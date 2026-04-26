@@ -14,7 +14,6 @@
       alignItems="center"
       gap="2"
       flex="1"
-      :display="{ base: 'none', md: 'flex' }"
     >
       <img
         :src="logoSrc"
