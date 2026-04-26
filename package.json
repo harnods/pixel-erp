@@ -10,11 +10,9 @@
   },
   "dependencies": {
     "@mekari/pixel3": "latest",
-    "nuxt": "^3.15.0",
-    "vue": "^3.5.0",
-    "vue-router": "^4.0.0"
-  },
-  "devDependencies": {
-    "@mekari/pixel3-postcss": "latest"
+    "@mekari/pixel3-postcss": "latest",
+    "nuxt": "^4.3.0",
+    "vue": "^3.5.27",
+    "vue-router": "^4.6.4"
   }
 }

@@ -24,42 +24,48 @@
 
 :root {
   /* Background */
-  --mp-background-surface-bold:          #142D26;
-  --mp-background-surface:               #F8F9F9;
-  --mp-background-stage:                 #FFFFFF;
-  --mp-background-neutral:               #FFFFFF;
-  --mp-background-neutral-subtle:        #F8F9F9;
-  --mp-background-neutral-hovered:       #F8F9F9;
-  --mp-background-neutral-pressed:       #EBF0F1;
-  --mp-background-neutral-subtle-hovered:#EBF0F1;
-  --mp-background-nav-stack-hovered:     #D6F4E9;
+  --mp-background-surface-bold: #142d26;
+  --mp-background-surface: #f8f9f9;
+  --mp-background-stage: #ffffff;
+  --mp-background-neutral: #ffffff;
+  --mp-background-neutral-subtle: #f8f9f9;
+  --mp-background-neutral-hovered: #f8f9f9;
+  --mp-background-neutral-pressed: #ebf0f1;
+  --mp-background-neutral-subtle-hovered: #ebf0f1;
+  --mp-background-nav-stack-hovered: #d6f4e9;
 
   /* Border */
-  --mp-border-default:                   #E3E7E9;
-  --mp-border-bold:                      #8C9596;
+  --mp-border-default: #e3e7e9;
+  --mp-border-bold: #8c9596;
 
   /* Text */
-  --mp-text-default:                     #080D0E;
-  --mp-text-inverse:                     #FFFFFF;
-  --mp-text-secondary:                   #3A4749;
-  --mp-text-selected:                    #0F6D4D;
-  --mp-text-link:                        #165082;
-  --mp-text-disabled:                    #8C9596;
-  --mp-text-danger:                      #A8352D;
+  --mp-text-default: #080d0e;
+  --mp-text-inverse: #ffffff;
+  --mp-text-secondary: #3a4749;
+  --mp-text-selected: #0f6d4d;
+  --mp-text-link: #165082;
+  --mp-text-disabled: #8c9596;
+  --mp-text-danger: #a8352d;
 
   /* Typography */
-  --mp-fonts-body: "Inter", -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+  --mp-fonts-body: "Inter", -apple-system, BlinkMacSystemFont, Helvetica, Arial,
+    sans-serif;
 
   /* Radius */
   --mp-radii-md: 0.375rem;
 
   /* Shadow (Enterprise uses #1D1F2429 as shadow color) */
-  --mp-shadows-sm: 0px 10px 15px -3px #1D1F2429, 0px 4px 6px -2px #1D1F2429;
+  --mp-shadows-sm: 0px 10px 15px -3px #1d1f2429, 0px 4px 6px -2px #1d1f2429;
 }
 
-*, *::before, *::after { box-sizing: border-box; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   height: 100%;
@@ -69,7 +75,9 @@ html, body {
   color: var(--mp-text-default);
 }
 
-#__nuxt { height: 100%; }
+#__nuxt {
+  height: 100%;
+}
 
 .app-shell {
   display: flex;

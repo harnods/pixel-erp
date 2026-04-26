@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "pixel": {
+      "source": "ahmadzakiy/skills",
+      "sourceType": "github",
+      "computedHash": "c2a00df00cc81d0e96ccdcc271f15cf26c9cdbbf01bb37ece236b8ada2519f56"
+    }
+  }
+}

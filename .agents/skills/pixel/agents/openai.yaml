@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pixel"
+  short_description: "Build Pixel 3 UIs with lean workflow guidance"
+  default_prompt: "Use $pixel to implement this UI with Mekari Pixel 3 using verified props, token-safe styling, and minimal-context workflow."

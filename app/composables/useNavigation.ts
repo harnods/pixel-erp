@@ -10,13 +10,13 @@
  */
 export const useNavigation = () => {
   /** Human-readable title shown in the page title bar */
-  const pageTitle = useState<string>('pageTitle', () => 'Home')
+  const pageTitle = useState<string>("pageTitle", () => "Home");
 
   /**
    * Key used to look up the component to render in the stage.
    * Matches the label of the menu item (e.g. 'Home', 'Sales invoices', 'Financials').
    */
-  const currentPageKey = useState<string>('currentPageKey', () => 'Home')
+  const currentPageKey = useState<string>("currentPageKey", () => "Home");
 
   /**
    * Navigate to a menu item.
@@ -24,9 +24,9 @@ export const useNavigation = () => {
    * @param title - optional override for the page title bar (defaults to key)
    */
   function navigate(key: string, title?: string) {
-    currentPageKey.value = key
-    pageTitle.value = title ?? key
+    currentPageKey.value = key;
+    pageTitle.value = title ?? key;
   }
 
-  return { pageTitle, currentPageKey, navigate }
-}
+  return { pageTitle, currentPageKey, navigate };
+};
