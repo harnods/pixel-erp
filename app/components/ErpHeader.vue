@@ -85,6 +85,5 @@
 
 <script setup lang="ts">
 import { MpFlex, MpAvatar, MpText, css } from "@mekari/pixel3";
-
-const logoSrc = "/mekari-erp-logo.svg";
+import logoSrc from "~/assets/images/mekari-erp-logo.svg?url";
 </script>

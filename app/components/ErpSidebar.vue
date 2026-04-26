@@ -86,6 +86,9 @@
 </template>
 
 <script setup lang="ts">
+import toggleIconUrl from '~/assets/images/sidebar-toggle.svg?url'
+import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface PanelSubItem {
@@ -128,8 +131,8 @@ const activeItem = ref('Home')
 const activePanel = ref<ActivePanel | null>(null)
 const activePanelSubItem = ref<string | null>(null)
 
-const toggleIcon = '/sidebar-toggle.svg'
-const shortcutIcon = '/shortcut-icon.svg'
+const toggleIcon = toggleIconUrl
+const shortcutIcon = shortcutIconUrl
 const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
 const { navigate } = useNavigation()
