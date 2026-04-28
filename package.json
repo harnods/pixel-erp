@@ -7,7 +7,9 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "test:design": "vitest run tests/design"
+    "test:design": "vitest run tests/design",
+    "test:behavior": "vitest run tests/behavior",
+    "test:all": "vitest run tests/"
   },
   "dependencies": {
     "@mekari/pixel3": "latest",
