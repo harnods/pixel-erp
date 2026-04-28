@@ -11,6 +11,43 @@ metadata:
 
 Build Pixel 3 UI with a low-noise workflow: verify setup, map the UI, validate props, apply token-safe styling, and ship runnable Vue/Nuxt code.
 
+## Project Context — Mekari ERP OS
+
+- **Theme**: Enterprise only (Token v2.4). Never use Light mode values.
+- **Framework**: Nuxt 4, `srcDir: 'app/'`, `ssr: false`
+- **Pattern docs**: `docs/patterns/*.md` — always read before building anything new
+- **Existing patterns**: `ErpTablePage`, `ErpFilterBar`, `ErpStatusBadge`, `ErpPagination`
+- **Page recipes**: `docs/patterns/page-recipes.md` — index / form / detail page templates
+- **Static assets**: import SVGs from `~/assets/images/` with `?url`, not from `public/`
+- **Design tests**: `tests/design/` — Vitest, CSS source parsing, no browser needed
+
+### When to run design tests
+
+Run `npx vitest run tests/design` automatically when modifying:
+- `app/components/patterns/*.vue`
+- `app/layouts/default.vue`
+
+Skip when only modifying:
+- `app/components/pages/*.vue`
+- `app/data/`, composables, route logic, docs, non-visual files
+
+---
+
+## Page Recipes & Commands
+
+Recognise both slash-command style and natural language:
+
+| Command / phrase | What to build |
+|---|---|
+| `/create-index-page` · "bikin index page" · "create index page" | `ErpFilterBar` + `ErpTablePage` + `useTableState` |
+| `/create-form-page` · "bikin form page" · "create form page" | Page title + stage with form fields (max 6 col) + action group |
+| `/create-detail-page` · "bikin detail page" · "create detail page" | Page title + stage with detail sections (label / value pairs) |
+
+For each recipe, read `docs/patterns/page-recipes.md` before writing code.  
+**Never create a new component/pattern** when an existing one can be customised via slots or props.
+
+---
+
 ## Golden Rules
 
 1. Import UI from `@mekari/pixel3`.
@@ -28,7 +65,6 @@ Build Pixel 3 UI with a low-noise workflow: verify setup, map the UI, validate p
 Read [references/setup.md](references/setup.md) if package setup, plugin registration, or token mode is unclear.
 
 ### 2. Analyze the Request
-
 - For Figma work: extract the node ID, then use Figma MCP `get_design_context` and `get_screenshot`.
 - For text requests: break the UI into sections, states, interactions, and responsive behavior.
 - Produce a short component plan before coding.
@@ -45,6 +81,7 @@ Read [references/components.md](references/components.md), then validate any unc
 ### 5. Produce Final Code
 
 Read [references/code-structure.md](references/code-structure.md) before writing the final Vue/Nuxt component.
+
 
 ## MCP Usage
 

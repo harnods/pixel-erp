@@ -6,7 +6,8 @@
     "build": "nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
-    "preview": "nuxt preview"
+    "preview": "nuxt preview",
+    "test:design": "vitest run tests/design"
   },
   "dependencies": {
     "@mekari/pixel3": "latest",
@@ -14,5 +15,8 @@
     "nuxt": "^4.3.0",
     "vue": "^3.5.27",
     "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.1"
   }
 }
