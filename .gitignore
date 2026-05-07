@@ -25,3 +25,4 @@ logs
 
 # Claude local config
 .claude/
+package-lock.json
