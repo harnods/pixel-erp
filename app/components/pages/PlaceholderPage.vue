@@ -25,15 +25,15 @@ const { currentPageKey } = useNavigation()
 }
 
 .placeholder-label {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 18px;            /* custom — not in token scale (between lg=16px and xl=20px) */
+  font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
-  margin: 0 0 8px;
+  margin: 0 0 var(--mp-spacing-2);
 }
 
 .placeholder-hint {
-  font-size: 14px;
-  color: #6B7280;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-subtle);
   margin: 0;
 }
 </style>

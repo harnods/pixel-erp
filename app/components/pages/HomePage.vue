@@ -6,11 +6,11 @@
 
 <style scoped>
 .home-page {
-  padding: 32px;
+  padding: var(--mp-spacing-8);
 }
 
 .home-welcome {
-  font-size: 16px;
+  font-size: var(--mp-font-sizes-lg);
   color: var(--mp-text-default);
   margin: 0;
 }

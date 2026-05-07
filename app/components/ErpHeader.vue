@@ -20,7 +20,7 @@
         alt="Mekari ERP"
         :class="
           css({
-            height: '20px',
+            height: '5',
             width: 'auto',
             display: 'block',
             flexShrink: '0'

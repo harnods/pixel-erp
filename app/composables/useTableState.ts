@@ -6,7 +6,7 @@
  * Usage:
  *   const { search, statusFilter, currentPage, paginated, total, perPage, setPage, setPerPage } =
  *     useTableState(rows, {
- *       perPage: 10,
+ *       perPage: 25,
  *       filterFn: (row, search, status) =>
  *         row.customer.name.toLowerCase().includes(search) &&
  *         (!status || row.status === status),
@@ -19,7 +19,7 @@ export function useTableState<T>(
     filterFn?: (row: T, search: string, status: string) => boolean
   },
 ) {
-  const perPage = ref(options?.perPage ?? 10)
+  const perPage = ref(options?.perPage ?? 25)
 
   const search = ref('')
   const statusFilter = ref('')

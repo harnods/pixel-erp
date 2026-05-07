@@ -1,6 +1,6 @@
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
-export type InvoiceStatus = 'draft' | 'pending' | 'approved' | 'paid' | 'overdue' | 'cancelled'
+export type InvoiceStatus = 'paid' | 'open' | 'overdue'
 export type ProductStatus = 'active' | 'inactive'
 export type ContactType   = 'company' | 'individual'
 

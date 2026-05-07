@@ -25,9 +25,9 @@
 .erp-filter-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--mp-colors-border-default);
+  gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border-bottom: 1px solid var(--mp-border-default);
   flex-shrink: 0;
   flex-wrap: wrap;
 }

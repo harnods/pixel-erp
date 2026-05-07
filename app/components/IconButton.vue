@@ -26,8 +26,8 @@ const props = defineProps<IconButtonProps>();
 
 const buttonClass = computed(() =>
   css({
-    height: "36px",
-    width: "36px",
+    height: "9",
+    width: "9",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
