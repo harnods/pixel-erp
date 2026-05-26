@@ -1,6 +1,6 @@
 /**
  * Design tests for ErpFilterBar
- * Spec source: docs/patterns/ErpFilterBar.md
+ * Spec source: docs/patterns/specs/ErpFilterBar.spec.ts
  *
  * Run: npx vitest run tests/design/ErpFilterBar.design.spec.ts
  * Trigger: when app/components/patterns/ErpFilterBar.vue changes
@@ -8,34 +8,35 @@
 
 import { describe, it, expect } from 'vitest'
 import { extractStyles } from './utils/css-parser'
+import { ErpFilterBarSpec } from '../../docs/patterns/specs/ErpFilterBar.spec'
 
 const styles = extractStyles('app/components/patterns/ErpFilterBar.vue')
 
 describe('ErpFilterBar (.erp-filter-bar)', () => {
   const fb = styles['.erp-filter-bar']
+  const spec = ErpFilterBarSpec.container
 
-  it('display is flex', () => {
-    expect(fb['display']).toBe('flex')
+  it('display is ' + spec.display, () => {
+    expect(fb['display']).toBe(spec.display)
   })
 
-  it('align-items is center', () => {
-    expect(fb['align-items']).toBe('center')
+  it('align-items is ' + spec.alignItems, () => {
+    expect(fb['align-items']).toBe(spec.alignItems)
   })
 
-  it('gap is 8px', () => {
-    expect(fb['gap']).toBe('8px')
+  it('gap uses token ' + spec.gap, () => {
+    expect(fb['gap']).toBe(spec.gap)
   })
 
-  it('padding is 12px 16px', () => {
-    expect(fb['padding']).toBe('12px 16px')
+  it('padding uses token ' + spec.padding, () => {
+    expect(fb['padding']).toBe(spec.padding)
   })
 
-  it('has border-bottom', () => {
-    expect(fb['border-bottom']).toBeDefined()
-    expect(fb['border-bottom']).toContain('1px solid')
+  it('has border-bottom with token ' + spec.borderToken, () => {
+    expect(fb['border-bottom']).toContain(spec.borderToken)
   })
 
-  it('flex-wrap is wrap (supports multiple rows of filters)', () => {
-    expect(fb['flex-wrap']).toBe('wrap')
+  it('flex-wrap is ' + spec.behaviors.responsiveWrap.flexWrap, () => {
+    expect(fb['flex-wrap']).toBe(spec.behaviors.responsiveWrap.flexWrap)
   })
 })

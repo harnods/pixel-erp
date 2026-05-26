@@ -16,13 +16,13 @@ export const ErpPaginationSpec = {
   //   display          : flex
   //   align-items      : center
   //   justify-content  : space-between
-  //   padding          : 8px 16px     ← TODO: verify dengan Figma
-  //   gap              : 16px
+  //   padding          : var(--mp-spacing-2) var(--mp-spacing-4)   = 8px 16px
+  //   gap              : var(--mp-spacing-4)   = 16px
   //   border-top       : 1px solid var(--mp-border-default)
 
   container: {
-    padding:      '8px 16px',    // TODO: verify dengan Figma
-    gap:          '16px',
+    padding:      'var(--mp-spacing-2) var(--mp-spacing-4)',
+    gap:          'var(--mp-spacing-4)',
     borderToken:  '--mp-border-default',
   },
 
@@ -31,11 +31,11 @@ export const ErpPaginationSpec = {
   // Selector: .pagination-label, .pagination-showing
   //
   // spec:
-  //   font-size : 13px            ← TODO: verify dengan Figma (body-small = 12px?)
+  //   font-size : var(--mp-font-sizes-sm)   = 12px
   //   color     : var(--mp-text-secondary)
 
   label: {
-    fontSize:   '13px',          // TODO: verify — Pixel body-small biasanya 12px
+    fontSize:   '--mp-font-sizes-sm',
     colorToken: '--mp-text-secondary',
   },
 

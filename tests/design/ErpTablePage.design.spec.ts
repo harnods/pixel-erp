@@ -1,6 +1,6 @@
 /**
  * Design tests for ErpTablePage
- * Spec source: docs/patterns/ErpTablePage.md
+ * Spec source: docs/patterns/specs/ErpTablePage.spec.ts
  *
  * Run: npx vitest run tests/design/ErpTablePage.design.spec.ts
  * Trigger: when app/components/patterns/ErpTablePage.vue changes
@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { extractStyles } from './utils/css-parser'
+import { ErpTablePageSpec } from '../../docs/patterns/specs/ErpTablePage.spec'
 
 const styles = extractStyles('app/components/patterns/ErpTablePage.vue')
 
@@ -15,33 +16,38 @@ const styles = extractStyles('app/components/patterns/ErpTablePage.vue')
 
 describe('ErpTablePage — table header (.erp-th)', () => {
   const th = styles['.erp-th']
+  const spec = ErpTablePageSpec.header
 
-  it('height is 28px', () => {
-    expect(th['height']).toBe('28px')
+  it('height uses token ' + spec.minHeight, () => {
+    expect(th['height']).toBe(spec.minHeight)
   })
 
-  it('font-size is 12px', () => {
-    expect(th['font-size']).toBe('12px')
+  it('font-size uses token ' + spec.fontSize, () => {
+    expect(th['font-size']).toBe(`var(${spec.fontSize})`)
   })
 
-  it('font-weight is 600 (semiBold)', () => {
-    expect(th['font-weight']).toBe('600')
+  it('font-weight uses token ' + spec.fontWeight, () => {
+    expect(th['font-weight']).toBe(`var(${spec.fontWeight})`)
   })
 
-  it('text-transform is uppercase', () => {
-    expect(th['text-transform']).toBe('uppercase')
+  it('letter-spacing uses token ' + spec.letterSpacing, () => {
+    expect(th['letter-spacing']).toBe(`var(${spec.letterSpacing})`)
   })
 
-  it('padding is 4px 16px 4px 8px (left-col Figma spec)', () => {
-    expect(th['padding']).toBe('4px 16px 4px 8px')
+  it('text-transform is ' + spec.textTransform, () => {
+    expect(th['text-transform']).toBe(spec.textTransform)
   })
 
-  it('background uses --mp-background-neutral-subtle token', () => {
-    expect(th['background']).toContain('--mp-background-neutral-subtle')
+  it('padding uses tokens ' + spec.padding, () => {
+    expect(th['padding']).toBe(spec.padding)
   })
 
-  it('border-bottom uses --mp-border-default token', () => {
-    expect(th['border-bottom']).toContain('--mp-border-default')
+  it('background uses token ' + spec.backgroundToken, () => {
+    expect(th['background']).toContain(spec.backgroundToken)
+  })
+
+  it('border-bottom uses token ' + spec.borderToken, () => {
+    expect(th['border-bottom']).toContain(spec.borderToken)
   })
 })
 
@@ -49,21 +55,22 @@ describe('ErpTablePage — table header (.erp-th)', () => {
 
 describe('ErpTablePage — table body cell (.erp-td)', () => {
   const td = styles['.erp-td']
+  const spec = ErpTablePageSpec.row
 
-  it('height is 40px', () => {
-    expect(td['height']).toBe('40px')
+  it('height uses token ' + spec.minHeight, () => {
+    expect(td['height']).toBe(spec.minHeight)
   })
 
-  it('font-size is 14px', () => {
-    expect(td['font-size']).toBe('14px')
+  it('font-size uses token ' + spec.fontSize, () => {
+    expect(td['font-size']).toBe(`var(${spec.fontSize})`)
   })
 
-  it('font-weight is 400 (regular)', () => {
-    expect(td['font-weight']).toBe('400')
+  it('font-weight uses token ' + spec.fontWeight, () => {
+    expect(td['font-weight']).toBe(`var(${spec.fontWeight})`)
   })
 
-  it('padding is 6px 16px 6px 8px (left-col Figma spec)', () => {
-    expect(td['padding']).toBe('6px 16px 6px 8px')
+  it('padding uses tokens ' + spec.padding, () => {
+    expect(td['padding']).toBe(spec.padding)
   })
 })
 
@@ -76,8 +83,8 @@ describe('ErpTablePage — right-aligned header (.erp-th--right)', () => {
     expect(thRight['text-align']).toBe('right')
   })
 
-  it('padding flips to 4px 8px 4px 16px (right-col Figma spec)', () => {
-    expect(thRight['padding']).toBe('4px 8px 4px 16px')
+  it('padding uses tokens ' + ErpTablePageSpec.header.paddingRight, () => {
+    expect(thRight['padding']).toBe(ErpTablePageSpec.header.paddingRight)
   })
 })
 
@@ -88,8 +95,8 @@ describe('ErpTablePage — right-aligned cell (.erp-td--right)', () => {
     expect(tdRight['text-align']).toBe('right')
   })
 
-  it('padding flips to 6px 8px 6px 16px', () => {
-    expect(tdRight['padding']).toBe('6px 8px 6px 16px')
+  it('padding uses tokens ' + ErpTablePageSpec.row.paddingRight, () => {
+    expect(tdRight['padding']).toBe(ErpTablePageSpec.row.paddingRight)
   })
 })
 
@@ -98,12 +105,12 @@ describe('ErpTablePage — right-aligned cell (.erp-td--right)', () => {
 describe('ErpTablePage — internal filter bar (.erp-filter-bar)', () => {
   const fb = styles['.erp-filter-bar']
 
-  it('padding is 12px 16px', () => {
-    expect(fb['padding']).toBe('12px 16px')
+  it('padding uses tokens var(--mp-spacing-3) var(--mp-spacing-4)', () => {
+    expect(fb['padding']).toBe('var(--mp-spacing-3) var(--mp-spacing-4)')
   })
 
-  it('gap is 8px', () => {
-    expect(fb['gap']).toBe('8px')
+  it('gap uses token var(--mp-spacing-2)', () => {
+    expect(fb['gap']).toBe('var(--mp-spacing-2)')
   })
 
   it('border-bottom uses --mp-border-default token', () => {
@@ -114,11 +121,11 @@ describe('ErpTablePage — internal filter bar (.erp-filter-bar)', () => {
 // ─── Sticky actions column ────────────────────────────────────────────────────
 
 describe('ErpTablePage — actions column (.erp-th--actions, .erp-td--actions)', () => {
-  it('actions header width is 44px', () => {
-    expect(styles['.erp-th--actions']['width']).toBe('44px')
+  it('actions header width uses token ' + ErpTablePageSpec.header.actionsWidth, () => {
+    expect(styles['.erp-th--actions']['width']).toBe(ErpTablePageSpec.header.actionsWidth)
   })
 
-  it('actions cell width is 44px', () => {
-    expect(styles['.erp-td--actions']['width']).toBe('44px')
+  it('actions cell width uses token ' + ErpTablePageSpec.header.actionsWidth, () => {
+    expect(styles['.erp-td--actions']['width']).toBe(ErpTablePageSpec.header.actionsWidth)
   })
 })

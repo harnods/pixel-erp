@@ -10,7 +10,7 @@
  *   <ErpFilterBar>
  *     <MpInputGroup id="...">...</MpInputGroup>
  *     <MpSelect id="...">...</MpSelect>
- *     <MpButton variant="primary" style="margin-left: auto">+ Create</MpButton>
+ *     <MpButton variant="primary" :class="css({ ml: 'auto' })">+ Create</MpButton>
  *   </ErpFilterBar>
  */
 </script>

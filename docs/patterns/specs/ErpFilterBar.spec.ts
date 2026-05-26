@@ -16,16 +16,16 @@ export const ErpFilterBarSpec = {
   //   display     : flex
   //   align-items : center
   //   flex-wrap   : wrap
-  //   gap         : 8px
-  //   padding     : 12px 16px     ← TODO: verify dengan Figma
+  //   gap         : var(--mp-spacing-2)   = 8px
+  //   padding     : var(--mp-spacing-3) var(--mp-spacing-4)   = 12px 16px
   //   border-bot  : 1px solid var(--mp-border-default)
 
   container: {
     display:      'flex',
     alignItems:   'center',
-    flexWrap:     'wrap',         // filter bisa turun ke baris berikutnya kalau tidak muat
-    gap:          '8px',
-    padding:      '12px 16px',   // TODO: verify dengan Figma
+    flexWrap:     'wrap',
+    gap:          'var(--mp-spacing-2)',
+    padding:      'var(--mp-spacing-3) var(--mp-spacing-4)',
     borderToken:  '--mp-border-default',
 
     // ── Behaviour ────────────────────────────────────────────────────────
@@ -34,8 +34,6 @@ export const ErpFilterBarSpec = {
       responsiveWrap: {
         // filter controls akan wrap ke baris baru otomatis
         // jika lebar container tidak cukup
-        //
-        // TODO: konfirmasi apakah wrapping ini di-require
         enabled:   true,
         flexWrap:  'wrap',
       },

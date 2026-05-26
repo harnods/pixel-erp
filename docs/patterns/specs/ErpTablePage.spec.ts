@@ -1,11 +1,9 @@
 /**
  * ErpTablePage Design Spec
  *
- * Ini adalah source of truth untuk design dan behaviour ErpTablePage.
- * Nilai di bawah di-pre-fill dari CSS yang sudah ada — review dan koreksi
- * sesuai Figma sebelum dijadikan acuan test.
+ * Pre-filled dari CSS yang sudah ada — review dan koreksi sesuai Figma.
  *
- * Setelah Anda selesai, jalankan: npm run test:all
+ * Setelah selesai, jalankan: npm run test:all
  */
 
 export const ErpTablePageSpec = {
@@ -15,31 +13,32 @@ export const ErpTablePageSpec = {
   // Selector: .erp-th
   //
   // spec:
-  //   min-height  : 28px        ← TODO: verify dengan Figma
-  //   max-height  : 28px        ← TODO: verify dengan Figma
-  //   padding     : 4px 16px 4px 8px
-  //   font-size   : 12px
-  //   font-weight : 600 (semiBold)
+  //   height      : var(--mp-sizes-7)        = 28px
+  //   padding     : spacing-1 spacing-4 spacing-1 spacing-2  (4px 16px 4px 8px)
+  //   font-size   : var(--mp-font-sizes-sm)  = 12px
+  //   font-weight : var(--mp-font-weights-semi-bold)  = 600
   //   text-transform: uppercase
+  //   letter-spacing: var(--mp-letter-spacings-normal) = 0
   //   border-bot  : 1px solid var(--mp-border-default)
   //   background  : var(--mp-background-neutral-subtle)
 
   header: {
-    minHeight:       '28px',        // TODO: verify dengan Figma
-    maxHeight:       '28px',        // TODO: verify dengan Figma
-    padding:         '4px 16px 4px 8px',
-    paddingRight:    '4px 8px 4px 16px',  // right-aligned column (flipped)
-    fontSize:        '12px',
-    fontWeight:      '600',
+    minHeight:       'var(--mp-sizes-7)',
+    maxHeight:       'var(--mp-sizes-7)',
+    padding:         'var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2)',
+    paddingRight:    'var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4)',
+    fontSize:        '--mp-font-sizes-sm',
+    fontWeight:      '--mp-font-weights-semi-bold',
     textTransform:   'uppercase',
+    letterSpacing:   '--mp-letter-spacings-normal',
     backgroundToken: '--mp-background-neutral-subtle',
     borderToken:     '--mp-border-default',
 
     // Checkbox column
-    checkboxWidth:   '36px',
+    checkboxWidth:   'var(--mp-sizes-9)',
 
     // Actions column (sticky right, no label)
-    actionsWidth:    '44px',
+    actionsWidth:    'var(--mp-sizes-11)',
 
     // ── Behaviour ──────────────────────────────────────────────────────────
     behaviors: {
@@ -47,20 +46,16 @@ export const ErpTablePageSpec = {
       stickyOnScroll: {
         // table header akan sticky ketika di-scroll dan posisinya
         // tetap di y=0 browser (tidak ikut scroll ke atas)
-        //
-        // TODO: konfirmasi apakah ini requirement halaman ini
         enabled:    true,
         position:   'sticky',
         top:        '0',
-        zIndex:     2,            // harus di atas body rows
-        scrollContainerOverflow: 'auto',  // .erp-table-wrapper syarat sticky
+        zIndex:     2,
+        scrollContainerOverflow: 'auto',
       },
 
       sortable: {
         // column header yang sortable menampilkan cursor pointer
         // dan background berubah saat hover sebagai affordance
-        //
-        // TODO: konfirmasi apakah semua column sortable atau hanya beberapa
         cursor:         'pointer',
         hasHoverState:  true,
       },
@@ -73,21 +68,21 @@ export const ErpTablePageSpec = {
   // Selector: .erp-td
   //
   // spec:
-  //   min-height  : 40px        ← TODO: verify dengan Figma
-  //   padding     : 6px 16px 6px 8px
-  //   font-size   : 14px
-  //   font-weight : 400 (regular)
+  //   height      : var(--mp-sizes-10)       = 40px
+  //   padding     : spacing-1.5 spacing-4 spacing-1.5 spacing-2  (6px 16px 6px 8px)
+  //   font-size   : var(--mp-font-sizes-md)  = 14px
+  //   font-weight : var(--mp-font-weights-regular)  = 400
   //   border-bot  : 1px solid var(--mp-border-default)
-  //   white-space : nowrap (konten tidak wrap)
+  //   white-space : nowrap
 
   row: {
-    minHeight:    '40px',         // TODO: verify dengan Figma
-    padding:      '6px 16px 6px 8px',
-    paddingRight: '6px 8px 6px 16px',  // right-aligned column (flipped)
-    fontSize:     '14px',
-    fontWeight:   '400',
+    minHeight:    'var(--mp-sizes-10)',
+    padding:      'var(--mp-spacing-1\\.5) var(--mp-spacing-4) var(--mp-spacing-1\\.5) var(--mp-spacing-2)',
+    paddingRight: 'var(--mp-spacing-1\\.5) var(--mp-spacing-2) var(--mp-spacing-1\\.5) var(--mp-spacing-4)',
+    fontSize:     '--mp-font-sizes-md',
+    fontWeight:   '--mp-font-weights-regular',
     borderToken:  '--mp-border-default',
-    noWrap:       true,           // white-space: nowrap
+    noWrap:       true,
 
     // ── Behaviour ──────────────────────────────────────────────────────────
     behaviors: {
@@ -95,8 +90,6 @@ export const ErpTablePageSpec = {
       hoverFeedback: {
         // setiap row memberikan visual feedback (background berubah)
         // ketika user mengarahkan mouse ke atas row tersebut
-        //
-        // TODO: konfirmasi apakah hover feedback ini di-require
         enabled:              true,
         hoverBackgroundToken: '--mp-background-neutral-hovered',
       },
@@ -107,10 +100,6 @@ export const ErpTablePageSpec = {
   // ─── Sticky Actions Column ───────────────────────────────────────────────────
   //
   // Kolom paling kanan yang berisi action button, sticky saat scroll horizontal.
-  //
-  // spec:
-  //   position : sticky, right: 0
-  //   separator: inset box-shadow kiri (visual pemisah dari konten yang ter-scroll)
 
   actionsColumn: {
 
@@ -118,15 +107,11 @@ export const ErpTablePageSpec = {
     behaviors: {
 
       stickyOnHorizontalScroll: {
-        // kolom actions akan tetap terlihat di sisi kanan
-        // meskipun user scroll tabel ke kiri/kanan
-        //
-        // TODO: konfirmasi apakah ini requirement atau optional
         enabled:                  true,
         position:                 'sticky',
         right:                    '0',
-        hasShadowSeparator:       true,   // inset box-shadow kiri
-        tableMinWidth:            'max-content',  // syarat horizontal overflow
+        hasShadowSeparator:       true,
+        tableMinWidth:            'max-content',
       },
 
     },

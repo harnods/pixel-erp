@@ -62,4 +62,6 @@ export interface PurchaseInvoice {
   amount: number
   status: InvoiceStatus
   itemCount: number
+  hasAttachment?: boolean
+  tags?: string[]
 }

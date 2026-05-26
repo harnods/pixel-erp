@@ -4,9 +4,10 @@ import { defineAsyncComponent, type Component, ref, computed, provide, nextTick,
 const { pageTitle, currentPageKey } = useNavigation()
 
 const pageRegistry: Record<string, Component> = {
-  'Home':            defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
-  'Sales invoices':  defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
-  'Company profile': defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
+  'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
+  'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
+  'Company profile':   defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
 }
 
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
@@ -20,6 +21,16 @@ const aireneOpen = ref(false)
 function toggleAirene() { aireneOpen.value = !aireneOpen.value }
 provide('toggleAirene', toggleAirene)
 provide('aireneOpen', aireneOpen)
+
+// ── Import dropdown ───────────────────────────────────────────────────────
+const importDropdownOpen = ref(false)
+const importBtnWrapEl = ref<HTMLElement | null>(null)
+
+function onImportOutsideClick(e: MouseEvent) {
+  if (!importBtnWrapEl.value?.contains(e.target as Node)) {
+    importDropdownOpen.value = false
+  }
+}
 
 // ── Chat sessions + history ───────────────────────────────────────────────
 interface ChatMessage {
@@ -182,12 +193,14 @@ function onMouseMoveMascot(e: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', onOutsideClick)
+  document.addEventListener('click', onImportOutsideClick)
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('mousemove', onMouseMoveMascot)
   _mascotRaf = requestAnimationFrame(_tickMascot)
 })
 onUnmounted(() => {
   document.removeEventListener('click', onOutsideClick)
+  document.removeEventListener('click', onImportOutsideClick)
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('mousemove', onMouseMoveMascot)
   if (_mascotRaf !== null) cancelAnimationFrame(_mascotRaf)
@@ -345,6 +358,65 @@ function startResize(e: MouseEvent) {
             New sales invoice
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">
+          <!-- Import button + dropdown -->
+          <div ref="importBtnWrapEl" class="import-wrap">
+            <button
+              class="btn-enterprise btn-enterprise--secondary"
+              :class="{ 'btn-enterprise--active': importDropdownOpen }"
+              @click.stop="importDropdownOpen = !importDropdownOpen"
+            >
+              Import
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
+              >
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+            <!-- Dropdown -->
+            <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
+
+              <!-- Group 1: spreadsheet + upload bills -->
+              <div class="import-group import-group--bordered">
+                <button class="import-item">Import from spreadsheet</button>
+                <button class="import-item import-item--ai">
+                  <span>Upload bills</span>
+                  <span class="ai-badge">
+                    <img
+                      src="https://www.figma.com/api/mcp/asset/b87bbbb6-b7ca-46be-a6a9-755ab81fefe6"
+                      width="12" height="12" alt="" class="ai-badge__icon"
+                    />
+                    <span class="ai-badge__label">AI</span>
+                  </span>
+                </button>
+              </div>
+
+              <!-- Group 2: Forward bills to -->
+              <div class="import-group">
+                <div class="import-forward">
+                  <div class="import-forward__labels">
+                    <span class="import-forward__title">Forward bills to</span>
+                    <span class="import-forward__email">dropbox.680128@jurnal.id</span>
+                  </div>
+                  <a class="import-forward__copy" @click.prevent>Copy address</a>
+                  <p class="import-forward__desc">
+                    Any bill or receipt attachment forwarded to this email will be automatically recorded as a draft.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <button class="btn-enterprise btn-enterprise--primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New purchase invoice
+          </button>
+        </div>
       </div>
 
       <div class="stage">
@@ -466,25 +538,25 @@ function startResize(e: MouseEvent) {
                 <button class="airene-suggestion-item" @click="sendMessage('Import sales invoices')">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="airene-sug-icon">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M8.45 15H2.05C1.60818 15 1.25 14.6418 1.25 14.2V7.8C1.25 7.35818 1.60818 7 2.05 7H8.45C8.89182 7 9.25 7.35818 9.25 7.8V14.2C9.25 14.6418 8.89182 15 8.45 15ZM4.6168 10.9933L3.03984 13.4H4.18184L5.11992 11.7129C5.17422 11.6216 5.20938 11.549 5.2252 11.4954H5.23868C5.27266 11.5825 5.30898 11.6573 5.34746 11.7197L6.2582 13.4H7.39336L5.87422 10.98L7.35586 8.6H6.28886L5.4461 10.1164C5.38946 10.2257 5.33516 10.3384 5.28282 10.4544H5.27266C5.2455 10.3831 5.1957 10.2748 5.12324 10.1297L4.33476 8.6H3.17246L4.6168 10.9933Z" fill="#1FB088"/>
-                    <path fill-rule="evenodd" clip-rule="evenodd" d="M5.25 6C5.25 4.91621 5.5228 4.12733 6.00443 3.61223C6.47747 3.10631 7.25949 2.75 8.52778 2.75H13.9722C15.2405 2.75 16.0225 3.10631 16.4956 3.61223C16.9772 4.12733 17.25 4.91621 17.25 6V14C17.25 15.0838 16.9772 15.8727 16.4956 16.3878C16.0225 16.8937 15.2405 17.25 13.9722 17.25H8.52778C7.25949 17.25 6.47747 16.8937 6.00443 16.3878C5.68583 16.047 5.45861 15.5865 5.34129 15H3.81988C3.95549 15.9231 4.29617 16.7571 4.90877 17.4122C5.74475 18.3063 6.97662 18.75 8.52778 18.75H13.9722C15.5234 18.75 16.7553 18.3063 17.5912 17.4122C18.4186 16.5273 18.75 15.3162 18.75 14V6C18.75 4.68379 18.4186 3.47267 17.5912 2.58777C16.7553 1.69369 15.5234 1.25 13.9722 1.25H8.52778C6.97662 1.25 5.74475 1.69369 4.90877 2.58777C4.08136 3.47267 3.75 4.68379 3.75 6V7H5.25V6ZM13.9722 14.75H9.03094C9.16672 14.6066 9.25 14.413 9.25 14.2V13.25H13.9722C14.3864 13.25 14.7222 13.5858 14.7222 14C14.7222 14.4142 14.3864 14.75 13.9722 14.75ZM10.75 11.55H9.25V10.05H10.75C11.1642 10.05 11.5 10.3858 11.5 10.8C11.5 11.2142 11.1642 11.55 10.75 11.55ZM13.5139 4C13.5139 3.58579 13.1781 3.25 12.7639 3.25C12.3497 3.25 12.0139 3.58579 12.0139 4V5.6C12.0139 6.8991 13.0796 7.95 14.375 7.95H15.9861C16.4003 7.95 16.7361 7.61421 16.7361 7.2C16.7361 6.78579 16.4003 6.45 15.9861 6.45H14.375C13.8982 6.45 13.5139 6.0609 13.5139 5.6V4Z" fill="#536062"/>
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M5.25 6C5.25 4.91621 5.5228 4.12733 6.00443 3.61223C6.47747 3.10631 7.25949 2.75 8.52778 2.75H13.9722C15.2405 2.75 16.0225 3.10631 16.4956 3.61223C16.9772 4.12733 17.25 4.91621 17.25 6V14C17.25 15.0838 16.9772 15.8727 16.4956 16.3878C16.0225 16.8937 15.2405 17.25 13.9722 17.25H8.52778C7.25949 17.25 6.47747 16.8937 6.00443 16.3878C5.68583 16.047 5.45861 15.5865 5.34129 15H3.81988C3.95549 15.9231 4.29617 16.7571 4.90877 17.4122C5.74475 18.3063 6.97662 18.75 8.52778 18.75H13.9722C15.5234 18.75 16.7553 18.3063 17.5912 17.4122C18.4186 16.5273 18.75 15.3162 18.75 14V6C18.75 4.68379 18.4186 3.47267 17.5912 2.58777C16.7553 1.69369 15.5234 1.25 13.9722 1.25H8.52778C6.97662 1.25 5.74475 1.69369 4.90877 2.58777C4.08136 3.47267 3.75 4.68379 3.75 6V7H5.25V6ZM13.9722 14.75H9.03094C9.16672 14.6066 9.25 14.413 9.25 14.2V13.25H13.9722C14.3864 13.25 14.7222 13.5858 14.7222 14C14.7222 14.4142 14.3864 14.75 13.9722 14.75ZM10.75 11.55H9.25V10.05H10.75C11.1642 10.05 11.5 10.3858 11.5 10.8C11.5 11.2142 11.1642 11.55 10.75 11.55ZM13.5139 4C13.5139 3.58579 13.1781 3.25 12.7639 3.25C12.3497 3.25 12.0139 3.58579 12.0139 4V5.6C12.0139 6.8991 13.0796 7.95 14.375 7.95H15.9861C16.4003 7.95 16.7361 7.61421 16.7361 7.2C16.7361 6.78579 16.4003 6.45 15.9861 6.45H14.375C13.8982 6.45 13.5139 6.0609 13.5139 5.6V4Z" fill="currentColor"/>
                   </svg>
                   Import sales invoices
                 </button>
                 <button class="airene-suggestion-item" @click="sendMessage('How much am I owed?')">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="airene-sug-icon">
-                    <path fill-rule="evenodd" clip-rule="evenodd" d="M14.031 2.01702C14.4358 2.10476 14.6928 2.50406 14.6051 2.90887L14.5012 3.38816H15.6395C16.6436 3.38816 17.4817 4.00084 17.8347 4.84644C17.9161 5.03254 17.9708 5.22646 17.9998 5.42421C18.0122 5.46993 18.0204 5.51749 18.024 5.56649L18.7442 15.4679C18.8397 16.8361 17.7648 18 16.3886 18H3.63145C2.02129 18 0.883477 16.4283 1.35874 14.8979L4.42037 5.07263C4.72762 4.07908 5.64738 3.38816 6.69347 3.38816H8.14835L8.34266 2.58162C8.43967 2.17893 8.84476 1.93113 9.24745 2.02814C9.65015 2.12515 9.89795 2.53024 9.80094 2.93294L9.69127 3.38816H12.9664L13.1391 2.59114C13.2269 2.18632 13.6261 1.92928 14.031 2.01702ZM12.6413 4.88816H9.3299L9.04452 6.07276C8.94751 6.47545 8.54242 6.72325 8.13972 6.62624C7.73703 6.52922 7.48923 6.12413 7.58624 5.72144L7.78699 4.88816H6.69347C6.31439 4.88816 5.96889 5.14173 5.85362 5.51511L2.79125 15.3428C2.61205 15.9202 3.04515 16.5 3.63145 16.5H13.1884C13.6039 16.5 13.9516 16.2235 14.0443 15.8337L14.0462 15.8258L16.4964 5.99545C16.5474 5.78067 16.5255 5.59467 16.4591 5.44447C16.3226 5.11446 16.0138 4.88816 15.6395 4.88816H14.1761L13.9214 6.06324C13.8337 6.46805 13.4344 6.72509 13.0295 6.63735C12.6247 6.54961 12.3677 6.15032 12.4554 5.74551L12.6413 4.88816ZM16.888 10.6264L15.5026 16.185C15.4766 16.2936 15.4434 16.3987 15.4036 16.5H16.3886C16.8886 16.5 17.2828 16.0799 17.2478 15.5732L16.888 10.6264ZM6.12531 9.98182C6.12531 9.5676 6.46109 9.23182 6.87531 9.23182H12.6938C13.1081 9.23182 13.4438 9.5676 13.4438 9.98182C13.4438 10.396 13.1081 10.7318 12.6938 10.7318H6.87531C6.46109 10.7318 6.12531 10.396 6.12531 9.98182ZM5.39799 12.8891C5.39799 12.4749 5.73378 12.1391 6.14799 12.1391H11.9665C12.3807 12.1391 12.7165 12.4749 12.7165 12.8891C12.7165 13.3033 12.3807 13.6391 11.9665 13.6391H6.14799C5.73378 13.6391 5.39799 13.3033 5.39799 12.8891Z" fill="#536062"/>
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M14.031 2.01702C14.4358 2.10476 14.6928 2.50406 14.6051 2.90887L14.5012 3.38816H15.6395C16.6436 3.38816 17.4817 4.00084 17.8347 4.84644C17.9161 5.03254 17.9708 5.22646 17.9998 5.42421C18.0122 5.46993 18.0204 5.51749 18.024 5.56649L18.7442 15.4679C18.8397 16.8361 17.7648 18 16.3886 18H3.63145C2.02129 18 0.883477 16.4283 1.35874 14.8979L4.42037 5.07263C4.72762 4.07908 5.64738 3.38816 6.69347 3.38816H8.14835L8.34266 2.58162C8.43967 2.17893 8.84476 1.93113 9.24745 2.02814C9.65015 2.12515 9.89795 2.53024 9.80094 2.93294L9.69127 3.38816H12.9664L13.1391 2.59114C13.2269 2.18632 13.6261 1.92928 14.031 2.01702ZM12.6413 4.88816H9.3299L9.04452 6.07276C8.94751 6.47545 8.54242 6.72325 8.13972 6.62624C7.73703 6.52922 7.48923 6.12413 7.58624 5.72144L7.78699 4.88816H6.69347C6.31439 4.88816 5.96889 5.14173 5.85362 5.51511L2.79125 15.3428C2.61205 15.9202 3.04515 16.5 3.63145 16.5H13.1884C13.6039 16.5 13.9516 16.2235 14.0443 15.8337L14.0462 15.8258L16.4964 5.99545C16.5474 5.78067 16.5255 5.59467 16.4591 5.44447C16.3226 5.11446 16.0138 4.88816 15.6395 4.88816H14.1761L13.9214 6.06324C13.8337 6.46805 13.4344 6.72509 13.0295 6.63735C12.6247 6.54961 12.3677 6.15032 12.4554 5.74551L12.6413 4.88816ZM16.888 10.6264L15.5026 16.185C15.4766 16.2936 15.4434 16.3987 15.4036 16.5H16.3886C16.8886 16.5 17.2828 16.0799 17.2478 15.5732L16.888 10.6264ZM6.12531 9.98182C6.12531 9.5676 6.46109 9.23182 6.87531 9.23182H12.6938C13.1081 9.23182 13.4438 9.5676 13.4438 9.98182C13.4438 10.396 13.1081 10.7318 12.6938 10.7318H6.87531C6.46109 10.7318 6.12531 10.396 6.12531 9.98182ZM5.39799 12.8891C5.39799 12.4749 5.73378 12.1391 6.14799 12.1391H11.9665C12.3807 12.1391 12.7165 12.4749 12.7165 12.8891C12.7165 13.3033 12.3807 13.6391 11.9665 13.6391H6.14799C5.73378 13.6391 5.39799 13.3033 5.39799 12.8891Z" fill="currentColor"/>
                   </svg>
                   How much am I owed?
                 </button>
                 <button class="airene-suggestion-item" @click="sendMessage('Compare revenue this month vs last month')">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="airene-sug-icon">
-                    <path fill-rule="evenodd" clip-rule="evenodd" d="M2 1.25C2.41421 1.25 2.75 1.58579 2.75 2V15.6C2.75 16.5138 3.48621 17.25 4.4 17.25H18C18.4142 17.25 18.75 17.5858 18.75 18C18.75 18.4142 18.4142 18.75 18 18.75H4.4C2.65779 18.75 1.25 17.3422 1.25 15.6V2C1.25 1.58579 1.58579 1.25 2 1.25ZM17.6879 5.43041C18.0025 5.69988 18.0391 6.17334 17.7696 6.48792L14.0896 10.7839L14.0876 10.7862C13.1956 11.8191 11.6107 11.8794 10.6457 10.9143L9.88567 10.1543C9.54072 9.80519 8.96862 9.82241 8.64048 10.2012L4.96967 14.4878C4.70024 14.8025 4.22679 14.8391 3.91217 14.5697C3.59755 14.3002 3.56091 13.8268 3.83033 13.5122L7.50233 9.22418C8.39187 8.19418 9.97773 8.1152 10.9478 9.09517L11.7063 9.85368C12.053 10.2003 12.6274 10.181 12.9515 9.80678L16.6304 5.51208C16.8999 5.1975 17.3733 5.16094 17.6879 5.43041Z" fill="#536062"/>
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M2 1.25C2.41421 1.25 2.75 1.58579 2.75 2V15.6C2.75 16.5138 3.48621 17.25 4.4 17.25H18C18.4142 17.25 18.75 17.5858 18.75 18C18.75 18.4142 18.4142 18.75 18 18.75H4.4C2.65779 18.75 1.25 17.3422 1.25 15.6V2C1.25 1.58579 1.58579 1.25 2 1.25ZM17.6879 5.43041C18.0025 5.69988 18.0391 6.17334 17.7696 6.48792L14.0896 10.7839L14.0876 10.7862C13.1956 11.8191 11.6107 11.8794 10.6457 10.9143L9.88567 10.1543C9.54072 9.80519 8.96862 9.82241 8.64048 10.2012L4.96967 14.4878C4.70024 14.8025 4.22679 14.8391 3.91217 14.5697C3.59755 14.3002 3.56091 13.8268 3.83033 13.5122L7.50233 9.22418C8.39187 8.19418 9.97773 8.1152 10.9478 9.09517L11.7063 9.85368C12.053 10.2003 12.6274 10.181 12.9515 9.80678L16.6304 5.51208C16.8999 5.1975 17.3733 5.16094 17.6879 5.43041Z" fill="currentColor"/>
                   </svg>
                   Compare revenue this month vs last month
                 </button>
                 <button class="airene-suggestion-item" @click="sendMessage('How do I set up Mekari Pay?')">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" class="airene-sug-icon">
-                    <path fill-rule="evenodd" clip-rule="evenodd" d="M5.4311 4.37041L7.5102 6.44951C8.21987 5.94632 9.08774 5.64994 10.024 5.64994C10.9479 5.64994 11.8052 5.93853 12.5096 6.42968L14.5689 4.3704C13.3216 3.35668 11.7322 2.74994 10 2.74994C8.2678 2.74994 6.67837 3.35668 5.4311 4.37041ZM15.6295 5.43106L13.5744 7.48616C14.0776 8.19583 14.374 9.06369 14.374 9.99994C14.374 10.9362 14.0776 11.8041 13.5744 12.5137L15.6295 14.5688C16.6433 13.3216 17.25 11.7321 17.25 9.99994C17.25 8.26775 16.6433 6.67833 15.6295 5.43106ZM14.5689 15.6295L12.5096 13.5702C11.8052 14.0613 10.9478 14.3499 10.024 14.3499C9.08775 14.3499 8.21989 14.0536 7.51022 13.5504L5.43112 15.6295C6.67839 16.6432 8.26781 17.2499 10 17.2499C11.7322 17.2499 13.3216 16.6432 14.5689 15.6295ZM4.37046 14.5688L6.45374 12.4855C5.9626 11.7811 5.674 10.9238 5.674 9.99994C5.674 9.07609 5.96259 8.21877 6.45373 7.51436L4.37044 5.43107C3.35673 6.67834 2.75 8.26775 2.75 9.99994C2.75 11.7321 3.35674 13.3216 4.37046 14.5688ZM3.8128 3.81277C5.39542 2.23014 7.58395 1.24994 10 1.24994C12.416 1.24994 14.6046 2.23014 16.1872 3.81276C17.7698 5.39538 18.75 7.5839 18.75 9.99994C18.75 12.416 17.7698 14.6045 16.1872 16.1871C14.6046 17.7697 12.416 18.7499 10 18.7499C7.58396 18.7499 5.39544 17.7697 3.81282 16.1871C2.2302 14.6045 1.25 12.416 1.25 9.99994C1.25 7.58391 2.23019 5.39539 3.8128 3.81277ZM10.024 7.14994C9.23197 7.14994 8.51657 7.47203 7.99924 7.99424C7.48828 8.51001 7.174 9.21754 7.174 9.99994C7.174 10.7823 7.48829 11.4899 7.99926 12.0057C8.51658 12.5279 9.23198 12.8499 10.024 12.8499C10.8064 12.8499 11.5139 12.5357 12.0297 12.0247C12.5519 11.5074 12.874 10.792 12.874 9.99994C12.874 9.20792 12.5519 8.49252 12.0297 7.97519C11.5139 7.46423 10.8064 7.14994 10.024 7.14994Z" fill="#536062"/>
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M5.4311 4.37041L7.5102 6.44951C8.21987 5.94632 9.08774 5.64994 10.024 5.64994C10.9479 5.64994 11.8052 5.93853 12.5096 6.42968L14.5689 4.3704C13.3216 3.35668 11.7322 2.74994 10 2.74994C8.2678 2.74994 6.67837 3.35668 5.4311 4.37041ZM15.6295 5.43106L13.5744 7.48616C14.0776 8.19583 14.374 9.06369 14.374 9.99994C14.374 10.9362 14.0776 11.8041 13.5744 12.5137L15.6295 14.5688C16.6433 13.3216 17.25 11.7321 17.25 9.99994C17.25 8.26775 16.6433 6.67833 15.6295 5.43106ZM14.5689 15.6295L12.5096 13.5702C11.8052 14.0613 10.9478 14.3499 10.024 14.3499C9.08775 14.3499 8.21989 14.0536 7.51022 13.5504L5.43112 15.6295C6.67839 16.6432 8.26781 17.2499 10 17.2499C11.7322 17.2499 13.3216 16.6432 14.5689 15.6295ZM4.37046 14.5688L6.45374 12.4855C5.9626 11.7811 5.674 10.9238 5.674 9.99994C5.674 9.07609 5.96259 8.21877 6.45373 7.51436L4.37044 5.43107C3.35673 6.67834 2.75 8.26775 2.75 9.99994C2.75 11.7321 3.35674 13.3216 4.37046 14.5688ZM3.8128 3.81277C5.39542 2.23014 7.58395 1.24994 10 1.24994C12.416 1.24994 14.6046 2.23014 16.1872 3.81276C17.7698 5.39538 18.75 7.5839 18.75 9.99994C18.75 12.416 17.7698 14.6045 16.1872 16.1871C14.6046 17.7697 12.416 18.7499 10 18.7499C7.58396 18.7499 5.39544 17.7697 3.81282 16.1871C2.2302 14.6045 1.25 12.416 1.25 9.99994C1.25 7.58391 2.23019 5.39539 3.8128 3.81277ZM10.024 7.14994C9.23197 7.14994 8.51657 7.47203 7.99924 7.99424C7.48828 8.51001 7.174 9.21754 7.174 9.99994C7.174 10.7823 7.48829 11.4899 7.99926 12.0057C8.51658 12.5279 9.23198 12.8499 10.024 12.8499C10.8064 12.8499 11.5139 12.5357 12.0297 12.0247C12.5519 11.5074 12.874 10.792 12.874 9.99994C12.874 9.20792 12.5519 8.49252 12.0297 7.97519C11.5139 7.46423 10.8064 7.14994 10.024 7.14994Z" fill="currentColor"/>
                   </svg>
                   How do I set up Mekari Pay?
                 </button>
@@ -497,7 +569,7 @@ function startResize(e: MouseEvent) {
                 <!-- Assistant avatar -->
                 <img v-if="msg.role === 'assistant'" src="~/assets/airene-mascot.png" width="24" height="25" alt="" class="chat-avatar" />
                 <div class="chat-bubble" :class="'chat-bubble--' + msg.role">
-                  <span style="white-space: pre-wrap;">{{ msg.text }}</span>
+                  <span class="chat-bubble__text">{{ msg.text }}</span>
                 </div>
               </div>
               <!-- Typing indicator -->
@@ -558,7 +630,7 @@ function startResize(e: MouseEvent) {
                   <!-- Send button -->
                   <button class="airene-send-btn" aria-label="Send" @click="sendMessage(inputText)">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M12 19V5M12 5L5 12M12 5L19 12" stroke="#536062" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M12 19V5M12 5L5 12M12 5L19 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                   </button>
                 </div>
@@ -599,7 +671,7 @@ function startResize(e: MouseEvent) {
 /* ── Title bar ────────────────────────────────────────────────────────────── */
 
 .page-title-bar {
-  height: 72px;
+  height: var(--mp-sizes-18, 72px);
   background: var(--mp-background-neutral-subtle);
   display: flex;
   align-items: center;
@@ -611,15 +683,15 @@ function startResize(e: MouseEvent) {
 .page-title-actions {
   display: flex;
   align-items: center;
-  gap: var(--mp-spacing-3, 12px);
+  gap: var(--mp-spacing-3);
 }
 
 .page-title-text {
   margin: 0;
   font-size: var(--mp-font-sizes-2xl);
   font-weight: var(--mp-font-weights-semi-bold);
-  line-height: 32px;
-  letter-spacing: -0.2px;
+  line-height: var(--mp-line-heights-2xl, 32px);
+  letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
 }
 
@@ -627,49 +699,193 @@ function startResize(e: MouseEvent) {
 .btn-enterprise {
   display: inline-flex;
   align-items: center;
-  gap: var(--mp-spacing-2, 8px);
-  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-4, 16px);
-  border-radius: 999px;
-  font-size: var(--mp-font-sizes-md, 14px);
-  font-weight: var(--mp-font-weights-semi-bold, 600);
-  line-height: var(--mp-line-heights-md, 20px);
+  gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  border-radius: var(--mp-radii-full, 999px);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md);
   cursor: pointer;
   white-space: nowrap;
   border: 1px solid transparent;
 }
 .btn-enterprise--secondary {
-  background: var(--mp-background-neutral, #ffffff);
-  border-color: var(--mp-border-bold, #8c9596);
-  color: var(--mp-text-secondary, #3a4749);
-  padding-left: 16px;
-  padding-right: 12px;
+  background: var(--mp-background-neutral);
+  border-color: var(--mp-border-bold);
+  color: var(--mp-text-secondary);
+  padding-left: var(--mp-spacing-4);
+  padding-right: var(--mp-spacing-3);
 }
-.btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
+.btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
 
 .btn-enterprise--primary {
   background: var(--mp-colors-emerald-700, #029861);
   border-color: var(--mp-colors-emerald-700, #029861);
-  color: #ffffff;
-  padding-left: 12px;
-  padding-right: 16px;
+  color: var(--mp-text-inverse);
+  padding-left: var(--mp-spacing-3);
+  padding-right: var(--mp-spacing-4);
 }
 .btn-enterprise--primary:hover {
   background: var(--mp-colors-emerald-800, #186f4a);
   border-color: var(--mp-colors-emerald-800, #186f4a);
 }
 
+/* ── Import dropdown ────────────────────────────────────────────────────── */
+
+.import-wrap {
+  position: relative;
+}
+
+.import-chevron {
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.import-chevron--open {
+  transform: rotate(180deg);
+}
+
+.btn-enterprise--active {
+  background: var(--mp-background-neutral-hovered);
+}
+
+.import-dropdown {
+  position: absolute;
+  top: calc(100% + var(--mp-spacing-1));
+  right: 0;
+  width: 220px;
+  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-md);
+  box-shadow: var(--mp-shadows-sm);
+  padding: var(--mp-spacing-2) 0;
+  z-index: 300;
+  overflow: hidden;
+}
+
+.import-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.import-group--bordered {
+  border-bottom: 1px solid var(--mp-border-default);
+  padding-bottom: var(--mp-spacing-2);
+  margin-bottom: 0;
+}
+
+.import-item {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  width: 100%;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
+  text-align: left;
+}
+.import-item:hover {
+  background: var(--mp-background-neutral-subtle);
+}
+
+.import-item--ai {
+  justify-content: flex-start;
+  gap: var(--mp-spacing-2);
+}
+
+/* AI badge */
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  background: var(--mp-airene-badge-bg);
+  border: 1px solid var(--mp-airene-badge-border);
+  border-radius: var(--mp-radii-full, 999px);
+  padding: var(--mp-spacing-0\.5) var(--mp-spacing-1);
+  line-height: 1;
+}
+
+.ai-badge__icon {
+  display: block;
+  width: var(--mp-sizes-3, 12px);
+  height: var(--mp-sizes-3, 12px);
+  flex-shrink: 0;
+}
+
+.ai-badge__label {
+  font-size: var(--mp-font-sizes-2xs, 10px);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px);
+  color: var(--mp-airene-bold);
+  white-space: nowrap;
+  margin-left: var(--mp-spacing-0\.5);
+}
+
+/* Forward bills section */
+.import-forward {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+}
+
+.import-forward__labels {
+  display: flex;
+  flex-direction: column;
+}
+
+.import-forward__title {
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
+}
+
+.import-forward__email {
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-sm, 16px);
+  color: var(--mp-text-secondary);
+}
+
+.import-forward__copy {
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-sm, 16px);
+  color: var(--mp-text-link);
+  text-decoration: underline;
+  cursor: pointer;
+  text-underline-offset: 2px;
+  width: fit-content;
+}
+.import-forward__copy:hover {
+  text-decoration-thickness: 2px;
+}
+
+.import-forward__desc {
+  margin: 0;
+  font-size: var(--mp-font-sizes-2xs, 10px);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-2xs, 12px);
+  color: var(--mp-text-secondary);
+}
+
 /* ── Stage ────────────────────────────────────────────────────────────────── */
 
 .stage {
   flex: 1;
-  background: var(--mp-background-stage, white);
+  background: var(--mp-background-stage);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: var(--mp-spacing-6, 24px);
+  padding: var(--mp-spacing-6);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--mp-spacing-5);
 }
 
 /* ── Airene slot (outer wrapper) ─────────────────────────────────────────── */
@@ -677,10 +893,10 @@ function startResize(e: MouseEvent) {
 .airene-slot {
   /* width is set dynamically via :style */
   flex-shrink: 0;
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  padding: 12px;
+  background: var(--mp-background-neutral-subtle);
+  padding: var(--mp-spacing-3);
   display: flex;
-  gap: 8px;
+  gap: var(--mp-spacing-2);
   position: relative;
   overflow: hidden;
 }
@@ -691,7 +907,7 @@ function startResize(e: MouseEvent) {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 12px;               /* wider invisible hitbox */
+  width: var(--mp-spacing-3);               /* wider invisible hitbox */
   cursor: col-resize;
   z-index: 10;
   display: flex;
@@ -704,20 +920,20 @@ function startResize(e: MouseEvent) {
   content: '';
   display: block;
   width: 2px;
-  height: 40px;
-  background: #dddee5;
-  border-radius: 999px;
+  height: var(--mp-spacing-10, 40px);
+  background: var(--mp-border-default);
+  border-radius: var(--mp-radii-full, 999px);
   transition: background 0.15s;
 }
 .airene-divider:hover::after {
-  background: #a0aab4;
+  background: var(--mp-border-bold);
 }
 
 /* White inner card */
 .airene-card {
   flex: 1;
-  background: white;
-  border-radius: 12px;
+  background: var(--mp-background-neutral);
+  border-radius: var(--mp-radii-lg, 12px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -730,7 +946,7 @@ function startResize(e: MouseEvent) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
   flex-shrink: 0;
 }
 
@@ -742,19 +958,19 @@ function startResize(e: MouseEvent) {
 .airene-new-chat {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--mp-text-default, #080d0e);
+  gap: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default);
   background: none;
   border: none;
   cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
-  line-height: 20px;
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  border-radius: var(--mp-radii-md);
+  line-height: var(--mp-line-heights-md);
   max-width: 200px;
 }
-.airene-new-chat:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
+.airene-new-chat:hover { background: var(--mp-background-neutral-hovered); }
 
 .airene-chat-title {
   overflow: hidden;
@@ -764,7 +980,7 @@ function startResize(e: MouseEvent) {
 
 .airene-chevron {
   flex-shrink: 0;
-  color: var(--mp-text-secondary, #536062);
+  color: var(--mp-text-secondary);
   transition: transform 0.15s ease;
 }
 .airene-chevron--open {
@@ -774,15 +990,15 @@ function startResize(e: MouseEvent) {
 /* History dropdown */
 .airene-history-dropdown {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--mp-spacing-1));
   left: 0;
   width: 256px;
-  background: white;
-  border: 1px solid var(--mp-border-default, #dcdfe4);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
+  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-lg, 10px);
+  box-shadow: var(--mp-shadows-md);
   z-index: 200;
-  padding: 4px 0;
+  padding: var(--mp-spacing-1) 0;
   max-height: 360px;
   overflow-y: auto;
 }
@@ -790,54 +1006,54 @@ function startResize(e: MouseEvent) {
 .airene-history-new-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--mp-spacing-2);
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--mp-text-default, #080d0e);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-medium);
+  color: var(--mp-text-default);
   text-align: left;
-  border-radius: 6px;
+  border-radius: var(--mp-radii-md);
 }
-.airene-history-new-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.airene-history-new-btn:hover { background: var(--mp-background-neutral-subtle); }
 
 .airene-history-sep {
   height: 1px;
-  background: var(--mp-border-default, #dcdfe4);
-  margin: 4px 0;
+  background: var(--mp-border-default);
+  margin: var(--mp-spacing-1) 0;
 }
 
 .airene-history-group {
   margin: 0;
-  padding: 8px 12px 2px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--mp-text-subtle, #6e7a7c);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-0\.5);
+  font-size: var(--mp-font-sizes-xs, 11px);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-subtle);
   text-transform: uppercase;
-  letter-spacing: 0.4px;
-  line-height: 16px;
+  letter-spacing: var(--mp-letter-spacings-wide, 0.4px);
+  line-height: var(--mp-line-heights-sm, 16px);
 }
 
 .airene-history-item {
   display: block;
   width: 100%;
-  padding: 6px 12px;
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--mp-text-default, #080d0e);
+  font-size: var(--mp-font-sizes-sm, 13px);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default);
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  border-radius: 4px;
+  border-radius: var(--mp-radii-sm);
 }
-.airene-history-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.airene-history-item:hover { background: var(--mp-background-neutral-subtle); }
 
 .airene-header-icons {
   display: flex;
@@ -848,16 +1064,16 @@ function startResize(e: MouseEvent) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: var(--mp-sizes-9, 36px);
+  height: var(--mp-sizes-9, 36px);
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 6px;
-  color: var(--mp-text-secondary, #536062);
-  padding: 8px;
+  border-radius: var(--mp-radii-md);
+  color: var(--mp-text-secondary);
+  padding: var(--mp-spacing-2);
 }
-.airene-icon-btn:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
+.airene-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Chat body ───────────────────────────────────────────────────────────── */
 
@@ -865,7 +1081,7 @@ function startResize(e: MouseEvent) {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding: 12px;
+  padding: var(--mp-spacing-3);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -882,8 +1098,8 @@ function startResize(e: MouseEvent) {
 .chat-message {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--mp-spacing-2);
+  margin-bottom: var(--mp-spacing-3);
   flex-shrink: 0;
 }
 
@@ -893,45 +1109,48 @@ function startResize(e: MouseEvent) {
 
 .chat-avatar {
   flex-shrink: 0;
-  border-radius: 50%;
+  border-radius: var(--mp-radii-full, 50%);
 }
 
 .chat-bubble {
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 20px;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border-radius: var(--mp-radii-lg, 12px);
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
   max-width: 85%;
   word-break: break-word;
 }
 
+.chat-bubble__text {
+  white-space: pre-wrap;
+}
+
 .chat-bubble--user {
-  background: #651FFF;
-  color: white;
-  border-radius: 12px 4px 12px 12px;
+  background: var(--mp-airene-default);
+  color: var(--mp-text-inverse);
+  border-radius: var(--mp-radii-lg, 12px) var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px);
 }
 
 .chat-bubble--assistant {
-  background: #f8f9f9;
-  color: #080d0e;
-  border-radius: 4px 12px 12px 12px;
-  white-space: pre-wrap;
+  background: var(--mp-background-neutral-subtle);
+  color: var(--mp-text-default);
+  border-radius: var(--mp-radii-sm) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px);
 }
 
 /* Typing indicator dots */
 .chat-typing {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 10px 12px;
-  min-height: 36px;
+  gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3);
+  min-height: var(--mp-sizes-9, 36px);
 }
 
 .typing-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #536062;
+  width: var(--mp-sizes-1\.5, 6px);
+  height: var(--mp-sizes-1\.5, 6px);
+  border-radius: var(--mp-radii-full, 50%);
+  background: var(--mp-text-secondary);
   flex-shrink: 0;
   animation: typingBounce 1.2s infinite ease-in-out;
 }
@@ -947,7 +1166,7 @@ function startResize(e: MouseEvent) {
 .airene-greetings {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--mp-spacing-2);
   flex-shrink: 0;
 }
 
@@ -960,7 +1179,7 @@ function startResize(e: MouseEvent) {
 .mascot-wrapper {
   position: relative;
   display: inline-block;
-  width: 60px;
+  width: 60px;             /* mascot artwork — fixed asset dimensions */
   height: 63px;
   will-change: transform;
   transform-origin: center bottom;  /* tilt from the base */
@@ -968,7 +1187,7 @@ function startResize(e: MouseEvent) {
 
 .airene-mascot-img {
   display: block;
-  width: 60px;
+  width: 60px;             /* mascot artwork — fixed asset dimensions */
   height: 63px;
   /* no transform here — wrapper handles it */
 }
@@ -976,10 +1195,10 @@ function startResize(e: MouseEvent) {
 /* Eyes drawn on the star body */
 .mascot-eye {
   position: absolute;
-  width: 9px;
+  width: 9px;              /* mascot eye — fixed pixel positions */
   height: 9px;
-  border-radius: 50%;
-  background: #ffffff;
+  border-radius: var(--mp-radii-full, 50%);
+  background: var(--mp-background-neutral);
   overflow: hidden;          /* clips pupil inside the white disc */
   display: flex;
   align-items: center;
@@ -997,28 +1216,28 @@ function startResize(e: MouseEvent) {
 .mascot-eye--right { left: 29.5px; top: 27.5px; }
 
 .mascot-pupil {
-  width: 5px;
+  width: 5px;              /* mascot pupil — fixed pixel size */
   height: 5px;
-  border-radius: 50%;
-  background: #1a0a2e;
+  border-radius: var(--mp-radii-full, 50%);
+  background: #1a0a2e;     /* mascot pupil — illustration colour, not a UI token */
   will-change: transform;
   flex-shrink: 0;
 }
 
 .airene-greeting-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 24px;
-  color: var(--mp-text-default, #080d0e);
+  font-size: var(--mp-font-sizes-lg);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 24px);
+  color: var(--mp-text-default);
 }
 
 .airene-greeting-msg {
   margin: 0;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  color: var(--mp-text-default, #080d0e);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
 }
 
 /* Suggestion list */
@@ -1031,16 +1250,16 @@ function startResize(e: MouseEvent) {
 .airene-suggestion-item {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
-  padding: 8px 0;
+  gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-2) 0;
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--mp-text-default, #080d0e);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default);
   text-align: left;
-  line-height: 20px;
+  line-height: var(--mp-line-heights-md);
   width: 100%;
 }
 .airene-suggestion-item:hover { opacity: 0.7; }
@@ -1054,43 +1273,43 @@ function startResize(e: MouseEvent) {
 
 .airene-footer {
   flex-shrink: 0;
-  padding: 12px;
+  padding: var(--mp-spacing-3);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--mp-spacing-1);
 }
 
 /* Input box: white rounded rectangle */
 .airene-input-box {
-  background: white;
-  border: 1px solid rgba(29, 31, 36, 0.16);
-  border-radius: 12px;
-  padding: 8px;
+  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-lg, 12px);
+  padding: var(--mp-spacing-2);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--mp-spacing-3);
 }
 
 /* Context chip row */
 .airene-context-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding-bottom: 4px;
+  gap: var(--mp-spacing-1);
+  padding-bottom: var(--mp-spacing-1);
 }
 
 .airene-context-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 6px 3px 8px;
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  border: 1px solid var(--mp-border-default, #dcdfe4);
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 16px;
-  color: var(--mp-text-default, #080d0e);
+  gap: var(--mp-spacing-1);
+  padding: 3px var(--mp-spacing-1\.5) 3px var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-full, 999px);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-sm, 16px);
+  color: var(--mp-text-default);
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
@@ -1099,7 +1318,7 @@ function startResize(e: MouseEvent) {
 
 .airene-context-chip-icon {
   flex-shrink: 0;
-  color: var(--mp-text-subtle, #6e7a7c);
+  color: var(--mp-text-subtle);
 }
 
 .airene-context-remove {
@@ -1107,41 +1326,41 @@ function startResize(e: MouseEvent) {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 14px;
-  height: 14px;
+  width: var(--mp-sizes-3\.5, 14px);
+  height: var(--mp-sizes-3\.5, 14px);
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--mp-text-subtle, #6e7a7c);
+  color: var(--mp-text-subtle);
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--mp-radii-full, 50%);
 }
 .airene-context-remove:hover {
-  background: var(--mp-background-neutral-hovered, #e8eaed);
-  color: var(--mp-text-default, #080d0e);
+  background: var(--mp-background-neutral-hovered);
+  color: var(--mp-text-default);
 }
 
 .airene-input-placeholder {
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  color: var(--mp-text-placeholder, #6e7a7c);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-placeholder);
 }
 
 .airene-real-input {
   width: 100%;
   border: none;
   outline: none;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  color: var(--mp-text-default, #080d0e);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
   background: transparent;
   padding: 0;
 }
 
 .airene-real-input::placeholder {
-  color: var(--mp-text-placeholder, #6e7a7c);
+  color: var(--mp-text-placeholder);
 }
 
 /* Actions row */
@@ -1155,31 +1374,31 @@ function startResize(e: MouseEvent) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 4px;
+  width: var(--mp-sizes-7, 28px);
+  height: var(--mp-sizes-7, 28px);
+  padding: var(--mp-spacing-1);
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 4px;
-  color: var(--mp-text-secondary, #536062);
+  border-radius: var(--mp-radii-sm);
+  color: var(--mp-text-secondary);
 }
-.airene-add-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.airene-add-btn:hover { background: var(--mp-background-neutral-subtle); }
 
 .airene-input-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--mp-spacing-2);
 }
 
 .airene-model-label {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  color: var(--mp-text-default, #080d0e);
+  gap: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
   cursor: pointer;
 }
 .airene-model-label:hover { opacity: 0.7; }
@@ -1188,27 +1407,27 @@ function startResize(e: MouseEvent) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--mp-sizes-8, 32px);
+  height: var(--mp-sizes-8, 32px);
   border: none;
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  border-radius: 999px;
+  background: var(--mp-background-neutral-subtle);
+  border-radius: var(--mp-radii-full, 999px);
   cursor: pointer;
   flex-shrink: 0;
 }
-.airene-send-btn:hover { background: var(--mp-background-neutral-hovered, #ebf0f1); }
+.airene-send-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Disclaimer */
 .airene-disclaimer {
   margin: 0;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 16px;
-  color: var(--mp-text-secondary, #3a4749);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-regular);
+  line-height: var(--mp-line-heights-sm, 16px);
+  color: var(--mp-text-secondary);
 }
 
 .airene-disclaimer-link {
-  color: #165082;
+  color: var(--mp-text-link);
   cursor: pointer;
   text-decoration: none;
 }
