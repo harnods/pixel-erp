@@ -1,31 +1,61 @@
 /**
- * useNavigation — shared navigation state across sidebar and stage.
+ * useNavigation — URL-driven navigation state.
+ *
+ * Single source of truth is the route path (e.g. /sales-invoices). Sidebar
+ * calls `navigate('Sales invoices')` which router-pushes the kebab-case slug;
+ * pages derive their key/title back from the route. Refresh preserves the page
+ * because the URL is durable; in-memory state would not survive ssr:false.
  *
  * Usage:
  *   const { currentPageKey, pageTitle, navigate } = useNavigation()
  *
  * To add a new page:
  *   1. Create  app/components/pages/YourPageName.vue
- *   2. Register it in pageRegistry inside app/pages/index.vue
+ *   2. Register it in pageRegistry inside app/pages/[...slug].vue
  */
+
+/** 'Home' → '/', 'Sales invoices' → '/sales-invoices', 'Cash & bank' → '/cash-and-bank' */
+export function labelToPath(label: string): string {
+  if (label === "Home") return "/";
+  return (
+    "/" +
+    label
+      .toLowerCase()
+      .replace(/\s*&\s*/g, "-and-")
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+  );
+}
+
+/** '/' → 'Home', '/sales-invoices' → 'Sales invoices', '/cash-and-bank' → 'Cash and bank' */
+export function pathToLabel(path: string): string {
+  if (!path || path === "/") return "Home";
+  const slug = path.replace(/^\/+/, "");
+  const words = slug.split("-");
+  return words
+    .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
 export const useNavigation = () => {
-  /** Human-readable title shown in the page title bar */
-  const pageTitle = useState<string>("pageTitle", () => "Home");
+  const route = useRoute();
+  const router = useRouter();
+
+  /** Key used to look up the component to render in the stage. Derived from route.path. */
+  const currentPageKey = computed(() => pathToLabel(route.path));
+
+  /** Human-readable title shown in the page title bar. */
+  const pageTitle = computed(() => currentPageKey.value);
 
   /**
-   * Key used to look up the component to render in the stage.
-   * Matches the label of the menu item (e.g. 'Home', 'Sales invoices', 'Financials').
+   * Navigate to a menu item by label.
+   * @param label - the menu item label (e.g. 'Sales invoices', 'Home')
    */
-  const currentPageKey = useState<string>("currentPageKey", () => "Home");
-
-  /**
-   * Navigate to a menu item.
-   * @param key   - the menu item label (used as component registry key)
-   * @param title - optional override for the page title bar (defaults to key)
-   */
-  function navigate(key: string, title?: string) {
-    currentPageKey.value = key;
-    pageTitle.value = title ?? key;
+  function navigate(label: string) {
+    const path = labelToPath(label);
+    if (route.path !== path) {
+      router.push(path);
+    }
   }
 
   return { pageTitle, currentPageKey, navigate };
