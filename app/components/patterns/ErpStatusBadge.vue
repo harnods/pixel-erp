@@ -30,11 +30,15 @@ const statusConfig: Record<string, StatusConfig> = {
   completed:  { type: 'completed',    label: 'Completed'  },
   verified:   { type: 'completed',    label: 'Verified'   },
   success:    { type: 'completed',    label: 'Success'    },
+  delivered:  { type: 'completed',    label: 'Delivered'  },
+  invoiced:   { type: 'completed',    label: 'Invoiced'   },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
   pending:    { type: 'warning',      label: 'Pending'    },
   draft:      { type: 'warning',      label: 'Draft'      },
+  'in transit':{ type: 'warning',     label: 'In transit' },
+  unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
 
@@ -52,6 +56,7 @@ const statusConfig: Record<string, StatusConfig> = {
   archived:   { type: 'announcement', label: 'Archived'   },
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   'not started':{ type: 'announcement', label: 'Not started' },
+  direct:     { type: 'announcement', label: 'Direct'     },
 
   // ── information — blue ────────────────────────────
   'partially processed': { type: 'information', label: 'Partially processed' },

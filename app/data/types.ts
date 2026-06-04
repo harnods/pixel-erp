@@ -5,6 +5,10 @@ export type SalesOrderStatus = 'open' | 'partially processed' | 'closed' | 'void
 export type ProductStatus    = 'active' | 'inactive'
 export type ContactType      = 'company' | 'individual'
 
+// Sales delivery — fulfillment + billing lifecycle
+export type FulfillmentStatus = 'in transit' | 'direct' | 'delivered'
+export type BillingStatus     = 'unbilled' | 'invoiced'
+
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
 export interface Customer {
@@ -76,5 +80,16 @@ export interface SalesOrder {
   status: SalesOrderStatus
   balanceDue: number                      // remaining IDR (0 when closed/voided)
   total: number                           // order total IDR
+  tags?: string[]
+}
+
+export interface SalesDelivery {
+  id: string
+  number: number                          // rendered as "Sales Delivery #20001"
+  customer: Pick<Customer, 'id' | 'name'>
+  date: string                            // delivery date, ISO
+  fulfillmentStatus: FulfillmentStatus    // in transit | direct | delivered
+  billingStatus: BillingStatus            // unbilled | invoiced
+  total: number                           // delivery total IDR
   tags?: string[]
 }
