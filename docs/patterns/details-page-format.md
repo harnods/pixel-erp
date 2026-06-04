@@ -135,8 +135,12 @@ Reuse as-is; do not redesign per module.
      multi-line cell (e.g. the name + `SKU:` subtitle) → that whole row **top**.
    - The primary cell stacks **name + a muted subtitle** (e.g. `SKU: …`), and gets a
      **View details** button on row hover (the product/line record's detail).
-   - The footer is **progressive pagination** (`Showing N of N [items]`, load-more in
-     batches of 10, bottom border) — see [ErpPagination.md](ErpPagination.md#progressive-pagination-load-more).
+   - **Show 10 by default; the table scrolls internally** (fixed `max-height` +
+     `overflow-y: auto`, **sticky header**) past ~10 rows so 50–100+ items don't grow the
+     page, and the next 10 **auto-load on scroll** (no button). In this scrolling state
+     the table becomes a **contained panel with a 1px `border-bold` outer border** (no
+     border when the list fits without scrolling). Footer: `Showing N of N [items]`. See
+     [ErpPagination.md → Progressive pagination](ErpPagination.md#progressive-pagination-infinite-scroll).
 6. **Notes + totals** (2 columns):
    - **Left**: optional free-text blocks (**Message**, **Memo**) and an **Attachment
      list** (file-type icon + filename link + size; count in the heading `Attachment (N)`).

@@ -21,23 +21,50 @@ const hasApproval = true
 const router = useRouter()
 const order = computed(() => getSalesOrderDetail(props.orderId))
 
-// ── Line-items progressive pagination (load 10 more per trigger) ───────────────
+// ── Line-items progressive pagination (auto lazy-load on scroll) ───────────────
 const PAGE_SIZE = 10
-const shownCount = ref(PAGE_SIZE)
+const shownCount = ref(PAGE_SIZE)               // show 10 by default
 const loadingMore = ref(false)
-watch(() => props.orderId, () => { shownCount.value = PAGE_SIZE; loadingMore.value = false })
 const visibleItems = computed(() => order.value.lineItems.slice(0, shownCount.value))
 const hasMoreItems = computed(() => shownCount.value < order.value.lineItems.length)
-const nextBatchCount = computed(() => Math.min(PAGE_SIZE, order.value.lineItems.length - shownCount.value))
+// progressive pagination kicks in past the default page → the table becomes a
+// bordered, internally-scrolling panel
+const isProgressive = computed(() => order.value.lineItems.length > PAGE_SIZE)
+
 function loadMoreItems() {
-  if (loadingMore.value) return
+  if (loadingMore.value || !hasMoreItems.value) return
   loadingMore.value = true
   // brief loading state before the next batch appends
   setTimeout(() => {
     shownCount.value = Math.min(shownCount.value + PAGE_SIZE, order.value.lineItems.length)
     loadingMore.value = false
-  }, 600)
+  }, 500)
 }
+
+// Auto-load the next batch when the user scrolls near the bottom of the table
+// (IntersectionObserver on a sentinel inside the table's own scroll container).
+const itemsScrollEl = ref<HTMLElement | null>(null)
+const itemsSentinelEl = ref<HTMLElement | null>(null)
+let itemsObserver: IntersectionObserver | null = null
+function setupItemsObserver() {
+  itemsObserver?.disconnect()
+  if (!itemsScrollEl.value || !itemsSentinelEl.value) return
+  itemsObserver = new IntersectionObserver(
+    (entries) => { if (entries[0].isIntersecting) loadMoreItems() },
+    { root: itemsScrollEl.value, rootMargin: '0px 0px 120px 0px' },
+  )
+  itemsObserver.observe(itemsSentinelEl.value)
+}
+onMounted(() => nextTick(setupItemsObserver))
+onUnmounted(() => itemsObserver?.disconnect())
+watch(() => props.orderId, () => {
+  shownCount.value = PAGE_SIZE
+  loadingMore.value = false
+  nextTick(() => {
+    if (itemsScrollEl.value) itemsScrollEl.value.scrollTop = 0
+    setupItemsObserver()
+  })
+})
 
 // ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
 const jumpSearch = ref('')
@@ -220,8 +247,9 @@ function goBack() { router.push('/sales-orders') }
         </div>
       </section>
 
-      <!-- ── Line items table (read-only) ── -->
-      <section class="detail-items-section">
+      <!-- ── Line items table (read-only) — auto lazy-load, internal scroll ── -->
+      <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
+        <div ref="itemsScrollEl" class="detail-items-scroll">
         <table class="detail-items">
           <thead>
             <tr>
@@ -262,14 +290,14 @@ function goBack() { router.push('/sales-orders') }
             </tr>
           </tbody>
         </table>
-        <div class="detail-items-count">
-          <span v-if="loadingMore" class="detail-loading">
+          <!-- sentinel observed for auto lazy-load + inline loading row -->
+          <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
+          <div v-if="loadingMore" class="detail-loading detail-items-loading">
             <MpSpinner size="sm" /> Loading items…
-          </span>
-          <template v-else>
-            <span>Showing {{ visibleItems.length }} of {{ order.lineItems.length }} products</span>
-            <button v-if="hasMoreItems" class="detail-load-more" @click="loadMoreItems">Load {{ nextBatchCount }} more…</button>
-          </template>
+          </div>
+        </div>
+        <div class="detail-items-count">
+          <span>Showing {{ visibleItems.length }} of {{ order.lineItems.length }} products</span>
         </div>
       </section>
 
@@ -643,7 +671,24 @@ function goBack() { router.push('/sales-orders') }
 .content-list-col { display: flex; flex-direction: column; }
 
 /* ── Line items table ── */
-.detail-items-section { display: flex; flex-direction: column; }
+.detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
+/* progressive case → contained panel with a 1px bold outer border */
+.detail-items-section--bordered {
+  border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-md);
+  overflow: hidden;
+}
+/* in the bordered panel the count sits at the bottom → divider above, not below */
+.detail-items-section--bordered .detail-items-count {
+  border-top: 1px solid var(--mp-border-default);
+  border-bottom: none;
+}
+/* table scrolls internally past ~10 rows so the page doesn't grow unbounded */
+.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: hidden; }
+/* header stays visible while the body scrolls */
+.detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
+.detail-items-sentinel { height: 1px; }
+.detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
 .detail-items, .detail-linked {
   width: 100%;
   border-collapse: collapse;
@@ -737,16 +782,6 @@ function goBack() { router.push('/sales-orders') }
   color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.detail-load-more {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-regular);
-  color: var(--mp-text-link);
-}
-.detail-load-more:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-loading {
   display: inline-flex;
   align-items: center;
