@@ -6,6 +6,10 @@ export type SalesQuoteStatus = 'open' | 'closed' | 'declined'
 export type ProductStatus    = 'active' | 'inactive'
 export type ContactType      = 'company' | 'individual'
 
+// Sales delivery — fulfillment + billing lifecycle
+export type FulfillmentStatus = 'in transit' | 'direct' | 'delivered'
+export type BillingStatus     = 'unbilled' | 'invoiced'
+
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
 export interface Customer {
@@ -88,5 +92,16 @@ export interface SalesQuote {
   expirationDate: string                  // ISO
   status: SalesQuoteStatus
   total: number                           // quote total IDR
+  tags?: string[]
+}
+
+export interface SalesDelivery {
+  id: string
+  number: number                          // rendered as "Sales Delivery #20001"
+  customer: Pick<Customer, 'id' | 'name'>
+  date: string                            // delivery date, ISO
+  fulfillmentStatus: FulfillmentStatus    // in transit | direct | delivered
+  billingStatus: BillingStatus            // unbilled | invoiced
+  total: number                           // delivery total IDR
   tags?: string[]
 }
