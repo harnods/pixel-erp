@@ -44,6 +44,7 @@ const statusConfig: Record<string, StatusConfig> = {
   failed:     { type: 'critical',     label: 'Failed'     },
   expired:    { type: 'critical',     label: 'Expired'    },
   error:      { type: 'critical',     label: 'Error'      },
+  declined:   { type: 'critical',     label: 'Declined'   },
 
   // ── announcement — GRAY (neutral / final / inactive) ──
   closed:     { type: 'announcement', label: 'Closed'     },

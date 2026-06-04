@@ -13,6 +13,7 @@ const pageRegistry: Record<string, Component> = {
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
+  'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Company profile':   defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Playground':        defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
@@ -374,6 +375,17 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New sales order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Sales quotes'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New sales quote
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">

@@ -2,6 +2,7 @@
 
 export type InvoiceStatus    = 'paid' | 'open' | 'overdue'
 export type SalesOrderStatus = 'open' | 'partially processed' | 'closed' | 'voided'
+export type SalesQuoteStatus = 'open' | 'closed' | 'declined'
 export type ProductStatus    = 'active' | 'inactive'
 export type ContactType      = 'company' | 'individual'
 
@@ -76,5 +77,16 @@ export interface SalesOrder {
   status: SalesOrderStatus
   balanceDue: number                      // remaining IDR (0 when closed/voided)
   total: number                           // order total IDR
+  tags?: string[]
+}
+
+export interface SalesQuote {
+  id: string
+  number: number                          // rendered as "Sales Quote #20090"
+  customer: Pick<Customer, 'id' | 'name'>
+  date: string                            // quote date, ISO
+  expirationDate: string                  // ISO
+  status: SalesQuoteStatus
+  total: number                           // quote total IDR
   tags?: string[]
 }
