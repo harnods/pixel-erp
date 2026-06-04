@@ -942,7 +942,10 @@ function startResize(e: MouseEvent) {
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: var(--mp-spacing-6);
+  /* side/bottom padding scrolls with content; the top 24px is a fixed border
+     (borders don't scroll) so content keeps a 24px gap from the stage's top edge */
+  padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
+  border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);
