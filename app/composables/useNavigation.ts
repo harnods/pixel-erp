@@ -41,8 +41,16 @@ export const useNavigation = () => {
   const route = useRoute();
   const router = useRouter();
 
-  /** Key used to look up the component to render in the stage. Derived from route.path. */
-  const currentPageKey = computed(() => pathToLabel(route.path));
+  /**
+   * Key used to look up the component to render in the stage. Derived from the
+   * FIRST path segment only, so detail routes (e.g. /sales-orders/SO001) still
+   * resolve to their parent ('Sales orders') — keeps the sidebar active and the
+   * title sane while the detail page renders its own title bar.
+   */
+  const currentPageKey = computed(() => {
+    const first = route.path.split("/").filter(Boolean)[0];
+    return pathToLabel(first ? "/" + first : "/");
+  });
 
   /** Human-readable title shown in the page title bar. */
   const pageTitle = computed(() => currentPageKey.value);

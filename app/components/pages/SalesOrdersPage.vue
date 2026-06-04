@@ -86,6 +86,12 @@ function clearFilters() {
   search.value = ''
   statusFilter.value = ''
 }
+
+// Navigate to a record's detail page (number-column "View details" + kebab)
+const router = useRouter()
+function viewDetails(id: string) {
+  router.push(`/sales-orders/${id}`)
+}
 </script>
 
 <template>
@@ -200,10 +206,10 @@ function clearFilters() {
     </template>
 
     <!-- ── Cell: Number — "View details" on row hover (record has a detail page) ── -->
-    <template #cell-number="{ value }">
+    <template #cell-number="{ row, value }">
       <div class="cell-with-action">
         <span class="cell-text cell-number">Sales Order #{{ value }}</span>
-        <button class="row-hover-btn" @click.stop>
+        <button class="row-hover-btn" @click.stop="viewDetails((row as Row).id)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -285,7 +291,7 @@ function clearFilters() {
         <!-- min-width 160px, width hugs content, labels never wrap -->
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>View details</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails((row as Row).id)">View details</MpPopoverListItem>
             <MpPopoverListItem>Create sales delivery</MpPopoverListItem>
             <MpPopoverListItem>Create sales invoice</MpPopoverListItem>
             <MpPopoverListItem>Mark as completed</MpPopoverListItem>

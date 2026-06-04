@@ -2,6 +2,7 @@
 import { defineAsyncComponent, type Component, ref, computed, provide, nextTick, onMounted, onUnmounted } from 'vue'
 
 const { pageTitle, currentPageKey } = useNavigation()
+const route = useRoute()
 
 // Browser tab title: "Mekari ERP | <module>"
 useHead({
@@ -19,7 +20,18 @@ const pageRegistry: Record<string, Component> = {
   'Playground':        defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
+const SalesOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
+
+// Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
+// its own title bar). Add modules here as their detail pages get built.
+const detailMatch = computed<{ component: Component; id: string } | null>(() => {
+  const segs = route.path.split('/').filter(Boolean)
+  if (segs.length >= 2 && segs[0] === 'sales-orders') {
+    return { component: SalesOrderDetailsPage, id: segs[1] }
+  }
+  return null
+})
 
 const currentComponent = computed<Component>(
   () => pageRegistry[currentPageKey.value] ?? PlaceholderPage,
@@ -351,6 +363,11 @@ function startResize(e: MouseEvent) {
 
     <!-- ── Left column: title bar + stage ── -->
     <div class="page-col">
+
+      <!-- Detail routes own their entire layout (title bar + stage) -->
+      <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
+
+      <template v-else>
       <div class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
@@ -464,6 +481,7 @@ function startResize(e: MouseEvent) {
       <div class="stage">
         <component :is="currentComponent" />
       </div>
+      </template>
     </div>
 
     <!-- ── Right: Airene chat panel ── -->

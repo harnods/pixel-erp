@@ -70,3 +70,35 @@
 
 For index pages, use [ErpTablePage.md](ErpTablePage.md) instead — it wires
 pagination automatically.
+
+---
+
+## Progressive pagination (load-more)
+
+A **second pagination model**, used for **embedded / read-only tables** — e.g. the
+**line-items table on a detail page** ([details-page-format.md](details-page-format.md)),
+related-records tabs, etc. Instead of page numbers, rows are revealed in batches.
+
+- A row **below the table** reads **`Showing {shown} of {total} {items}`** (e.g.
+  `Showing 10 of 124 products`).
+- It loads the **next 10 rows** on a **manual trigger** (a `Load more` text-link next to
+  the count). Two states:
+  1. **Idle**: `Showing {shown} of {total} {items}` + **`Load more`**.
+  2. **Loading**: while the next batch loads, the row shows a **spinner (`MpSpinner`) +
+     `Loading items…`** (replacing the count + link). Then it appends 10 and returns to idle.
+- When **`shown === total`** (everything loaded) there is **no trigger** — just the
+  count (e.g. `Showing 2 of 2 products`).
+- The progressive-pagination row has a **bottom border** (`1px solid
+  var(--mp-border-default)`) closing the table region, and **8px left/right padding**
+  (`var(--mp-spacing-2)`, aligning the count with the table's first column) with **12px
+  top/bottom** (`var(--mp-spacing-3)`). Text uses **`var(--mp-text-secondary)`**.
+- **Batch size = 10.** Tables can hold **100+ rows**, so the default is to show the
+  first batch and let the user load more on demand (not render everything at once).
+
+Implemented on the Sales Order detail page (`SalesOrderDetailsPage.vue`): the line-items
+table shows `shownCount` rows (default 10), and a **`Load more`** text-link appends
+`PAGE_SIZE` (10) more. The mock data varies item counts per order (1 → many); **SO001
+has 50 items** so the load-more is exercised end-to-end.
+
+Distinguish from the standard bar above: **page numbers + prev/next + rows-per-page**
+is for **index pages**; **progressive load-more** is for **embedded detail tables**.

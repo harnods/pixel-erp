@@ -40,11 +40,10 @@ Do not use non-Enterprise components or manually override tokens.
 ```
 
 ### Page Title Bar
-- Height: `72px` (custom — not in the token scale)
-- Background: `var(--mp-background-neutral-subtle)`
-- Padding: `0 var(--mp-spacing-6)` (0 24px)
-- Font: `var(--mp-font-sizes-2xl)` (24px), weight `var(--mp-font-weights-semi-bold)`, color `var(--mp-text-default)`
-- Line height `32px` / letter-spacing `-0.2px` are custom (not token-based)
+- **Always `72px`**, background `var(--mp-background-neutral-subtle)`, padding `0 24px`.
+- Full spec (dimensions, index / detail / form variants, title-bar status badge rule,
+  build checklist) lives in **[docs/patterns/page-title-bar.md](docs/patterns/page-title-bar.md)** —
+  refer to it when generating any page.
 
 ---
 
