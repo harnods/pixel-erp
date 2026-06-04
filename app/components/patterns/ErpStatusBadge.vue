@@ -8,12 +8,12 @@
  *
  * Add new statuses to statusConfig below.
  *
- * MpBadge type mapping (from DESIGN.md):
- *   completed   → Paid, Approved, Active, Completed
- *   warning     → Open, Pending, Draft, In Review
- *   critical    → Overdue, Rejected, Failed, Voided
- *   information → Inactive, Archived, Cancelled
- *   announcement→ New, Beta, VIP, Featured
+ * MpBadge `type` → colour (Pixel — there is NO purple; gray = `announcement`):
+ *   completed    → green   (done / positive)
+ *   warning      → yellow  (needs attention / in progress)
+ *   critical     → red     (error / failure)
+ *   announcement → GRAY    (Pixel's neutral badge — Inactive, Closed, Voided, …)
+ *   information  → blue    (informational / new)
  */
 
 import { MpBadge } from '@mekari/pixel3'
@@ -23,7 +23,7 @@ const props = defineProps<{ status: string }>()
 interface StatusConfig { type: string; label: string }
 
 const statusConfig: Record<string, StatusConfig> = {
-  // ── Completed (green) ─────────────────────────────
+  // ── completed — green ─────────────────────────────
   paid:       { type: 'completed',    label: 'Paid'       },
   approved:   { type: 'completed',    label: 'Approved'   },
   active:     { type: 'completed',    label: 'Active'     },
@@ -31,32 +31,34 @@ const statusConfig: Record<string, StatusConfig> = {
   verified:   { type: 'completed',    label: 'Verified'   },
   success:    { type: 'completed',    label: 'Success'    },
 
-  // ── Warning (yellow) ──────────────────────────────
+  // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
   pending:    { type: 'warning',      label: 'Pending'    },
   draft:      { type: 'warning',      label: 'Draft'      },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
 
-  // ── Critical (red) ────────────────────────────────
+  // ── critical — red ────────────────────────────────
   overdue:    { type: 'critical',     label: 'Overdue'    },
   rejected:   { type: 'critical',     label: 'Rejected'   },
   failed:     { type: 'critical',     label: 'Failed'     },
-  voided:     { type: 'critical',     label: 'Voided'     },
   expired:    { type: 'critical',     label: 'Expired'    },
   error:      { type: 'critical',     label: 'Error'      },
 
-  // ── Information (gray/blue) ───────────────────────
-  inactive:   { type: 'information',  label: 'Inactive'   },
-  archived:   { type: 'information',  label: 'Archived'   },
-  cancelled:  { type: 'information',  label: 'Cancelled'  },
-  'not started':{ type: 'information',label: 'Not started'},
+  // ── announcement — GRAY (neutral / final / inactive) ──
+  closed:     { type: 'announcement', label: 'Closed'     },
+  voided:     { type: 'announcement', label: 'Voided'     },
+  inactive:   { type: 'announcement', label: 'Inactive'   },
+  archived:   { type: 'announcement', label: 'Archived'   },
+  cancelled:  { type: 'announcement', label: 'Cancelled'  },
+  'not started':{ type: 'announcement', label: 'Not started' },
 
-  // ── Announcement (purple) ─────────────────────────
-  new:        { type: 'announcement', label: 'New'        },
-  beta:       { type: 'announcement', label: 'Beta'       },
-  vip:        { type: 'announcement', label: 'VIP'        },
-  featured:   { type: 'announcement', label: 'Featured'   },
+  // ── information — blue ────────────────────────────
+  'partially processed': { type: 'information', label: 'Partially processed' },
+  new:        { type: 'information',  label: 'New'        },
+  beta:       { type: 'information',  label: 'Beta'       },
+  vip:        { type: 'information',  label: 'VIP'        },
+  featured:   { type: 'information',  label: 'Featured'   },
 }
 
 const config = computed<StatusConfig>(() => {

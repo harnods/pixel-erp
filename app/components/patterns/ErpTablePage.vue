@@ -32,7 +32,7 @@
  *   sort(key)
  */
 
-import { MpCheckbox } from '@mekari/pixel3'
+import { MpCheckbox, MpSkeleton } from '@mekari/pixel3'
 import ErpPagination from './ErpPagination.vue'
 
 const sendAireneMessage = inject<(text: string, context?: string) => void>('sendAireneMessage')
@@ -57,6 +57,11 @@ const props = withDefaults(defineProps<{
   sortDir?: 'asc' | 'desc'
   hasCheckbox?: boolean
   hasAiChat?: boolean
+  /** Show skeleton placeholder rows instead of data (e.g. first load) */
+  loading?: boolean
+  /** True when a search/filter is active — switches the empty state to the inline
+   *  "No results found" variant (vs the full illustrated empty state). */
+  hasActiveFilter?: boolean
   /** Returns a context label string for a given row — shown as a chip in the AI chat input */
   contextLabel?: (row: Record<string, unknown>) => string
 }>(), {
@@ -65,6 +70,8 @@ const props = withDefaults(defineProps<{
   sortDir: 'asc',
   hasCheckbox: false,
   hasAiChat: false,
+  loading: false,
+  hasActiveFilter: false,
   contextLabel: undefined,
 })
 
@@ -72,7 +79,40 @@ const emit = defineEmits<{
   pageChange: [page: number]
   perPageChange: [perPage: number]
   sort: [key: string]
+  clearFilters: []
 }>()
+
+// ─── Pagination skeleton ────────────────────────────────────────────────────
+// Briefly show the skeleton when the user changes page or rows-per-page, so every
+// module gets a "loading next page" state without extra page code.
+const paginating = ref(false)
+let paginatingTimer: ReturnType<typeof setTimeout> | null = null
+
+/** true on first load (prop) OR while a pagination change is settling */
+const showSkeleton = computed(() => props.loading || paginating.value)
+
+/** Rows currently rendered — frozen during a pagination change so the OLD rows stay
+ *  visible while the 3 skeleton rows for the incoming page show below them. */
+const displayRows = ref<Record<string, unknown>[]>([])
+watch(() => props.rows, (val) => { if (!paginating.value) displayRows.value = val }, { immediate: true })
+
+function triggerPaginating() {
+  paginating.value = true
+  if (paginatingTimer) clearTimeout(paginatingTimer)
+  paginatingTimer = setTimeout(() => {
+    displayRows.value = props.rows   // swap in the new page
+    paginating.value = false
+  }, 500)
+}
+function onPageChange(page: number) {
+  emit('pageChange', page)
+  triggerPaginating()
+}
+function onPerPageChange(per: number) {
+  emit('perPageChange', per)
+  triggerPaginating()
+}
+onUnmounted(() => { if (paginatingTimer) clearTimeout(paginatingTimer) })
 
 // ─── Row selection ────────────────────────────────────────────────────────────
 
@@ -176,6 +216,58 @@ onUnmounted(() => {
   document.removeEventListener('click', closePopover)
   document.removeEventListener('keydown', onEscKey)
 })
+
+// ─── Horizontal overflow detection ──────────────────────────────────────────────
+// The sticky-right column border only shows when the table is actually wider than
+// the stage (horizontal scroll). No overflow → no sticky border.
+
+const tableWrapperEl = ref<HTMLElement | null>(null)
+const tableEl = ref<HTMLElement | null>(null)
+const isOverflowing = ref(false)
+/** Indices of rows tall enough (a cell wrapped) to top-align all their cells */
+const tallRows = ref<Set<number>>(new Set())
+let resizeObserver: ResizeObserver | null = null
+
+function checkOverflow() {
+  const w = tableWrapperEl.value
+  if (!w) return
+  isOverflowing.value = w.scrollWidth > w.clientWidth + 1
+}
+
+// A row is "tall" (some cell wrapped to multiple lines) when its height exceeds the
+// shortest (single-line) row by more than ~half a line → top-align that row's cells.
+function updateRowAlignment() {
+  const trs = tableEl.value?.querySelectorAll<HTMLElement>('tbody tr.erp-tr:not(.erp-tr--skeleton)')
+  if (!trs || trs.length === 0) { tallRows.value = new Set(); return }
+  let min = Infinity
+  trs.forEach(t => { const h = t.getBoundingClientRect().height; if (h < min) min = h })
+  const next = new Set<number>()
+  trs.forEach((t, i) => { if (t.getBoundingClientRect().height > min + 12) next.add(i) })
+  tallRows.value = next
+}
+
+function refresh() {
+  checkOverflow()
+  updateRowAlignment()
+}
+
+onMounted(() => {
+  nextTick(refresh)
+  resizeObserver = new ResizeObserver(() => refresh())
+  if (tableWrapperEl.value) resizeObserver.observe(tableWrapperEl.value)
+  if (tableEl.value) resizeObserver.observe(tableEl.value)
+  window.addEventListener('resize', refresh)
+})
+onUnmounted(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  window.removeEventListener('resize', refresh)
+})
+
+// Recheck when content that affects table width/row height changes
+watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.hasAiChat], () => {
+  nextTick(refresh)
+})
 </script>
 
 <template>
@@ -192,24 +284,19 @@ onUnmounted(() => {
     </div>
 
     <!-- ── Table wrapper — handles horizontal overflow ── -->
-    <div class="erp-table-wrapper" :class="{ 'has-ai': hasAiChat }">
-      <table class="erp-table">
+    <div
+      ref="tableWrapperEl"
+      class="erp-table-wrapper"
+      :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing }"
+    >
+      <table ref="tableEl" class="erp-table">
 
         <!-- ── Header ── -->
         <thead class="erp-thead">
           <tr>
-            <!-- Checkbox th -->
-            <th v-if="hasCheckbox" class="erp-th erp-th--checkbox">
-              <MpCheckbox
-                id="erp-select-all"
-                :is-checked="allSelected"
-                @change="toggleAll"
-              />
-            </th>
-
-            <!-- Column headers -->
+            <!-- Column headers — checkbox merges into the first column's cell -->
             <th
-              v-for="col in columns"
+              v-for="(col, ci) in columns"
               :key="col.key"
               class="erp-th"
               :class="{
@@ -221,20 +308,29 @@ onUnmounted(() => {
               :style="col.width ? { width: col.width, minWidth: col.width } : {}"
               @click="col.sortable ? emit('sort', col.key) : undefined"
             >
-              <span v-if="!col.noHeader" class="th-label">
+              <span v-if="hasCheckbox && ci === 0" class="erp-cell-check">
+                <MpCheckbox
+                  id="erp-select-all"
+                  :is-checked="allSelected"
+                  @change="toggleAll"
+                  @click.stop
+                />
+                <span v-if="!col.noHeader" class="th-label">{{ col.label }}</span>
+              </span>
+              <span v-else-if="!col.noHeader" class="th-label">
                 {{ col.label }}
               </span>
             </th>
 
-            <!-- Actions th — sticky right, no label -->
+            <!-- Actions th — sticky right, no label (hidden only on first-load skeleton) -->
             <th
-              v-if="$slots.actions"
+              v-if="$slots.actions && !loading"
               class="erp-th erp-th--actions erp-th--fixed"
             />
 
-            <!-- AI chat th — outermost sticky right, 28px, no label -->
+            <!-- AI chat th — outermost sticky right, 28px (hidden only on first-load skeleton) -->
             <th
-              v-if="hasAiChat"
+              v-if="hasAiChat && !loading"
               class="erp-th erp-th--ai"
             />
           </tr>
@@ -243,27 +339,19 @@ onUnmounted(() => {
         <!-- ── Body ── -->
         <tbody>
 
-          <!-- Data rows -->
-          <template v-if="rows.length > 0">
+          <!-- Data rows (hidden on first load; frozen during a pagination change) -->
+          <template v-if="!loading">
             <tr
-              v-for="(row, ri) in rows"
+              v-for="(row, ri) in displayRows"
               :key="ri"
               class="erp-tr"
+              :class="{ 'erp-tr--align-top': tallRows?.has(ri) }"
               @mouseenter="hasAiChat ? onRowEnter(ri) : undefined"
               @mouseleave="hasAiChat ? onRowLeave(ri) : undefined"
             >
-              <!-- Checkbox td -->
-              <td v-if="hasCheckbox" class="erp-td erp-td--checkbox">
-                <MpCheckbox
-                  :id="`erp-row-${ri}`"
-                  :is-checked="selectedRows.has(ri)"
-                  @change="() => toggleRow(ri)"
-                />
-              </td>
-
-              <!-- Data cells -->
+              <!-- Data cells — checkbox merges into the first column's cell -->
               <td
-                v-for="col in columns"
+                v-for="(col, ci) in columns"
                 :key="col.key"
                 class="erp-td"
                 :class="{
@@ -272,7 +360,18 @@ onUnmounted(() => {
                   'erp-td--fixed':  col.isFixed,
                 }"
               >
-                <slot :name="`cell-${col.key}`" :row="row" :value="row[col.key]">
+                <span v-if="hasCheckbox && ci === 0" class="erp-cell-check">
+                  <MpCheckbox
+                    :id="`erp-row-${ri}`"
+                    :is-checked="selectedRows.has(ri)"
+                    @change="() => toggleRow(ri)"
+                    @click.stop
+                  />
+                  <slot :name="`cell-${col.key}`" :row="row" :value="row[col.key]">
+                    <template v-if="typeof row[col.key] !== 'boolean'">{{ row[col.key] }}</template>
+                  </slot>
+                </span>
+                <slot v-else :name="`cell-${col.key}`" :row="row" :value="row[col.key]">
                   <!-- fallback: only render string / number — never render raw booleans -->
                   <template v-if="typeof row[col.key] !== 'boolean'">{{ row[col.key] }}</template>
                 </slot>
@@ -310,16 +409,50 @@ onUnmounted(() => {
             </tr>
           </template>
 
+          <!-- Skeleton rows — first load (alone) OR pagination change (appended below data) -->
+          <template v-if="showSkeleton">
+            <tr v-for="n in 3" :key="`sk-${n}`" class="erp-tr erp-tr--skeleton">
+              <td
+                v-for="col in columns"
+                :key="col.key"
+                class="erp-td"
+                :class="{
+                  'erp-td--right':  col.align === 'right',
+                  'erp-td--center': col.align === 'center',
+                  'erp-td--fixed':  col.isFixed,
+                }"
+              >
+                <MpSkeleton
+                  class="erp-skeleton"
+                  height="14px"
+                  rounded="sm"
+                  duration="0s"
+                  :width="col.align === 'right' ? '56px' : '72px'"
+                />
+              </td>
+              <!-- match data-row columns during pagination; hidden on first load -->
+              <td v-if="$slots.actions && !loading" class="erp-td erp-td--actions erp-td--fixed" />
+              <td v-if="hasAiChat && !loading" class="erp-td erp-td--ai" />
+            </tr>
+          </template>
+
           <!-- Empty state -->
-          <tr v-else>
+          <tr v-else-if="displayRows.length === 0">
             <td
               class="erp-td erp-td--empty"
-              :colspan="columns.length + (hasCheckbox ? 1 : 0) + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
+              :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
             >
-              <slot name="empty">
+              <!-- Inline empty — search/filter eliminated all results (no illustration) -->
+              <div v-if="hasActiveFilter" class="empty-inline">
+                <p class="empty-inline-title">No results found</p>
+                <p class="empty-inline-desc">Try adjusting your filters.</p>
+                <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
+              </div>
+              <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
+              <slot v-else name="empty">
                 <div class="empty-default">
-                  <p class="empty-title">No data found</p>
-                  <p class="empty-hint">Try adjusting your filters.</p>
+                  <p class="empty-title">No data yet</p>
+                  <p class="empty-hint">There's nothing here yet.</p>
                 </div>
               </slot>
             </td>
@@ -329,14 +462,14 @@ onUnmounted(() => {
       </table>
     </div>
 
-    <!-- ── Pagination ── -->
+    <!-- ── Pagination ── (hidden during first-load skeleton) -->
     <ErpPagination
-      v-if="total > 0"
+      v-if="!loading && total > 0"
       :current-page="currentPage"
       :per-page="perPage"
       :total="total"
-      @page-change="emit('pageChange', $event)"
-      @per-page-change="emit('perPageChange', $event)"
+      @page-change="onPageChange"
+      @per-page-change="onPerPageChange"
     />
 
     <!-- ── AI tooltip (Teleport to body) ── -->
@@ -403,9 +536,27 @@ onUnmounted(() => {
   gap: var(--mp-spacing-3);
 }
 
-/* Table scroll container */
+/* Table scroll container — persistent horizontal scrollbar when the table
+   overflows, so users without a trackpad can always drag to scroll left/right
+   (macOS overlay scrollbars auto-hide; styling forces a classic, always-visible bar) */
 .erp-table-wrapper {
   overflow-x: auto;
+  scrollbar-width: thin;                 /* Firefox */
+  scrollbar-color: var(--mp-border-bold) var(--mp-background-neutral-subtle);
+}
+.erp-table-wrapper::-webkit-scrollbar {
+  height: 10px;
+}
+.erp-table-wrapper::-webkit-scrollbar-track {
+  background: var(--mp-background-neutral-subtle);
+}
+.erp-table-wrapper::-webkit-scrollbar-thumb {
+  background: var(--mp-border-bold);
+  border-radius: var(--mp-radii-full, 999px);
+  border: 2px solid var(--mp-background-neutral-subtle);
+}
+.erp-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--mp-text-subtle);
 }
 
 /* ─── Table base ──────────────────────────────────────────────────────────── */
@@ -465,12 +616,20 @@ onUnmounted(() => {
   padding: var(--mp-spacing-1) var(--mp-spacing-2);
 }
 
-/* Checkbox column */
-.erp-th--checkbox {
-  width: var(--mp-sizes-9);
-  min-width: var(--mp-sizes-9);
-  text-align: center;
-  padding: var(--mp-spacing-1) var(--mp-spacing-2);
+/* Checkbox merged into the first column's cell (header + body) */
+.erp-cell-check {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+}
+
+/* First-load skeleton — solid (no shimmer gradient, no animation) */
+.erp-skeleton {
+  display: inline-block;        /* honour the cell's text-align (right/center cols) */
+  vertical-align: middle;
+  background-image: none !important;
+  background-color: var(--mp-border-default) !important;
+  animation: none !important;
 }
 
 /* Sortable header */
@@ -486,7 +645,6 @@ onUnmounted(() => {
   position: sticky;
   right: 0;
   z-index: 3;
-  box-shadow: inset 2px 0 var(--mp-border-default);
 }
 .has-ai .erp-th--fixed {
   right: var(--mp-sizes-7);
@@ -552,14 +710,21 @@ onUnmounted(() => {
 /* ─── Body cells ──────────────────────────────────────────────────────────── */
 
 .erp-td {
-  height: var(--mp-sizes-10);
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2);
+  height: var(--mp-sizes-10);          /* 40px — single-line row height */
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2);  /* 6px top/bottom */
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-default);
-  vertical-align: middle;
+  vertical-align: middle;              /* single-line rows are centred */
   white-space: nowrap;
   background: inherit;
+}
+
+/* Rows with a multi-line cell (e.g. wrapped tags) align ALL cells to the top,
+   so single-line cells line up with the first line of the tall cell.
+   `.erp-tr--align-top` is toggled by JS that measures row height. */
+.erp-tr--align-top .erp-td {
+  vertical-align: top;
 }
 
 /* Right-aligned cells — flip padding */
@@ -574,19 +739,16 @@ onUnmounted(() => {
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-2);
 }
 
-/* Checkbox cell */
-.erp-td--checkbox {
-  width: var(--mp-sizes-9);
-  min-width: var(--mp-sizes-9);
-  text-align: center;
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2);
-}
-
 /* Sticky right cell — shift by 28px when AI column is present */
 .erp-td--fixed {
   position: sticky;
   right: 0;
   z-index: 1;
+}
+
+/* Sticky separator border only when the table actually overflows horizontally */
+.erp-table-wrapper.is-overflowing .erp-th--fixed,
+.erp-table-wrapper.is-overflowing .erp-td--fixed {
   box-shadow: inset 2px 0 var(--mp-border-default);
 }
 .has-ai .erp-td--fixed {
@@ -598,7 +760,7 @@ onUnmounted(() => {
   width: var(--mp-sizes-11);
   min-width: var(--mp-sizes-11);
   text-align: right;
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2);
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2);   /* 6px top/bottom (icon-button column) */
 }
 
 /* AI chat cell */
@@ -705,7 +867,7 @@ onUnmounted(() => {
 
 .erp-td--empty {
   text-align: center;
-  padding: var(--mp-spacing-16, 64px) var(--mp-spacing-4) !important;
+  padding: var(--mp-spacing-6) var(--mp-spacing-4) !important;
   height: auto;
   white-space: normal;
 }
@@ -728,5 +890,30 @@ onUnmounted(() => {
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-subtle);
   margin: 0;
+}
+
+/* Inline empty (filtered/search → no results) — no illustration */
+.empty-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+}
+.empty-inline-title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.empty-inline-desc {
+  margin: 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+.empty-inline-clear {
+  margin-top: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-link);
+  cursor: pointer;
 }
 </style>

@@ -3,11 +3,18 @@ import { defineAsyncComponent, type Component, ref, computed, provide, nextTick,
 
 const { pageTitle, currentPageKey } = useNavigation()
 
+// Browser tab title: "Mekari ERP | <module>"
+useHead({
+  title: () => `Mekari ERP | ${pageTitle.value}`,
+})
+
 const pageRegistry: Record<string, Component> = {
   'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
+  'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
   'Company profile':   defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
+  'Playground':        defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
@@ -356,6 +363,17 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New sales invoice
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Sales orders'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New sales order
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">

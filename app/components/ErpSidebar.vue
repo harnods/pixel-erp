@@ -135,7 +135,7 @@ const toggleIcon = toggleIconUrl
 const shortcutIcon = shortcutIconUrl
 const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
-const { navigate } = useNavigation()
+const { navigate, currentPageKey } = useNavigation()
 
 const flyoutItem = ref<NavItem | null>(null)
 const flyoutStyle = ref<Record<string, string>>({})
@@ -371,6 +371,42 @@ const navGroups: NavItem[][] = [
   ],
 ]
 
+// ─── Sync active state from the route ──────────────────────────────────────────
+//
+// Active highlight is URL-driven so it survives a refresh (this is an SPA —
+// ssr:false). Resolve the current page label back to its top-level nav item +
+// sub-item; first match wins (primary nav group is iterated first).
+
+function resolveActive(pageKey: string): { nav: string; sub: string | null } {
+  for (const group of navGroups) {
+    for (const item of group) {
+      if (item.name === pageKey) return { nav: item.name, sub: null }
+      for (const subGroup of item.submenu ?? []) {
+        for (const sub of subGroup) {
+          if (sub.label === pageKey) return { nav: item.name, sub: sub.label }
+          for (const pGroup of sub.panelSubmenu ?? []) {
+            for (const p of pGroup) {
+              if (p.label === pageKey) return { nav: item.name, sub: p.label }
+            }
+          }
+        }
+      }
+      for (const pGroup of item.panelSubmenu ?? []) {
+        for (const p of pGroup) {
+          if (p.label === pageKey) return { nav: item.name, sub: p.label }
+        }
+      }
+    }
+  }
+  return { nav: 'Home', sub: null }
+}
+
+watch(currentPageKey, (key) => {
+  const { nav, sub } = resolveActive(key)
+  activeItem.value = nav
+  activePanelSubItem.value = sub
+}, { immediate: true })
+
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 function openPanel(panel: ActivePanel) {
@@ -480,6 +516,7 @@ function cancelClose() {
   flex-shrink: 0;
   overflow: hidden;
   transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width;
   padding: 0 var(--mp-spacing-2) var(--mp-spacing-2);
 }
 
@@ -536,7 +573,8 @@ function cancelClose() {
 .nav-item {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;   /* constant — avoids icon snap on collapse;
+                                    icon stays centred in the 36px rail via padding */
   gap: var(--mp-spacing-2);
   width: var(--mp-sizes-9);
   height: var(--mp-sizes-9);
@@ -551,7 +589,6 @@ function cancelClose() {
 
 .sidebar.is-expanded .nav-item {
   width: 100%;
-  justify-content: flex-start;
 }
 
 .nav-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
@@ -581,14 +618,15 @@ function cancelClose() {
   color: var(--mp-text-default);
   line-height: var(--mp-line-heights-md);
   opacity: 0;
-  max-width: 0;
   overflow: hidden;
   white-space: nowrap;
   pointer-events: none;
-  transition: opacity 120ms ease, max-width 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* opacity-only fade; the rail's width animation + overflow:hidden clip the text
+     (animating max-width is not smooth) */
+  transition: opacity 140ms ease;
 }
 
-.sidebar.is-expanded .nav-label { opacity: 1; max-width: 160px; }
+.sidebar.is-expanded .nav-label { opacity: 1; }
 
 /* ── Secondary sidebar panel ── */
 .sidebar-panel {

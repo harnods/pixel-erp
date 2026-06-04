@@ -5,6 +5,13 @@ export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",
   devtools: { enabled: true },
 
+  app: {
+    head: {
+      title: "Mekari ERP",
+      link: [{ rel: "icon", type: "image/svg+xml", href: "/mekari-brand.svg" }]
+    }
+  },
+
   css: [
     "@/assets/css/pixel.css" // make sure to load pixel.css file at the very last
   ],

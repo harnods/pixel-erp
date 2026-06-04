@@ -1,8 +1,9 @@
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
-export type InvoiceStatus = 'paid' | 'open' | 'overdue'
-export type ProductStatus = 'active' | 'inactive'
-export type ContactType   = 'company' | 'individual'
+export type InvoiceStatus    = 'paid' | 'open' | 'overdue'
+export type SalesOrderStatus = 'open' | 'partially processed' | 'closed' | 'voided'
+export type ProductStatus    = 'active' | 'inactive'
+export type ContactType      = 'company' | 'individual'
 
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
@@ -63,5 +64,17 @@ export interface PurchaseInvoice {
   status: InvoiceStatus
   itemCount: number
   hasAttachment?: boolean
+  tags?: string[]
+}
+
+export interface SalesOrder {
+  id: string
+  number: number                          // rendered as "Sales Order #10090"
+  customer: Pick<Customer, 'id' | 'name'>
+  date: string                            // order date, ISO
+  dueDate: string                         // ISO
+  status: SalesOrderStatus
+  balanceDue: number                      // remaining IDR (0 when closed/voided)
+  total: number                           // order total IDR
   tags?: string[]
 }
