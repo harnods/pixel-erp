@@ -49,10 +49,10 @@ Reuse as-is; do not redesign per module.
 
 1. **Layout**: Filter bar → Table → Pagination, inside the white stage
    (padding `var(--mp-spacing-6)`).
-2. **Title bar** (shell): page title left; **action buttons right** — at least one
-   **primary** `+ New [entity]`, optional **secondary** (e.g. Import). Rendered via a
-   `v-if="currentPageKey === '<Page>'"` block in `app/pages/[...slug].vue`. Keep to
-   one primary; put bulk ops (export, column settings) in the filter bar's right group.
+2. **Title bar** — see **[page-title-bar.md](page-title-bar.md)** (the single source of
+   truth for every page's title bar). Index variant: page title left; **action buttons
+   right** — one **primary** `+ New [entity]` + optional **secondary** (e.g. Import).
+   Bulk ops (export, column settings) go in the filter bar's right group, not here.
 3. **Filter bar** (`#filters` slot — `space-between`, no border):
    - **Left**: **quick filter(s)** (`MpSelect` **fixed 160px**, long label truncates
      with `…`; `MpPopover` dropdown shows full text) + **All filters** pill (filter

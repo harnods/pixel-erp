@@ -67,6 +67,17 @@ export interface PurchaseInvoice {
   tags?: string[]
 }
 
+export interface SalesOrderItem {
+  product: string
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  unitPrice: number       // IDR
+  discountPct: number     // 0 = none
+  amount: number          // qty * unitPrice, net of line discount (excl. tax)
+}
+
 export interface SalesOrder {
   id: string
   number: number                          // rendered as "Sales Order #10090"
@@ -74,7 +85,11 @@ export interface SalesOrder {
   date: string                            // order date, ISO
   dueDate: string                         // ISO
   status: SalesOrderStatus
-  balanceDue: number                      // remaining IDR (0 when closed/voided)
-  total: number                           // order total IDR
+  balanceDue: number                      // remaining IDR (0 when fully invoiced/paid)
+  total: number                           // order total IDR — derived from items + tax + shipping
   tags?: string[]
+  // line items + the inputs the totals are derived from (source of truth for the detail page)
+  items: SalesOrderItem[]
+  globalDiscount: number                  // IDR, order-level discount
+  shippingFee: number                     // IDR
 }

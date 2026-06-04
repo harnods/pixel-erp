@@ -18,7 +18,16 @@
 
 import { MpBadge } from '@mekari/pixel3'
 
-const props = defineProps<{ status: string }>()
+const props = withDefaults(
+  defineProps<{
+    status: string
+    /** Badge size — 'sm' (table rows, default) or 'md' (page title bar, detail header). */
+    size?: 'sm' | 'md'
+    /** MpBadge variant. Default 'tableStatus' (table rows); use 'additionalInformation' next to a page-title H1. */
+    badgeFor?: string
+  }>(),
+  { size: undefined, badgeFor: 'tableStatus' },
+)
 
 interface StatusConfig { type: string; label: string }
 
@@ -30,6 +39,7 @@ const statusConfig: Record<string, StatusConfig> = {
   completed:  { type: 'completed',    label: 'Completed'  },
   verified:   { type: 'completed',    label: 'Verified'   },
   success:    { type: 'completed',    label: 'Success'    },
+  delivered:  { type: 'completed',    label: 'Delivered'  },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
@@ -55,6 +65,7 @@ const statusConfig: Record<string, StatusConfig> = {
 
   // ── information — blue ────────────────────────────
   'partially processed': { type: 'information', label: 'Partially processed' },
+  unbilled:   { type: 'information',  label: 'Unbilled'   },
   new:        { type: 'information',  label: 'New'        },
   beta:       { type: 'information',  label: 'Beta'       },
   vip:        { type: 'information',  label: 'VIP'        },
@@ -68,7 +79,7 @@ const config = computed<StatusConfig>(() => {
 </script>
 
 <template>
-  <MpBadge for="tableStatus" :type="config.type">
+  <MpBadge :for="badgeFor" :type="config.type" :size="size">
     {{ config.label }}
   </MpBadge>
 </template>

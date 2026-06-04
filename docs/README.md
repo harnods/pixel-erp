@@ -19,7 +19,9 @@ Start here. This is the home for ERP UI/UX documentation.
 
 | Topic | Doc | Covers |
 |---|---|---|
+| Page title bar | [page-title-bar.md](patterns/page-title-bar.md) | The 72px title bar shared by every page — dimensions, index/detail/form variants, title-bar badge rule |
 | Index page format | [index-page-format.md](patterns/index-page-format.md) | Wireframe + spec for list/index pages (filter bar → table → pagination) |
+| Detail page format | [details-page-format.md](patterns/details-page-format.md) | Wireframe + spec for transaction detail pages (header summary 2–5 col → line items → totals → tabs → footer actions) |
 | Page recipes | [page-recipes.md](patterns/page-recipes.md) | Standard scaffolds for index, form, and detail pages |
 
 ## ERP Components
@@ -30,6 +32,7 @@ Start here. This is the home for ERP UI/UX documentation.
 | Pagination | [ErpPagination.md](patterns/ErpPagination.md) | Rows-per-page selector, page info, prev/next |
 | Filter Bar | [ErpFilterBar.md](patterns/ErpFilterBar.md) | Layout container for filter controls + standard search pattern |
 | Status Badge | [ErpStatusBadge.md](patterns/ErpStatusBadge.md) | Status → badge type mapping |
+| Content List | [ContentList.md](patterns/ContentList.md) | Labelled key/value field (label over value); detail header + key/value displays |
 | Form | [Form.md](patterns/Form.md) | Field anatomy, layout rules (558px / 6-col), field type → Pixel component |
 | Modal | [Modal.md](patterns/Modal.md) | Centered dialog for focused/interrupting tasks |
 | Drawer | [Drawer.md](patterns/Drawer.md) | Side panel for contextual detail/edit without leaving the page |
