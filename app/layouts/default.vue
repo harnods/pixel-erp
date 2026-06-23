@@ -7,6 +7,7 @@
         <slot />
       </div>
     </div>
+    <MpToastManager />
   </div>
 </template>
 

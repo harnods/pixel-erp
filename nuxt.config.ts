@@ -4,6 +4,7 @@ export default defineNuxtConfig({
   ssr: false,
   compatibilityDate: "2025-07-15",
   devtools: { enabled: true },
+  devServer: { port: 4321 },
 
   app: {
     head: {
@@ -13,6 +14,7 @@ export default defineNuxtConfig({
   },
 
   css: [
+    "@/assets/css/erp.css",
     "@/assets/css/pixel.css" // make sure to load pixel.css file at the very last
   ],
   postcss: {

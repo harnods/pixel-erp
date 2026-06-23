@@ -37,6 +37,15 @@ export function pathToLabel(path: string): string {
     .join(" ");
 }
 
+/**
+ * The label of the currently-active menu item, published by the sidebar (which
+ * owns the nav tree). Lets the page title bar show the exact menu name instead
+ * of a label reconstructed from the URL slug — those diverge for names with
+ * hyphens/slashes ('Put-away', 'Stock in/out') or distinct routes ('Inventory'
+ * settings → /inventory-settings). Module-level so it's shared across components.
+ */
+const activeMenuLabel = ref("");
+
 export const useNavigation = () => {
   const route = useRoute();
   const router = useRouter();
@@ -52,8 +61,17 @@ export const useNavigation = () => {
     return pathToLabel(first ? "/" + first : "/");
   });
 
-  /** Human-readable title shown in the page title bar. */
-  const pageTitle = computed(() => currentPageKey.value);
+  /**
+   * Human-readable title shown in the page title bar. Always mirrors the active
+   * menu name when known (set by the sidebar); falls back to the slug-derived
+   * key before the sidebar has resolved (e.g. first paint).
+   */
+  const pageTitle = computed(() => activeMenuLabel.value || currentPageKey.value);
+
+  /** Sidebar publishes the resolved active menu label here. */
+  function setActiveMenuLabel(label: string) {
+    activeMenuLabel.value = label;
+  }
 
   /**
    * Navigate to a menu item by label.
@@ -66,5 +84,5 @@ export const useNavigation = () => {
     }
   }
 
-  return { pageTitle, currentPageKey, navigate };
+  return { pageTitle, currentPageKey, navigate, setActiveMenuLabel };
 };

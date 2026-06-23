@@ -28,7 +28,8 @@ const buttonStyles = css({
     bg: "background.header.menu.hovered"
   },
   _focusVisible: {
-    outline: "2px solid token(colors.lime.300)",
+    // Neutral slate focus (Color/Gray/Slate400) — consistent with all ERP form fields
+    outline: "2px solid #8C9596",
     outlineOffset: "2px"
   }
 });

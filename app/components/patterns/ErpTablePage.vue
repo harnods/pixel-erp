@@ -36,6 +36,7 @@ import { MpCheckbox, MpSkeleton } from '@mekari/pixel3'
 import ErpPagination from './ErpPagination.vue'
 
 const sendAireneMessage = inject<(text: string, context?: string) => void>('sendAireneMessage')
+const slots = useSlots()
 
 export interface TableColumn {
   key: string
@@ -64,6 +65,10 @@ const props = withDefaults(defineProps<{
   hasActiveFilter?: boolean
   /** Returns a context label string for a given row — shown as a chip in the AI chat input */
   contextLabel?: (row: Record<string, unknown>) => string
+  /** Return true for rows that cannot be selected (checkbox disabled) */
+  rowDisabled?: (row: Record<string, unknown>, index: number) => boolean
+  /** Singular noun shown in the bulk bar count, e.g. "warehouse" → "2 warehouses selected" */
+  bulkLabel?: string
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -73,6 +78,8 @@ const props = withDefaults(defineProps<{
   loading: false,
   hasActiveFilter: false,
   contextLabel: undefined,
+  rowDisabled: undefined,
+  bulkLabel: 'item',
 })
 
 const emit = defineEmits<{
@@ -80,6 +87,7 @@ const emit = defineEmits<{
   perPageChange: [perPage: number]
   sort: [key: string]
   clearFilters: []
+  selectionChange: [count: number]
 }>()
 
 // ─── Pagination skeleton ────────────────────────────────────────────────────
@@ -90,6 +98,13 @@ let paginatingTimer: ReturnType<typeof setTimeout> | null = null
 
 /** true on first load (prop) OR while a pagination change is settling */
 const showSkeleton = computed(() => props.loading || paginating.value)
+
+/** Full (illustrated) empty state — no data ever AND no active filter. In this
+ *  state the table header is hidden so the empty state replaces the whole table.
+ *  (The inline "no results" filtered state keeps the header.) */
+const isFullEmpty = computed(
+  () => !showSkeleton.value && displayRows.value.length === 0 && !props.hasActiveFilter,
+)
 
 /** Rows currently rendered — frozen during a pagination change so the OLD rows stay
  *  visible while the 3 skeleton rows for the incoming page show below them. */
@@ -118,21 +133,37 @@ onUnmounted(() => { if (paginatingTimer) clearTimeout(paginatingTimer) })
 
 const selectedRows = ref(new Set<number>())
 
+const selectableIndices = computed(() =>
+  props.rows.map((r, i) => i).filter(i => !(props.rowDisabled?.(props.rows[i], i) ?? false))
+)
+
 const allSelected = computed(() =>
-  props.rows.length > 0 && props.rows.every((_, i) => selectedRows.value.has(i))
+  selectableIndices.value.length > 0 &&
+  selectableIndices.value.every(i => selectedRows.value.has(i))
+)
+
+const someSelected = computed(() =>
+  selectedRows.value.size > 0 && !allSelected.value
 )
 
 function toggleAll() {
   selectedRows.value = allSelected.value
     ? new Set()
-    : new Set(props.rows.map((_, i) => i))
+    : new Set(selectableIndices.value)
 }
 
 function toggleRow(i: number) {
+  if (props.rowDisabled?.(props.rows[i], i)) return
   const s = new Set(selectedRows.value)
   s.has(i) ? s.delete(i) : s.add(i)
   selectedRows.value = s
 }
+
+function deselectAll() {
+  selectedRows.value = new Set()
+}
+
+watch(selectedRows, (s) => emit('selectionChange', s.size))
 
 // Reset selection when rows change (page change, filter, sort)
 watch(() => props.rows, () => {
@@ -205,7 +236,12 @@ function sendAndClose() {
 }
 
 function onEscKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') closePopover()
+  if (e.key !== 'Escape') return
+  if (selectedRows.value.size > 0) {
+    deselectAll()
+  } else {
+    closePopover()
+  }
 }
 
 onMounted(() => {
@@ -234,15 +270,15 @@ function checkOverflow() {
   isOverflowing.value = w.scrollWidth > w.clientWidth + 1
 }
 
-// A row is "tall" (some cell wrapped to multiple lines) when its height exceeds the
-// shortest (single-line) row by more than ~half a line → top-align that row's cells.
+// A row is "tall" when its height exceeds the single-line baseline (40px) by more
+// than a small buffer. Using an absolute threshold (not relative to the shortest row)
+// so that tables where ALL rows have multi-line content are still detected correctly.
+const SINGLE_LINE_ROW_HEIGHT = 44 // 40px min-height + 4px render buffer
 function updateRowAlignment() {
   const trs = tableEl.value?.querySelectorAll<HTMLElement>('tbody tr.erp-tr:not(.erp-tr--skeleton)')
   if (!trs || trs.length === 0) { tallRows.value = new Set(); return }
-  let min = Infinity
-  trs.forEach(t => { const h = t.getBoundingClientRect().height; if (h < min) min = h })
   const next = new Set<number>()
-  trs.forEach((t, i) => { if (t.getBoundingClientRect().height > min + 12) next.add(i) })
+  trs.forEach((t, i) => { if (t.getBoundingClientRect().height > SINGLE_LINE_ROW_HEIGHT) next.add(i) })
   tallRows.value = next
 }
 
@@ -268,6 +304,20 @@ onUnmounted(() => {
 watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.hasAiChat], () => {
   nextTick(refresh)
 })
+
+// ─── Bulk bar ─────────────────────────────────────────────────────────────────
+
+const totalCols = computed(() =>
+  props.columns.length +
+  (slots.actions ? 1 : 0) +
+  (props.hasAiChat ? 1 : 0)
+)
+
+const bulkCountLabel = computed(() => {
+  const n = selectedRows.value.size
+  const noun = props.bulkLabel ?? 'item'
+  return `${n} ${n === 1 ? noun : noun + 's'} selected`
+})
 </script>
 
 <template>
@@ -289,12 +339,56 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
       class="erp-table-wrapper"
       :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing }"
     >
-      <table ref="tableEl" class="erp-table">
+      <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty }">
 
-        <!-- ── Header ── -->
-        <thead class="erp-thead">
-          <tr>
-            <!-- Column headers — checkbox merges into the first column's cell -->
+        <!-- ── Colgroup — pins column widths even when header row swaps to bulk bar.
+             Skipped on the full empty state so the table fits the container (no scroll). -->
+        <colgroup v-if="!isFullEmpty">
+          <col
+            v-for="col in columns"
+            :key="col.key"
+            :style="col.width ? { width: col.width, minWidth: col.width } : {}"
+          />
+          <col v-if="$slots.actions" style="width: 44px; min-width: 44px" />
+          <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
+        </colgroup>
+
+        <!-- ── Header ── (hidden on the full illustrated empty state) -->
+        <thead v-if="!isFullEmpty" class="erp-thead">
+
+          <!-- Bulk selection bar — replaces column headers when rows are selected -->
+          <tr v-if="$slots['bulk-actions'] && selectedRows.size > 0" class="erp-tr-bulk">
+            <th :colspan="totalCols" class="erp-th erp-th--bulk">
+              <div class="erp-bulk-bar">
+                <div class="erp-bulk-bar__left">
+                  <MpCheckbox
+                    id="erp-bulk-select-all"
+                    :is-checked="allSelected"
+                    :is-indeterminate="someSelected"
+                    @change="toggleAll"
+                    @click.stop
+                  />
+                  <span class="erp-bulk-bar__count">{{ bulkCountLabel }}</span>
+                  <div class="erp-bulk-bar__actions">
+                    <slot
+                      name="bulk-actions"
+                      :count="selectedRows.size"
+                      :selected-rows="selectedRows"
+                      :deselect-all="deselectAll"
+                    />
+                  </div>
+                </div>
+                <div class="erp-bulk-bar__right">
+                  <span>Press</span>
+                  <kbd class="erp-bulk-bar__kbd">Esc</kbd>
+                  <span>to deselect</span>
+                </div>
+              </div>
+            </th>
+          </tr>
+
+          <!-- Normal column headers -->
+          <tr v-else>
             <th
               v-for="(col, ci) in columns"
               :key="col.key"
@@ -312,6 +406,7 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
                 <MpCheckbox
                   id="erp-select-all"
                   :is-checked="allSelected"
+                  :is-indeterminate="someSelected"
                   @change="toggleAll"
                   @click.stop
                 />
@@ -364,6 +459,7 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
                   <MpCheckbox
                     :id="`erp-row-${ri}`"
                     :is-checked="selectedRows.has(ri)"
+                    :is-disabled="rowDisabled?.(row, ri) ?? false"
                     @change="() => toggleRow(ri)"
                     @click.stop
                   />
@@ -564,9 +660,17 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
 .erp-table {
   width: 100%;
   min-width: max-content;     /* force overflow so sticky works */
+  table-layout: fixed;        /* honour column widths; prevent content from expanding cells */
   border-collapse: collapse;
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
+}
+
+/* Full empty state: drop the fixed column widths so the table fits the container
+   (no horizontal scroll behind the illustrated empty state). */
+.erp-table--empty {
+  min-width: 0;
+  table-layout: auto;
 }
 
 /* ─── Header ──────────────────────────────────────────────────────────────── */
@@ -711,7 +815,7 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
 
 .erp-td {
   height: var(--mp-sizes-10);          /* 40px — single-line row height */
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2);  /* 6px top/bottom */
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);  /* 10px top/bottom always */
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-default);
@@ -720,8 +824,8 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
   background: inherit;
 }
 
-/* Rows with a multi-line cell (e.g. wrapped tags) align ALL cells to the top,
-   so single-line cells line up with the first line of the tall cell.
+/* Rows with a description, avatar, or multi-line cell switch ALL cells to top-aligned.
+   Padding stays 10px — only alignment changes.
    `.erp-tr--align-top` is toggled by JS that measures row height. */
 .erp-tr--align-top .erp-td {
   vertical-align: top;
@@ -730,13 +834,13 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
 /* Right-aligned cells — flip padding */
 .erp-td--right {
   text-align: right;
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4);
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4);
   font-variant-numeric: tabular-nums;
 }
 
 .erp-td--center {
   text-align: center;
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2);
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2);
 }
 
 /* Sticky right cell — shift by 28px when AI column is present */
@@ -760,7 +864,7 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
   width: var(--mp-sizes-11);
   min-width: var(--mp-sizes-11);
   text-align: right;
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2);   /* 6px top/bottom (icon-button column) */
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2);
 }
 
 /* AI chat cell */
@@ -915,5 +1019,66 @@ watch(() => [props.columns, props.rows, props.loading, props.hasCheckbox, props.
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-link);
   cursor: pointer;
+}
+
+/* ── Bulk selection bar ──────────────────────────────────────────────────────── */
+.erp-tr-bulk .erp-th--bulk {
+  padding: 0 var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: var(--mp-font-weights-regular);
+}
+
+.erp-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  gap: var(--mp-spacing-3);
+}
+
+.erp-bulk-bar__left {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+  flex-shrink: 0;
+}
+
+.erp-bulk-bar__count {
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default);
+  white-space: nowrap;
+}
+
+.erp-bulk-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+}
+
+.erp-bulk-bar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+  flex-shrink: 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+  white-space: nowrap;
+}
+
+.erp-bulk-bar__kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--mp-spacing-1);
+  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-sm);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+  font-family: inherit;
+  color: var(--mp-text-secondary);
 }
 </style>

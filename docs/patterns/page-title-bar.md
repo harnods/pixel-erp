@@ -81,8 +81,25 @@ A page title bar is a **flex row**: the title block on the **left**, actions on 
 
 ### C. Form / create-edit page
 
-- Left: title `Create [entity]` / `Edit [entity]` (no breadcrumb required).
-- Right: usually empty (form actions live in the form's own action group).
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  [Index label] ‹breadcrumb›                                          │
+│  New [entity] / Edit [entity]                                        │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- **Left**: a **breadcrumb** back to the index page (same as Variant B — small
+  `var(--mp-text-link)` link, **12px**, e.g. `Warehouses`), sitting directly above
+  the H1 title (**no gap**, both vertically centred in the 72px bar). Title is
+  `New [entity]` / `Edit [entity]`.
+  > The create title is **`New [entity]`** (matches the index's `+ New [entity]`
+  > button), not `Create [entity]`.
+- **Right**: usually empty (form actions live in the form's own action group at the
+  bottom of the stage).
+- Rendered as a full-bleed page via `detailMatch` in `[...slug].vue` (the component
+  brings its own title bar + stage), e.g. `/warehouses/new`.
+
+Live reference: [NewWarehousePage.vue](../../app/components/pages/NewWarehousePage.vue).
 
 ---
 

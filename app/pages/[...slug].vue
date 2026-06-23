@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { defineAsyncComponent, type Component, ref, computed, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { defineAsyncComponent, type Component, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
+const router = useRouter()
 
 // Browser tab title: "Mekari ERP | <module>"
 useHead({
@@ -16,11 +17,15 @@ const pageRegistry: Record<string, Component> = {
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
+  'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
   'Company profile':   defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Playground':        defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
 const SalesOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
+const ImportWarehousesPage = defineAsyncComponent(() => import('~/components/pages/ImportWarehousesPage.vue'))
+const NewWarehousePage = defineAsyncComponent(() => import('~/components/pages/NewWarehousePage.vue'))
+const WarehouseDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
@@ -30,12 +35,32 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
   }
+  if (segs.length >= 2 && segs[0] === 'warehouses' && segs[1] === 'import') {
+    return { component: ImportWarehousesPage, id: 'import' }
+  }
+  if (segs.length >= 2 && segs[0] === 'warehouses' && segs[1] === 'new') {
+    return { component: NewWarehousePage, id: 'new' }
+  }
+  // /warehouses/:id (any segment other than the reserved sub-routes) → detail page
+  if (segs.length >= 2 && segs[0] === 'warehouses' && !['new', 'import'].includes(segs[1])) {
+    return { component: WarehouseDetailsPage, id: segs[1] }
+  }
   return null
 })
 
 const currentComponent = computed<Component>(
   () => pageRegistry[currentPageKey.value] ?? PlaceholderPage,
 )
+
+// Pages that show a status tab bar below the title (outside the stage). Keyed by
+// page label (currentPageKey). Add an entry to give a page its own tabs.
+const pageTabs: Record<string, string[]> = {
+  'Barang keluar': ['Orders', 'Picking', 'Packing', 'Ready to ship', 'Delivery', 'Voided orders'],
+  'Barang masuk': ['Receipts', 'Put-away', 'Completed', 'Canceled'],
+}
+const currentTabs = computed<string[]>(() => pageTabs[currentPageKey.value] ?? [])
+const activeTab = ref('')
+watch(currentPageKey, () => { activeTab.value = currentTabs.value[0] ?? '' }, { immediate: true })
 
 // ── Airene panel open/close ───────────────────────────────────────────────
 const aireneOpen = ref(false)
@@ -371,13 +396,13 @@ function startResize(e: MouseEvent) {
       <div class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
             Import
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
-          <button class="btn-enterprise btn-enterprise--primary">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -388,7 +413,7 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--secondary">
             Import
           </button>
-          <button class="btn-enterprise btn-enterprise--primary">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -399,7 +424,7 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--secondary">
             Import
           </button>
-          <button class="btn-enterprise btn-enterprise--primary">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -410,18 +435,29 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--secondary">
             Import
           </button>
-          <button class="btn-enterprise btn-enterprise--primary">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New sales delivery
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Warehouses'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/warehouses/import')">
+            Import
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/warehouses/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New warehouse
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">
           <!-- Import button + dropdown -->
           <div ref="importBtnWrapEl" class="import-wrap">
             <button
-              class="btn-enterprise btn-enterprise--secondary"
+              class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
               :class="{ 'btn-enterprise--active': importDropdownOpen }"
               @click.stop="importDropdownOpen = !importDropdownOpen"
             >
@@ -469,7 +505,7 @@ function startResize(e: MouseEvent) {
             </div>
           </div>
 
-          <button class="btn-enterprise btn-enterprise--primary">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -478,8 +514,27 @@ function startResize(e: MouseEvent) {
         </div>
       </div>
 
+      <!-- Status tabs (below the title, outside the stage) -->
+      <div v-if="currentTabs.length" class="page-tabs" role="tablist">
+        <button
+          v-for="tab in currentTabs"
+          :key="tab"
+          class="page-tab"
+          :class="{ 'page-tab--active': activeTab === tab }"
+          role="tab"
+          :aria-selected="activeTab === tab"
+          @click="activeTab = tab"
+        >
+          {{ tab }}
+        </button>
+      </div>
+
       <div class="stage">
-        <component :is="currentComponent" />
+        <div v-if="currentTabs.length" class="tab-stage-placeholder">
+          <p class="tab-stage-placeholder__title">{{ activeTab }}</p>
+          <p class="tab-stage-placeholder__desc">Page content goes here.</p>
+        </div>
+        <component v-else :is="currentComponent" />
       </div>
       </template>
     </div>
@@ -755,41 +810,6 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-default);
 }
 
-/* Enterprise pill buttons */
-.btn-enterprise {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-md);
-  cursor: pointer;
-  white-space: nowrap;
-  border: 1px solid transparent;
-}
-.btn-enterprise--secondary {
-  background: var(--mp-background-neutral);
-  border-color: var(--mp-border-bold);
-  color: var(--mp-text-secondary);
-  padding-left: var(--mp-spacing-4);
-  padding-right: var(--mp-spacing-3);
-}
-.btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
-
-.btn-enterprise--primary {
-  background: var(--mp-colors-emerald-700, #029861);
-  border-color: var(--mp-colors-emerald-700, #029861);
-  color: var(--mp-text-inverse);
-  padding-left: var(--mp-spacing-3);
-  padding-right: var(--mp-spacing-4);
-}
-.btn-enterprise--primary:hover {
-  background: var(--mp-colors-emerald-800, #186f4a);
-  border-color: var(--mp-colors-emerald-800, #186f4a);
-}
-
 /* ── Import dropdown ────────────────────────────────────────────────────── */
 
 .import-wrap {
@@ -949,6 +969,65 @@ function startResize(e: MouseEvent) {
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);
+}
+
+/* ── Status tabs (between title bar and stage, on the gray surface) ───────── */
+
+.page-tabs {
+  display: flex;
+  gap: var(--mp-spacing-5);
+  padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0;
+}
+
+.page-tab {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--mp-spacing-3) 0;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-secondary);
+  white-space: nowrap;
+  transition: color 100ms;
+}
+
+.page-tab:hover {
+  color: var(--mp-text-default);
+}
+
+.page-tab--active {
+  color: var(--mp-text-selected);
+  font-weight: var(--mp-font-weights-semi-bold);
+}
+
+.page-tab--active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--mp-text-selected);
+  border-radius: var(--mp-radii-sm, 2px) var(--mp-radii-sm, 2px) 0 0;
+}
+
+/* Placeholder shown in the stage for a tabbed page (until real screens exist) */
+.tab-stage-placeholder {
+  margin: auto;
+  text-align: center;
+}
+.tab-stage-placeholder__title {
+  font-size: var(--mp-font-sizes-lg);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.tab-stage-placeholder__desc {
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
 }
 
 /* ── Airene slot (outer wrapper) ─────────────────────────────────────────── */
