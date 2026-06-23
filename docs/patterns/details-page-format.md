@@ -15,6 +15,11 @@ This is the read counterpart to [index-page-format.md](index-page-format.md): th
 page lists records; the detail page shows **one** record. The hover "View details"
 action and the number-column link on an index page navigate here.
 
+> **Two flavours of detail page.** This doc covers **transaction** detail pages
+> (line items + totals). **Master-data** records (warehouse, product, contact, …) use
+> a lighter variant — see **[§C. Master-data detail variant](#c-master-data-detail-variant)**.
+> The title bar, stage, breadcrumb, and 32px region gaps are shared; the body differs.
+
 ---
 
 ## Wireframe
@@ -221,6 +226,45 @@ These change for every module. **If any are unknown, ask the user before generat
    columns). At least one tab is typical. **Ask the user.**
 10. **Footer actions** — the **`Print & share`** menu items and the **`Actions`** menu
     items. **Ask the user.**
+
+---
+
+## C. Master-data detail variant
+
+For **master-data** records (warehouse, product, contact, …) — not transactions.
+Shares the shell with the transaction layout (72px title bar, white stage, breadcrumb
+above the H1, **32px** region gaps) but the body is simpler. Live reference:
+[WarehouseDetailsPage.vue](../../app/components/pages/WarehouseDetailsPage.vue)
+(route `/warehouses/:id`, registered in `[...slug].vue` `detailMatch`).
+
+Differences from the transaction layout:
+
+1. **Title bar** — breadcrumb (index label, 12px link) above the record-name H1. **No
+   status badge / jump switcher / approval icons.** Instead, a single primary
+   **`Actions ▾`** dropdown (emerald) sits **top-right** of the title bar.
+   - **`Actions` items**: `Edit` · `Archive`/`Unarchive` · `Delete` **(if applicable)**.
+     Mirror the index's conditional rules — e.g. a **default** record can't be
+     archived/deleted; `Delete` only when the record has **no transactions**. Archive &
+     Delete open the same confirmation modals as the index; success fires a toast
+     (`[Object] archived` / `[Object] deleted`).
+2. **Info section** — an H2 section heading (e.g. `Warehouse info`) then **horizontal
+   label/value rows** (`<dl>`: label = 12px secondary in a fixed ~160px column, value =
+   14px default), **not** the multi-column ContentList grid. Empty value → `—`.
+3. **Last-updated** metadata line (12px text link) sits directly under the info rows.
+4. **Tabs** (`MpTabs`, green underline, same overrides as §A.8) — each tab is a
+   **data table** of related records (e.g. `Products`, `Batches`, `Serial numbers`,
+   `Transactions`). The primary table reuses the **[ErpTablePage.md](ErpTablePage.md)
+   header & row spec** (28px gray header, 40px rows) with a right-aligned **toolbar**
+   (Airene · column settings · export · search) above it and a **pagination footer**
+   below (`Rows per page` · `Showing X-Y of N` · page nav). Wide tables scroll
+   horizontally inside a `border-bold` panel. Empty tab → a single muted line.
+5. **No** info banner, header-summary grid, totals block, or footer action bar — the
+   `Actions` dropdown in the title bar replaces the footer.
+
+> Keep `MpTabPanels` children to **`MpTabPanel` only** — an HTML comment between panels
+> trips Pixel's "Invalid child component of MpTabPanels" warning.
+
+---
 
 ### Questions to ask before generating a detail page
 

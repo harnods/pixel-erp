@@ -45,8 +45,9 @@
               @click="handlePanelSubItemClick(sub)"
             >
               <span>{{ sub.label }}</span>
+              <span v-if="sub.count != null" class="panel-item-count">{{ sub.count }}</span>
               <img
-                v-if="sub.iconType === 'shortcut'"
+                v-else-if="sub.iconType === 'shortcut'"
                 :src="shortcutIcon"
                 class="panel-item-icon"
                 alt=""
@@ -94,6 +95,14 @@ import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 interface PanelSubItem {
   label: string
   iconType?: 'shortcut' | 'settings'
+  /**
+   * Navigation identity (page label) when it must differ from the display label —
+   * e.g. a Settings sub-item "Inventory" routes to its own page, not the top-level
+   * "Inventory" list. Defaults to `label`.
+   */
+  to?: string
+  /** Task-count indicator shown right-aligned (e.g. items awaiting action). */
+  count?: number
 }
 
 // Level-2 flyout item. If panelSubmenu is set, clicking it opens a level-3 panel.
@@ -112,6 +121,11 @@ interface NavItem {
   submenu?: SubItem[][]
   /** Level-2 panel opened directly by clicking the nav item (e.g. Reports) */
   panelSubmenu?: PanelSubItem[][]
+  /**
+   * Explicit destination path for a leaf item, when it shouldn't route to its own
+   * slug — e.g. WMS Ops "Warehouses" opens a specific warehouse's detail directly.
+   */
+  path?: string
 }
 
 interface ActivePanel {
@@ -135,7 +149,8 @@ const toggleIcon = toggleIconUrl
 const shortcutIcon = shortcutIconUrl
 const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
-const { navigate, currentPageKey } = useNavigation()
+const { navigate, currentPageKey, setActiveMenuLabel } = useNavigation()
+const router = useRouter()
 
 const flyoutItem = ref<NavItem | null>(null)
 const flyoutStyle = ref<Record<string, string>>({})
@@ -150,7 +165,51 @@ const arrowPointsLeft = computed(() => navExpanded.value || (!!activePanel.value
 
 // ─── Nav data ────────────────────────────────────────────────────────────────
 
-const navGroups: NavItem[][] = [
+// Settings level-2 panel — shared so WMS Standalone shows the same Settings list as ERP.
+const settingsPanelSubmenu: PanelSubItem[][] = [
+  [
+    { label: 'Company profile' },
+    { label: 'Users & roles' },
+    { label: 'Billing' },
+  ],
+  [
+    { label: 'Sales' },
+    { label: 'Purchases' },
+    { label: 'Inventory' },
+    { label: 'Warehouses' },
+    { label: 'Production' },
+    { label: 'Default accounts' },
+  ],
+  [
+    { label: 'Templates' },
+    { label: 'Custom fields' },
+    { label: 'Approval workflows' },
+    { label: 'Tagging rules' },
+  ],
+  [
+    { label: 'Tax rates' },
+    { label: 'Currencies' },
+    { label: 'Payment terms' },
+    { label: 'Payment methods' },
+    { label: 'Tags' },
+  ],
+]
+
+// Settings level-2 panel for WMS Standalone — a trimmed, warehouse-focused list.
+const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
+  [
+    { label: 'Company profile' },
+    { label: 'Users & roles' },
+    { label: 'Billing' },
+  ],
+  [
+    { label: 'Inventory', to: 'Inventory settings' },
+    { label: 'Warehouse', to: 'Warehouse settings' },
+    { label: 'Storage locations' },
+  ],
+]
+
+const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
     {
@@ -247,29 +306,27 @@ const navGroups: NavItem[][] = [
       ],
     },
     {
-      name: 'Warehouses', icon: 'warehouse',
+      name: 'WMS', icon: 'warehouse',
       submenu: [
         [
-          {
-            label: 'Warehouse',
-            panelSubmenu: [[
-              { label: 'All warehouses' },
-              { label: 'Stock adjustments' },
-              { label: 'Warehouse transfers' },
-              { label: 'Stock requests' },
-              { label: 'Storage locations' },
-            ]],
-          },
+          { label: 'Overview' },
+          { label: 'Warehouses' },
           {
             label: 'Fulfillments',
             panelTitle: 'Fulfillments',
             panelSubmenu: [[
-              { label: 'Sales orders' },
-              { label: 'Purchase orders' },
+              { label: 'Barang keluar' },
+              { label: 'Barang masuk' },
             ]],
           },
+          { label: 'Warehouse transfers' },
+          { label: 'Stock adjustments' },
         ],
-        [{ label: 'Warehouse settings', iconType: 'settings' }],
+        [
+          { label: 'Storage locations' },
+          { label: 'Warehouse reports', iconType: 'shortcut' },
+          { label: 'Warehouse settings', iconType: 'settings' },
+        ],
       ],
     },
     {
@@ -339,37 +396,82 @@ const navGroups: NavItem[][] = [
     },
     {
       name: 'Settings', icon: 'settings',
-      panelSubmenu: [
-        [
-          { label: 'Company profile' },
-          { label: 'Users & roles' },
-          { label: 'Billing' },
-        ],
-        [
-          { label: 'Sales' },
-          { label: 'Purchases' },
-          { label: 'Inventory' },
-          { label: 'Warehouses' },
-          { label: 'Production' },
-          { label: 'Default accounts' },
-        ],
-        [
-          { label: 'Templates' },
-          { label: 'Custom fields' },
-          { label: 'Approval workflows' },
-          { label: 'Tagging rules' },
-        ],
-        [
-          { label: 'Tax rates' },
-          { label: 'Currencies' },
-          { label: 'Payment terms' },
-          { label: 'Payment methods' },
-          { label: 'Tags' },
-        ],
-      ],
+      panelSubmenu: settingsPanelSubmenu,
     },
   ],
 ]
+
+// Shared WMS nav items (reused across WMS scenarios).
+const barangKeluarNav: NavItem = {
+  name: 'Barang keluar', icon: 'sales',
+  panelSubmenu: [[
+    { label: 'Orders', count: 8 },
+    { label: 'Picking', count: 6 },
+    { label: 'Packing', count: 4 },
+    { label: 'Ready to ship', count: 2 },
+    { label: 'Delivery' },
+    { label: 'Voided orders' },
+  ]],
+}
+const barangMasukNav: NavItem = {
+  name: 'Barang masuk', icon: 'cart',
+  panelSubmenu: [[
+    { label: 'Receipt', count: 12 },
+    { label: 'Put-away', count: 3 },
+    { label: 'Completed', to: 'Inbound completed' },
+    { label: 'Canceled' },
+  ]],
+}
+const stockCountNav: NavItem[] = [
+  { name: 'Stock count', icon: 'table-view-list' },
+  { name: 'Cycle count', icon: 'chart-of-account' },
+  { name: 'Stock in/out', icon: 'fulfillment' },
+]
+
+// WMS Standalone nav — full WMS menu. Warehouses → existing index (/warehouses)
+// which supports add + view details; the rest fall back to the placeholder page.
+const wmsStandaloneNavGroups: NavItem[][] = [
+  [
+    { name: 'Home', icon: 'home' },
+    { name: 'Reports', icon: 'reports' },
+  ],
+  [
+    { name: 'Inventory', icon: 'products' },
+    { name: 'Warehouses', icon: 'warehouse' },
+  ],
+  [barangKeluarNav, barangMasukNav],
+  stockCountNav,
+  [
+    { name: 'Settings', icon: 'settings', panelSubmenu: wmsSettingsPanelSubmenu },
+  ],
+]
+
+// WMS Ops — trimmed menu: Home, Warehouses, the active warehouse's fulfillment
+// flows, and the stock-count group. No Reports / Inventory / Settings.
+// "Warehouses" opens the active assigned warehouse's detail directly; the
+// fulfillment group depends on what the active warehouse handles (out / in).
+const { activeWarehouse } = useWarehouseContext()
+const wmsOpsNavGroups = computed<NavItem[][]>(() => {
+  const flows = activeWarehouse.value?.flows ?? ['out']
+  const fulfillment: NavItem[] = []
+  if (flows.includes('out')) fulfillment.push(barangKeluarNav)
+  if (flows.includes('in')) fulfillment.push(barangMasukNav)
+  return [
+    [{ name: 'Home', icon: 'home' }],
+    [{ name: 'Warehouses', icon: 'warehouse', path: `/warehouses/${activeWarehouse.value?.id ?? 'wh-001'}` }],
+    fulfillment,
+    stockCountNav,
+  ]
+})
+
+// Active scenario drives which nav is shown. WMS Ops + Ops 2 share the trimmed
+// Ops menu; WMS Standalone uses the full WMS nav; ERP uses the ERP nav.
+const { activeScenario } = useScenario()
+const navGroups = computed<NavItem[][]>(() => {
+  if (activeScenario.value === 'WMS Ops' || activeScenario.value === 'WMS Ops 2') return wmsOpsNavGroups.value
+  if (activeScenario.value.startsWith('WMS')) return wmsStandaloneNavGroups
+  return erpNavGroups
+})
 
 // ─── Sync active state from the route ──────────────────────────────────────────
 //
@@ -377,35 +479,84 @@ const navGroups: NavItem[][] = [
 // ssr:false). Resolve the current page label back to its top-level nav item +
 // sub-item; first match wins (primary nav group is iterated first).
 
-function resolveActive(pageKey: string): { nav: string; sub: string | null } {
-  for (const group of navGroups) {
+// Resolve a page label back to its nav item + sub-item, and — when the match
+// lives inside a level-2 panel — the panel that should be open. Returning the
+// panel lets us restore it on refresh (otherwise the panel only ever opens via
+// a click handler, so a hard reload on a panel sub-page would lose it).
+function resolveActive(pageKey: string): {
+  nav: string
+  sub: string | null
+  panel: ActivePanel | null
+} {
+  for (const group of navGroups.value) {
     for (const item of group) {
-      if (item.name === pageKey) return { nav: item.name, sub: null }
+      // slug-based match so names with caps/slashes (e.g. 'Stock in/out') still
+      // resolve through the URL round-trip
+      if (labelToPath(item.name) === labelToPath(pageKey)) {
+        return { nav: item.name, sub: null, panel: null }
+      }
       for (const subGroup of item.submenu ?? []) {
         for (const sub of subGroup) {
-          if (sub.label === pageKey) return { nav: item.name, sub: sub.label }
+          if (sub.label === pageKey) return { nav: item.name, sub: sub.label, panel: null }
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
-              if (p.label === pageKey) return { nav: item.name, sub: p.label }
+              if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
+                return {
+                  nav: item.name,
+                  sub: p.label,
+                  // level-3 panel opened from a flyout sub-item (e.g. Products)
+                  panel: {
+                    title: sub.panelTitle ?? item.name,
+                    groups: sub.panelSubmenu!,
+                    parentNavName: item.name,
+                  },
+                }
+              }
             }
           }
         }
       }
       for (const pGroup of item.panelSubmenu ?? []) {
         for (const p of pGroup) {
-          if (p.label === pageKey) return { nav: item.name, sub: p.label }
+          if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
+            return {
+              nav: item.name,
+              sub: p.label,
+              // level-2 panel opened directly from the nav item (e.g. Settings, Reports)
+              panel: { title: item.name, groups: item.panelSubmenu!, parentNavName: item.name },
+            }
+          }
         }
       }
     }
   }
-  return { nav: 'Home', sub: null }
+  return { nav: 'Home', sub: null, panel: null }
 }
 
 watch(currentPageKey, (key) => {
-  const { nav, sub } = resolveActive(key)
+  const { nav, sub, panel } = resolveActive(key)
   activeItem.value = nav
   activePanelSubItem.value = sub
+  // Page title always mirrors the active menu name — the deepest active label
+  // (panel sub-item if any, otherwise the nav item).
+  setActiveMenuLabel(sub ?? nav)
+  // Keep the level-2 panel in sync with the URL so it survives a refresh.
+  if (panel) {
+    activePanel.value = panel
+    isPanelVisible.value = true
+    isExpanded.value = false
+  } else {
+    activePanel.value = null
+  }
 }, { immediate: true })
+
+// Switching scenario swaps the whole nav — close any open ERP panel/flyout and
+// collapse the rail so we don't show stale level-2/3 content from the old menu.
+watch(activeScenario, () => {
+  closePanel()
+  flyoutItem.value = null
+  isExpanded.value = false
+})
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
@@ -441,13 +592,14 @@ function handleNavClick(item: NavItem) {
       const firstItem = item.panelSubmenu[0][0]
       openPanel({ title: item.name, groups: item.panelSubmenu, parentNavName: item.name })
       activePanelSubItem.value = firstItem.label
-      navigate(firstItem.label)
+      navigate(firstItem.to ?? firstItem.label)
       activeItem.value = item.name
     }
   } else if (!item.submenu) {
     // Simple leaf nav item (e.g. Home, Expenses, Settings)
     activeItem.value = item.name
-    navigate(item.name)
+    if (item.path) router.push(item.path)
+    else navigate(item.name)
     closePanel()
   }
   // Items with submenu: flyout opens on hover, click does nothing
@@ -455,7 +607,7 @@ function handleNavClick(item: NavItem) {
 
 function handlePanelSubItemClick(sub: PanelSubItem) {
   activePanelSubItem.value = sub.label
-  navigate(sub.label)
+  navigate(sub.to ?? sub.label)
 }
 
 function handleFlyoutSubItemClick(sub: SubItem) {
@@ -468,7 +620,7 @@ function handleFlyoutSubItemClick(sub: SubItem) {
     const firstItem = sub.panelSubmenu[0][0]
     openPanel({ title: panelTitle, groups: sub.panelSubmenu, parentNavName: parentName })
     activePanelSubItem.value = firstItem.label
-    navigate(firstItem.label)
+    navigate(firstItem.to ?? firstItem.label)
     activeItem.value = parentName
   } else {
     // Regular level-2 item — navigate directly, close any open panel
@@ -699,6 +851,25 @@ function cancelClose() {
   height: var(--mp-sizes-4);
   flex-shrink: 0;
   filter: brightness(0) opacity(0.5);
+}
+
+/* Task-count indicator — right-aligned pill */
+.panel-item-count {
+  flex-shrink: 0;
+  min-width: var(--mp-sizes-5);
+  padding: 0 var(--mp-spacing-1\.5);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-pressed);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 24px);
+  color: var(--mp-text-secondary);
+  text-align: center;
+}
+
+.panel-item.active .panel-item-count {
+  background: var(--mp-background-brand, var(--mp-text-selected));
+  color: var(--mp-text-inverse, #fff);
 }
 
 /* Slide-in transition */

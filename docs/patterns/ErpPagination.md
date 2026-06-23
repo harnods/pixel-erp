@@ -91,6 +91,10 @@ user scrolls.
   default page (≤ ~10 rows, no scroll), there is **no border**.
   > Note: `overflow: hidden` on a flex child zeroes its min-height — give the panel
   > `flex-shrink: 0` so the flex-column stage doesn't collapse it.
+  > **The outer border is for VERTICAL internal scroll only.** A table that merely
+  > overflows **horizontally** (many/wide columns) uses a plain `overflow-x: auto`
+  > scroll container with **no outer border / radius** — same as `ErpTablePage`. Don't
+  > add the bordered panel just because the table scrolls sideways.
 - **Auto lazy-load (no button).** Scrolling near the bottom **auto-loads the next 10** —
   an **`IntersectionObserver`** watches a sentinel at the end of the loaded rows (`root` =
   the table scroll container, `rootMargin` bottom ~120px). No `Load more` button.

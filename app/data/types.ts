@@ -10,6 +10,9 @@ export type ContactType      = 'company' | 'individual'
 export type FulfillmentStatus = 'in transit' | 'direct' | 'delivered'
 export type BillingStatus     = 'unbilled' | 'invoiced'
 
+// WMS
+export type WarehouseStatus = 'active' | 'archived'
+
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
 export interface Customer {
@@ -108,6 +111,25 @@ export interface SalesQuote {
   status: SalesQuoteStatus
   total: number                           // quote total IDR
   tags?: string[]
+}
+
+export interface WarehousePIC {
+  id: string
+  name: string
+}
+
+export interface Warehouse {
+  id: string
+  name: string
+  code: string
+  skuTotal: number
+  pics: WarehousePIC[]
+  address: string
+  status: WarehouseStatus
+  hasTransactions: boolean
+  isDefault?: boolean
+  updatedAt: string       // ISO date string
+  updatedBy: string       // person name
 }
 
 export interface SalesDelivery {
