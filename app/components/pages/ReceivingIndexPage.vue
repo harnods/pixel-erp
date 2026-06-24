@@ -7,7 +7,7 @@ import {
   MpModalOverlay, MpModalCloseButton, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { receivingQueuePOs, type ReceivingPO, type ReceivingTask } from '~/data/receivingTasks'
+import { receivingQueuePOs, taskAgingDays, type ReceivingPO, type ReceivingTask } from '~/data/receivingTasks'
 import { warehouses } from '~/data/warehouses'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -84,16 +84,28 @@ function clearFilters() {
 // number of columns for colspans (Assignee hidden for Ops)
 const colCount = computed(() => (isScoped.value ? 7 : 8))
 
-// ─── Accordion expand state (default: all collapsed) ───────────────────────────
+// ─── Accordion expand state (default: all expanded) ────────────────────────────
 const expanded = reactive<Record<string, boolean>>({})
-function toggle(id: string) { expanded[id] = !expanded[id] }
-const isExpanded = (id: string) => !!expanded[id]
+// Undefined = not yet toggled → treated as open; only an explicit false collapses.
+const isExpanded = (id: string) => expanded[id] !== false
+function toggle(id: string) { expanded[id] = !isExpanded(id) }
 
 // ─── PO roll-ups ───────────────────────────────────────────────────────────────
 function poSkuTotal(po: ReceivingPO) { return po.tasks.reduce((n, t) => n + t.skuCount, 0) }
 function poPurchaseQty(po: ReceivingPO) { return po.tasks.reduce((n, t) => n + t.purchaseQty, 0) }
 function poReceivedQty(po: ReceivingPO) { return po.tasks.reduce((n, t) => n + t.receivedQty, 0) }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+function formatDate(iso?: string) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+}
+// Aging shows only when a task ran longer than a day.
+function aging(t: ReceivingTask) {
+  const d = taskAgingDays(t)
+  return d > 1 ? d : 0
+}
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 function viewDetails(_t: ReceivingTask) { /* task detail (scan/manual) TBD */ }
@@ -190,6 +202,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <col style="width: 120px" />
           <col style="width: 100px" />
           <col style="width: 130px" />
+          <col style="width: 180px" />
+          <col style="width: 230px" />
           <col style="width: 44px" />
         </colgroup>
         <thead>
@@ -201,6 +215,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <th class="rcvg-th rcvg-th--right">Purchase qty</th>
             <th class="rcvg-th rcvg-th--right">Received</th>
             <th class="rcvg-th">Status</th>
+            <th class="rcvg-th">Start date</th>
+            <th class="rcvg-th">End date</th>
             <th class="rcvg-th" />
           </tr>
         </thead>
@@ -217,6 +233,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <td class="rcvg-td">{{ poSkuTotal(po) }} SKUs</td>
               <td class="rcvg-td rcvg-td--right">{{ fmt(poPurchaseQty(po)) }}</td>
               <td class="rcvg-td rcvg-td--right">{{ fmt(poReceivedQty(po)) }}</td>
+              <td class="rcvg-td" />
+              <td class="rcvg-td" />
               <td class="rcvg-td" />
               <td class="rcvg-td" />
             </tr>
@@ -239,6 +257,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
                 <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
                 <td class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
+                <td class="rcvg-td">{{ formatDate(t.startDate) }}</td>
+                <td class="rcvg-td">
+                  <span class="rcvg-end">
+                    <span v-if="t.endDate">{{ formatDate(t.endDate) }}</span>
+                    <span v-else class="rcvg-end__ongoing">—</span>
+                    <span v-if="aging(t)" class="rcvg-aging">{{ aging(t) }} days</span>
+                  </span>
+                </td>
                 <td class="rcvg-td rcvg-td--actions">
                   <MpPopover :id="`rcvg-actions-${t.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                     <MpPopoverTrigger>
@@ -360,6 +386,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-td--right { text-align: right; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .rcvg-td--muted { color: var(--mp-text-secondary); }
 .rcvg-td--actions { text-align: right; padding-right: var(--mp-spacing-2); }
+
+/* End date cell — date (or "In progress") + aging badge when > 1 day */
+.rcvg-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.rcvg-end__ongoing { color: var(--mp-text-secondary); }
+.rcvg-aging {
+  display: inline-flex; align-items: center;
+  padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-warning-subtle, #fef3e6);
+  color: var(--mp-text-warning, #a86400);
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
+}
 
 /* PO group row — no hover state (it's just an expand/collapse header) */
 .rcvg-po-row { cursor: pointer; background: var(--mp-background-neutral); }
