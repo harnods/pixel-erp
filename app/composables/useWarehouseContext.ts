@@ -21,13 +21,14 @@ const SCENARIO_WAREHOUSES: Record<string, string[]> = {
  */
 type WarehouseFlow = "out" | "in";
 const WAREHOUSE_FLOWS: Record<string, WarehouseFlow[]> = {
-  "wh-001": ["out"], // Jakarta Pusat — outbound only
+  "wh-001": ["out", "in"], // Jakarta Pusat — full fulfillment (in + out)
   "wh-009": ["out", "in"], // Jakarta Timur — full fulfillment (in + out)
 };
 
 export interface AssignedWarehouse {
   id: string;
   name: string;
+  code: string;
   flows: WarehouseFlow[];
 }
 
@@ -38,11 +39,15 @@ export function useWarehouseContext() {
   const { activeScenario } = useScenario();
 
   const assignedWarehouses = computed<AssignedWarehouse[]>(() =>
-    (SCENARIO_WAREHOUSES[activeScenario.value] ?? []).map((id) => ({
-      id,
-      name: warehouses.find((w) => w.id === id)?.name ?? id,
-      flows: WAREHOUSE_FLOWS[id] ?? ["out"],
-    })),
+    (SCENARIO_WAREHOUSES[activeScenario.value] ?? []).map((id) => {
+      const w = warehouses.find((wh) => wh.id === id);
+      return {
+        id,
+        name: w?.name ?? id,
+        code: w?.code ?? "",
+        flows: WAREHOUSE_FLOWS[id] ?? ["out"],
+      };
+    }),
   );
 
   // The chosen warehouse if it belongs to the current scenario, otherwise the

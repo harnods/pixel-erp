@@ -89,6 +89,9 @@
 <script setup lang="ts">
 import toggleIconUrl from '~/assets/images/sidebar-toggle.svg?url'
 import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
+import { receiptCountsByStage } from '~/data/receipts'
+import { receivingOpenCount } from '~/data/receivingTasks'
+import { putAwayOpenCount } from '~/data/putAwayTasks'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -413,14 +416,19 @@ const barangKeluarNav: NavItem = {
     { label: 'Voided orders' },
   ]],
 }
-const barangMasukNav: NavItem = {
-  name: 'Barang masuk', icon: 'cart',
-  panelSubmenu: [[
-    { label: 'Receipt', count: 12 },
-    { label: 'Put-away', count: 3 },
-    { label: 'Completed', to: 'Inbound completed' },
-    { label: 'Canceled' },
-  ]],
+// Barang masuk nav — counts derive live from receipt data (warehouse-scoped),
+// so panel badges match what the table shows. Standalone adds Draft; Ops doesn't.
+function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean): NavItem {
+  const c = receiptCountsByStage(scopeIds)
+  const items: PanelSubItem[] = []
+  if (withDraft) items.push({ label: 'Draft' })
+  items.push({ label: 'On the way', count: c['On the way'] })
+  items.push({ label: 'Receiving', count: receivingOpenCount(scopeIds) || undefined })
+  items.push({ label: 'Put-away', count: putAwayOpenCount(scopeIds) || undefined })
+  items.push({ label: 'Partial reception', count: c['Partial reception'] })
+  items.push({ label: 'Completed', to: 'Inbound completed' })
+  items.push({ label: 'Canceled' })
+  return { name: 'Barang masuk', icon: 'cart', panelSubmenu: [items] }
 }
 const stockCountNav: NavItem[] = [
   { name: 'Stock count', icon: 'table-view-list' },
@@ -428,9 +436,11 @@ const stockCountNav: NavItem[] = [
   { name: 'Stock in/out', icon: 'fulfillment' },
 ]
 
-// WMS Standalone nav — full WMS menu. Warehouses → existing index (/warehouses)
-// which supports add + view details; the rest fall back to the placeholder page.
-const wmsStandaloneNavGroups: NavItem[][] = [
+const { activeWarehouse, assignedWarehouses } = useWarehouseContext()
+const assignedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.id))
+
+// WMS Standalone nav — full WMS menu (all warehouses). Warehouses → existing index.
+const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
     { name: 'Home', icon: 'home' },
     { name: 'Reports', icon: 'reports' },
@@ -439,23 +449,21 @@ const wmsStandaloneNavGroups: NavItem[][] = [
     { name: 'Inventory', icon: 'products' },
     { name: 'Warehouses', icon: 'warehouse' },
   ],
-  [barangKeluarNav, barangMasukNav],
+  [barangKeluarNav, barangMasukNavItem(undefined, true)],
   stockCountNav,
   [
     { name: 'Settings', icon: 'settings', panelSubmenu: wmsSettingsPanelSubmenu },
   ],
-]
+])
 
-// WMS Ops — trimmed menu: Home, Warehouses, the active warehouse's fulfillment
-// flows, and the stock-count group. No Reports / Inventory / Settings.
-// "Warehouses" opens the active assigned warehouse's detail directly; the
-// fulfillment group depends on what the active warehouse handles (out / in).
-const { activeWarehouse } = useWarehouseContext()
+// WMS Ops — trimmed menu scoped to the user's assigned warehouse(s). The
+// fulfillment group depends on what the active warehouse handles (out / in);
+// Barang masuk counts are scoped to the assigned warehouses.
 const wmsOpsNavGroups = computed<NavItem[][]>(() => {
   const flows = activeWarehouse.value?.flows ?? ['out']
   const fulfillment: NavItem[] = []
   if (flows.includes('out')) fulfillment.push(barangKeluarNav)
-  if (flows.includes('in')) fulfillment.push(barangMasukNav)
+  if (flows.includes('in')) fulfillment.push(barangMasukNavItem(assignedWarehouseIds.value, false))
   return [
     [{ name: 'Home', icon: 'home' }],
     [{ name: 'Warehouses', icon: 'warehouse', path: `/warehouses/${activeWarehouse.value?.id ?? 'wh-001'}` }],
@@ -469,7 +477,7 @@ const wmsOpsNavGroups = computed<NavItem[][]>(() => {
 const { activeScenario } = useScenario()
 const navGroups = computed<NavItem[][]>(() => {
   if (activeScenario.value === 'WMS Ops' || activeScenario.value === 'WMS Ops 2') return wmsOpsNavGroups.value
-  if (activeScenario.value.startsWith('WMS')) return wmsStandaloneNavGroups
+  if (activeScenario.value.startsWith('WMS')) return wmsStandaloneNavGroups.value
   return erpNavGroups
 })
 

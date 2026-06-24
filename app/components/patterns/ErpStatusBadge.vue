@@ -41,15 +41,19 @@ const statusConfig: Record<string, StatusConfig> = {
   success:    { type: 'completed',    label: 'Success'    },
   delivered:  { type: 'completed',    label: 'Delivered'  },
   invoiced:   { type: 'completed',    label: 'Invoiced'   },
+  received:   { type: 'completed',    label: 'Received'   },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
   pending:    { type: 'warning',      label: 'Pending'    },
   draft:      { type: 'warning',      label: 'Draft'      },
   'in transit':{ type: 'warning',     label: 'In transit' },
+  'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
+  receiving:  { type: 'warning',      label: 'Receiving'  },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
+  'in progress':{ type: 'warning',    label: 'In progress'},
 
   // ── critical — red ────────────────────────────────
   overdue:    { type: 'critical',     label: 'Overdue'    },
@@ -66,10 +70,14 @@ const statusConfig: Record<string, StatusConfig> = {
   archived:   { type: 'announcement', label: 'Archived'   },
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   'not started':{ type: 'announcement', label: 'Not started' },
+  'to do':    { type: 'announcement', label: 'To do'      },
+  'on the way':{ type: 'announcement', label: 'On the way' },
   direct:     { type: 'announcement', label: 'Direct'     },
 
   // ── information — blue ────────────────────────────
   'partially processed': { type: 'information', label: 'Partially processed' },
+  'partially received': { type: 'information', label: 'Partially received' },
+  'partial reception': { type: 'information', label: 'Partial reception' },
   new:        { type: 'information',  label: 'New'        },
   beta:       { type: 'information',  label: 'Beta'       },
   vip:        { type: 'information',  label: 'VIP'        },
