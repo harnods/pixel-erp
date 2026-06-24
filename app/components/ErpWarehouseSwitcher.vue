@@ -8,7 +8,10 @@
   <!-- Single warehouse (Ops 1): static label, not switchable -->
   <div v-if="!hasWarehouseSwitcher" class="wh-switch-static">
     <span class="wh-switch-sep" aria-hidden="true" />
-    <span class="wh-switch-name">{{ activeWarehouse?.name }}</span>
+    <span class="wh-switch-label">
+      <span class="wh-switch-name">{{ activeWarehouse?.name }}</span>
+      <span class="wh-switch-code">{{ activeWarehouse?.code }}</span>
+    </span>
   </div>
 
   <!-- Multiple warehouses (Ops 2): switcher dropdown -->
@@ -24,7 +27,10 @@
     <MpPopoverTrigger>
       <button type="button" class="wh-switch-trigger" aria-label="Switch warehouse">
         <span class="wh-switch-sep" aria-hidden="true" />
-        <span class="wh-switch-name">{{ activeWarehouse?.name }}</span>
+        <span class="wh-switch-label">
+          <span class="wh-switch-name">{{ activeWarehouse?.name }}</span>
+          <span class="wh-switch-code">{{ activeWarehouse?.code }}</span>
+        </span>
         <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
@@ -39,7 +45,10 @@
           class="wh-switch-item"
           @click="select(w.id, onClosePopover)"
         >
-          <span class="wh-switch-item-name">{{ w.name }}</span>
+          <span class="wh-switch-item-label">
+            <span class="wh-switch-item-name">{{ w.name }}</span>
+            <span class="wh-switch-item-code">{{ w.code }}</span>
+          </span>
           <MpIcon
             v-if="w.id === activeWarehouse?.id"
             name="check"
@@ -72,7 +81,7 @@ function select(id: string, closePopover: () => void) {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
-  height: var(--mp-spacing-8, 32px);
+  height: var(--mp-spacing-12, 48px);
   padding: 0 var(--mp-spacing-2);
 }
 
@@ -81,7 +90,7 @@ function select(id: string, closePopover: () => void) {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
-  height: var(--mp-spacing-8, 32px);
+  height: var(--mp-spacing-12, 48px);
   padding: 0 var(--mp-spacing-2);
   background: transparent;
   border: 0;
@@ -101,6 +110,11 @@ function select(id: string, closePopover: () => void) {
   background: rgba(255, 255, 255, 0.24);
   margin-right: var(--mp-spacing-1);
 }
+.wh-switch-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
 .wh-switch-name {
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
@@ -108,9 +122,18 @@ function select(id: string, closePopover: () => void) {
   color: var(--mp-colors-text-inverse, #fff);
   white-space: nowrap;
 }
+.wh-switch-code {
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+  color: var(--mp-colors-text-inverse, #fff);
+  opacity: 0.7;
+  white-space: nowrap;
+}
 
 /* ── Dropdown (portalled → root box is global) ─────────────── */
 :global(.mp-popover.wh-switch-menu) {
+  /* Above the header (sticky 1100) and the table's sticky cells/headers */
+  z-index: var(--mp-z-indices-popover, 1600);
   min-width: 240px;
   padding: 0 0 var(--mp-spacing-2);
   background: var(--mp-colors-background-stage, #fff);
@@ -148,9 +171,19 @@ function select(id: string, closePopover: () => void) {
 .wh-switch-item:hover {
   background: var(--mp-colors-background-neutral-hovered, #f0f2f2);
 }
+.wh-switch-item-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
 .wh-switch-item-name {
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-colors-text-default, #080d0e);
+}
+.wh-switch-item-code {
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+  color: var(--mp-colors-text-secondary, #3a4749);
 }
 </style>

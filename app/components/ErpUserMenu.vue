@@ -209,6 +209,8 @@ function selectScenario(scenario: Scenario, closePopover: () => void) {
    authored elements in our template and keep the scope id, so they stay
    scoped. (use-portal + is-unstyled = we own all chrome here.) */
 :global(.mp-popover.user-menu) {
+  /* Above the header (sticky 1100) and the table's sticky cells/headers */
+  z-index: var(--mp-z-indices-popover, 1600);
   width: 277px;
   padding: var(--mp-spacing-2) 0 0;
   background: var(--mp-colors-background-stage, #ffffff);

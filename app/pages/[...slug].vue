@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { defineAsyncComponent, type Component, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { receiptCountsByStage } from '~/data/receipts'
+import { receivingOpenCount } from '~/data/receivingTasks'
+import { putAwayOpenCount } from '~/data/putAwayTasks'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
@@ -18,6 +21,13 @@ const pageRegistry: Record<string, Component> = {
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
+  'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
+  'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
+  'Put-away':          defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue')),
+  'Partial reception': defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue')),
+  'Completed':         defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
+  'Inbound completed': defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
+  'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
   'Company profile':   defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Playground':        defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
@@ -27,6 +37,12 @@ const ImportWarehousesPage = defineAsyncComponent(() => import('~/components/pag
 const NewWarehousePage = defineAsyncComponent(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
+const ReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue'))
+const ReceivingIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue'))
+const PutAwayIndexPage = defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue'))
+const PartialReceptionIndexPage = defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
+const CompletedReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue'))
+const CanceledReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -56,11 +72,52 @@ const currentComponent = computed<Component>(
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
   'Barang keluar': ['Orders', 'Picking', 'Packing', 'Ready to ship', 'Delivery', 'Voided orders'],
-  'Barang masuk': ['Receipts', 'Put-away', 'Completed', 'Canceled'],
+  'Barang masuk': ['On the way', 'Receiving', 'Put-away', 'Partial reception', 'Completed', 'Canceled'],
 }
+// Per-tab count badges — derived live from the data so they match the table.
+// Only the active stages get a badge (terminal stages don't).
+const BADGE_STAGES = ['On the way', 'Receiving', 'Partial reception']
+const currentTabCounts = computed<Record<string, number>>(() => {
+  if (currentPageKey.value !== 'Barang masuk') return {}
+  const counts = receiptCountsByStage() // ERP = all warehouses
+  const out: Record<string, number> = {}
+  for (const s of BADGE_STAGES) if (counts[s]) out[s] = counts[s]
+  // Receiving / Put-away are task-based (a different dataset than the PO stages)
+  const recv = receivingOpenCount()
+  if (recv) out['Receiving'] = recv
+  const putaway = putAwayOpenCount()
+  if (putaway) out['Put-away'] = putaway
+  return out
+})
+
 const currentTabs = computed<string[]>(() => pageTabs[currentPageKey.value] ?? [])
 const activeTab = ref('')
 watch(currentPageKey, () => { activeTab.value = currentTabs.value[0] ?? '' }, { immediate: true })
+
+// Real component to render in the stage for a given page + tab (else placeholder).
+const tabComponents: Record<string, Record<string, Component>> = {
+  'Barang masuk': {
+    'On the way': ReceiptIndexPage,
+    'Receiving': ReceivingIndexPage,
+    'Put-away': PutAwayIndexPage,
+    'Partial reception': PartialReceptionIndexPage,
+    'Completed': CompletedReceiptIndexPage,
+    'Canceled': CanceledReceiptIndexPage,
+  },
+}
+const activeTabComponent = computed<Component | null>(
+  () => tabComponents[currentPageKey.value]?.[activeTab.value] ?? null,
+)
+
+// New PO / Import buttons — POs are manually created from the WMS module (→ Draft),
+// so these show only in WMS Standalone, on Barang masuk pages.
+const { activeScenario } = useScenario()
+const BARANG_MASUK_PAGES = [
+  'Draft', 'On the way', 'Receiving', 'Partial reception', 'Inbound completed', 'Canceled',
+]
+const showNewPurchaseOrder = computed(() =>
+  activeScenario.value === 'WMS Standalone' && BARANG_MASUK_PAGES.includes(currentPageKey.value),
+)
 
 // ── Airene panel open/close ───────────────────────────────────────────────
 const aireneOpen = ref(false)
@@ -512,6 +569,17 @@ function startResize(e: MouseEvent) {
             New purchase invoice
           </button>
         </div>
+        <div v-else-if="showNewPurchaseOrder" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New purchase order
+          </button>
+        </div>
       </div>
 
       <!-- Status tabs (below the title, outside the stage) -->
@@ -526,11 +594,13 @@ function startResize(e: MouseEvent) {
           @click="activeTab = tab"
         >
           {{ tab }}
+          <span v-if="currentTabCounts[tab] != null" class="page-tab-count">{{ currentTabCounts[tab] }}</span>
         </button>
       </div>
 
       <div class="stage">
-        <div v-if="currentTabs.length" class="tab-stage-placeholder">
+        <component v-if="activeTabComponent" :is="activeTabComponent" />
+        <div v-else-if="currentTabs.length" class="tab-stage-placeholder">
           <p class="tab-stage-placeholder__title">{{ activeTab }}</p>
           <p class="tab-stage-placeholder__desc">Page content goes here.</p>
         </div>
@@ -983,6 +1053,9 @@ function startResize(e: MouseEvent) {
 
 .page-tab {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
   background: none;
   border: none;
   cursor: pointer;
@@ -993,6 +1066,23 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-secondary);
   white-space: nowrap;
   transition: color 100ms;
+}
+
+/* Count badge on a tab */
+.page-tab-count {
+  min-width: var(--mp-sizes-5);
+  padding: 0 var(--mp-spacing-1\.5);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-pressed);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 24px);
+  color: var(--mp-text-secondary);
+  text-align: center;
+}
+.page-tab--active .page-tab-count {
+  background: var(--mp-background-brand, var(--mp-text-selected));
+  color: var(--mp-text-inverse, #fff);
 }
 
 .page-tab:hover {
