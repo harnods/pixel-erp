@@ -7,6 +7,7 @@ import {
   MpModalOverlay, MpModalCloseButton, MpInput, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import PurchaseReceivingModal from '~/components/PurchaseReceivingModal.vue'
 import { useTableState } from '~/composables/useTableState'
 import { receiptsForStage, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
@@ -161,7 +162,11 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 function viewDetails(_row: Receipt) { /* detail page TBD */ }
-function purchaseReceiving(_row: Receipt) { /* receiving flow TBD */ }
+
+const prModalOpen  = ref(false)
+const receiptForPR = ref<Receipt | null>(null)
+function purchaseReceiving(row: Receipt) { receiptForPR.value = row; prModalOpen.value = true }
+function closePRModal() { prModalOpen.value = false; receiptForPR.value = null }
 
 // Bulk actions (stubs) — clear the selection after acting.
 function bulkPurchaseReceiving(deselectAll: () => void) { deselectAll() }
@@ -471,6 +476,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <!-- ── Purchase receiving modal ── -->
+  <PurchaseReceivingModal
+    :receipt="receiptForPR"
+    :open="prModalOpen"
+    @close="closePRModal"
+    @created="closePRModal"
+  />
 
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="rcv-demo-fab" is-close-on-select use-portal placement="top-end">

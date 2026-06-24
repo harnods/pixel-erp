@@ -6,39 +6,50 @@ export interface ReceiptLineItem {
   productDesc: string
   sku: string
   colorHue: number
+  image: string
   purchaseQty: number
   storageLocation: string
 }
 
+// Wholesale coffee beans + machines & equipment catalog.
 const CATALOG = [
-  { id: 'p01', name: 'Smartphone Case iPhone 15 Pro', desc: 'TPU + Polycarbonate, MagSafe compatible', sku: 'ACC-PH-001', hue: 210 },
-  { id: 'p02', name: 'Wireless Earbuds Pro X', desc: 'ANC, IPX5, 30h battery, USB-C', sku: 'ACC-AU-002', hue: 145 },
-  { id: 'p03', name: 'USB-C Cable 2m Braided', desc: '100W fast charge, PD 3.0', sku: 'ACC-CB-003', hue: 30 },
-  { id: 'p04', name: 'Power Bank 20000mAh', desc: '65W PD, dual USB-A + USB-C output', sku: 'ACC-PB-004', hue: 180 },
-  { id: 'p05', name: 'Tempered Glass Screen Protector', desc: '9H hardness, 2.5D edge, anti-glare', sku: 'ACC-SP-005', hue: 260 },
-  { id: 'p06', name: "Running Shoes Men's (Size 42)", desc: 'EVA midsole, mesh upper, reflective strip', sku: 'APL-SH-006', hue: 15 },
-  { id: 'p07', name: 'Cotton T-Shirt Basic White (M)', desc: '180gsm combed cotton, unisex fit', sku: 'APL-TS-007', hue: 200 },
-  { id: 'p08', name: 'Cargo Pants Slim Fit (W32)', desc: '4-pocket, stretch cotton blend', sku: 'APL-PT-008', hue: 100 },
-  { id: 'p09', name: 'Stainless Water Bottle 750ml', desc: 'Vacuum insulated, 24h cold / 12h hot', sku: 'SPT-BT-009', hue: 170 },
-  { id: 'p10', name: 'Instant Coffee 3-in-1 Box', desc: '20 sachets × 25g, medium roast blend', sku: 'FNB-CF-010', hue: 25 },
-  { id: 'p11', name: 'Mineral Water 600ml (24-pack)', desc: 'TDS <100ppm, sealed carton', sku: 'FNB-WR-011', hue: 195 },
-  { id: 'p12', name: 'Hand Sanitizer Gel 500ml', desc: '70% ethanol, aloe vera extract', sku: 'HBC-HS-012', hue: 135 },
-  { id: 'p13', name: 'KN95 Face Mask (50pcs/box)', desc: '5-layer filtration, earloop, foldable', sku: 'HBC-FM-013', hue: 50 },
-  { id: 'p14', name: 'A4 Copy Paper 80gsm Rim', desc: '500 sheets, brightness 104%, acid-free', sku: 'OFF-PP-014', hue: 55 },
-  { id: 'p15', name: 'Ballpoint Pen Black Box (12pcs)', desc: '0.7mm tip, oil-based ink, cap-type', sku: 'OFF-PN-015', hue: 230 },
-  { id: 'p16', name: 'Wireless Optical Mouse 2.4GHz', desc: 'USB nano receiver, 3-level DPI, silent', sku: 'ACC-MS-016', hue: 280 },
-  { id: 'p17', name: 'Mechanical Keyboard TKL RGB', desc: 'Brown switches, RGB backlit, USB-C', sku: 'ACC-KB-017', hue: 320 },
-  { id: 'p18', name: 'Monitor Stand Adjustable', desc: 'Height 10–15cm, max load 8kg, cable slot', sku: 'FRN-MS-018', hue: 40 },
-  { id: 'p19', name: 'Storage Box Foldable 60L', desc: 'PP body + bamboo lid, 50kg rated load', sku: 'FRN-SB-019', hue: 80 },
-  { id: 'p20', name: 'Vitamin C 500mg Effervescent (100s)', desc: 'Orange flavour, dissolves in 200ml water', sku: 'HBC-VC-020', hue: 35 },
-  { id: 'p21', name: 'Desk Organizer 5-Slot Bamboo', desc: 'Natural bamboo fibre, non-slip base', sku: 'OFF-DO-021', hue: 70 },
-  { id: 'p22', name: 'LED Desk Lamp with USB Charging', desc: '3 colour temps, touch dimmer, USB-A port', sku: 'OFF-LM-022', hue: 45 },
-  { id: 'p23', name: 'Notebook A5 Hardcover Dot Grid', desc: '192 pages, 80gsm, lay-flat binding', sku: 'OFF-NB-023', hue: 240 },
-  { id: 'p24', name: 'Canvas Tote Bag Natural', desc: '10oz cotton canvas, 38×40cm, gusset', sku: 'APL-TB-024', hue: 60 },
-  { id: 'p25', name: 'Protein Bar Choc Almond (12pk)', desc: '25g protein/bar, 45g bar, no added sugar', sku: 'FNB-PB-025', hue: 20 },
+  // ── Green (raw) coffee beans, by origin — sold by the sack ──
+  { id: 'p01', name: 'Green Beans Arabica Gayo Grade 1', desc: 'Aceh highlands, fully washed, 60kg jute sack', sku: 'GRN-ARB-GYO', hue: 25,  kw: 'coffee,beans,green' },
+  { id: 'p02', name: 'Green Beans Robusta Lampung', desc: 'Sumatra, natural process, screen 16, 60kg sack', sku: 'GRN-ROB-LMP', hue: 30,  kw: 'coffee,beans' },
+  { id: 'p03', name: 'Green Beans Arabica Toraja Sapan', desc: 'Sulawesi 1,600 masl, semi-washed, 60kg sack', sku: 'GRN-ARB-TRJ', hue: 20,  kw: 'coffee,beans,green' },
+  { id: 'p04', name: 'Green Beans Arabica Kintamani', desc: 'Bali, honey process, citrus notes, 60kg sack', sku: 'GRN-ARB-KTM', hue: 35,  kw: 'coffee,beans' },
+  { id: 'p05', name: 'Green Beans Arabica Java Preanger', desc: 'West Java, fully washed, 60kg sack', sku: 'GRN-ARB-JVP', hue: 28,  kw: 'coffee,beans,green' },
+  { id: 'p06', name: 'Green Beans Arabica Mandheling', desc: 'North Sumatra, wet-hulled, earthy body, 60kg sack', sku: 'GRN-ARB-MDH', hue: 22,  kw: 'coffee,beans' },
+  { id: 'p07', name: 'Green Beans Arabica Flores Bajawa', desc: 'Volcanic soil, chocolate notes, 60kg sack', sku: 'GRN-ARB-FLB', hue: 18,  kw: 'coffee,beans,green' },
+  { id: 'p08', name: 'Green Beans Robusta Temanggung', desc: 'Central Java, dry process, 60kg sack', sku: 'GRN-ROB-TMG', hue: 33,  kw: 'coffee,beans' },
+
+  // ── Roasted beans — wholesale bags ──
+  { id: 'p09', name: 'Roasted Beans House Blend Medium', desc: 'Whole bean, 1kg foil bag with valve', sku: 'RST-HSE-1K',  hue: 26,  kw: 'roasted,coffee' },
+  { id: 'p10', name: 'Roasted Beans Espresso Blend Dark', desc: 'Whole bean, oily finish, 1kg valve bag', sku: 'RST-ESP-1K',  hue: 19,  kw: 'espresso,coffee' },
+  { id: 'p11', name: 'Roasted Beans Single Origin Gayo', desc: 'Light-medium roast, whole bean, 1kg', sku: 'RST-GYO-1K',  hue: 31,  kw: 'roasted,coffee,beans' },
+  { id: 'p12', name: 'Roasted Beans Decaf Swiss Water', desc: 'CO₂-free decaf, whole bean, 500g bag', sku: 'RST-DEC-500', hue: 24,  kw: 'coffee,beans' },
+
+  // ── Espresso machines ──
+  { id: 'p13', name: 'Espresso Machine Dual Boiler 2-Group', desc: 'Commercial, stainless body, PID control', sku: 'MCH-ESP-2GR', hue: 200, kw: 'espresso,machine' },
+  { id: 'p14', name: 'Espresso Machine Single Group Compact', desc: 'Café counter, 1 group, 5L boiler', sku: 'MCH-ESP-1GR', hue: 205, kw: 'espresso,machine' },
+  { id: 'p15', name: 'Espresso Machine 3-Group Volumetric', desc: 'High-volume, auto dosing, twin pump', sku: 'MCH-ESP-3GR', hue: 210, kw: 'espresso,machine' },
+
+  // ── Grinders ──
+  { id: 'p16', name: 'Coffee Grinder On-Demand 64mm', desc: 'Flat burr, digital timer, doserless', sku: 'GRD-OD-64',   hue: 215, kw: 'coffee,grinder' },
+  { id: 'p17', name: 'Coffee Grinder Conical 83mm', desc: 'Heavy-duty conical burr, low retention', sku: 'GRD-CN-83',   hue: 220, kw: 'coffee,grinder' },
+  { id: 'p18', name: 'Coffee Grinder Filter Bulk 98mm', desc: 'Batch brew, 2kg hopper, flat burr', sku: 'GRD-FL-98',   hue: 225, kw: 'coffee,grinder' },
+
+  // ── Brewing equipment & accessories ──
+  { id: 'p19', name: 'Batch Brewer 2.5L Thermal', desc: 'Dual warmer, programmable, pour-over mode', sku: 'EQP-BRW-25',  hue: 190, kw: 'coffee,brewer' },
+  { id: 'p20', name: 'Milk Frothing Pitcher 600ml', desc: 'Stainless steel, sharp spout, latte art', sku: 'ACC-PCH-600', hue: 185, kw: 'milk,pitcher,coffee' },
+  { id: 'p21', name: 'Tamper 58mm Flat Base', desc: 'Anodized aluminium handle, calibrated', sku: 'ACC-TMP-58',  hue: 240, kw: 'coffee,tamper' },
+  { id: 'p22', name: 'Bottomless Portafilter 58mm', desc: 'Triple spout removed, chrome finish', sku: 'ACC-PRT-58',  hue: 245, kw: 'portafilter,espresso' },
+  { id: 'p23', name: 'Coffee Scale 2kg / 0.1g', desc: 'Built-in brew timer, USB-C rechargeable', sku: 'ACC-SCL-2K',  hue: 250, kw: 'coffee,scale' },
+  { id: 'p24', name: 'Paper Filter V60 02 (100 pcs)', desc: 'Natural unbleached, cone shape', sku: 'ACC-FLT-V60', hue: 50,  kw: 'coffee,filter' },
+  { id: 'p25', name: 'Knock Box Drawer Stainless', desc: '2.4L capacity, rubber knock bar', sku: 'ACC-KNB-24',  hue: 235, kw: 'coffee,knockbox' },
 ] as const
 
-const BINS = [
+export const BINS = [
   'A-01-01', 'A-01-02', 'A-02-01', 'A-02-03', 'A-03-02',
   'B-01-01', 'B-01-04', 'B-02-02', 'B-03-01', 'B-03-03',
   'C-01-02', 'C-02-01', 'C-02-04', 'C-03-03', 'C-04-01',
@@ -80,6 +91,8 @@ export function lineItemsForReceipt(receipt: Receipt): ReceiptLineItem[] {
     productDesc: p.desc,
     sku: p.sku,
     colorHue: p.hue,
+    // Deterministic, topical photo per SKU (coffee beans / machines / gear).
+    image: `https://loremflickr.com/96/96/${p.kw}?lock=${(seed + i * 13) % 1000}`,
     purchaseQty: qtys[i],
     storageLocation: BINS[(seed + i * 5) % BINS.length],
   }))
