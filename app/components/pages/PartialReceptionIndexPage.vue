@@ -206,8 +206,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '190px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="createPurchaseReceiving(row as unknown as Receipt)">Purchase receiving</MpPopoverListItem>
             <MpPopoverListItem @click="viewDetails(row as unknown as Receipt)">View details</MpPopoverListItem>
+            <MpPopoverListItem @click="createPurchaseReceiving(row as unknown as Receipt)">Purchase receiving</MpPopoverListItem>
             <MpPopoverListItem
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCloseModal(row as unknown as Receipt)"
