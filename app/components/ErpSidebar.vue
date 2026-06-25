@@ -434,6 +434,8 @@ const { activeWarehouse, assignedWarehouses } = useWarehouseContext()
 const assignedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.id))
 
 // WMS Standalone nav — full WMS menu (all warehouses). Warehouses → existing index.
+// Barang Masuk and Barang Keluar navigate directly (no level-2 panel); tabs inside
+// the page handle Receipts / Receiving / Put-away and Orders / Picking / etc.
 const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
     { name: 'Home', icon: 'home' },
@@ -443,7 +445,10 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Inventory', icon: 'products' },
     { name: 'Warehouses', icon: 'warehouse' },
   ],
-  [barangKeluarNav, barangMasukNavItem(undefined, true)],
+  [
+    { name: 'Barang keluar', icon: 'sales' },
+    { name: 'Barang masuk', icon: 'cart' },
+  ],
   stockCountNav,
   [
     { name: 'Settings', icon: 'settings', panelSubmenu: wmsSettingsPanelSubmenu },

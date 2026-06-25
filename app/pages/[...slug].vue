@@ -140,7 +140,7 @@ const activeTabComponent = computed<Component | null>(
 // so these show only in WMS Standalone, on Barang masuk pages.
 const { activeScenario } = useScenario()
 const BARANG_MASUK_PAGES = [
-  'Draft', 'On the way', 'Receiving', 'Partial reception', 'Inbound completed', 'Canceled',
+  'Barang masuk', 'Draft', 'On the way', 'Receiving', 'Partial reception', 'Inbound completed', 'Canceled',
 ]
 const showNewPurchaseOrder = computed(() =>
   activeScenario.value === 'WMS Standalone' && BARANG_MASUK_PAGES.includes(currentPageKey.value),
