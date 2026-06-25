@@ -49,6 +49,7 @@ const CompletedReceiptIndexPage = defineAsyncComponent(() => import('~/component
 const CanceledReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue'))
 const ReceivingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceivingTaskDetailsPage.vue'))
 const CreatePurchaseReceivingPage = defineAsyncComponent(() => import('~/components/pages/CreatePurchaseReceivingPage.vue'))
+const CreatePutAwayPage = defineAsyncComponent(() => import('~/components/pages/CreatePutAwayPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -63,6 +64,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // so the level-2 sidebar panel stays open with "Receiving" highlighted.
   if (segs.length >= 2 && segs[0] === 'receiving') {
     return { component: ReceivingTaskDetailsPage, id: segs[1] }
+  }
+  // /barang-masuk/put-away/create → create put-away task form
+  if (segs.length >= 3 && segs[0] === 'barang-masuk' && segs[1] === 'put-away' && segs[2] === 'create') {
+    return { component: CreatePutAwayPage, id: 'create' }
   }
   // /barang-masuk/:id/receive → create purchase receiving (full page, not a modal)
   if (segs.length >= 3 && segs[0] === 'barang-masuk' && segs[2] === 'receive') {
@@ -538,15 +543,25 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Barang masuk'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
-            Import
-          </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            New receipt
-          </button>
+          <template v-if="activeTab === 'Put-away'">
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/barang-masuk/put-away/create')">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Create put-away
+            </button>
+          </template>
+          <template v-else>
+            <button class="btn-enterprise btn-enterprise--secondary">
+              Import
+            </button>
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              New receipt
+            </button>
+          </template>
         </div>
         <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">
           <!-- Import button + dropdown -->
