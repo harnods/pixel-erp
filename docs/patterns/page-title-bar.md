@@ -61,6 +61,9 @@ A page title bar is a **flex row**: the title block on the **left**, actions on 
   centred, with **no gap between them** (breadcrumb sits directly above the H1).
 - **Breadcrumb**: a small link back to the index page (e.g. `Sales orders`),
   `var(--mp-text-link)`, 12px.
+  > **CSS requirement**: always set `align-self: flex-start` on the breadcrumb element.
+  > Without it the button stretches to the full width of its flex-column container and
+  > can appear indented relative to the title text below it.
 - **Title**: `[Entity] #[number]` (the standard H1).
 - **Inline status** right of the title: an [`ErpStatusBadge`](ErpStatusBadge.md)
   (`for="additionalInformation"`, `size="md"`).
@@ -124,9 +127,10 @@ Status → colour mapping lives in [ErpStatusBadge.md](ErpStatusBadge.md).
 - [ ] Bar is **72px**, background `neutral-subtle`, padding `0 24px`, contents centred.
 - [ ] Title = H1 (24px semibold) from `useNavigation()`.
 - [ ] **Index**: right-side primary `+ New [entity]` + optional secondary.
-- [ ] **Detail**: breadcrumb (no gap above H1) + title + status badge
-      (`for="additionalInformation"`, `size="md"`) + jump-to chevron (304px popover, 280px search:
-      search + 5 recent records).
+- [ ] **Detail**: breadcrumb + title + status badge + jump chevron. Specifically:
+  - Breadcrumb: `align-self: flex-start` **required** — prevents button from stretching wide and looking indented.
+  - Status badge: **`badge-for="additionalInformation"` + `size="md"`** — never `tableStatus` (that's for table rows only).
+  - Jump popover: 304px wide, 280px search input, shows 5 recent records.
 - [ ] **If the module has an approval flow** (ASK): two icon buttons — `task-todo`
       (tooltip `Approval log`) + `comment` (tooltip `Comments`), each in an `MpTooltip`.
       No approval → omit.

@@ -26,25 +26,22 @@ function setDemoState(s: DemoState) {
   if (s === 'data') { loading.value = true; setTimeout(() => { loading.value = false }, 1200) }
 }
 
-// ─── Scenario scoping (Ops = assigned warehouse(s); Assignee hidden) ────────────
+// ─── Scenario scoping ──────────────────────────────────────────────────────────
 const { assignedWarehouses } = useWarehouseContext()
 const scopedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.id))
 const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
-// ─── Columns (Assignee hidden when scoped to the user's own warehouse) ──────────
-const columns = computed<TableColumn[]>(() => [
-  { key: 'taskNo',        label: 'Number',           width: '180px' },
-  { key: 'purchaseNo',    label: 'Purchase no.',     width: '200px' },
-  { key: 'warehouseName', label: 'Warehouse',        width: '170px' },
-  ...(!isScoped.value ? [{ key: 'assignee', label: 'Assignee', width: '150px' } as TableColumn] : []),
-  { key: 'itemQty',       label: 'Items',            width: '90px', align: 'right' as const },
-  { key: 'destination',   label: 'Storage location', width: '150px' },
-  { key: 'status',        label: 'Status',           width: '120px' },
-])
+// ─── Columns ───────────────────────────────────────────────────────────────────
+const columns: TableColumn[] = [
+  { key: 'taskNo',            label: 'Number',            width: '180px' },
+  { key: 'receivingTaskNos',  label: 'Receiving tasks',   width: '240px' },
+  { key: 'warehouseName',     label: 'Warehouse',         width: '180px' },
+  { key: 'itemQty',           label: 'Items',             width: '90px',  align: 'right' },
+  { key: 'status',            label: 'Status',            width: '160px' },
+]
 
-// ─── Filters ───────────────────────────────────────────────────────────────────
+// ─── Filters — max 2 quick filters: Status + Warehouse (hidden when scoped) ───
 const warehouseFilter = ref('')
-const assigneeFilter = ref('')
 const statusFilter = ref('')
 
 const baseTasks = computed<PutAwayTask[]>(() =>
@@ -52,7 +49,6 @@ const baseTasks = computed<PutAwayTask[]>(() =>
     ? putAwayTasksFor(isScoped.value ? scopedWarehouseIds.value : undefined)
     : [],
 )
-const rows = computed<PutAwayTask[]>(() => baseTasks.value)
 
 const warehouseOptions = computed(() => {
   const src = isScoped.value
@@ -60,47 +56,48 @@ const warehouseOptions = computed(() => {
     : warehouses.filter(w => !w.isDefault && w.status === 'active')
   return src.map(w => ({ label: w.name, value: w.id }))
 })
-const assigneeOptions = computed(() =>
-  [...new Set(baseTasks.value.map(t => t.assignee))].map(a => ({ label: a, value: a })),
-)
 const statusOptions = [
-  { label: 'Open', value: 'open' },
+  { label: 'Open',        value: 'open' },
   { label: 'In progress', value: 'in progress' },
-  { label: 'Completed', value: 'completed' },
+  { label: 'Completed',   value: 'completed' },
 ]
 const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
-const assigneeLabel = computed(() => assigneeOptions.value.find(o => o.value === assigneeFilter.value)?.label ?? '')
-const statusLabel = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
+const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
 
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort,
-} = useTableState<PutAwayTask>(rows, {
+} = useTableState<PutAwayTask>(baseTasks, {
   perPage: 25,
   filterFn: (row, s) => {
     const matchesSearch = !s
       || row.taskNo.toLowerCase().includes(s)
-      || row.purchaseNo.toLowerCase().includes(s)
+      || row.receivingTaskNos.some(n => n.toLowerCase().includes(s))
       || row.warehouseName.toLowerCase().includes(s)
-      || row.assignee.toLowerCase().includes(s)
     const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
-    const matchesAssignee = !assigneeFilter.value || row.assignee === assigneeFilter.value
-    const matchesStatus = !statusFilter.value || row.status === statusFilter.value
-    return matchesSearch && matchesWarehouse && matchesAssignee && matchesStatus
+    const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
+    return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
-watch([warehouseFilter, assigneeFilter, statusFilter], () => setPage(1))
+watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(
-  () => !!search.value || !!warehouseFilter.value || !!assigneeFilter.value || !!statusFilter.value,
-)
-function clearFilters() { search.value = ''; warehouseFilter.value = ''; assigneeFilter.value = ''; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!statusFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = ''; statusFilter.value = '' }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
-// ─── Row actions ─────────────────────────────────────────────────────────────
-function viewDetails(_row: PutAwayTask) { /* put-away detail (scan/manual) TBD */ }
+// ─── Receiving tasks expand/collapse ──────────────────────────────────────────
+const expandedRows = ref(new Set<string>())
+function toggleExpand(id: string) {
+  const s = new Set(expandedRows.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  expandedRows.value = s
+}
+
+// ─── Row actions ──────────────────────────────────────────────────────────────
+const router = useRouter()
+function viewDetails(row: PutAwayTask) { router.push(`/put-away/${row.id}`) }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -116,6 +113,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
+    has-checkbox
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -128,35 +126,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverTrigger>
             <MpSelect
               id="pa-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = ''"
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = ''"
             >
               <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="opt in warehouseOptions" :key="opt.value"
                 :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <MpPopover v-if="!isScoped" id="pa-assignee-filter" is-close-on-select>
-          <MpPopoverTrigger>
-            <MpSelect
-              id="pa-assignee-select" placeholder="Assignee" :model-value="assigneeFilter" is-clearable
-              :class="css({ width: '170px' })" @mousedown.prevent @clear="assigneeFilter = ''"
-            >
-              <option v-if="assigneeFilter" :value="assigneeFilter">{{ assigneeLabel }}</option>
-            </MpSelect>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '170px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in assigneeOptions" :key="opt.value"
-                :is-active="opt.value === assigneeFilter" @click="assigneeFilter = opt.value"
               >{{ opt.label }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -205,10 +184,47 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Cells ── -->
-    <template #cell-taskNo="{ value }"><span class="pa-no">{{ value }}</span></template>
-    <template #cell-warehouseName="{ value }"><span class="rcv-warehouse">{{ value }}</span></template>
+    <!-- ── Number — View details chip on hover ── -->
+    <template #cell-taskNo="{ value, row }">
+      <div class="cell-with-action">
+        <span class="cell-text pa-no">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as PutAwayTask)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
+    </template>
+
+    <!-- ── Receiving tasks — expandable list ── -->
+    <template #cell-receivingTaskNos="{ value, row }">
+      <span class="pa-rtasks">
+        <template v-if="expandedRows.has((row as unknown as PutAwayTask).id)">
+          <span v-for="no in (value as string[])" :key="no" class="pa-rtasks__item">{{ no }}</span>
+          <button class="pa-rtasks__toggle" @click.stop="toggleExpand((row as unknown as PutAwayTask).id)">Show less</button>
+        </template>
+        <template v-else>
+          <span class="pa-rtasks__item">{{ (value as string[])[0] }}</span>
+          <button
+            v-if="(value as string[]).length > 1"
+            class="pa-rtasks__toggle"
+            @click.stop="toggleExpand((row as unknown as PutAwayTask).id)"
+          >+{{ (value as string[]).length - 1 }} more</button>
+        </template>
+      </span>
+    </template>
+
+    <!-- ── Warehouse ── -->
+    <template #cell-warehouseName="{ value }">
+      <span class="pa-warehouse">{{ value }}</span>
+    </template>
+
+    <!-- ── Items qty ── -->
     <template #cell-itemQty="{ value }">{{ formatNum(value as number) }}</template>
+
+    <!-- ── Status ── -->
     <template #cell-status="{ value }"><ErpStatusBadge :status="value as string" /></template>
 
     <!-- ── Actions kebab ── -->
@@ -257,7 +273,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 </template>
 
 <style scoped>
-.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.filter-left  { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
@@ -280,8 +296,34 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
 
-.pa-no { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.rcv-warehouse {
+/* Number cell — View details chip on hover */
+.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+.cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pa-no { color: var(--mp-text-default); }
+.row-hover-btn {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.row-hover-btn__label {
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+}
+:global(.erp-tr:hover .row-hover-btn) { display: flex; }
+
+/* Receiving tasks cell */
+.pa-rtasks { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-0\.5); }
+.pa-rtasks__item  { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pa-rtasks__toggle {
+  border: none; background: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link, var(--mp-text-brand));
+  line-height: var(--mp-line-heights-sm);
+}
+.pa-rtasks__toggle:hover { text-decoration: underline; }
+
+.pa-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
 
@@ -296,14 +338,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }
 .empty-full-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.empty-full-desc { margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.empty-full-desc  { margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .demo-fab {
   position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
   width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  background: var(--mp-background-inverse); color: var(--mp-text-inverse); cursor: pointer; z-index: 1200;
   box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
 }
 .demo-fab:hover { opacity: 0.9; }

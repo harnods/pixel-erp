@@ -328,26 +328,29 @@ function handleCreate() {
         <section v-else class="pa-tasks-table-wrap" :class="{ 'pa-tasks-table-wrap--bordered': isTasksProgressive }">
           <table class="pa-tasks-table">
             <colgroup>
-              <col style="width: 40px" />
-              <col style="width: 180px" />
+              <col style="width: 200px" />
               <col />
               <col style="width: 100px" />
+              <col style="width: 110px" />
             </colgroup>
             <thead>
               <tr>
-                <th class="pa-th pa-th--check">
-                  <input
-                    type="checkbox"
-                    class="pa-checkbox"
-                    :checked="allSelected"
-                    :indeterminate="someSelected"
-                    aria-label="Select all"
-                    @change="toggleAll"
-                  />
+                <th class="pa-th">
+                  <div class="pa-cell-check">
+                    <input
+                      type="checkbox"
+                      class="pa-checkbox"
+                      :checked="allSelected"
+                      :indeterminate="someSelected"
+                      aria-label="Select all"
+                      @change="toggleAll"
+                    />
+                    Number
+                  </div>
                 </th>
-                <th class="pa-th">Task no.</th>
                 <th class="pa-th">Purchase no.</th>
-                <th class="pa-th pa-th--num">Received qty</th>
+                <th class="pa-th">SKU qty</th>
+                <th class="pa-th">Received qty</th>
               </tr>
             </thead>
             <tbody>
@@ -358,19 +361,22 @@ function handleCreate() {
                 :class="{ 'pa-task-row--selected': selectedIds.has(task.id) }"
                 @click="toggleTask(task.id)"
               >
-                <td class="pa-td pa-td--check">
-                  <input
-                    type="checkbox"
-                    class="pa-checkbox"
-                    :checked="selectedIds.has(task.id)"
-                    :aria-label="`Select ${task.taskNo}`"
-                    @click.stop
-                    @change="toggleTask(task.id)"
-                  />
+                <td class="pa-td">
+                  <div class="pa-cell-check">
+                    <input
+                      type="checkbox"
+                      class="pa-checkbox"
+                      :checked="selectedIds.has(task.id)"
+                      :aria-label="`Select ${task.taskNo}`"
+                      @click.stop
+                      @change="toggleTask(task.id)"
+                    />
+                    {{ task.taskNo }}
+                  </div>
                 </td>
-                <td class="pa-td pa-td--mono">{{ task.taskNo }}</td>
-                <td class="pa-td pa-td--mono">{{ task.purchaseNo }}</td>
-                <td class="pa-td pa-td--num">{{ formatNum(task.receivedQty) }}</td>
+                <td class="pa-td">{{ task.purchaseNo }}</td>
+                <td class="pa-td">{{ task.skuCount }}</td>
+                <td class="pa-td">{{ formatNum(task.receivedQty) }}</td>
               </tr>
             </tbody>
           </table>
@@ -554,7 +560,6 @@ function handleCreate() {
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
-.pa-th--check { width: 40px; text-align: center; }
 .pa-th--num {
   text-align: right;
   padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4);
@@ -572,7 +577,7 @@ function handleCreate() {
 .pa-task-row { cursor: pointer; transition: background 80ms; }
 .pa-task-row:hover .pa-td { background: var(--mp-background-neutral-subtle); }
 .pa-task-row--selected .pa-td { background: var(--mp-background-brand-subtle, #e8f7f2); }
-.pa-td--check { text-align: center; }
+.pa-cell-check { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .pa-td--mono { font-variant-numeric: tabular-nums; }
 .pa-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;

@@ -546,6 +546,7 @@ function resolveActive(pageKey: string): {
 // sidebar away from the relevant section.
 const SECTION_PARENT: Record<string, string> = {
   Receiving: 'Barang masuk',
+  'Put away': 'Barang masuk',
 }
 
 watch(currentPageKey, (key) => {

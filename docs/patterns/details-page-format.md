@@ -132,6 +132,9 @@ Reuse as-is; do not redesign per module.
    actions, no sticky kebab** (or a lighter read-only `<table>` if those features get in
    the way). **Either way it MUST follow the [ErpTablePage.md](ErpTablePage.md) header
    & row spec** — don't re-style it:
+   - **Filter bar above the table**: a thin row containing only a **search input**. The
+     search is **always right-aligned** (`justify-content: flex-end` on the bar). Never
+     left-align or stretch the search in a detail-page filter bar.
    - **Header**: `neutral-subtle` gray bg, **28px**, 12px/600 uppercase, padding
      `4px 16px 4px 8px` (left) / `4px 8px 4px 16px` (right), 1px bottom border.
    - **Rows**: single-line **40px**, **6px vertical padding** (`var(--mp-spacing-1\.5)`),

@@ -102,8 +102,9 @@ function createPutAway() {
   }
   if (task.value && po.value) {
     addPutAwayTask({
-      purchaseNo: po.value.purchaseNo, warehouseId: po.value.warehouseId,
-      warehouseName: po.value.warehouseName, assignee: task.value.assignee, itemQty: task.value.receivedQty,
+      receivingTaskIds: [task.value.id], receivingTaskNos: [task.value.taskNo],
+      warehouseId: po.value.warehouseId, warehouseName: po.value.warehouseName,
+      assignee: task.value.assignee, itemQty: task.value.receivedQty,
     })
   }
   toast.notify({ variant: 'success', title: 'Put-away created' })

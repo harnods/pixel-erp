@@ -136,8 +136,9 @@ function bulkCreatePutAway() {
       t.status = 'completed'
       if (!t.endDate) t.endDate = endIso
       addPutAwayTask({
-        purchaseNo: po.purchaseNo, warehouseId: po.warehouseId,
-        warehouseName: po.warehouseName, assignee: t.assignee, itemQty: t.receivedQty,
+        receivingTaskIds: [t.id], receivingTaskNos: [t.taskNo],
+        warehouseId: po.warehouseId, warehouseName: po.warehouseName,
+        assignee: t.assignee, itemQty: t.receivedQty,
       })
     }
   }
