@@ -183,6 +183,49 @@ const selectedLabel = computed(() => options.find(o => o.value === value.value)?
 
 ---
 
+## Line-items table in a form
+
+Some forms embed an **editable line-items table** — e.g. the **Create purchase
+receiving** page (`CreatePurchaseReceivingPage.vue`), where the user narrows the SKU
+scope, edits storage locations, and removes rows.
+
+This table follows the **progressive-loading** model, identical to detail-page line
+items — see [ErpPagination.md → Progressive pagination](ErpPagination.md#progressive-pagination-infinite-scroll).
+
+- **Show 10 by default** (`PAGE_SIZE = 10`); the next 10 auto-load on scroll via an
+  `IntersectionObserver`; a `Showing N of N` row sits below.
+- **Outside border is conditional, not always-on.** Wrap the table in the bordered,
+  internally-scrolling panel **only when it needs progressive loading** — i.e. when there
+  are **more than 10 rows**. A short list (**≤ 10 rows**) renders **borderless** and grows
+  naturally with no internal scroll.
+
+  ```vue
+  <script setup lang="ts">
+  const PAGE_SIZE = 10
+  // visibleItems = the filtered list before the page slice
+  const isProgressive = computed(() => visibleItems.value.length > PAGE_SIZE)
+  </script>
+
+  <template>
+    <!-- bind the modifier class — never hard-code it on -->
+    <section class="pr-items-section" :class="{ 'pr-items-section--bordered': isProgressive }">
+      …
+    </section>
+  </template>
+  ```
+
+  ```css
+  .pr-items-section--bordered {
+    border: 1px solid var(--mp-border-bold);
+    border-radius: var(--mp-radii-lg);
+    overflow: hidden;               /* give the panel flex-shrink: 0 in a flex column */
+  }
+  /* count row divider only inside the bordered panel */
+  .pr-items-section--bordered .pr-items-count { border-top: 1px solid var(--mp-border-default); }
+  ```
+
+---
+
 ## Full form-page example
 
 ```vue

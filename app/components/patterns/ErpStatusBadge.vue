@@ -50,6 +50,8 @@ const statusConfig: Record<string, StatusConfig> = {
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
   receiving:  { type: 'warning',      label: 'Receiving'  },
+  'on the way':{ type: 'warning',     label: 'Open'       },
+  'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
@@ -68,9 +70,9 @@ const statusConfig: Record<string, StatusConfig> = {
   inactive:   { type: 'announcement', label: 'Inactive'   },
   archived:   { type: 'announcement', label: 'Archived'   },
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
+  canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },
   'to do':    { type: 'announcement', label: 'To do'      },
-  'on the way':{ type: 'announcement', label: 'On the way' },
   direct:     { type: 'announcement', label: 'Direct'     },
 
   // ── information — blue ────────────────────────────

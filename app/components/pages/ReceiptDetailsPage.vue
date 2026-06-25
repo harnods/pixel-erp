@@ -7,7 +7,6 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import PurchaseReceivingModal from '~/components/PurchaseReceivingModal.vue'
 import { getReceiptDetail } from '~/data/receiptDetails'
 import { receiptsForStage, type Receipt } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
@@ -141,10 +140,8 @@ const displayedReceivings = computed(() =>
   demoLinked.value === 'with-data' ? demoFakeReceivings.value : linkedReceivings.value,
 )
 
-// ── Create purchase receiving modal ────────────────────────────────────────────
-const prModalOpen = ref(false)
-function openPurchaseReceiving() { prModalOpen.value = true }
-function closePRModal() { prModalOpen.value = false }
+// ── Create purchase receiving (full page) ───────────────────────────────────────
+function openPurchaseReceiving() { router.push(`/barang-masuk/${props.orderId}/receive`) }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -178,7 +175,7 @@ function agingDays(startDate?: string, endDate?: string): number {
   return Math.max(0, diff) + 1
 }
 
-function goBack() { router.push('/barang-masuk') }
+function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
 </script>
 
 <template>
@@ -187,9 +184,10 @@ function goBack() { router.push('/barang-masuk') }
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">On the way</button>
+        <button class="detail-breadcrumb" @click="goBack">Receipts</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
+          <ErpStatusBadge v-if="receipt" :status="receipt.status" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">
@@ -412,8 +410,6 @@ function goBack() { router.push('/barang-masuk') }
       </div>
     </div>
 
-    <!-- ── Purchase receiving modal ── -->
-    <PurchaseReceivingModal :receipt="receipt ?? null" :open="prModalOpen" @close="closePRModal" @created="closePRModal" />
 
     <!-- ── Demo scenario FAB (bottom-right) ── -->
     <MpPopover id="rcd-demo-fab" is-close-on-select use-portal placement="top-end">

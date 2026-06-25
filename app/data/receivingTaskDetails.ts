@@ -128,6 +128,42 @@ export function getTaskLineItems(task: ReceivingTask, purchaseNo: string): TaskL
   }))
 }
 
+/** A put-away task linked to a receiving task (the next step after receiving). */
+export interface PutAwayLink {
+  taskNo: string
+  assignee: string
+  itemQty: number
+  destination: string
+  status: 'open' | 'in progress' | 'completed'
+  startDate?: string
+  endDate?: string
+}
+
+/**
+ * Put-away task(s) linked to a receiving task — the downstream transaction, shown
+ * on the detail page like Purchase receivings are on a PO. A `completed` receiving
+ * task means its put-away task has been created (so it has a linked put-away, which
+ * itself may still be open or already done). `pending put-away` = not created yet.
+ */
+export function getPutAwayForTask(task: ReceivingTask): PutAwayLink[] {
+  if (task.status !== 'completed') return []
+  const seed = strSeed(task.id)
+  const num = 20000 + (Number(task.taskNo.replace(/\D/g, '')) % 10000)
+  const split = seed % 3 === 0
+  // The put-away task can be at any stage: open (created, not started) ·
+  // in progress (being shelved) · completed (stored).
+  const status: PutAwayLink['status'] = seed % 3 === 0 ? 'open' : seed % 3 === 1 ? 'in progress' : 'completed'
+  return [{
+    taskNo: `Put-away #${num}`,
+    assignee: task.assignee,
+    itemQty: task.receivedQty,
+    destination: split ? `${(seed % 3) + 2} locations` : BINS[seed % BINS.length],
+    status,
+    startDate: status === 'open' ? undefined : task.endDate, // started once it's in progress
+    endDate: status === 'completed' ? task.endDate : undefined,
+  }]
+}
+
 /** Find a task and its parent PO. Returns null if not found. */
 export function findTaskWithPO(taskId: string): { task: ReceivingTask; po: ReceivingPO } | null {
   for (const po of receivingPOs) {

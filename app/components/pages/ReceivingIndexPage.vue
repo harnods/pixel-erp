@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, css,
+  MpModalOverlay, MpModalCloseButton, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { receivingQueuePOs, taskAgingDays, type ReceivingPO, type ReceivingTask } from '~/data/receivingTasks'
+import { addPutAwayTask } from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -32,11 +33,14 @@ const warehouseFilter = ref('')
 const assigneeFilter = ref('')
 const statusFilter = ref('') // '' | open | completed
 
-const basePOs = computed<ReceivingPO[]>(() =>
-  demoState.value === 'data'
+// Bumped after a bulk status mutation so the (plain-data) queue recomputes.
+const dataVersion = ref(0)
+const basePOs = computed<ReceivingPO[]>(() => {
+  void dataVersion.value
+  return demoState.value === 'data'
     ? receivingQueuePOs(isScoped.value ? scopedWarehouseIds.value : undefined)
-    : [],
-)
+    : []
+})
 
 const warehouseOptions = computed(() => {
   const src = isScoped.value
@@ -48,9 +52,10 @@ const assigneeOptions = computed(() =>
   [...new Set(basePOs.value.flatMap(po => po.tasks.map(t => t.assignee)))].map(a => ({ label: a, value: a })),
 )
 const statusOptions = [
-  { label: 'Open',        value: 'open' },
-  { label: 'In progress', value: 'in progress' },
-  { label: 'Completed',   value: 'completed' },
+  { label: 'Open',             value: 'open' },
+  { label: 'In progress',      value: 'in progress' },
+  { label: 'Pending put-away', value: 'pending put-away' },
+  { label: 'Completed',        value: 'completed' },
 ]
 const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
 const assigneeLabel = computed(() => assigneeOptions.value.find(o => o.value === assigneeFilter.value)?.label ?? '')
@@ -83,8 +88,74 @@ function clearFilters() {
   search.value = ''; statusFilter.value = ''; warehouseFilter.value = ''; assigneeFilter.value = ''
 }
 
-// number of columns for colspans (Assignee hidden for Ops)
-const colCount = computed(() => (isScoped.value ? 7 : 8))
+// Total columns (Assignee hidden for Ops) — for the bulk bar colspan.
+const colCount = computed(() => (isScoped.value ? 9 : 10))
+
+// ─── Bulk select (tasks) ───────────────────────────────────────────────────────
+// Any task can be selected. The available bulk action depends on the selection:
+//   all "pending put-away" → Create put-away · anything else (incl. mixed) → Delete only.
+const selectedTasks = ref(new Set<string>())
+const allTaskIds = computed(() => filteredPOs.value.flatMap(po => po.tasks.map(t => t.id)))
+const allSelected = computed(() => allTaskIds.value.length > 0 && allTaskIds.value.every(id => selectedTasks.value.has(id)))
+const someSelected = computed(() => selectedTasks.value.size > 0 && !allSelected.value)
+const bulkCountLabel = computed(() => {
+  const n = selectedTasks.value.size
+  return `${n} ${n === 1 ? 'task' : 'tasks'} selected`
+})
+const selectedTaskObjs = computed(() =>
+  filteredPOs.value.flatMap(po => po.tasks).filter(t => selectedTasks.value.has(t.id)),
+)
+// Create put-away only when every selected task is pending put-away.
+const canCreatePutAway = computed(
+  () => selectedTaskObjs.value.length > 0 && selectedTaskObjs.value.every(t => t.status === 'pending put-away'),
+)
+function toggleTask(id: string) {
+  const s = new Set(selectedTasks.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  selectedTasks.value = s
+}
+function toggleAll() {
+  selectedTasks.value = allSelected.value ? new Set() : new Set(allTaskIds.value)
+}
+function poTaskIds(po: ReceivingPO) { return po.tasks.map(t => t.id) }
+function poAllSelected(po: ReceivingPO) { return po.tasks.length > 0 && poTaskIds(po).every(id => selectedTasks.value.has(id)) }
+function poSomeSelected(po: ReceivingPO) { return poTaskIds(po).some(id => selectedTasks.value.has(id)) && !poAllSelected(po) }
+function togglePO(po: ReceivingPO) {
+  const s = new Set(selectedTasks.value)
+  if (poAllSelected(po)) poTaskIds(po).forEach(id => s.delete(id))
+  else poTaskIds(po).forEach(id => s.add(id))
+  selectedTasks.value = s
+}
+function deselectAll() { selectedTasks.value = new Set() }
+function bulkCreatePutAway() {
+  const endIso = new Date().toISOString()
+  // Creating the put-away task completes the receiving task and adds a Put-away task.
+  for (const po of filteredPOs.value) {
+    for (const t of po.tasks) {
+      if (!selectedTasks.value.has(t.id)) continue
+      t.status = 'completed'
+      if (!t.endDate) t.endDate = endIso
+      addPutAwayTask({
+        purchaseNo: po.purchaseNo, warehouseId: po.warehouseId,
+        warehouseName: po.warehouseName, assignee: t.assignee, itemQty: t.receivedQty,
+      })
+    }
+  }
+  dataVersion.value++
+  toast.notify({ variant: 'success', title: 'Put-away created' })
+  deselectAll()
+}
+// Bulk delete — confirmation alert before removing.
+const bulkDeleteOpen = ref(false)
+function confirmBulkDelete() {
+  const n = selectedTasks.value.size
+  bulkDeleteOpen.value = false
+  toast.notify({ variant: 'success', title: `${n} ${n === 1 ? 'task' : 'tasks'} deleted` })
+  deselectAll()
+}
+function onEsc(e: KeyboardEvent) { if (e.key === 'Escape' && selectedTasks.value.size) deselectAll() }
+onMounted(() => window.addEventListener('keydown', onEsc))
+onUnmounted(() => window.removeEventListener('keydown', onEsc))
 
 // ─── Accordion expand state (default: all expanded) ────────────────────────────
 const expanded = reactive<Record<string, boolean>>({})
@@ -192,7 +263,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <div v-if="filteredPOs.length" class="rcvg-table-wrap">
       <table class="rcvg-table">
         <colgroup>
-          <col style="width: 260px" />
+          <col style="width: 280px" />
           <col style="width: 170px" />
           <col v-if="!isScoped" style="width: 150px" />
           <col style="width: 100px" />
@@ -204,13 +275,34 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <col style="width: 44px" />
         </colgroup>
         <thead>
-          <tr>
-            <th class="rcvg-th">Number</th>
+          <!-- Bulk bar — replaces the header row when tasks are selected -->
+          <tr v-if="selectedTasks.size > 0" class="rcvg-tr-bulk">
+            <th :colspan="colCount" class="rcvg-th rcvg-th--bulk">
+              <div class="rcvg-bulk-bar">
+                <div class="rcvg-bulk-bar__left">
+                  <MpCheckbox id="rcvg-bulk-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
+                  <span class="rcvg-bulk-bar__count">{{ bulkCountLabel }}</span>
+                  <button v-if="canCreatePutAway" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="bulkCreatePutAway">Create put-away</button>
+                  <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="bulkDeleteOpen = true">Delete</button>
+                </div>
+                <div class="rcvg-bulk-bar__right">
+                  <span>Press</span><kbd class="rcvg-bulk-bar__kbd">Esc</kbd><span>to deselect</span>
+                </div>
+              </div>
+            </th>
+          </tr>
+          <tr v-else>
+            <th class="rcvg-th">
+              <div class="rcvg-num-head">
+                <MpCheckbox id="rcvg-head-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
+                <span>Number</span>
+              </div>
+            </th>
             <th class="rcvg-th">Warehouse</th>
             <th v-if="!isScoped" class="rcvg-th">Assignee</th>
             <th class="rcvg-th">SKU scope</th>
             <th class="rcvg-th rcvg-th--right">Purchase qty</th>
-            <th class="rcvg-th rcvg-th--right">Received</th>
+            <th class="rcvg-th rcvg-th--right">Received qty</th>
             <th class="rcvg-th">Status</th>
             <th class="rcvg-th">Start date</th>
             <th class="rcvg-th">End date</th>
@@ -222,6 +314,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <!-- PO group row -->
             <tr class="rcvg-po-row" @click="toggle(po.id)">
               <td class="rcvg-td rcvg-td--po">
+                <span class="rcvg-check" @click.stop>
+                  <MpCheckbox :id="`rcvg-po-${po.id}`" :is-checked="poAllSelected(po)" :is-indeterminate="poSomeSelected(po)" @change="togglePO(po)" />
+                </span>
                 <MpIcon :name="isExpanded(po.id) ? 'chevrons-down' : 'chevrons-right'" size="sm" />
                 <span class="rcvg-po-no">{{ po.purchaseNo }}</span>
               </td>
@@ -237,8 +332,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </tr>
             <!-- Task rows -->
             <template v-if="isExpanded(po.id)">
-              <tr v-for="t in po.tasks" :key="t.id" class="rcvg-task-row">
+              <tr v-for="t in po.tasks" :key="t.id" class="rcvg-task-row" :class="{ 'rcvg-task-row--selected': selectedTasks.has(t.id) }">
                 <td class="rcvg-td rcvg-td--task">
+                  <span class="rcvg-check" @click.stop>
+                    <MpCheckbox :id="`rcvg-task-${t.id}`" :is-checked="selectedTasks.has(t.id)" @change="toggleTask(t.id)" />
+                  </span>
                   <span class="rcvg-task-no">{{ t.taskNo }}</span>
                   <button class="row-hover-btn" @click.stop="viewDetails(t)">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -318,6 +416,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalOverlay />
   </MpModal>
 
+  <!-- ── Bulk delete confirmation modal ── -->
+  <MpModal id="rcvg-bulk-delete-modal" :is-open="bulkDeleteOpen" size="sm"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkDeleteOpen = false">
+    <MpModalContent>
+      <MpModalHeader>Delete {{ selectedTasks.size }} {{ selectedTasks.size === 1 ? 'task' : 'tasks' }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        The selected receiving tasks will be permanently deleted. This can't be undone.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkDeleteOpen = false">Keep tasks</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">Delete tasks</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="rcvg-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
@@ -351,7 +467,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 200px;
 }
 .filter-search-input {
@@ -373,6 +489,26 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   text-transform: uppercase; color: var(--mp-text-secondary); text-align: left; white-space: nowrap;
 }
 .rcvg-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+
+/* Checkbox column + bulk bar */
+/* Checkbox lives inside the Number column, next to the number */
+.rcvg-num-head { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.rcvg-check { display: inline-flex; align-items: center; flex-shrink: 0; }
+.rcvg-tr-bulk .rcvg-th--bulk {
+  /* zero vertical padding → same 28px row height as the normal header (no table shift).
+     left padding matches the normal header so the select-all checkbox stays put. */
+  padding: 0 var(--mp-spacing-3) 0 var(--mp-spacing-2); text-transform: none; font-weight: var(--mp-font-weights-regular);
+}
+.rcvg-bulk-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); height: var(--mp-sizes-7, 28px); }
+.rcvg-bulk-bar__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.rcvg-bulk-bar__count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap; }
+.rcvg-bulk-bar__right { display: flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+.rcvg-bulk-bar__kbd {
+  display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-sm);
+  font-size: var(--mp-font-sizes-xs); font-family: inherit; color: var(--mp-text-secondary);
+}
+.rcvg-task-row--selected .rcvg-td { background: var(--mp-background-selected-subtle, #eef6f2); }
 
 .rcvg-td {
   height: var(--mp-sizes-10, 40px);
@@ -406,9 +542,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-lg, 24px);
 }
 
-/* Task row (indented under the PO) */
+/* Task row (checkbox aligns with the PO's; task number indented under the PO number) */
 .rcvg-task-row:hover .rcvg-td { background: var(--mp-background-neutral-subtle); }
-.rcvg-td--task { position: relative; padding-left: var(--mp-spacing-9, 36px); color: var(--mp-text-default); }
+.rcvg-td--task { position: relative; display: flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-default); }
+.rcvg-task-no { margin-left: var(--mp-spacing-6); }
 
 /* Task number — View details chip on row hover */
 .row-hover-btn {

@@ -7,7 +7,6 @@ import {
   MpModalOverlay, MpModalCloseButton, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
-import PurchaseReceivingModal from '~/components/PurchaseReceivingModal.vue'
 import { useTableState } from '~/composables/useTableState'
 import { receiptsForStage, closeReceipt, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
@@ -85,12 +84,8 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function outstanding(r: Receipt) { return Math.max(0, r.purchaseQty - r.receivedQty) }
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
-const prModalOpen   = ref(false)
-const receiptForPR  = ref<Receipt | null>(null)
-function createPurchaseReceiving(row: Receipt) { receiptForPR.value = row; prModalOpen.value = true }
-function closePRModal() { prModalOpen.value = false; receiptForPR.value = null }
-
 const router = useRouter()
+function createPurchaseReceiving(row: Receipt) { router.push(`/barang-masuk/${row.id}/receive`) }
 function viewDetails(row: Receipt) { router.push(`/barang-masuk/${row.id}`) }
 
 const closeModalOpen = ref(false)
@@ -251,13 +246,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalOverlay />
   </MpModal>
 
-  <!-- ── Purchase receiving modal ── -->
-  <PurchaseReceivingModal
-    :receipt="receiptForPR"
-    :open="prModalOpen"
-    @close="closePRModal"
-    @created="closePRModal"
-  />
 
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="par-demo-fab" is-close-on-select use-portal placement="top-end">
@@ -291,7 +279,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 200px;
 }
 .filter-search-input {

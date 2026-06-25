@@ -37,13 +37,6 @@ export interface Receipt {
 // Anchor "today" so the arrival-date presets line up with the mock data.
 export const RECEIPT_TODAY = new Date("2026-06-23");
 
-const STATUSES = [
-  "on the way", // not arrived / not processed yet
-  "receiving", // being received
-  "partial reception", // partially received
-  "completed", // fully received
-] as const;
-
 // Receipts go to real (non-default, active) warehouses.
 const RECEIVING_WAREHOUSES = warehouses.filter(
   (w) => !w.isDefault && w.status === "active",
@@ -103,16 +96,44 @@ function generateTrackingNos(i: number): string[] {
   return Array.from({ length: n }, (_, k) => `SD${String(9583 + i * 137 + k * 53).padStart(7, '0')}`)
 }
 
+// Deterministic 0–99 hash with bit-mixing (xorshift-multiply finalizer) so values
+// are well scattered — no banding or repeating pattern down the list.
+function hash100(i: number): number {
+  let x = ((i + 1) * 2654435761) >>> 0;
+  x ^= x >>> 15;
+  x = (x * 2246822519) >>> 0;
+  x ^= x >>> 13;
+  return (x >>> 0) % 100;
+}
+
+// Future arrival windows for not-yet-arrived (on the way) POs — spread so each
+// arrival-date preset (today / tomorrow / next 7 days / this month / beyond) hits some.
+const FUTURE_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7, 9, 12, 18, 23, 27, 34, 40];
+
+/**
+ * Status for receipt i — weighted to feel like a real inbound queue rather than a
+ * strict cycle: mostly On the way + Completed, fewer Partial reception. "receiving"
+ * isn't used here (it has no list of its own), so every receipt is visible.
+ */
+function statusFor(i: number): string {
+  const h = hash100(i);
+  if (h < 42) return "on the way";       // ~42% awaiting arrival
+  if (h < 64) return "partial reception"; // ~22% received short
+  return "completed";                     // ~36% fully received
+}
+
 /** Deterministic mock — ~40 receipts spread across warehouses, statuses and dates. */
 function generateReceipts(count = 42): Receipt[] {
-  // arrival offsets (days from today) chosen so each preset window catches some:
-  // today (0), tomorrow (1), within 7 days, within this month, and beyond.
-  const offsets = [0, 0, 1, 1, 2, 3, 5, 6, 4, 7, 9, 12, 18, 23, 27, -2, -4, 34, 40];
   const out: Receipt[] = [];
   for (let i = 0; i < count; i++) {
     const wh = RECEIVING_WAREHOUSES[i % RECEIVING_WAREHOUSES.length];
-    const status = STATUSES[i % STATUSES.length];
-    const offset = offsets[i % offsets.length];
+    const status = statusFor(i);
+    // Arrival makes sense per status: on the way → still to come (future);
+    // arrived states (partial / completed) → a recent past date.
+    const arrived = status !== "on the way";
+    const offset = arrived
+      ? -(((i * 7) % 26) + 2)                       // 2–27 days ago
+      : FUTURE_OFFSETS[i % FUTURE_OFFSETS.length];  // upcoming
     const skuQty = ((i * 7 + 3) % 48) + 2;
     const purchaseQty = skuQty * (((i * 13) % 40) + 5);
     // Purchase no. comes from two sources, each with its own format:
@@ -132,8 +153,8 @@ function generateReceipts(count = 42): Receipt[] {
       purchaseQty,
       receivedQty: computeReceived(i, status, purchaseQty),
       status,
-      // completed receipts were fully received a few days ago
-      receivedDate: status === "completed" ? isoOffset(-((i % 18) + 1)) : undefined,
+      // completed receipts were fully received between arrival and today
+      receivedDate: status === "completed" ? isoOffset(-((i % 10) + 1)) : undefined,
       estimatedArrival: isoOffset(offset),
       memo: generateMemo(i, isoOffset(offset)),
       trackingNos: generateTrackingNos(i),
@@ -232,6 +253,23 @@ export function receiptsForStage(stage: string, warehouseIds?: string[]): Receip
   return receipts.filter(
     (r) =>
       r.status === status &&
+      (!warehouseIds?.length || warehouseIds.includes(r.warehouseId)),
+  );
+}
+
+/** Stage label for a receipt (e.g. "on the way" → "On the way"). */
+export function receiptStage(r: Receipt): string {
+  return STATUS_TO_STAGE[r.status] ?? r.status;
+}
+
+/** Receipts across several stages, optionally warehouse-scoped. */
+export function receiptsForStages(stages: string[], warehouseIds?: string[]): Receipt[] {
+  const statuses = stages
+    .map((stage) => Object.keys(STATUS_TO_STAGE).find((s) => STATUS_TO_STAGE[s] === stage))
+    .filter(Boolean) as string[];
+  return receipts.filter(
+    (r) =>
+      statuses.includes(r.status) &&
       (!warehouseIds?.length || warehouseIds.includes(r.warehouseId)),
   );
 }

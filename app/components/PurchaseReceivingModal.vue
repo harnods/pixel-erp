@@ -394,7 +394,7 @@ function handleCreate() {
 .pr-filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 260px;
 }
 .pr-filter-search-input {

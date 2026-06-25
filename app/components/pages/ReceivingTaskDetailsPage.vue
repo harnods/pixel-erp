@@ -3,15 +3,17 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton, MpModalOverlay,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpButton, toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { findTaskWithPO, getTaskLineItems, allTasksFlat, setTaskReceived } from '~/data/receivingTaskDetails'
-import { taskAgingDays } from '~/data/receivingTasks'
+import { findTaskWithPO, getTaskLineItems, allTasksFlat, setTaskReceived, getPutAwayForTask } from '~/data/receivingTaskDetails'
+import { addPutAwayTask } from '~/data/putAwayTasks'
+import { taskAgingDays, type ReceivingTask } from '~/data/receivingTasks'
 import { formatDateTime } from '~/utils/date'
 
-type TaskStatus = 'open' | 'in progress' | 'completed'
+type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -47,6 +49,12 @@ watch([() => props.orderId, lineItems], () => {
 }, { immediate: true })
 
 const isInProgress = computed(() => localStatus.value === 'in progress')
+// Open tasks haven't started receiving yet — show only Purchase qty (no Received /
+// Outstanding columns, which are meaningless until receiving begins).
+const showReceivedCols = computed(() => localStatus.value !== 'open')
+
+// Linked put-away task(s) — the downstream transaction, shown like PRs on a PO.
+const linkedPutAway = computed(() => task.value ? getPutAwayForTask({ ...task.value, status: localStatus.value, endDate: localEndDate.value ?? undefined }) : [])
 
 const purchaseTotal      = computed(() => task.value?.purchaseQty ?? 0)
 const savedReceivedTotal = computed(() => Object.values(localReceived.value).reduce((a, b) => a + (b || 0), 0))
@@ -82,6 +90,24 @@ const lastUpdated = computed(() => {
   const offsetMs = Math.floor(progress * 4 * 60 * 60 * 1000) // up to 4h after start
   return new Date(base + offsetMs).toISOString()
 })
+
+// Create the put-away task → the receiving task is now completed.
+function createPutAway() {
+  const endIso = new Date().toISOString()
+  localStatus.value = 'completed'
+  if (!localEndDate.value) localEndDate.value = endIso
+  if (task.value) {
+    task.value.status = 'completed'
+    if (!task.value.endDate) task.value.endDate = endIso
+  }
+  if (task.value && po.value) {
+    addPutAwayTask({
+      purchaseNo: po.value.purchaseNo, warehouseId: po.value.warehouseId,
+      warehouseName: po.value.warehouseName, assignee: task.value.assignee, itemQty: task.value.receivedQty,
+    })
+  }
+  toast.notify({ variant: 'success', title: 'Put-away created' })
+}
 
 // ── Receiving actions ───────────────────────────────────────────────────────
 function openReceiveModal() {
@@ -119,9 +145,10 @@ function commitReceiving() {
   const complete = total >= purchaseTotal.value
   const endIso = new Date().toISOString()
 
+  // Receiving is done → goods await put-away (the put-away task isn't created yet).
   // Local refs → instant re-render.
   localReceived.value = received
-  localStatus.value   = 'completed'
+  localStatus.value   = 'pending put-away'
   localEndDate.value  = endIso
   receiveModalOpen.value = false
 
@@ -129,20 +156,29 @@ function commitReceiving() {
   setTaskReceived(props.orderId, received)
   if (task.value) {
     task.value.receivedQty = total
-    task.value.status = 'completed'
+    task.value.status = 'pending put-away'
     task.value.endDate = endIso
     if (!task.value.startDate) task.value.startDate = endIso
   }
 
   toast.notify({
     variant: complete ? 'success' : 'warning',
-    title: complete ? 'Receiving completed' : 'Receiving saved with outstanding items',
+    title: complete ? 'Receiving completed, pending put-away' : 'Receiving saved with outstanding items',
   })
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
+
+// Aging for a linked put-away row (start → end, or start → today while open).
+function paAging(pa: { startDate?: string; endDate?: string; status: string }): number {
+  return taskAgingDays({
+    startDate: pa.startDate,
+    endDate: pa.endDate,
+    status: pa.status === 'completed' ? 'completed' : 'in progress',
+  } as ReceivingTask)
+}
 
 function agingLabel(): string {
   if (!task.value) return ''
@@ -246,9 +282,10 @@ function jumpTo(id: string) {
   router.push(`/receiving/${id}`)
 }
 
-// goBack: return to Receiving (resolves as Barang masuk panel sub-item → keeps level-2 open)
+// goBack: return to the Barang masuk page on the Receiving tab so the inbound
+// stage tabs (On the way / Receiving / Put-away / …) stay visible.
 function goBack() {
-  router.push('/receiving')
+  router.push('/barang-masuk?tab=Receiving')
 }
 </script>
 
@@ -263,7 +300,7 @@ function goBack() {
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <!-- Pulse — only while in progress -->
           <span v-if="isInProgress" class="rcvgd-pulse" aria-label="In progress" />
-          <ErpStatusBadge :status="localStatus" />
+          <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcvgd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch task">
@@ -354,53 +391,49 @@ function goBack() {
         <div ref="itemsScrollEl" class="detail-items-scroll">
           <table class="detail-items">
             <colgroup>
-              <col style="width: 44px" />
-              <col style="width: 200px" />
-              <col style="width: 136px" />
-              <col style="width: 140px" />
-              <col style="width: 112px" />
-              <col style="width: 112px" />
-              <col style="width: 112px" />
-              <col style="width: 64px" />
               <col />
+              <col style="width: 150px" />
+              <col style="width: 120px" />
+              <col v-if="showReceivedCols" style="width: 120px" />
+              <col v-if="showReceivedCols" style="width: 120px" />
+              <col style="width: 72px" />
             </colgroup>
             <thead>
               <tr>
-                <th class="detail-th" />
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
-                <th class="detail-th">Storage location</th>
                 <th class="detail-th detail-th--num">Purchase qty</th>
-                <th class="detail-th detail-th--num">Received qty</th>
-                <th class="detail-th detail-th--num">Outstanding</th>
+                <th v-if="showReceivedCols" class="detail-th detail-th--num">Received qty</th>
+                <th v-if="showReceivedCols" class="detail-th detail-th--num">Outstanding</th>
                 <th class="detail-th">Unit</th>
-                <th class="detail-th" />
               </tr>
             </thead>
             <tbody>
               <tr v-for="item in visibleItems" :key="item.skuCode" class="detail-item-row">
-                <td class="detail-td detail-td--thumb">
-                  <img class="rcvgd-product-thumb" :src="item.image" :alt="item.productName" loading="lazy" width="28" height="28" />
+                <td class="detail-td">
+                  <div class="rcvgd-product">
+                    <img class="rcvgd-product-thumb" :src="item.image" :alt="item.productName" loading="lazy" width="40" height="40" />
+                    <span class="rcvgd-product-name">{{ item.productName }}</span>
+                  </div>
                 </td>
-                <td class="detail-td detail-td--product">{{ item.productName }}</td>
                 <td class="detail-td detail-td--secondary">{{ item.skuCode }}</td>
-                <td class="detail-td detail-td--secondary">{{ item.binLocation }}</td>
                 <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
-                <td class="detail-td detail-td--num">
+                <td v-if="showReceivedCols" class="detail-td detail-td--num">
+                  <!-- While in progress the count is still changing — keep it neutral;
+                       only colour the final received qty once the task is done. -->
                   <span
-                    :class="rowReceived(item.skuCode, item.receivedQty) === item.expectedQty ? 'rcvgd-qty--full' : rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-qty--partial' : 'rcvgd-qty--zero'"
+                    :class="isInProgress ? '' : (rowReceived(item.skuCode, item.receivedQty) === item.expectedQty ? 'rcvgd-qty--full' : rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-qty--partial' : 'rcvgd-qty--zero')"
                   >
                     {{ fmt(rowReceived(item.skuCode, item.receivedQty)) }}
                   </span>
                 </td>
-                <td class="detail-td detail-td--num">
+                <td v-if="showReceivedCols" class="detail-td detail-td--num">
                   <span v-if="item.expectedQty - rowReceived(item.skuCode, item.receivedQty) > 0" class="rcvgd-outstanding">
                     {{ fmt(item.expectedQty - rowReceived(item.skuCode, item.receivedQty)) }}
                   </span>
                   <span v-else class="rcvgd-qty--full">—</span>
                 </td>
                 <td class="detail-td">{{ item.unit }}</td>
-                <td class="detail-td" />
               </tr>
             </tbody>
           </table>
@@ -414,6 +447,62 @@ function goBack() {
         </div>
       </section>
       </div>
+
+      <!-- ── Linked put-away tab (shown once a put-away task exists) ── -->
+      <MpTabs v-if="linkedPutAway.length" id="rcvgd-tabs" :default-value="0" variant-color="green" class="rcvgd-tabs">
+        <MpTabList>
+          <MpTab id="rcvgd-tab-pa" :value="0">Put-away ({{ linkedPutAway.length }})</MpTab>
+        </MpTabList>
+        <MpTabPanels>
+          <MpTabPanel :value="0">
+            <div class="rcvgd-linked-wrap">
+              <table class="rcvgd-linked">
+                <colgroup>
+                  <col style="width: 220px" />
+                  <col style="width: 180px" />
+                  <col style="width: 140px" />
+                  <col style="width: 180px" />
+                  <col />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="detail-th">Number</th>
+                    <th class="detail-th">Assignee</th>
+                    <th class="detail-th">Status</th>
+                    <th class="detail-th">Start date</th>
+                    <th class="detail-th">End date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="pa in linkedPutAway" :key="pa.taskNo" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="rcvgd-linked-num">{{ pa.taskNo }}</span>
+                        <button class="row-hover-btn">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ pa.assignee }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
+                    <td class="detail-td">{{ pa.startDate ? formatDateTime(pa.startDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="rcvgd-end-cell">
+                        <span>{{ pa.endDate ? formatDateTime(pa.endDate) : '—' }}</span>
+                        <span v-if="paAging(pa) > 1" class="rcvgd-aging">{{ paAging(pa) }} days</span>
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+        </MpTabPanels>
+      </MpTabs>
 
     </div>
 
@@ -430,13 +519,16 @@ function goBack() {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Print PDF</MpPopoverListItem>
-            <MpPopoverListItem>Print dot matrix</MpPopoverListItem>
+            <MpPopoverListItem>Print receiving slip</MpPopoverListItem>
+            <MpPopoverListItem>Print label</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="localStatus !== 'completed'" class="detail-btn detail-btn--primary" @click="openReceiveModal">
-        {{ localStatus === 'open' ? 'Start receiving' : 'Continue receiving' }}
+      <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="openReceiveModal">
+        Start receiving
+      </button>
+      <button v-else-if="localStatus === 'pending put-away'" class="detail-btn detail-btn--primary" @click="createPutAway">
+        Create put-away
       </button>
     </footer>
 
@@ -498,21 +590,17 @@ function goBack() {
             <div class="rcvgd-rm-scroll">
               <table class="detail-items">
                 <colgroup>
-                  <col style="width: 40px" />
                   <col />
-                  <col style="width: 104px" />
-                  <col style="width: 132px" />
+                  <col style="width: 120px" />
                   <col style="width: 100px" />
-                  <col style="width: 96px" />
+                  <col style="width: 110px" />
                   <col style="width: 92px" />
                   <col style="width: 56px" />
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th" />
                     <th class="detail-th">Product</th>
                     <th class="detail-th">SKU</th>
-                    <th class="detail-th">Storage location</th>
                     <th class="detail-th detail-th--num">Purchase qty</th>
                     <th class="detail-th detail-th--num">Received qty</th>
                     <th class="detail-th detail-th--num">Outstanding</th>
@@ -521,12 +609,13 @@ function goBack() {
                 </thead>
                 <tbody>
                   <tr v-for="item in modalItems" :key="item.skuCode" class="detail-item-row">
-                    <td class="detail-td detail-td--thumb">
-                      <img class="rcvgd-product-thumb" :src="item.image" :alt="item.productName" loading="lazy" width="28" height="28" />
+                    <td class="detail-td">
+                      <div class="rcvgd-product">
+                        <img class="rcvgd-product-thumb" :src="item.image" :alt="item.productName" loading="lazy" width="40" height="40" />
+                        <span class="rcvgd-product-name">{{ item.productName }}</span>
+                      </div>
                     </td>
-                    <td class="detail-td detail-td--product">{{ item.productName }}</td>
                     <td class="detail-td detail-td--secondary">{{ item.skuCode }}</td>
-                    <td class="detail-td detail-td--secondary">{{ item.binLocation }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
                     <td class="detail-td detail-td--num">
                       <input
@@ -546,7 +635,7 @@ function goBack() {
                     <td class="detail-td">{{ item.unit }}</td>
                   </tr>
                   <tr v-if="!modalItems.length">
-                    <td class="detail-td rcvgd-rm-empty" colspan="8">No products match your search.</td>
+                    <td class="detail-td rcvgd-rm-empty" colspan="6">No products match your search.</td>
                   </tr>
                 </tbody>
               </table>
@@ -737,7 +826,7 @@ function goBack() {
 .rcvgd-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 240px;
 }
 .rcvgd-search {
@@ -780,19 +869,49 @@ function goBack() {
 .detail-td--num { text-align: right; white-space: nowrap; padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4); }
 .detail-td--product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detail-td--secondary { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.detail-td--thumb { padding: var(--mp-spacing-1\.5) var(--mp-spacing-1); width: 44px; }
+/* ── Linked put-away tab ─────────────────────────────────────────────────── */
+.rcvgd-tabs { flex-shrink: 0; }
+.rcvgd-tabs :deep(.mp-tab--isSelected_true),
+.rcvgd-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.rcvgd-tabs :deep(.mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
+.rcvgd-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.rcvgd-linked-wrap { overflow-x: auto; }
+.rcvgd-linked { width: 100%; border-collapse: collapse; }
+.rcvgd-linked .detail-th { background: var(--mp-background-neutral-subtle); }
+.rcvgd-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
+.rcvgd-linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* Number cell — "View details" chip on row hover */
+.rcvgd-linked .detail-td--number { position: relative; }
+.rcvgd-linked .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
+.rcvgd-linked .row-hover-btn {
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.rcvgd-linked .row-hover-btn__label {
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+}
+.rcvgd-linked .detail-item-row:hover .row-hover-btn { display: flex; }
 
-/* Product thumbnail — real product photo, same style as ReceiptDetailsPage */
+/* Product cell — photo + name, same pattern as the other detail pages */
+.rcvgd-product { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .rcvgd-product-thumb {
-  width: 28px; height: 28px; border-radius: var(--mp-radii-sm); flex-shrink: 0;
+  width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
+  border-radius: var(--mp-radii-md); flex-shrink: 0;
   object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle);
+}
+.rcvgd-product-name {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 .detail-items-count {
   display: flex; align-items: center; margin: 0;
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-  border-bottom: 1px solid var(--mp-border-default);
 }
 
 /* Editable received-qty input — compact, right-aligned in the column */

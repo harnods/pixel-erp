@@ -5,6 +5,7 @@ import {
   MpSpinner, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getReceiptDetail } from '~/data/receiptDetails'
 import { receipts } from '~/data/receipts'
 
@@ -110,7 +111,7 @@ function attachmentIcon(name: string): string {
 }
 function trackingText(nos: string[]) { return nos.length ? nos.join(', ') : '—' }
 
-function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Canceled' } }) }
+function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
 </script>
 
 <template>
@@ -119,9 +120,10 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Canceled
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Canceled</button>
+        <button class="detail-breadcrumb" @click="goBack">Receipts</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
+          <ErpStatusBadge v-if="receipt" :status="receipt.status" badge-for="additionalInformation" size="md" />
           <MpPopover id="cxd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">
