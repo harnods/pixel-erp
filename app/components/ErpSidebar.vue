@@ -461,8 +461,8 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
 const wmsOpsNavGroups = computed<NavItem[][]>(() => {
   const flows = activeWarehouse.value?.flows ?? ['out']
   const fulfillment: NavItem[] = []
-  if (flows.includes('out')) fulfillment.push(barangKeluarNav)
-  if (flows.includes('in')) fulfillment.push(barangMasukNavItem(assignedWarehouseIds.value, false))
+  if (flows.includes('out')) fulfillment.push({ name: 'Barang keluar', icon: 'sales' })
+  if (flows.includes('in')) fulfillment.push({ name: 'Barang masuk', icon: 'cart' })
   return [
     [{ name: 'Home', icon: 'home' }],
     [{ name: 'Warehouses', icon: 'warehouse', path: `/warehouses/${activeWarehouse.value?.id ?? 'wh-001'}` }],
