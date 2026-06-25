@@ -873,7 +873,7 @@ function goBack() {
 .rcvgd-tabs { flex-shrink: 0; }
 .rcvgd-tabs :deep(.mp-tab--isSelected_true),
 .rcvgd-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
-.rcvgd-tabs :deep(.mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
+.rcvgd-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .rcvgd-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 .rcvgd-linked-wrap { overflow-x: auto; }
 .rcvgd-linked { width: 100%; border-collapse: collapse; }
