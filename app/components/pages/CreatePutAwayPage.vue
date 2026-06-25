@@ -23,13 +23,7 @@ const ASSIGNEES = [
   { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
 ]
 
-// ─── Form state ────────────────────────────────────────────────────────────────
-const assigneeId    = ref('')
-const assigneeError = ref(false)
-watch(assigneeId, (v) => { if (v) assigneeError.value = false })
-const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
-
-// ─── Source receiving tasks (status = pending put-away) ────────────────────────
+// ─── All pending put-away tasks (flat) ────────────────────────────────────────
 interface FlatTask {
   id: string
   taskNo: string
@@ -38,10 +32,9 @@ interface FlatTask {
   warehouseName: string
   skuCount: number
   receivedQty: number
-  assignee: string
 }
 
-const pendingTasks = computed<FlatTask[]>(() =>
+const allPendingTasks = computed<FlatTask[]>(() =>
   receivingPOs.flatMap(po =>
     po.tasks
       .filter(t => t.status === 'pending put-away')
@@ -53,33 +46,53 @@ const pendingTasks = computed<FlatTask[]>(() =>
         warehouseName: po.warehouseName,
         skuCount: t.skuCount,
         receivedQty: t.receivedQty,
-        assignee: t.assignee,
       })),
   ),
 )
 
-// ─── Warehouse groups ──────────────────────────────────────────────────────────
-interface TaskGroup {
-  warehouseId: string
-  warehouseName: string
-  tasks: FlatTask[]
-}
-
-const taskGroups = computed<TaskGroup[]>(() => {
-  const map = new Map<string, TaskGroup>()
-  for (const t of pendingTasks.value) {
-    const g = map.get(t.warehouseId)
-    if (g) g.tasks.push(t)
-    else map.set(t.warehouseId, { warehouseId: t.warehouseId, warehouseName: t.warehouseName, tasks: [t] })
+// ─── Warehouse selector ────────────────────────────────────────────────────────
+// Only warehouses that actually have pending put-away tasks
+const availableWarehouses = computed(() => {
+  const seen = new Set<string>()
+  const list: { id: string; name: string }[] = []
+  for (const t of allPendingTasks.value) {
+    if (!seen.has(t.warehouseId)) {
+      seen.add(t.warehouseId)
+      list.push({ id: t.warehouseId, name: t.warehouseName })
+    }
   }
-  return Array.from(map.values())
+  return list
 })
 
-// Border only when progressive (>10 rows)
+const warehouseId  = ref('')
+const warehouseError = ref(false)
+watch(warehouseId, (v) => {
+  if (v) warehouseError.value = false
+  // reset task selection when warehouse changes
+  selectedIds.value = new Set()
+})
+const warehouseName = computed(() =>
+  availableWarehouses.value.find(w => w.id === warehouseId.value)?.name ?? '',
+)
+
+// ─── Assignee ─────────────────────────────────────────────────────────────────
+const assigneeId    = ref('')
+const assigneeError = ref(false)
+watch(assigneeId, (v) => { if (v) assigneeError.value = false })
+const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+
+// ─── Receiving tasks filtered by selected warehouse ────────────────────────────
+const pendingTasks = computed<FlatTask[]>(() =>
+  warehouseId.value
+    ? allPendingTasks.value.filter(t => t.warehouseId === warehouseId.value)
+    : [],
+)
+
+// Border only when >10 rows (progressive)
 const TASK_PAGE_SIZE = 10
 const isTasksProgressive = computed(() => pendingTasks.value.length > TASK_PAGE_SIZE)
 
-// Task selection (multi-select with checkboxes)
+// ─── Task selection ────────────────────────────────────────────────────────────
 const selectedIds = ref(new Set<string>())
 const taskSelectionError = ref(false)
 
@@ -90,30 +103,12 @@ function toggleTask(id: string) {
   if (s.size > 0) taskSelectionError.value = false
 }
 
-function isGroupAllSelected(group: TaskGroup): boolean {
-  return group.tasks.length > 0 && group.tasks.every(t => selectedIds.value.has(t.id))
-}
-function isGroupSomeSelected(group: TaskGroup): boolean {
-  return group.tasks.some(t => selectedIds.value.has(t.id)) && !isGroupAllSelected(group)
-}
-function toggleGroup(group: TaskGroup) {
-  const s = new Set(selectedIds.value)
-  if (isGroupAllSelected(group)) {
-    group.tasks.forEach(t => s.delete(t.id))
-  } else {
-    group.tasks.forEach(t => s.add(t.id))
-  }
-  selectedIds.value = s
-  if (s.size > 0) taskSelectionError.value = false
-}
-
 const allSelected = computed(() =>
   pendingTasks.value.length > 0 && selectedIds.value.size === pendingTasks.value.length,
 )
 const someSelected = computed(() =>
   selectedIds.value.size > 0 && selectedIds.value.size < pendingTasks.value.length,
 )
-
 function toggleAll() {
   selectedIds.value = allSelected.value
     ? new Set()
@@ -232,18 +227,18 @@ function goPutAway() {
 
 function handleCreate() {
   let valid = true
-  if (!assigneeId.value) { assigneeError.value = true; valid = false }
+  if (!warehouseId.value) { warehouseError.value = true; valid = false }
+  if (!assigneeId.value)  { assigneeError.value  = true; valid = false }
   if (!selectedTasks.value.length) { taskSelectionError.value = true; valid = false }
   if (!valid) return
 
-  const firstTask = selectedTasks.value[0]!
   const totalQty = skuRows.value.reduce((s, r) => s + r.receivedQty, 0)
 
   addPutAwayTask({
     receivingTaskIds: selectedTasks.value.map(t => t.id),
     receivingTaskNos: selectedTasks.value.map(t => t.taskNo),
-    warehouseId: firstTask.warehouseId,
-    warehouseName: firstTask.warehouseName,
+    warehouseId:   warehouseId.value,
+    warehouseName: warehouseName.value,
     assignee: assigneeLabel.value,
     itemQty: totalQty,
   })
@@ -271,8 +266,25 @@ function handleCreate() {
     <!-- ── Scrollable stage ── -->
     <div ref="stageEl" class="detail-stage">
 
-      <!-- Assignee -->
+      <!-- Warehouse + Assignee -->
       <div class="pa-section pa-grid">
+        <!-- Warehouse -->
+        <MpFormControl id="pa-warehouse" is-required :is-invalid="warehouseError" :class="css({ gridColumn: 'span 3' })">
+          <MpFormLabel>Warehouse</MpFormLabel>
+          <MpAutocomplete
+            id="pa-warehouse-ac"
+            v-model="warehouseId"
+            :data="availableWarehouses"
+            label-prop="name"
+            value-prop="id"
+            placeholder="Select warehouse"
+            is-searchable is-clearable use-portal is-full-width
+            :is-invalid="warehouseError"
+          />
+          <MpFormErrorMessage>You must select a warehouse</MpFormErrorMessage>
+        </MpFormControl>
+
+        <!-- Assignee -->
         <MpFormControl id="pa-assignee" is-required :is-invalid="assigneeError" :class="css({ gridColumn: 'span 3' })">
           <MpFormLabel>Assignee</MpFormLabel>
           <MpAutocomplete
@@ -299,27 +311,26 @@ function handleCreate() {
         </MpFormControl>
       </div>
 
-      <!-- Receiving tasks selector -->
-      <div class="pa-tasks-section">
-        <h2 class="pa-section-title">Source receiving tasks</h2>
-        <p class="pa-section-desc">Select one or more receiving tasks to include in this put-away.</p>
+      <!-- Receiving tasks — only shown after warehouse is selected -->
+      <div v-if="warehouseId" class="pa-tasks-section">
+        <h2 class="pa-section-title">Receiving tasks</h2>
 
-        <!-- Error message -->
+        <!-- Error -->
         <p v-if="taskSelectionError" class="pa-tasks-error">You must select at least one receiving task.</p>
 
-        <!-- Empty state — no pending tasks -->
+        <!-- Empty state — no pending tasks for this warehouse -->
         <div v-if="!pendingTasks.length" class="pa-empty">
           <p class="pa-empty-title">No pending tasks</p>
-          <p class="pa-empty-desc">All receiving tasks have been put away or are still in progress.</p>
+          <p class="pa-empty-desc">No receiving tasks are pending put-away for this warehouse.</p>
         </div>
 
-        <!-- Tasks table — border only when progressive (>10 rows) -->
+        <!-- Tasks table — border only when >10 rows -->
         <section v-else class="pa-tasks-table-wrap" :class="{ 'pa-tasks-table-wrap--bordered': isTasksProgressive }">
           <table class="pa-tasks-table">
             <colgroup>
               <col style="width: 40px" />
               <col style="width: 180px" />
-              <col style="width: 180px" />
+              <col />
               <col style="width: 100px" />
             </colgroup>
             <thead>
@@ -340,45 +351,27 @@ function handleCreate() {
               </tr>
             </thead>
             <tbody>
-              <template v-for="group in taskGroups" :key="group.warehouseId">
-                <!-- Warehouse group header -->
-                <tr class="pa-group-header-row">
-                  <td class="pa-td pa-td--check">
-                    <input
-                      type="checkbox"
-                      class="pa-checkbox"
-                      :checked="isGroupAllSelected(group)"
-                      :indeterminate="isGroupSomeSelected(group)"
-                      :aria-label="`Select all in ${group.warehouseName}`"
-                      @click.stop
-                      @change="toggleGroup(group)"
-                    />
-                  </td>
-                  <td class="pa-group-header-cell" colspan="3">{{ group.warehouseName }}</td>
-                </tr>
-                <!-- Task rows for this warehouse -->
-                <tr
-                  v-for="task in group.tasks"
-                  :key="task.id"
-                  class="pa-task-row"
-                  :class="{ 'pa-task-row--selected': selectedIds.has(task.id) }"
-                  @click="toggleTask(task.id)"
-                >
-                  <td class="pa-td pa-td--check">
-                    <input
-                      type="checkbox"
-                      class="pa-checkbox"
-                      :checked="selectedIds.has(task.id)"
-                      :aria-label="`Select ${task.taskNo}`"
-                      @click.stop
-                      @change="toggleTask(task.id)"
-                    />
-                  </td>
-                  <td class="pa-td pa-td--mono">{{ task.taskNo }}</td>
-                  <td class="pa-td pa-td--mono">{{ task.purchaseNo }}</td>
-                  <td class="pa-td pa-td--num">{{ formatNum(task.receivedQty) }}</td>
-                </tr>
-              </template>
+              <tr
+                v-for="task in pendingTasks"
+                :key="task.id"
+                class="pa-task-row"
+                :class="{ 'pa-task-row--selected': selectedIds.has(task.id) }"
+                @click="toggleTask(task.id)"
+              >
+                <td class="pa-td pa-td--check">
+                  <input
+                    type="checkbox"
+                    class="pa-checkbox"
+                    :checked="selectedIds.has(task.id)"
+                    :aria-label="`Select ${task.taskNo}`"
+                    @click.stop
+                    @change="toggleTask(task.id)"
+                  />
+                </td>
+                <td class="pa-td pa-td--mono">{{ task.taskNo }}</td>
+                <td class="pa-td pa-td--mono">{{ task.purchaseNo }}</td>
+                <td class="pa-td pa-td--num">{{ formatNum(task.receivedQty) }}</td>
+              </tr>
             </tbody>
           </table>
         </section>
@@ -575,15 +568,6 @@ function handleCreate() {
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
 }
 .pa-task-row:last-child .pa-td { border-bottom: none; }
-/* Warehouse group header row */
-.pa-group-header-row .pa-td--check { border-bottom: 1px solid var(--mp-border-default); }
-.pa-group-header-cell {
-  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: 0.04em;
-  border-bottom: 1px solid var(--mp-border-default);
-  background: var(--mp-background-neutral-subtle);
-}
 
 .pa-task-row { cursor: pointer; transition: background 80ms; }
 .pa-task-row:hover .pa-td { background: var(--mp-background-neutral-subtle); }
