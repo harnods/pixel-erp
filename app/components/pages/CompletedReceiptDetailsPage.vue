@@ -10,6 +10,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getReceiptDetail } from '~/data/receiptDetails'
 import { receiptsForStage } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
+import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -138,6 +139,9 @@ function formatDateNumeric(iso?: string) {
 
 // ── Linked purchase receivings ─────────────────────────────────────────────────
 const linkedReceivings = computed(() => getPurchaseReceivingsForReceipt(props.orderId))
+
+// ── Linked put-away tasks ──────────────────────────────────────────────────────
+const linkedPutAways = computed(() => getPutAwayForReceipt(props.orderId))
 
 function agingDays(startDate?: string, endDate?: string): number {
   if (!startDate) return 0
@@ -277,10 +281,11 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
       <!-- Last updated -->
       <a class="detail-updated" @click.prevent>Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
 
-      <!-- ── Linked purchase receivings tab ── -->
+      <!-- ── Linked purchase receivings + put-away tabs ── -->
       <MpTabs id="cod-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="cod-tab-pr" :value="0">Purchase receiving ({{ linkedReceivings.length }})</MpTab>
+          <MpTab id="cod-tab-pa" :value="1">Put-away ({{ linkedPutAways.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
@@ -336,6 +341,56 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                         <span v-if="pr.endDate">{{ formatDateNumeric(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+
+          <!-- Put-away panel -->
+          <MpTabPanel :value="1">
+            <div class="detail-linked-wrap">
+              <table class="detail-linked">
+                <colgroup>
+                  <col style="width: 220px" />
+                  <col style="width: 180px" />
+                  <col style="width: 140px" />
+                  <col style="width: 180px" />
+                  <col />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="detail-th">Number</th>
+                    <th class="detail-th">Assignee</th>
+                    <th class="detail-th">Status</th>
+                    <th class="detail-th">Start date</th>
+                    <th class="detail-th">End date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="pa in linkedPutAways" :key="pa.id" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="linked-num">{{ pa.taskNo }}</span>
+                        <button class="row-hover-btn">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ pa.assignee }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
+                    <td class="detail-td">{{ pa.startDate ? formatDateNumeric(pa.startDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="pa.endDate">{{ formatDateNumeric(pa.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
                       </span>
                     </td>
                   </tr>

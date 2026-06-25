@@ -1,5 +1,6 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
+import { receipts } from "./receipts";
 
 /**
  * A put-away task — once goods are received they must be moved from the
@@ -22,6 +23,8 @@ export interface PutAwayTask {
   /** destination storage — a single bin, or "N locations" when split */
   destination: string;
   status: "open" | "in progress" | "completed";
+  startDate?: string;
+  endDate?: string;
 }
 
 const ASSIGNEES = [
@@ -34,6 +37,13 @@ const ASSIGNEES = [
 ];
 
 const ZONES = ["A", "B", "C", "D"];
+
+function shiftDate(iso: string, days: number): string {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+const BASE_DATE = "2026-05-01";
 
 const PUTAWAY_WAREHOUSES = warehouses.filter(
   (w) => !w.isDefault && w.status === "active",
@@ -56,6 +66,8 @@ function generateTasks(count = 9): PutAwayTask[] {
       : `${zone}-${String((p % 9) + 1).padStart(2, "0")}-${String((p % 5) + 1).padStart(2, "0")}`;
     // spread across the lifecycle: open · in progress (being shelved) · completed
     const status: PutAwayTask["status"] = p % 4 === 1 ? "completed" : p % 4 === 3 ? "in progress" : "open";
+    const startDate = status !== "open" ? shiftDate(BASE_DATE, p * 3 + 1) : undefined;
+    const endDate = status === "completed" ? shiftDate(startDate!, 1 + (p % 3)) : undefined;
     out.push({
       id: `pa-${p}`,
       taskNo: `Put-away #${seq++}`,
@@ -66,6 +78,8 @@ function generateTasks(count = 9): PutAwayTask[] {
       itemQty,
       destination,
       status,
+      startDate,
+      endDate,
     });
   }
   return out;
@@ -110,4 +124,33 @@ export function putAwayTasksFor(warehouseIds?: string[]): PutAwayTask[] {
 /** Badge count for the Put-away stage = unfinished put-away tasks (scoped). */
 export function putAwayOpenCount(warehouseIds?: string[]): number {
   return putAwayTasksFor(warehouseIds).filter((t) => t.status !== "completed").length;
+}
+
+/** Put-away task(s) linked to a receipt (completed or partial reception). */
+export function getPutAwayForReceipt(orderId: string): PutAwayTask[] {
+  const receipt = receipts.find((r) => r.id === orderId);
+  if (!receipt) return [];
+  const h = orderId.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const taskNum = 20200 + (h % 300);
+  const status: PutAwayTask["status"] = h % 3 === 0 ? "open" : h % 3 === 1 ? "in progress" : "completed";
+  const base = receipt.receivedDate ?? receipt.estimatedArrival;
+  const startDate = status !== "open" ? shiftDate(base, 1) : undefined;
+  const endDate = status === "completed" ? shiftDate(base, 2 + (h % 3)) : undefined;
+  const split = h % 4 === 0;
+  const destination = split
+    ? `${(h % 3) + 2} locations`
+    : `${ZONES[h % 4]}-${String((h % 9) + 1).padStart(2, "0")}-${String((h % 5) + 1).padStart(2, "0")}`;
+  return [{
+    id: `pa-receipt-${orderId}`,
+    taskNo: `Put-away #${taskNum}`,
+    purchaseNo: receipt.purchaseNo,
+    warehouseId: receipt.warehouseId,
+    warehouseName: receipt.warehouseName,
+    assignee: ASSIGNEES[h % ASSIGNEES.length] ?? ASSIGNEES[0],
+    itemQty: receipt.receivedQty,
+    destination,
+    status,
+    startDate,
+    endDate,
+  }];
 }
