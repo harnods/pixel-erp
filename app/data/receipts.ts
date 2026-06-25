@@ -23,6 +23,8 @@ export interface Receipt {
   canceledDate?: string;
   /** why the PO was canceled (canceled receipts only) */
   canceledReason?: string;
+  /** who canceled the PO (canceled receipts only) */
+  canceledBy?: string;
   /** ISO date the goods are estimated to arrive */
   estimatedArrival: string;
   /** free-text memo the back-office writes on the PO (optional) — e.g.
@@ -173,6 +175,7 @@ function generateCanceled(count = 7): Receipt[] {
       status: "canceled",
       canceledDate: isoOffset(-((k % 12) + 1)),
       canceledReason: CANCEL_REASONS[k % CANCEL_REASONS.length],
+      canceledBy: ['Rizal Candra', 'Dewi Rahayu', 'Agus Firmansyah', 'Sari Indah'][k % 4],
       estimatedArrival: isoOffset(-((k % 12) + 3)),
       memo: generateMemo(i, isoOffset(0)),
       trackingNos: [],

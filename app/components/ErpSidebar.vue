@@ -541,8 +541,22 @@ function resolveActive(pageKey: string): {
   return { nav: 'Home', sub: null, panel: null }
 }
 
+// Map URL-first-segment keys that don't appear directly in the nav tree to their
+// parent section. Used as a fallback when resolveActive returns Home so that
+// detail pages (e.g. receiving task detail in ERP scenario) don't snap the
+// sidebar away from the relevant section.
+const SECTION_PARENT: Record<string, string> = {
+  Receiving: 'Barang masuk',
+}
+
 watch(currentPageKey, (key) => {
-  const { nav, sub, panel } = resolveActive(key)
+  let { nav, sub, panel } = resolveActive(key)
+  // When the URL key isn't in this scenario's nav tree, try the canonical parent
+  // section instead so the sidebar stays anchored (and the level-2 panel stays open).
+  if (nav === 'Home' && key !== 'Home') {
+    const parentKey = SECTION_PARENT[key]
+    if (parentKey) ({ nav, sub, panel } = resolveActive(parentKey))
+  }
   activeItem.value = nav
   activePanelSubItem.value = sub
   // Page title always mirrors the active menu name — the deepest active label

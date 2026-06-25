@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, type Component, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { receiptCountsByStage } from '~/data/receipts'
+import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 
@@ -38,11 +38,16 @@ const NewWarehousePage = defineAsyncComponent(() => import('~/components/pages/N
 const WarehouseDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
 const ReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue'))
+const ReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceiptDetailsPage.vue'))
+const PartialReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
+const CompletedReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptDetailsPage.vue'))
+const CanceledReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptDetailsPage.vue'))
 const ReceivingIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue'))
 const PutAwayIndexPage = defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue'))
 const PartialReceptionIndexPage = defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
 const CompletedReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue'))
 const CanceledReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue'))
+const ReceivingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceivingTaskDetailsPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -50,6 +55,21 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   const segs = route.path.split('/').filter(Boolean)
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
+  }
+  // /barang-masuk/:id → inbound PO detail (kept under the section path so the
+  // level-2 sidebar submenu stays active, like /sales-orders/:id).
+  // /receiving/:taskId → task detail; "Receiving" resolves as Barang masuk panel sub-item
+  // so the level-2 sidebar panel stays open with "Receiving" highlighted.
+  if (segs.length >= 2 && segs[0] === 'receiving') {
+    return { component: ReceivingTaskDetailsPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'barang-masuk') {
+    const r = receipts.find((x) => x.id === segs[1])
+    let component = ReceiptDetailsPage
+    if (r?.status === 'partial reception') component = PartialReceiptDetailsPage
+    else if (r?.status === 'completed') component = CompletedReceiptDetailsPage
+    else if (r?.status === 'canceled') component = CanceledReceiptDetailsPage
+    return { component, id: segs[1] }
   }
   if (segs.length >= 2 && segs[0] === 'warehouses' && segs[1] === 'import') {
     return { component: ImportWarehousesPage, id: 'import' }
@@ -92,7 +112,11 @@ const currentTabCounts = computed<Record<string, number>>(() => {
 
 const currentTabs = computed<string[]>(() => pageTabs[currentPageKey.value] ?? [])
 const activeTab = ref('')
-watch(currentPageKey, () => { activeTab.value = currentTabs.value[0] ?? '' }, { immediate: true })
+watch([currentPageKey, () => route.query.tab], () => {
+  const tabs = currentTabs.value
+  const queryTab = route.query.tab as string | undefined
+  activeTab.value = (queryTab && tabs.includes(queryTab)) ? queryTab : (tabs[0] ?? '')
+}, { immediate: true })
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {

@@ -5,6 +5,7 @@ import {
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
 import { receiptsForStage, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
@@ -76,12 +77,10 @@ function clearFilters() { search.value = ''; warehouseFilter.value = '' }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
-function formatDate(iso?: string) {
-  return iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-}
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
-function viewDetails(_row: Receipt) { /* detail page TBD */ }
+const router = useRouter()
+function viewDetails(row: Receipt) { router.push(`/barang-masuk/${row.id}`) }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
