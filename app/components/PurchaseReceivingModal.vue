@@ -5,11 +5,12 @@ import {
   MpModalCloseButton, MpModalOverlay,
   MpButton, MpFormControl, MpFormLabel, MpTooltip, MpSpinner, MpAutocomplete,
   MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpSelect, css,
+  MpPopoverList, MpPopoverListItem, MpSelect, toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import type { Receipt } from '~/data/receipts'
 import { lineItemsForReceipt, BINS, type ReceiptLineItem } from '~/data/receiptLineItems'
+import { addPurchaseReceiving } from '~/data/purchaseReceivings'
 
 const props = defineProps<{ receipt: Receipt | null; open: boolean }>()
 const emit = defineEmits<{ close: []; created: [] }>()
@@ -134,6 +135,25 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 const canCreate = computed(() => !!assigneeId.value && keptItems.value.length > 0)
 
 function handleCreate() {
+  if (props.receipt) {
+    const today = new Date()
+    const dateStr = today.toISOString().slice(0, 10)
+    const skuCount = keptItems.value.length
+    const totalSkuQty = props.receipt.skuQty
+    addPurchaseReceiving({
+      receiptId: props.receipt.id,
+      date: dateStr,
+      assignee: assigneeLabel.value,
+      skuScope: `${skuCount} SKUs`,
+      purchaseQty: keptItems.value.reduce((s, i) => s + i.purchaseQty, 0),
+      receivedQty: keptItems.value.reduce((s, i) => s + i.purchaseQty, 0),
+      skuCount,
+      status: 'completed',
+      startDate: dateStr,
+      endDate: dateStr,
+    })
+  }
+  toast.notify({ variant: 'success', title: 'Purchase receiving saved' })
   emit('created')
   emit('close')
 }
@@ -230,9 +250,10 @@ function handleCreate() {
               <table class="pr-items">
                 <colgroup>
                   <col />
-                  <col style="width: 150px" />
-                  <col style="width: 120px" />
-                  <col style="width: 150px" />
+                  <col style="width: 140px" />
+                  <col style="width: 110px" />
+                  <col style="width: 80px" />
+                  <col style="width: 140px" />
                   <col style="width: 56px" />
                 </colgroup>
                 <thead>
@@ -240,6 +261,7 @@ function handleCreate() {
                     <th class="pr-th">Product</th>
                     <th class="pr-th">SKU</th>
                     <th class="pr-th pr-th--num">Purchase qty</th>
+                    <th class="pr-th">Unit</th>
                     <th class="pr-th">Storage location</th>
                     <th class="pr-th pr-th--action" aria-hidden="true" />
                   </tr>
@@ -261,6 +283,7 @@ function handleCreate() {
                     </td>
                     <td class="pr-td"><span class="pr-sku-text">{{ it.sku }}</span></td>
                     <td class="pr-td pr-td--num">{{ formatNum(it.purchaseQty) }}</td>
+                    <td class="pr-td">{{ it.unit }}</td>
                     <td class="pr-td">
                       <!-- Click edit → searchable select to change the bin -->
                       <MpAutocomplete

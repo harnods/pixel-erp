@@ -53,7 +53,6 @@ const statusConfig: Record<string, StatusConfig> = {
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
-  'in progress':{ type: 'warning',    label: 'In progress'},
 
   // ── critical — red ────────────────────────────────
   overdue:    { type: 'critical',     label: 'Overdue'    },
@@ -78,6 +77,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'partially processed': { type: 'information', label: 'Partially processed' },
   'partially received': { type: 'information', label: 'Partially received' },
   'partial reception': { type: 'information', label: 'Partial reception' },
+  'in progress':{ type: 'information',  label: 'In progress' },
   new:        { type: 'information',  label: 'New'        },
   beta:       { type: 'information',  label: 'Beta'       },
   vip:        { type: 'information',  label: 'VIP'        },

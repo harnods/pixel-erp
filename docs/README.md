@@ -33,6 +33,7 @@ Start here. This is the home for ERP UI/UX documentation.
 | Filter Bar | [ErpFilterBar.md](patterns/ErpFilterBar.md) | Layout container for filter controls + standard search pattern |
 | Status Badge | [ErpStatusBadge.md](patterns/ErpStatusBadge.md) | Status → badge type mapping |
 | Content List | [ContentList.md](patterns/ContentList.md) | Labelled key/value field (label over value); detail header + key/value displays |
+| Date format | [date-format.md](patterns/date-format.md) | Numeric `DD/MM/YYYY` table date standard; `formatDate` / `formatDateTime` helpers |
 | Form | [Form.md](patterns/Form.md) | Field anatomy, layout rules (558px / 6-col), field type → Pixel component |
 | Modal | [Modal.md](patterns/Modal.md) | Centered dialog for focused/interrupting tasks |
 | Drawer | [Drawer.md](patterns/Drawer.md) | Side panel for contextual detail/edit without leaving the page |

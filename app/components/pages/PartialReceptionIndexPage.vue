@@ -90,7 +90,8 @@ const receiptForPR  = ref<Receipt | null>(null)
 function createPurchaseReceiving(row: Receipt) { receiptForPR.value = row; prModalOpen.value = true }
 function closePRModal() { prModalOpen.value = false; receiptForPR.value = null }
 
-function viewDetails(_row: Receipt) { /* detail page TBD */ }
+const router = useRouter()
+function viewDetails(row: Receipt) { router.push(`/barang-masuk/${row.id}`) }
 
 const closeModalOpen = ref(false)
 const receiptToClose = ref<Receipt | null>(null)

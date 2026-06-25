@@ -7,6 +7,7 @@ import {
   MpModalOverlay, MpModalCloseButton, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { formatDateTime } from '~/utils/date'
 import { receivingQueuePOs, taskAgingDays, type ReceivingPO, type ReceivingTask } from '~/data/receivingTasks'
 import { warehouses } from '~/data/warehouses'
 
@@ -47,8 +48,9 @@ const assigneeOptions = computed(() =>
   [...new Set(basePOs.value.flatMap(po => po.tasks.map(t => t.assignee)))].map(a => ({ label: a, value: a })),
 )
 const statusOptions = [
-  { label: 'Open',      value: 'open' },
-  { label: 'Completed', value: 'completed' },
+  { label: 'Open',        value: 'open' },
+  { label: 'In progress', value: 'in progress' },
+  { label: 'Completed',   value: 'completed' },
 ]
 const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
 const assigneeLabel = computed(() => assigneeOptions.value.find(o => o.value === assigneeFilter.value)?.label ?? '')
@@ -95,12 +97,6 @@ function poSkuTotal(po: ReceivingPO) { return po.tasks.reduce((n, t) => n + t.sk
 function poPurchaseQty(po: ReceivingPO) { return po.tasks.reduce((n, t) => n + t.purchaseQty, 0) }
 function poReceivedQty(po: ReceivingPO) { return po.tasks.reduce((n, t) => n + t.receivedQty, 0) }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
-function formatDate(iso?: string) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-  })
-}
 // Aging shows only when a task ran longer than a day.
 function aging(t: ReceivingTask) {
   const d = taskAgingDays(t)
@@ -108,7 +104,8 @@ function aging(t: ReceivingTask) {
 }
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
-function viewDetails(_t: ReceivingTask) { /* task detail (scan/manual) TBD */ }
+const router = useRouter()
+function viewDetails(t: ReceivingTask) { router.push(`/receiving/${t.id}`) }
 const deleteModalOpen = ref(false)
 const taskToDelete = ref<ReceivingTask | null>(null)
 function openDeleteModal(t: ReceivingTask) { taskToDelete.value = t; deleteModalOpen.value = true }
@@ -257,10 +254,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
                 <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
                 <td class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
-                <td class="rcvg-td">{{ formatDate(t.startDate) }}</td>
+                <td class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
                 <td class="rcvg-td">
                   <span class="rcvg-end">
-                    <span v-if="t.endDate">{{ formatDate(t.endDate) }}</span>
+                    <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
                     <span v-else class="rcvg-end__ongoing">—</span>
                     <span v-if="aging(t)" class="rcvg-aging">{{ aging(t) }} days</span>
                   </span>
@@ -393,8 +390,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-aging {
   display: inline-flex; align-items: center;
   padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-warning-subtle, #fef3e6);
-  color: var(--mp-text-warning, #a86400);
+  background: var(--mp-background-neutral-subtle, #f1f5f9);
+  color: var(--mp-text-secondary);
   font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
