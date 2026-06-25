@@ -21,8 +21,9 @@ export interface ReceivingTask {
   purchaseQty: number;
   /** units recorded so far */
   receivedQty: number;
-  /** open = not started yet · in progress = receiving started · completed = done */
-  status: "open" | "in progress" | "completed";
+  /** open = not started · in progress = receiving · pending put-away = received,
+   *  awaiting put-away · completed = put away / done */
+  status: "open" | "in progress" | "pending put-away" | "completed";
   /** ISO date receiving started — absent while the task is still "open" (not started) */
   startDate?: string;
   /** ISO date the task finished — completed tasks only */
@@ -83,13 +84,14 @@ const RECEIVING_WAREHOUSES = warehouses.filter(
 function generatePOs(count = 12): ReceivingPO[] {
   const pos: ReceivingPO[] = [];
   let seq = 10090;
+  let singleSeq = 0; // cycles single-task POs through the full lifecycle
   const mkTask = (
     assignee: string,
     skuScope: string,
     skuCount: number,
     purchaseQty: number,
     receivedQty: number,
-    status: "open" | "in progress" | "completed",
+    status: "open" | "in progress" | "pending put-away" | "completed",
     startDate?: string,
     endDate?: string,
   ): ReceivingTask => ({
@@ -113,40 +115,53 @@ function generatePOs(count = 12): ReceivingPO[] {
     const totalSkus = ((p * 3 + 5) % 14) + 4; // 4–17
     const tasks: ReceivingTask[] = [];
 
-    // Most POs are received in a single "All SKUs" task; only a few are split
-    // into SKU-scoped batches (first batch received, remainder still pending).
+    // Lifecycle (correct semantics):
+    //   open            → not started
+    //   in progress     → receiving underway (received < purchase)
+    //   pending put-away → received in full, put-away task not done yet
+    //   completed       → goods put away (done)
+    // Most POs are a single "All SKUs" task; a few are split into SKU batches.
     if (p % 5 === 0) {
       const s1 = Math.ceil(totalSkus / 2);
       const s2 = totalSkus - s1;
       const q1 = s1 * 4;
       const q2 = s2 * 4;
-      // First batch is done — usually received in full, occasionally closed early (partial).
-      const earlyClose = (p / 5) % 2 === 1;
-      // Completed batch: started 5–8 days ago, ran 0–3 days (some same-day → 1 day, some aged).
       const startA = -(5 + (p % 4));
       const durA = (p + 1) % 4;
+      // First batch received in full; alternate whether it's been put away
+      // (completed) or is still awaiting put-away (pending put-away).
+      const firstPutAway = (p / 5) % 2 === 0;
       tasks.push(mkTask(
-        ASSIGNEES[p % ASSIGNEES.length], `${s1} SKUs`, s1, q1, earlyClose ? Math.round(q1 * 0.7) : q1, "completed",
+        ASSIGNEES[p % ASSIGNEES.length], `${s1} SKUs`, s1, q1, q1,
+        firstPutAway ? "completed" : "pending put-away",
         isoAt(startA, 8 + (p % 6), (p * 7) % 60),
         isoAt(Math.min(0, startA + durA), 9 + (p % 7), (p * 11) % 60),
       ));
-      // Remainder: in progress (started, 50% in) when closed early, else not started yet.
-      if (earlyClose) {
+      // Remainder: still being received once the first batch is stored, else not started.
+      if (firstPutAway) {
         tasks.push(mkTask(ASSIGNEES[(p + 2) % ASSIGNEES.length], `${s2} SKUs`, s2, q2, Math.round(q2 * 0.5), "in progress", isoAt(-((p + 1) % 5), 8 + (p % 5), (p * 13) % 60)));
       } else {
         tasks.push(mkTask(ASSIGNEES[(p + 2) % ASSIGNEES.length], `${s2} SKUs`, s2, q2, 0, "open"));
       }
     } else {
       const q = totalSkus * 4;
-      // Single task — realistic spread: not started (0), early progress, almost done.
-      const stage = p % 3; // 0 → not started, 1 → ~40%, 2 → ~75%
-      const receivedQty = stage === 0 ? 0 : stage === 1 ? Math.round(q * 0.4) : Math.round(q * 0.75);
-      if (receivedQty === 0) {
-        // Not started → "open", no dates.
+      // Single "All SKUs" task — cycle through every lifecycle stage in turn.
+      const LIFECYCLE = ['open', 'in40', 'in75', 'pending put-away', 'completed'] as const;
+      const stage = LIFECYCLE[singleSeq++ % LIFECYCLE.length];
+      if (stage === 'open') {
+        // Not started → no dates.
         tasks.push(mkTask(ASSIGNEES[p % ASSIGNEES.length], "All SKUs", totalSkus, q, 0, "open"));
-      } else {
-        // Started → "in progress"; started 0–6 days ago so some are same-day (1 day, no aging).
+      } else if (stage === 'in40' || stage === 'in75') {
+        // Receiving underway — received less than the full qty.
+        const receivedQty = stage === 'in40' ? Math.round(q * 0.4) : Math.round(q * 0.75);
         tasks.push(mkTask(ASSIGNEES[p % ASSIGNEES.length], "All SKUs", totalSkus, q, receivedQty, "in progress", isoAt(-(p % 7), 8 + (p % 6), (p * 17) % 60)));
+      } else {
+        // Received in full — pending put-away (not stored yet) or completed (put away).
+        tasks.push(mkTask(
+          ASSIGNEES[p % ASSIGNEES.length], "All SKUs", totalSkus, q, q, stage,
+          isoAt(-(2 + (p % 4)), 8 + (p % 6), (p * 7) % 60),
+          isoAt(-(p % 2), 10 + (p % 5), (p * 17) % 60),
+        ));
       }
     }
 

@@ -2,15 +2,15 @@
 import { ref, computed, onMounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpDatePicker,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpDatePicker, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton, MpInput, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
-import PurchaseReceivingModal from '~/components/PurchaseReceivingModal.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { receiptsForStage, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
+import { receiptsForStages, receiptStage, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -38,8 +38,9 @@ function setDemoState(s: DemoState) {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'purchaseNo',       label: 'Purchase no.',      width: '260px' },
+  { key: 'purchaseNo',       label: 'Number',            width: '260px' },
   { key: 'warehouseName',    label: 'Warehouse',         width: '180px' },
+  { key: 'status',           label: 'Status',            width: '150px' },
   { key: 'trackingNos',      label: 'Tracking no.',      width: '150px' },
   { key: 'skuQty',           label: 'SKU qty',           width: '100px', align: 'right' },
   { key: 'purchaseQty',      label: 'Purchase qty',      width: '120px', align: 'right' },
@@ -47,6 +48,32 @@ const columns: TableColumn[] = [
 ]
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
+// Status — multi-select. Completed & Canceled are terminal, hidden by default, so
+// the default view shows only the actionable stages.
+const STATUS_OPTIONS = ['On the way', 'Partial reception', 'Completed', 'Canceled']
+const DEFAULT_STATUSES = ['On the way', 'Partial reception']
+// Display label per stage value — "On the way" shows as "Open" (value stays internal).
+const STATUS_LABELS: Record<string, string> = { 'On the way': 'Open' }
+function statusOptionLabel(s: string) { return STATUS_LABELS[s] ?? s }
+const statusFilter = ref<string[]>([...DEFAULT_STATUSES])
+function toggleStatus(s: string) {
+  statusFilter.value = statusFilter.value.includes(s)
+    ? statusFilter.value.filter(x => x !== s)
+    : [...statusFilter.value, s]
+}
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === STATUS_OPTIONS.length) return 'All statuses'
+  if (n === 1) return statusOptionLabel(statusFilter.value[0])
+  return `${n} statuses`
+})
+const statusIsDefault = computed(() =>
+  statusFilter.value.length === DEFAULT_STATUSES.length
+  && DEFAULT_STATUSES.every(s => statusFilter.value.includes(s)),
+)
+function resetStatus() { statusFilter.value = [...DEFAULT_STATUSES] }
+
 const warehouseFilter = ref('')
 const arrivalPreset = ref('') // '' | today | tomorrow | next7 | thismonth | custom
 const customFrom = ref('')    // DD/MM/YYYY
@@ -117,9 +144,10 @@ function clearArrival() {
 }
 
 // ─── Table state ─────────────────────────────────────────────────────────────
-// This page is the "On the way" stage — show only on-the-way receipts (warehouse-scoped).
+// Unified Receipts list — all receipt stages (On the way / Partial reception /
+// Completed / Canceled); the Status filter narrows which show (warehouse-scoped).
 const scopedReceipts = computed<Receipt[]>(() =>
-  receiptsForStage('On the way', isScoped.value ? scopedWarehouseIds.value : undefined),
+  receiptsForStages(STATUS_OPTIONS, isScoped.value ? scopedWarehouseIds.value : undefined),
 )
 const rows = computed<Receipt[]>(() => (demoState.value === 'data' ? scopedReceipts.value : []))
 
@@ -132,6 +160,7 @@ const {
     const matchesSearch = !s
       || row.purchaseNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
+    const matchesStatus = statusFilter.value.includes(receiptStage(row))
     const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
     let matchesArrival = true
     const range = arrivalRange.value
@@ -139,18 +168,19 @@ const {
       const d = dayStart(new Date(row.estimatedArrival))
       matchesArrival = d >= range[0] && d <= range[1]
     }
-    return matchesSearch && matchesWarehouse && matchesArrival
+    return matchesSearch && matchesStatus && matchesWarehouse && matchesArrival
   },
 })
 
 // reset to page 1 when the extra (non-built-in) filters change
-watch([warehouseFilter, arrivalRange], () => setPage(1))
+watch([statusFilter, warehouseFilter, arrivalRange], () => setPage(1))
 
 const hasActiveFilter = computed(
-  () => !!search.value || !!warehouseFilter.value || !!arrivalPreset.value,
+  () => !!search.value || !statusIsDefault.value || !!warehouseFilter.value || !!arrivalPreset.value,
 )
 function clearFilters() {
   search.value = ''
+  resetStatus()
   warehouseFilter.value = ''
   clearArrival()
 }
@@ -162,10 +192,7 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 const router = useRouter()
 function viewDetails(row: Receipt) { router.push(`/barang-masuk/${row.id}`) }
 
-const prModalOpen  = ref(false)
-const receiptForPR = ref<Receipt | null>(null)
-function purchaseReceiving(row: Receipt) { receiptForPR.value = row; prModalOpen.value = true }
-function closePRModal() { prModalOpen.value = false; receiptForPR.value = null }
+function purchaseReceiving(row: Receipt) { router.push(`/barang-masuk/${row.id}/receive`) }
 
 // Bulk actions (stubs) — clear the selection after acting.
 function bulkPurchaseReceiving(deselectAll: () => void) { deselectAll() }
@@ -280,6 +307,31 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
+        <!-- Status — multi-select (Completed & Canceled hidden by default) -->
+        <MpPopover id="rcv-status-filter" :is-close-on-select="false">
+          <MpPopoverTrigger>
+            <MpSelect
+              id="rcv-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '180px' })" @mousedown.prevent @clear="resetStatus"
+            >
+              <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })">
+            <div class="status-filter-list">
+              <label v-for="s in STATUS_OPTIONS" :key="s" class="status-filter-item">
+                <MpCheckbox
+                  :id="`rcv-status-${s}`"
+                  :is-checked="statusFilter.includes(s)"
+                  @change="toggleStatus(s)"
+                  @click.stop
+                />
+                <span>{{ statusOptionLabel(s) }}</span>
+              </label>
+            </div>
+          </MpPopoverContent>
+        </MpPopover>
+
         <!-- Arrival date -->
         <MpPopover id="rcv-arrival-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
@@ -353,6 +405,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Warehouse — wrap to 2 lines instead of bleeding ── -->
     <template #cell-warehouseName="{ value }">
       <span class="rcv-warehouse">{{ value }}</span>
+    </template>
+
+    <!-- ── Status badge ── -->
+    <template #cell-status="{ value }">
+      <ErpStatusBadge :status="(value as string)" />
     </template>
 
     <!-- ── Tracking no. (one PO may have several) — edit on hover ── -->
@@ -476,13 +533,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalOverlay />
   </MpModal>
 
-  <!-- ── Purchase receiving modal ── -->
-  <PurchaseReceivingModal
-    :receipt="receiptForPR"
-    :open="prModalOpen"
-    @close="closePRModal"
-    @created="closePRModal"
-  />
 
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="rcv-demo-fab" is-close-on-select use-portal placement="top-end">
@@ -521,7 +571,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 200px;
 }
 .filter-search-input {
@@ -529,6 +579,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+
+/* Status multi-select list */
+.status-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.status-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-2\.5); border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.status-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 
 /* Arrival custom range */
 .arrival-custom {
@@ -550,20 +609,21 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   white-space: normal;
 }
 
-/* Tracking no. — one or more, stacked; edit icon on row hover */
-.rcv-track-cell { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Tracking no. — one or more, stacked; edit icon sits right next to the text (row hover) */
+.rcv-track-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; }
 .rcv-tracking { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .rcv-tracking__no { color: var(--mp-text-default); white-space: nowrap; }
 .rcv-tracking__empty { color: var(--mp-text-secondary); }
 .track-edit-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-  display: none; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
-  border: none; background: var(--mp-background-neutral); border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-text-secondary);
+  flex-shrink: 0;
+  /* always laid out (space reserved) — only visibility toggles, so the row never shifts */
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-6, 24px); height: var(--mp-sizes-6, 24px);
+  border: none; background: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary); visibility: hidden;
 }
 .track-edit-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
-:global(.erp-tr:hover .track-edit-btn) { display: inline-flex; }
+:global(.erp-tr:hover .track-edit-btn) { visibility: visible; }
 
 /* Edit tracking modal */
 .track-modal__group + .track-modal__group {

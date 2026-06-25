@@ -1,3 +1,4 @@
+import { reactive } from "vue";
 import { warehouses } from "./warehouses";
 
 /**
@@ -20,7 +21,7 @@ export interface PutAwayTask {
   itemQty: number;
   /** destination storage — a single bin, or "N locations" when split */
   destination: string;
-  status: "open" | "completed";
+  status: "open" | "in progress" | "completed";
 }
 
 const ASSIGNEES = [
@@ -53,8 +54,8 @@ function generateTasks(count = 9): PutAwayTask[] {
     const destination = split
       ? `${((p % 3) + 2)} locations`
       : `${zone}-${String((p % 9) + 1).padStart(2, "0")}-${String((p % 5) + 1).padStart(2, "0")}`;
-    // most tasks still open; a couple already done
-    const status = p % 4 === 1 ? "completed" : "open";
+    // spread across the lifecycle: open · in progress (being shelved) · completed
+    const status: PutAwayTask["status"] = p % 4 === 1 ? "completed" : p % 4 === 3 ? "in progress" : "open";
     out.push({
       id: `pa-${p}`,
       taskNo: `Put-away #${seq++}`,
@@ -70,7 +71,34 @@ function generateTasks(count = 9): PutAwayTask[] {
   return out;
 }
 
-export const putAwayTasks: PutAwayTask[] = generateTasks();
+export const putAwayTasks = reactive<PutAwayTask[]>(generateTasks());
+
+// Next task number — continues past the generated ones.
+let nextSeq = 20090 + putAwayTasks.length;
+
+/** Create a put-away task (from a completed receiving) — newly created → "open". */
+export function addPutAwayTask(opts: {
+  purchaseNo: string;
+  warehouseId: string;
+  warehouseName: string;
+  assignee: string;
+  itemQty: number;
+}): PutAwayTask {
+  const seq = nextSeq++;
+  const task: PutAwayTask = {
+    id: `pa-new-${seq}`,
+    taskNo: `Put-away #${seq}`,
+    purchaseNo: opts.purchaseNo,
+    warehouseId: opts.warehouseId,
+    warehouseName: opts.warehouseName,
+    assignee: opts.assignee,
+    itemQty: opts.itemQty,
+    destination: "Unassigned",
+    status: "open",
+  };
+  putAwayTasks.unshift(task);
+  return task;
+}
 
 /** Put-away tasks scoped to warehouses (all when none given). */
 export function putAwayTasksFor(warehouseIds?: string[]): PutAwayTask[] {
@@ -79,7 +107,7 @@ export function putAwayTasksFor(warehouseIds?: string[]): PutAwayTask[] {
     : putAwayTasks;
 }
 
-/** Badge count for the Put-away stage = open put-away tasks (scoped). */
+/** Badge count for the Put-away stage = unfinished put-away tasks (scoped). */
 export function putAwayOpenCount(warehouseIds?: string[]): number {
-  return putAwayTasksFor(warehouseIds).filter((t) => t.status === "open").length;
+  return putAwayTasksFor(warehouseIds).filter((t) => t.status !== "completed").length;
 }

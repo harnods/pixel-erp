@@ -48,6 +48,7 @@ const PartialReceptionIndexPage = defineAsyncComponent(() => import('~/component
 const CompletedReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue'))
 const CanceledReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue'))
 const ReceivingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceivingTaskDetailsPage.vue'))
+const CreatePurchaseReceivingPage = defineAsyncComponent(() => import('~/components/pages/CreatePurchaseReceivingPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -62,6 +63,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // so the level-2 sidebar panel stays open with "Receiving" highlighted.
   if (segs.length >= 2 && segs[0] === 'receiving') {
     return { component: ReceivingTaskDetailsPage, id: segs[1] }
+  }
+  // /barang-masuk/:id/receive → create purchase receiving (full page, not a modal)
+  if (segs.length >= 3 && segs[0] === 'barang-masuk' && segs[2] === 'receive') {
+    return { component: CreatePurchaseReceivingPage, id: segs[1] }
   }
   if (segs.length >= 2 && segs[0] === 'barang-masuk') {
     const r = receipts.find((x) => x.id === segs[1])
@@ -92,16 +97,17 @@ const currentComponent = computed<Component>(
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
   'Barang keluar': ['Orders', 'Picking', 'Packing', 'Ready to ship', 'Delivery', 'Voided orders'],
-  'Barang masuk': ['On the way', 'Receiving', 'Put-away', 'Partial reception', 'Completed', 'Canceled'],
+  'Barang masuk': ['Receipts', 'Receiving', 'Put-away'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
-// Only the active stages get a badge (terminal stages don't).
-const BADGE_STAGES = ['On the way', 'Receiving', 'Partial reception']
+// The Receipts tab badges the default-visible (actionable) receipts: On the way +
+// Partial reception (Completed / Canceled are terminal, hidden by default).
 const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value !== 'Barang masuk') return {}
   const counts = receiptCountsByStage() // ERP = all warehouses
   const out: Record<string, number> = {}
-  for (const s of BADGE_STAGES) if (counts[s]) out[s] = counts[s]
+  const receipts = (counts['On the way'] ?? 0) + (counts['Partial reception'] ?? 0)
+  if (receipts) out['Receipts'] = receipts
   // Receiving / Put-away are task-based (a different dataset than the PO stages)
   const recv = receivingOpenCount()
   if (recv) out['Receiving'] = recv
@@ -121,12 +127,9 @@ watch([currentPageKey, () => route.query.tab], () => {
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {
   'Barang masuk': {
-    'On the way': ReceiptIndexPage,
+    'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
     'Put-away': PutAwayIndexPage,
-    'Partial reception': PartialReceptionIndexPage,
-    'Completed': CompletedReceiptIndexPage,
-    'Canceled': CanceledReceiptIndexPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -532,6 +535,17 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New warehouse
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Barang masuk'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New receipt
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">

@@ -146,7 +146,7 @@ function agingDays(startDate?: string, endDate?: string): number {
   return Math.max(0, Math.round((ref.getTime() - start.getTime()) / 86400000) + 1)
 }
 
-function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Completed' } }) }
+function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
 </script>
 
 <template>
@@ -155,9 +155,10 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Complete
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Completed</button>
+        <button class="detail-breadcrumb" @click="goBack">Receipts</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
+          <ErpStatusBadge status="completed" badge-for="additionalInformation" size="md" />
           <MpPopover id="cod-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">

@@ -314,14 +314,8 @@ const erpNavGroups: NavItem[][] = [
         [
           { label: 'Overview' },
           { label: 'Warehouses' },
-          {
-            label: 'Fulfillments',
-            panelTitle: 'Fulfillments',
-            panelSubmenu: [[
-              { label: 'Barang keluar' },
-              { label: 'Barang masuk' },
-            ]],
-          },
+          { label: 'Barang keluar' },
+          { label: 'Barang masuk' },
           { label: 'Warehouse transfers' },
           { label: 'Stock adjustments' },
         ],

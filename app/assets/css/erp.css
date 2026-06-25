@@ -101,9 +101,12 @@
   box-shadow: 0 0 0 1px var(--mp-colors-red-400, #e2483d);
 }
 
-/* Index filter-bar search box (custom .filter-search, shared across all module
-   index pages) — give it the same neutral slate focus ring. */
-.filter-search:focus-within {
+/* Custom search pills (index filter bars + detail/form search boxes) — one shared
+   neutral slate focus ring so focus looks identical everywhere. Each component's
+   scoped border wins over border-color here, so only the subtle ring is added. */
+.filter-search:focus-within,
+.pr-filter-search:focus-within,
+.rcvgd-search-wrap:focus-within {
   border-color: #8c9596;
   box-shadow: 0 0 0 1px #8c9596;
 }

@@ -75,9 +75,10 @@ pagination automatically.
 
 ## Progressive pagination (infinite scroll)
 
-A **second pagination model**, used for **embedded / read-only tables** — e.g. the
-**line-items table on a detail page** ([details-page-format.md](details-page-format.md)),
-related-records tabs, etc. Instead of page numbers, rows are revealed in batches as the
+A **second pagination model**, used for **embedded line-items tables** — read-only
+(the **line-items table on a detail page**, [details-page-format.md](details-page-format.md),
+related-records tabs) **and editable** (the **SKU table in the Create purchase receiving
+form**, [Form.md](Form.md)). Instead of page numbers, rows are revealed in batches as the
 user scrolls.
 
 - **Show 10 by default** (`PAGE_SIZE = 10`).
@@ -89,6 +90,11 @@ user scrolls.
   `var(--mp-border-bold)` outer border** + `var(--mp-radii-md)` corners (the `Showing N
   of N` footer sits inside it, divided by a top border). When the list fits in the
   default page (≤ ~10 rows, no scroll), there is **no border**.
+  > **The outer border is conditional on progressive loading, not always-on.** Gate it
+  > on a computed like `isProgressive = items.length > PAGE_SIZE` (10) and bind the
+  > modifier class — e.g. `:class="{ 'pr-items-section--bordered': isProgressive }"`.
+  > > 10 items → bordered, internally-scrolling panel. ≤ 10 items → borderless,
+  > grows naturally with no scroll. Never hard-code the bordered class on.
   > Note: `overflow: hidden` on a flex child zeroes its min-height — give the panel
   > `flex-shrink: 0` so the flex-column stage doesn't collapse it.
   > **The outer border is for VERTICAL internal scroll only.** A table that merely

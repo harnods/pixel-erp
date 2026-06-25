@@ -65,6 +65,7 @@ const assigneeOptions = computed(() =>
 )
 const statusOptions = [
   { label: 'Open', value: 'open' },
+  { label: 'In progress', value: 'in progress' },
   { label: 'Completed', value: 'completed' },
 ]
 const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
@@ -270,7 +271,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 200px;
 }
 .filter-search-input {
