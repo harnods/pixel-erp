@@ -58,6 +58,27 @@ const pendingTasks = computed<FlatTask[]>(() =>
   ),
 )
 
+// ─── Warehouse groups ──────────────────────────────────────────────────────────
+interface TaskGroup {
+  warehouseId: string
+  warehouseName: string
+  tasks: FlatTask[]
+}
+
+const taskGroups = computed<TaskGroup[]>(() => {
+  const map = new Map<string, TaskGroup>()
+  for (const t of pendingTasks.value) {
+    const g = map.get(t.warehouseId)
+    if (g) g.tasks.push(t)
+    else map.set(t.warehouseId, { warehouseId: t.warehouseId, warehouseName: t.warehouseName, tasks: [t] })
+  }
+  return Array.from(map.values())
+})
+
+// Border only when progressive (>10 rows)
+const TASK_PAGE_SIZE = 10
+const isTasksProgressive = computed(() => pendingTasks.value.length > TASK_PAGE_SIZE)
+
 // Task selection (multi-select with checkboxes)
 const selectedIds = ref(new Set<string>())
 const taskSelectionError = ref(false)
@@ -65,6 +86,23 @@ const taskSelectionError = ref(false)
 function toggleTask(id: string) {
   const s = new Set(selectedIds.value)
   s.has(id) ? s.delete(id) : s.add(id)
+  selectedIds.value = s
+  if (s.size > 0) taskSelectionError.value = false
+}
+
+function isGroupAllSelected(group: TaskGroup): boolean {
+  return group.tasks.length > 0 && group.tasks.every(t => selectedIds.value.has(t.id))
+}
+function isGroupSomeSelected(group: TaskGroup): boolean {
+  return group.tasks.some(t => selectedIds.value.has(t.id)) && !isGroupAllSelected(group)
+}
+function toggleGroup(group: TaskGroup) {
+  const s = new Set(selectedIds.value)
+  if (isGroupAllSelected(group)) {
+    group.tasks.forEach(t => s.delete(t.id))
+  } else {
+    group.tasks.forEach(t => s.add(t.id))
+  }
   selectedIds.value = s
   if (s.size > 0) taskSelectionError.value = false
 }
@@ -225,7 +263,7 @@ function handleCreate() {
           <button class="detail-breadcrumb" @click="goPutAway">Put-away</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Create put-away task</h1>
+          <h1 class="detail-title">New put-away</h1>
         </div>
       </div>
     </header>
@@ -275,14 +313,13 @@ function handleCreate() {
           <p class="pa-empty-desc">All receiving tasks have been put away or are still in progress.</p>
         </div>
 
-        <!-- Tasks table -->
-        <section v-else class="pa-tasks-table-wrap">
+        <!-- Tasks table — border only when progressive (>10 rows) -->
+        <section v-else class="pa-tasks-table-wrap" :class="{ 'pa-tasks-table-wrap--bordered': isTasksProgressive }">
           <table class="pa-tasks-table">
             <colgroup>
               <col style="width: 40px" />
               <col style="width: 180px" />
               <col style="width: 180px" />
-              <col />
               <col style="width: 100px" />
             </colgroup>
             <thead>
@@ -299,33 +336,49 @@ function handleCreate() {
                 </th>
                 <th class="pa-th">Task no.</th>
                 <th class="pa-th">Purchase no.</th>
-                <th class="pa-th">Warehouse</th>
                 <th class="pa-th pa-th--num">Received qty</th>
               </tr>
             </thead>
             <tbody>
-              <tr
-                v-for="task in pendingTasks"
-                :key="task.id"
-                class="pa-task-row"
-                :class="{ 'pa-task-row--selected': selectedIds.has(task.id) }"
-                @click="toggleTask(task.id)"
-              >
-                <td class="pa-td pa-td--check">
-                  <input
-                    type="checkbox"
-                    class="pa-checkbox"
-                    :checked="selectedIds.has(task.id)"
-                    :aria-label="`Select ${task.taskNo}`"
-                    @click.stop
-                    @change="toggleTask(task.id)"
-                  />
-                </td>
-                <td class="pa-td pa-td--mono">{{ task.taskNo }}</td>
-                <td class="pa-td pa-td--mono">{{ task.purchaseNo }}</td>
-                <td class="pa-td pa-td--warehouse">{{ task.warehouseName }}</td>
-                <td class="pa-td pa-td--num">{{ formatNum(task.receivedQty) }}</td>
-              </tr>
+              <template v-for="group in taskGroups" :key="group.warehouseId">
+                <!-- Warehouse group header -->
+                <tr class="pa-group-header-row">
+                  <td class="pa-td pa-td--check">
+                    <input
+                      type="checkbox"
+                      class="pa-checkbox"
+                      :checked="isGroupAllSelected(group)"
+                      :indeterminate="isGroupSomeSelected(group)"
+                      :aria-label="`Select all in ${group.warehouseName}`"
+                      @click.stop
+                      @change="toggleGroup(group)"
+                    />
+                  </td>
+                  <td class="pa-group-header-cell" colspan="3">{{ group.warehouseName }}</td>
+                </tr>
+                <!-- Task rows for this warehouse -->
+                <tr
+                  v-for="task in group.tasks"
+                  :key="task.id"
+                  class="pa-task-row"
+                  :class="{ 'pa-task-row--selected': selectedIds.has(task.id) }"
+                  @click="toggleTask(task.id)"
+                >
+                  <td class="pa-td pa-td--check">
+                    <input
+                      type="checkbox"
+                      class="pa-checkbox"
+                      :checked="selectedIds.has(task.id)"
+                      :aria-label="`Select ${task.taskNo}`"
+                      @click.stop
+                      @change="toggleTask(task.id)"
+                    />
+                  </td>
+                  <td class="pa-td pa-td--mono">{{ task.taskNo }}</td>
+                  <td class="pa-td pa-td--mono">{{ task.purchaseNo }}</td>
+                  <td class="pa-td pa-td--num">{{ formatNum(task.receivedQty) }}</td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </section>
@@ -488,10 +541,8 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c0392b);
 }
 
-.pa-tasks-table-wrap {
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-lg); overflow: hidden;
-}
+.pa-tasks-table-wrap { border-radius: var(--mp-radii-lg); overflow: hidden; }
+.pa-tasks-table-wrap--bordered { border: 1px solid var(--mp-border-bold); }
 .pa-tasks-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
 
 /* ── Checkbox ─────────────────────────────────────────────────────────────────── */
@@ -524,12 +575,21 @@ function handleCreate() {
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
 }
 .pa-task-row:last-child .pa-td { border-bottom: none; }
+/* Warehouse group header row */
+.pa-group-header-row .pa-td--check { border-bottom: 1px solid var(--mp-border-default); }
+.pa-group-header-cell {
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle);
+}
+
 .pa-task-row { cursor: pointer; transition: background 80ms; }
 .pa-task-row:hover .pa-td { background: var(--mp-background-neutral-subtle); }
 .pa-task-row--selected .pa-td { background: var(--mp-background-brand-subtle, #e8f7f2); }
 .pa-td--check { text-align: center; }
 .pa-td--mono { font-variant-numeric: tabular-nums; }
-.pa-td--warehouse { white-space: normal; }
 .pa-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4);
