@@ -1,5 +1,8 @@
 import { receipts, type Receipt } from './receipts'
 import { lineItemsForReceipt, type ReceiptLineItem } from './receiptLineItems'
+import { getPurchaseReceivingsForReceipt } from './purchaseReceivings'
+import { picForWarehouse } from './warehouses'
+import { VENDORS } from './master'
 
 /** Assembled view model for the inbound PO (receipt) detail page. */
 export interface ReceiptDetail {
@@ -19,24 +22,6 @@ export interface ReceiptDetail {
   /** Staff member who received the goods (partial/completed receipts). */
   receivedBy?: string
 }
-
-// Warehouse staff who handle goods reception.
-const STAFF = [
-  'Budi Santoso', 'Dewi Rahayu', 'Rizki Pratama',
-  'Agus Firmansyah', 'Sari Indah', 'Hendra Wijaya',
-]
-
-// Coffee suppliers / roasters the warehouse buys green & roasted beans + gear from.
-const VENDORS = [
-  'EXPAT Roasters',
-  'Anomali Coffee',
-  'Tanamera Coffee Roastery',
-  'Common Grounds',
-  'Toko Kopi Tuku',
-  'Klasik Beans Cooperative',
-  'Sagaleh Coffee Supply',
-  'Kopi Nako Roastery',
-]
 
 function shiftDays(iso: string, days: number): string {
   const d = new Date(iso)
@@ -61,15 +46,16 @@ export function getReceiptDetail(id: string): ReceiptDetail | null {
     transactionDate,
     estimatedArrival: r.estimatedArrival,
     shipVia: '—',
-    vendor: VENDORS[h % VENDORS.length],
+    vendor: VENDORS[h % VENDORS.length]!,
     trackingNos: r.trackingNos,
     warehouseName: r.warehouseName,
     lineItems: lineItemsForReceipt(r),
     memo: r.memo ?? '—',
     // Most POs carry one supporting document.
     attachments: h % 4 === 0 ? [] : [{ name: 'sample-filename.pdf', sizeKB: 128 }],
-    lastUpdatedBy: 'Rizal Candra',
+    lastUpdatedBy: picForWarehouse(r.warehouseId, 0),
     lastUpdatedAt: `${shiftDays(transactionDate, -1)}T11:00:00`,
-    receivedBy: STAFF[(h + 2) % STAFF.length],
+    receivedBy: getPurchaseReceivingsForReceipt(r.id).find((pr) => pr.status === 'completed')?.assignee
+      ?? picForWarehouse(r.warehouseId, 0),
   }
 }

@@ -17,8 +17,6 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
 
-const STAFF = ['Budi Santoso', 'Dewi Rahayu', 'Rizki Pratama', 'Agus Firmansyah', 'Sari Indah', 'Hendra Wijaya']
-
 function idSeed(id: string): number {
   return id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
 }
@@ -35,7 +33,12 @@ function linePutAwayQty(purchaseQty: number, index: number): number {
 }
 function lineReceivedBy(index: number): string {
   if (!lineIsReceived(index)) return '—'
-  return STAFF[(seed.value + Math.floor(index / 3)) % STAFF.length]
+  let covered = 0
+  for (const pr of linkedReceivings.value) {
+    covered += pr.skuCount
+    if (index < covered) return pr.assignee
+  }
+  return linkedReceivings.value[0]?.assignee ?? '—'
 }
 
 // ── Line-items progressive pagination ─────────────────────────────────────────
@@ -289,6 +292,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
+            <h3 class="linked-section-title">Purchase receiving tasks</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup>
@@ -320,7 +324,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
                         <span class="linked-num">{{ pr.receivingNo }}</span>
-                        <button class="row-hover-btn">
+                        <button class="row-hover-btn" @click.stop="router.push(`/receiving/${pr.taskId}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -351,6 +355,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 
           <!-- Put-away panel -->
           <MpTabPanel :value="1">
+            <h3 class="linked-section-title">Put-away tasks</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup>
@@ -374,7 +379,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
                         <span class="linked-num">{{ pa.taskNo }}</span>
-                        <button class="row-hover-btn">
+                        <button class="row-hover-btn" @click.stop="router.push(`/put-away/${pa.id}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -556,6 +561,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 .detail-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
 .detail-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .detail-linked-wrap { overflow-x: auto; }
 .detail-linked { width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: fixed; border-top: 1px solid var(--mp-border-default); }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }

@@ -9,9 +9,8 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, setTaskReceived, getPutAwayForTask } from '~/data/receivingTaskDetails'
-import { addPutAwayTask } from '~/data/putAwayTasks'
 import { taskAgingDays, type ReceivingTask } from '~/data/receivingTasks'
-import { formatDateTime } from '~/utils/date'
+import { formatDate, formatDateTime } from '~/utils/date'
 
 type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed'
 
@@ -56,6 +55,18 @@ const showReceivedCols = computed(() => localStatus.value !== 'open')
 // Linked put-away task(s) — the downstream transaction, shown like PRs on a PO.
 const linkedPutAway = computed(() => task.value ? getPutAwayForTask({ ...task.value, status: localStatus.value, endDate: localEndDate.value ?? undefined }) : [])
 
+// Derived PO status using same stage labels as the receipts index table.
+const poStatus = computed<string>(() => {
+  const tasks = po.value?.tasks ?? []
+  if (!tasks.length) return 'on the way'
+  if (tasks.every(t => t.status === 'completed')) {
+    const totalPurchase = tasks.reduce((s, t) => s + t.purchaseQty, 0)
+    const totalReceived = tasks.reduce((s, t) => s + t.receivedQty, 0)
+    return totalReceived >= totalPurchase ? 'completed' : 'partial reception'
+  }
+  return tasks.some(t => t.status === 'completed') ? 'partial reception' : 'on the way'
+})
+
 const purchaseTotal      = computed(() => task.value?.purchaseQty ?? 0)
 const savedReceivedTotal = computed(() => Object.values(localReceived.value).reduce((a, b) => a + (b || 0), 0))
 const outstandingTotal   = computed(() => Math.max(0, purchaseTotal.value - savedReceivedTotal.value))
@@ -91,23 +102,12 @@ const lastUpdated = computed(() => {
   return new Date(base + offsetMs).toISOString()
 })
 
-// Create the put-away task → the receiving task is now completed.
 function createPutAway() {
-  const endIso = new Date().toISOString()
-  localStatus.value = 'completed'
-  if (!localEndDate.value) localEndDate.value = endIso
-  if (task.value) {
-    task.value.status = 'completed'
-    if (!task.value.endDate) task.value.endDate = endIso
-  }
-  if (task.value && po.value) {
-    addPutAwayTask({
-      receivingTaskIds: [task.value.id], receivingTaskNos: [task.value.taskNo],
-      warehouseId: po.value.warehouseId, warehouseName: po.value.warehouseName,
-      assignee: task.value.assignee, itemQty: task.value.receivedQty,
-    })
-  }
-  toast.notify({ variant: 'success', title: 'Put-away created' })
+  if (!task.value || !po.value) return
+  router.push({
+    path: '/barang-masuk/put-away/create',
+    query: { warehouseId: po.value.warehouseId, taskId: task.value.id },
+  })
 }
 
 // ── Receiving actions ───────────────────────────────────────────────────────
@@ -449,13 +449,63 @@ function goBack() {
       </section>
       </div>
 
-      <!-- ── Linked put-away tab (shown once a put-away task exists) ── -->
-      <MpTabs v-if="linkedPutAway.length" id="rcvgd-tabs" :default-value="0" variant-color="green" class="rcvgd-tabs">
+      <!-- ── Linked transactions ── -->
+      <MpTabs id="rcvgd-tabs" :default-value="0" variant-color="green" class="rcvgd-tabs">
         <MpTabList>
-          <MpTab id="rcvgd-tab-pa" :value="0">Put-away ({{ linkedPutAway.length }})</MpTab>
+          <MpTab id="rcvgd-tab-po" :value="0">Linked transactions</MpTab>
+          <MpTab v-if="linkedPutAway.length" id="rcvgd-tab-pa" :value="1">Put-away ({{ linkedPutAway.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
+
           <MpTabPanel :value="0">
+            <h3 class="linked-section-title">Purchase order</h3>
+            <div class="rcvgd-linked-wrap">
+              <table class="rcvgd-linked">
+                <colgroup>
+                  <col style="width: 220px" />
+                  <col style="width: 180px" />
+                  <col style="width: 140px" />
+                  <col style="width: 130px" />
+                  <col style="width: 100px" />
+                  <col style="width: 100px" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="detail-th">Number</th>
+                    <th class="detail-th">Warehouse</th>
+                    <th class="detail-th">Status</th>
+                    <th class="detail-th">Estimated arrival</th>
+                    <th class="detail-th">Purchase qty</th>
+                    <th class="detail-th">Received qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="rcvgd-linked-num">{{ po.purchaseNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/barang-masuk/${po.receiptId}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ po.warehouseName }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="poStatus" /></td>
+                    <td class="detail-td">{{ formatDate(po.estimatedArrival) }}</td>
+                    <td class="detail-td">{{ fmt(po.tasks.reduce((s, t) => s + t.purchaseQty, 0)) }}</td>
+                    <td class="detail-td">{{ fmt(po.tasks.reduce((s, t) => s + t.receivedQty, 0)) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+
+          <MpTabPanel v-if="linkedPutAway.length" :value="1">
+            <h3 class="linked-section-title">Put-away tasks</h3>
             <div class="rcvgd-linked-wrap">
               <table class="rcvgd-linked">
                 <colgroup>
@@ -479,7 +529,7 @@ function goBack() {
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
                         <span class="rcvgd-linked-num">{{ pa.taskNo }}</span>
-                        <button class="row-hover-btn">
+                        <button class="row-hover-btn" @click.stop="router.push(`/put-away/${pa.id}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -502,6 +552,7 @@ function goBack() {
               </table>
             </div>
           </MpTabPanel>
+
         </MpTabPanels>
       </MpTabs>
 
@@ -870,12 +921,13 @@ function goBack() {
 .detail-td--num { text-align: right; white-space: nowrap; padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4); }
 .detail-td--product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detail-td--secondary { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-/* ── Linked put-away tab ─────────────────────────────────────────────────── */
+/* ── Linked transactions tab ─────────────────────────────────────────────── */
 .rcvgd-tabs { flex-shrink: 0; }
 .rcvgd-tabs :deep(.mp-tab--isSelected_true),
 .rcvgd-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
 .rcvgd-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .rcvgd-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .rcvgd-linked-wrap { overflow-x: auto; }
 .rcvgd-linked { width: 100%; border-collapse: collapse; }
 .rcvgd-linked .detail-th { background: var(--mp-background-neutral-subtle); }

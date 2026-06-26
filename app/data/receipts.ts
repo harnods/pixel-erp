@@ -1,5 +1,6 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
+import { TODAY } from './master'
 
 /** An inbound goods receipt (Barang masuk → Receipt). */
 export interface Receipt {
@@ -35,7 +36,7 @@ export interface Receipt {
 }
 
 // Anchor "today" so the arrival-date presets line up with the mock data.
-export const RECEIPT_TODAY = new Date("2026-06-23");
+export const RECEIPT_TODAY = TODAY
 
 // Receipts go to real (non-default, active) warehouses.
 const RECEIVING_WAREHOUSES = warehouses.filter(

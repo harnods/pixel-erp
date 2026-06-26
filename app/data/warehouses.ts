@@ -132,4 +132,33 @@ export const warehouses: Warehouse[] = [
     updatedAt: '2026-06-17',
     updatedBy: 'Bayu Pradana',
   },
+  {
+    id: 'wh-010',
+    name: 'Gudang Makassar Utara',
+    code: 'GDG-MKS-02',
+    skuTotal: 374,
+    pics: [{ id: 'p10', name: 'Agus Firmansyah' }],
+    address: 'Jl. Perintis Kemerdekaan KM 12, Kelurahan Tamalanrea, Kecamatan Tamalanrea, Kota Makassar, Sulawesi Selatan 90245',
+    status: 'active',
+    hasTransactions: true,
+    updatedAt: '2026-06-16',
+    updatedBy: 'Agus Firmansyah',
+  },
 ]
+
+/** PIC names for a warehouse (empty when none / unknown id). */
+export function warehousePics(warehouseId: string): string[] {
+  return warehouses.find((w) => w.id === warehouseId)?.pics.map((p) => p.name) ?? []
+}
+
+/**
+ * The staff member responsible for work in a warehouse. A warehouse may have
+ * several PICs; `seed` rotates among them deterministically so the same task
+ * always resolves to the same person. Falls back to a shared back-office name
+ * when the warehouse has no PIC on record.
+ */
+export function picForWarehouse(warehouseId: string, seed = 0): string {
+  const pics = warehousePics(warehouseId)
+  if (!pics.length) return 'Rizal Candra'
+  return pics[Math.abs(seed) % pics.length]!
+}

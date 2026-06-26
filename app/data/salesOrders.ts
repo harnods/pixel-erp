@@ -1,4 +1,5 @@
 import type { SalesOrder, SalesOrderItem, SalesOrderStatus } from './types'
+import { CATALOG } from './catalog'
 
 /**
  * Mock sales orders for a wholesale + retail coffee business
@@ -51,21 +52,14 @@ const TAG_SETS: string[][] = [
   ['Wholesale'],
 ]
 
-/** Product catalogue — beans, machines, accessories, merch. */
-const PRODUCTS: Omit<SalesOrderItem, 'qty' | 'discountPct' | 'amount'>[] = [
-  { product: 'Myanmar Mya Ze Di Natural',         sku: 'BN-1790', description: 'Whole bean, natural process, 1 kg',     unit: 'kg',   unitPrice: 320_000    },
-  { product: 'Bolivia Caranavi Sol de la Mañana', sku: 'BN-1580', description: 'Whole bean, washed, light roast, 1 kg', unit: 'kg',   unitPrice: 480_000    },
-  { product: 'Ethiopia Yirgacheffe G1',           sku: 'BN-2210', description: 'Whole bean, washed, floral, 1 kg',      unit: 'kg',   unitPrice: 450_000    },
-  { product: 'Brazil Santos Green Bean',          sku: 'BN-3050', description: 'Green bean, bulk sack, 30 kg',          unit: 'sack', unitPrice: 2_400_000  },
-  { product: 'House Blend Retail 250g',           sku: 'BN-1002', description: 'Medium roast, retail bag, 250 g',       unit: 'pcs',  unitPrice: 85_000     },
-  { product: 'Cold Brew Concentrate 1L',          sku: 'BV-0440', description: 'Ready-to-dilute, 1 L bottle',           unit: 'btl',  unitPrice: 120_000    },
-  { product: 'La Marzocco Linea Mini',            sku: 'MC-0420', description: 'Espresso machine, 1 group',             unit: 'unit', unitPrice: 92_000_000 },
-  { product: 'Mahlkönig EK43 Grinder',            sku: 'MC-0231', description: 'Commercial flat-burr grinder',          unit: 'unit', unitPrice: 38_500_000 },
-  { product: 'Fellow Stagg EKG Kettle',           sku: 'AC-0810', description: 'Electric pour-over kettle, 0.9 L',      unit: 'unit', unitPrice: 2_350_000  },
-  { product: 'Ceramic V60 Dripper 02',            sku: 'AC-0155', description: 'Pour-over dripper, ceramic',            unit: 'pcs',  unitPrice: 165_000    },
-  { product: 'Paper Filter V60 (100s)',           sku: 'AC-0160', description: 'Box of 100 filters',                   unit: 'box',  unitPrice: 75_000     },
-  { product: 'Branded Ceramic Mug',               sku: 'MD-0900', description: 'Logo mug, 250 ml',                     unit: 'pcs',  unitPrice: 55_000     },
-]
+/** Product catalogue — same master catalog as the WMS, mapped to sales order items. */
+const PRODUCTS: Omit<SalesOrderItem, 'qty' | 'discountPct' | 'amount'>[] = CATALOG.map(item => ({
+  product: item.name,
+  sku: item.sku,
+  description: item.desc,
+  unit: item.unit,
+  unitPrice: item.price,
+}))
 
 const TAX_RATE = 0.11
 
@@ -79,10 +73,10 @@ function addDays(iso: string, days: number): string {
 }
 
 function buildItems(i: number): SalesOrderItem[] {
-  const count = i === 0 ? 50 : ITEM_COUNTS[i % ITEM_COUNTS.length]
+  const count = i === 0 ? 50 : (ITEM_COUNTS[i % ITEM_COUNTS.length] ?? 3)
   const items: SalesOrderItem[] = []
   for (let j = 0; j < count; j++) {
-    const p = PRODUCTS[(i * 5 + j * 7) % PRODUCTS.length]
+    const p = PRODUCTS[(i * 5 + j * 7) % PRODUCTS.length]!
     // machines/sacks come in small qty; consumables in larger qty
     const big = p.unitPrice >= 2_000_000
     const qty = big ? 1 + ((i + j) % 2) : 1 + ((i + j * 3) % 12)
@@ -117,8 +111,8 @@ function build(): SalesOrder[] {
   const out: SalesOrder[] = []
   for (let i = 0; i < 100; i++) {
     const number = 10090 + i
-    const customer = CUSTOMERS[i % CUSTOMERS.length]
-    const status = STATUSES[i % STATUSES.length]
+    const customer = CUSTOMERS[i % CUSTOMERS.length]!
+    const status = STATUSES[i % STATUSES.length]!
     const date = addDays('2026-01-02', i)        // one order per day
     const dueDate = addDays(date, 30)
 

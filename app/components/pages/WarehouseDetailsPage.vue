@@ -10,6 +10,7 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { TODAY } from '~/data/master'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -188,8 +189,6 @@ function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' 
 function formatDateNumeric(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
 }
-// prototype "today"; flag a batch when expired or expiring within 30 days
-const TODAY = new Date('2026-06-22')
 function isExpiryWarning(iso: string) {
   return (new Date(iso).getTime() - TODAY.getTime()) / 86_400_000 < 30
 }

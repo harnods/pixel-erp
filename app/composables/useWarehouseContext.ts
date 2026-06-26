@@ -8,21 +8,22 @@ import { warehouses } from "~/data/warehouses";
  * Standalone/ERP aren't scoped here (full access), so they get no entry.
  */
 const SCENARIO_WAREHOUSES: Record<string, string[]> = {
-  // A WMS Ops supervisor covers warehouses in one region (Greater Jakarta here),
-  // not across cities.
+  // WMS Ops (Ops 1) → Budi Santoso, sole PIC of Jakarta Pusat.
   "WMS Ops": ["wh-001"],
-  "WMS Ops 2": ["wh-001", "wh-009"],
+  // WMS Ops 2 → Agus Firmansyah, supervising both Makassar warehouses (same city).
+  // Two warehouses → a switcher appears next to the header logo.
+  "WMS Ops 2": ["wh-006", "wh-010"],
 };
 
 /**
  * Fulfillment flows enabled per warehouse — drives which fulfillment menus show:
  *   "out" → Barang keluar, "in" → Barang masuk.
- * Jakarta Pusat is outbound-only; Surabaya Timur handles both.
  */
 type WarehouseFlow = "out" | "in";
 const WAREHOUSE_FLOWS: Record<string, WarehouseFlow[]> = {
   "wh-001": ["out", "in"], // Jakarta Pusat — full fulfillment (in + out)
-  "wh-009": ["out", "in"], // Jakarta Timur — full fulfillment (in + out)
+  "wh-006": ["out", "in"], // Makassar Selatan — full fulfillment (in + out)
+  "wh-010": ["out", "in"], // Makassar Utara — full fulfillment (in + out)
 };
 
 export interface AssignedWarehouse {

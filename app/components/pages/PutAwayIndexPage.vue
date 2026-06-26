@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -19,8 +19,16 @@ const demoStates: { value: DemoState; label: string }[] = [
   { value: 'data', label: 'With data' },
   { value: 'empty', label: 'Empty state' },
 ]
+const route = useRoute()
+
 const loading = ref(true)
-onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
+onMounted(() => {
+  setTimeout(() => { loading.value = false }, 1200)
+  if (route.query.saved === '1') {
+    toast.notify({ variant: 'success', title: 'Put-away task saved' })
+    router.replace({ query: { ...route.query, saved: undefined } })
+  }
+})
 function setDemoState(s: DemoState) {
   demoState.value = s
   if (s === 'data') { loading.value = true; setTimeout(() => { loading.value = false }, 1200) }

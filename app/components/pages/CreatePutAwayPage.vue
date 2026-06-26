@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  MpButton, MpSpinner, MpAutocomplete,
+  MpButton, MpCheckbox, MpSpinner, MpAutocomplete,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  toast, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
+  MpModalOverlay, MpModalCloseButton,
+  MpIcon, css,
 } from '@mekari/pixel3'
 import { receivingPOs } from '~/data/receivingTasks'
 import { getTaskLineItems, type TaskLineItem } from '~/data/receivingTaskDetails'
 import { addPutAwayTask } from '~/data/putAwayTasks'
 import { BINS } from '~/data/receiptLineItems'
 
+// MpAutocomplete data for bin locations
+const BINS_AC = BINS.map(b => ({ id: b, name: b }))
+
 const router = useRouter()
+const route  = useRoute()
 
 const ASSIGNEES = [
   { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
@@ -66,14 +72,15 @@ const availableWarehouses = computed(() => {
 
 const warehouseId  = ref('')
 const warehouseError = ref(false)
+let _prefillSuppressClear = false
 watch(warehouseId, (v) => {
   if (v) warehouseError.value = false
-  // reset task selection when warehouse changes
-  selectedIds.value = new Set()
+  if (!_prefillSuppressClear) selectedIds.value = new Set()
 })
 const warehouseName = computed(() =>
   availableWarehouses.value.find(w => w.id === warehouseId.value)?.name ?? '',
 )
+const isWarehouseLocked = computed(() => !!route.query.warehouseId)
 
 // ─── Assignee ─────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
@@ -148,14 +155,75 @@ const skuRows = computed<SkuRow[]>(() => {
   return rows
 })
 
-// Storage location per SKU row (user input)
+// Storage location per SKU row — seeded from binLocation, overridable by the user
 const storageLocations = ref<Record<string, string>>({})
 function setLocation(rowKey: string, val: string) {
   storageLocations.value = { ...storageLocations.value, [rowKey]: val }
 }
+// Auto-fill bin from task line items; preserve any location the user already set
+watch(skuRows, (rows) => {
+  const patch: Record<string, string> = {}
+  for (const row of rows) {
+    if (!(row.rowKey in storageLocations.value)) patch[row.rowKey] = row.binLocation
+  }
+  if (Object.keys(patch).length) storageLocations.value = { ...storageLocations.value, ...patch }
+}, { immediate: true })
 
-// Bin autocomplete dropdown — simple datalist via <input list>
-const BIN_LIST_ID = 'pa-bins-datalist'
+// ─── SKU bulk selection ────────────────────────────────────────────────────────
+const selectedSkuKeys = ref(new Set<string>())
+
+function toggleSku(rowKey: string) {
+  const s = new Set(selectedSkuKeys.value)
+  s.has(rowKey) ? s.delete(rowKey) : s.add(rowKey)
+  selectedSkuKeys.value = s
+}
+const allSkusSelected  = computed(() =>
+  pagedSkus.value.length > 0 && selectedSkuKeys.value.size === pagedSkus.value.length,
+)
+const someSkusSelected = computed(() =>
+  selectedSkuKeys.value.size > 0 && selectedSkuKeys.value.size < pagedSkus.value.length,
+)
+function toggleAllSkus() {
+  selectedSkuKeys.value = allSkusSelected.value
+    ? new Set()
+    : new Set(pagedSkus.value.map(r => r.rowKey))
+}
+// Clear stale selections when the SKU list changes (tasks deselected)
+watch(skuRows, (rows) => {
+  const valid = new Set(rows.map(r => r.rowKey))
+  const cleaned = new Set([...selectedSkuKeys.value].filter(k => valid.has(k)))
+  if (cleaned.size !== selectedSkuKeys.value.size) selectedSkuKeys.value = cleaned
+})
+
+// ─── Edit-location modal (single row or bulk) ─────────────────────────────────
+// null = closed  |  '__bulk__' = bulk mode  |  rowKey = single-row edit
+const editingLocationKey = ref<string | null>(null)
+const editLocationValue  = ref('')
+const isBulkEdit = computed(() => editingLocationKey.value === '__bulk__')
+
+function openLocationEdit(rowKey: string) {
+  editingLocationKey.value = rowKey
+  editLocationValue.value  = storageLocations.value[rowKey] ?? ''
+}
+function openBulkLocationEdit() {
+  editingLocationKey.value = '__bulk__'
+  editLocationValue.value  = ''
+}
+function closeLocationEdit() {
+  editingLocationKey.value = null
+  editLocationValue.value  = ''
+}
+function saveLocationEdit() {
+  if (isBulkEdit.value) {
+    const patch: Record<string, string> = {}
+    for (const key of selectedSkuKeys.value) patch[key] = editLocationValue.value
+    storageLocations.value = { ...storageLocations.value, ...patch }
+  } else if (editingLocationKey.value) {
+    setLocation(editingLocationKey.value, editLocationValue.value)
+  }
+  closeLocationEdit()
+}
+function clearSkuSelection() { selectedSkuKeys.value = new Set() }
 
 // ─── Progressive pagination for SKU table ─────────────────────────────────────
 const PAGE_SIZE   = 10
@@ -200,7 +268,29 @@ function checkStageOverflow() {
   if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
 }
 let stageObserver: ResizeObserver | null = null
+
+function handleKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && selectedSkuKeys.value.size > 0) {
+    clearSkuSelection()
+  }
+}
 onMounted(() => {
+  // Pre-fill from URL params when navigating from Receiving index (kebab or bulk checkbox)
+  const qWh    = route.query.warehouseId as string | undefined
+  const qTask  = route.query.taskId  as string | undefined   // single task (from kebab)
+  const qTasks = route.query.taskIds as string | undefined   // comma-list (from bulk)
+  if (qWh) {
+    _prefillSuppressClear = true
+    warehouseId.value = qWh
+    nextTick(() => {
+      _prefillSuppressClear = false
+      const ids = qTasks
+        ? qTasks.split(',').filter(id => pendingTasks.value.some(t => t.id === id))
+        : qTask && pendingTasks.value.some(t => t.id === qTask) ? [qTask] : []
+      if (ids.length) selectedIds.value = new Set(ids)
+    })
+  }
+
   nextTick(() => {
     checkStageOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
@@ -210,11 +300,13 @@ onMounted(() => {
     }
     setupSkusObserver()
   })
+  window.addEventListener('keydown', handleKeyDown)
 })
 onUnmounted(() => {
   stageObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
   skusObserver?.disconnect()
+  window.removeEventListener('keydown', handleKeyDown)
 })
 watch([selectedIds, shownCount], () => nextTick(checkStageOverflow))
 
@@ -243,8 +335,7 @@ function handleCreate() {
     itemQty: totalQty,
   })
 
-  toast.notify({ variant: 'success', title: 'Put-away task created' })
-  goPutAway()
+  router.push({ path: '/barang-masuk', query: { tab: 'Put-away', saved: '1' } })
 }
 </script>
 
@@ -278,7 +369,9 @@ function handleCreate() {
             label-prop="name"
             value-prop="id"
             placeholder="Select warehouse"
-            is-searchable is-clearable use-portal is-full-width
+            is-searchable use-portal is-full-width
+            :is-clearable="!isWarehouseLocked"
+            :is-disabled="isWarehouseLocked"
             :is-invalid="warehouseError"
           />
           <MpFormErrorMessage>You must select a warehouse</MpFormErrorMessage>
@@ -337,13 +430,12 @@ function handleCreate() {
               <tr>
                 <th class="pa-th">
                   <div class="pa-cell-check">
-                    <input
-                      type="checkbox"
-                      class="pa-checkbox"
-                      :checked="allSelected"
-                      :indeterminate="someSelected"
-                      aria-label="Select all"
+                    <MpCheckbox
+                      id="pa-select-all"
+                      :is-checked="allSelected"
+                      :is-indeterminate="someSelected"
                       @change="toggleAll"
+                      @click.stop
                     />
                     Number
                   </div>
@@ -358,19 +450,17 @@ function handleCreate() {
                 v-for="task in pendingTasks"
                 :key="task.id"
                 class="pa-task-row"
-                :class="{ 'pa-task-row--selected': selectedIds.has(task.id) }"
                 @click="toggleTask(task.id)"
               >
                 <td class="pa-td">
                   <div class="pa-cell-check">
-                    <input
-                      type="checkbox"
-                      class="pa-checkbox"
-                      :checked="selectedIds.has(task.id)"
-                      :aria-label="`Select ${task.taskNo}`"
-                      @click.stop
-                      @change="toggleTask(task.id)"
-                    />
+                    <span @click.stop>
+                      <MpCheckbox
+                        :id="`pa-row-${task.id}`"
+                        :is-checked="selectedIds.has(task.id)"
+                        @change="toggleTask(task.id)"
+                      />
+                    </span>
                     {{ task.taskNo }}
                   </div>
                 </td>
@@ -395,10 +485,7 @@ function handleCreate() {
         <h2 class="pa-section-title">SKUs to put away</h2>
         <p class="pa-section-desc">Assign a storage location (bin) to each SKU.</p>
 
-        <!-- Hidden datalist for bin suggestions -->
-        <datalist :id="BIN_LIST_ID">
-          <option v-for="bin in BINS" :key="bin" :value="bin" />
-        </datalist>
+
 
         <section class="pa-items-section" :class="{ 'pa-items-section--bordered': isProgressive }">
           <div ref="skusScrollEl" class="pa-items-scroll">
@@ -412,8 +499,47 @@ function handleCreate() {
                 <col style="width: 200px" />
               </colgroup>
               <thead>
-                <tr>
-                  <th class="pa-th">Product</th>
+                <!-- Bulk action bar — replaces column headers when SKU rows are selected -->
+                <tr v-if="selectedSkuKeys.size > 0" class="pa-tr-bulk">
+                  <th :colspan="6" class="pa-th pa-th--bulk">
+                    <div class="pa-sku-bulk-bar">
+                      <div class="pa-sku-bulk-bar__left">
+                        <span @click.stop>
+                          <MpCheckbox
+                            id="pa-sku-bulk-all"
+                            :is-checked="allSkusSelected"
+                            :is-indeterminate="someSkusSelected"
+                            @change="toggleAllSkus"
+                          />
+                        </span>
+                        <span class="pa-sku-bulk-count">
+                          {{ selectedSkuKeys.size }} SKU{{ selectedSkuKeys.size > 1 ? 's' : '' }} selected
+                        </span>
+                        <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="openBulkLocationEdit">
+                          Edit storage location
+                        </button>
+                      </div>
+                      <div class="pa-sku-bulk-bar__right">
+                        <span>Press</span><kbd class="pa-sku-bulk-bar__kbd">Esc</kbd><span>to deselect</span>
+                      </div>
+                    </div>
+                  </th>
+                </tr>
+                <!-- Normal column headers -->
+                <tr v-else>
+                  <th class="pa-th">
+                    <div class="pa-cell-check">
+                      <span @click.stop>
+                        <MpCheckbox
+                          id="pa-sku-select-all"
+                          :is-checked="allSkusSelected"
+                          :is-indeterminate="someSkusSelected"
+                          @change="toggleAllSkus"
+                        />
+                      </span>
+                      Product
+                    </div>
+                  </th>
                   <th class="pa-th">SKU</th>
                   <th class="pa-th">Receiving task</th>
                   <th class="pa-th pa-th--num">Qty</th>
@@ -424,14 +550,23 @@ function handleCreate() {
               <tbody>
                 <tr v-for="row in pagedSkus" :key="row.rowKey" class="pa-item-row">
                   <td class="pa-td">
-                    <div class="pa-product">
-                      <img
-                        class="pa-product-thumb"
-                        :src="row.image" :alt="row.productName"
-                        loading="lazy" width="40" height="40"
-                      />
-                      <div class="pa-product-info">
-                        <span class="pa-product-name">{{ row.productName }}</span>
+                    <div class="pa-cell-check">
+                      <span @click.stop>
+                        <MpCheckbox
+                          :id="`pa-sku-${row.rowKey}`"
+                          :is-checked="selectedSkuKeys.has(row.rowKey)"
+                          @change="toggleSku(row.rowKey)"
+                        />
+                      </span>
+                      <div class="pa-product">
+                        <img
+                          class="pa-product-thumb"
+                          :src="row.image" :alt="row.productName"
+                          loading="lazy" width="40" height="40"
+                        />
+                        <div class="pa-product-info">
+                          <span class="pa-product-name">{{ row.productName }}</span>
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -440,14 +575,19 @@ function handleCreate() {
                   <td class="pa-td pa-td--num">{{ formatNum(row.receivedQty) }}</td>
                   <td class="pa-td">{{ row.unit }}</td>
                   <td class="pa-td pa-td--location">
-                    <input
-                      type="text"
-                      class="pa-location-input"
-                      :list="BIN_LIST_ID"
-                      :value="storageLocations[row.rowKey] ?? ''"
-                      placeholder="e.g. A-01-01"
-                      @input="setLocation(row.rowKey, ($event.target as HTMLInputElement).value)"
-                    />
+                    <div class="pa-location-cell">
+                      <span
+                        class="pa-location-value"
+                        :class="{ 'pa-location-value--empty': !storageLocations[row.rowKey] }"
+                      >{{ storageLocations[row.rowKey] || '—' }}</span>
+                      <button
+                        class="pa-location-edit-btn"
+                        aria-label="Edit storage location"
+                        @click.stop="openLocationEdit(row.rowKey)"
+                      >
+                        <MpIcon name="edit" size="sm" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -471,6 +611,41 @@ function handleCreate() {
       <MpButton variant="primary" is-rounded @click="handleCreate">Save</MpButton>
     </footer>
   </div>
+
+  <!-- ── Edit storage location modal ── -->
+  <MpModal :is-open="!!editingLocationKey" @close="closeLocationEdit">
+    <MpModalContent>
+      <MpModalHeader>
+        {{ isBulkEdit
+          ? `Edit storage location (${selectedSkuKeys.size} SKU${selectedSkuKeys.size > 1 ? 's' : ''})`
+          : 'Edit storage location' }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <MpFormControl>
+          <MpFormLabel>Bin location</MpFormLabel>
+          <MpAutocomplete
+            id="pa-loc-modal-ac"
+            v-model="editLocationValue"
+            :data="BINS_AC"
+            label-prop="name"
+            value-prop="id"
+            is-searchable
+            is-full-width
+            use-portal
+            placeholder="Select bin location..."
+          />
+        </MpFormControl>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <MpButton variant="ghost" is-rounded @click="closeLocationEdit">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save</MpButton>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 </template>
 
 <style scoped>
@@ -522,15 +697,20 @@ function handleCreate() {
 
 /* ── Section title ───────────────────────────────────────────────────────────── */
 .pa-section-title {
-  margin: 0 0 var(--mp-spacing-1) 0;
+  margin: 0;
   font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default);
 }
 .pa-section-desc {
-  margin: 0 0 var(--mp-spacing-4) 0;
+  margin: 0;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
   line-height: var(--mp-line-heights-md);
 }
+/* Receiving tasks: 20px gap from H2 to table */
+.pa-tasks-section .pa-section-title { margin-bottom: var(--mp-spacing-5); }
+/* SKUs to put away: no gap H2→caption, 20px gap caption→table */
+.pa-sku-section .pa-section-title { margin-bottom: 0; }
+.pa-sku-section .pa-section-desc { margin-bottom: var(--mp-spacing-5); }
 
 /* ── Task section ─────────────────────────────────────────────────────────────── */
 .pa-tasks-section { margin-bottom: var(--mp-spacing-6); }
@@ -543,13 +723,6 @@ function handleCreate() {
 .pa-tasks-table-wrap { border-radius: var(--mp-radii-lg); overflow: hidden; }
 .pa-tasks-table-wrap--bordered { border: 1px solid var(--mp-border-bold); }
 .pa-tasks-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-
-/* ── Checkbox ─────────────────────────────────────────────────────────────────── */
-.pa-checkbox {
-  width: var(--mp-sizes-4, 16px); height: var(--mp-sizes-4, 16px);
-  border-radius: var(--mp-radii-sm); cursor: pointer; flex-shrink: 0;
-  accent-color: var(--mp-background-brand, #029861);
-}
 
 /* ── Table header ─────────────────────────────────────────────────────────────── */
 .pa-th {
@@ -576,7 +749,6 @@ function handleCreate() {
 
 .pa-task-row { cursor: pointer; transition: background 80ms; }
 .pa-task-row:hover .pa-td { background: var(--mp-background-neutral-subtle); }
-.pa-task-row--selected .pa-td { background: var(--mp-background-brand-subtle, #e8f7f2); }
 .pa-cell-check { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .pa-td--mono { font-variant-numeric: tabular-nums; }
 .pa-td--num {
@@ -615,21 +787,53 @@ function handleCreate() {
   color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pa-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pa-task-ref { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pa-task-ref { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-/* Storage location input */
-.pa-td--location { padding-right: var(--mp-spacing-3); }
-.pa-location-input {
-  width: 100%; box-sizing: border-box;
-  height: var(--mp-sizes-8, 32px);
-  padding: var(--mp-spacing-1) var(--mp-spacing-2);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  outline: none; transition: border-color 100ms;
+/* Storage location cell — value + edit button sits right next to the text (row hover) */
+.pa-location-cell {
+  display: inline-flex; align-items: center;
+  gap: var(--mp-spacing-1); min-width: 0;
 }
-.pa-location-input::placeholder { color: var(--mp-text-placeholder); }
-.pa-location-input:focus { border-color: var(--mp-border-selected, #029861); }
+.pa-location-value {
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  white-space: nowrap;
+}
+.pa-location-value--empty { color: var(--mp-text-secondary); }
+.pa-location-edit-btn {
+  flex-shrink: 0;
+  /* always in layout (space reserved) — visibility toggles so the row never shifts */
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-6, 24px); height: var(--mp-sizes-6, 24px);
+  border: none; background: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary);
+  visibility: hidden;
+}
+.pa-location-edit-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.pa-item-row:hover .pa-location-edit-btn { visibility: visible; }
+
+/* SKU bulk action bar — mirrors rcvg-tr-bulk / rcvg-bulk-bar pattern exactly */
+.pa-tr-bulk .pa-th--bulk {
+  padding: 0 var(--mp-spacing-3) 0 var(--mp-spacing-2);
+  text-transform: none; font-weight: var(--mp-font-weights-regular);
+}
+.pa-sku-bulk-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  height: var(--mp-sizes-7, 28px); gap: var(--mp-spacing-3);
+}
+.pa-sku-bulk-bar__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.pa-sku-bulk-count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap; }
+.pa-sku-bulk-bar__right {
+  display: flex; align-items: center; gap: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap;
+}
+.pa-sku-bulk-bar__kbd {
+  display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-sm);
+  font-size: var(--mp-font-sizes-xs); font-family: inherit; color: var(--mp-text-secondary);
+}
+
+/* Edit location modal footer */
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); }
 
 /* Sentinel + loading */
 .pa-items-sentinel { height: 1px; }

@@ -21,13 +21,13 @@
       <div class="erp-user" role="button" tabindex="0" aria-label="Open account menu">
         <MpAvatar
           id="header-user-avatar"
-          name="Rizal Candra"
+          :name="currentUser"
           size="lg"
           variant-color="sky"
         />
         <div class="erp-user__meta">
           <MpText size="label" color="text.inverse.static" weight="semiBold">
-            Rizal Candra
+            {{ currentUser }}
           </MpText>
           <div class="erp-user__company">
             <MpText size="body-small" color="text.inverse" is-truncated>
@@ -127,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import {
   MpPopover,
   MpPopoverTrigger,
@@ -136,6 +136,7 @@ import {
   MpText,
   MpIcon,
 } from "@mekari/pixel3";
+import { picForWarehouse } from "~/data/warehouses";
 
 // Public asset (place your attached megaphone here). Bound dynamically so a missing
 // file degrades to a 404 at runtime instead of breaking the Vite build.
@@ -156,6 +157,16 @@ const view = ref<"main" | "wms">("main");
 const scenarios: Scenario[] = ["ERP", "WMS Standalone", "WMS Ops", "WMS Ops 2"];
 const { activeScenario, setScenario } = useScenario();
 const { navigate } = useNavigation();
+
+// In an Ops scenario the signed-in user IS the warehouse operator (the assigned
+// warehouse's PIC) — Budi Santoso for Ops 1, Agus Firmansyah for Ops 2. ERP and
+// WMS Standalone are run by the back-office account.
+const { activeWarehouse, hasWarehouseContext } = useWarehouseContext();
+const currentUser = computed(() =>
+  hasWarehouseContext.value && activeWarehouse.value
+    ? picForWarehouse(activeWarehouse.value.id, 0)
+    : "Rizal Candra",
+);
 
 function selectScenario(scenario: Scenario, closePopover: () => void) {
   setScenario(scenario);

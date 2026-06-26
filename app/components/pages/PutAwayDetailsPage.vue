@@ -58,6 +58,7 @@ const linkedReceivingTasks = computed(() => {
     return {
       id,
       taskNo: task.value!.receivingTaskNos[i],
+      purchaseOrderNo: entry?.po.purchaseNo ?? '—',
       status: 'completed' as const,
       startDate,
       endDate,
@@ -148,14 +149,14 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search put-away task…" />
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Cari tugas put-away…" />
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.receivingTaskNos[0] }}{{ t.receivingTaskNos.length > 1 ? ` +${t.receivingTaskNos.length - 1} more` : '' }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No tasks found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">Tugas tidak ditemukan. Coba kata kunci lain.</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -203,7 +204,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="pad-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="itemSearch" class="pad-search" type="text" placeholder="Cari produk atau SKU…" />
           </div>
         </div>
 
@@ -233,7 +234,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in visibleItems" :key="item.skuCode" class="detail-item-row">
+                <tr v-for="item in visibleItems" :key="item.skuCode" class="pad-product-row">
                   <td class="detail-td">
                     <div class="pad-product">
                       <img class="pad-product-thumb" :src="item.image" :alt="item.productName" loading="lazy" width="40" height="40" />
@@ -270,17 +271,19 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </section>
       </div>
 
-      <!-- ── Linked transactions tab ── -->
+      <!-- ── Purchase receiving tab ── -->
       <MpTabs id="pad-tabs" :default-value="0" variant-color="green" class="pad-tabs">
         <MpTabList>
-          <MpTab id="pad-tab-linked" value="linked">Linked transactions ({{ linkedReceivingTasks.length }})</MpTab>
+          <MpTab id="pad-tab-linked" value="linked">Purchase receiving ({{ linkedReceivingTasks.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="linked">
+            <h3 class="linked-section-title">Purchase receiving tasks</h3>
             <div class="pad-linked-wrap">
               <table class="pad-linked">
                 <colgroup>
                   <col style="width: 220px" />
+                  <col style="width: 200px" />
                   <col style="width: 140px" />
                   <col style="width: 160px" />
                   <col style="width: 160px" />
@@ -289,6 +292,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
+                    <th class="detail-th">Purchase order no.</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Start date</th>
                     <th class="detail-th">End date</th>
@@ -309,6 +313,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                         </button>
                       </div>
                     </td>
+                    <td class="detail-td detail-td--secondary">{{ rt.purchaseOrderNo }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="rt.status" /></td>
                     <td class="detail-td">{{ rt.startDate ? formatDate(rt.startDate) : '—' }}</td>
                     <td class="detail-td">
@@ -538,6 +543,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 .pad-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 
+.linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pad-linked-wrap { overflow-x: auto; }
 .pad-linked { width: 100%; border-collapse: collapse; }
 

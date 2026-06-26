@@ -192,6 +192,8 @@ const descriptions: Record<string, string> = {
   'wh-002': 'Gudang distribusi wilayah Jawa Timur',
   'wh-003': 'Gudang industri kawasan Bandung Selatan',
   'wh-009': 'Gudang fulfillment wilayah Jakarta Timur dan sekitarnya',
+  'wh-006': 'Gudang distribusi wilayah Makassar dan Indonesia Timur',
+  'wh-010': 'Gudang fulfillment wilayah Makassar Utara dan sekitarnya',
 }
 
 // numeric seed from a warehouse id (e.g. 'wh-001' → 1) for stable generation
