@@ -1,254 +1,78 @@
-import { reactive } from 'vue'
-import { receipts } from './receipts'
-import { receivingTaskRefsForWarehouse } from './receivingTasks'
-import { picForWarehouse } from './warehouses'
+import {
+  receivingTasksForReceipt,
+  createReceivingTask,
+  type ReceivingTask,
+} from './receivingTasks'
 
+/**
+ * "Purchase receiving" rows shown on a receipt's detail page.
+ *
+ * These are now a thin VIEW over the receipt's real receiving tasks (single
+ * source of truth), so the PO detail, the Receiving queue, and the task detail
+ * always agree. The shape is kept stable for the existing detail-page templates.
+ */
 export interface PurchaseReceiving {
   id: string
   receiptId: string
   taskId: string
   receivingNo: string
-  date: string          // task creation/assignment date (ISO)
+  date: string
   assignee: string
-  skuScope: string      // e.g. "5 SKUs"
+  skuScope: string
   purchaseQty: number
   receivedQty: number
   skuCount: number
   status: 'open' | 'in progress' | 'pending put-away' | 'completed'
-  startDate?: string    // ISO — undefined when task hasn't started yet (open)
-  endDate?: string      // ISO — undefined when not yet completed
+  startDate?: string
+  endDate?: string
 }
 
-
-function hash(s: string): number {
-  return s.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-}
-
-function shiftDays(iso: string, days: number): string {
-  const d = new Date(iso)
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
-}
-
-// Fallback task numbers (used only when a warehouse has no receiving tasks of
-// its own) — kept in the rtask-10090… range so they never collide.
-function taskNo(h: number, offset = 0): string {
-  return `Receiving #${10090 + ((h + offset) % 30)}`
-}
-function taskId(h: number, offset = 0): string {
-  return `rtask-${10090 + ((h + offset) % 30)}`
-}
-
-// Counter only used for dynamically-added entries (via addPurchaseReceiving).
-let prSeq = 20000
-function nextPrNo(): string { return `Receiving #${prSeq++}` }
-
-function generateInitial(): PurchaseReceiving[] {
-  const out: PurchaseReceiving[] = []
-
-  receipts.forEach((r) => {
-    if (r.status !== 'completed' && r.status !== 'partial reception') return
-    const h = hash(r.id)
-    const base = r.estimatedArrival
-
-    // A receipt's purchase-receiving tasks are real receiving tasks in the
-    // receipt's own warehouse (so number, assignee and links all stay in-warehouse).
-    // Prefer tasks whose goods have actually been received so a "completed"
-    // purchase-receiving row never links to a still-in-progress receiving task.
-    const allRefs = receivingTaskRefsForWarehouse(r.warehouseId)
-    const receivedRefs = allRefs.filter(
-      (t) => t.status === 'completed' || t.status === 'pending put-away',
-    )
-    const refs = receivedRefs.length ? receivedRefs : allRefs
-    const refA = refs.length ? refs[h % refs.length]! : undefined
-    const refB = refs.length ? refs[(h + 1) % refs.length]! : undefined
-    const taskIdA = refA?.id ?? taskId(h)
-    const taskNoA = refA?.no ?? taskNo(h)
-    const taskIdB = refB?.id ?? taskId(h, 4)
-    const taskNoB = refB?.no ?? taskNo(h, 4)
-
-    if (r.status === 'partial reception') {
-      // A partial PO always has at least 1 completed task.
-      // Variants (by h % 3):
-      //   0 → 2 tasks: 1st completed (batch A done), 2nd still open (batch B not yet started)
-      //   1 → 2 tasks: 1st completed (batch A done), 2nd in progress (actively receiving batch B)
-      //   2 → 1 task: completed, but received qty < purchase qty (supplier short-shipped, accepted)
-      const variant = h % 3
-
-      if (variant === 0) {
-        // Batch A completed, Batch B open
-        const skuA = Math.max(1, Math.ceil(r.skuQty * 0.6))
-        const skuB = r.skuQty - skuA
-        const qtyA = Math.round(r.purchaseQty * 0.6)
-        const dateA = shiftDays(base, -5)
-        out.push({
-          id: `pr-${r.id}-1`,
-          receiptId: r.id,
-          taskId: taskIdA,
-          receivingNo: taskNoA,
-          date: dateA,
-          assignee: picForWarehouse(r.warehouseId, 0),
-          skuScope: `${skuA} SKUs`,
-          purchaseQty: qtyA,
-          receivedQty: Math.round(r.receivedQty * 0.6),
-          skuCount: skuA,
-          status: 'completed',
-          startDate: dateA,
-          endDate: shiftDays(dateA, 2),
-        })
-        out.push({
-          id: `pr-${r.id}-2`,
-          receiptId: r.id,
-          taskId: taskIdB,
-          receivingNo: taskNoB,
-          date: shiftDays(base, -2),
-          assignee: picForWarehouse(r.warehouseId, 1),
-          skuScope: `${skuB} SKUs`,
-          purchaseQty: r.purchaseQty - qtyA,
-          receivedQty: 0,
-          skuCount: skuB,
-          status: 'open',
-          startDate: undefined,
-          endDate: undefined,
-        })
-      } else if (variant === 1) {
-        // Batch A completed, Batch B in progress
-        const skuA = Math.max(1, Math.floor(r.skuQty * 0.55))
-        const skuB = r.skuQty - skuA
-        const qtyA = Math.round(r.purchaseQty * 0.55)
-        const dateA = shiftDays(base, -4)
-        const dateB = shiftDays(base, -1)
-        out.push({
-          id: `pr-${r.id}-1`,
-          receiptId: r.id,
-          taskId: taskIdA,
-          receivingNo: taskNoA,
-          date: dateA,
-          assignee: picForWarehouse(r.warehouseId, 0),
-          skuScope: `${skuA} SKUs`,
-          purchaseQty: qtyA,
-          receivedQty: Math.round(r.receivedQty * 0.55),
-          skuCount: skuA,
-          status: 'completed',
-          startDate: dateA,
-          endDate: shiftDays(dateA, 1),
-        })
-        out.push({
-          id: `pr-${r.id}-2`,
-          receiptId: r.id,
-          taskId: taskIdB,
-          receivingNo: taskNoB,
-          date: dateB,
-          assignee: picForWarehouse(r.warehouseId, 1),
-          skuScope: `${skuB} SKUs`,
-          purchaseQty: r.purchaseQty - qtyA,
-          receivedQty: Math.round((r.purchaseQty - qtyA) * 0.4),
-          skuCount: skuB,
-          status: 'in progress',
-          startDate: dateB,
-          endDate: undefined,
-        })
-      } else {
-        // Single task: completed but short-received (supplier delivered less than ordered)
-        const dateA = shiftDays(base, -(h % 3 + 2))
-        out.push({
-          id: `pr-${r.id}-1`,
-          receiptId: r.id,
-          taskId: taskIdA,
-          receivingNo: taskNoA,
-          date: dateA,
-          assignee: picForWarehouse(r.warehouseId, 0),
-          skuScope: `${r.skuQty} SKUs`,
-          purchaseQty: r.purchaseQty,
-          receivedQty: r.receivedQty,
-          skuCount: r.skuQty,
-          status: 'completed',
-          startDate: dateA,
-          endDate: shiftDays(dateA, 1),
-        })
-      }
-    } else {
-      // Completed PO: all tasks are completed and goods are fully received.
-      // Variants (by h % 2):
-      //   0 → 1 task: completed, full qty (single-delivery PO)
-      //   1 → 2 tasks: both completed (split into two batches, both done)
-      const variant = h % 2
-
-      if (variant === 0) {
-        const taskDate = shiftDays(base, -(h % 3 + 2))
-        out.push({
-          id: `pr-${r.id}-1`,
-          receiptId: r.id,
-          taskId: taskIdA,
-          receivingNo: taskNoA,
-          date: taskDate,
-          assignee: picForWarehouse(r.warehouseId, 0),
-          skuScope: `${r.skuQty} SKUs`,
-          purchaseQty: r.purchaseQty,
-          receivedQty: r.receivedQty,
-          skuCount: r.skuQty,
-          status: 'completed',
-          startDate: taskDate,
-          endDate: shiftDays(taskDate, 1),
-        })
-      } else {
-        // Split into 2 batches, both completed
-        const skuA = Math.ceil(r.skuQty * 0.55)
-        const skuB = r.skuQty - skuA
-        const qtyA = Math.round(r.purchaseQty * 0.55)
-        const dateA = shiftDays(base, -(h % 4 + 4))
-        const dateB = shiftDays(dateA, 2)
-        out.push({
-          id: `pr-${r.id}-1`,
-          receiptId: r.id,
-          taskId: taskIdA,
-          receivingNo: taskNoA,
-          date: dateA,
-          assignee: picForWarehouse(r.warehouseId, 0),
-          skuScope: `${skuA} SKUs`,
-          purchaseQty: qtyA,
-          receivedQty: Math.round(r.receivedQty * 0.55),
-          skuCount: skuA,
-          status: 'completed',
-          startDate: dateA,
-          endDate: shiftDays(dateA, 1),
-        })
-        out.push({
-          id: `pr-${r.id}-2`,
-          receiptId: r.id,
-          taskId: taskIdB,
-          receivingNo: taskNoB,
-          date: dateB,
-          assignee: picForWarehouse(r.warehouseId, 1),
-          skuScope: `${skuB} SKUs`,
-          purchaseQty: r.purchaseQty - qtyA,
-          receivedQty: r.receivedQty - Math.round(r.receivedQty * 0.55),
-          skuCount: skuB,
-          status: 'completed',
-          startDate: dateB,
-          endDate: shiftDays(dateB, 1),
-        })
-      }
-    }
-  })
-
-  return out
-}
-
-export const purchaseReceivings = reactive<PurchaseReceiving[]>(generateInitial())
-
-export function getPurchaseReceivingsForReceipt(receiptId: string): PurchaseReceiving[] {
-  return purchaseReceivings.filter((pr) => pr.receiptId === receiptId)
-}
-
-export function addPurchaseReceiving(
-  data: Omit<PurchaseReceiving, 'id' | 'receivingNo'>,
-): PurchaseReceiving {
-  const pr: PurchaseReceiving = {
-    ...data,
-    id: `pr-${data.receiptId}-${purchaseReceivings.length + 1}`,
-    receivingNo: nextPrNo(),
+function toRow(t: ReceivingTask): PurchaseReceiving {
+  return {
+    id: t.id,
+    receiptId: t.receiptId,
+    taskId: t.id,
+    receivingNo: t.taskNo,
+    date: (t.createdDate ?? t.startDate ?? t.endDate ?? '').slice(0, 10),
+    assignee: t.assignee,
+    skuScope: t.skuScope,
+    purchaseQty: t.purchaseQty,
+    receivedQty: t.receivedQty,
+    skuCount: t.skuCount,
+    status: t.status,
+    startDate: t.startDate,
+    endDate: t.endDate,
   }
-  purchaseReceivings.push(pr)
-  return pr
+}
+
+/** A receipt's receiving tasks, as purchase-receiving rows. */
+export function getPurchaseReceivingsForReceipt(receiptId: string): PurchaseReceiving[] {
+  return receivingTasksForReceipt(receiptId).map(toRow)
+}
+
+/**
+ * Legacy create entry point (used by the unmounted PurchaseReceivingModal).
+ * Delegates to the real task creator so it stays consistent if ever revived.
+ */
+export function addPurchaseReceiving(data: {
+  receiptId: string
+  assignee: string
+  skus?: string[]
+  // legacy fields accepted (and ignored) so the unmounted modal still type-checks
+  date?: string
+  skuScope?: string
+  skuCount?: number
+  purchaseQty?: number
+  receivedQty?: number
+  status?: string
+  startDate?: string
+  endDate?: string
+  taskId?: string
+}): PurchaseReceiving | null {
+  const task = createReceivingTask({
+    receiptId: data.receiptId,
+    assignee: data.assignee,
+    skus: data.skus ?? [],
+  })
+  return task ? toRow(task) : null
 }

@@ -2,14 +2,15 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton, MpModalOverlay,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
-  MpButton, toast, css,
+  css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { findTaskWithPO, getTaskLineItems, allTasksFlat, setTaskReceived, getPutAwayForTask } from '~/data/receivingTaskDetails'
-import { taskAgingDays, type ReceivingTask } from '~/data/receivingTasks'
+import ProductCell from '~/components/patterns/ProductCell.vue'
+import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask } from '~/data/receivingTaskDetails'
+import { taskAgingDays, startReceiving, type ReceivingTask } from '~/data/receivingTasks'
+import { receipts } from '~/data/receipts'
 import { formatDate, formatDateTime } from '~/utils/date'
 
 type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed'
@@ -22,20 +23,15 @@ const entry = computed(() => findTaskWithPO(props.orderId))
 const task  = computed(() => entry.value?.task)
 const po    = computed(() => entry.value?.po)
 
-const lineItems = computed(() => task.value && po.value ? getTaskLineItems(task.value, po.value.purchaseNo) : [])
+const lineItems = computed(() => task.value ? getTaskLineItems(task.value) : [])
 
 // ── Local receiving state ───────────────────────────────────────────────────
 // Plain mock data isn't deeply reactive, so we mirror the mutable bits in local
 // refs that drive the view. Saving updates these (instant re-render) and also the
 // underlying task + override store (so a remount after navigation stays in sync).
-const localStatus  = ref<TaskStatus>('open')
-const localEndDate = ref<string | null>(null)
-// Per-SKU received qty: localReceived = saved/displayed, draftQty = modal input.
+const localStatus   = ref<TaskStatus>('open')
+const localEndDate  = ref<string | null>(null)
 const localReceived = ref<Record<string, number>>({})
-const draftQty      = ref<Record<string, number>>({})
-const receiveModalOpen      = ref(false)
-const showIncompleteConfirm = ref(false)
-const modalSearch           = ref('')
 
 watch([() => props.orderId, lineItems], () => {
   const map: Record<string, number> = {}
@@ -43,8 +39,6 @@ watch([() => props.orderId, lineItems], () => {
   localReceived.value = map
   localStatus.value   = (task.value?.status as TaskStatus) ?? 'open'
   localEndDate.value  = task.value?.endDate ?? null
-  receiveModalOpen.value = false
-  draftQty.value = {}
 }, { immediate: true })
 
 const isInProgress = computed(() => localStatus.value === 'in progress')
@@ -55,37 +49,15 @@ const showReceivedCols = computed(() => localStatus.value !== 'open')
 // Linked put-away task(s) — the downstream transaction, shown like PRs on a PO.
 const linkedPutAway = computed(() => task.value ? getPutAwayForTask({ ...task.value, status: localStatus.value, endDate: localEndDate.value ?? undefined }) : [])
 
-// Derived PO status using same stage labels as the receipts index table.
+// PO status — the REAL derived receipt status (single source), not a local guess.
 const poStatus = computed<string>(() => {
-  const tasks = po.value?.tasks ?? []
-  if (!tasks.length) return 'on the way'
-  if (tasks.every(t => t.status === 'completed')) {
-    const totalPurchase = tasks.reduce((s, t) => s + t.purchaseQty, 0)
-    const totalReceived = tasks.reduce((s, t) => s + t.receivedQty, 0)
-    return totalReceived >= totalPurchase ? 'completed' : 'partial reception'
-  }
-  return tasks.some(t => t.status === 'completed') ? 'partial reception' : 'on the way'
+  const r = receipts.find(x => x.id === po.value?.receiptId)
+  return r?.status ?? 'on the way'
 })
 
 const purchaseTotal      = computed(() => task.value?.purchaseQty ?? 0)
 const savedReceivedTotal = computed(() => Object.values(localReceived.value).reduce((a, b) => a + (b || 0), 0))
 const outstandingTotal   = computed(() => Math.max(0, purchaseTotal.value - savedReceivedTotal.value))
-
-// Modal (draft) totals — drive the modal summary + incomplete alert.
-const draftReceivedTotal = computed(() => Object.values(draftQty.value).reduce((a, b) => a + (b || 0), 0))
-const draftOutstanding   = computed(() => Math.max(0, purchaseTotal.value - draftReceivedTotal.value))
-const shortItemsCount = computed(
-  () => lineItems.value.filter(it => (draftQty.value[it.skuCode] ?? 0) < it.expectedQty).length,
-)
-
-// Modal line items — filtered by the modal's own search box.
-const modalItems = computed(() => {
-  const q = modalSearch.value.trim().toLowerCase()
-  if (!q) return lineItems.value
-  return lineItems.value.filter(
-    it => it.productName.toLowerCase().includes(q) || it.skuCode.toLowerCase().includes(q),
-  )
-})
 
 /** Saved received qty for a page-table row. */
 function rowReceived(skuCode: string, fallback: number): number {
@@ -111,61 +83,9 @@ function createPutAway() {
 }
 
 // ── Receiving actions ───────────────────────────────────────────────────────
-function openReceiveModal() {
-  const map: Record<string, number> = {}
-  for (const it of lineItems.value) map[it.skuCode] = localReceived.value[it.skuCode] ?? 0
-  draftQty.value = map
-  modalSearch.value = ''
-  receiveModalOpen.value = true
-}
-function closeReceiveModal() {
-  receiveModalOpen.value = false
-  draftQty.value = {}
-}
-/** Quick-fill every row to its full purchase qty. */
-function receiveAll() {
-  const map: Record<string, number> = {}
-  for (const it of lineItems.value) map[it.skuCode] = it.expectedQty
-  draftQty.value = map
-}
-function onQtyInput(skuCode: string, expected: number, e: Event) {
-  let n = Math.floor(Number((e.target as HTMLInputElement).value))
-  if (!Number.isFinite(n) || n < 0) n = 0
-  if (n > expected) n = expected
-  draftQty.value = { ...draftQty.value, [skuCode]: n }
-}
-
-function endReceiving() {
-  if (draftOutstanding.value > 0) { showIncompleteConfirm.value = true; return }
-  commitReceiving()
-}
-function commitReceiving() {
-  showIncompleteConfirm.value = false
-  const received = { ...draftQty.value }
-  const total = draftReceivedTotal.value
-  const complete = total >= purchaseTotal.value
-  const endIso = new Date().toISOString()
-
-  // Receiving is done → goods await put-away (the put-away task isn't created yet).
-  // Local refs → instant re-render.
-  localReceived.value = received
-  localStatus.value   = 'pending put-away'
-  localEndDate.value  = endIso
-  receiveModalOpen.value = false
-
-  // Persist to the mock store so a remount after navigation stays consistent.
-  setTaskReceived(props.orderId, received)
-  if (task.value) {
-    task.value.receivedQty = total
-    task.value.status = 'pending put-away'
-    task.value.endDate = endIso
-    if (!task.value.startDate) task.value.startDate = endIso
-  }
-
-  toast.notify({
-    variant: complete ? 'success' : 'warning',
-    title: complete ? 'Receiving completed, pending put-away' : 'Receiving saved with outstanding items',
-  })
+function startReceivingAndNavigate() {
+  startReceiving(props.orderId)
+  router.push(`/receiving/${props.orderId}/receive`)
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -346,7 +266,7 @@ function goBack() {
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="SKU scope" :value="task.skuScope" />
+          <ContentList label="Sku qty" :value="task.skuScope" />
           <ContentList label="Start date" :value="task.startDate ? formatDateTime(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="rcvgd-end-cell">
@@ -393,11 +313,11 @@ function goBack() {
           <table class="detail-items">
             <colgroup>
               <col />
-              <col style="width: 150px" />
-              <col style="width: 120px" />
-              <col v-if="showReceivedCols" style="width: 120px" />
-              <col v-if="showReceivedCols" style="width: 120px" />
-              <col style="width: 72px" />
+              <col />
+              <col />
+              <col v-if="showReceivedCols" />
+              <col v-if="showReceivedCols" />
+              <col />
             </colgroup>
             <thead>
               <tr>
@@ -412,12 +332,9 @@ function goBack() {
             <tbody>
               <tr v-for="item in visibleItems" :key="item.skuCode" class="detail-item-row">
                 <td class="detail-td">
-                  <div class="rcvgd-product">
-                    <img class="rcvgd-product-thumb" :src="item.image" :alt="item.productName" loading="lazy" width="40" height="40" />
-                    <span class="rcvgd-product-name">{{ item.productName }}</span>
-                  </div>
+                  <ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" />
                 </td>
-                <td class="detail-td detail-td--secondary">{{ item.skuCode }}</td>
+                <td class="detail-td">{{ item.skuCode }}</td>
                 <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
                 <td v-if="showReceivedCols" class="detail-td detail-td--num">
                   <!-- While in progress the count is still changing — keep it neutral;
@@ -462,12 +379,12 @@ function goBack() {
             <div class="rcvgd-linked-wrap">
               <table class="rcvgd-linked">
                 <colgroup>
-                  <col style="width: 220px" />
-                  <col style="width: 180px" />
-                  <col style="width: 140px" />
-                  <col style="width: 130px" />
-                  <col style="width: 100px" />
-                  <col style="width: 100px" />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
@@ -509,10 +426,10 @@ function goBack() {
             <div class="rcvgd-linked-wrap">
               <table class="rcvgd-linked">
                 <colgroup>
-                  <col style="width: 220px" />
-                  <col style="width: 180px" />
-                  <col style="width: 140px" />
-                  <col style="width: 180px" />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
                   <col />
                 </colgroup>
                 <thead>
@@ -576,163 +493,17 @@ function goBack() {
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="openReceiveModal">
+      <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">
         Start receiving
+      </button>
+      <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/receiving/${orderId}/receive`)">
+        Continue receiving
       </button>
       <button v-else-if="localStatus === 'pending put-away'" class="detail-btn detail-btn--primary" @click="createPutAway">
         Create put-away
       </button>
     </footer>
 
-    <!-- ── Receive-items modal — enter received qty per SKU ── -->
-    <MpModal
-      id="rcvgd-receive"
-      :is-open="receiveModalOpen"
-      size="xl"
-      is-close-on-esc
-      :is-keep-alive="false"
-      @close="closeReceiveModal"
-    >
-      <MpModalContent>
-        <MpModalHeader>
-          Receive items
-          <MpModalCloseButton />
-        </MpModalHeader>
-
-        <MpModalBody>
-          <!-- PO header -->
-          <div class="rcvgd-rm-header">
-            <ContentList label="Purchase order" :value="po.purchaseNo" />
-            <ContentList label="Warehouse" :value="po.warehouseName" />
-            <ContentList label="Assignee" :value="task.assignee" />
-          </div>
-
-          <!-- Live summary -->
-          <div class="rcvgd-rm-summary">
-            <div class="rcvgd-rm-stat">
-              <span class="rcvgd-rm-stat-val">{{ fmt(purchaseTotal) }}</span>
-              <span class="rcvgd-rm-stat-label">Purchase qty</span>
-            </div>
-            <div class="rcvgd-rm-stat">
-              <span class="rcvgd-rm-stat-val">{{ fmt(draftReceivedTotal) }}</span>
-              <span class="rcvgd-rm-stat-label">Received qty</span>
-            </div>
-            <div class="rcvgd-rm-stat">
-              <span class="rcvgd-rm-stat-val" :class="{ 'rcvgd-rm-stat-val--warn': draftOutstanding > 0 }">{{ fmt(draftOutstanding) }}</span>
-              <span class="rcvgd-rm-stat-label">Outstanding</span>
-            </div>
-          </div>
-
-          <!-- Filter bar: hint + Receive all (left), search (right) -->
-          <div class="rcvgd-rm-bar">
-            <div class="rcvgd-rm-bar-left">
-              <span class="rcvgd-editing-hint">Enter the received quantity for each item</span>
-              <button class="rcvgd-link-btn" @click="receiveAll">Receive all</button>
-            </div>
-            <div class="rcvgd-search-wrap">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
-              <input v-model="modalSearch" class="rcvgd-search" type="text" placeholder="Search product or SKU…" />
-            </div>
-          </div>
-
-          <!-- SKU table with editable received qty -->
-          <section class="rcvgd-rm-section">
-            <div class="rcvgd-rm-scroll">
-              <table class="detail-items">
-                <colgroup>
-                  <col />
-                  <col style="width: 120px" />
-                  <col style="width: 100px" />
-                  <col style="width: 110px" />
-                  <col style="width: 92px" />
-                  <col style="width: 56px" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th class="detail-th">Product</th>
-                    <th class="detail-th">SKU</th>
-                    <th class="detail-th detail-th--num">Purchase qty</th>
-                    <th class="detail-th detail-th--num">Received qty</th>
-                    <th class="detail-th detail-th--num">Outstanding</th>
-                    <th class="detail-th">Unit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="item in modalItems" :key="item.skuCode" class="detail-item-row">
-                    <td class="detail-td">
-                      <div class="rcvgd-product">
-                        <img class="rcvgd-product-thumb" :src="item.image" :alt="item.productName" loading="lazy" width="40" height="40" />
-                        <span class="rcvgd-product-name">{{ item.productName }}</span>
-                      </div>
-                    </td>
-                    <td class="detail-td detail-td--secondary">{{ item.skuCode }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
-                    <td class="detail-td detail-td--num">
-                      <input
-                        class="rcvgd-qty-input"
-                        type="number" min="0" :max="item.expectedQty"
-                        :value="draftQty[item.skuCode] ?? 0"
-                        :aria-label="`Received qty for ${item.productName}`"
-                        @input="onQtyInput(item.skuCode, item.expectedQty, $event)"
-                      />
-                    </td>
-                    <td class="detail-td detail-td--num">
-                      <span v-if="item.expectedQty - (draftQty[item.skuCode] ?? 0) > 0" class="rcvgd-outstanding">
-                        {{ fmt(item.expectedQty - (draftQty[item.skuCode] ?? 0)) }}
-                      </span>
-                      <span v-else class="rcvgd-qty--full">—</span>
-                    </td>
-                    <td class="detail-td">{{ item.unit }}</td>
-                  </tr>
-                  <tr v-if="!modalItems.length">
-                    <td class="detail-td rcvgd-rm-empty" colspan="6">No products match your search.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </MpModalBody>
-
-        <MpModalFooter>
-          <div class="rcvgd-modal-footer">
-            <MpButton variant="ghost" is-rounded @click="closeReceiveModal">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="endReceiving">Save</MpButton>
-          </div>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
-
-    <!-- ── Incomplete-receiving confirmation (stacked over the receive modal) ── -->
-    <MpModal
-      id="rcvgd-incomplete"
-      :is-open="showIncompleteConfirm"
-      size="sm"
-      is-close-on-esc
-      :is-keep-alive="false"
-      @close="showIncompleteConfirm = false"
-    >
-      <MpModalContent>
-        <MpModalHeader>
-          End receiving with outstanding items?
-          <MpModalCloseButton />
-        </MpModalHeader>
-        <MpModalBody>
-          {{ fmt(draftOutstanding) }} of {{ fmt(purchaseTotal) }} units are still outstanding
-          across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'item' : 'items' }}.
-          This receiving will be saved as incomplete.
-        </MpModalBody>
-        <MpModalFooter>
-          <div class="rcvgd-modal-footer">
-            <MpButton variant="ghost" is-rounded @click="showIncompleteConfirm = false">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="commitReceiving">End receiving</MpButton>
-          </div>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
   </div>
 
   <!-- Not found fallback -->
@@ -752,7 +523,7 @@ function goBack() {
   background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
-.detail-bar-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb {
   align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
@@ -868,13 +639,6 @@ function goBack() {
 
 /* ── Filter bar ─────────────────────────────────────────────────────────── */
 .rcvgd-filter-bar { display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-3); }
-.rcvgd-editing-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.rcvgd-link-btn {
-  background: none; border: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium);
-  color: var(--mp-text-link); line-height: var(--mp-line-heights-sm);
-}
-.rcvgd-link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .rcvgd-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
@@ -895,12 +659,12 @@ function goBack() {
 .detail-items-section--bordered .detail-items-count {
   border-top: 1px solid var(--mp-border-default); border-bottom: none;
 }
-.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: hidden; }
+.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: 1px; }
 .detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
 .detail-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
-.detail-items { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 .detail-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
@@ -911,16 +675,15 @@ function goBack() {
 }
 .detail-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .detail-td {
-  height: var(--mp-sizes-10, 40px);
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2);
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
-.detail-td--num { text-align: right; white-space: nowrap; padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4); }
+.detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-td--product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.detail-td--secondary { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.detail-td--secondary { color: var(--mp-text-secondary); }
 /* ── Linked transactions tab ─────────────────────────────────────────────── */
 .rcvgd-tabs { flex-shrink: 0; }
 .rcvgd-tabs :deep(.mp-tab--isSelected_true),
@@ -967,17 +730,6 @@ function goBack() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
 }
 
-/* Editable received-qty input — compact, right-aligned in the column */
-.rcvgd-qty-input {
-  width: 100%; max-width: var(--mp-sizes-20, 80px); box-sizing: border-box;
-  padding: var(--mp-spacing-1) var(--mp-spacing-2);
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  text-align: right; font-variant-numeric: tabular-nums;
-  background: var(--mp-background-neutral); outline: none;
-}
-.rcvgd-qty-input:focus { border-color: var(--mp-border-brand-bold, #029861); }
-
 /* Received qty coloring */
 .rcvgd-qty--full    { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
 .rcvgd-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
@@ -1011,45 +763,6 @@ function goBack() {
   background: transparent; border-color: transparent; color: var(--mp-text-secondary);
 }
 .detail-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
-
-/* Modal footer — right-aligned actions */
-.rcvgd-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
-
-/* ── Receive-items modal ─────────────────────────────────────────────────── */
-.rcvgd-rm-header {
-  display: flex; gap: var(--mp-spacing-10);
-  padding: 0 0 var(--mp-spacing-4) 0; margin-bottom: var(--mp-spacing-5);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.rcvgd-rm-header :deep(.content-list) { padding-top: 0; }
-.rcvgd-rm-summary {
-  display: flex; align-items: center; gap: var(--mp-spacing-10);
-  margin-bottom: var(--mp-spacing-5);
-}
-.rcvgd-rm-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
-.rcvgd-rm-stat-val {
-  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default); font-variant-numeric: tabular-nums;
-}
-.rcvgd-rm-stat-val--warn { color: var(--mp-text-warning-default, #854d0e); }
-.rcvgd-rm-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.rcvgd-rm-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5);
-}
-.rcvgd-rm-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
-.rcvgd-rm-section {
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden;
-}
-.rcvgd-rm-scroll { max-height: 420px; overflow-y: auto; overflow-x: hidden; }
-.rcvgd-rm-section .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
-.rcvgd-rm-section .detail-item-row:last-child .detail-td { border-bottom: none; }
-/* Tighter horizontal padding so all headers fit within the modal width */
-.rcvgd-rm-section .detail-th,
-.rcvgd-rm-section .detail-td { padding-left: var(--mp-spacing-2); padding-right: var(--mp-spacing-2); }
-.rcvgd-rm-section .detail-th--num,
-.rcvgd-rm-section .detail-td--num { padding-left: var(--mp-spacing-1); padding-right: var(--mp-spacing-2); }
-.rcvgd-rm-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-8) 0; }
 
 /* Not found */
 .rcvgd-not-found {

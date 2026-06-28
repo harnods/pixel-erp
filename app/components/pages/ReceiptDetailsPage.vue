@@ -6,6 +6,7 @@ import {
   MpIcon, MpSpinner, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getReceiptDetail } from '~/data/receiptDetails'
 import { receiptsForStage, type Receipt } from '~/data/receipts'
@@ -126,7 +127,7 @@ const demoFakeReceivings = computed(() => {
     receivingNo: `Receiving #${10001 + (h % 99)}`,
     date: base,
     assignee: DEMO_STAFF[h % DEMO_STAFF.length],
-    skuScope: `${skuCount} SKUs`,
+    skuScope: String(skuCount),
     purchaseQty,
     receivedQty,
     skuCount,
@@ -238,9 +239,9 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
         <div ref="itemsScrollEl" class="detail-items-scroll">
           <table class="detail-items">
             <colgroup>
-              <col style="width: 380px" />
-              <col style="width: 220px" />
-              <col style="width: 140px" />
+              <col />
+              <col />
+              <col />
               <col />
             </colgroup>
             <thead>
@@ -255,8 +256,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
               <tr v-for="it in visibleItems" :key="it.productId" class="detail-item-row">
                 <td class="detail-td">
                   <div class="rcd-product">
-                    <img class="rcd-product-thumb" :src="it.image" :alt="it.productName" loading="lazy" width="28" height="28" />
-                    <span class="rcd-product-name" :title="it.productName">{{ it.productName }}</span>
+                    <ProductCell :name="it.productName" :desc="it.productDesc" :image="it.image" />
                   </div>
                 </td>
                 <td class="detail-td">{{ it.sku }}</td>
@@ -308,22 +308,22 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup>
-                  <col style="width: 200px" />
-                  <col style="width: 100px" />
-                  <col style="width: 160px" />
-                  <col style="width: 100px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 120px" />
-                  <col style="width: 100px" />
-                  <col style="width: 160px" />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Date</th>
                     <th class="detail-th">Assignee</th>
-                    <th class="detail-th">SKU scope</th>
+                    <th class="detail-th">Sku qty</th>
                     <th class="detail-th detail-th--num">Purchase qty</th>
                     <th class="detail-th detail-th--num">Received qty</th>
                     <th class="detail-th">Status</th>
@@ -441,7 +441,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
-.detail-bar-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb {
   align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
@@ -504,12 +504,12 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   border-top: 1px solid var(--mp-border-default); border-bottom: none;
 }
 /* table scrolls internally past ~10 rows so the page doesn't grow unbounded */
-.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: hidden; }
+.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: 1px; }
 .detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
 .detail-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
-.detail-items { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 .detail-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
@@ -520,14 +520,13 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 }
 .detail-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .detail-td {
-  height: var(--mp-sizes-10, 40px);
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2);
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
-.detail-td--num { text-align: right; white-space: nowrap; padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4); }
+.detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .rcd-product-thumb {
@@ -603,7 +602,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 .linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .detail-linked-wrap { overflow-x: auto; }
 .detail-linked {
-  width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: fixed;
+  width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: auto;
   border-top: 1px solid var(--mp-border-default);
 }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }

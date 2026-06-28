@@ -1,80 +1,64 @@
 import { reactive } from "vue";
-import { warehouses } from "./warehouses";
-import { receipts } from "./receipts";
-import { receivingTaskRefsForWarehouse } from "./receivingTasks";
-import { picForWarehouse } from "./warehouses";
-import { TODAY_ISO } from './master'
+import { warehouses, picForWarehouse } from "./warehouses";
+import {
+  receivingTaskRefsForWarehouse,
+  receivingTasksForReceipt,
+  getReceivingTask,
+  linkPutAway,
+} from "./receivingTasks";
+import { loadSnapshot, saveSnapshot } from "./persist";
 
 /**
- * A put-away task — once goods are received they must be moved from the
- * receiving dock into storage (bin) locations. One task can cover one or more
- * receiving tasks whose status is "pending put-away". A task is Open (not
- * started), In progress (shelving underway) or Completed (all units stored).
+ * A put-away task — once goods are received they must be moved from the receiving
+ * dock into storage (bin) locations. One task can bundle one or more receiving
+ * tasks whose status is "pending put-away"; creating it marks those receiving
+ * tasks "completed". Operator Start/End put-away is out of scope for now, so a
+ * created put-away stays "open". See docs/scenarios/inbound-complete-scenario.md.
  */
 export interface PutAwayTask {
   id: string;
-  /** task number, e.g. "Put-away #20090" */
   taskNo: string;
-  /** the source receiving tasks bundled into this put-away */
   receivingTaskIds: string[];
   receivingTaskNos: string[];
   warehouseId: string;
   warehouseName: string;
-  /** the warehouse person assigned */
   assignee: string;
-  /** total units to put away */
   itemQty: number;
-  /** destination storage — a single bin, or "N locations" when split */
   destination: string;
   status: "open" | "in progress" | "completed";
   startDate?: string;
   endDate?: string;
+  completedItems?: Array<{ skuCode: string; qty: number; binLocation: string }>;
 }
 
 const ZONES = ["A", "B", "C", "D"];
-
-function shiftDate(iso: string, days: number): string {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-const BASE_DATE = TODAY_ISO
 
 const PUTAWAY_WAREHOUSES = warehouses.filter(
   (w) => !w.isDefault && w.status === "active",
 );
 
-// Receiving tasks awaiting / finished put-away, grouped by warehouse. A put-away
-// only ever bundles tasks from its own warehouse, so the linked receiving tasks,
-// destination and assignee all stay consistent with the put-away's warehouse.
-function putAwaySourcePool(warehouseId: string): Array<{ id: string; no: string }> {
+/** Pending-put-away receiving tasks for a warehouse (eligible to be put away). */
+function pendingRefs(warehouseId: string): Array<{ id: string; no: string }> {
   return receivingTaskRefsForWarehouse(warehouseId)
-    .filter((t) => t.status === "pending put-away" || t.status === "completed")
+    .filter((t) => t.status === "pending put-away")
     .map((t) => ({ id: t.id, no: t.no }));
 }
 
-function generateTasks(): PutAwayTask[] {
+function receivedUnits(taskIds: string[]): number {
+  return taskIds.reduce((sum, id) => sum + (getReceivingTask(id)?.receivedQty ?? 0), 0);
+}
+
+// ── Seed: one Open put-away per warehouse for its FIRST pending task ──────────────
+// That receiving task becomes Completed (state E); any other pending tasks stay
+// pending (state D), so both states are demonstrable.
+function seedTasks(): PutAwayTask[] {
   const out: PutAwayTask[] = [];
   let seq = 20090;
-  // Only warehouses that actually have received goods to shelve get a put-away.
-  const whs = PUTAWAY_WAREHOUSES.filter((w) => putAwaySourcePool(w.id).length > 0);
-  whs.forEach((wh, p) => {
-    const pool = putAwaySourcePool(wh.id);
-    const itemQty = (((p * 7 + 5) % 20) + 4) * 4;
-    const split = p % 3 === 0 && pool.length > 1;
-    const zone = ZONES[p % ZONES.length];
-    const destination = split
-      ? `${((p % 3) + 2)} locations`
-      : `${zone}-${String((p % 9) + 1).padStart(2, "0")}-${String((p % 5) + 1).padStart(2, "0")}`;
-    const status: PutAwayTask["status"] = p % 4 === 1 ? "completed" : p % 4 === 3 ? "in progress" : "open";
-    const daysBack = status === "in progress" ? 2 + p : 8 + p * 2
-    const startDate = status !== "open" ? shiftDate(BASE_DATE, -daysBack) : undefined;
-    const endDate = status === "completed" ? shiftDate(startDate!, 2 + (p % 3)) : undefined;
-
-    // bundle 1–3 of this warehouse's receiving tasks
-    const taskCount = Math.min(pool.length, p % 4 === 2 ? 3 : p % 3 === 1 ? 2 : 1);
-    const rtasks = pool.slice(0, taskCount);
-
+  PUTAWAY_WAREHOUSES.forEach((wh, p) => {
+    const pending = pendingRefs(wh.id);
+    if (!pending.length) return;
+    const rtasks = pending.slice(0, 1); // 1:1 for the seed; bundling is allowed in-app
+    const zone = ZONES[p % ZONES.length]!;
     out.push({
       id: `pa-${p}`,
       taskNo: `Put-away #${seq++}`,
@@ -83,30 +67,47 @@ function generateTasks(): PutAwayTask[] {
       warehouseId: wh.id,
       warehouseName: wh.name,
       assignee: picForWarehouse(wh.id, p),
-      itemQty,
-      destination,
-      status,
-      startDate,
-      endDate,
+      itemQty: receivedUnits(rtasks.map((r) => r.id)),
+      destination: `${zone}-${String((p % 9) + 1).padStart(2, "0")}-${String((p % 5) + 1).padStart(2, "0")}`,
+      status: "open",
     });
   });
   return out;
 }
 
-export const putAwayTasks = reactive<PutAwayTask[]>(generateTasks());
+const snapshot = loadSnapshot<PutAwayTask>("putaway");
+export const putAwayTasks = reactive<PutAwayTask[]>(snapshot ?? seedTasks());
+
+function persistPutAways(): void {
+  saveSnapshot("putaway", putAwayTasks);
+}
+
+// On first load, mark each seed put-away's receiving task(s) Completed.
+if (!snapshot) {
+  for (const pa of putAwayTasks) for (const id of pa.receivingTaskIds) linkPutAway(id, pa.id);
+  persistPutAways();
+}
 
 let nextSeq = 20090 + putAwayTasks.length;
+function freshSeq(): number {
+  const used = putAwayTasks.map((t) => Number(t.taskNo.replace(/\D/g, ""))).filter(Number.isFinite);
+  nextSeq = Math.max(nextSeq, ...used, 20089) + 1;
+  return nextSeq;
+}
 
-/** Create a put-away task from one or more completed receiving tasks — newly created → "open". */
+/**
+ * Create a put-away task from one or more pending-put-away receiving tasks.
+ * Newly created → "open"; each source receiving task becomes "completed".
+ */
 export function addPutAwayTask(opts: {
   receivingTaskIds: string[];
   receivingTaskNos: string[];
   warehouseId: string;
   warehouseName: string;
   assignee: string;
-  itemQty: number;
+  itemQty?: number;
 }): PutAwayTask {
-  const seq = nextSeq++;
+  const seq = freshSeq();
   const task: PutAwayTask = {
     id: `pa-new-${seq}`,
     taskNo: `Put-away #${seq}`,
@@ -115,11 +116,14 @@ export function addPutAwayTask(opts: {
     warehouseId: opts.warehouseId,
     warehouseName: opts.warehouseName,
     assignee: opts.assignee,
-    itemQty: opts.itemQty,
+    itemQty: opts.itemQty ?? receivedUnits(opts.receivingTaskIds),
     destination: "Unassigned",
     status: "open",
   };
   putAwayTasks.unshift(task);
+  // Write-back: the source receiving tasks are now consumed → Completed.
+  for (const id of opts.receivingTaskIds) linkPutAway(id, task.id);
+  persistPutAways();
   return task;
 }
 
@@ -135,14 +139,45 @@ export function putAwayOpenCount(warehouseIds?: string[]): number {
   return putAwayTasksFor(warehouseIds).filter((t) => t.status !== "completed").length;
 }
 
-/**
- * Put-away task(s) shown on a receipt's detail page. Goods received against a
- * receipt are put away in that receipt's warehouse, so we return the real
- * put-away task(s) for the receipt's warehouse — same warehouse, same PIC as the
- * receipt's purchase receivings, and a working link to the put-away detail.
- */
+/** Put-away task(s) for a receipt — only those consuming THIS receipt's receiving tasks. */
 export function getPutAwayForReceipt(orderId: string): PutAwayTask[] {
-  const receipt = receipts.find((r) => r.id === orderId);
-  if (!receipt) return [];
-  return putAwayTasks.filter((t) => t.warehouseId === receipt.warehouseId);
+  const taskIds = new Set(receivingTasksForReceipt(orderId).map((t) => t.id));
+  if (!taskIds.size) return [];
+  return putAwayTasks.filter((pa) => pa.receivingTaskIds.some((id) => taskIds.has(id)));
+}
+
+export function getPutAwayTask(taskId: string): PutAwayTask | undefined {
+  return putAwayTasks.find((t) => t.id === taskId);
+}
+
+function nowIso(): string { return new Date().toISOString(); }
+
+export function startPutAway(taskId: string): void {
+  const t = getPutAwayTask(taskId);
+  if (!t || t.status !== 'open') return;
+  t.status = 'in progress';
+  t.startDate = nowIso();
+  persistPutAways();
+}
+
+export function savePutAwayDraft(
+  taskId: string,
+  items: Array<{ skuCode: string; qty: number; binLocation: string }>,
+): void {
+  const t = getPutAwayTask(taskId);
+  if (!t) return;
+  if (t.status === 'open') { t.status = 'in progress'; t.startDate = nowIso(); }
+  persistPutAways();
+}
+
+export function endPutAway(
+  taskId: string,
+  items: Array<{ skuCode: string; qty: number; binLocation: string }>,
+): void {
+  const t = getPutAwayTask(taskId);
+  if (!t) return;
+  t.status = 'completed';
+  t.endDate = nowIso();
+  t.completedItems = items.filter((it) => it.qty > 0);
+  persistPutAways();
 }

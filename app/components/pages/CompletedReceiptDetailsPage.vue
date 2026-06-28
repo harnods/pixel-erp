@@ -6,39 +6,31 @@ import {
   MpIcon, MpSpinner, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getReceiptDetail } from '~/data/receiptDetails'
 import { receiptsForStage } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
+import { receivedSummaryForReceipt } from '~/data/receivingTasks'
 
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
 
-function idSeed(id: string): number {
-  return id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-}
-const seed = computed(() => idSeed(props.orderId))
+// Real per-SKU received data, aggregated from this receipt's receiving tasks.
+const receivedSummary = computed(() => receivedSummaryForReceipt(props.orderId))
 
-function lineIsReceived(index: number): boolean {
-  return (seed.value + index) % 3 !== 0
+function lineReceivedQty(sku: string): number {
+  return receivedSummary.value[sku]?.received ?? 0
 }
-function lineReceivedQty(purchaseQty: number, index: number): number {
-  return lineIsReceived(index) ? purchaseQty : 0
+function linePutAwayQty(sku: string): number {
+  return lineReceivedQty(sku)
 }
-function linePutAwayQty(purchaseQty: number, index: number): number {
-  return lineReceivedQty(purchaseQty, index)
-}
-function lineReceivedBy(index: number): string {
-  if (!lineIsReceived(index)) return '—'
-  let covered = 0
-  for (const pr of linkedReceivings.value) {
-    covered += pr.skuCount
-    if (index < covered) return pr.assignee
-  }
-  return linkedReceivings.value[0]?.assignee ?? '—'
+function lineReceivedBy(sku: string): string {
+  const s = receivedSummary.value[sku]
+  return s && s.received > 0 ? s.assignee : '—'
 }
 
 // ── Line-items progressive pagination ─────────────────────────────────────────
@@ -216,12 +208,12 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
         <div ref="itemsScrollEl" class="detail-items-scroll">
           <table class="detail-items">
             <colgroup>
-              <col style="width: 220px" />
-              <col style="width: 140px" />
-              <col style="width: 140px" />
-              <col style="width: 140px" />
-              <col style="width: 140px" />
-              <col style="width: 80px" />
+              <col />
+              <col />
+              <col />
+              <col />
+              <col />
+              <col />
               <col />
             </colgroup>
             <thead>
@@ -239,16 +231,15 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
               <tr v-for="(it, idx) in visibleItems" :key="it.productId" class="detail-item-row">
                 <td class="detail-td">
                   <div class="rcd-product">
-                    <img class="rcd-product-thumb" :src="it.image" :alt="it.productName" loading="lazy" width="28" height="28" />
-                    <span class="rcd-product-name" :title="it.productName">{{ it.productName }}</span>
+                    <ProductCell :name="it.productName" :desc="it.productDesc" :image="it.image" />
                   </div>
                 </td>
                 <td class="detail-td">{{ it.sku }}</td>
                 <td class="detail-td detail-td--num">{{ formatNum(it.purchaseQty) }}</td>
-                <td class="detail-td detail-td--num">{{ formatNum(lineReceivedQty(it.purchaseQty, idx)) }}</td>
-                <td class="detail-td detail-td--num">{{ formatNum(linePutAwayQty(it.purchaseQty, idx)) }}</td>
+                <td class="detail-td detail-td--num">{{ formatNum(lineReceivedQty(it.sku)) }}</td>
+                <td class="detail-td detail-td--num">{{ formatNum(linePutAwayQty(it.sku)) }}</td>
                 <td class="detail-td">{{ it.unit }}</td>
-                <td class="detail-td">{{ lineReceivedBy(idx) }}</td>
+                <td class="detail-td">{{ lineReceivedBy(it.sku) }}</td>
               </tr>
             </tbody>
           </table>
@@ -296,22 +287,22 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup>
-                  <col style="width: 148px" />
-                  <col style="width: 100px" />
-                  <col style="width: 160px" />
-                  <col style="width: 120px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 120px" />
-                  <col style="width: 100px" />
-                  <col style="width: 100px" />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Date</th>
                     <th class="detail-th">Assignee</th>
-                    <th class="detail-th">SKU scope</th>
+                    <th class="detail-th">Sku qty</th>
                     <th class="detail-th detail-th--num">Purchase qty</th>
                     <th class="detail-th detail-th--num">Received qty</th>
                     <th class="detail-th">Status</th>
@@ -359,10 +350,10 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup>
-                  <col style="width: 220px" />
-                  <col style="width: 180px" />
-                  <col style="width: 140px" />
-                  <col style="width: 180px" />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
                   <col />
                 </colgroup>
                 <thead>
@@ -439,7 +430,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
-.detail-bar-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb {
   align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
@@ -497,12 +488,12 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 .detail-items-section--bordered .detail-items-count {
   border-top: 1px solid var(--mp-border-default); border-bottom: none;
 }
-.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: hidden; }
+.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: 1px; }
 .detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
 .detail-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
-.detail-items { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 .detail-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
@@ -513,13 +504,12 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 }
 .detail-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .detail-td {
-  height: var(--mp-sizes-10, 40px);
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2);
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-.detail-td--num { text-align: right; white-space: nowrap; padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4); }
+.detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
@@ -563,7 +553,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 .detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 .linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .detail-linked-wrap { overflow-x: auto; }
-.detail-linked { width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: fixed; border-top: 1px solid var(--mp-border-default); }
+.detail-linked { width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: auto; border-top: 1px solid var(--mp-border-default); }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
 .detail-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--number { position: relative; }

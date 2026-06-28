@@ -804,6 +804,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   display: flex;
   flex-direction: column;
   justify-content: center;
+  gap: 0;
   min-width: 0;
 }
 .detail-breadcrumb {
@@ -1165,7 +1166,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-bth--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 /* rows — 10px vertical padding; dividers between every row (right columns) */
 .wh-btd {
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-default);
@@ -1174,7 +1175,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   white-space: nowrap;
   background: var(--mp-background-neutral);
 }
-.wh-btd--num { text-align: right; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); }
+.wh-btd--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 /* merged Product/SKU cells: top-aligned, right divider so the group reads as one block */
 .wh-btd--product, .wh-btd--sku {
   vertical-align: top;

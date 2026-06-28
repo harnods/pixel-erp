@@ -48,9 +48,12 @@ const PartialReceptionIndexPage = defineAsyncComponent(() => import('~/component
 const CompletedReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue'))
 const CanceledReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue'))
 const ReceivingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceivingTaskDetailsPage.vue'))
+const ReceiveItemsPage = defineAsyncComponent(() => import('~/components/pages/ReceiveItemsPage.vue'))
 const CreatePurchaseReceivingPage = defineAsyncComponent(() => import('~/components/pages/CreatePurchaseReceivingPage.vue'))
 const CreatePutAwayPage = defineAsyncComponent(() => import('~/components/pages/CreatePutAwayPage.vue'))
+const CreateReceiptPage = defineAsyncComponent(() => import('~/components/pages/CreateReceiptPage.vue'))
 const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayDetailsPage.vue'))
+const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -63,8 +66,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // level-2 sidebar submenu stays active, like /sales-orders/:id).
   // /receiving/:taskId → task detail; "Receiving" resolves as Barang masuk panel sub-item
   // so the level-2 sidebar panel stays open with "Receiving" highlighted.
+  if (segs.length >= 3 && segs[0] === 'receiving' && segs[2] === 'receive') {
+    return { component: ReceiveItemsPage, id: segs[1] }
+  }
   if (segs.length >= 2 && segs[0] === 'receiving') {
     return { component: ReceivingTaskDetailsPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'put-away' && segs[2] === 'store') {
+    return { component: PutAwayItemsPage, id: segs[1] }
   }
   if (segs.length >= 2 && segs[0] === 'put-away') {
     return { component: PutAwayDetailsPage, id: segs[1] }
@@ -72,6 +81,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /barang-masuk/put-away/create → create put-away task form
   if (segs.length >= 3 && segs[0] === 'barang-masuk' && segs[1] === 'put-away' && segs[2] === 'create') {
     return { component: CreatePutAwayPage, id: 'create' }
+  }
+  // /barang-masuk/new → create inbound receipt (PO) form
+  if (segs.length >= 2 && segs[0] === 'barang-masuk' && segs[1] === 'new') {
+    return { component: CreateReceiptPage, id: 'new' }
   }
   // /barang-masuk/:id/receive → create purchase receiving (full page, not a modal)
   if (segs.length >= 3 && segs[0] === 'barang-masuk' && segs[2] === 'receive') {
@@ -559,7 +572,7 @@ function startResize(e: MouseEvent) {
             <button class="btn-enterprise btn-enterprise--secondary">
               Import
             </button>
-            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/barang-masuk/new')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>

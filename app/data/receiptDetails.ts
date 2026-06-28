@@ -46,7 +46,7 @@ export function getReceiptDetail(id: string): ReceiptDetail | null {
     transactionDate,
     estimatedArrival: r.estimatedArrival,
     shipVia: '—',
-    vendor: VENDORS[h % VENDORS.length]!,
+    vendor: r.vendor ?? VENDORS[h % VENDORS.length]!,
     trackingNos: r.trackingNos,
     warehouseName: r.warehouseName,
     lineItems: lineItemsForReceipt(r),

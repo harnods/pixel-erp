@@ -44,6 +44,7 @@ const columns: TableColumn[] = [
   { key: 'taskNo',            label: 'Number',            width: '180px' },
   { key: 'receivingTaskNos',  label: 'Receiving tasks',   width: '240px' },
   { key: 'warehouseName',     label: 'Warehouse',         width: '180px' },
+  { key: 'assignee',          label: 'Assignee',          width: '160px' },
   { key: 'itemQty',           label: 'Items',             width: '90px',  align: 'right' },
   { key: 'status',            label: 'Status',            width: '160px' },
 ]

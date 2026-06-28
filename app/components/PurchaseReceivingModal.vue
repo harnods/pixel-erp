@@ -144,7 +144,7 @@ function handleCreate() {
       receiptId: props.receipt.id,
       date: dateStr,
       assignee: assigneeLabel.value,
-      skuScope: `${skuCount} SKUs`,
+      skuScope: String(skuCount),
       purchaseQty: keptItems.value.reduce((s, i) => s + i.purchaseQty, 0),
       receivedQty: keptItems.value.reduce((s, i) => s + i.purchaseQty, 0),
       skuCount,

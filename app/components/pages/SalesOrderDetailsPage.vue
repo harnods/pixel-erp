@@ -490,6 +490,7 @@ function goBack() { router.push('/sales-orders') }
   display: flex;
   flex-direction: column;
   justify-content: center;
+  gap: 0;
   min-width: 0;
 }
 .detail-breadcrumb {
@@ -684,7 +685,7 @@ function goBack() { router.push('/sales-orders') }
   border-bottom: none;
 }
 /* table scrolls internally past ~10 rows so the page doesn't grow unbounded */
-.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: hidden; }
+.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 /* header stays visible while the body scrolls */
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: 1px; }
@@ -741,7 +742,7 @@ function goBack() { router.push('/sales-orders') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: fixed; }
+.detail-linked { table-layout: auto; }
 .detail-linked-col--date   { width: 140px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }

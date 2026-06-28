@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
@@ -7,10 +7,11 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { putAwayTasks } from '~/data/putAwayTasks'
+import ProductCell from '~/components/patterns/ProductCell.vue'
+import { putAwayTasks, startPutAway as startPutAwayTask } from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
-import { formatDate } from '~/utils/date'
+import { formatDate, formatDateTime } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -116,7 +117,35 @@ const jumpResults = computed(() => {
 })
 function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/put-away/${id}`) }
 
+// ── Sticky footer ─────────────────────────────────────────────────────────
+const stageEl = ref<HTMLElement | null>(null)
+const stageOverflowing = ref(false)
+function checkStageOverflow() {
+  const el = stageEl.value
+  if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
+}
+let stageObserver: ResizeObserver | null = null
+onMounted(() => {
+  nextTick(() => {
+    checkStageOverflow()
+    stageObserver = new ResizeObserver(checkStageOverflow)
+    if (stageEl.value) {
+      stageObserver.observe(stageEl.value)
+      stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true })
+    }
+  })
+})
+onUnmounted(() => {
+  stageObserver?.disconnect()
+  stageEl.value?.removeEventListener('scroll', checkStageOverflow)
+})
+watch(() => props.orderId, () => nextTick(checkStageOverflow))
+
 // ── Footer actions ─────────────────────────────────────────────────────────
+function startPutAway() {
+  if (task.value?.status === 'open') startPutAwayTask(props.orderId)
+  router.push(`/put-away/${props.orderId}/store`)
+}
 function editTask() {
   toast.notify({ variant: 'info', title: 'Edit — coming soon' })
 }
@@ -166,7 +195,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     </header>
 
     <!-- ── Scrollable stage ── -->
-    <div class="detail-stage">
+    <div ref="stageEl" class="detail-stage">
 
       <!-- ── Summary grid (2 cols) ── -->
       <section class="pad-summary">
@@ -175,24 +204,24 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Start date" :value="task.startDate ? formatDate(task.startDate) : '—'" />
-          <ContentList label="End date" :value="task.endDate ? formatDate(task.endDate) : '—'" />
+          <ContentList label="Start date" :value="formatDateTime(task.startDate)" />
+          <ContentList label="End date" :value="formatDateTime(task.endDate)" />
         </div>
       </section>
 
       <!-- ── Progress stats ── -->
       <section class="pad-progress">
         <div class="pad-progress-stat">
+          <span class="pad-progress-val">{{ fmt(lineItems.length) }}</span>
+          <span class="pad-progress-label">SKU qty</span>
+        </div>
+        <div class="pad-progress-stat">
           <span class="pad-progress-val">{{ fmt(task.itemQty) }}</span>
-          <span class="pad-progress-label">Items</span>
+          <span class="pad-progress-label">Received qty</span>
         </div>
         <div class="pad-progress-stat">
           <span class="pad-progress-val">{{ fmt(storedQty) }}</span>
-          <span class="pad-progress-label">Stored</span>
-        </div>
-        <div class="pad-progress-stat">
-          <span class="pad-progress-val">{{ fmt(outstandingQty) }}</span>
-          <span class="pad-progress-label">Outstanding</span>
+          <span class="pad-progress-label">Stored qty</span>
         </div>
       </section>
 
@@ -213,47 +242,38 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <table class="detail-items">
               <colgroup>
                 <col />
-                <col style="width: 150px" />
-                <col style="width: 160px" />
-                <col style="width: 80px" />
-                <col style="width: 72px" />
-                <col v-if="task.status !== 'open'" style="width: 80px" />
-                <col v-if="task.status !== 'open'" style="width: 90px" />
-                <col style="width: 140px" />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
               </colgroup>
               <thead>
                 <tr>
                   <th class="detail-th">Product</th>
                   <th class="detail-th">SKU</th>
                   <th class="detail-th">Receiving task</th>
-                  <th class="detail-th detail-th--num">Qty</th>
+                  <th class="detail-th detail-th--num">Received qty</th>
+                  <th class="detail-th detail-th--num">Stored qty</th>
                   <th class="detail-th">Unit</th>
-                  <th v-if="task.status !== 'open'" class="detail-th detail-th--num">Stored</th>
-                  <th v-if="task.status !== 'open'" class="detail-th detail-th--num">Outstanding</th>
                   <th class="detail-th">Storage location</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="item in visibleItems" :key="item.skuCode" class="pad-product-row">
                   <td class="detail-td">
-                    <div class="pad-product">
-                      <img class="pad-product-thumb" :src="item.image" :alt="item.productName" loading="lazy" width="40" height="40" />
-                      <span class="pad-product-name">{{ item.productName }}</span>
-                    </div>
+                    <ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" />
                   </td>
-                  <td class="detail-td detail-td--secondary">{{ item.skuCode }}</td>
-                  <td class="detail-td detail-td--secondary">{{ item.receivingTaskNo }}</td>
+                  <td class="detail-td">{{ item.skuCode }}</td>
+                  <td class="detail-td">{{ item.receivingTaskNo }}</td>
                   <td class="detail-td detail-td--num">{{ fmt(item.qty) }}</td>
-                  <td class="detail-td detail-td--secondary">{{ item.unit }}</td>
-                  <td v-if="task.status !== 'open'" class="detail-td detail-td--num">
+                  <td class="detail-td detail-td--num">
                     <span :class="item.stored === item.qty ? 'pad-qty--full' : item.stored > 0 ? 'pad-qty--partial' : 'pad-qty--zero'">
                       {{ fmt(item.stored) }}
                     </span>
                   </td>
-                  <td v-if="task.status !== 'open'" class="detail-td detail-td--num">
-                    <span v-if="item.qty - item.stored > 0" class="pad-outstanding">{{ fmt(item.qty - item.stored) }}</span>
-                    <span v-else class="pad-qty--full">—</span>
-                  </td>
+                  <td class="detail-td detail-td--secondary">{{ item.unit }}</td>
                   <td class="detail-td">
                     <span class="pad-bin">{{ item.binLocation }}</span>
                   </td>
@@ -282,11 +302,11 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <div class="pad-linked-wrap">
               <table class="pad-linked">
                 <colgroup>
-                  <col style="width: 220px" />
-                  <col style="width: 200px" />
-                  <col style="width: 140px" />
-                  <col style="width: 160px" />
-                  <col style="width: 160px" />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
                   <col />
                 </colgroup>
                 <thead>
@@ -331,27 +351,30 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </MpTabPanels>
       </MpTabs>
 
-      <!-- ── Footer action bar ── -->
-      <div class="detail-footer">
-        <!-- Print (secondary dropdown) -->
-        <MpPopover id="pad-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--secondary">
-              Print
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>Print put-away slip</MpPopoverListItem>
-              <MpPopoverListItem>Print location label</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+    </div>
 
-        <!-- Actions (primary dropdown) -->
+    <!-- ── Footer action bar ── -->
+    <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
+      <!-- Print (secondary dropdown) -->
+      <MpPopover id="pad-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--secondary">
+            Print
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem>Print put-away slip</MpPopoverListItem>
+            <MpPopoverListItem>Print location label</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+
+      <!-- Actions-only when completed; split button otherwise -->
+      <template v-if="task.status === 'completed'">
         <MpPopover id="pad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
             <button class="detail-btn detail-btn--primary">
@@ -368,9 +391,30 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-      </div>
-
-    </div>
+      </template>
+      <template v-else>
+        <div class="detail-split">
+          <button class="detail-btn detail-btn--primary detail-split-main" @click="startPutAway">
+            {{ task.status === 'in progress' ? 'Continue put-away' : 'Start put-away' }}
+          </button>
+          <MpPopover id="pad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="editTask">Edit</MpPopoverListItem>
+                <MpPopoverListItem @click="deleteTask">Delete</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+      </template>
+    </footer>
 
   </div>
 
@@ -391,7 +435,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 var(--mp-spacing-6);
 }
-.detail-bar-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb {
   align-self: flex-start;
   background: none; border: none; padding: 0; cursor: pointer;
@@ -478,7 +522,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden;
 }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; }
-.detail-items { width: 100%; border-collapse: collapse; }
+.detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 
 .detail-th {
   height: var(--mp-sizes-7, 28px); background: var(--mp-background-neutral-subtle);
@@ -491,9 +535,9 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 .detail-item-row:hover { background: var(--mp-background-neutral-hovered); }
 .detail-td {
-  height: var(--mp-sizes-10, 40px); vertical-align: middle;
+  vertical-align: top;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2);
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   border-bottom: 1px solid var(--mp-border-default);
 }
 .detail-td--num { text-align: right; padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4); }
@@ -529,7 +573,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 /* ── Storage location bin ── */
 .pad-bin {
-  font-size: var(--mp-font-sizes-md); font-family: var(--mp-fonts-mono, monospace);
+  font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
 }
 
@@ -567,9 +611,13 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 /* ── Footer ── */
 .detail-footer {
-  display: flex; justify-content: flex-end; align-items: center;
-  gap: var(--mp-spacing-3); padding-top: var(--mp-spacing-4);
+  flex-shrink: 0;
+  display: flex; justify-content: flex-end; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-4) var(--mp-spacing-6);
+  background: var(--mp-background-stage);
+  border-top: 1px solid transparent;
 }
+.detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 .detail-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
@@ -591,6 +639,14 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 .detail-btn--primary:hover {
   background: var(--mp-colors-emerald-800, #186f4a);
   border-color: var(--mp-colors-emerald-800, #186f4a);
+}
+
+.detail-split { display: inline-flex; align-items: stretch; }
+.detail-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.detail-split-chevron {
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
+  padding-left: var(--mp-spacing-2); padding-right: var(--mp-spacing-2);
+  border-left: 1px solid rgba(255, 255, 255, 0.3); gap: 0;
 }
 
 /* ── Not found ── */

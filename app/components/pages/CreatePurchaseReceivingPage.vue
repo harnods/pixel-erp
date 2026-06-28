@@ -6,9 +6,10 @@ import {
   toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ProductCell from '~/components/patterns/ProductCell.vue'
 import { receipts, type Receipt } from '~/data/receipts'
 import { lineItemsForReceipt, type ReceiptLineItem } from '~/data/receiptLineItems'
-import { addPurchaseReceiving } from '~/data/purchaseReceivings'
+import { createReceivingTask, uncoveredLineItems } from '~/data/receivingTasks'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -38,20 +39,13 @@ const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.val
 const removed = ref(new Set<string>())
 const search  = ref('')
 
-// Same orderId-derived seed the partial-reception detail uses to mark which lines
-// already arrived (~2 of every 3). Receiving a partial PO should only top up the
-// lines that are still outstanding, so we exclude the already-received ones.
-function idSeed(id: string): number {
-  return id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-}
+// A receiving task can only cover SKUs not already in another task (the coverage
+// rule). So the picker shows just this PO's uncovered SKUs; once all are covered
+// the page has nothing to add (and "Create receiving task" is blocked upstream).
 const lineItems = computed<ReceiptLineItem[]>(() => {
   if (!receipt.value) return []
-  const items = lineItemsForReceipt(receipt.value)
-  if (receipt.value.status === 'partial reception') {
-    const seed = idSeed(props.orderId)
-    return items.filter((_, i) => (seed + i) % 3 === 0) // only lines not yet received
-  }
-  return items
+  const uncovered = new Set(uncoveredLineItems(props.orderId).map((l) => l.sku))
+  return lineItemsForReceipt(receipt.value).filter((i) => uncovered.has(i.sku))
 })
 const keptItems = computed<ReceiptLineItem[]>(() =>
   lineItems.value.filter(i => !removed.value.has(i.productId)),
@@ -163,23 +157,15 @@ function handleCreate() {
   if (!assigneeId.value) { assigneeError.value = true; return }
   if (!keptItems.value.length) return
   if (receipt.value) {
-    const today = new Date()
-    const dateStr = today.toISOString().slice(0, 10)
-    const skuCount = keptItems.value.length
-    addPurchaseReceiving({
+    // Create an Open receiving task covering the kept (included) SKUs. The operator
+    // does the actual receiving; PO status stays Open until a task is ended.
+    createReceivingTask({
       receiptId: receipt.value.id,
-      date: dateStr,
       assignee: assigneeLabel.value,
-      skuScope: `${skuCount} SKUs`,
-      purchaseQty: keptItems.value.reduce((s, i) => s + i.purchaseQty, 0),
-      receivedQty: keptItems.value.reduce((s, i) => s + i.purchaseQty, 0),
-      skuCount,
-      status: 'completed',
-      startDate: dateStr,
-      endDate: dateStr,
+      skus: keptItems.value.map((i) => i.sku),
     })
   }
-  toast.notify({ variant: 'success', title: 'Purchase receiving saved' })
+  toast.notify({ variant: 'success', title: 'Tugas penerimaan berhasil dibuat' })
   router.push(`/barang-masuk/${props.orderId}`)
 }
 </script>
@@ -279,10 +265,10 @@ function handleCreate() {
             <table class="pr-items">
               <colgroup>
                 <col />
-                <col style="width: 140px" />
-                <col style="width: 80px" />
-                <col style="width: 80px" />
-                <col style="width: 56px" />
+                <col />
+                <col />
+                <col />
+                <col />
               </colgroup>
               <thead>
                 <tr>
@@ -296,17 +282,7 @@ function handleCreate() {
               <tbody>
                 <tr v-for="it in pagedItems" :key="it.productId" class="pr-item-row">
                   <td class="pr-td">
-                    <div class="pr-product">
-                      <img
-                        class="pr-product-thumb"
-                        :src="it.image" :alt="it.productName"
-                        loading="lazy" width="40" height="40"
-                      />
-                      <div class="pr-product-info">
-                        <span class="pr-product-name">{{ it.productName }}</span>
-                        <span class="pr-product-desc">{{ it.productDesc }}</span>
-                      </div>
-                    </div>
+                    <ProductCell :name="it.productName" :desc="it.productDesc" :image="it.image" />
                   </td>
                   <td class="pr-td"><span class="pr-sku-text">{{ it.sku }}</span></td>
                   <td class="pr-td pr-td--num">{{ formatNum(it.purchaseQty) }}</td>
@@ -360,7 +336,7 @@ function handleCreate() {
   background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
-.detail-bar-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb-trail { display: flex; align-items: center; gap: var(--mp-spacing-1); align-self: flex-start; }
 .detail-breadcrumb {
   align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
@@ -453,8 +429,8 @@ function handleCreate() {
 .pr-items-section--bordered .pr-items-count {
   border-top: 1px solid var(--mp-border-default);
 }
-.pr-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: hidden; }
-.pr-items { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.pr-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.pr-items { width: 100%; table-layout: auto; border-collapse: collapse; }
 .pr-items thead .pr-th { position: sticky; top: 0; z-index: 1; }
 
 .pr-th {
@@ -473,7 +449,7 @@ function handleCreate() {
 
 .pr-td {
   height: var(--mp-sizes-10, 40px);
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
@@ -481,7 +457,7 @@ function handleCreate() {
 .pr-item-row:last-child .pr-td { border-bottom: none; }
 .pr-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4);
+  padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
 }
 .pr-td--action { text-align: right; padding-right: var(--mp-spacing-2); }
 

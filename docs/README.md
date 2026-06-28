@@ -24,6 +24,12 @@ Start here. This is the home for ERP UI/UX documentation.
 | Detail page format | [details-page-format.md](patterns/details-page-format.md) | Wireframe + spec for transaction detail pages (header summary 2–5 col → line items → totals → tabs → footer actions) |
 | Page recipes | [page-recipes.md](patterns/page-recipes.md) | Standard scaffolds for index, form, and detail pages |
 
+## Flows / Scenarios
+
+| Topic | Doc | Covers |
+|---|---|---|
+| Inbound (Barang masuk) | [inbound-complete-scenario.md](scenarios/inbound-complete-scenario.md) | End-to-end PO → Receiving Task → Put-away: statuses, transitions, SKU-coverage rules, PO-status derivation, seed-data states. **Draft spec — pending sign-off.** |
+
 ## ERP Components
 
 | Component | Doc | Covers |

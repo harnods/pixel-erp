@@ -1,10 +1,11 @@
-import { receivingPOs, type ReceivingTask, type ReceivingPO } from './receivingTasks'
+import { receivingPOs, saveReceivingDraft, type ReceivingTask, type ReceivingPO } from './receivingTasks'
 import { putAwayTasks } from './putAwayTasks'
 import { BINS } from './receiptLineItems'
 import { CATALOG } from './catalog'
 
 export interface TaskLineItem {
   productName: string
+  productDesc: string
   skuCode:     string
   image:       string
   colorHue:    number
@@ -14,81 +15,37 @@ export interface TaskLineItem {
   unit:        string
 }
 
-// Per-task received-qty overrides, recorded when a user ends a receiving session.
-// Keyed by taskId → { [skuCode]: receivedQty }. Lets the detail table reflect the
-// exact quantities entered (instead of the derived front-fill) for the rest of the
-// SPA session, so the demo stays consistent across navigation.
-const receivedOverrides: Record<string, Record<string, number>> = {}
-
-export function setTaskReceived(taskId: string, received: Record<string, number>): void {
-  receivedOverrides[taskId] = { ...received }
-}
+const CATALOG_BY_SKU = new Map(CATALOG.map((p) => [p.sku, p]))
 
 function strSeed(s: string): number {
   return s.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
 }
 
-/** Distribute received units front-filling (first SKUs are scanned first). */
-function distributeReceived(expectedQtys: number[], totalReceived: number): number[] {
-  const received = Array(expectedQtys.length).fill(0)
-  let rem = totalReceived
-  for (let i = 0; i < expectedQtys.length; i++) {
-    if (rem <= 0) break
-    const take = Math.min(expectedQtys[i]!, rem)
-    received[i] = take
-    rem -= take
-  }
-  return received
+/** Save received qty per SKU for a task (kept name for callers) → persists as draft. */
+export function setTaskReceived(taskId: string, received: Record<string, number>): void {
+  saveReceivingDraft(taskId, received)
 }
 
 /**
- * Generate line items for a receiving task using the shared product catalog.
- * Products are selected deterministically from the PO's purchaseNo seed so
- * the same PO always shows the same set of products everywhere in the app.
+ * Line items for a receiving task — the task's own per-SKU items (the source of
+ * truth), enriched with product image/colour/unit from the shared catalog.
  */
-export function getTaskLineItems(task: ReceivingTask, purchaseNo: string): TaskLineItem[] {
-  const seed = strSeed(purchaseNo)
-  const count = Math.min(task.skuCount, CATALOG.length)
-
-  // Pick products the same way receiptLineItems does — seed * 3 + i * 7 pattern.
-  const used = new Set<number>()
-  const picks: (typeof CATALOG)[number][] = []
-  for (let i = 0; i < count; i++) {
-    let idx = (seed * 3 + i * 7) % CATALOG.length
-    while (used.has(idx)) idx = (idx + 1) % CATALOG.length
-    used.add(idx)
-    picks.push(CATALOG[idx]!)
-  }
-
-  // Distribute expected qty across SKUs with slight variance.
-  const weights = picks.map((_, i) => 1 + ((seed * 17 + i * 11) % 7) * 0.3)
-  const totalW = weights.reduce((a, b) => a + b, 0)
-  const expectedQtys: number[] = []
-  let rem = task.purchaseQty
-  for (let i = 0; i < count; i++) {
-    if (i === count - 1) {
-      expectedQtys.push(Math.max(1, rem))
-    } else {
-      const q = Math.max(1, Math.round(task.purchaseQty * weights[i]! / totalW))
-      expectedQtys.push(q)
-      rem -= q
+export function getTaskLineItems(task: ReceivingTask): TaskLineItem[] {
+  const seed = strSeed(task.id)
+  return task.items.map((it, i) => {
+    const p = CATALOG_BY_SKU.get(it.sku)
+    return {
+      productName: it.productName || p?.name || it.sku,
+      productDesc: p?.desc ?? '',
+      skuCode:     it.sku,
+      image:       p?.img ?? '',
+      colorHue:    p?.hue ?? 200,
+      binLocation: BINS[(seed + i * 5) % BINS.length]!,
+      expectedQty: it.expectedQty,
+      receivedQty: it.receivedQty,
+      unit:        it.unit || p?.unit || 'Unit',
     }
-  }
-
-  const receivedQtys = distributeReceived(expectedQtys, task.receivedQty)
-  const override = receivedOverrides[task.id]
-
-  return picks.map((p, i) => ({
-    productName: p.name,
-    skuCode:     p.sku,
-    image:       p.img,
-    colorHue:    p.hue,
-    binLocation: BINS[(seed + i * 5) % BINS.length]!,
-    expectedQty: expectedQtys[i]!,
-    // Exact per-SKU qty if the user has saved a receiving session; else derived.
-    receivedQty: override ? (override[p.sku] ?? 0) : receivedQtys[i]!,
-    unit:        p.unit,
-  }))
+  })
 }
 
 /** A put-away task linked to a receiving task (the next step after receiving). */

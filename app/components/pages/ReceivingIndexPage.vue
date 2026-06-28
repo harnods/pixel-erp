@@ -307,7 +307,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <th class="rcvg-th">Receiving task no.</th>
             <th class="rcvg-th">Warehouse</th>
             <th v-if="!isScoped" class="rcvg-th">Assignee</th>
-            <th class="rcvg-th">SKU qty</th>
+            <th class="rcvg-th">Sku qty</th>
             <th class="rcvg-th rcvg-th--right">Purchase qty</th>
             <th class="rcvg-th rcvg-th--right">Received qty</th>
             <th class="rcvg-th">Status</th>
@@ -353,7 +353,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 {{ po.warehouseName }}
               </td>
               <td v-if="!isScoped" class="rcvg-td">{{ t.assignee }}</td>
-              <td class="rcvg-td">{{ t.skuCount }} SKUs</td>
+              <td class="rcvg-td">{{ t.skuCount }}</td>
               <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
               <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
               <td class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
@@ -527,11 +527,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 .rcvg-td {
   height: var(--mp-sizes-10, 40px);
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   border-bottom: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle; white-space: nowrap;
 }
-.rcvg-td--right { text-align: right; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
+.rcvg-td--right { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .rcvg-td--muted { color: var(--mp-text-secondary); }
 .rcvg-th--actions,
 .rcvg-td--actions {

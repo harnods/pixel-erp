@@ -584,7 +584,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .status-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
 .status-filter-item {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-2\.5); border-radius: var(--mp-radii-md);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
   cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .status-filter-item:hover { background: var(--mp-background-neutral-subtle); }

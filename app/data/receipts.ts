@@ -1,5 +1,6 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
+import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY } from './master'
 
 /** An inbound goods receipt (Barang masuk → Receipt). */
@@ -33,6 +34,8 @@ export interface Receipt {
   memo?: string;
   /** tracking / resi numbers (e.g. SD0009583). A PO may have 0, 1 or several. */
   trackingNos: string[];
+  /** supplier — set on user-created receipts; seed receipts derive it by hash. */
+  vendor?: string;
 }
 
 // Anchor "today" so the arrival-date presets line up with the mock data.
@@ -206,10 +209,36 @@ function generateCanceled(count = 7): Receipt[] {
   return out;
 }
 
-export const receipts = reactive<Receipt[]>([
-  ...generateReceipts(),
-  ...generateCanceled(),
-]);
+// The inbound graph (receipts + receiving tasks + put-aways) is persisted as a
+// full snapshot so seed records mutated by the flow (status derivation, received
+// qty) survive a refresh. A present snapshot wins over the freshly-built seed;
+// "Reset demo data" clears it.
+const receiptSnapshot = loadSnapshot<Receipt>("receipts");
+export const receipts = reactive<Receipt[]>(
+  receiptSnapshot ?? [...generateReceipts(), ...generateCanceled()],
+);
+
+/** Persist the receipts snapshot (call after any mutation). */
+export function persistReceipts(): void {
+  saveSnapshot("receipts", receipts);
+}
+
+let receiptAddSeq = receipts.filter((r) => r.id.startsWith("rcv-new-")).length;
+
+/** Create a new inbound receipt (PO) from the New receipt form — persists + clickable. */
+export function addReceipt(
+  data: Omit<Receipt, "id" | "number">,
+): Receipt {
+  const n = receiptAddSeq++;
+  const receipt: Receipt = {
+    ...data,
+    id: `rcv-new-${n}`,
+    number: `RCV-2026-${String(5000 + n).padStart(4, "0")}`,
+  };
+  receipts.unshift(receipt);
+  persistReceipts();
+  return receipt;
+}
 
 /**
  * Close a partial reception — the PO is accepted as final even though it was
@@ -221,6 +250,7 @@ export function closeReceipt(id: string): void {
   if (!r) return;
   r.status = "completed";
   r.receivedDate = new Date(RECEIPT_TODAY).toISOString().slice(0, 10);
+  persistReceipts();
 }
 
 // status → stage label (used by tabs / sidebar panel)

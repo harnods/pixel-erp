@@ -7,6 +7,7 @@ import {
   MpModalOverlay, MpModalCloseButton,
   MpIcon, css,
 } from '@mekari/pixel3'
+import ProductCell from '~/components/patterns/ProductCell.vue'
 import { receivingPOs } from '~/data/receivingTasks'
 import { getTaskLineItems, type TaskLineItem } from '~/data/receivingTaskDetails'
 import { addPutAwayTask } from '~/data/putAwayTasks'
@@ -282,12 +283,28 @@ onMounted(() => {
   if (qWh) {
     _prefillSuppressClear = true
     warehouseId.value = qWh
-    nextTick(() => {
-      _prefillSuppressClear = false
+
+    // Try immediately after next tick; if the task isn't in pendingTasks yet
+    // (e.g. endReceiving was called just before navigation and the reactive graph
+    // hasn't fully propagated), fall back to watching pendingTasks until it appears.
+    let prefillDone = false
+    const tryPrefill = () => {
+      if (prefillDone) return
       const ids = qTasks
         ? qTasks.split(',').filter(id => pendingTasks.value.some(t => t.id === id))
         : qTask && pendingTasks.value.some(t => t.id === qTask) ? [qTask] : []
-      if (ids.length) selectedIds.value = new Set(ids)
+      if (ids.length) {
+        selectedIds.value = new Set(ids)
+        prefillDone = true
+      }
+    }
+
+    nextTick(() => {
+      _prefillSuppressClear = false
+      tryPrefill()
+      if (!prefillDone && (qTask || qTasks)) {
+        const stop = watch(pendingTasks, () => { tryPrefill(); if (prefillDone) stop() }, { immediate: true })
+      }
     })
   }
 
@@ -421,10 +438,10 @@ function handleCreate() {
         <section v-else class="pa-tasks-table-wrap" :class="{ 'pa-tasks-table-wrap--bordered': isTasksProgressive }">
           <table class="pa-tasks-table">
             <colgroup>
-              <col style="width: 200px" />
               <col />
-              <col style="width: 100px" />
-              <col style="width: 110px" />
+              <col />
+              <col />
+              <col />
             </colgroup>
             <thead>
               <tr>
@@ -437,11 +454,11 @@ function handleCreate() {
                       @change="toggleAll"
                       @click.stop
                     />
-                    Number
+                    Purchase receiving no.
                   </div>
                 </th>
-                <th class="pa-th">Purchase no.</th>
-                <th class="pa-th">SKU qty</th>
+                <th class="pa-th">Purchase order no.</th>
+                <th class="pa-th">Sku qty</th>
                 <th class="pa-th">Received qty</th>
               </tr>
             </thead>
@@ -492,11 +509,11 @@ function handleCreate() {
             <table class="pa-items">
               <colgroup>
                 <col />
-                <col style="width: 140px" />
-                <col style="width: 160px" />
-                <col style="width: 80px" />
-                <col style="width: 60px" />
-                <col style="width: 200px" />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
               </colgroup>
               <thead>
                 <!-- Bulk action bar — replaces column headers when SKU rows are selected -->
@@ -558,16 +575,7 @@ function handleCreate() {
                           @change="toggleSku(row.rowKey)"
                         />
                       </span>
-                      <div class="pa-product">
-                        <img
-                          class="pa-product-thumb"
-                          :src="row.image" :alt="row.productName"
-                          loading="lazy" width="40" height="40"
-                        />
-                        <div class="pa-product-info">
-                          <span class="pa-product-name">{{ row.productName }}</span>
-                        </div>
-                      </div>
+                      <ProductCell :name="row.productName" :desc="row.productDesc" :image="row.image" />
                     </div>
                   </td>
                   <td class="pa-td"><span class="pa-sku-text">{{ row.skuCode }}</span></td>
@@ -656,7 +664,7 @@ function handleCreate() {
   background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
-.detail-bar-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb-trail { display: flex; align-items: center; gap: var(--mp-spacing-1); align-self: flex-start; }
 .detail-breadcrumb {
   align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
@@ -722,7 +730,7 @@ function handleCreate() {
 
 .pa-tasks-table-wrap { border-radius: var(--mp-radii-lg); overflow: hidden; }
 .pa-tasks-table-wrap--bordered { border: 1px solid var(--mp-border-bold); }
-.pa-tasks-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.pa-tasks-table { width: 100%; table-layout: auto; border-collapse: collapse; }
 
 /* ── Table header ─────────────────────────────────────────────────────────────── */
 .pa-th {
@@ -741,8 +749,8 @@ function handleCreate() {
 /* ── Task rows ────────────────────────────────────────────────────────────────── */
 .pa-td {
   height: var(--mp-sizes-10, 40px);
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
 }
 .pa-task-row:last-child .pa-td { border-bottom: none; }
@@ -753,7 +761,7 @@ function handleCreate() {
 .pa-td--mono { font-variant-numeric: tabular-nums; }
 .pa-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4);
+  padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
 }
 
 .pa-selection-summary {
@@ -768,8 +776,8 @@ function handleCreate() {
   border-radius: var(--mp-radii-lg); overflow: hidden;
 }
 .pa-items-section--bordered .pa-items-count { border-top: 1px solid var(--mp-border-default); }
-.pa-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: hidden; }
-.pa-items { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.pa-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.pa-items { width: 100%; table-layout: auto; border-collapse: collapse; }
 .pa-items thead .pa-th { position: sticky; top: 0; z-index: 1; }
 .pa-item-row:last-child .pa-td { border-bottom: none; }
 
