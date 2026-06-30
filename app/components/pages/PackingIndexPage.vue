@@ -2,13 +2,19 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
+  MpModalOverlay, MpModalCloseButton, MpFormControl, MpFormLabel, MpAutocomplete, MpInput, MpButton,
+  css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { useTableState } from '~/composables/useTableState'
-import { putAwayTasksFor, type PutAwayTask } from '~/data/putAwayTasks'
+import { packingTasksFor, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
+import { addDeliveryTask } from '~/data/deliveryTasks'
+import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
 import { warehouses } from '~/data/warehouses'
+import { formatDateTime } from '~/utils/date'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -25,7 +31,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Put-away task saved' })
+    toast.notify({ variant: 'success', title: 'Packing task saved' })
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })
@@ -40,22 +46,27 @@ const scopedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.id
 const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
+// Packing is per sales order — one task = one order (no bundling).
 const columns: TableColumn[] = [
-  { key: 'taskNo',            label: 'Number',            width: '180px' },
-  { key: 'receivingTaskNos',  label: 'Receiving tasks',   width: '240px' },
-  { key: 'warehouseName',     label: 'Warehouse',         width: '180px' },
-  { key: 'assignee',          label: 'Assignee',          width: '160px' },
-  { key: 'itemQty',           label: 'Items',             width: '90px',  align: 'right' },
-  { key: 'status',            label: 'Status',            width: '160px' },
+  { key: 'taskNo',        label: 'Number',      width: '180px' },
+  { key: 'salesNo',       label: 'Sales order', width: '200px' },
+  { key: 'warehouseName', label: 'Warehouse',   width: '180px' },
+  { key: 'assignee',      label: 'Assignee',    width: '160px' },
+  { key: 'skuQty',        label: 'SKU qty',     width: '100px', align: 'right' },
+  { key: 'toPackQty',     label: 'To pack',     width: '100px', align: 'right' },
+  { key: 'packedQty',     label: 'Packed qty',  width: '100px', align: 'right' },
+  { key: 'status',        label: 'Status',      width: '140px' },
+  { key: 'startDate',     label: 'Start date',  width: '170px' },
+  { key: 'endDate',       label: 'End date',    width: '190px' },
 ]
 
-// ─── Filters — max 2 quick filters: Status + Warehouse (hidden when scoped) ───
+// ─── Filters — Status + Warehouse (hidden when scoped) ───
 const warehouseFilter = ref('')
 const statusFilter = ref('')
 
-const baseTasks = computed<PutAwayTask[]>(() =>
+const baseTasks = computed<PackingTask[]>(() =>
   demoState.value === 'data'
-    ? putAwayTasksFor(isScoped.value ? scopedWarehouseIds.value : undefined)
+    ? packingTasksFor(isScoped.value ? scopedWarehouseIds.value : undefined)
     : [],
 )
 
@@ -67,8 +78,9 @@ const warehouseOptions = computed(() => {
 })
 const statusOptions = [
   { label: 'Open',        value: 'open' },
-  { label: 'In process', value: 'in progress' },
+  { label: 'In process',  value: 'in progress' },
   { label: 'Completed',   value: 'completed' },
+  { label: 'Canceled',    value: 'canceled' },
 ]
 const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
 const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
@@ -76,12 +88,12 @@ const statusLabel    = computed(() => statusOptions.find(o => o.value === status
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort,
-} = useTableState<PutAwayTask>(baseTasks, {
+} = useTableState<PackingTask>(baseTasks, {
   perPage: 25,
   filterFn: (row, s) => {
     const matchesSearch = !s
       || row.taskNo.toLowerCase().includes(s)
-      || row.receivingTaskNos.some(n => n.toLowerCase().includes(s))
+      || row.salesNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
     const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
     const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
@@ -95,18 +107,80 @@ function clearFilters() { search.value = ''; warehouseFilter.value = ''; statusF
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
-
-// ─── Receiving tasks expand/collapse ──────────────────────────────────────────
-const expandedRows = ref(new Set<string>())
-function toggleExpand(id: string) {
-  const s = new Set(expandedRows.value)
-  s.has(id) ? s.delete(id) : s.add(id)
-  expandedRows.value = s
-}
+function agingDays(t: PackingTask) { return packingTaskAgingDays(t) }
 
 // ─── Row actions ──────────────────────────────────────────────────────────────
 const router = useRouter()
-function viewDetails(row: PutAwayTask) { router.push(`/put-away/${row.id}`) }
+function viewDetails(row: PackingTask) { router.push(`/packing/${row.id}`) }
+
+// A completed packing task that hasn't been shipped yet can create a shipping
+// (delivery). Each packing task is one sales order → one delivery.
+function canCreateShipping(t: PackingTask) {
+  return t.status === 'completed' && getDeliveryForPackingTask(t.id).length === 0
+}
+
+// ── Create shipping → pick an assignee, then make a delivery per packing task ──
+const ASSIGNEES = [
+  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
+  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
+  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
+  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
+  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
+  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
+  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
+  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
+]
+const shipModalOpen = ref(false)
+const shipQueue = ref<PackingTask[]>([])
+const shipAssigneeId = ref('')
+const shipAssigneeError = ref(false)
+const shipAssigneeLabel = computed(() => ASSIGNEES.find(a => a.id === shipAssigneeId.value)?.name ?? '')
+// Courier + tracking captured here for a single shipment (scan label auto-fills);
+// for bulk they're filled later at handover (per package).
+const shipScan = ref('')
+const shipCourier = ref('')
+const shipTracking = ref('')
+const shipSingle = computed(() => shipQueue.value.length === 1)
+
+function openShipModal(tasks: PackingTask[]) {
+  shipQueue.value = tasks
+  shipAssigneeId.value = ''
+  shipAssigneeError.value = false
+  shipScan.value = ''
+  shipCourier.value = ''
+  shipTracking.value = ''
+  shipModalOpen.value = true
+}
+const SHIP_COURIERS = ['JNE', 'SiCepat', 'J&T Express', 'AnterAja', 'Internal fleet']
+// Scanning a shipping label (issued by OMS) → auto-fills courier + tracking (dummy random).
+function applyShipScan() {
+  shipCourier.value = SHIP_COURIERS[Math.floor(Math.random() * SHIP_COURIERS.length)]!
+  shipTracking.value = 'SD' + Math.floor(1_000_000 + Math.random() * 9_000_000)
+  if (!shipScan.value.trim()) shipScan.value = shipTracking.value
+}
+function createShipping(t: PackingTask) { openShipModal([t]) }
+// Bulk → one delivery per selected completed packing task (delivery is per order).
+function bulkCreateShipping(selectedRows: Set<number>, deselectAll: () => void) {
+  const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as PackingTask[]
+  const eligible = rows.filter(canCreateShipping)
+  deselectAll()
+  if (eligible.length) openShipModal(eligible)
+}
+function confirmShipping() {
+  if (!shipAssigneeId.value) { shipAssigneeError.value = true; return }
+  for (const t of shipQueue.value) {
+    addDeliveryTask({
+      salesOrderId: t.salesOrderId, salesNo: t.salesNo,
+      packingTaskId: t.id, packingTaskNo: t.taskNo,
+      warehouseId: t.warehouseId, warehouseName: t.warehouseName,
+      assignee: shipAssigneeLabel.value, skuQty: t.skuQty, toShipQty: t.packedQty,
+      courier: shipSingle.value ? (shipCourier.value.trim() || undefined) : undefined,
+      trackingNo: shipSingle.value ? (shipTracking.value.trim() || undefined) : undefined,
+    })
+  }
+  shipModalOpen.value = false
+  router.push({ path: '/barang-keluar', query: { tab: 'Delivery', saved: '1' } })
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -128,13 +202,22 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @sort="toggleSort"
     @clear-filters="clearFilters"
   >
+    <!-- ── Bulk actions ── -->
+    <template #bulk-actions="{ deselectAll, selectedRows }">
+      <button
+        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+        @click="bulkCreateShipping(selectedRows as Set<number>, deselectAll)"
+      >
+        Create shipping
+      </button>
+    </template>
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover v-if="!isScoped" id="pa-wh-filter" is-close-on-select>
+        <MpPopover v-if="!isScoped" id="pack-wh-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
-              id="pa-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
+              id="pack-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
               :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = ''"
             >
               <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
@@ -150,10 +233,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover id="pa-status-filter" is-close-on-select>
+        <MpPopover id="pack-status-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
-              id="pa-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
+              id="pack-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
               :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''"
             >
               <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
@@ -172,7 +255,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <MpTooltip id="tt-pa-airene" label="Ask Airene" placement="bottom" use-portal>
+          <MpTooltip id="tt-pack-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
@@ -180,7 +263,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
-          <MpTooltip id="tt-pa-export" label="Export" placement="bottom" use-portal>
+          <MpTooltip id="tt-pack-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
         </div>
@@ -196,8 +279,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Number — View details chip on hover ── -->
     <template #cell-taskNo="{ value, row }">
       <div class="cell-with-action">
-        <span class="cell-text pa-no">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as PutAwayTask)">
+        <span class="cell-text pack-no">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as PackingTask)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -207,38 +290,37 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Receiving tasks — expandable list ── -->
-    <template #cell-receivingTaskNos="{ value, row }">
-      <span class="pa-rtasks">
-        <template v-if="expandedRows.has((row as unknown as PutAwayTask).id)">
-          <span v-for="no in (value as string[])" :key="no" class="pa-rtasks__item">{{ no }}</span>
-          <button class="pa-rtasks__toggle" @click.stop="toggleExpand((row as unknown as PutAwayTask).id)">Show less</button>
-        </template>
-        <template v-else>
-          <span class="pa-rtasks__item">{{ (value as string[])[0] }}</span>
-          <button
-            v-if="(value as string[]).length > 1"
-            class="pa-rtasks__toggle"
-            @click.stop="toggleExpand((row as unknown as PutAwayTask).id)"
-          >+{{ (value as string[]).length - 1 }} more</button>
-        </template>
-      </span>
+    <!-- ── Sales order (single) ── -->
+    <template #cell-salesNo="{ value }">
+      <span class="pack-so">{{ value }}</span>
     </template>
 
     <!-- ── Warehouse ── -->
     <template #cell-warehouseName="{ value }">
-      <span class="pa-warehouse">{{ value }}</span>
+      <span class="pack-warehouse">{{ value }}</span>
     </template>
 
-    <!-- ── Items qty ── -->
-    <template #cell-itemQty="{ value }">{{ formatNum(value as number) }}</template>
+    <!-- ── Numeric cells ── -->
+    <template #cell-skuQty="{ value }">{{ formatNum(value as number) }}</template>
+    <template #cell-toPackQty="{ value }">{{ formatNum(value as number) }}</template>
+    <template #cell-packedQty="{ value }">{{ formatNum(value as number) }}</template>
 
     <!-- ── Status ── -->
     <template #cell-status="{ value }"><ErpStatusBadge :status="value as string" /></template>
 
+    <!-- ── Start / End date + aging ── -->
+    <template #cell-startDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
+    <template #cell-endDate="{ row }">
+      <span class="pack-end">
+        <span v-if="(row as unknown as PackingTask).endDate">{{ formatDateTime((row as unknown as PackingTask).endDate) }}</span>
+        <span v-else class="pack-end__ongoing">—</span>
+        <span v-if="agingDays(row as unknown as PackingTask) > 1" class="pack-aging">{{ agingDays(row as unknown as PackingTask) }} days</span>
+      </span>
+    </template>
+
     <!-- ── Actions kebab ── -->
     <template #actions="{ row }">
-      <MpPopover :id="`pa-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+      <MpPopover :id="`pack-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <button class="row-kebab" aria-label="More actions">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -248,7 +330,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails(row as unknown as PutAwayTask)">View details</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails(row as unknown as PackingTask)">View details</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCreateShipping(row as unknown as PackingTask)"
+              @click="createShipping(row as unknown as PackingTask)"
+            >Create shipping</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -258,14 +344,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No put-away tasks</p>
-        <p class="empty-full-desc">Received goods waiting to be stored will appear here.</p>
+        <p class="empty-full-title">No packing tasks</p>
+        <p class="empty-full-desc">Picked orders waiting to be packed will appear here.</p>
       </div>
     </template>
   </ErpTablePage>
 
   <!-- ── Demo scenario FAB ── -->
-  <MpPopover id="pa-demo-fab" is-close-on-select use-portal placement="top-end">
+  <MpPopover id="pack-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
       <button class="demo-fab" aria-label="Change scenario state"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
     </MpPopoverTrigger>
@@ -279,6 +365,59 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>
+
+  <!-- ── Create shipping: pick assignee ── -->
+  <MpModal id="pack-ship-modal" :is-open="shipModalOpen" size="lg" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="shipModalOpen = false">
+    <MpModalContent>
+      <MpModalHeader>Create shipping<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <p class="ship-modal-note">
+          {{ shipQueue.length }} shipment{{ shipQueue.length > 1 ? 's' : '' }} will be created (one per sales order).
+        </p>
+        <MpFormControl id="pack-ship-assignee" is-required :is-invalid="shipAssigneeError" :class="css({ marginBottom: shipSingle ? '16px' : '0' })">
+          <MpFormLabel>Assignee</MpFormLabel>
+          <MpAutocomplete
+            id="pack-ship-assignee-ac"
+            v-model="shipAssigneeId"
+            :data="ASSIGNEES"
+            label-prop="name"
+            value-prop="id"
+            placeholder="Select assignee"
+            is-searchable is-clearable use-portal is-full-width
+            :is-invalid="shipAssigneeError"
+          />
+        </MpFormControl>
+
+        <!-- Courier + tracking (single shipment) — scan label or enter manually -->
+        <template v-if="shipSingle">
+          <MpFormControl id="pack-ship-scan" :class="css({ marginBottom: '16px' })">
+            <MpFormLabel>Scan shipping label</MpFormLabel>
+            <div class="ship-scan-field">
+              <MpInput id="pack-ship-scan-input" v-model="shipScan" placeholder="Scan or paste label…" is-full-width @keyup.enter="applyShipScan" />
+              <MpButton variant="secondary" is-rounded @click="applyShipScan">Apply</MpButton>
+            </div>
+          </MpFormControl>
+          <div class="ship-modal-grid">
+            <MpFormControl id="pack-ship-courier">
+              <MpFormLabel>Courier</MpFormLabel>
+              <MpInput id="pack-ship-courier-input" v-model="shipCourier" placeholder="e.g. JNE, SiCepat" is-full-width />
+            </MpFormControl>
+            <MpFormControl id="pack-ship-tracking">
+              <MpFormLabel>Tracking no.</MpFormLabel>
+              <MpInput id="pack-ship-tracking-input" v-model="shipTracking" placeholder="e.g. SD0009583" is-full-width />
+            </MpFormControl>
+          </div>
+        </template>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="ship-modal-footer">
+          <MpButton variant="ghost" is-rounded @click="shipModalOpen = false">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmShipping">Create shipping</MpButton>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 </template>
 
 <style scoped>
@@ -308,7 +447,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Number cell — View details chip on hover */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.pa-no { color: var(--mp-text-default); }
+.pack-no { color: var(--mp-text-default); }
+.pack-so { color: var(--mp-text-default); }
 .row-hover-btn {
   position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
@@ -322,18 +462,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 :global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
-/* Receiving tasks cell */
-.pa-rtasks { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-0\.5); }
-.pa-rtasks__item  { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pa-rtasks__toggle {
-  border: none; background: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link, var(--mp-text-brand));
-  line-height: var(--mp-line-heights-sm);
-}
-.pa-rtasks__toggle:hover { text-decoration: underline; }
-
-.pa-warehouse {
+.pack-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+
+/* Start/End date + aging badge */
+.pack-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.pack-end__ongoing { color: var(--mp-text-secondary); }
+.pack-aging {
+  display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5);
+  border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #f1f5f9);
+  color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
 
 .row-kebab {
@@ -359,4 +499,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .demo-fab:hover { opacity: 0.9; }
 .demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ship-modal-note { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ship-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+.ship-scan-field { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.ship-scan-field > :first-child { flex: 1; min-width: 0; }
+.ship-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
 </style>

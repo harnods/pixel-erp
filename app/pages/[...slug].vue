@@ -3,6 +3,14 @@ import { defineAsyncComponent, type Component, ref, computed, watch, provide, ne
 import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
+import { outgoingOpenCount } from '~/data/outgoing'
+import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { pickingOpenCount } from '~/data/pickingTasks'
+
+// Keep outbound order statuses derived from their tasks (coherent everywhere).
+syncOutboundOrderStatuses()
+import { packingOpenCount } from '~/data/packingTasks'
+import { deliveryOpenCount } from '~/data/deliveryTasks'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
@@ -42,6 +50,18 @@ const ReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages
 const PartialReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
 const CompletedReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptDetailsPage.vue'))
 const CanceledReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptDetailsPage.vue'))
+const OutgoingIndexPage = defineAsyncComponent(() => import('~/components/pages/OutgoingIndexPage.vue'))
+const PickingIndexPage = defineAsyncComponent(() => import('~/components/pages/PickingIndexPage.vue'))
+const PackingIndexPage = defineAsyncComponent(() => import('~/components/pages/PackingIndexPage.vue'))
+const DeliveryIndexPage = defineAsyncComponent(() => import('~/components/pages/DeliveryIndexPage.vue'))
+const CreatePickingPage = defineAsyncComponent(() => import('~/components/pages/CreatePickingPage.vue'))
+const CreatePackingPage = defineAsyncComponent(() => import('~/components/pages/CreatePackingPage.vue'))
+const PickingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PickingTaskDetailsPage.vue'))
+const PickItemsPage = defineAsyncComponent(() => import('~/components/pages/PickItemsPage.vue'))
+const PackingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PackingTaskDetailsPage.vue'))
+const PackItemsPage = defineAsyncComponent(() => import('~/components/pages/PackItemsPage.vue'))
+const DeliveryTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
+const OutgoingOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
 const ReceivingIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue'))
 const PutAwayIndexPage = defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue'))
 const PartialReceptionIndexPage = defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
@@ -59,6 +79,38 @@ const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/P
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /barang-keluar/picking/create → create a new picking list (bundles sales orders)
+  if (segs.length >= 3 && segs[0] === 'barang-keluar' && segs[1] === 'picking' && segs[2] === 'create') {
+    return { component: CreatePickingPage, id: 'create' }
+  }
+  // /barang-keluar/packing/create → create packing tasks from a completed picking task
+  if (segs.length >= 3 && segs[0] === 'barang-keluar' && segs[1] === 'packing' && segs[2] === 'create') {
+    return { component: CreatePackingPage, id: 'create' }
+  }
+  // /barang-keluar/:id → outgoing sales order detail (not the picking/packing sub-routes)
+  if (segs.length >= 2 && segs[0] === 'barang-keluar' && segs[1] !== 'picking' && segs[1] !== 'packing') {
+    return { component: OutgoingOrderDetailsPage, id: segs[1] }
+  }
+  // /picking/:taskId/pick → operator picks items from bins
+  if (segs.length >= 3 && segs[0] === 'picking' && segs[2] === 'pick') {
+    return { component: PickItemsPage, id: segs[1] }
+  }
+  // /picking/:taskId → picking task detail
+  if (segs.length >= 2 && segs[0] === 'picking') {
+    return { component: PickingTaskDetailsPage, id: segs[1] }
+  }
+  // /packing/:taskId/pack → operator matches/packs the order
+  if (segs.length >= 3 && segs[0] === 'packing' && segs[2] === 'pack') {
+    return { component: PackItemsPage, id: segs[1] }
+  }
+  // /packing/:taskId → packing task detail
+  if (segs.length >= 2 && segs[0] === 'packing') {
+    return { component: PackingTaskDetailsPage, id: segs[1] }
+  }
+  // /delivery/:taskId → delivery (shipment) detail
+  if (segs.length >= 2 && segs[0] === 'delivery') {
+    return { component: DeliveryTaskDetailsPage, id: segs[1] }
+  }
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
   }
@@ -118,24 +170,40 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  'Barang keluar': ['Orders', 'Picking', 'Packing', 'Ready to ship', 'Delivery', 'Voided orders'],
+  'Barang keluar': ['Outgoing', 'Picking', 'Packing', 'Delivery'],
   'Barang masuk': ['Receipts', 'Receiving', 'Put-away'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
 // Partial reception (Completed / Canceled are terminal, hidden by default).
 const currentTabCounts = computed<Record<string, number>>(() => {
-  if (currentPageKey.value !== 'Barang masuk') return {}
-  const counts = receiptCountsByStage() // ERP = all warehouses
-  const out: Record<string, number> = {}
-  const receipts = (counts['On the way'] ?? 0) + (counts['Partial reception'] ?? 0)
-  if (receipts) out['Receipts'] = receipts
-  // Receiving / Put-away are task-based (a different dataset than the PO stages)
-  const recv = receivingOpenCount()
-  if (recv) out['Receiving'] = recv
-  const putaway = putAwayOpenCount()
-  if (putaway) out['Put-away'] = putaway
-  return out
+  if (currentPageKey.value === 'Barang masuk') {
+    const counts = receiptCountsByStage() // ERP = all warehouses
+    const out: Record<string, number> = {}
+    const receipts = (counts['On the way'] ?? 0) + (counts['Partial reception'] ?? 0)
+    if (receipts) out['Receipts'] = receipts
+    // Receiving / Put-away are task-based (a different dataset than the PO stages)
+    const recv = receivingOpenCount()
+    if (recv) out['Receiving'] = recv
+    const putaway = putAwayOpenCount()
+    if (putaway) out['Put-away'] = putaway
+    return out
+  }
+  if (currentPageKey.value === 'Barang keluar') {
+    const out: Record<string, number> = {}
+    // Outgoing badges the actionable orders: everything not yet Completed/Canceled.
+    const outgoing = outgoingOpenCount() // ERP = all warehouses
+    if (outgoing) out['Outgoing'] = outgoing
+    // Picking / Packing / Delivery are task-based (a different dataset than the orders)
+    const picking = pickingOpenCount()
+    if (picking) out['Picking'] = picking
+    const packing = packingOpenCount()
+    if (packing) out['Packing'] = packing
+    const delivery = deliveryOpenCount()
+    if (delivery) out['Delivery'] = delivery
+    return out
+  }
+  return {}
 })
 
 const currentTabs = computed<string[]>(() => pageTabs[currentPageKey.value] ?? [])
@@ -152,6 +220,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
     'Put-away': PutAwayIndexPage,
+  },
+  'Barang keluar': {
+    'Outgoing': OutgoingIndexPage,
+    'Picking': PickingIndexPage,
+    'Packing': PackingIndexPage,
+    'Delivery': DeliveryIndexPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -558,6 +632,16 @@ function startResize(e: MouseEvent) {
             </svg>
             New warehouse
           </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Barang keluar'" class="page-title-actions">
+          <template v-if="activeTab === 'Picking'">
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/barang-keluar/picking/create')">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              New picking list
+            </button>
+          </template>
         </div>
         <div v-else-if="currentPageKey === 'Barang masuk'" class="page-title-actions">
           <template v-if="activeTab === 'Put-away'">
