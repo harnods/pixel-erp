@@ -301,10 +301,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <th class="rcvg-th">
               <div class="rcvg-num-head">
                 <MpCheckbox id="rcvg-head-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
-                <span>Purchase order no.</span>
+                <span>Receiving task no.</span>
               </div>
             </th>
-            <th class="rcvg-th">Receiving task no.</th>
+            <th class="rcvg-th">Purchase order no.</th>
             <th class="rcvg-th">Warehouse</th>
             <th v-if="!isScoped" class="rcvg-th">Assignee</th>
             <th class="rcvg-th">Sku qty</th>
@@ -324,16 +324,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               class="rcvg-task-row"
               :class="{ 'rcvg-task-row--selected': selectedTasks.has(t.id) }"
             >
-              <!-- PO cell — only rendered for first task, spans all tasks in this PO -->
-              <td v-if="tIdx === 0" :rowspan="po.tasks.length" class="rcvg-td rcvg-td--po">
-                <div class="rcvg-po-cell">
-                  <span class="rcvg-check" @click.stop>
-                    <MpCheckbox :id="`rcvg-po-${po.id}`" :is-checked="poAllSelected(po)" :is-indeterminate="poSomeSelected(po)" @change="togglePO(po)" />
-                  </span>
-                  <span class="rcvg-po-no">{{ po.purchaseNo }}</span>
-                </div>
-              </td>
-              <!-- Receiving task cell -->
+              <!-- Receiving task cell (first column) -->
               <td class="rcvg-td rcvg-td--task">
                 <div class="rcvg-task-cell">
                   <span class="rcvg-check" @click.stop>
@@ -347,6 +338,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                     </svg>
                     <span class="row-hover-btn__label">VIEW DETAILS</span>
                   </button>
+                </div>
+              </td>
+              <!-- PO cell — only rendered for first task, spans all tasks in this PO -->
+              <td v-if="tIdx === 0" :rowspan="po.tasks.length" class="rcvg-td rcvg-td--po">
+                <div class="rcvg-po-cell">
+                  <span class="rcvg-po-no">{{ po.purchaseNo }}</span>
                 </div>
               </td>
               <td v-if="tIdx === 0" :rowspan="po.tasks.length" class="rcvg-td rcvg-td--warehouse">
@@ -559,7 +556,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* Merged PO + Warehouse cells */
-.rcvg-td--po { vertical-align: top; border-right: 1px solid var(--mp-border-default); }
+.rcvg-td--po { vertical-align: top; border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
 .rcvg-td--warehouse { vertical-align: top; border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
 .rcvg-po-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rcvg-po-no { color: var(--mp-text-default); }
