@@ -53,7 +53,7 @@ const assigneeOptions = computed(() =>
 )
 const statusOptions = [
   { label: 'Open',             value: 'open' },
-  { label: 'In progress',      value: 'in progress' },
+  { label: 'In process',      value: 'in progress' },
   { label: 'Pending put-away', value: 'pending put-away' },
   { label: 'Completed',        value: 'completed' },
 ]

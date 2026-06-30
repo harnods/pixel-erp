@@ -1,0 +1,527 @@
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import {
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css,
+} from '@mekari/pixel3'
+import ContentList from '~/components/patterns/ContentList.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ProductCell from '~/components/patterns/ProductCell.vue'
+import { outgoingOrders, outgoingStage } from '~/data/outgoing'
+import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
+import { getPackingForOrder } from '~/data/packingTasks'
+import { deliveryTasks, DELIVERY_COURIERS } from '~/data/deliveryTasks'
+import { formatDate, formatDateTime } from '~/utils/date'
+
+const props = defineProps<{ orderId: string }>()
+const router = useRouter()
+
+syncOutboundOrderStatuses()
+
+const order = computed(() => outgoingOrders.find(o => o.id === props.orderId))
+const lineItems = computed(() => order.value ? buildPickingLines([order.value.id], [order.value.salesNo]) : [])
+
+const linkedPicking = computed(() => getPickingForOrder(props.orderId))
+const linkedPacking = computed(() => getPackingForOrder(props.orderId))
+const linkedDelivery = computed(() => deliveryTasks.filter(d => d.salesOrderId === props.orderId))
+const hasLinked = computed(() => linkedPicking.value.length > 0 || linkedPacking.value.length > 0 || linkedDelivery.value.length > 0)
+
+// Per-SKU progress across this order's tasks (picked → packed → shipped).
+const shippedPackingIds = computed(() => new Set(linkedDelivery.value.filter(d => d.status === 'shipped').map(d => d.packingTaskId)))
+const progressByKey = computed<Record<string, { picked: number; packed: number; shipped: number }>>(() => {
+  const map: Record<string, { picked: number; packed: number; shipped: number }> = {}
+  for (const l of lineItems.value) map[l.key] = { picked: 0, packed: 0, shipped: 0 }
+  for (const t of linkedPicking.value)
+    for (const [k, q] of Object.entries(t.pickedByKey ?? {})) if (map[k]) map[k].picked += q
+  for (const t of linkedPacking.value) {
+    const shipped = shippedPackingIds.value.has(t.id)
+    for (const [k, q] of Object.entries(t.packedByKey ?? {})) if (map[k]) { map[k].packed += q; if (shipped) map[k].shipped += q }
+  }
+  return map
+})
+function prog(key: string) { return progressByKey.value[key] ?? { picked: 0, packed: 0, shipped: 0 } }
+
+// ── Line items — auto lazy-load, internal scroll & border past 10 rows ─────────
+const PAGE_SIZE = 10
+const shownCount = ref(PAGE_SIZE)
+const loadingMore = ref(false)
+const visibleItems = computed(() => lineItems.value.slice(0, shownCount.value))
+const hasMoreItems = computed(() => shownCount.value < lineItems.value.length)
+const itemsProgressive = computed(() => lineItems.value.length > PAGE_SIZE)
+
+function loadMoreItems() {
+  if (loadingMore.value || !hasMoreItems.value) return
+  loadingMore.value = true
+  setTimeout(() => {
+    shownCount.value = Math.min(shownCount.value + PAGE_SIZE, lineItems.value.length)
+    loadingMore.value = false
+  }, 500)
+}
+
+const itemsScrollEl = ref<HTMLElement | null>(null)
+const itemsSentinelEl = ref<HTMLElement | null>(null)
+let itemsObserver: IntersectionObserver | null = null
+function setupItemsObserver() {
+  itemsObserver?.disconnect()
+  if (!itemsScrollEl.value || !itemsSentinelEl.value) return
+  itemsObserver = new IntersectionObserver(
+    (entries) => { if (entries[0]!.isIntersecting) loadMoreItems() },
+    { root: itemsScrollEl.value, rootMargin: '0px 0px 120px 0px' },
+  )
+  itemsObserver.observe(itemsSentinelEl.value)
+}
+onMounted(() => nextTick(setupItemsObserver))
+onUnmounted(() => itemsObserver?.disconnect())
+watch(() => props.orderId, () => {
+  shownCount.value = PAGE_SIZE
+  loadingMore.value = false
+  nextTick(() => {
+    if (itemsScrollEl.value) itemsScrollEl.value.scrollTop = 0
+    setupItemsObserver()
+  })
+})
+
+// Transaction (order creation) date — derived: a few days before the due date.
+const transactionDate = computed(() => {
+  if (!order.value) return ''
+  const d = new Date(order.value.dueDate)
+  d.setDate(d.getDate() - (3 + (seedNum(order.value.id) % 5)))
+  return d.toISOString()
+})
+// Marketplace orders (Desty) carry a cut-off time on the due date and usually arrive
+// with the courier + tracking no. already assigned by the channel.
+const isMarketplace = computed(() => !!order.value && order.value.source !== 'Sales Order')
+const dueDateDisplay = computed(() =>
+  order.value ? (isMarketplace.value ? formatDateTime(order.value.dueDate) : formatDate(order.value.dueDate)) : '—',
+)
+const MP_COURIERS = DELIVERY_COURIERS.filter(c => c !== 'Internal fleet')
+// Courier / tracking no. surface from the linked delivery task; for marketplace orders
+// they're pre-assigned by the channel even before shipping is processed.
+const courier = computed(() => {
+  const fromTask = linkedDelivery.value.find(d => d.courier)?.courier
+  if (fromTask) return fromTask
+  if (isMarketplace.value && order.value) return MP_COURIERS[seedNum(order.value.id) % MP_COURIERS.length]!
+  return '—'
+})
+const trackingNo = computed(() => {
+  const fromTask = linkedDelivery.value.find(d => d.trackingNo)?.trackingNo
+  if (fromTask) return fromTask
+  if (isMarketplace.value && order.value) {
+    const digits = String(1_000_000_000 + (seedNum(order.value.id) * 2654435761) % 9_000_000_000)
+    return `TRK${digits}`
+  }
+  return '—'
+})
+
+// ── Notes / attachment / audit (mirrors Sales order & Receipt detail) ─────────────
+function seedNum(id: string): number { return Number(id.replace(/\D/g, '')) || 0 }
+const NOTE_UPDATERS = ['Rizal Candra', 'Dewi Rahayu', 'Agus Firmansyah', 'Sari Indah']
+const NOTE_ATTACH = ['packing-instruction.pdf', 'customer-note.jpg', 'shipping-label.pdf']
+const attachments = computed(() => {
+  if (!order.value) return [] as { name: string; sizeKB: number }[]
+  const s = seedNum(order.value.id)
+  const n = (s % 3) + 1 // always 1–3 files
+  return Array.from({ length: n }, (_, i) => ({ name: NOTE_ATTACH[i % NOTE_ATTACH.length]!, sizeKB: 40 + ((s + i * 37) % 220) }))
+})
+const lastUpdatedBy = computed(() => order.value ? NOTE_UPDATERS[seedNum(order.value.id) % NOTE_UPDATERS.length]! : '')
+const lastUpdatedAt = computed(() => order.value?.shippedDate ?? order.value?.dueDate ?? new Date().toISOString())
+
+/** File-type → Pixel document icon for an attachment. */
+function attachmentIcon(name: string): string {
+  const ext = name.toLowerCase().split('.').pop() ?? ''
+  if (ext === 'pdf') return 'pdf-document'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'heic'].includes(ext)) return 'image-document'
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'excel-document'
+  if (['doc', 'docx'].includes(ext)) return 'word-document'
+  return 'attachment'
+}
+function formatUpdatedAt(iso: string) {
+  const d = new Date(iso)
+  const date = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(d)
+  const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
+  return `${date}, ${time} (GMT+7)`
+}
+
+function fmt(n: number) { return n.toLocaleString('id-ID') }
+
+// ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
+const jumpSearch = ref('')
+const jumpResults = computed(() => {
+  const q = jumpSearch.value.trim().toLowerCase()
+  const matched = q
+    ? outgoingOrders.filter(o => o.salesNo.toLowerCase().includes(q) || o.number.toLowerCase().includes(q))
+    : outgoingOrders
+  return matched.slice(0, 6)
+})
+function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/barang-keluar/${id}`) }
+
+function goBack() { router.push('/barang-keluar?tab=Outgoing') }
+function createPicking() {
+  if (!order.value) return
+  router.push({ path: '/barang-keluar/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id } })
+}
+
+// footer divider
+const stageEl = ref<HTMLElement | null>(null)
+const stageOverflowing = ref(false)
+function checkOverflow() { const el = stageEl.value; if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1 }
+let ro: ResizeObserver | null = null
+onMounted(() => nextTick(() => {
+  checkOverflow()
+  ro = new ResizeObserver(checkOverflow)
+  if (stageEl.value) { ro.observe(stageEl.value); stageEl.value.addEventListener('scroll', checkOverflow, { passive: true }) }
+}))
+onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll', checkOverflow) })
+</script>
+
+<template>
+  <div v-if="order" class="detail-page">
+
+    <header class="detail-bar">
+      <div class="detail-bar-left">
+        <button class="detail-breadcrumb" @click="goBack">Barang keluar</button>
+        <div class="detail-titlerow-left">
+          <h1 class="detail-title">{{ order.salesNo }}</h1>
+          <ErpStatusBadge :status="outgoingStage(order)" badge-for="additionalInformation" size="md" />
+          <MpPopover id="ood-jump" use-portal :is-keep-alive="false" placement="bottom-start">
+            <MpPopoverTrigger>
+              <button class="detail-jump-chevron" aria-label="Switch transaction">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ width: '304px' })">
+              <div class="detail-jump">
+                <div class="detail-jump-search-wrap">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
+                </div>
+                <div class="detail-jump-list">
+                  <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
+                    <span class="detail-jump-item-number">{{ o.salesNo }}</span>
+                    <span class="detail-jump-item-customer">{{ o.customer ?? o.source }}</span>
+                  </button>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                </div>
+              </div>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+      </div>
+    </header>
+
+    <div ref="stageEl" class="detail-stage">
+
+      <section class="ood-summary">
+        <div class="content-list-col">
+          <ContentList label="Transaction date" :value="formatDate(transactionDate)" />
+          <ContentList label="Transaction no." :value="order.salesNo" />
+          <ContentList label="Customer" :value="order.customer ?? '—'" />
+          <ContentList label="Source" :value="order.source" />
+        </div>
+        <div class="content-list-col">
+          <ContentList label="Due date" :value="dueDateDisplay" />
+          <ContentList label="Courier" :value="courier" />
+          <ContentList label="Tracking no." :value="trackingNo" />
+          <ContentList label="Warehouse" :value="order.warehouseName" />
+        </div>
+      </section>
+
+      <!-- Line items -->
+      <div class="ood-table-wrap">
+        <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsProgressive }">
+          <div ref="itemsScrollEl" class="detail-items-scroll">
+            <table class="detail-items">
+              <thead>
+                <tr>
+                  <th class="detail-th">Product</th>
+                  <th class="detail-th">SKU</th>
+                  <th class="detail-th detail-th--num">Order qty</th>
+                  <th class="detail-th detail-th--num">Picked qty</th>
+                  <th class="detail-th detail-th--num">Packed qty</th>
+                  <th class="detail-th detail-th--num">Shipped qty</th>
+                  <th class="detail-th">Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in visibleItems" :key="item.key" class="detail-item-row">
+                  <td class="detail-td"><ProductCell :name="item.product" :desc="item.desc" :image="item.img" /></td>
+                  <td class="detail-td">{{ item.sku }}</td>
+                  <td class="detail-td detail-td--num">{{ fmt(item.qty) }}</td>
+                  <td class="detail-td detail-td--num">{{ fmt(prog(item.key).picked) }}</td>
+                  <td class="detail-td detail-td--num">{{ fmt(prog(item.key).packed) }}</td>
+                  <td class="detail-td detail-td--num">{{ fmt(prog(item.key).shipped) }}</td>
+                  <td class="detail-td">{{ item.unit }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
+            <div v-if="loadingMore" class="detail-loading detail-items-loading">
+              <MpSpinner size="sm" /> Loading products…
+            </div>
+          </div>
+          <div class="detail-items-count">
+            <span>Showing {{ visibleItems.length }} of {{ lineItems.length }} products</span>
+          </div>
+        </section>
+      </div>
+
+      <!-- Message / memo / attachment + audit (mirrors Sales order detail) -->
+      <section class="detail-notes-left">
+        <ContentList label="Message">
+          <p class="detail-note-text">—</p>
+        </ContentList>
+        <ContentList label="Memo">
+          <p class="detail-note-text">—</p>
+        </ContentList>
+        <ContentList :label="`Attachment (${attachments.length})`">
+          <div v-if="attachments.length" class="detail-attach-list">
+            <a v-for="(a, i) in attachments" :key="i" class="detail-attach" @click.prevent>
+              <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
+              <span class="detail-attach-meta">
+                <span class="detail-attach-name">{{ a.name }}</span>
+                <span class="detail-attach-size">{{ a.sizeKB.toFixed(1) }} KB</span>
+              </span>
+            </a>
+          </div>
+          <p v-else class="detail-note-text">—</p>
+        </ContentList>
+      </section>
+      <a class="detail-updated" @click.prevent>Last updated by {{ lastUpdatedBy }} on {{ formatUpdatedAt(lastUpdatedAt) }}</a>
+
+      <!-- Linked outbound tasks (only once at least one exists) -->
+      <MpTabs v-if="hasLinked" id="ood-tabs" :default-value="0" variant-color="green" class="ood-tabs">
+        <MpTabList>
+          <MpTab v-if="linkedPicking.length" id="ood-tab-pick" :value="0">Picking ({{ linkedPicking.length }})</MpTab>
+          <MpTab v-if="linkedPacking.length" id="ood-tab-pack" :value="1">Packing ({{ linkedPacking.length }})</MpTab>
+          <MpTab v-if="linkedDelivery.length" id="ood-tab-del" :value="2">Delivery ({{ linkedDelivery.length }})</MpTab>
+        </MpTabList>
+        <MpTabPanels>
+          <MpTabPanel v-if="linkedPicking.length" :value="0">
+            <h3 class="linked-section-title">Picking list tasks</h3>
+            <div class="ood-linked-wrap">
+              <table class="ood-linked">
+                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
+                <tbody>
+                  <tr v-for="t in linkedPicking" :key="t.id" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="ood-link-num">{{ t.taskNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/picking/${t.id}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ t.assignee }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
+                    <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ t.endDate ? formatDateTime(t.endDate) : '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+          <MpTabPanel v-if="linkedPacking.length" :value="1">
+            <h3 class="linked-section-title">Packing tasks</h3>
+            <div class="ood-linked-wrap">
+              <table class="ood-linked">
+                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Order qty</th><th class="detail-th detail-th--num">Packed qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
+                <tbody>
+                  <tr v-for="t in linkedPacking" :key="t.id" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="ood-link-num">{{ t.taskNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/packing/${t.id}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ t.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(t.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(order.orderQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(t.packedQty) }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
+                    <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ t.endDate ? formatDateTime(t.endDate) : '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+          <MpTabPanel v-if="linkedDelivery.length" :value="2">
+            <h3 class="linked-section-title">Delivery tasks</h3>
+            <div class="ood-linked-wrap">
+              <table class="ood-linked">
+                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Courier</th><th class="detail-th">Tracking no.</th><th class="detail-th">Status</th></tr></thead>
+                <tbody>
+                  <tr v-for="d in linkedDelivery" :key="d.id" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="ood-link-num">{{ d.taskNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/delivery/${d.id}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ d.courier ?? '—' }}</td>
+                    <td class="detail-td">{{ d.trackingNo ?? '—' }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="d.status" /></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+        </MpTabPanels>
+      </MpTabs>
+
+    </div>
+
+    <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
+      <MpPopover id="ood-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--secondary">
+            Print
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem>Print sales order</MpPopoverListItem>
+            <MpPopoverListItem v-if="linkedDelivery.length">Print delivery note</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+      <button v-if="canPickOrder(order)" class="detail-btn detail-btn--primary" @click="createPicking">
+        Create picking list
+      </button>
+    </footer>
+
+  </div>
+
+  <div v-else class="ood-not-found">
+    <p>Order not found.</p>
+    <button class="detail-breadcrumb" @click="goBack">Back to Barang keluar</button>
+  </div>
+</template>
+
+<style scoped>
+.detail-page { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
+.detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px); }
+.detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
+.detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.detail-jump-chevron {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
+  background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-icon-default);
+}
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump { display: flex; flex-direction: column; }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search {
+  width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+}
+.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.detail-jump-list { display: flex; flex-direction: column; }
+.detail-jump-item {
+  display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
+  background: none; border: none; cursor: pointer; padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
+}
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.detail-jump-empty { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
+
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-8); }
+.ood-summary { display: grid; grid-template-columns: 244px 244px; column-gap: var(--mp-spacing-6); row-gap: 0; }
+.content-list-col { display: flex; flex-direction: column; }
+
+.ood-table-wrap { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+.ood-section-title { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
+.detail-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
+.detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
+.detail-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
+.detail-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+.detail-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
+.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
+.detail-items .detail-th { position: sticky; top: 0; z-index: 1; }
+.detail-items-sentinel { height: 1px; }
+.detail-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
+.detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
+.detail-items-count {
+  display: flex; align-items: center; margin: 0;
+  padding: var(--mp-spacing-3) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.detail-items-section--bordered .detail-items-count { border-top: 1px solid var(--mp-border-default); border-bottom: none; }
+.detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+
+.ood-tabs { flex-shrink: 0; }
+.ood-tabs :deep(.mp-tab--isSelected_true), .ood-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.ood-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
+.ood-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ood-linked-wrap { overflow-x: auto; }
+.ood-linked { width: 100%; border-collapse: collapse; }
+.ood-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
+.ood-link-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ood-empty { color: var(--mp-text-secondary); }
+/* Number cell — "View details" chip on row hover (same as index tables) */
+.ood-linked .detail-td--number { position: relative; }
+.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
+.row-hover-btn {
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
+.ood-linked .detail-item-row:hover .row-hover-btn { display: flex; }
+
+.detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
+.detail-footer--floating { border-top-color: var(--mp-border-default); }
+.detail-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; }
+.detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-secondary); }
+.detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
+.detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
+.detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+
+.ood-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* Notes / attachment / audit (mirrors Sales order & Receipt detail) */
+.detail-notes-left { display: flex; flex-direction: column; }
+.detail-note-text { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); white-space: pre-line; }
+.detail-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.detail-attach { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; width: fit-content; }
+.detail-attach-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.detail-attach-meta { display: flex; flex-direction: column; }
+.detail-attach-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
+.detail-attach:hover .detail-attach-name { text-decoration: underline; text-underline-offset: 2px; }
+.detail-attach-size { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.detail-updated { margin: 0; align-self: flex-start; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
+.detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
+</style>

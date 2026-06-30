@@ -220,7 +220,7 @@ function goBack() {
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <!-- Pulse — only while in progress -->
-          <span v-if="isInProgress" class="rcvgd-pulse" aria-label="In progress" />
+          <span v-if="isInProgress" class="rcvgd-pulse" aria-label="In process" />
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcvgd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>

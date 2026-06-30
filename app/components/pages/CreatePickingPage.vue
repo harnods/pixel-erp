@@ -1,0 +1,663 @@
+<script setup lang="ts">
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import {
+  MpButton, MpCheckbox, MpAutocomplete,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, css,
+} from '@mekari/pixel3'
+import ProductCell from '~/components/patterns/ProductCell.vue'
+import { pickableOrders, skuLineQty, type OutgoingOrder } from '~/data/outgoing'
+import { addPickingTask, type PickingLine } from '~/data/pickingTasks'
+import { CATALOG } from '~/data/catalog'
+import { BINS } from '~/data/receiptLineItems'
+
+const router = useRouter()
+const route  = useRoute()
+
+const ASSIGNEES = [
+  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
+  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
+  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
+  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
+  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
+  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
+  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
+  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
+]
+
+// ─── Pickable orders (open / in progress) ──────────────────────────────────────
+const allPickable = computed<OutgoingOrder[]>(() => pickableOrders())
+
+// Only warehouses that actually have pickable orders
+const availableWarehouses = computed(() => {
+  const seen = new Set<string>()
+  const list: { id: string; name: string }[] = []
+  for (const o of allPickable.value) {
+    if (!seen.has(o.warehouseId)) {
+      seen.add(o.warehouseId)
+      list.push({ id: o.warehouseId, name: o.warehouseName })
+    }
+  }
+  return list
+})
+
+// ─── Prefill from query (when opened from the Outgoing index: row / bulk) ───────
+// Initialized at setup (before the clearing watcher is active) so the navigated
+// warehouse + sales orders come in already selected.
+const prefillWarehouse = (route.query.warehouseId as string | undefined) ?? ''
+const prefillOrderIds = ((route.query.orderIds as string | undefined)?.split(',').filter(Boolean)) ?? []
+
+// ─── Warehouse selector ────────────────────────────────────────────────────────
+const warehouseId = ref(prefillWarehouse)
+const warehouseError = ref(false)
+// User changing the warehouse resets the order selection (initial value doesn't fire).
+watch(warehouseId, (v) => {
+  if (v) warehouseError.value = false
+  selectedIds.value = new Set()
+})
+const warehouseName = computed(() =>
+  availableWarehouses.value.find(w => w.id === warehouseId.value)?.name ?? '',
+)
+const isWarehouseLocked = computed(() => !!route.query.warehouseId)
+
+// ─── Assignee ───────────────────────────────────────────────────────────────────
+const assigneeId    = ref('')
+const assigneeError = ref(false)
+watch(assigneeId, (v) => { if (v) assigneeError.value = false })
+const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+
+// ─── Orders filtered by selected warehouse ──────────────────────────────────────
+const orders = computed<OutgoingOrder[]>(() =>
+  warehouseId.value
+    ? allPickable.value.filter(o => o.warehouseId === warehouseId.value)
+    : [],
+)
+const isOrdersProgressive = computed(() => orders.value.length > 10)
+
+// ─── Order selection ─────────────────────────────────────────────────────────────
+const selectedIds = ref(new Set<string>(prefillOrderIds))
+const orderSelectionError = ref(false)
+
+function toggleOrder(id: string) {
+  const s = new Set(selectedIds.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  selectedIds.value = s
+  if (s.size > 0) orderSelectionError.value = false
+}
+const allSelected = computed(() =>
+  orders.value.length > 0 && selectedIds.value.size === orders.value.length,
+)
+const someSelected = computed(() =>
+  selectedIds.value.size > 0 && selectedIds.value.size < orders.value.length,
+)
+function toggleAll() {
+  selectedIds.value = allSelected.value ? new Set() : new Set(orders.value.map(o => o.id))
+  if (selectedIds.value.size > 0) orderSelectionError.value = false
+}
+const selectedOrders = computed(() => orders.value.filter(o => selectedIds.value.has(o.id)))
+
+// ─── Picking list per sales order ───────────────────────────────────────────────
+// Each selected order is exploded into its own SKU lines (deterministic from the
+// catalog). Picking is reviewed PER ORDER, so each order gets its own table.
+function seedNum(id: string): number { return Number(id.replace(/\D/g, '')) || 0 }
+function hashStr(s: string): number {
+  let h = 0
+  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return h
+}
+function binForSku(sku: string): string { return BINS[hashStr(sku) % BINS.length]! }
+
+// Warehouse stock per SKU (deterministic). A WMS prevents overselling, so stock is
+// normally plentiful; ~1 in 6 SKUs is genuinely low. Available = On hand − Reserved
+// (reserved = committed to other orders outside this picking list).
+function onHandForSku(sku: string): number {
+  const h = hashStr(sku)
+  return h % 6 === 0 ? (h % 30) + 8 : (h % 120) + 80 // low (8–37) vs healthy (80–199)
+}
+function reservedForSku(sku: string): number {
+  const oh = onHandForSku(sku)
+  return Math.round((oh * (hashStr(sku + 'r') % 30)) / 100) // 0–29% committed elsewhere
+}
+
+interface SkuLine { sku: string; product: string; desc: string; img: string; unit: string; qty: number; bin: string }
+
+function orderLines(o: OutgoingOrder): SkuLine[] {
+  const n = Math.min(o.skuQty, CATALOG.length)
+  const base = seedNum(o.id)
+  const lines: SkuLine[] = []
+  for (let i = 0; i < n; i++) {
+    const item = CATALOG[(base * 7 + i * 13) % CATALOG.length]!
+    // same per-SKU qty (1..5) used to build the order total → they always agree
+    lines.push({
+      sku: item.sku, product: item.name, desc: item.desc, img: item.img,
+      unit: item.unit, qty: skuLineQty(base, i), bin: binForSku(item.sku),
+    })
+  }
+  // order each table by storage location so the picker route is ordered
+  return lines.sort((a, b) => a.bin.localeCompare(b.bin))
+}
+
+interface PickLine extends SkuLine { key: string }
+interface OrderTable { order: OutgoingOrder; lines: PickLine[] }
+const orderTables = computed<OrderTable[]>(() =>
+  selectedOrders.value.map(o => ({
+    order: o,
+    lines: orderLines(o).map(l => ({ ...l, key: `${o.id}::${l.sku}` })),
+  })),
+)
+
+// ─── Supervisor edits: include/exclude a SKU (checkbox, default on) + edit qty ──
+const excludedKeys = ref(new Set<string>())
+const qtyOverrides = ref<Record<string, number>>({})
+function isSelected(key: string) { return !excludedKeys.value.has(key) }
+function toggleLine(key: string) {
+  const s = new Set(excludedKeys.value)
+  s.has(key) ? s.delete(key) : s.add(key)
+  excludedKeys.value = s
+}
+// To pick is clamped to [0, cap] — can't pick more than ordered, or more than the
+// stock still available after earlier same-SKU lines have taken their share.
+function setQty(key: string, val: string, cap: number) {
+  const n = Math.min(cap, Math.max(0, Math.floor(Number(val) || 0)))
+  qtyOverrides.value = { ...qtyOverrides.value, [key]: n }
+}
+
+// ─── Stock allocation across the whole picking list ──────────────────────────────
+// The SAME SKU may appear in several selected orders. They all draw from ONE pool
+// (On hand − Reserved). Lines are allocated top-to-bottom: each pick a line takes
+// becomes additional "reserved" for the lines below it, so combined To pick can
+// never exceed Available — no overselling across orders.
+interface LineStock { onHand: number; reserved: number; available: number; cap: number; toPick: number }
+const lineStock = computed<Map<string, LineStock>>(() => {
+  const takenBySku: Record<string, number> = {} // picked so far in this session, per SKU
+  const map = new Map<string, LineStock>()
+  for (const t of orderTables.value) {
+    for (const l of t.lines) {
+      const onHand = onHandForSku(l.sku)
+      const reserved = reservedForSku(l.sku) + (takenBySku[l.sku] ?? 0)
+      const available = Math.max(0, onHand - reserved)
+      const cap = Math.min(l.qty, available)
+      const selected = isSelected(l.key)
+      const desired = qtyOverrides.value[l.key] ?? cap
+      const toPick = selected ? Math.min(Math.max(0, desired), cap) : 0
+      if (toPick > 0) takenBySku[l.sku] = (takenBySku[l.sku] ?? 0) + toPick
+      map.set(l.key, { onHand, reserved, available, cap, toPick })
+    }
+  }
+  return map
+})
+function stockOf(key: string): LineStock {
+  return lineStock.value.get(key) ?? { onHand: 0, reserved: 0, available: 0, cap: 0, toPick: 0 }
+}
+
+// Per-table (per-order) select-all
+function tableKeys(t: OrderTable) { return t.lines.map(l => l.key) }
+function allSel(t: OrderTable) { return t.lines.length > 0 && tableKeys(t).every(isSelected) }
+function someSel(t: OrderTable) {
+  const sel = tableKeys(t).filter(isSelected).length
+  return sel > 0 && sel < t.lines.length
+}
+function toggleTable(t: OrderTable) {
+  const s = new Set(excludedKeys.value)
+  if (allSel(t)) tableKeys(t).forEach(k => s.add(k))
+  else tableKeys(t).forEach(k => s.delete(k))
+  excludedKeys.value = s
+}
+
+const selectedLines = computed<PickLine[]>(() =>
+  orderTables.value.flatMap(t => t.lines.filter(l => isSelected(l.key))),
+)
+const totalSkus   = computed(() => selectedLines.value.length)
+const totalToPick = computed(() => selectedLines.value.reduce((a, l) => a + stockOf(l.key).toPick, 0))
+
+// ─── Footer divider ────────────────────────────────────────────────────────────
+const stageEl = ref<HTMLElement | null>(null)
+const stageOverflowing = ref(false)
+function checkStageOverflow() {
+  const el = stageEl.value
+  if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
+}
+let stageObserver: ResizeObserver | null = null
+onMounted(() => {
+  nextTick(() => {
+    checkStageOverflow()
+    stageObserver = new ResizeObserver(checkStageOverflow)
+    if (stageEl.value) {
+      stageObserver.observe(stageEl.value)
+      stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true })
+    }
+  })
+})
+onUnmounted(() => {
+  stageObserver?.disconnect()
+  stageEl.value?.removeEventListener('scroll', checkStageOverflow)
+})
+watch([selectedIds], () => nextTick(checkStageOverflow))
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function formatNum(n: number) { return n.toLocaleString('id-ID') }
+
+function goPicking() {
+  router.push({ path: '/barang-keluar', query: { tab: 'Picking' } })
+}
+
+function handleCreate() {
+  let valid = true
+  if (!warehouseId.value) { warehouseError.value = true; valid = false }
+  if (!assigneeId.value)  { assigneeError.value  = true; valid = false }
+  if (!selectedOrders.value.length) { orderSelectionError.value = true; valid = false }
+  if (!valid) return
+
+  // Build the planned pick lines from the supervisor's selection (checked SKUs +
+  // edited To-pick qty) so the picking task's detail/pick view matches exactly.
+  const lines: PickingLine[] = []
+  for (const t of orderTables.value) {
+    for (const l of t.lines) {
+      if (!isSelected(l.key)) continue
+      const qty = stockOf(l.key).toPick
+      if (qty <= 0) continue
+      lines.push({
+        key: l.key, orderId: t.order.id, salesNo: t.order.salesNo,
+        sku: l.sku, product: l.product, desc: l.desc, img: l.img,
+        unit: l.unit, bin: l.bin, qty,
+      })
+    }
+  }
+
+  addPickingTask({
+    salesOrderIds: selectedOrders.value.map(o => o.id),
+    salesNos:      selectedOrders.value.map(o => o.salesNo),
+    warehouseId:   warehouseId.value,
+    warehouseName: warehouseName.value,
+    assignee:      assigneeLabel.value,
+    lines,
+  })
+
+  router.push({ path: '/barang-keluar', query: { tab: 'Picking', saved: '1' } })
+}
+</script>
+
+<template>
+  <div class="detail-page">
+
+    <!-- ── Title bar ── -->
+    <header class="detail-bar">
+      <div class="detail-bar-left">
+        <nav class="detail-breadcrumb-trail">
+          <button class="detail-breadcrumb" @click="goPicking">Picking</button>
+        </nav>
+        <div class="detail-titlerow-left">
+          <h1 class="detail-title">New picking list</h1>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── Scrollable stage ── -->
+    <div ref="stageEl" class="detail-stage">
+
+      <!-- Warehouse + Assignee -->
+      <div class="pk-section pk-grid">
+        <MpFormControl id="pk-warehouse" is-required :is-invalid="warehouseError" :class="css({ gridColumn: 'span 3' })">
+          <MpFormLabel>Warehouse</MpFormLabel>
+          <MpAutocomplete
+            id="pk-warehouse-ac"
+            v-model="warehouseId"
+            :data="availableWarehouses"
+            label-prop="name"
+            value-prop="id"
+            placeholder="Select warehouse"
+            is-searchable use-portal is-full-width
+            :is-clearable="!isWarehouseLocked"
+            :is-disabled="isWarehouseLocked"
+            :is-invalid="warehouseError"
+          />
+          <MpFormErrorMessage>You must select a warehouse</MpFormErrorMessage>
+        </MpFormControl>
+
+        <MpFormControl id="pk-assignee" is-required :is-invalid="assigneeError" :class="css({ gridColumn: 'span 3' })">
+          <MpFormLabel>Assignee</MpFormLabel>
+          <MpAutocomplete
+            id="pk-assignee-ac"
+            v-model="assigneeId"
+            :data="ASSIGNEES"
+            label-prop="name"
+            value-prop="id"
+            placeholder="Select assignee"
+            is-searchable is-clearable use-portal is-full-width
+            :is-invalid="assigneeError"
+          >
+            <template #default="{ item }">
+              <div class="pk-assignee-opt">
+                <span
+                  class="pk-assignee-avatar"
+                  :style="{ background: `hsl(${item.hue},50%,88%)`, color: `hsl(${item.hue},55%,35%)` }"
+                >{{ item.initials }}</span>
+                {{ item.name }}
+              </div>
+            </template>
+          </MpAutocomplete>
+          <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+        </MpFormControl>
+      </div>
+
+      <!-- Sales orders — only shown after warehouse is selected -->
+      <div v-if="warehouseId" class="pk-tasks-section">
+        <h2 class="pk-section-title">Sales orders</h2>
+
+        <p v-if="orderSelectionError" class="pk-tasks-error">You must select at least one sales order.</p>
+
+        <!-- Empty state -->
+        <div v-if="!orders.length" class="pk-empty">
+          <p class="pk-empty-title">No orders to pick</p>
+          <p class="pk-empty-desc">No sales orders are awaiting picking for this warehouse.</p>
+        </div>
+
+        <!-- Orders table -->
+        <section v-else class="pk-tasks-table-wrap" :class="{ 'pk-tasks-table-wrap--bordered': isOrdersProgressive }">
+          <table class="pk-tasks-table">
+            <thead>
+              <tr>
+                <th class="pk-th">
+                  <div class="pk-cell-check">
+                    <MpCheckbox
+                      id="pk-select-all"
+                      :is-checked="allSelected"
+                      :is-indeterminate="someSelected"
+                      @change="toggleAll"
+                      @click.stop
+                    />
+                    Sales order no.
+                  </div>
+                </th>
+                <th class="pk-th">Customer</th>
+                <th class="pk-th pk-th--num">SKU qty</th>
+                <th class="pk-th pk-th--num">Order qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="o in orders"
+                :key="o.id"
+                class="pk-task-row"
+                @click="toggleOrder(o.id)"
+              >
+                <td class="pk-td">
+                  <div class="pk-cell-check">
+                    <span @click.stop>
+                      <MpCheckbox
+                        :id="`pk-row-${o.id}`"
+                        :is-checked="selectedIds.has(o.id)"
+                        @change="toggleOrder(o.id)"
+                      />
+                    </span>
+                    {{ o.salesNo }}
+                  </div>
+                </td>
+                <td class="pk-td">{{ o.customer ?? '—' }}</td>
+                <td class="pk-td pk-td--num">{{ formatNum(o.skuQty) }}</td>
+                <td class="pk-td pk-td--num">{{ formatNum(o.orderQty) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- Selection summary -->
+        <p v-if="selectedOrders.length" class="pk-selection-summary">
+          {{ selectedOrders.length }} order{{ selectedOrders.length > 1 ? 's' : '' }} selected
+          &nbsp;·&nbsp;
+          {{ formatNum(totalSkus) }} SKU{{ totalSkus !== 1 ? 's' : '' }}
+          &nbsp;·&nbsp;
+          {{ formatNum(totalToPick) }} to pick
+        </p>
+      </div>
+
+      <!-- Picking list — one table per sales order (reviewed per order) -->
+      <div v-if="selectedOrders.length" class="pk-sku-section">
+        <h2 class="pk-section-title">Picking list</h2>
+        <p class="pk-section-desc">Items to collect per sales order. Available shows pickable stock on hand.</p>
+
+        <div v-for="t in orderTables" :key="t.order.id" class="pk-order-block">
+          <div class="pk-order-head">
+            <span class="pk-order-no">{{ t.order.salesNo }}</span>
+            <span v-if="t.order.customer" class="pk-order-cust">{{ t.order.customer }}</span>
+          </div>
+          <section class="pk-items-section pk-items-section--bordered">
+            <div class="pk-items-scroll">
+              <table class="pk-items">
+                <thead>
+                  <tr>
+                    <th class="pk-th pk-th--check">
+                      <span @click.stop>
+                        <MpCheckbox
+                          :id="`pk-all-${t.order.id}`"
+                          :is-checked="allSel(t)"
+                          :is-indeterminate="someSel(t)"
+                          @change="toggleTable(t)"
+                        />
+                      </span>
+                    </th>
+                    <th class="pk-th">Product</th>
+                    <th class="pk-th">SKU</th>
+                    <th class="pk-th">Storage location</th>
+                    <th class="pk-th pk-th--num">Order qty</th>
+                    <th class="pk-th pk-th--num">To pick</th>
+                    <th class="pk-th pk-th--num">Available</th>
+                    <th class="pk-th">Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in t.lines"
+                    :key="row.key"
+                    class="pk-item-row"
+                    :class="{ 'pk-item-row--off': !isSelected(row.key) }"
+                  >
+                    <td class="pk-td">
+                      <span @click.stop>
+                        <MpCheckbox
+                          :id="`pk-line-${row.key}`"
+                          :is-checked="isSelected(row.key)"
+                          @change="toggleLine(row.key)"
+                        />
+                      </span>
+                    </td>
+                    <td class="pk-td">
+                      <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
+                    </td>
+                    <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
+                    <td class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
+                    <td class="pk-td pk-td--num">{{ formatNum(row.qty) }}</td>
+                    <td class="pk-td pk-td--input">
+                      <input
+                        type="number" min="0" :max="stockOf(row.key).cap" class="pk-qty-input"
+                        :value="stockOf(row.key).toPick"
+                        :disabled="!isSelected(row.key)"
+                        @input="setQty(row.key, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
+                        @click.stop
+                      />
+                    </td>
+                    <td class="pk-td pk-td--num">
+                      <span :class="{ 'pk-short': stockOf(row.key).available < row.qty }">{{ formatNum(stockOf(row.key).available) }}</span>
+                    </td>
+                    <td class="pk-td">{{ row.unit }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+
+    </div><!-- /detail-stage -->
+
+    <!-- ── Sticky footer ── -->
+    <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
+      <MpButton variant="ghost" is-rounded @click="goPicking">Cancel</MpButton>
+      <MpButton variant="primary" is-rounded @click="handleCreate">Save</MpButton>
+    </footer>
+  </div>
+</template>
+
+<style scoped>
+/* ── Page shell ─────────────────────────────────────────────────────────────── */
+.detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.detail-bar {
+  flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
+  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+}
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
+.detail-breadcrumb-trail { display: flex; align-items: center; gap: var(--mp-spacing-1); align-self: flex-start; }
+.detail-breadcrumb {
+  align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
+}
+.detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
+.detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.detail-title {
+  margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
+  color: var(--mp-text-default);
+}
+.detail-stage {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
+  border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
+}
+.detail-footer {
+  flex-shrink: 0;
+  display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-4) var(--mp-spacing-6);
+  background: var(--mp-background-stage);
+  border-top: 1px solid transparent;
+}
+.detail-footer--floating { border-top-color: var(--mp-border-default); }
+
+/* ── Section / form grid ─────────────────────────────────────────────────────── */
+.pk-section { margin-bottom: var(--mp-spacing-6); }
+.pk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--mp-spacing-4); max-width: 558px; }
+.pk-assignee-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.pk-assignee-avatar {
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
+  border-radius: var(--mp-radii-full); flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--mp-font-sizes-xs); font-weight: var(--mp-font-weights-semi-bold);
+}
+
+/* ── Section title ───────────────────────────────────────────────────────────── */
+.pk-section-title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default);
+}
+.pk-section-desc {
+  margin: 0;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-md);
+}
+.pk-tasks-section .pk-section-title { margin-bottom: var(--mp-spacing-5); }
+.pk-sku-section .pk-section-title { margin-bottom: 0; }
+.pk-sku-section .pk-section-desc { margin-bottom: var(--mp-spacing-5); }
+
+/* ── Sections ────────────────────────────────────────────────────────────────── */
+.pk-tasks-section { margin-bottom: var(--mp-spacing-6); }
+.pk-sku-section { margin-bottom: var(--mp-spacing-6); }
+.pk-tasks-error {
+  margin: 0 0 var(--mp-spacing-3) 0;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c0392b);
+}
+
+.pk-tasks-table-wrap { border-radius: var(--mp-radii-lg); overflow: hidden; }
+.pk-tasks-table-wrap--bordered { border: 1px solid var(--mp-border-bold); }
+.pk-tasks-table { width: 100%; table-layout: auto; border-collapse: collapse; }
+
+/* ── Table header ─────────────────────────────────────────────────────────────── */
+.pk-th {
+  height: var(--mp-sizes-7, 28px); text-align: left;
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); text-transform: uppercase;
+  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+}
+.pk-th--num {
+  text-align: right;
+  padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4);
+}
+
+/* ── Rows ────────────────────────────────────────────────────────────────────── */
+.pk-td {
+  height: var(--mp-sizes-10, 40px);
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+}
+.pk-task-row:last-child .pk-td, .pk-item-row:last-child .pk-td { border-bottom: none; }
+.pk-task-row { cursor: pointer; transition: background 80ms; }
+.pk-task-row:hover .pk-td { background: var(--mp-background-neutral-subtle); }
+.pk-cell-check { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.pk-td--num {
+  text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
+  padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
+}
+
+.pk-selection-summary {
+  margin: var(--mp-spacing-3) 0 0;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
+
+/* ── Picking list — per-order blocks ─────────────────────────────────────────── */
+.pk-order-block { margin-bottom: var(--mp-spacing-5); }
+.pk-order-head {
+  display: flex; align-items: baseline; gap: var(--mp-spacing-2);
+  margin-bottom: var(--mp-spacing-2);
+}
+.pk-order-no { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pk-order-cust { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-short { color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-semi-bold); }
+
+/* ── Picking list table ──────────────────────────────────────────────────────── */
+.pk-items-section { display: flex; flex-direction: column; }
+.pk-items-section--bordered {
+  border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-lg); overflow: hidden;
+}
+.pk-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.pk-items { width: 100%; table-layout: auto; border-collapse: collapse; }
+.pk-items thead .pk-th { position: sticky; top: 0; z-index: 1; }
+.pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pk-loc-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pk-th--check { width: var(--mp-sizes-12, 48px); }
+.pk-item-row--off { opacity: 0.45; }
+
+/* Form-table look: column dividers + grey read-only cells, white editable cell */
+.pk-items .pk-th { border-right: 1px solid var(--mp-border-default); }
+.pk-items .pk-th:last-child { border-right: none; }
+.pk-items .pk-td {
+  border-right: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle);
+}
+.pk-items .pk-td:last-child { border-right: none; }
+/* Editable qty cell — white, input fills edge-to-edge, focus ring */
+.pk-items .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
+.pk-items .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pk-qty-input {
+  width: 100%; text-align: right;
+  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
+  border: none; background: transparent; color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none;
+}
+.pk-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
+
+/* ── Empty state ─────────────────────────────────────────────────────────────── */
+.pk-empty {
+  display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-10, 40px) 0;
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg);
+}
+.pk-empty-title {
+  margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.pk-empty-desc { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+</style>
