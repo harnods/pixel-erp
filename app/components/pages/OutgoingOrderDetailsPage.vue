@@ -522,6 +522,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-attach-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .detail-attach:hover .detail-attach-name { text-decoration: underline; text-underline-offset: 2px; }
 .detail-attach-size { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.detail-updated { margin: 0; align-self: flex-start; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
+.detail-updated { margin: 0; align-self: flex-start; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; }
 .detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 </style>

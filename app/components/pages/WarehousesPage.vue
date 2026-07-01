@@ -19,7 +19,7 @@ function goToDetail(id: string) { router.push(`/warehouses/${id}`) }
 const allColumns: TableColumn[] = [
   { key: 'name',        label: 'Name',         width: '155px' },
   { key: 'code',        label: 'Code',         width: '78px'  },
-  { key: 'skuTotal',    label: 'SKU Total',    width: '78px', align: 'right' },
+  { key: 'skuTotal',    label: 'SKU qty',      width: '78px', align: 'right' },
   { key: 'pics',        label: 'PIC',          width: '108px' },
   { key: 'address',     label: 'Address',      width: '90px'  },
   { key: 'status',      label: 'Status',       width: '90px'  },
@@ -30,7 +30,7 @@ const allColumns: TableColumn[] = [
 const columnItems = [
   { key: 'name',        label: 'Name',         disabled: true  },
   { key: 'code',        label: 'Code',         disabled: false },
-  { key: 'skuTotal',    label: 'SKU Total',    disabled: false },
+  { key: 'skuTotal',    label: 'SKU qty',      disabled: false },
   { key: 'pics',        label: 'PIC',          disabled: false },
   { key: 'address',     label: 'Address',      disabled: false },
   { key: 'status',      label: 'Status',       disabled: false },
@@ -151,7 +151,7 @@ const exportScope = ref<ExportScope>('all')
 
 const exportColumnKeys = ['name', 'code', 'skuTotal', 'pics', 'address', 'status'] as const
 const exportColumnLabels: Record<string, string> = {
-  name: 'Name', code: 'Code', skuTotal: 'SKU total',
+  name: 'Name', code: 'Code', skuTotal: 'SKU qty',
   pics: 'PIC', address: 'Address', status: 'Status',
 }
 const exportColumnChecked = reactive<Record<string, boolean>>(

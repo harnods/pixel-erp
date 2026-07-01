@@ -156,6 +156,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'warehouses' && segs[1] === 'new') {
     return { component: NewWarehousePage, id: 'new' }
   }
+  // /warehouses/:id/edit → reuse the warehouse form in edit mode
+  if (segs.length >= 3 && segs[0] === 'warehouses' && segs[2] === 'edit') {
+    return { component: NewWarehousePage, id: segs[1]! }
+  }
   // /warehouses/:id (any segment other than the reserved sub-routes) → detail page
   if (segs.length >= 2 && segs[0] === 'warehouses' && !['new', 'import'].includes(segs[1])) {
     return { component: WarehouseDetailsPage, id: segs[1] }

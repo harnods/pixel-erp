@@ -128,6 +128,7 @@ export interface Warehouse {
   status: WarehouseStatus
   hasTransactions: boolean
   isDefault?: boolean
+  description?: string    // set on user-created / edited warehouses
   updatedAt: string       // ISO date string
   updatedBy: string       // person name
 }
