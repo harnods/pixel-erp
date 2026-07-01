@@ -6,6 +6,7 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
 
@@ -20,6 +21,7 @@ const hasApproval = true
 
 const router = useRouter()
 const order = computed(() => getSalesOrderDetail(props.orderId))
+const activityOpen = ref(false)
 
 // ── Line-items progressive pagination (auto lazy-load on scroll) ───────────────
 const PAGE_SIZE = 10
@@ -355,7 +357,7 @@ function goBack() { router.push('/sales-orders') }
       </section>
 
       <!-- Last updated -->
-      <a class="detail-updated" @click.prevent>Last updated by {{ order.lastUpdatedBy }} on {{ formatUpdatedAt(order.lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ order.lastUpdatedBy }} on {{ formatUpdatedAt(order.lastUpdatedAt) }}</a>
 
       <!-- ── Tabs ── -->
       <MpTabs id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
@@ -460,6 +462,14 @@ function goBack() { router.push('/sales-orders') }
       </div>
 
     </div><!-- /detail-stage -->
+
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="`Sales Order #${order.number}`"
+      :updated-by="order.lastUpdatedBy"
+      :updated-at="order.lastUpdatedAt"
+      @close="activityOpen = false"
+    />
   </div>
 </template>
 

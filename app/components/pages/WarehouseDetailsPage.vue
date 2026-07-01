@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -9,13 +9,44 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import ClampText from '~/components/patterns/ClampText.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
+import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseActivity } from '~/data/warehouses'
 import { TODAY } from '~/data/master'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
 const warehouse = computed(() => getWarehouseDetail(props.orderId))
+const activityOpen = ref(false)
+
+// Activity log — the REAL log recorded on create/edit (newest first, real timestamps
+// + only the fields that actually changed). Seed warehouses that were never touched
+// via the form get a synthesized "Created" baseline from their current fields.
+const activityEntries = computed(() => {
+  const w = warehouse.value
+  if (!w) return []
+  const logged = getWarehouseActivity(w.id).map((r) => ({ date: r.date, user: r.user, activity: r.activity, details: r.details }))
+  if (logged.some((e) => e.activity === 'Created')) return logged
+
+  const createdBaseline = {
+    date: new Date(w.updatedAt).toISOString(),
+    user: w.updatedBy,
+    activity: 'Created',
+    details: [
+      { label: 'Name', value: dash(w.name) },
+      { label: 'Code', value: dash(w.code) },
+      { label: 'PIC', value: w.pics.map((p) => p.name).join(', ') || EM_DASH },
+      { label: 'Address', value: dash(w.address) },
+      { label: 'Description', value: dash(w.description) },
+    ],
+  }
+  return [...logged, createdBaseline]
+})
 
 // WMS Ops + Ops 2 operate within a single warehouse — hide the "Warehouses"
 // breadcrumb (no list to go back to) and the Transactions tab in those scenarios.
@@ -30,16 +61,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
+// Any missing / unfilled value renders as an em dash (—) — never blank, never "-".
+const EM_DASH = '—'
+function dash(v?: string | null): string {
+  const t = (v ?? '').trim()
+  return t && t !== '-' ? t : EM_DASH
+}
+
 // ── Warehouse info rows (horizontal label / value, per Figma) ──────────────────
 const infoRows = computed(() => {
   const w = warehouse.value
   if (!w) return []
   return [
-    { key: 'name', label: 'Warehouse name', value: w.name },
-    { key: 'code', label: 'Warehouse code', value: w.code },
-    { key: 'pic', label: 'PIC', value: w.pic },
-    { key: 'address', label: 'Address', value: w.address },
-    { key: 'description', label: 'Description', value: w.description },
+    { key: 'name', label: 'Warehouse name', value: dash(w.name) },
+    { key: 'code', label: 'Warehouse code', value: dash(w.code) },
+    { key: 'pic', label: 'PIC', value: dash(w.pic) },
+    { key: 'address', label: 'Address', value: dash(w.address) },
+    { key: 'description', label: 'Description', value: dash(w.description) },
   ]
 })
 
@@ -71,7 +109,7 @@ function confirmDelete() {
 }
 
 // ── Products table (Products tab) — ErpTablePage (read-only, single page) ──────
-const stockColumns: TableColumn[] = [
+const allStockColumns: TableColumn[] = [
   { key: 'name',                label: 'Name',                 width: '320px' },
   { key: 'sku',                 label: 'SKU',                  width: '120px' },
   { key: 'barcode',             label: 'Barcode',              width: '170px' },
@@ -88,6 +126,36 @@ const stockColumns: TableColumn[] = [
   { key: 'lastPurchaseCost',    label: 'Last purchase cost',   width: '180px', align: 'right' },
   { key: 'defaultPurchaseCost', label: 'Default purchase cost', width: '190px', align: 'right' },
 ]
+// Column show/hide — first column (Name) always on; Last updated appended, hidden by default.
+const allStockCols: TableColumn[] = [...allStockColumns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const stockColVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(allStockCols.map(c => [c.key, c.key !== 'lastUpdated'])),
+)
+const stockColItems = allStockCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const stockColumns = computed<TableColumn[]>(() => allStockCols.filter(c => stockColVisibility[c.key]))
+
+// Column show/hide for the Batches / Serial custom tables (Product + SKU always on).
+const batchColItems = [
+  { key: 'product', label: 'Product', disabled: true },
+  { key: 'sku', label: 'SKU', disabled: true },
+  { key: 'batch', label: 'Batch' },
+  { key: 'location', label: 'Location' },
+  { key: 'expiry', label: 'Expiry date' },
+  { key: 'onHand', label: 'On hand' },
+  { key: 'reserved', label: 'Reserved' },
+  { key: 'available', label: 'Available' },
+  { key: 'unit', label: 'Unit' },
+  { key: 'lastUpdated', label: 'Last updated' },
+]
+const batchColVisibility = reactive<Record<string, boolean>>(Object.fromEntries(batchColItems.map(c => [c.key, c.key !== 'lastUpdated'])))
+const serialColItems = [
+  { key: 'product', label: 'Product', disabled: true },
+  { key: 'sku', label: 'SKU', disabled: true },
+  { key: 'available', label: 'Available' },
+  { key: 'reserved', label: 'Reserved' },
+  { key: 'lastUpdated', label: 'Last updated' },
+]
+const serialColVisibility = reactive<Record<string, boolean>>(Object.fromEntries(serialColItems.map(c => [c.key, c.key !== 'lastUpdated'])))
 
 const search = ref('')
 const filteredStock = computed(() => {
@@ -189,8 +257,19 @@ function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' 
 function formatDateNumeric(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
 }
+function daysToExpiry(iso: string) {
+  return Math.ceil((new Date(iso).getTime() - TODAY.getTime()) / 86_400_000)
+}
+// A batch is flagged when it's already expired or expiring within 30 days.
 function isExpiryWarning(iso: string) {
-  return (new Date(iso).getTime() - TODAY.getTime()) / 86_400_000 < 30
+  return daysToExpiry(iso) < 30
+}
+function expiryTooltip(iso: string) {
+  const d = formatDateNumeric(iso)
+  const days = daysToExpiry(iso)
+  if (days < 0) return `Expired on ${d}`
+  if (days === 0) return `Expires today (${d})`
+  return `Expiring in ${days} day${days === 1 ? '' : 's'} (${d})`
 }
 
 function formatIDR(amount: number) {
@@ -307,7 +386,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <dd v-else class="wh-info-value">{{ row.value }}</dd>
           </div>
         </dl>
-        <a class="detail-updated" @click.prevent>
+        <a class="detail-updated" @click.prevent="activityOpen = true">
           Last updated by {{ warehouse.updatedBy }} on {{ formatUpdatedAt(warehouse.updatedAt) }}
         </a>
       </section>
@@ -345,11 +424,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       </svg>
                     </button>
                   </MpTooltip>
-                  <MpTooltip id="wh-tt-columns" label="Column settings" placement="bottom" use-portal>
-                    <button class="wh-tool-btn" aria-label="Column settings">
-                      <MpIcon name="column-settings" size="md" />
-                    </button>
-                  </MpTooltip>
+                  <ColumnSettingsMenu id="wh-tt-columns" :items="stockColItems" :visibility="stockColVisibility" />
                   <MpTooltip id="wh-tt-export" label="Export" placement="bottom" use-portal>
                     <button class="wh-tool-btn" aria-label="Export">
                       <MpIcon name="download" size="md" />
@@ -369,7 +444,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <img class="wh-thumb" :src="(row as any).photo" :alt="(row as any).name" loading="lazy" />
                     <span class="wh-product-text">
                       <span class="wh-product-name">{{ (row as any).name }}</span>
-                      <span class="wh-product-sub">{{ (row as any).subtitle }}</span>
+                      <ClampText class="wh-product-sub" :text="(row as any).subtitle" />
                     </span>
                   </div>
                   <button class="row-hover-btn" @click.stop>
@@ -399,6 +474,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <template #cell-averageCost="{ value }">{{ formatIDR(value as number) }}</template>
               <template #cell-lastPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
               <template #cell-defaultPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
+              <template #cell-lastUpdated="{ row }">
+                <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
+              </template>
 
               <!-- per-row kebab (sticky-right actions column; un-sticks at scroll end) -->
               <template #actions="{ row }">
@@ -455,9 +533,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     </svg>
                   </button>
                 </MpTooltip>
-                <MpTooltip id="wh-bt-columns" label="Column settings" placement="bottom" use-portal>
-                  <button class="wh-tool-btn" aria-label="Column settings"><MpIcon name="column-settings" size="md" /></button>
-                </MpTooltip>
+                <ColumnSettingsMenu id="wh-bt-columns" :items="batchColItems" :visibility="batchColVisibility" />
                 <MpTooltip id="wh-bt-export" label="Export" placement="bottom" use-portal>
                   <button class="wh-tool-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
                 </MpTooltip>
@@ -473,26 +549,28 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <table class="wh-batch-table">
                 <colgroup>
                   <col style="width: 320px" />
-                  <col style="width: 130px" />
-                  <col style="width: 160px" />
-                  <col style="width: 210px" />
-                  <col style="width: 170px" />
-                  <col style="width: 120px" />
-                  <col style="width: 120px" />
-                  <col style="width: 120px" />
-                  <col style="width: 90px" />
+                  <col v-if="batchColVisibility.sku" style="width: 130px" />
+                  <col v-if="batchColVisibility.batch" style="width: 160px" />
+                  <col v-if="batchColVisibility.location" style="width: 210px" />
+                  <col v-if="batchColVisibility.expiry" style="width: 170px" />
+                  <col v-if="batchColVisibility.onHand" style="width: 120px" />
+                  <col v-if="batchColVisibility.reserved" style="width: 120px" />
+                  <col v-if="batchColVisibility.available" style="width: 120px" />
+                  <col v-if="batchColVisibility.unit" style="width: 90px" />
+                  <col v-if="batchColVisibility.lastUpdated" style="width: 200px" />
                 </colgroup>
                 <thead>
                   <tr>
                     <th class="wh-bth">Product</th>
-                    <th class="wh-bth">SKU</th>
-                    <th class="wh-bth">Batch</th>
-                    <th class="wh-bth">Location</th>
-                    <th class="wh-bth">Expiry date</th>
-                    <th class="wh-bth wh-bth--num">On hand</th>
-                    <th class="wh-bth wh-bth--num">Reserved</th>
-                    <th class="wh-bth wh-bth--num">Available</th>
-                    <th class="wh-bth">Unit</th>
+                    <th v-if="batchColVisibility.sku" class="wh-bth">SKU</th>
+                    <th v-if="batchColVisibility.batch" class="wh-bth">Batch</th>
+                    <th v-if="batchColVisibility.location" class="wh-bth">Location</th>
+                    <th v-if="batchColVisibility.expiry" class="wh-bth">Expiry date</th>
+                    <th v-if="batchColVisibility.onHand" class="wh-bth wh-bth--num">On hand</th>
+                    <th v-if="batchColVisibility.reserved" class="wh-bth wh-bth--num">Reserved</th>
+                    <th v-if="batchColVisibility.available" class="wh-bth wh-bth--num">Available</th>
+                    <th v-if="batchColVisibility.unit" class="wh-bth">Unit</th>
+                    <th v-if="batchColVisibility.lastUpdated" class="wh-bth">Last updated</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -520,7 +598,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                             <span class="wh-product-text">
                               <span class="wh-product-name">{{ p.name }}</span>
-                              <span class="wh-product-sub">{{ p.subtitle }}</span>
+                              <ClampText class="wh-product-sub" :text="p.subtitle" />
                             </span>
                           </div>
                         </div>
@@ -532,20 +610,21 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           <span class="row-hover-btn__label">VIEW DETAILS</span>
                         </button>
                       </td>
-                      <td class="wh-btd wh-btd--sku" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">
+                      <td v-if="batchColVisibility.sku" class="wh-btd wh-btd--sku" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">
                         {{ p.sku }}
                       </td>
-                      <td class="wh-btd"><span class="wh-batch-summary">{{ batchCountLabel(visibleBatches(p).length) }}</span></td>
-                      <td class="wh-btd"></td><!-- Location (per batch row) -->
-                      <td class="wh-btd"></td><!-- Expiry date -->
-                      <td class="wh-btd wh-btd--num">{{ formatNum(p.onHand) }}</td>
-                      <td class="wh-btd wh-btd--num">{{ formatNum(p.reserved) }}</td>
-                      <td class="wh-btd wh-btd--num">{{ formatNum(p.available) }}</td>
-                      <td class="wh-btd">{{ p.unit }}</td>
+                      <td v-if="batchColVisibility.batch" class="wh-btd"><span class="wh-batch-summary">{{ batchCountLabel(visibleBatches(p).length) }}</span></td>
+                      <td v-if="batchColVisibility.location" class="wh-btd"></td><!-- Location (per batch row) -->
+                      <td v-if="batchColVisibility.expiry" class="wh-btd"></td><!-- Expiry date -->
+                      <td v-if="batchColVisibility.onHand" class="wh-btd wh-btd--num">{{ formatNum(p.onHand) }}</td>
+                      <td v-if="batchColVisibility.reserved" class="wh-btd wh-btd--num">{{ formatNum(p.reserved) }}</td>
+                      <td v-if="batchColVisibility.available" class="wh-btd wh-btd--num">{{ formatNum(p.available) }}</td>
+                      <td v-if="batchColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
+                      <td v-if="batchColVisibility.lastUpdated" class="wh-btd"><LastUpdatedCell v-bind="lastUpdatedFor(p.id)" /></td>
                     </tr>
                     <!-- batch rows (only when expanded) -->
                     <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
-                      <td class="wh-btd wh-batch-cell">
+                      <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
                         <span>{{ b.batchNo }}</span>
                         <button class="row-hover-btn" @click.stop>
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -555,17 +634,28 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           <span class="row-hover-btn__label">VIEW DETAILS</span>
                         </button>
                       </td>
-                      <td class="wh-btd wh-loc-cell">{{ b.location }}</td>
-                      <td class="wh-btd">
-                        <span class="wh-expiry-cell">
+                      <td v-if="batchColVisibility.location" class="wh-btd wh-loc-cell">{{ b.location }}</td>
+                      <td v-if="batchColVisibility.expiry" class="wh-btd">
+                        <span class="wh-expiry-cell" :class="{ 'wh-expiry-cell--danger': isExpiryWarning(b.expiryDate) }">
                           {{ formatDateNumeric(b.expiryDate) }}
-                          <MpIcon v-if="isExpiryWarning(b.expiryDate)" name="warning-triangle" size="sm" class="wh-expiry-warn" />
+                          <MpTooltip
+                            v-if="isExpiryWarning(b.expiryDate)"
+                            :id="`wh-tt-exp-${p.id}-${b.batchNo}`"
+                            :label="expiryTooltip(b.expiryDate)"
+                            placement="top"
+                            use-portal
+                          >
+                            <span class="wh-expiry-warn" @click.stop>
+                              <MpIcon name="warning-triangle" size="sm" />
+                            </span>
+                          </MpTooltip>
                         </span>
                       </td>
-                      <td class="wh-btd wh-btd--num">{{ formatNum(b.onHand) }}</td>
-                      <td class="wh-btd wh-btd--num">{{ formatNum(b.reserved) }}</td>
-                      <td class="wh-btd wh-btd--num">{{ formatNum(b.available) }}</td>
-                      <td class="wh-btd">{{ p.unit }}</td>
+                      <td v-if="batchColVisibility.onHand" class="wh-btd wh-btd--num">{{ formatNum(b.onHand) }}</td>
+                      <td v-if="batchColVisibility.reserved" class="wh-btd wh-btd--num">{{ formatNum(b.reserved) }}</td>
+                      <td v-if="batchColVisibility.available" class="wh-btd wh-btd--num">{{ formatNum(b.available) }}</td>
+                      <td v-if="batchColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
+                      <td v-if="batchColVisibility.lastUpdated" class="wh-btd" />
                     </tr>
                   </template>
                 </tbody>
@@ -598,9 +688,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     </svg>
                   </button>
                 </MpTooltip>
-                <MpTooltip id="wh-st-columns" label="Column settings" placement="bottom" use-portal>
-                  <button class="wh-tool-btn" aria-label="Column settings"><MpIcon name="column-settings" size="md" /></button>
-                </MpTooltip>
+                <ColumnSettingsMenu id="wh-st-columns" :items="serialColItems" :visibility="serialColVisibility" />
                 <MpTooltip id="wh-st-export" label="Export" placement="bottom" use-portal>
                   <button class="wh-tool-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
                 </MpTooltip>
@@ -616,28 +704,30 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <table class="wh-batch-table">
                 <colgroup>
                   <col style="width: 320px" />
-                  <col style="width: 150px" />
-                  <col />
-                  <col style="width: 260px" />
+                  <col v-if="serialColVisibility.sku" style="width: 150px" />
+                  <col v-if="serialColVisibility.available" />
+                  <col v-if="serialColVisibility.reserved" style="width: 260px" />
+                  <col v-if="serialColVisibility.lastUpdated" style="width: 200px" />
                 </colgroup>
                 <thead>
                   <tr>
                     <th class="wh-bth">Product</th>
-                    <th class="wh-bth">SKU</th>
-                    <th class="wh-bth">Available</th>
-                    <th class="wh-bth">Reserved</th>
+                    <th v-if="serialColVisibility.sku" class="wh-bth">SKU</th>
+                    <th v-if="serialColVisibility.available" class="wh-bth">Available</th>
+                    <th v-if="serialColVisibility.reserved" class="wh-bth">Reserved</th>
+                    <th v-if="serialColVisibility.lastUpdated" class="wh-bth">Last updated</th>
                   </tr>
                 </thead>
                 <tbody>
                   <template v-for="p in filteredSerialProducts" :key="p.id">
-                    <!-- summary row — Product & SKU span the group -->
-                    <tr class="wh-batch-group-row">
+                    <!-- summary row — Product & SKU span the group;
+                         click anywhere on the row toggles the accordion -->
+                    <tr class="wh-batch-group-row" @click="toggleSerial(p.id)">
                       <td class="wh-btd wh-btd--product wh-batch-cell" :rowspan="isSerialExpanded(p.id) ? 2 : 1">
                         <div class="wh-batch-product">
                           <button
                             class="wh-expand-btn"
                             :aria-label="isSerialExpanded(p.id) ? 'Collapse' : 'Expand'"
-                            @click="toggleSerial(p.id)"
                           >
                             <svg
                               width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
@@ -650,7 +740,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                             <span class="wh-product-text">
                               <span class="wh-product-name">{{ p.name }}</span>
-                              <span class="wh-product-sub">{{ p.subtitle }}</span>
+                              <ClampText class="wh-product-sub" :text="p.subtitle" />
                             </span>
                           </div>
                         </div>
@@ -662,13 +752,14 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           <span class="row-hover-btn__label">VIEW DETAILS</span>
                         </button>
                       </td>
-                      <td class="wh-btd wh-btd--sku" :rowspan="isSerialExpanded(p.id) ? 2 : 1">{{ p.sku }}</td>
-                      <td class="wh-btd"><span class="wh-batch-summary">{{ serialCountLabel(p.serials.available.length) }}</span></td>
-                      <td class="wh-btd"><span class="wh-batch-summary">{{ serialCountLabel(p.serials.reserved.length) }}</span></td>
+                      <td v-if="serialColVisibility.sku" class="wh-btd wh-btd--sku" :rowspan="isSerialExpanded(p.id) ? 2 : 1">{{ p.sku }}</td>
+                      <td v-if="serialColVisibility.available" class="wh-btd"><span class="wh-batch-summary">{{ serialCountLabel(p.serials.available.length) }}</span></td>
+                      <td v-if="serialColVisibility.reserved" class="wh-btd"><span class="wh-batch-summary">{{ serialCountLabel(p.serials.reserved.length) }}</span></td>
+                      <td v-if="serialColVisibility.lastUpdated" class="wh-btd"><LastUpdatedCell v-bind="lastUpdatedFor(p.id)" /></td>
                     </tr>
                     <!-- detail row (when expanded): serial lists -->
                     <tr v-if="isSerialExpanded(p.id)" class="wh-batch-child-row">
-                      <td class="wh-btd wh-btd--top">
+                      <td v-if="serialColVisibility.available" class="wh-btd wh-btd--top">
                         <ul class="wh-serial-list">
                           <li v-for="u in p.serials.available" :key="u.serial" class="wh-serial-unit">
                             <a class="wh-serial-link" @click.prevent>{{ u.serial }}</a>
@@ -676,7 +767,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           </li>
                         </ul>
                       </td>
-                      <td class="wh-btd wh-btd--top">
+                      <td v-if="serialColVisibility.reserved" class="wh-btd wh-btd--top">
                         <div class="wh-serial-reserved">
                           <div v-for="u in p.serials.reserved" :key="u.serial" class="wh-serial-unit">
                             <a class="wh-serial-link" @click.prevent>{{ u.serial }}</a>
@@ -684,6 +775,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           </div>
                         </div>
                       </td>
+                      <td v-if="serialColVisibility.lastUpdated" class="wh-btd wh-btd--top" />
                     </tr>
                   </template>
                 </tbody>
@@ -775,6 +867,14 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
+
+    <ActivityLogModal
+      v-if="warehouse"
+      :is-open="activityOpen"
+      :subject="warehouse.name"
+      :entries="activityEntries"
+      @close="activityOpen = false"
+    />
 
   </div>
 </template>
@@ -1031,7 +1131,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: var(--mp-background-neutral-subtle);
   border: 1px solid var(--mp-border-default);
 }
-.wh-product-text { display: flex; flex-direction: column; }
+.wh-product-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .wh-product-name { color: var(--mp-text-default); }
 .wh-product-sub {
   font-size: var(--mp-font-sizes-sm);
@@ -1067,8 +1167,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-serial-list {
   margin: 0;
   padding-left: var(--mp-spacing-4);
-  columns: 2;
-  column-gap: var(--mp-spacing-8);
+  /* content-sized columns packed left, so serials sit close together instead of
+     spreading across the full-width Available column */
+  column-width: 190px;
+  column-gap: var(--mp-spacing-5);
   list-style: disc;
 }
 .wh-serial-list li { break-inside: avoid; }
@@ -1100,7 +1202,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .row-hover-btn--top { top: var(--mp-spacing-2-5, 10px); transform: none; }
 .wh-batch-no { color: var(--mp-text-default); }
 .wh-expiry-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); white-space: nowrap; }
-.wh-expiry-warn { color: var(--mp-icon-warning, #c2701f); flex-shrink: 0; }
+.wh-expiry-cell--danger { color: var(--mp-text-danger, #a8352d); }
+.wh-expiry-warn { display: inline-flex; align-items: center; color: var(--mp-text-danger, #a8352d); flex-shrink: 0; cursor: default; }
 
 .row-kebab {
   display: inline-flex;
@@ -1187,6 +1290,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-batch-table tbody tr:last-child .wh-btd { border-bottom: none; }
 .wh-batch-table tbody tr:hover .wh-btd { background: var(--mp-background-neutral-hovered); }
 .wh-batch-group-row { cursor: pointer; }
+/* summary cells (Batch/Serial count, qty) align to the top so they line up with the
+   first line of the tall product cell — including before the row is expanded */
+.wh-batch-group-row .wh-btd { vertical-align: top; }
 
 /* ── PIC tag chips (warehouse info) ── */
 .wh-pic-tags { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }

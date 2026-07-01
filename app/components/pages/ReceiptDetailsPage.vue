@@ -6,6 +6,7 @@ import {
   MpIcon, MpSpinner, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getReceiptDetail } from '~/data/receiptDetails'
@@ -16,6 +17,7 @@ const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
+const activityOpen = ref(false)
 const receipt = computed<Receipt | undefined>(() =>
   receiptsForStage('On the way').find((r) => r.id === props.orderId),
 )
@@ -295,7 +297,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
       </section>
 
       <!-- Last updated -->
-      <a class="detail-updated" @click.prevent>Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
 
       <!-- ── Linked purchase receivings tab (hidden until a PR exists) ── -->
       <MpTabs v-if="displayedReceivings.length > 0" id="rcd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
@@ -429,6 +431,13 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="detail.purchaseNo"
+      :updated-by="detail.lastUpdatedBy"
+      :updated-at="detail.lastUpdatedAt"
+      @close="activityOpen = false"
+    />
   </div>
 </template>
 

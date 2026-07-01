@@ -14,6 +14,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 
 const router = useRouter()
 function goToDetail(id: string) { router.push(`/warehouses/${id}`) }
+function goEdit(id: string) { router.push(`/warehouses/${id}/edit`) }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const allColumns: TableColumn[] = [
@@ -397,7 +398,7 @@ function clearFilters() {
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="goToDetail((row as unknown as Warehouse).id)">View details</MpPopoverListItem>
-            <MpPopoverListItem>Edit</MpPopoverListItem>
+            <MpPopoverListItem @click="goEdit((row as unknown as Warehouse).id)">Edit</MpPopoverListItem>
             <template v-if="!(row as unknown as Warehouse).isDefault">
               <MpPopoverListItem
                 v-if="(row as unknown as Warehouse).status === 'active'"
