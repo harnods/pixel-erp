@@ -70,12 +70,21 @@
             <span class="user-menu__label">Language</span>
             <span class="user-menu__value">English</span>
           </button>
-          <button type="button" class="user-menu__row" @click="resetData(onClosePopover)">
-            <span class="user-menu__label">Reset demo data</span>
-            <MpIcon name="refresh" size="md" color="icon.default" />
-          </button>
           <button type="button" class="user-menu__row">
             <span class="user-menu__label">Sign out</span>
+          </button>
+        </nav>
+
+        <div class="user-menu__divider" />
+
+        <!-- Prototype / demo controls -->
+        <nav class="user-menu__group">
+          <button type="button" class="user-menu__row" @click="resetData(onClosePopover)">
+            <span class="user-menu__label">Reset demo data</span>
+          </button>
+          <button type="button" class="user-menu__row" @click="toggleReview(onClosePopover)">
+            <span class="user-menu__label">Review mode</span>
+            <span v-if="isReviewMode" class="user-menu__value">On</span>
           </button>
         </nav>
 
@@ -142,6 +151,7 @@ import {
 } from "@mekari/pixel3";
 import { picForWarehouse } from "~/data/warehouses";
 import { resetDb } from "~/data/persist";
+import { useReviewMode } from "@ds/proto-review";
 
 // Public asset (place your attached megaphone here). Bound dynamically so a missing
 // file degrades to a 404 at runtime instead of breaking the Vite build.
@@ -187,6 +197,14 @@ function resetData(closePopover: () => void) {
   resetDb();
   closePopover();
   if (import.meta.client) window.location.reload();
+}
+
+// Flips the proto-review overlay on/off for the rest of this browser session
+// (persists across page navigation) without needing the ?review query param.
+const { isReviewMode, toggleReviewMode } = useReviewMode();
+function toggleReview(closePopover: () => void) {
+  toggleReviewMode();
+  closePopover();
 }
 </script>
 

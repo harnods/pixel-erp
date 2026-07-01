@@ -2,6 +2,7 @@
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>
+  <ProtoReviewOverlay />
 </template>
 
 <script setup lang="ts">

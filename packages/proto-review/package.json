@@ -1,0 +1,19 @@
+{
+  "name": "@ds/proto-review",
+  "version": "0.1.0",
+  "description": "Drop-in Figma-style comment annotations for Vue/Nuxt prototypes, backed by Supabase.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "proto-review": "./bin/init.mjs"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@supabase/supabase-js": "^2.0.0",
+    "vue": "^3.0.0",
+    "vue-router": "^4.0.0"
+  }
+}
