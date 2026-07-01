@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
   MpInput, MpTextarea, MpInputTag, toast, type DataInterface,
 } from '@mekari/pixel3'
+import { warehouses, addWarehouse, updateWarehouse } from '~/data/warehouses'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
+
+// order-id from the catch-all route: 'new' → create, a warehouse id → edit.
+const props = defineProps<{ orderId?: string }>()
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
 
 const router = useRouter()
 
@@ -33,6 +39,21 @@ const userSuggestions = [
 
 const picCount = computed(() => picData.value.length)
 
+// Edit mode — prefill the form from the existing warehouse.
+onMounted(() => {
+  if (!isEdit.value) return
+  const w = warehouses.find((x) => x.id === props.orderId)
+  if (!w) return
+  name.value = w.name
+  code.value = w.code
+  address.value = w.address === '-' ? '' : w.address
+  const detail = getWarehouseDetail(props.orderId!)
+  description.value = detail && detail.description !== '—' ? detail.description : ''
+  picData.value = w.pics.map((p) => ({
+    id: p.id, text: p.name, value: p.name, isInvalid: false, isReadOnly: false,
+  }))
+})
+
 // Errors are only triggered from the Save action — never inline while typing
 const nameError = ref(false)
 const codeError = ref(false)
@@ -44,7 +65,7 @@ function handlePicChange(data: DataInterface[]) {
 }
 
 function goBack() {
-  router.push('/warehouses')
+  router.push(isEdit.value ? `/warehouses/${props.orderId}` : '/warehouses')
 }
 
 // Save is never disabled — validation fires here on click
@@ -54,8 +75,23 @@ function save() {
   picError.value = picData.value.length === 0
   if (nameError.value || codeError.value || picError.value) return
 
-  toast.notify({ variant: 'success', title: 'Warehouse saved' })
-  router.push('/warehouses')
+  const payload = {
+    name: name.value.trim(),
+    code: code.value.trim(),
+    address: address.value,
+    description: description.value,
+    pics: picData.value.map((p, i) => ({ id: p.id || `pic-${i}`, name: p.text })),
+  }
+
+  if (isEdit.value) {
+    updateWarehouse(props.orderId!, payload)
+    toast.notify({ variant: 'success', title: 'Warehouse updated' })
+    router.push(`/warehouses/${props.orderId}`)
+  } else {
+    addWarehouse(payload)
+    toast.notify({ variant: 'success', title: 'Warehouse saved' })
+    router.push('/warehouses')
+  }
 }
 </script>
 
@@ -66,7 +102,7 @@ function save() {
     <div class="nw-titlebar">
       <div class="nw-titlebar-left">
         <button class="nw-breadcrumb" @click="goBack">Warehouses</button>
-        <h1 class="nw-title">New warehouse</h1>
+        <h1 class="nw-title">{{ isEdit ? 'Edit warehouse' : 'New warehouse' }}</h1>
       </div>
     </div>
 

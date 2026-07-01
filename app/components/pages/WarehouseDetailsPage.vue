@@ -497,8 +497,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </thead>
                 <tbody>
                   <template v-for="p in filteredBatchProducts" :key="p.id">
-                    <!-- group summary row — Product & SKU span the whole group -->
-                    <tr class="wh-batch-group-row">
+                    <!-- group summary row — Product & SKU span the whole group;
+                         click anywhere on the row toggles the accordion -->
+                    <tr class="wh-batch-group-row" @click="toggleBatch(p.id)">
                       <td
                         class="wh-btd wh-btd--product wh-batch-cell"
                         :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1"
@@ -507,7 +508,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           <button
                             class="wh-expand-btn"
                             :aria-label="isBatchExpanded(p.id) ? 'Collapse' : 'Expand'"
-                            @click="toggleBatch(p.id)"
                           >
                             <svg
                               width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
@@ -900,9 +900,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
 /* Last updated link */
 .detail-updated {
-  margin-top: var(--mp-spacing-4);
+  margin-top: var(--mp-spacing-8);
   align-self: flex-start;
-  font-size: 12px;
+  font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-link);
   cursor: pointer;
 }
@@ -1186,6 +1186,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 /* last group has no trailing border (panel border closes it) */
 .wh-batch-table tbody tr:last-child .wh-btd { border-bottom: none; }
 .wh-batch-table tbody tr:hover .wh-btd { background: var(--mp-background-neutral-hovered); }
+.wh-batch-group-row { cursor: pointer; }
 
 /* ── PIC tag chips (warehouse info) ── */
 .wh-pic-tags { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }

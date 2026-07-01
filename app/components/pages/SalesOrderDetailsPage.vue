@@ -857,7 +857,7 @@ function goBack() { router.push('/sales-orders') }
 .detail-updated {
   margin: 0;
   align-self: flex-start;
-  font-size: var(--mp-font-sizes-sm);
+  font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-link);
   cursor: pointer;
 }
