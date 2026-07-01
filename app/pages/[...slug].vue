@@ -29,6 +29,7 @@ const pageRegistry: Record<string, Component> = {
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
+  'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
   'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
   'Put-away':          defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue')),

@@ -5,6 +5,7 @@ import {
   MpSpinner, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getReceiptDetail } from '~/data/receiptDetails'
@@ -14,6 +15,7 @@ const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
+const activityOpen = ref(false)
 const receipt = computed(() => receipts.find((r) => r.id === props.orderId))
 
 // ── Line-items progressive pagination ─────────────────────────────────────────
@@ -235,7 +237,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
       </section>
 
       <!-- Last updated -->
-      <a class="detail-updated" @click.prevent>Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
 
     </div><!-- /detail-stage -->
 
@@ -259,6 +261,13 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
       </MpPopover>
     </div>
 
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="detail.purchaseNo"
+      :updated-by="detail.lastUpdatedBy"
+      :updated-at="detail.lastUpdatedAt"
+      @close="activityOpen = false"
+    />
   </div>
 </template>
 

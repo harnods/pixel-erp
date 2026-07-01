@@ -251,6 +251,25 @@ icon/label/handler differ per column). Copy the markup + CSS from a reference pa
 
 ***
 
+## Accordion / expandable rows
+
+When a table row expands to reveal a detail sub-panel (e.g. Warehouse detail →
+**Batches** and **Serial numbers** tabs), the **whole summary row is the toggle**:
+
+* **Clicking anywhere on the row** (any column/cell) expands/collapses the accordion —
+    not just the chevron. Put the handler on the `<tr>` (`@click="toggle(id)"`) and give
+    the row `cursor: pointer`.
+* The **chevron stays as a visual affordance only** — remove its own `@click` so it
+    bubbles to the row (avoids a double-toggle). Keep its `aria-label` (Expand/Collapse).
+* Any **in-row action** (e.g. `View details` hover button) must use **`@click.stop`** so
+    it doesn't also toggle the accordion.
+
+> This applies to **every** table that has a row-level accordion. It does **not** apply
+> to inline *show-more* cells (e.g. a "+N more" chips toggle inside one cell) — those
+> keep their own button and the row keeps its primary action (e.g. navigate to detail).
+
+***
+
 ## Empty state — two variants
 
 Follows Mekari's [empty state inside an index view](https://docs.mekari.design/skills/mekari-taste/references/index-view.html#empty-state-inside-an-index-view).

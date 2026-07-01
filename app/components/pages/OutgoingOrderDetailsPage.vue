@@ -5,6 +5,7 @@ import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { outgoingOrders, outgoingStage } from '~/data/outgoing'
@@ -143,6 +144,7 @@ function formatUpdatedAt(iso: string) {
   return `${date}, ${time} (GMT+7)`
 }
 
+const activityOpen = ref(false)
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 // ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
@@ -288,7 +290,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           <p v-else class="detail-note-text">—</p>
         </ContentList>
       </section>
-      <a class="detail-updated" @click.prevent>Last updated by {{ lastUpdatedBy }} on {{ formatUpdatedAt(lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ lastUpdatedBy }} on {{ formatUpdatedAt(lastUpdatedAt) }}</a>
 
       <!-- Linked outbound tasks (only once at least one exists) -->
       <MpTabs v-if="hasLinked" id="ood-tabs" :default-value="0" variant-color="green" class="ood-tabs">
@@ -410,6 +412,14 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         Create picking list
       </button>
     </footer>
+
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="order.salesNo"
+      :updated-by="lastUpdatedBy"
+      :updated-at="lastUpdatedAt"
+      @close="activityOpen = false"
+    />
 
   </div>
 
