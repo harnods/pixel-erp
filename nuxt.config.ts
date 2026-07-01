@@ -13,6 +13,10 @@ export default defineNuxtConfig({
     }
   },
 
+  build: {
+    transpile: ['@ds/proto-review'],
+  },
+
   css: [
     "@/assets/css/erp.css",
     "@/assets/css/pixel.css" // make sure to load pixel.css file at the very last
