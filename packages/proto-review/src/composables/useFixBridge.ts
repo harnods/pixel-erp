@@ -18,20 +18,18 @@ export function setBridgeUrl(url: string) {
 }
 
 const available = ref(false)
-let checked = false
 
 export function useFixBridge() {
+  // Probes on every popover open (not one-shot) so starting the bridge
+  // mid-session makes the button appear on the next comment you open, no
+  // reload needed. It's a cheap loopback request with an 800ms timeout.
   async function checkAvailability() {
-    // Only meaningful on localhost; skip the probe on deployed prototypes.
     if (typeof window === 'undefined') return
     const host = window.location.hostname
     if (host !== 'localhost' && host !== '127.0.0.1') {
       available.value = false
-      checked = true
       return
     }
-    if (checked) return
-    checked = true
     try {
       const ctrl = new AbortController()
       const t = setTimeout(() => ctrl.abort(), 800)

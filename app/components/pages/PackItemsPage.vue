@@ -177,10 +177,10 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
       </div>
 
       <div class="pak-summary">
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span><span class="pak-stat-label">SKU qty</span></div>
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span><span class="pak-stat-label">Picked qty</span></div>
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span><span class="pak-stat-label">Packed qty</span></div>
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span><span class="pak-stat-label">Outstanding qty</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">SKU qty</span><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">Picked qty</span><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">Packed qty</span><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">Outstanding qty</span><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pak-sku-section">

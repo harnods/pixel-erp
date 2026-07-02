@@ -10,11 +10,13 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import {
   getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask,
 } from '~/data/pickingTaskDetails'
-import { getPickingTask, startPicking, pickingTaskAgingDays, type PickingTask } from '~/data/pickingTasks'
+import { getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
+import { getPackingForOrder } from '~/data/packingTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { toast } from '@mekari/pixel3'
 
-type TaskStatus = 'open' | 'in progress' | 'completed' | 'canceled'
+type TaskStatus = 'open' | 'in progress' | 'partially picked' | 'completed' | 'canceled'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -67,6 +69,23 @@ function startPickingAndNavigate() {
   router.push(`/picking/${props.orderId}/pick`)
 }
 function createPacking() {
+  // Packability is judged at the ORDER level across all picking lists, and an order
+  // that already has a packing task is excluded. Only block when nothing is left.
+  const t = task.value
+  if (t) {
+    const packable = packableOrderIds(t).filter(id => getPackingForOrder(id).length === 0)
+    if (packable.length === 0) {
+      const anyPickComplete = packableOrderIds(t).length > 0
+      toast.notify({
+        variant: 'danger',
+        title: anyPickComplete ? 'Already packed' : 'Nothing can be packed yet',
+        description: anyPickComplete
+          ? 'These orders already have a packing task.'
+          : 'Marketplace orders must be fully picked (across their picking lists) before packing.',
+      })
+      return
+    }
+  }
   router.push({ path: '/barang-keluar/packing/create', query: { pickingId: props.orderId } })
 }
 
@@ -224,13 +243,12 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
         <div class="content-list-col">
           <ContentList label="Warehouse" :value="task.warehouseName" />
           <ContentList label="Assignee" :value="task.assignee" />
-          <ContentList label="Sales orders" :value="task.salesNos.join(', ')" />
         </div>
         <div class="content-list-col">
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="pkd-end-cell">
-              <span>{{ localEndDate ? formatDateTime(localEndDate) : '—' }}</span>
+              <span>{{ localEndDate ? formatDateTimeLong(localEndDate) : '—' }}</span>
               <span v-if="agingLabel()" class="pkd-aging">{{ agingLabel() }}</span>
             </span>
           </ContentList>
@@ -240,20 +258,20 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
       <!-- Progress stats -->
       <section class="pkd-progress">
         <div class="pkd-progress-stat">
-          <span class="pkd-progress-val">{{ task.skuQty }}</span>
           <span class="pkd-progress-label">SKU qty</span>
+          <span class="pkd-progress-val">{{ task.skuQty }}</span>
         </div>
         <div class="pkd-progress-stat">
-          <span class="pkd-progress-val">{{ fmt(toPickTotal) }}</span>
           <span class="pkd-progress-label">To pick qty</span>
+          <span class="pkd-progress-val">{{ fmt(toPickTotal) }}</span>
         </div>
         <div class="pkd-progress-stat">
-          <span class="pkd-progress-val">{{ fmt(pickedTotal) }}</span>
           <span class="pkd-progress-label">Picked qty</span>
+          <span class="pkd-progress-val">{{ fmt(pickedTotal) }}</span>
         </div>
         <div class="pkd-progress-stat">
-          <span class="pkd-progress-val">{{ fmt(outstandingTotal) }}</span>
           <span class="pkd-progress-label">Outstanding qty</span>
+          <span class="pkd-progress-val">{{ fmt(outstandingTotal) }}</span>
         </div>
       </section>
 
@@ -323,6 +341,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
+            <h3 class="linked-section-title">Sales orders</h3>
             <div class="pkd-linked-wrap">
               <table class="pkd-linked">
                 <thead>
@@ -368,6 +387,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
           </MpTabPanel>
 
           <MpTabPanel v-if="linkedPacking.length" :value="1">
+            <h3 class="linked-section-title">Packing tasks</h3>
             <div class="pkd-linked-wrap">
               <table class="pkd-linked">
                 <thead>
@@ -429,8 +449,8 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
       <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/picking/${orderId}/pick`)">
         Continue picking
       </button>
-      <button v-else-if="localStatus === 'completed'" class="detail-btn detail-btn--primary" @click="createPacking">
-        Create packing
+      <button v-else-if="localStatus === 'completed' || localStatus === 'partially picked'" class="detail-btn detail-btn--primary" @click="createPacking">
+        Create packing task
       </button>
     </footer>
 
@@ -582,6 +602,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
 .pkd-tabs :deep(.mp-tab--isSelected_true), .pkd-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
 .pkd-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .pkd-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pkd-linked-wrap { overflow-x: auto; }
 .pkd-linked { width: 100%; border-collapse: collapse; }
 .pkd-linked .detail-item-row:last-child .detail-td { border-bottom: none; }

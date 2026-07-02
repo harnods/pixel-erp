@@ -5,20 +5,28 @@
         <div>
           <h2 class="pr-panel__title">All comments</h2>
           <p class="pr-panel__subtitle">
-            {{ annotations.length }} comment{{ annotations.length === 1 ? '' : 's' }} across every page
+            {{ visibleAnnotations.length }} comment{{ visibleAnnotations.length === 1 ? '' : 's' }} across every page
           </p>
         </div>
         <button class="pr-panel__close" title="Close" @click="$emit('close')">✕</button>
       </div>
 
+      <label v-if="resolvedCount" class="pr-panel__filter">
+        <input type="checkbox" :checked="hideResolved" @change="toggleHideResolved" />
+        Hide resolved ({{ resolvedCount }})
+      </label>
+
       <div v-if="loading" class="pr-panel__empty">Loading...</div>
       <div v-else-if="!annotations.length" class="pr-panel__empty">
         No comments yet. Click "Add Comment" on any page to leave the first one.
       </div>
+      <div v-else-if="!visibleAnnotations.length" class="pr-panel__empty">
+        All comments are resolved. Uncheck “Hide resolved” to see them.
+      </div>
 
       <div v-else class="pr-panel__list">
         <button
-          v-for="ann in annotations"
+          v-for="ann in visibleAnnotations"
           :key="ann.id"
           class="pr-item"
           @click="$emit('select', ann)"
@@ -43,9 +51,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { Annotation } from '../types'
 import { fetchAllAnnotations } from '../composables/useAnnotations'
+import { useReviewMode } from '../composables/useReviewMode'
 import { getAuthorColor } from '../lib/authorColor'
 import { pushBody, unpushBody } from '../lib/pushWrapper'
 
@@ -56,8 +65,16 @@ defineEmits<{
   select: [annotation: Annotation]
 }>()
 
+// Shared with the on-page pins, so this toggle also reveals/hides resolved pins.
+const { hideResolved, toggleHideResolved } = useReviewMode()
+
 const annotations = ref<Annotation[]>([])
 const loading = ref(true)
+
+const resolvedCount = computed(() => annotations.value.filter(a => a.resolved).length)
+const visibleAnnotations = computed(() =>
+  hideResolved.value ? annotations.value.filter(a => !a.resolved) : annotations.value
+)
 
 function formatTime(iso: string) {
   const d = new Date(iso)
@@ -121,6 +138,22 @@ onUnmounted(() => {
   margin: 2px 0 0;
   font-size: 11px;
   color: #8a8a8a;
+}
+
+.pr-panel__filter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-bottom: 1px solid #232323;
+  font-size: 12px;
+  color: #c9c9c9;
+  cursor: pointer;
+  user-select: none;
+}
+.pr-panel__filter input {
+  accent-color: #1868db;
+  cursor: pointer;
 }
 
 .pr-panel__close {

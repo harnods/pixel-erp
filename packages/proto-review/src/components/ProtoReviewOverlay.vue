@@ -126,6 +126,7 @@ const {
   toggleAddMode,
   cancelAddMode,
   togglePins,
+  hideResolved,
   setReviewerName,
 } = useReviewMode()
 
@@ -222,8 +223,10 @@ function resolvePoint(ann: Annotation): { x: number; y: number } | null {
 const positionedAnnotations = computed(() => {
   layoutTick.value // re-resolve on scroll/resize
   return annotations.value
+    // index taken before filtering so pin numbers stay stable
     .map((ann, index) => ({ ann, index, point: resolvePoint(ann) }))
     .filter((p) => p.point !== null)
+    .filter((p) => !hideResolved.value || !p.ann.resolved)
     .map((p) => ({ ann: p.ann, index: p.index, x: p.point!.x, y: p.point!.y }))
 })
 

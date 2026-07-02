@@ -211,20 +211,20 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <!-- Live summary -->
       <div class="ri-summary">
         <div class="ri-stat">
-          <span class="ri-stat-val">{{ fmt(lineItems.length) }}</span>
           <span class="ri-stat-label">SKU qty</span>
+          <span class="ri-stat-val">{{ fmt(lineItems.length) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-val">{{ fmt(purchaseTotal) }}</span>
           <span class="ri-stat-label">Purchase qty</span>
+          <span class="ri-stat-val">{{ fmt(purchaseTotal) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-val">{{ fmt(draftReceivedTotal) }}</span>
           <span class="ri-stat-label">Received qty</span>
+          <span class="ri-stat-val">{{ fmt(draftReceivedTotal) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-val">{{ fmt(draftOutstanding) }}</span>
           <span class="ri-stat-label">Difference qty</span>
+          <span class="ri-stat-val">{{ fmt(draftOutstanding) }}</span>
         </div>
       </div>
 

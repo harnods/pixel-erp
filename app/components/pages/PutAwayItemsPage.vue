@@ -279,16 +279,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
       <div class="pi-summary">
         <div class="pi-stat">
-          <span class="pi-stat-val">{{ fmt(skuQty) }}</span>
           <span class="pi-stat-label">SKU qty</span>
+          <span class="pi-stat-val">{{ fmt(skuQty) }}</span>
         </div>
         <div class="pi-stat">
-          <span class="pi-stat-val">{{ fmt(receivedQty) }}</span>
           <span class="pi-stat-label">Received qty</span>
+          <span class="pi-stat-val">{{ fmt(receivedQty) }}</span>
         </div>
         <div class="pi-stat">
-          <span class="pi-stat-val">{{ fmt(draftHandled) }}</span>
           <span class="pi-stat-label">Qty to store</span>
+          <span class="pi-stat-val">{{ fmt(draftHandled) }}</span>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 import { reactive } from "vue";
 import { warehouses, picForWarehouse } from "./warehouses";
-import { outgoingOrders, pickableOrders, canCreatePicking, shippedSeeds, type OutgoingOrder } from "./outgoing";
+import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, type OutgoingOrder } from "./outgoing";
 import { orderSkuLines } from "./inventory";
 import { binForSku } from "./warehouseDetails";
 import { TODAY } from "./master";
@@ -43,7 +43,7 @@ export interface PickingTask {
   toPickQty: number;
   /** units actually picked so far (0 ≤ pickedQty ≤ toPickQty) */
   pickedQty: number;
-  status: "open" | "in progress" | "completed" | "canceled";
+  status: "open" | "in progress" | "partially picked" | "completed" | "canceled";
   startDate?: string;
   endDate?: string;
   /** planned pick lines (per SKU per order) */
@@ -240,10 +240,11 @@ export function pickingTasksFor(warehouseIds?: string[]): PickingTask[] {
     : pickingTasks;
 }
 
-/** Badge count for the Picking stage = unfinished picking tasks (scoped). */
+/** Badge count for the Picking stage = tasks still being picked (open / in progress).
+ *  Finished tasks (completed or partially picked) and canceled ones don't count. */
 export function pickingOpenCount(warehouseIds?: string[]): number {
   return pickingTasksFor(warehouseIds).filter(
-    (t) => t.status !== "completed" && t.status !== "canceled",
+    (t) => t.status === "open" || t.status === "in progress",
   ).length;
 }
 
@@ -252,12 +253,34 @@ export function getPickingForOrder(orderId: string): PickingTask[] {
   return pickingTasks.filter((t) => t.salesOrderIds.includes(orderId));
 }
 
-/** SKU line keys for an order already covered by an existing picking task. */
+/**
+ * SKU line keys for an order that are already "covered" — i.e. nothing left to pick.
+ * A key is covered when it's either still on an UNFINISHED picking task (open / in
+ * progress, so no duplicate list), or it has been FULLY picked. The un-picked remainder
+ * of a finished "partially picked" task is NOT covered → it can go on a new picking list.
+ */
 function pickedKeysForOrder(orderId: string): Set<string> {
-  const keys = new Set<string>();
-  for (const t of getPickingForOrder(orderId))
-    for (const l of pickingLinesOf(t)) if (l.orderId === orderId) keys.add(l.key);
-  return keys;
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  const demand = new Map<string, number>(); // planned qty per SKU line
+  if (order) for (const l of buildPickingLines([orderId], [order.salesNo])) demand.set(l.key, l.qty);
+
+  const picked = new Map<string, number>();
+  const onActive = new Set<string>();
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    const finished = t.status === "completed" || t.status === "partially picked";
+    for (const l of pickingLinesOf(t)) {
+      if (l.orderId !== orderId) continue;
+      if (!finished) onActive.add(l.key);
+      picked.set(l.key, (picked.get(l.key) ?? 0) + (t.pickedByKey?.[l.key] ?? 0));
+    }
+  }
+
+  const covered = new Set<string>();
+  for (const [key, need] of demand) {
+    if (onActive.has(key) || (picked.get(key) ?? 0) >= need) covered.add(key);
+  }
+  return covered;
 }
 
 /**
@@ -272,6 +295,18 @@ export function canPickOrder(order: OutgoingOrder): boolean {
 
 export function getPickingTask(taskId: string): PickingTask | undefined {
   return pickingTasks.find((t) => t.id === taskId);
+}
+
+/** Total units already picked for one order+SKU across every (non-canceled) picking
+ *  task — so a NEW picking list only asks for the remaining qty. */
+export function pickedQtyForOrderSku(orderId: string, sku: string): number {
+  const key = `${orderId}::${sku}`;
+  let sum = 0;
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    sum += t.pickedByKey?.[key] ?? 0;
+  }
+  return sum;
 }
 
 /** The pick lines of a task (stored, or generated for seed tasks without them). */
@@ -319,13 +354,77 @@ export function savePickingDraft(taskId: string, picked: Record<string, number>)
   persistPicking();
 }
 
-/** Operator clicks "End picking" → completed + end timestamp. */
+/**
+ * Operator clicks "Finish picking" → end timestamp. Fully picked ⇒ "completed";
+ * anything less ⇒ "partially picked" (allowed for ANY order, marketplace or not — the
+ * marketplace-completeness rule is enforced only when creating the packing task).
+ */
 export function endPicking(taskId: string, picked: Record<string, number>): void {
   const t = getPickingTask(taskId);
   if (!t) return;
   t.pickedByKey = { ...picked };
   t.pickedQty = sumPicked(t.pickedByKey);
-  t.status = "completed";
+  t.status = t.pickedQty >= t.toPickQty ? "completed" : "partially picked";
   t.endDate = nowIso();
   persistPicking();
+}
+
+/** True once picking is finished (fully or partially) — ready for a packing task. */
+export function isPickingFinished(t: PickingTask): boolean {
+  return t.status === "completed" || t.status === "partially picked";
+}
+/** True when every planned unit has been picked. */
+export function isFullyPicked(t: PickingTask): boolean {
+  return t.pickedQty >= t.toPickQty;
+}
+/** Does this task bundle any marketplace order? */
+export function hasMarketplaceOrder(t: PickingTask): boolean {
+  return t.salesOrderIds.some((id) => {
+    const o = outgoingOrders.find((x) => x.id === id);
+    return o ? isMarketplaceOrder(o) : false;
+  });
+}
+/** Units picked for one order's lines within this task. */
+export function orderPickedQtyInTask(t: PickingTask, orderId: string): number {
+  return pickingLinesOf(t)
+    .filter((l) => l.orderId === orderId)
+    .reduce((s, l) => s + (t.pickedByKey?.[l.key] ?? 0), 0);
+}
+/** Every line of one order picked to its full planned qty (within this task). */
+export function orderFullyPickedInTask(t: PickingTask, orderId: string): boolean {
+  const lines = pickingLinesOf(t).filter((l) => l.orderId === orderId);
+  return lines.length > 0 && lines.every((l) => (t.pickedByKey?.[l.key] ?? 0) >= l.qty);
+}
+/** Total planned demand for an order (sum of its SKU line qtys). */
+export function orderDemand(orderId: string): number {
+  const o = outgoingOrders.find((x) => x.id === orderId);
+  return o ? orderSkuLines(o).reduce((s, l) => s + l.qty, 0) : 0;
+}
+/** Units picked for an order ACROSS ALL its picking lists (not just one task). */
+export function orderPickedTotal(orderId: string): number {
+  const o = outgoingOrders.find((x) => x.id === orderId);
+  if (!o) return 0;
+  return orderSkuLines(o).reduce((s, l) => s + pickedQtyForOrderSku(orderId, l.sku), 0);
+}
+/** Order fully picked once its picked total across every list meets its demand. */
+export function orderFullyPickedAcrossTasks(orderId: string): boolean {
+  const demand = orderDemand(orderId);
+  return demand > 0 && orderPickedTotal(orderId) >= demand;
+}
+/**
+ * Order ids in this task that CAN become a packing task right now — evaluated at the
+ * ORDER level across all picking lists (an order split over 2 lists still counts):
+ * marketplace ⇒ fully picked across lists; non-marketplace ⇒ at least one unit picked.
+ * (Whether the order already HAS a packing task is checked by the caller.)
+ */
+export function packableOrderIds(t: PickingTask): string[] {
+  return t.salesOrderIds.filter((id) => {
+    const o = outgoingOrders.find((x) => x.id === id);
+    const marketplace = o ? isMarketplaceOrder(o) : false;
+    return marketplace ? orderFullyPickedAcrossTasks(id) : orderPickedTotal(id) > 0;
+  });
+}
+/** Can a packing task be created from this picking task yet? (any order packable) */
+export function canCreatePackingFrom(t: PickingTask): boolean {
+  return isPickingFinished(t) && packableOrderIds(t).length > 0;
 }

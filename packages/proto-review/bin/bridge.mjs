@@ -61,9 +61,18 @@ function buildPrompt(d) {
 
 function runFix(id, prompt) {
   const job = jobs.get(id)
-  // --permission-mode acceptEdits: auto-approve file edits (this is a
-  // prototype fix workflow) while still stopping short of free-rein bash.
-  const args = ['-p', prompt, '--permission-mode', 'acceptEdits', '--output-format', 'json']
+  // Hardening: comment text is untrusted (the Supabase table is public/no-auth),
+  // so a malicious comment could try to smuggle instructions into this prompt.
+  // We auto-approve *file edits* (acceptEdits) for a smooth prototype workflow,
+  // but hard-disable Bash so an injected prompt can't run shell commands — the
+  // worst case is an unwanted file edit, which shows up in `git diff` and can be
+  // discarded. Review the diff before keeping a fix.
+  const args = [
+    '-p', prompt,
+    '--permission-mode', 'acceptEdits',
+    '--disallowedTools', 'Bash',
+    '--output-format', 'json',
+  ]
   let child
   try {
     child = spawn('claude', args, { cwd: CWD, shell: false })
@@ -163,4 +172,5 @@ server.listen(PORT, '127.0.0.1', () => {
   log(`listening on http://localhost:${PORT}`)
   log(`project: ${CWD}`)
   log(`the "Fix with Claude" button in review mode will now work on this machine.`)
+  log(`safety: Bash is disabled for fix runs; review "git diff" before keeping a fix.`)
 })

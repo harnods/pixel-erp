@@ -280,20 +280,20 @@ function goBack() {
       <!-- ── Progress stats ── -->
       <section class="rcvgd-progress">
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-val">{{ task.skuCount }}</span>
           <span class="rcvgd-progress-label">SKUs</span>
+          <span class="rcvgd-progress-val">{{ task.skuCount }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-val">{{ fmt(task.purchaseQty) }}</span>
           <span class="rcvgd-progress-label">Purchase qty</span>
+          <span class="rcvgd-progress-val">{{ fmt(task.purchaseQty) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-val">{{ fmt(savedReceivedTotal) }}</span>
           <span class="rcvgd-progress-label">Received qty</span>
+          <span class="rcvgd-progress-val">{{ fmt(savedReceivedTotal) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-val">{{ fmt(outstandingTotal) }}</span>
           <span class="rcvgd-progress-label">Outstanding qty</span>
+          <span class="rcvgd-progress-val">{{ fmt(outstandingTotal) }}</span>
         </div>
       </section>
 

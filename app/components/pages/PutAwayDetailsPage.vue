@@ -212,16 +212,16 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       <!-- ── Progress stats ── -->
       <section class="pad-progress">
         <div class="pad-progress-stat">
-          <span class="pad-progress-val">{{ fmt(lineItems.length) }}</span>
           <span class="pad-progress-label">SKU qty</span>
+          <span class="pad-progress-val">{{ fmt(lineItems.length) }}</span>
         </div>
         <div class="pad-progress-stat">
-          <span class="pad-progress-val">{{ fmt(task.itemQty) }}</span>
           <span class="pad-progress-label">Received qty</span>
+          <span class="pad-progress-val">{{ fmt(task.itemQty) }}</span>
         </div>
         <div class="pad-progress-stat">
-          <span class="pad-progress-val">{{ fmt(storedQty) }}</span>
           <span class="pad-progress-label">Stored qty</span>
+          <span class="pad-progress-val">{{ fmt(storedQty) }}</span>
         </div>
       </section>
 

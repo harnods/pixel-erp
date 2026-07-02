@@ -30,7 +30,7 @@ const columnItems = [
   { key: 'level', label: 'Level', disabled: true },
   { key: 'name', label: 'Name' },
   { key: 'description', label: 'Description' },
-  { key: 'defaultType', label: 'Default type' },
+  { key: 'defaultType', label: 'Storing preference' },
   { key: 'lastUpdated', label: 'Last updated' },
 ]
 function luFor(lvl: LevelRow) {
@@ -102,7 +102,7 @@ function saveEdit() {
           <th class="sl-th">Level</th>
           <th v-if="colVis.name" class="sl-th">Name</th>
           <th v-if="colVis.description" class="sl-th">Description</th>
-          <th v-if="colVis.defaultType" class="sl-th">Default type</th>
+          <th v-if="colVis.defaultType" class="sl-th">Storing preference</th>
           <th v-if="colVis.lastUpdated" class="sl-th">Last updated</th>
           <th class="sl-th" />
         </tr>
@@ -146,7 +146,7 @@ function saveEdit() {
               <MpInput id="sl-edit-name-input" v-model="editName" is-full-width placeholder="Level name" />
             </MpFormControl>
             <MpFormControl id="sl-edit-type">
-              <MpFormLabel>Default type</MpFormLabel>
+              <MpFormLabel>Storing preference</MpFormLabel>
               <MpAutocomplete
                 id="sl-edit-type-ac"
                 v-model="editType"

@@ -19,18 +19,13 @@ const router = useRouter()
 const task = computed(() => getPickingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPickingLineItems(task.value) : [])
 
-// Marketplace orders must be fulfilled in full — every line of a marketplace order in
-// this picking list has to be picked to its full to-pick qty before picking can finish.
+// Any picking task can be finished partially (regardless of marketplace) → it becomes
+// "partially picked". The marketplace "must be complete" rule applies only when turning
+// the task into a packing task (here: the "Finish & create packing" shortcut).
 const marketplaceOrderIds = computed(
   () => new Set((task.value?.salesOrderIds ?? []).filter(id => isMarketplaceOrder(outgoingOrders.find(o => o.id === id)))),
 )
 const hasMarketplaceOrder = computed(() => marketplaceOrderIds.value.size > 0)
-const marketplaceFullyPicked = computed(() =>
-  lineItems.value
-    .filter(it => marketplaceOrderIds.value.has(it.orderId))
-    .every(it => (draftQty.value[it.key] ?? 0) >= it.expectedQty),
-)
-const canFinishPicking = computed(() => !hasMarketplaceOrder.value || marketplaceFullyPicked.value)
 
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
@@ -101,11 +96,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 // ── Finish picking confirmation ───────────────────────────────────────────────
 const showConfirm = ref(false)
 function endPickingClick() {
-  if (!canFinishPicking.value) {
-    showQtyErrors.value = true
-    finishError.value = 'Marketplace orders must be picked in full — pick every item to its full to-pick qty before finishing.'
-    return
-  }
   if (draftPickedTotal.value === 0) {
     showQtyErrors.value = true
     finishError.value = 'Enter picked qty for at least 1 item'
@@ -118,15 +108,25 @@ function commitPicking(createPacking = false) {
   showConfirm.value = false
   const complete = draftPickedTotal.value >= toPickTotal.value
   endPicking(props.orderId, { ...draftQty.value })
-  if (createPacking) {
+  // Marketplace orders can only become a packing task when fully picked.
+  const blockPacking = createPacking && hasMarketplaceOrder.value && !complete
+  if (createPacking && !blockPacking) {
     router.push({ path: '/barang-keluar/packing/create', query: { pickingId: props.orderId } })
+    return
+  }
+  if (blockPacking) {
+    toast.notify({
+      variant: 'warning',
+      title: 'Saved as partially picked',
+      description: 'Marketplace orders must be fully picked before a packing task can be created.',
+    })
   } else {
     toast.notify({
       variant: complete ? 'success' : 'warning',
-      title: complete ? 'Picking finished, ready to pack' : 'Picking finished short',
+      title: complete ? 'Picking finished, ready to pack' : 'Picking finished (partially picked)',
     })
-    router.push(`/picking/${props.orderId}`)
   }
+  router.push(`/picking/${props.orderId}`)
 }
 function saveDraft() {
   savePickingDraft(props.orderId, { ...draftQty.value })
@@ -198,10 +198,10 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
       </div>
 
       <div class="pik-summary">
-        <div class="pik-stat"><span class="pik-stat-val">{{ fmt(lineItems.length) }}</span><span class="pik-stat-label">SKU qty</span></div>
-        <div class="pik-stat"><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span><span class="pik-stat-label">To pick qty</span></div>
-        <div class="pik-stat"><span class="pik-stat-val">{{ fmt(draftPickedTotal) }}</span><span class="pik-stat-label">Picked qty</span></div>
-        <div class="pik-stat"><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span><span class="pik-stat-label">Outstanding qty</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">SKU qty</span><span class="pik-stat-val">{{ fmt(lineItems.length) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">To pick qty</span><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">Picked qty</span><span class="pik-stat-val">{{ fmt(draftPickedTotal) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">Outstanding qty</span><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pik-sku-section">
@@ -301,7 +301,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
         <template v-if="draftOutstanding > 0">
           {{ fmt(draftOutstanding) }} of {{ fmt(toPickTotal) }} units couldn't be picked
           across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'item' : 'items' }}.
-          This picking will be completed short.
+          This picking will be saved as <strong>partially picked</strong>.
+          <template v-if="hasMarketplaceOrder">
+            A marketplace order here must be fully picked before a packing task can be created —
+            pick the remaining items later on a new picking list.
+          </template>
         </template>
         <template v-else>
           All {{ fmt(toPickTotal) }} units have been picked.
@@ -311,7 +315,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
         <div class="pik-modal-footer">
           <button class="pik-btn pik-btn--ghost" @click="showConfirm = false">Cancel</button>
           <button class="pik-btn pik-btn--secondary" @click="commitPicking(false)">Finish picking</button>
-          <button class="pik-btn pik-btn--primary" @click="commitPicking(true)">Finish &amp; create packing</button>
+          <button
+            v-if="!(hasMarketplaceOrder && draftOutstanding > 0)"
+            class="pik-btn pik-btn--primary"
+            @click="commitPicking(true)"
+          >Finish &amp; create packing</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

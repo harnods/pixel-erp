@@ -40,7 +40,11 @@ export function allPickingTasksFlat(): Array<{ id: string; taskNo: string; sales
 
 /** Packing tasks created from this picking task. */
 export function getPackingForPickingTask(taskId: string): PackingTask[] {
-  return packingTasks.filter((p) => p.pickingTaskId === taskId);
+  // Match any packing task this picking list contributed to (an order split across
+  // several lists records them all in pickingTaskIds).
+  return packingTasks.filter(
+    (p) => p.pickingTaskId === taskId || (p.pickingTaskIds?.includes(taskId) ?? false),
+  );
 }
 
 export { getPickingTask };

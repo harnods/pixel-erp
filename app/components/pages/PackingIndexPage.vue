@@ -14,6 +14,7 @@ import { packingTasksFor, packingTaskAgingDays, type PackingTask } from '~/data/
 import { addDeliveryTask } from '~/data/deliveryTasks'
 import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
 import { warehouses } from '~/data/warehouses'
+import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTime } from '~/utils/date'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -119,7 +120,7 @@ function canCreateShipping(t: PackingTask) {
   return t.status === 'completed' && getDeliveryForPackingTask(t.id).length === 0
 }
 
-// ── Create shipping → pick an assignee, then make a delivery per packing task ──
+// ── Create delivery → pick an assignee, then make a delivery per packing task ──
 const ASSIGNEES = [
   { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
   { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
@@ -141,19 +142,38 @@ const shipScan = ref('')
 const shipCourier = ref('')
 const shipTracking = ref('')
 const shipSingle = computed(() => shipQueue.value.length === 1)
+const SHIP_COURIERS = ['JNE', 'SiCepat', 'J&T Express', 'AnterAja', 'Internal fleet']
+function marketplaceShipInfo(salesNo: string) {
+  let h = 0; for (const c of salesNo) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return { courier: SHIP_COURIERS[h % 4]!, trackingNo: 'SD' + (1_000_000 + (h % 9_000_000)) }
+}
+// A single marketplace shipment already carries courier + tracking (fixed) → show them
+// locked; other single shipments let the user fill them in (not required).
+const shipHasFixedCourier = computed(() =>
+  shipSingle.value && isMarketplaceOrder(outgoingOrders.find(o => o.id === shipQueue.value[0]?.salesOrderId)),
+)
 
 function openShipModal(tasks: PackingTask[]) {
   shipQueue.value = tasks
   shipAssigneeId.value = ''
   shipAssigneeError.value = false
-  shipScan.value = ''
-  shipCourier.value = ''
-  shipTracking.value = ''
+  const single = tasks.length === 1 ? tasks[0] : undefined
+  const order = single ? outgoingOrders.find(o => o.id === single.salesOrderId) : undefined
+  if (single && isMarketplaceOrder(order)) {
+    const info = marketplaceShipInfo(single.salesNo)
+    shipCourier.value = info.courier
+    shipTracking.value = info.trackingNo
+    shipScan.value = info.trackingNo
+  } else {
+    shipScan.value = ''
+    shipCourier.value = ''
+    shipTracking.value = ''
+  }
   shipModalOpen.value = true
 }
-const SHIP_COURIERS = ['JNE', 'SiCepat', 'J&T Express', 'AnterAja', 'Internal fleet']
 // Scanning a shipping label (issued by OMS) → auto-fills courier + tracking (dummy random).
 function applyShipScan() {
+  if (shipHasFixedCourier.value) return // fixed
   shipCourier.value = SHIP_COURIERS[Math.floor(Math.random() * SHIP_COURIERS.length)]!
   shipTracking.value = 'SD' + Math.floor(1_000_000 + Math.random() * 9_000_000)
   if (!shipScan.value.trim()) shipScan.value = shipTracking.value
@@ -174,6 +194,7 @@ function confirmShipping() {
       packingTaskId: t.id, packingTaskNo: t.taskNo,
       warehouseId: t.warehouseId, warehouseName: t.warehouseName,
       assignee: shipAssigneeLabel.value, skuQty: t.skuQty, toShipQty: t.packedQty,
+      deliveryMethod: (shipSingle.value && (shipHasFixedCourier.value || shipCourier.value.trim())) ? 'online' : (shipSingle.value ? 'self' : 'online'),
       courier: shipSingle.value ? (shipCourier.value.trim() || undefined) : undefined,
       trackingNo: shipSingle.value ? (shipTracking.value.trim() || undefined) : undefined,
     })
@@ -208,7 +229,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
         @click="bulkCreateShipping(selectedRows as Set<number>, deselectAll)"
       >
-        Create shipping
+        Create delivery
       </button>
     </template>
     <!-- ── Filter bar ── -->
@@ -334,7 +355,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem
               v-if="canCreateShipping(row as unknown as PackingTask)"
               @click="createShipping(row as unknown as PackingTask)"
-            >Create shipping</MpPopoverListItem>
+            >Create delivery</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -366,14 +387,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </MpPopoverContent>
   </MpPopover>
 
-  <!-- ── Create shipping: pick assignee ── -->
+  <!-- ── Create delivery: pick assignee ── -->
   <MpModal id="pack-ship-modal" :is-open="shipModalOpen" size="lg" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="shipModalOpen = false">
     <MpModalContent>
-      <MpModalHeader>Create shipping<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Create delivery<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <p class="ship-modal-note">
-          {{ shipQueue.length }} shipment{{ shipQueue.length > 1 ? 's' : '' }} will be created (one per sales order).
-        </p>
         <MpFormControl id="pack-ship-assignee" is-required :is-invalid="shipAssigneeError" :class="css({ marginBottom: shipSingle ? '16px' : '0' })">
           <MpFormLabel>Assignee</MpFormLabel>
           <MpAutocomplete
@@ -388,23 +406,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           />
         </MpFormControl>
 
-        <!-- Courier + tracking (single shipment) — scan label or enter manually -->
+        <!-- Courier + AWB (single shipment): fixed & disabled when the order carries
+             them, else the user can fill them (not required) -->
         <template v-if="shipSingle">
-          <MpFormControl id="pack-ship-scan" :class="css({ marginBottom: '16px' })">
+          <MpFormControl v-if="!shipHasFixedCourier" id="pack-ship-scan" :class="css({ marginBottom: '16px' })">
             <MpFormLabel>Scan shipping label</MpFormLabel>
             <div class="ship-scan-field">
               <MpInput id="pack-ship-scan-input" v-model="shipScan" placeholder="Scan or paste label…" is-full-width @keyup.enter="applyShipScan" />
-              <MpButton variant="secondary" is-rounded @click="applyShipScan">Apply</MpButton>
+              <MpButton variant="secondary" is-rounded class="erp-outline-btn" @click="applyShipScan">Apply</MpButton>
             </div>
           </MpFormControl>
           <div class="ship-modal-grid">
             <MpFormControl id="pack-ship-courier">
               <MpFormLabel>Courier</MpFormLabel>
-              <MpInput id="pack-ship-courier-input" v-model="shipCourier" placeholder="e.g. JNE, SiCepat" is-full-width />
+              <MpInput id="pack-ship-courier-input" v-model="shipCourier" placeholder="e.g. JNE, SiCepat" is-full-width :is-disabled="shipHasFixedCourier" />
             </MpFormControl>
             <MpFormControl id="pack-ship-tracking">
-              <MpFormLabel>Tracking no.</MpFormLabel>
-              <MpInput id="pack-ship-tracking-input" v-model="shipTracking" placeholder="e.g. SD0009583" is-full-width />
+              <MpFormLabel>AWB / tracking no.</MpFormLabel>
+              <MpInput id="pack-ship-tracking-input" v-model="shipTracking" placeholder="e.g. SD0009583" is-full-width :is-disabled="shipHasFixedCourier" />
             </MpFormControl>
           </div>
         </template>
@@ -412,7 +431,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <MpModalFooter>
         <div class="ship-modal-footer">
           <MpButton variant="ghost" is-rounded @click="shipModalOpen = false">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="confirmShipping">Create shipping</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmShipping">Create delivery</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -499,8 +518,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .demo-fab:hover { opacity: 0.9; }
 .demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.ship-modal-note { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ship-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+/* secondary/outline button: gray-bold border + default text */
+:deep(.erp-outline-btn) { border-color: var(--mp-border-bold) !important; color: var(--mp-text-default) !important; }
+.ship-modal-note { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
 .ship-scan-field { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .ship-scan-field > :first-child { flex: 1; min-width: 0; }
 .ship-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }

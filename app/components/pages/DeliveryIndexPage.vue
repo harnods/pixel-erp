@@ -73,7 +73,7 @@ const warehouseOptions = computed(() => {
   return src.map(w => ({ label: w.name, value: w.id }))
 })
 const statusOptions = [
-  { label: 'Pending pick-up', value: 'pending pick-up' },
+  { label: 'Ready to ship', value: 'ready to ship' },
   { label: 'Shipped',         value: 'shipped' },
   { label: 'Canceled',        value: 'canceled' },
 ]
@@ -245,7 +245,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as DeliveryTask)">View details</MpPopoverListItem>
             <MpPopoverListItem
-              v-if="(row as unknown as DeliveryTask).status === 'pending pick-up'"
+              v-if="(row as unknown as DeliveryTask).status === 'ready to ship'"
               @click="shipRow(row as unknown as DeliveryTask)"
             >Handover to courier</MpPopoverListItem>
           </MpPopoverList>
