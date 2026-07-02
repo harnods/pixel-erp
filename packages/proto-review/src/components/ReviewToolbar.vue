@@ -1,5 +1,10 @@
 <template>
-  <div class="pr-toolbar" @click.stop @mousedown.stop>
+  <div
+    class="pr-toolbar"
+    :class="{ 'pr-toolbar--left': cornerPosition === 'bottom-left' }"
+    @click.stop
+    @mousedown.stop
+  >
     <!-- Name prompt — first time -->
     <div v-if="!reviewerName" class="pr-toolbar__onboard">
       <p>Who are you?</p>
@@ -59,6 +64,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { getAuthorColor } from '../lib/authorColor'
+import { cornerPosition } from '../lib/launcherConfig'
 
 const props = defineProps<{
   reviewerName: string
@@ -110,6 +116,10 @@ function saveName() {
   z-index: 3;
   min-width: 220px;
   overflow: hidden;
+}
+.pr-toolbar--left {
+  right: auto;
+  left: 24px;
 }
 
 .pr-toolbar__onboard {

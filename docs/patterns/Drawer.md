@@ -17,6 +17,32 @@
 
 ---
 
+## ERP default
+
+Standard right drawer — full-height, flush to the screen edges (default `MpDrawer`,
+**not** the `floating` variant). `placement="right"` + a `size` (`sm`/`md`/…). Header
+title + `MpDrawerCloseButton`; scrollable body form; footer `MpButtonGroup` with
+**ghost Cancel + primary Save** (both `is-rounded`). Example: the "New location" drawer
+in `WarehouseDetailsPage.vue`.
+
+```vue
+<MpDrawer id="…" :is-open="open" placement="right" size="sm" @close="open = false">
+  <MpDrawerContent>
+    <MpDrawerHeader>Title <MpDrawerCloseButton /></MpDrawerHeader>
+    <MpDrawerBody>…form…</MpDrawerBody>
+    <MpDrawerFooter>
+      <MpButtonGroup>
+        <MpButton variant="ghost" is-rounded @click="open = false">Cancel</MpButton>
+        <MpButton variant="primary" is-rounded>Save</MpButton>
+      </MpButtonGroup>
+    </MpDrawerFooter>
+  </MpDrawerContent>
+  <MpDrawerOverlay />
+</MpDrawer>
+```
+
+---
+
 ## Anatomy
 
 - Open state controlled by `v-model` (boolean).

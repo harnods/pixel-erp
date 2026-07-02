@@ -81,6 +81,9 @@ import { getAuthorColor } from '../lib/authorColor'
 const props = defineProps<{
   annotation: Annotation
   index: number
+  /** Pin's viewport pixel position, resolved by the overlay. */
+  x: number
+  y: number
   reviewerName: string
 }>()
 
@@ -94,14 +97,12 @@ const emit = defineEmits<{
 const replyText = ref('')
 
 const popoverStyle = computed(() => {
-  const x = props.annotation.x_pct
-  const y = props.annotation.y_pct
-  const toLeft = x > 60
-  const toTop = y > 55
+  const toLeft = props.x > window.innerWidth * 0.6
+  const toTop = props.y > window.innerHeight * 0.55
   return {
-    position: 'absolute' as const,
-    left: toLeft ? `calc(${x}% - 305px)` : `calc(${x}% + 22px)`,
-    top: toTop ? `calc(${y}% - 280px)` : `calc(${y}% + 22px)`,
+    position: 'fixed' as const,
+    left: `${toLeft ? props.x - 305 : props.x + 22}px`,
+    top: `${toTop ? props.y - 280 : props.y + 22}px`,
   }
 })
 

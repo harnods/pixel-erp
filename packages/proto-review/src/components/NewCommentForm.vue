@@ -87,13 +87,14 @@ const initials = computed(() =>
 
 const authorColor = computed(() => getAuthorColor(localName.value))
 
+// x/y are the pending pin's viewport pixel position (resolved by the overlay).
 const formStyle = computed(() => {
-  const toLeft = props.x > 60
-  const toTop = props.y > 55
+  const toLeft = props.x > window.innerWidth * 0.6
+  const toTop = props.y > window.innerHeight * 0.55
   return {
-    position: 'absolute' as const,
-    left: toLeft ? `calc(${props.x}% - 285px)` : `calc(${props.x}% + 22px)`,
-    top: toTop ? `calc(${props.y}% - 220px)` : `calc(${props.y}% + 22px)`,
+    position: 'fixed' as const,
+    left: `${toLeft ? props.x - 285 : props.x + 22}px`,
+    top: `${toTop ? props.y - 220 : props.y + 22}px`,
   }
 })
 

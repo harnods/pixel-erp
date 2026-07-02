@@ -195,3 +195,16 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
     stock: generateStock(wh.skuTotal, seedFromId(id)),
   }
 }
+
+/**
+ * The stock stored at a single storage location — the location's own slice of the
+ * warehouse stock: [skuStart, skuStart + skuQty). Because the location tree tiles the
+ * whole stock array exactly (see buildTree), every warehouse SKU appears in exactly
+ * one bin and the per-location counts sum to the warehouse SKU total.
+ */
+export function getLocationStock(warehouseId: string, skuStart: number, skuQty: number): WarehouseStockItem[] {
+  const wh = getWarehouseDetail(warehouseId)
+  if (!wh || skuQty <= 0) return []
+  const start = Math.max(0, Math.min(skuStart, wh.stock.length))
+  return wh.stock.slice(start, start + skuQty)
+}

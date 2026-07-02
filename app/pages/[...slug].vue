@@ -45,6 +45,7 @@ const SalesOrderDetailsPage = defineAsyncComponent(() => import('~/components/pa
 const ImportWarehousesPage = defineAsyncComponent(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = defineAsyncComponent(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseDetailsPage.vue'))
+const StorageLocationDetailsPage = defineAsyncComponent(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
 const ReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceiptDetailsPage.vue'))
@@ -160,6 +161,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /warehouses/:id/edit → reuse the warehouse form in edit mode
   if (segs.length >= 3 && segs[0] === 'warehouses' && segs[2] === 'edit') {
     return { component: NewWarehousePage, id: segs[1]! }
+  }
+  // /warehouses/:whId/locations/:locId → storage location detail
+  if (segs.length >= 4 && segs[0] === 'warehouses' && segs[2] === 'locations') {
+    return { component: StorageLocationDetailsPage, id: `${segs[1]}::${segs[3]}` }
   }
   // /warehouses/:id (any segment other than the reserved sub-routes) → detail page
   if (segs.length >= 2 && segs[0] === 'warehouses' && !['new', 'import'].includes(segs[1])) {

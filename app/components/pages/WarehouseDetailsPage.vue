@@ -5,17 +5,19 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpDatePicker, toast, css,
+  MpModalOverlay, MpModalCloseButton, MpDatePicker, MpButton, MpBadge, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseActivity } from '~/data/warehouses'
+import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { TODAY } from '~/data/master'
 
 const props = defineProps<{ orderId: string }>()
@@ -156,6 +158,62 @@ const serialColItems = [
   { key: 'lastUpdated', label: 'Last updated' },
 ]
 const serialColVisibility = reactive<Record<string, boolean>>(Object.fromEntries(serialColItems.map(c => [c.key, c.key !== 'lastUpdated'])))
+
+// ── Storage locations (tree) — persisted per warehouse via the data module ────────
+const locTree = ref<LocNode[]>([])
+const expandedLoc = ref<Set<string>>(new Set())
+const locSearch = ref('')
+watch(() => warehouse.value?.id, (id) => {
+  locTree.value = id ? getStorageTree(id) : []
+  expandedLoc.value = new Set()
+}, { immediate: true })
+
+function locNameMatch(node: LocNode, q: string): boolean {
+  return node.name.toLowerCase().includes(q) || node.children.some(c => locNameMatch(c, q))
+}
+// Flattened visible rows (respecting expand state; a search expands all matching paths).
+const flatLocations = computed(() => {
+  const q = locSearch.value.trim().toLowerCase()
+  const out: { node: LocNode; depth: number; hasChildren: boolean; open: boolean }[] = []
+  const walk = (nodes: LocNode[], depth: number) => {
+    for (const node of nodes) {
+      if (q && !locNameMatch(node, q)) continue
+      const hasChildren = node.children.length > 0
+      const open = q ? true : expandedLoc.value.has(node.id)
+      out.push({ node, depth, hasChildren, open })
+      if (hasChildren && open) walk(node.children, depth + 1)
+    }
+  }
+  walk(locTree.value, 0)
+  return out
+})
+function toggleLoc(node: LocNode) {
+  if (!node.children.length) return
+  const s = new Set(expandedLoc.value)
+  s.has(node.id) ? s.delete(node.id) : s.add(node.id)
+  expandedLoc.value = s
+}
+function deleteLoc(node: LocNode) {
+  if (warehouse.value) deleteLocation(warehouse.value.id, node.id)
+}
+function viewLocation(node: LocNode) {
+  if (warehouse.value) router.push(`/warehouses/${warehouse.value.id}/locations/${node.id}`)
+}
+
+// Add-location drawer (shared <NewLocationDrawer>). parentId null = root location.
+const newLocOpen = ref(false)
+const newLocParentId = ref<string | null>(null)
+function openNewLoc() {
+  newLocParentId.value = null
+  newLocOpen.value = true
+}
+function addSubLoc(node: LocNode) {
+  newLocParentId.value = node.id
+  newLocOpen.value = true
+}
+function onLocSaved(parentId: string | null) {
+  if (parentId) expandedLoc.value = new Set([...expandedLoc.value, parentId])
+}
 
 const search = ref('')
 const filteredStock = computed(() => {
@@ -398,6 +456,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <MpTab id="wh-tab-batches" value="batches">Batches</MpTab>
           <MpTab id="wh-tab-serial" value="serial">Serial numbers</MpTab>
           <MpTab v-if="!isWmsOps" id="wh-tab-transactions" value="transactions">Transactions</MpTab>
+          <MpTab id="wh-tab-locations" value="locations">Storage locations</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="products">
@@ -803,6 +862,109 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <p class="empty-full-desc">Transactions in this warehouse will appear here.</p>
             </div>
           </MpTabPanel>
+
+          <!-- Storage locations — tree table (Floor → Zone → Rack → Bin) -->
+          <MpTabPanel value="locations">
+            <!-- empty state (e.g. the default warehouse has no locations) -->
+            <div v-if="!locTree.length" class="empty-full">
+              <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+              <p class="empty-full-title">No storage locations</p>
+              <p class="empty-full-desc">Storage locations for this warehouse will appear here.</p>
+              <MpButton variant="tertiary" is-rounded left-icon="add" class="wh-loc-empty-cta" @click="openNewLoc">New location</MpButton>
+            </div>
+
+            <template v-else>
+            <div class="wh-loc-filterbar">
+              <div class="wh-search">
+                <MpIcon name="search" size="md" />
+                <input v-model="locSearch" class="wh-search-input" type="text" placeholder="Search location..." />
+              </div>
+              <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewLoc">New location</MpButton>
+            </div>
+
+            <div class="wh-loc-scroll">
+              <table class="wh-loc-table">
+                <colgroup>
+                  <col style="width: 420px" />
+                  <col style="width: 120px" />
+                  <col /><!-- filler: pushes the action button to the far right -->
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="wh-bth">Location name</th>
+                    <th class="wh-bth">SKU qty</th>
+                    <th class="wh-bth" />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in flatLocations"
+                    :key="row.node.id"
+                    class="wh-loc-row"
+                    :class="{ 'wh-loc-row--branch': row.hasChildren }"
+                    @click="toggleLoc(row.node)"
+                  >
+                    <td class="wh-btd wh-loc-name-td">
+                      <div class="wh-loc-name" :style="{ paddingLeft: `${row.depth * 24}px` }">
+                        <svg
+                          v-if="row.hasChildren"
+                          class="wh-loc-chevron" :class="{ 'wh-loc-chevron--open': row.open }"
+                          width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                        >
+                          <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span v-else class="wh-loc-chevron-spacer" />
+                        <MpTooltip
+                          :id="`wh-loc-type-${row.node.id}`"
+                          :label="row.node.type"
+                          placement="top"
+                          use-portal
+                        >
+                          <MpIcon
+                            :name="row.node.type === 'Storage' ? 'products' : 'folder-close'"
+                            size="md"
+                            class="wh-loc-type-icon"
+                            :class="row.node.type === 'Storage' ? 'wh-loc-type-icon--storage' : 'wh-loc-type-icon--org'"
+                          />
+                        </MpTooltip>
+                        <span class="wh-loc-name-text">{{ row.node.name }}</span>
+                        <MpBadge for="tableStatus" type="announcement" size="sm" class="wh-loc-code">{{ row.node.code }}</MpBadge>
+                        <button class="wh-loc-view" @click.stop="viewLocation(row.node)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="wh-btd">{{ formatNum(row.node.skuQty) }}</td>
+                    <td class="wh-btd wh-loc-td--action">
+                      <MpPopover :id="`wh-loc-actions-${row.node.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                        <MpPopoverTrigger>
+                          <button class="row-kebab" aria-label="More actions" @click.stop>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                              <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+                            </svg>
+                          </button>
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+                          <MpPopoverList>
+                            <MpPopoverListItem @click="addSubLoc(row.node)">Add sub-location</MpPopoverListItem>
+                            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="deleteLoc(row.node)">Delete</MpPopoverListItem>
+                          </MpPopoverList>
+                        </MpPopoverContent>
+                      </MpPopover>
+                    </td>
+                  </tr>
+                  <tr v-if="!flatLocations.length">
+                    <td class="wh-btd wh-loc-empty" colspan="3">No storage locations found.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            </template>
+          </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
 
@@ -876,10 +1038,56 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       @close="activityOpen = false"
     />
 
+    <!-- New location drawer (shared component) -->
+    <NewLocationDrawer
+      v-if="warehouse"
+      :is-open="newLocOpen"
+      :warehouse-id="warehouse.id"
+      :parent-id="newLocParentId"
+      @update:is-open="newLocOpen = $event"
+      @saved="onLocSaved"
+    />
+
   </div>
 </template>
 
 <style scoped>
+/* ── Storage locations (tree table) ── */
+.wh-loc-filterbar { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-4); }
+.wh-loc-scroll { overflow-x: auto; }
+.wh-loc-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.wh-loc-table .wh-btd { vertical-align: middle; }
+.wh-loc-row--branch { cursor: pointer; }
+.wh-loc-table tbody tr:hover .wh-btd { background: var(--mp-background-neutral-hovered); }
+.wh-loc-name { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.wh-loc-name-text { color: var(--mp-text-default); }
+/* type marker: folder = Organizational (grouping), box = Storage (holds stock) */
+.wh-loc-type-icon { flex-shrink: 0; display: inline-flex; }
+.wh-loc-type-icon--org { color: var(--mp-icon-default, var(--mp-text-secondary)); }
+.wh-loc-type-icon--storage { color: var(--mp-icon-brand, var(--mp-colors-emerald-600, #0f9d58)); }
+.wh-loc-code { text-transform: uppercase; flex-shrink: 0; }
+/* "View details" chip sits inline right after the name/code. Kept in layout with
+   visibility (not display) + a fixed height so revealing it on hover never shifts
+   the row height. */
+.wh-loc-view {
+  visibility: hidden;
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
+  margin-left: var(--mp-spacing-2); flex-shrink: 0;
+  height: 20px; box-sizing: border-box; padding: 0 var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);
+}
+.wh-loc-view .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
+.wh-loc-row:hover .wh-loc-view { visibility: visible; }
+.wh-loc-chevron { flex-shrink: 0; transition: transform 0.15s ease; color: var(--mp-icon-default, var(--mp-text-secondary)); }
+.wh-loc-chevron--open { transform: rotate(90deg); }
+.wh-loc-chevron-spacer { display: inline-block; width: 16px; flex-shrink: 0; }
+/* trim vertical padding so the 32px kebab keeps the row at 40px (not 52px).
+   Two-class selector to beat `.wh-btd`'s shorthand padding declared later in the file. */
+.wh-loc-table .wh-loc-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
+.wh-loc-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
+.wh-loc-empty-cta { margin-top: var(--mp-spacing-3); }
+
 .detail-page {
   height: 100%;
   display: flex;

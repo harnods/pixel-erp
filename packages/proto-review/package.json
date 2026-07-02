@@ -1,6 +1,6 @@
 {
   "name": "@ds/proto-review",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Drop-in Figma-style comment annotations for Vue/Nuxt prototypes, backed by Supabase.",
   "type": "module",
   "main": "./src/index.ts",
