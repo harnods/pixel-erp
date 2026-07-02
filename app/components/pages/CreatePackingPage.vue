@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpButton, MpCheckbox, MpAutocomplete,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
@@ -124,11 +124,28 @@ function checkStageOverflow() {
   const el = stageEl.value
   if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
 }
+// Each per-order table gets an outer border only when its OWN scroll area actually
+// overflows (rows exceed its max height) — measured, not by row count.
+const overflowingOrders = ref(new Set<string>())
+const scrollEls = new Map<string, HTMLElement>()
+function setScrollRef(orderId: string, el: unknown) {
+  const node = el as HTMLElement | null
+  if (node) scrollEls.set(orderId, node)
+  else scrollEls.delete(orderId)
+}
+function measureTableOverflow() {
+  const next = new Set<string>()
+  for (const [orderId, el] of scrollEls) {
+    if (el.scrollHeight > el.clientHeight + 1) next.add(orderId)
+  }
+  overflowingOrders.value = next
+}
+function recheckLayout() { checkStageOverflow(); measureTableOverflow() }
 let stageObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
-    checkStageOverflow()
-    stageObserver = new ResizeObserver(checkStageOverflow)
+    recheckLayout()
+    stageObserver = new ResizeObserver(recheckLayout)
     if (stageEl.value) {
       stageObserver.observe(stageEl.value)
       stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true })
@@ -139,6 +156,7 @@ onUnmounted(() => {
   stageObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
 })
+watch(orderTables, () => nextTick(recheckLayout))
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -263,8 +281,8 @@ function handleCreate() {
               <span class="pk-order-no">{{ t.salesNo }}</span>
               <span v-if="t.customer" class="pk-order-cust">{{ t.customer }}</span>
             </div>
-            <section class="pk-items-section pk-items-section--bordered">
-              <div class="pk-items-scroll">
+            <section class="pk-items-section" :class="{ 'pk-items-section--bordered': overflowingOrders.has(t.orderId) }">
+              <div :ref="el => setScrollRef(t.orderId, el)" class="pk-items-scroll">
                 <table class="pk-items">
                   <colgroup>
                     <col style="width: 42%" />

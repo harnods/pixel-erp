@@ -74,6 +74,13 @@ const { hasWarehouseContext } = useWarehouseContext();
 .erp-header__logo {
   height: var(--mp-spacing-5); /* 20px */
   width: auto;
+  /* Defeat the global `img { max-width: 100% }` reset: when the header row
+     gets tight (narrow viewport, search column claiming width), that cap
+     collapses the logo's width toward 0 while its height stays 20px —
+     squishing it. flex-shrink: 0 keeps it from shrinking as a flex item;
+     object-fit: contain guarantees the aspect ratio even if constrained. */
+  max-width: none;
+  object-fit: contain;
   display: block;
   flex-shrink: 0;
 }

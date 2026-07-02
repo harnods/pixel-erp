@@ -13,7 +13,7 @@ import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
 import { getPackingForOrder } from '~/data/packingTasks'
 import { deliveryTasks, marketplaceShipping } from '~/data/deliveryTasks'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -94,7 +94,7 @@ const transactionDate = computed(() => {
 // with the courier + tracking no. already assigned by the channel.
 const isMarketplace = computed(() => !!order.value && order.value.source !== 'Sales Order')
 const dueDateDisplay = computed(() =>
-  order.value ? (isMarketplace.value ? formatDateTime(order.value.dueDate) : formatDate(order.value.dueDate)) : '—',
+  order.value ? (isMarketplace.value ? formatDateTimeLong(order.value.dueDate) : formatDateLong(order.value.dueDate)) : '—',
 )
 // Courier / tracking no. surface from the linked delivery task; for marketplace orders
 // they're pre-assigned by the channel even before shipping is processed (same source of
@@ -212,7 +212,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
       <section class="ood-summary">
         <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDate(transactionDate)" />
+          <ContentList label="Transaction date" :value="formatDateLong(transactionDate)" />
           <ContentList label="Transaction no." :value="order.salesNo" />
           <ContentList label="Customer" :value="order.customer ?? '—'" />
           <ContentList label="Source" :value="order.source" />

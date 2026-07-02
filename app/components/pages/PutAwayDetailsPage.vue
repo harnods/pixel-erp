@@ -11,7 +11,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { putAwayTasks, startPutAway as startPutAwayTask } from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -204,8 +204,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Start date" :value="formatDateTime(task.startDate)" />
-          <ContentList label="End date" :value="formatDateTime(task.endDate)" />
+          <ContentList label="Start date" :value="formatDateTimeLong(task.startDate)" />
+          <ContentList label="End date" :value="formatDateTimeLong(task.endDate)" />
         </div>
       </section>
 

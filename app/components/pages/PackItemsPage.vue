@@ -62,7 +62,6 @@ const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const pagedItems = computed(() => filteredItems.value.slice(0, shownCount.value))
-const isProgressive = computed(() => filteredItems.value.length > PAGE_SIZE)
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -85,34 +84,38 @@ function packAll() {
   draftQty.value = map
 }
 const showQtyErrors = ref(false)
+// Inline validation caption under the toolbar (shown on a failed Finish attempt), not a toast.
+const finishError = ref('')
 function onQtyInput(key: string, max: number, e: Event) {
   let n = Math.floor(Number((e.target as HTMLInputElement).value))
   if (!Number.isFinite(n) || n < 0) n = 0
   if (n > max) n = max
   draftQty.value = { ...draftQty.value, [key]: n }
   if (showQtyErrors.value) showQtyErrors.value = false
+  if (finishError.value) finishError.value = ''
 }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 const showConfirm = ref(false)
 function endPackingClick() {
-  if (draftPackedTotal.value === 0) {
-    showQtyErrors.value = true
-    toast.notify({ variant: 'danger', title: 'Enter packed qty for at least 1 item' })
-    return
-  }
   if (!canEndPacking.value) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'danger', title: 'Marketplace orders must be packed in full', description: 'Pack every picked unit — packed qty must match the picked qty for every item.' })
+    finishError.value = 'Marketplace orders must be packed in full — pack every picked unit before finishing.'
     return
   }
+  if (draftPackedTotal.value === 0) {
+    showQtyErrors.value = true
+    finishError.value = 'Enter packed qty for at least 1 item'
+    return
+  }
+  finishError.value = ''
   showConfirm.value = true
 }
 function commit() {
   showConfirm.value = false
   if (!task.value) return
   endPacking(props.orderId, { ...draftQty.value })
-  toast.notify({ variant: 'success', title: 'Packing completed, ready to ship' })
+  toast.notify({ variant: 'success', title: 'Packing finished, ready to ship' })
   router.push(`/packing/${props.orderId}`)
 }
 function saveDraft() {
@@ -126,17 +129,24 @@ function goPacking() { router.push('/barang-keluar?tab=Packing') }
 const stageEl = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)
 function checkStageOverflow() { const el = stageEl.value; if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1 }
+// Outer border only once the items scroll area actually overflows (can scroll).
+const itemsOverflowing = ref(false)
+function checkItemsOverflow() { const el = itemsScrollEl.value; itemsOverflowing.value = !!el && el.scrollHeight > el.clientHeight + 1 }
 let stageObserver: ResizeObserver | null = null
+let itemsResizeObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
     checkStageOverflow()
+    checkItemsOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
     if (stageEl.value) { stageObserver.observe(stageEl.value); stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true }) }
+    itemsResizeObserver = new ResizeObserver(checkItemsOverflow)
+    if (itemsScrollEl.value) itemsResizeObserver.observe(itemsScrollEl.value)
     setupItemsObserver()
   })
 })
-onUnmounted(() => { stageObserver?.disconnect(); stageEl.value?.removeEventListener('scroll', checkStageOverflow); itemsObserver?.disconnect() })
-watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
+onUnmounted(() => { stageObserver?.disconnect(); itemsResizeObserver?.disconnect(); stageEl.value?.removeEventListener('scroll', checkStageOverflow); itemsObserver?.disconnect() })
+watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { checkStageOverflow(); checkItemsOverflow() }))
 </script>
 
 <template>
@@ -168,9 +178,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
       <div class="pak-summary">
         <div class="pak-stat"><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span><span class="pak-stat-label">SKU qty</span></div>
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span><span class="pak-stat-label">Picked</span></div>
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span><span class="pak-stat-label">Packed</span></div>
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span><span class="pak-stat-label">Outstanding</span></div>
+        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span><span class="pak-stat-label">Picked qty</span></div>
+        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span><span class="pak-stat-label">Packed qty</span></div>
+        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span><span class="pak-stat-label">Outstanding qty</span></div>
       </div>
 
       <div class="pak-sku-section">
@@ -178,7 +188,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <div class="pak-filter-bar-left">
             <span class="pak-editing-hint">
               {{ isMarketplace
-                ? 'Marketplace order — pack every picked unit in full to end packing.'
+                ? 'Marketplace order — pack every picked unit in full to finish packing.'
                 : 'Match the picked goods to this order and enter the packed qty.' }}
             </span>
             <button class="pak-link-btn" @click="packAll">Pack all</button>
@@ -190,8 +200,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
             <input v-model="search" class="pak-search" type="text" placeholder="Search product or SKU…" />
           </div>
         </div>
+        <p v-if="finishError" class="pak-finish-error">{{ finishError }}</p>
 
-        <section class="pak-items-section" :class="{ 'pak-items-section--bordered': isProgressive }">
+        <section class="pak-items-section" :class="{ 'pak-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pak-items-scroll">
             <table class="pak-items">
               <thead>
@@ -201,7 +212,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <th class="pak-th pak-th--num">Order qty</th>
                   <th class="pak-th pak-th--num">Picked qty</th>
                   <th class="pak-th pak-th--num">Packed qty</th>
-                  <th class="pak-th pak-th--num">Outstanding</th>
+                  <th class="pak-th pak-th--num">Outstanding qty</th>
                   <th class="pak-th">Unit</th>
                 </tr>
               </thead>
@@ -241,7 +252,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="pak-btn pak-btn--ghost" @click="goBack">Cancel</button>
       <button class="pak-btn pak-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="pak-btn pak-btn--primary" :disabled="!canEndPacking" @click="endPackingClick">End packing</button>
+      <button class="pak-btn pak-btn--primary" @click="endPackingClick">Finish packing</button>
     </footer>
   </div>
 
@@ -253,7 +264,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   <MpModal id="pak-confirm" :is-open="showConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showConfirm = false">
     <MpModalContent>
       <MpModalHeader>
-        {{ draftOutstanding > 0 ? 'End packing with unpacked items?' : 'End packing task?' }}
+        {{ draftOutstanding > 0 ? 'Finish packing with unpacked items?' : 'Finish packing?' }}
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
@@ -269,7 +280,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <MpModalFooter>
         <div class="pak-modal-footer">
           <button class="pak-btn pak-btn--ghost" @click="showConfirm = false">Cancel</button>
-          <button class="pak-btn pak-btn--primary" @click="commit">End packing</button>
+          <button class="pak-btn pak-btn--primary" @click="commit">Finish packing</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -302,6 +313,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pak-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
 .pak-filter-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .pak-editing-hint { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pak-finish-error { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
 .pak-link-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-link); }
 .pak-link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .pak-search-wrap { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 240px; }

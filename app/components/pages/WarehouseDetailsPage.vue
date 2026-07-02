@@ -928,7 +928,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           />
                         </MpTooltip>
                         <span class="wh-loc-name-text">{{ row.node.name }}</span>
-                        <MpBadge for="tableStatus" type="announcement" size="sm" class="wh-loc-code">{{ row.node.code }}</MpBadge>
                         <button class="wh-loc-view" @click.stop="viewLocation(row.node)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>

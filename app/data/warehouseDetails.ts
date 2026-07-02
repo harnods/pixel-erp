@@ -1,5 +1,5 @@
 import { warehouses } from './warehouses'
-import { PRODUCTS } from './inventory'
+import { warehouseProducts, type Product } from './inventory'
 import { TODAY } from './master'
 import type { Warehouse } from './types'
 import { stockLocationPaths } from './storageLocations'
@@ -129,13 +129,13 @@ function makeSerials(sku: string, onHand: number, reserved: number, seed: number
  * and pricing come from the DB; per-warehouse figures (on hand, reserved, bins,
  * batches, serials) are generated here.
  */
-function generateStock(count: number, seed: number): WarehouseStockItem[] {
+function generateStock(products: Product[], seed: number): WarehouseStockItem[] {
   const out: WarehouseStockItem[] = []
-  // SKU qty = distinct SKUs stocked, so never exceed the product-DB size and never
-  // repeat a SKU (each row is a distinct product).
-  const n = Math.min(count, PRODUCTS.length)
+  // The warehouse's own assortment (a deterministic random subset), so its Products tab
+  // shows exactly what orders sourced from it draw on — never a mismatched SKU.
+  const n = products.length
   for (let i = 0; i < n; i++) {
-    const c = PRODUCTS[i]!
+    const c = products[i]!
     const cycle = 1
     const onHand = ((i * 53 + seed * 7 + 17) % 1500) + 5
     const reserved = onHand > 40 ? (i * 13 + seed) % 40 : 0
@@ -189,8 +189,9 @@ function seedFromId(id: string): number {
 export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   const wh = warehouses.find((w) => w.id === id)
   if (!wh) return undefined
-  // stock count matches the index "SKU Total" exactly
-  const stock = generateStock(wh.skuTotal, seedFromId(id))
+  // stock rows = the warehouse's own assortment (deterministic random subset), which is
+  // exactly `skuTotal` distinct products.
+  const stock = generateStock(warehouseProducts(id), seedFromId(id))
   // Assign each product the REAL storage-tree bin it occupies (leaves tile the stock
   // array 1:1), so a product/batch/serial's location always matches the location you
   // opened it from — no more "Rack 03 contains an item tagged Rack 05".

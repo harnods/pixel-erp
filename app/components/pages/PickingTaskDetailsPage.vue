@@ -11,8 +11,8 @@ import {
   getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask,
 } from '~/data/pickingTaskDetails'
 import { getPickingTask, startPicking, pickingTaskAgingDays, type PickingTask } from '~/data/pickingTasks'
-import { outgoingOrders, outgoingStage } from '~/data/outgoing'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 type TaskStatus = 'open' | 'in progress' | 'completed' | 'canceled'
 
@@ -71,6 +71,15 @@ function createPacking() {
 }
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+// Marketplace (Desty) orders carry a due time → show date+time, and flag those due
+// within 24h with an "Expire in N hours" danger caption. ERP orders are date-only.
+function isMarketplaceDue(o: { dueDate: string }) { return typeof o.dueDate === 'string' && o.dueDate.includes('T') }
+function dueDisplay(o: { dueDate: string }) { return isMarketplaceDue(o) ? formatDateTime(o.dueDate) : formatDate(o.dueDate) }
+function expireHours(o: { dueDate: string }): number | null {
+  if (!isMarketplaceDue(o)) return null
+  const h = (new Date(o.dueDate).getTime() - OUTGOING_TODAY.getTime()) / 3_600_000
+  return h > 0 && h < 24 ? Math.max(1, Math.ceil(h)) : null
+}
 function agingLabel(): string {
   if (!task.value) return ''
   const d = pickingTaskAgingDays({ ...task.value, endDate: localEndDate.value ?? undefined, status: localStatus.value } as PickingTask)
@@ -91,7 +100,6 @@ const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.value))
-const isProgressive = computed(() => filteredItems.value.length > PAGE_SIZE)
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -121,24 +129,36 @@ function checkStageOverflow() {
   const el = stageEl.value
   if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
 }
+// The items table gets an outer border only once its scroll area actually overflows
+// (i.e. the rows exceed its max height and it can scroll) — not merely by row count.
+const itemsOverflowing = ref(false)
+function checkItemsOverflow() {
+  const el = itemsScrollEl.value
+  itemsOverflowing.value = !!el && el.scrollHeight > el.clientHeight + 1
+}
 let stageObserver: ResizeObserver | null = null
+let itemsResizeObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
     setupItemsObserver()
     checkStageOverflow()
+    checkItemsOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
     if (stageEl.value) {
       stageObserver.observe(stageEl.value)
       stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true })
     }
+    itemsResizeObserver = new ResizeObserver(checkItemsOverflow)
+    if (itemsScrollEl.value) itemsResizeObserver.observe(itemsScrollEl.value)
   })
 })
 onUnmounted(() => {
   itemsObserver?.disconnect()
   stageObserver?.disconnect()
+  itemsResizeObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
 })
-watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
+watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { checkStageOverflow(); checkItemsOverflow() }))
 
 // ── Jump-to-task switcher ────────────────────────────────────────────────────
 const jumpSearch = ref('')
@@ -192,7 +212,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
 
       <div v-if="isInProgress && lastUpdated" class="detail-bar-right">
         <span class="pkd-last-updated-label">Last updated</span>
-        <span class="pkd-last-updated-val">{{ formatDateTime(lastUpdated) }}</span>
+        <span class="pkd-last-updated-val">{{ formatDateTimeLong(lastUpdated) }}</span>
       </div>
     </header>
 
@@ -207,8 +227,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
           <ContentList label="Sales orders" :value="task.salesNos.join(', ')" />
         </div>
         <div class="content-list-col">
-          <ContentList label="SKU qty" :value="String(task.skuQty)" />
-          <ContentList label="Start date" :value="task.startDate ? formatDateTime(task.startDate) : '—'" />
+          <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="pkd-end-cell">
               <span>{{ localEndDate ? formatDateTime(localEndDate) : '—' }}</span>
@@ -222,19 +241,19 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
       <section class="pkd-progress">
         <div class="pkd-progress-stat">
           <span class="pkd-progress-val">{{ task.skuQty }}</span>
-          <span class="pkd-progress-label">SKUs</span>
+          <span class="pkd-progress-label">SKU qty</span>
         </div>
         <div class="pkd-progress-stat">
           <span class="pkd-progress-val">{{ fmt(toPickTotal) }}</span>
-          <span class="pkd-progress-label">To pick</span>
+          <span class="pkd-progress-label">To pick qty</span>
         </div>
         <div class="pkd-progress-stat">
           <span class="pkd-progress-val">{{ fmt(pickedTotal) }}</span>
-          <span class="pkd-progress-label">Picked</span>
+          <span class="pkd-progress-label">Picked qty</span>
         </div>
         <div class="pkd-progress-stat">
           <span class="pkd-progress-val">{{ fmt(outstandingTotal) }}</span>
-          <span class="pkd-progress-label">Outstanding</span>
+          <span class="pkd-progress-label">Outstanding qty</span>
         </div>
       </section>
 
@@ -248,7 +267,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
             <input v-model="itemSearch" class="pkd-search" type="text" placeholder="Search product or SKU…" />
           </div>
         </div>
-        <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
+        <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <thead>
@@ -256,9 +275,9 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
                   <th class="detail-th">Product</th>
                   <th class="detail-th">SKU</th>
                   <th class="detail-th">Storage location</th>
-                  <th class="detail-th detail-th--num">To pick</th>
+                  <th class="detail-th detail-th--num">To pick qty</th>
                   <th v-if="showPickedCols" class="detail-th detail-th--num">Picked qty</th>
-                  <th v-if="showPickedCols" class="detail-th detail-th--num">Outstanding</th>
+                  <th v-if="showPickedCols" class="detail-th detail-th--num">Outstanding qty</th>
                   <th class="detail-th">Unit</th>
                 </tr>
               </thead>
@@ -310,6 +329,9 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Customer</th>
+                    <th class="detail-th">Source</th>
+                    <th class="detail-th detail-th--num">SKU qty</th>
+                    <th class="detail-th detail-th--num">Order qty</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Due date</th>
                   </tr>
@@ -329,8 +351,16 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
                       </div>
                     </td>
                     <td class="detail-td">{{ o.customer ?? '—' }}</td>
+                    <td class="detail-td">{{ o.source }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(o.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(o.orderQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="outgoingStage(o)" /></td>
-                    <td class="detail-td">{{ formatDate(o.dueDate) }}</td>
+                    <td class="detail-td">
+                      <span class="pkd-due">
+                        <span>{{ dueDisplay(o) }}</span>
+                        <span v-if="expireHours(o) !== null" class="pkd-due-expire">Expire in {{ expireHours(o) }} hours</span>
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -543,6 +573,9 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
 .pkd-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
 .pkd-qty--zero { color: var(--mp-text-placeholder); }
 .pkd-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
+/* Linked-order due date + marketplace expiry caption */
+.pkd-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
+.pkd-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
 
 /* Linked tabs */
 .pkd-tabs { flex-shrink: 0; }

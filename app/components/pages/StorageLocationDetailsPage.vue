@@ -15,6 +15,7 @@ import {
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import StockTables from '~/components/patterns/StockTables.vue'
 import StorageLocationTree from '~/components/patterns/StorageLocationTree.vue'
+import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
 import { findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { levelLabel, STORAGE_LEVEL_KEYS } from '~/data/storageLevels'
@@ -78,7 +79,6 @@ const activityEntries = computed<ActivityEntry[]>(() => {
     activity: 'Created',
     details: [
       { label: 'Location name', value: n.name },
-      { label: 'Code', value: n.code },
       { label: 'Level', value: levelText.value },
       { label: 'Location type', value: n.type },
     ],
@@ -90,6 +90,9 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 function goAllWarehouses() { router.push('/warehouses') }
 function goWarehouse() { router.push(`/warehouses/${warehouseId.value}`) }
 function goToLoc(id: string) { router.push(`/warehouses/${warehouseId.value}/locations/${id}`) }
+
+// Edit this location — reuses the add-location drawer form.
+const editOpen = ref(false)
 
 // Delete needs a confirmation modal.
 const deleteConfirmOpen = ref(false)
@@ -124,6 +127,7 @@ function confirmDeleteLocation() {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
+            <MpPopoverListItem @click="editOpen = true">Edit location</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="deleteConfirmOpen = true">
               Delete location
             </MpPopoverListItem>
@@ -142,10 +146,6 @@ function confirmDeleteLocation() {
             <dd class="sld-info-value">{{ node.name }}</dd>
           </div>
           <div class="sld-info-row">
-            <dt class="sld-info-label">Code</dt>
-            <dd class="sld-info-value">{{ node.code }}</dd>
-          </div>
-          <div class="sld-info-row">
             <dt class="sld-info-label">Level</dt>
             <dd class="sld-info-value">{{ levelText }}</dd>
           </div>
@@ -154,7 +154,7 @@ function confirmDeleteLocation() {
             <dd class="sld-info-value">
               <span class="sld-path">
                 <template v-for="(p, i) in path" :key="p.id">
-                  <button class="sld-path-link" @click="goToLoc(p.id)">{{ p.code }}</button>
+                  <button class="sld-path-link" @click="goToLoc(p.id)">{{ p.name }}</button>
                   <span v-if="i < path.length - 1" class="sld-path-sep">/</span>
                 </template>
               </span>
@@ -207,6 +207,16 @@ function confirmDeleteLocation() {
       @close="activityOpen = false"
     />
 
+    <!-- Edit this location (shared add-location form) -->
+    <NewLocationDrawer
+      :is-open="editOpen"
+      :warehouse-id="warehouseId"
+      :parent-id="null"
+      :edit-id="node.id"
+      @update:is-open="editOpen = $event"
+      @saved="editOpen = false"
+    />
+
     <!-- Delete confirmation -->
     <MpModal
       id="sld-delete-modal"
@@ -224,10 +234,10 @@ function confirmDeleteLocation() {
         </MpModalHeader>
         <MpModalBody>
           <template v-if="hasChildren">
-            Deleting <strong>{{ node.name }}</strong> ({{ node.code }}) also removes all of its sub-locations. This can't be undone.
+            Deleting <strong>{{ node.name }}</strong> also removes all of its sub-locations. This can't be undone.
           </template>
           <template v-else>
-            Delete <strong>{{ node.name }}</strong> ({{ node.code }})? This can't be undone.
+            Delete <strong>{{ node.name }}</strong>? This can't be undone.
           </template>
         </MpModalBody>
         <MpModalFooter>
@@ -274,7 +284,7 @@ function confirmDeleteLocation() {
 .sld-info-value { margin: 0; flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); }
 .sld-type-desc { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .sld-path { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); flex-wrap: wrap; }
-.sld-path-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-transform: uppercase; }
+.sld-path-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .sld-path-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .sld-path-sep { color: var(--mp-text-subtle); }
 .sld-lastupdated { display: inline-block; margin: var(--mp-spacing-4) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; }

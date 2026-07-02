@@ -58,16 +58,45 @@ export function productBySku(sku: string): Product | undefined {
   return BY_SKU.get(sku)
 }
 
+// Deterministic per-warehouse PRNG seed (bit-mixed from the warehouse id) so each
+// warehouse gets a DIFFERENT but STABLE assortment — the mix never changes across
+// reloads, which is what keeps every view coherent.
+function warehouseSeed(warehouseId: string): number {
+  let s = ((Number(warehouseId.replace(/\D/g, '')) || 1) * 2654435761) >>> 0
+  s ^= s >>> 15
+  s = (s * 2246822519) >>> 0
+  s ^= s >>> 13
+  return s >>> 0
+}
+
 /**
- * The products a warehouse stocks — the first `skuTotal` catalog products, in catalog
- * order. This is the ONE definition of "what a warehouse carries"; `warehouseDetails`
- * builds its stock rows from the same slice, so a warehouse's Products tab, its storage
- * locations and any order sourced from it all reference the exact same SKUs.
+ * The products a warehouse stocks — a deterministic RANDOM subset of `skuTotal`
+ * distinct catalog products (seeded by the warehouse id), so each warehouse carries a
+ * realistic, varied assortment instead of the same top-N SKUs. This is the ONE
+ * definition of "what a warehouse carries"; `warehouseDetails` builds its stock rows
+ * from this exact set, so a warehouse's Products tab, its storage locations and any
+ * order sourced from it all reference the same SKUs. Returned in catalog order so the
+ * stock list stays tidy (grouped by category/SKU), not shuffled.
  */
 export function warehouseProducts(warehouseId: string): Product[] {
   const wh = warehouses.find((w) => w.id === warehouseId)
   if (!wh || wh.isDefault || !wh.skuTotal) return []
-  return PRODUCTS.slice(0, Math.min(wh.skuTotal, PRODUCTS.length))
+  const n = Math.min(wh.skuTotal, PRODUCTS.length)
+  // Seeded Fisher–Yates over the catalog indices, then take the first n.
+  let s = warehouseSeed(warehouseId)
+  const rand = () => {
+    s = (s * 1664525 + 1013904223) >>> 0
+    return s / 4294967296
+  }
+  const idx = PRODUCTS.map((_, i) => i)
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[idx[i], idx[j]] = [idx[j]!, idx[i]!]
+  }
+  return idx
+    .slice(0, n)
+    .sort((a, b) => a - b) // back to catalog order for a tidy, stable list
+    .map((i) => PRODUCTS[i]!)
 }
 
 /** SKUs a warehouse stocks. */

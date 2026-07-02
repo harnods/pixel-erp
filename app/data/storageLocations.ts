@@ -173,16 +173,17 @@ export function getStorageTree(warehouseId: string): LocNode[] {
 }
 
 /**
- * For each stock index [0, skuTotal), the code-path of the leaf bin that holds it
- * (root → leaf codes, e.g. "L1 / ZA / A01 / R01 / RK03"). Leaves tile the stock array
- * exactly, so every product maps to a real location — this is what makes the location
- * shown on a product/batch/serial match the location you opened it from.
+ * For each stock index [0, skuTotal), the NAME-path of the leaf bin that holds it
+ * (root → leaf names, e.g. "First Floor / Cold Zone / Aisle A / Row 1 / Bin 001").
+ * Leaves tile the stock array exactly, so every product maps to a real location — this
+ * is what makes the location shown on a product/batch/serial match the location you
+ * opened it from. Codes are no longer shown anywhere, so locations read by name.
  */
 export function stockLocationPaths(warehouseId: string): string[] {
   const paths: string[] = []
   const walk = (nodes: LocNode[], trail: string[]) => {
     for (const n of nodes) {
-      const here = [...trail, n.code]
+      const here = [...trail, n.name]
       if (n.children.length) walk(n.children, here)
       else {
         const p = here.join(' / ')
@@ -217,6 +218,11 @@ export function addSubLocation(warehouseId: string, parentId: string, data: NewL
   const parent = findNode(getStorageTree(warehouseId), parentId)
   if (parent) parent.children.push({ id: newId(), level: data.level, code: data.code, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
   persist()
+}
+/** Edit an existing location's level, name and type (keeps its code + children). */
+export function updateLocation(warehouseId: string, id: string, data: { level: string; name: string; type: LocType }): void {
+  const node = findNode(getStorageTree(warehouseId), id)
+  if (node) { node.level = data.level; node.name = data.name; node.type = data.type; persist() }
 }
 /** Suggested next code for a level — warehouse-wide unique (never collides with an
  *  existing code anywhere in this warehouse's tree). */

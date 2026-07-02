@@ -14,7 +14,7 @@ import { getDeliveryTask, handoverToCourier, marketplaceShipping } from '~/data/
 import { getPackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { outgoingOrders, outgoingStage } from '~/data/outgoing'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -190,7 +190,7 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
         <div class="content-list-col">
           <ContentList label="Courier" :value="task.courier ?? '—'" />
           <ContentList label="Tracking no." :value="task.trackingNo ?? '—'" />
-          <ContentList label="Ship date" :value="task.shippedDate ? formatDateTime(task.shippedDate) : '—'" />
+          <ContentList label="Ship date" :value="task.shippedDate ? formatDateTimeLong(task.shippedDate) : '—'" />
         </div>
       </section>
 

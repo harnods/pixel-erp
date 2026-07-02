@@ -7,7 +7,7 @@
  * and navigates to a row's detail page. Persists via the storage-location store.
  */
 import {
-  MpBadge, MpButton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpButton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   css,
@@ -80,11 +80,13 @@ function confirmDelete() {
   deleteTarget.value = null
 }
 
-// New / sub-location drawer
+// New / sub-location / edit drawer (shared form)
 const drawerOpen = ref(false)
 const drawerParentId = ref<string | null>(null)
-function openNew() { drawerParentId.value = props.parentId; drawerOpen.value = true }
-function addSub(n: LocNode) { drawerParentId.value = n.id; drawerOpen.value = true }
+const drawerEditId = ref<string | null>(null)
+function openNew() { drawerEditId.value = null; drawerParentId.value = props.parentId; drawerOpen.value = true }
+function addSub(n: LocNode) { drawerEditId.value = null; drawerParentId.value = n.id; drawerOpen.value = true }
+function editLoc(n: LocNode) { drawerEditId.value = n.id; drawerParentId.value = null; drawerOpen.value = true }
 function onSaved(pid: string | null) {
   if (pid && pid !== props.parentId) expanded.value = new Set([...expanded.value, pid])
 }
@@ -147,7 +149,6 @@ function onSaved(pid: string | null) {
                   />
                 </MpTooltip>
                 <span class="wh-loc-name-text">{{ row.node.name }}</span>
-                <MpBadge for="tableStatus" type="announcement" size="sm" class="wh-loc-code">{{ row.node.code }}</MpBadge>
                 <button class="wh-loc-view" @click.stop="view(row.node)">
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                     <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -169,6 +170,7 @@ function onSaved(pid: string | null) {
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                   <MpPopoverList>
+                    <MpPopoverListItem @click="editLoc(row.node)">Edit</MpPopoverListItem>
                     <MpPopoverListItem @click="addSub(row.node)">Add sub-location</MpPopoverListItem>
                     <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askDelete(row.node)">Delete</MpPopoverListItem>
                   </MpPopoverList>
@@ -189,6 +191,7 @@ function onSaved(pid: string | null) {
       :is-open="drawerOpen"
       :warehouse-id="warehouseId"
       :parent-id="drawerParentId"
+      :edit-id="drawerEditId"
       @update:is-open="drawerOpen = $event"
       @saved="onSaved"
     />
@@ -210,10 +213,10 @@ function onSaved(pid: string | null) {
         </MpModalHeader>
         <MpModalBody>
           <template v-if="deleteTarget?.children.length">
-            Deleting <strong>{{ deleteTarget?.name }}</strong> ({{ deleteTarget?.code }}) also removes all of its sub-locations. This can't be undone.
+            Deleting <strong>{{ deleteTarget?.name }}</strong> also removes all of its sub-locations. This can't be undone.
           </template>
           <template v-else>
-            Delete <strong>{{ deleteTarget?.name }}</strong> ({{ deleteTarget?.code }})? This can't be undone.
+            Delete <strong>{{ deleteTarget?.name }}</strong>? This can't be undone.
           </template>
         </MpModalBody>
         <MpModalFooter>

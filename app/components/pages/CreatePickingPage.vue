@@ -219,7 +219,6 @@ const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const visibleRows = computed(() => pickRows.value.slice(0, shownCount.value))
 const hasMoreRows = computed(() => shownCount.value < pickRows.value.length)
-const isProgressive = computed(() => pickRows.value.length > PAGE_SIZE)
 
 function loadMoreRows() {
   if (loadingMore.value || !hasMoreRows.value) return
@@ -249,8 +248,10 @@ watch(() => pickRows.value.length, () => {
   nextTick(() => {
     if (itemsScrollEl.value) itemsScrollEl.value.scrollTop = 0
     setupItemsObserver()
+    checkItemsOverflow()
   })
 })
+watch(shownCount, () => nextTick(checkItemsOverflow))
 
 // ─── Footer divider ────────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)
@@ -259,22 +260,30 @@ function checkStageOverflow() {
   const el = stageEl.value
   if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
 }
+// The items table gets an outer border only once its scroll area actually overflows.
+const itemsOverflowing = ref(false)
+function checkItemsOverflow() { const el = itemsScrollEl.value; itemsOverflowing.value = !!el && el.scrollHeight > el.clientHeight + 1 }
 let stageObserver: ResizeObserver | null = null
+let itemsResizeObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
     checkStageOverflow()
+    checkItemsOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
     if (stageEl.value) {
       stageObserver.observe(stageEl.value)
       stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true })
     }
+    itemsResizeObserver = new ResizeObserver(checkItemsOverflow)
+    if (itemsScrollEl.value) itemsResizeObserver.observe(itemsScrollEl.value)
   })
 })
 onUnmounted(() => {
   stageObserver?.disconnect()
+  itemsResizeObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
 })
-watch(selectedOrders, () => nextTick(checkStageOverflow))
+watch(selectedOrders, () => nextTick(() => { checkStageOverflow(); checkItemsOverflow() }))
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -400,7 +409,7 @@ function handleCreate() {
           {{ formatNum(totalToPick) }} to pick
         </p>
 
-        <section class="pk-items-section" :class="{ 'pk-items-section--bordered': isProgressive }">
+        <section class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pk-items-scroll">
             <table class="pk-items">
               <thead>

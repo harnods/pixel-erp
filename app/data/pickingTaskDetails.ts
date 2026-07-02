@@ -5,6 +5,7 @@ import { binForSku } from "./warehouseDetails";
 /** Enriched picking line for the detail / pick pages. */
 export interface PickLineItem {
   key: string;
+  orderId: string;
   salesNo: string;
   productName: string;
   productDesc: string;
@@ -19,6 +20,7 @@ export interface PickLineItem {
 export function getPickingLineItems(task: PickingTask): PickLineItem[] {
   return pickingLinesOf(task).map((l) => ({
     key: l.key,
+    orderId: l.orderId,
     salesNo: l.salesNo,
     productName: l.product,
     productDesc: l.desc,

@@ -11,7 +11,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask } from '~/data/receivingTaskDetails'
 import { taskAgingDays, startReceiving, type ReceivingTask } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed'
 
@@ -267,7 +267,7 @@ function goBack() {
         </div>
         <div class="content-list-col">
           <ContentList label="Sku qty" :value="task.skuScope" />
-          <ContentList label="Start date" :value="task.startDate ? formatDateTime(task.startDate) : '—'" />
+          <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="rcvgd-end-cell">
               <span>{{ localEndDate ? formatDateTime(localEndDate) : '—' }}</span>
@@ -293,7 +293,7 @@ function goBack() {
         </div>
         <div class="rcvgd-progress-stat">
           <span class="rcvgd-progress-val">{{ fmt(outstandingTotal) }}</span>
-          <span class="rcvgd-progress-label">Outstanding</span>
+          <span class="rcvgd-progress-label">Outstanding qty</span>
         </div>
       </section>
 
@@ -325,7 +325,7 @@ function goBack() {
                 <th class="detail-th">SKU</th>
                 <th class="detail-th detail-th--num">Purchase qty</th>
                 <th v-if="showReceivedCols" class="detail-th detail-th--num">Received qty</th>
-                <th v-if="showReceivedCols" class="detail-th detail-th--num">Outstanding</th>
+                <th v-if="showReceivedCols" class="detail-th detail-th--num">Outstanding qty</th>
                 <th class="detail-th">Unit</th>
               </tr>
             </thead>

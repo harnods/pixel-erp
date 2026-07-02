@@ -9,10 +9,10 @@
 import {
   MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerFooter, MpDrawerOverlay,
   MpDrawerCloseButton, MpFormControl, MpFormLabel, MpFormHelpText, MpInput, MpAutocomplete,
-  MpButton, MpButtonGroup,
+  MpButton, MpButtonGroup, toast,
 } from '@mekari/pixel3'
 import {
-  addRootLocation, addSubLocation, suggestCode, defaultTypeForLevel, findLocation,
+  addRootLocation, addSubLocation, updateLocation, suggestCode, defaultTypeForLevel, findLocation,
   STORAGE_LEVELS, type LocType,
 } from '~/data/storageLocations'
 import { levelOptions, levelLabel } from '~/data/storageLevels'
@@ -21,27 +21,37 @@ const props = defineProps<{
   isOpen: boolean
   warehouseId: string
   parentId: string | null
+  /** When set, the drawer edits this existing location (same form) instead of adding. */
+  editId?: string | null
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'saved', parentId: string | null): void
 }>()
 
+const isEdit = computed(() => !!props.editId)
 const levelPickerOptions = computed(() => levelOptions())
 const level = ref<string>(STORAGE_LEVELS[0]!)
 const name = ref('')
 const code = ref('')
 const type = ref<LocType>('Organizational')
 
-// Parent path (root → parent) for the breadcrumb; empty for a root-level location.
+// Breadcrumb (root → parent). For edit it's the edited node's ancestors; for a
+// sub-location it's the parent's path; empty for a root-level add.
 const crumbs = computed<string[]>(() => {
+  if (isEdit.value) {
+    const p = findLocation(props.warehouseId, props.editId!)?.path ?? []
+    return p.slice(0, -1).map(n => n.name) // ancestors, excluding the node itself
+  }
   if (!props.parentId) return []
   return findLocation(props.warehouseId, props.parentId)?.path.map(n => n.name) ?? []
 })
 const levelHelp = computed(() =>
-  props.parentId
-    ? `Sub-location of ${crumbs.value[crumbs.value.length - 1] ?? ''}`
-    : 'No parent — this will be the top level location in this warehouse',
+  isEdit.value
+    ? 'Editing this location'
+    : props.parentId
+      ? `Sub-location of ${crumbs.value[crumbs.value.length - 1] ?? ''}`
+      : 'No parent — this will be the top level location in this warehouse',
 )
 const typeHelp = computed(() => {
   const lvl = levelLabel(level.value)
@@ -57,6 +67,15 @@ function defaultLevelFor(): string {
   return STORAGE_LEVELS[Math.min(i + 1, STORAGE_LEVELS.length - 1)]!
 }
 function reset() {
+  if (isEdit.value) {
+    // prefill from the location being edited (keep its code)
+    const node = findLocation(props.warehouseId, props.editId!)?.node
+    level.value = node?.level ?? STORAGE_LEVELS[0]!
+    name.value = node?.name ?? ''
+    type.value = node?.type ?? 'Organizational'
+    code.value = node?.code ?? ''
+    return
+  }
   level.value = defaultLevelFor()
   name.value = ''
   type.value = defaultTypeForLevel(level.value)
@@ -64,9 +83,9 @@ function reset() {
 }
 // Reset each time the drawer opens.
 watch(() => props.isOpen, (open) => { if (open) reset() })
-// Level drives sensible defaults for code + type (only while open).
+// Level drives sensible defaults for code + type (only while adding).
 watch(level, (lvl) => {
-  if (!props.isOpen) return
+  if (!props.isOpen || isEdit.value) return
   code.value = suggestCode(props.warehouseId, props.parentId, lvl)
   type.value = defaultTypeForLevel(lvl)
 })
@@ -74,7 +93,13 @@ watch(level, (lvl) => {
 function close() { emit('update:isOpen', false) }
 function save() {
   const nm = name.value.trim()
-  if (!nm) return
+  if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a location name' }); return }
+  if (isEdit.value) {
+    updateLocation(props.warehouseId, props.editId!, { level: level.value, name: nm, type: type.value })
+    emit('saved', props.parentId)
+    close()
+    return
+  }
   const data = { level: level.value, name: nm, code: code.value.trim() || level.value.slice(0, 1).toUpperCase(), type: type.value }
   if (props.parentId) addSubLocation(props.warehouseId, props.parentId, data)
   else addRootLocation(props.warehouseId, data)
@@ -89,6 +114,7 @@ function save() {
     :is-open="isOpen"
     placement="right"
     size="sm"
+    variant="floating"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -96,7 +122,7 @@ function save() {
   >
     <MpDrawerContent>
       <MpDrawerHeader>
-        New location
+        {{ isEdit ? 'Edit location' : 'New location' }}
         <MpDrawerCloseButton />
       </MpDrawerHeader>
       <MpDrawerBody>
@@ -106,7 +132,7 @@ function save() {
               <span class="nl-crumb">{{ c }}</span>
               <span class="nl-crumb-sep">/</span>
             </template>
-            <span class="nl-crumb nl-crumb--current">New location</span>
+            <span class="nl-crumb nl-crumb--current">{{ isEdit ? name || 'Location' : 'New location' }}</span>
           </div>
 
           <MpFormControl id="nl-level" is-required>
@@ -124,17 +150,10 @@ function save() {
             <MpFormHelpText>{{ levelHelp }}</MpFormHelpText>
           </MpFormControl>
 
-          <div class="nl-row">
-            <MpFormControl id="nl-name" is-required>
-              <MpFormLabel>Location name</MpFormLabel>
-              <MpInput id="nl-name-input" v-model="name" is-full-width placeholder="e.g. Cold Zone" />
-            </MpFormControl>
-            <MpFormControl id="nl-code">
-              <MpFormLabel>Code</MpFormLabel>
-              <MpInput id="nl-code-input" v-model="code" is-full-width placeholder="e.g. ZA" />
-              <MpFormHelpText>Used in location path</MpFormHelpText>
-            </MpFormControl>
-          </div>
+          <MpFormControl id="nl-name" is-required>
+            <MpFormLabel>Location name</MpFormLabel>
+            <MpInput id="nl-name-input" v-model="name" is-full-width placeholder="e.g. Cold Zone" />
+          </MpFormControl>
 
           <MpFormControl id="nl-type" is-required>
             <MpFormLabel>Location type</MpFormLabel>
@@ -161,7 +180,7 @@ function save() {
       <MpDrawerFooter>
         <MpButtonGroup>
           <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded :is-disabled="!name.trim()" @click="save">Save</MpButton>
+          <MpButton variant="primary" is-rounded @click="save">Save</MpButton>
         </MpButtonGroup>
       </MpDrawerFooter>
     </MpDrawerContent>

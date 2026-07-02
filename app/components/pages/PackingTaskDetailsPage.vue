@@ -15,7 +15,7 @@ import {
 import { getPackingTask, startPacking, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
 import { addDeliveryTask } from '~/data/deliveryTasks'
 import { outgoingOrders, outgoingStage } from '~/data/outgoing'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 type TaskStatus = 'open' | 'in progress' | 'completed' | 'canceled'
 
@@ -124,7 +124,6 @@ const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.value))
-const isProgressive = computed(() => filteredItems.value.length > PAGE_SIZE)
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -144,17 +143,24 @@ watch(itemSearch, () => { shownCount.value = PAGE_SIZE; nextTick(() => { if (ite
 const stageEl = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)
 function checkStageOverflow() { const el = stageEl.value; if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1 }
+// Outer border only once the items scroll area actually overflows (can scroll).
+const itemsOverflowing = ref(false)
+function checkItemsOverflow() { const el = itemsScrollEl.value; itemsOverflowing.value = !!el && el.scrollHeight > el.clientHeight + 1 }
 let stageObserver: ResizeObserver | null = null
+let itemsResizeObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
     setupItemsObserver()
     checkStageOverflow()
+    checkItemsOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
     if (stageEl.value) { stageObserver.observe(stageEl.value); stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true }) }
+    itemsResizeObserver = new ResizeObserver(checkItemsOverflow)
+    if (itemsScrollEl.value) itemsResizeObserver.observe(itemsScrollEl.value)
   })
 })
-onUnmounted(() => { itemsObserver?.disconnect(); stageObserver?.disconnect(); stageEl.value?.removeEventListener('scroll', checkStageOverflow) })
-watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
+onUnmounted(() => { itemsObserver?.disconnect(); stageObserver?.disconnect(); itemsResizeObserver?.disconnect(); stageEl.value?.removeEventListener('scroll', checkStageOverflow) })
+watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { checkStageOverflow(); checkItemsOverflow() }))
 
 const jumpSearch = ref('')
 const jumpResults = computed(() => {
@@ -204,7 +210,7 @@ function goBack() { router.push('/barang-keluar?tab=Packing') }
       </div>
       <div v-if="isInProgress && lastUpdated" class="detail-bar-right">
         <span class="pck-last-updated-label">Last updated</span>
-        <span class="pck-last-updated-val">{{ formatDateTime(lastUpdated) }}</span>
+        <span class="pck-last-updated-val">{{ formatDateTimeLong(lastUpdated) }}</span>
       </div>
     </header>
 
@@ -218,7 +224,7 @@ function goBack() { router.push('/barang-keluar?tab=Packing') }
         </div>
         <div class="content-list-col">
           <ContentList label="Picking task" :value="task.pickingTaskNo" />
-          <ContentList label="Start date" :value="task.startDate ? formatDateTime(task.startDate) : '—'" />
+          <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="pck-end-cell">
               <span>{{ localEndDate ? formatDateTime(localEndDate) : '—' }}</span>
@@ -229,10 +235,10 @@ function goBack() { router.push('/barang-keluar?tab=Packing') }
       </section>
 
       <section class="pck-progress">
-        <div class="pck-progress-stat"><span class="pck-progress-val">{{ task.skuQty }}</span><span class="pck-progress-label">SKUs</span></div>
-        <div class="pck-progress-stat"><span class="pck-progress-val">{{ fmt(pickedTotal) }}</span><span class="pck-progress-label">Picked</span></div>
-        <div class="pck-progress-stat"><span class="pck-progress-val">{{ fmt(packedTotal) }}</span><span class="pck-progress-label">Packed</span></div>
-        <div class="pck-progress-stat"><span class="pck-progress-val">{{ fmt(outstandingTotal) }}</span><span class="pck-progress-label">Outstanding</span></div>
+        <div class="pck-progress-stat"><span class="pck-progress-val">{{ task.skuQty }}</span><span class="pck-progress-label">SKU qty</span></div>
+        <div class="pck-progress-stat"><span class="pck-progress-val">{{ fmt(pickedTotal) }}</span><span class="pck-progress-label">Picked qty</span></div>
+        <div class="pck-progress-stat"><span class="pck-progress-val">{{ fmt(packedTotal) }}</span><span class="pck-progress-label">Packed qty</span></div>
+        <div class="pck-progress-stat"><span class="pck-progress-val">{{ fmt(outstandingTotal) }}</span><span class="pck-progress-label">Outstanding qty</span></div>
       </section>
 
       <div class="pck-table-wrap">
@@ -244,7 +250,7 @@ function goBack() { router.push('/barang-keluar?tab=Packing') }
             <input v-model="itemSearch" class="pck-search" type="text" placeholder="Search product or SKU…" />
           </div>
         </div>
-        <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
+        <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <thead>
@@ -254,7 +260,7 @@ function goBack() { router.push('/barang-keluar?tab=Packing') }
                   <th class="detail-th">Storage location</th>
                   <th class="detail-th detail-th--num">Picked qty</th>
                   <th v-if="showPackedCols" class="detail-th detail-th--num">Packed qty</th>
-                  <th v-if="showPackedCols" class="detail-th detail-th--num">Outstanding</th>
+                  <th v-if="showPackedCols" class="detail-th detail-th--num">Outstanding qty</th>
                   <th class="detail-th">Unit</th>
                 </tr>
               </thead>
