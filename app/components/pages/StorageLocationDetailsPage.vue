@@ -19,6 +19,7 @@ import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
 import { findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { levelLabel, STORAGE_LEVEL_KEYS } from '~/data/storageLevels'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
+import { formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -85,13 +86,6 @@ const activityEntries = computed<ActivityEntry[]>(() => {
 })
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
-function fmtDateTime(iso: string) {
-  const d = new Date(iso)
-  const mon = d.toLocaleString('en-US', { month: 'short' })
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${d.getDate()} ${mon} ${d.getFullYear()}, ${hh}:${mm} (GMT+7)`
-}
 
 function goAllWarehouses() { router.push('/warehouses') }
 function goWarehouse() { router.push(`/warehouses/${warehouseId.value}`) }
@@ -183,7 +177,7 @@ function confirmDeleteLocation() {
           </div>
         </dl>
         <a class="sld-lastupdated" @click.prevent="activityOpen = true">
-          Last updated by {{ lu.by }} on {{ fmtDateTime(lu.at) }}
+          Last updated by {{ lu.by }} on {{ formatDateTimeLong(lu.at) }}
         </a>
       </section>
 

@@ -142,7 +142,7 @@ function formatUpdatedAt(iso: string) {
   const d = new Date(iso)
   const date = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(d)
   const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
-  return `${date}, ${time} (GMT+7)`
+  return `${date}, ${time}`
 }
 function attachmentIcon(name: string): string {
   const ext = name.toLowerCase().split('.').pop() ?? ''

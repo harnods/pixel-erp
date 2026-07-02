@@ -1,5 +1,6 @@
 import { getDeliveryTask, deliveryTasks, type DeliveryTask } from "./deliveryTasks";
 import { getPackingTask, pickedLinesForPacking } from "./packingTasks";
+import { binForSku } from "./warehouseDetails";
 
 /** A SKU line being shipped (= what was packed for this order). */
 export interface ShipLineItem {
@@ -23,7 +24,7 @@ export function getDeliveryLineItems(task: DeliveryTask): ShipLineItem[] {
       productDesc: l.desc,
       skuCode: l.sku,
       image: l.img,
-      binLocation: l.bin,
+      binLocation: binForSku(task.warehouseId, l.sku),
       qty: pack.packedByKey?.[l.key] ?? l.picked,
       unit: l.unit,
     }))

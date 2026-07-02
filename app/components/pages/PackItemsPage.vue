@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { formatDateLong, formatDateTimeLong } from '~/utils/date'
 import {
   MpSpinner,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
@@ -29,25 +30,13 @@ const allPicked = computed(() =>
 )
 const canEndPacking = computed(() => !isMarketplace.value || allPicked.value)
 
-const startDateLabel = computed(() => {
-  const d = task.value?.startDate
-  if (!d) return '—'
-  const dt = new Date(d)
-  const date = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-  const time = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  return `${date}, ${time}`
-})
+const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
 // Due date carries an end-of-day cut-off for marketplace orders (…T23:59); show the
 // time only when the ISO string includes one.
 const dueDateLabel = computed(() => {
   const d = order.value?.dueDate
-  if (!d) return '—'
-  const dt = new Date(d)
-  const date = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-  if (!d.includes('T')) return date
-  const time = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  return `${date}, ${time}`
+  return d?.includes('T') ? formatDateTimeLong(d) : formatDateLong(d)
 })
 
 const draftQty = ref<Record<string, number>>({})

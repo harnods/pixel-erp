@@ -1,5 +1,6 @@
 import { getPickingTask, pickingLinesOf, pickingTasks, type PickingTask } from "./pickingTasks";
 import { packingTasks, type PackingTask } from "./packingTasks";
+import { binForSku } from "./warehouseDetails";
 
 /** Enriched picking line for the detail / pick pages. */
 export interface PickLineItem {
@@ -23,7 +24,7 @@ export function getPickingLineItems(task: PickingTask): PickLineItem[] {
     productDesc: l.desc,
     skuCode: l.sku,
     image: l.img,
-    binLocation: l.bin,
+    binLocation: binForSku(task.warehouseId, l.sku),
     expectedQty: l.qty,
     pickedQty: task.pickedByKey?.[l.key] ?? 0,
     unit: l.unit,

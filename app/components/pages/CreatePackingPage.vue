@@ -7,8 +7,8 @@ import {
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getPickingTask } from '~/data/pickingTasks'
 import { addPackingTask } from '~/data/packingTasks'
-import { outgoingOrders, skuLineQty, isMarketplaceOrder } from '~/data/outgoing'
-import { CATALOG } from '~/data/catalog'
+import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
+import { orderSkuLines } from '~/data/inventory'
 
 const router = useRouter()
 const route  = useRoute()
@@ -41,7 +41,6 @@ watch(assigneeId, (v) => { if (v) assigneeError.value = false })
 const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // ─── Picked items per sales order (what's available to pack) ─────────────────────
-function seedNum(id: string): number { return Number(id.replace(/\D/g, '')) || 0 }
 interface PackLine { key: string; sku: string; product: string; desc: string; img: string; unit: string; order: number; picked: number }
 interface OrderTable { orderId: string; salesNo: string; customer: string; isMarketplace: boolean; lines: PackLine[] }
 
@@ -53,18 +52,14 @@ const orderTables = computed<OrderTable[]>(() => {
   const pickRatio = p.toPickQty > 0 ? p.pickedQty / p.toPickQty : 1
   return p.salesOrderIds.map((orderId, oi) => {
     const o = outgoingOrders.find(x => x.id === orderId)
-    const n = Math.min(o?.skuQty ?? 0, CATALOG.length)
-    const base = seedNum(orderId)
-    const lines: PackLine[] = []
-    for (let i = 0; i < n; i++) {
-      const item = CATALOG[(base * 7 + i * 13) % CATALOG.length]!
-      const order = skuLineQty(base, i)
-      lines.push({
-        key: `${orderId}::${item.sku}`,
-        sku: item.sku, product: item.name, desc: item.desc, img: item.img,
-        unit: item.unit, order, picked: Math.min(order, Math.round(order * pickRatio)),
-      })
-    }
+    // Same product-DB source as picking, so the packing SKUs + order qty always agree.
+    const lines: PackLine[] = o
+      ? orderSkuLines(o).map((l) => ({
+          key: `${orderId}::${l.sku}`,
+          sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
+          unit: l.product.unit, order: l.qty, picked: Math.min(l.qty, Math.round(l.qty * pickRatio)),
+        }))
+      : []
     return {
       orderId,
       salesNo: p.salesNos[oi] ?? o?.salesNo ?? orderId,

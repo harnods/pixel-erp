@@ -13,6 +13,7 @@
  * record's own data so the log is realistic and consistent with the record.
  */
 import { MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalOverlay, MpModalCloseButton, MpSpinner } from '@mekari/pixel3'
+import { formatDateTime } from '~/utils/date'
 
 export interface ActivityDetail { label: string; value: string }
 export interface ActivityEntry { date: string; user: string; activity: string; details: ActivityDetail[] }
@@ -88,10 +89,7 @@ watch(() => props.isOpen, (open) => {
 })
 
 function formatWhen(iso: string) {
-  const d = new Date(iso)
-  const date = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
-  const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
-  return `${date}, ${time}`
+  return formatDateTime(iso)
 }
 </script>
 

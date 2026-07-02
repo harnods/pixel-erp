@@ -5,10 +5,10 @@ import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { pickableOrders, skuLineQty, isMarketplaceOrder, type OutgoingOrder } from '~/data/outgoing'
+import { pickableOrders, isMarketplaceOrder, type OutgoingOrder } from '~/data/outgoing'
 import { addPickingTask, type PickingLine } from '~/data/pickingTasks'
-import { CATALOG } from '~/data/catalog'
-import { BINS } from '~/data/receiptLineItems'
+import { orderSkuLines } from '~/data/inventory'
+import { binForSku } from '~/data/warehouseDetails'
 
 const router = useRouter()
 const route  = useRoute()
@@ -72,13 +72,11 @@ const selectedOrders = computed<OutgoingOrder[]>(() =>
 // ─── Picking list per sales order ───────────────────────────────────────────────
 // Each selected order is exploded into its own SKU lines (deterministic from the
 // catalog). Picking is reviewed PER ORDER, so each order gets its own table.
-function seedNum(id: string): number { return Number(id.replace(/\D/g, '')) || 0 }
 function hashStr(s: string): number {
   let h = 0
   for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0
   return h
 }
-function binForSku(sku: string): string { return BINS[hashStr(sku) % BINS.length]! }
 
 // Warehouse stock per SKU (deterministic). A WMS prevents overselling, so stock is
 // normally plentiful; ~1 in 6 SKUs is genuinely low. Available = On hand − Reserved
@@ -95,17 +93,12 @@ function reservedForSku(sku: string): number {
 interface SkuLine { sku: string; product: string; desc: string; img: string; unit: string; qty: number; bin: string }
 
 function orderLines(o: OutgoingOrder): SkuLine[] {
-  const n = Math.min(o.skuQty, CATALOG.length)
-  const base = seedNum(o.id)
-  const lines: SkuLine[] = []
-  for (let i = 0; i < n; i++) {
-    const item = CATALOG[(base * 7 + i * 13) % CATALOG.length]!
-    // same per-SKU qty (1..5) used to build the order total → they always agree
-    lines.push({
-      sku: item.sku, product: item.name, desc: item.desc, img: item.img,
-      unit: item.unit, qty: skuLineQty(base, i), bin: binForSku(item.sku),
-    })
-  }
+  // SKUs + qty come from the product DB (drawn from what this warehouse stocks), so
+  // each line maps to a real bin — same source picking/packing use downstream.
+  const lines: SkuLine[] = orderSkuLines(o).map((l) => ({
+    sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
+    unit: l.product.unit, qty: l.qty, bin: binForSku(o.warehouseId, l.sku),
+  }))
   // order each table by storage location so the picker route is ordered
   return lines.sort((a, b) => a.bin.localeCompare(b.bin))
 }

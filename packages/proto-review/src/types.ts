@@ -51,4 +51,11 @@ export interface ProtoReviewConfig {
    * something there — e.g. a scenario/environment switcher.
    */
   corner?: 'bottom-right' | 'bottom-left'
+  /**
+   * URL of the local `proto-review bridge` (default http://localhost:4319).
+   * The "Fix with Claude" button POSTs comments here to run a headless
+   * `claude -p` fix. Only reachable on the machine running the bridge, so
+   * the button auto-hides for everyone else.
+   */
+  fixBridgeUrl?: string
 }

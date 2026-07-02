@@ -1,5 +1,5 @@
 import { warehouses } from './warehouses'
-import { CATALOG } from './catalog'
+import { PRODUCTS } from './inventory'
 import { TODAY } from './master'
 import type { Warehouse } from './types'
 import { stockLocationPaths } from './storageLocations'
@@ -123,18 +123,19 @@ function makeSerials(sku: string, onHand: number, reserved: number, seed: number
 }
 
 /**
- * Deterministically build `count` stock items for a warehouse (stable per id) by
- * cycling the master {@link CATALOG} — so a warehouse's Products tab shows the SAME
- * products (name, SKU, photo, unit, price) as picking / packing / receiving. Per-
- * warehouse figures (on hand, reserved, bins, batches, serials) are generated here.
+ * Deterministically build `count` stock items for a warehouse (stable per id) from the
+ * product DB {@link PRODUCTS} — so a warehouse's Products tab shows the SAME products
+ * (name, SKU, photo, unit, pricing) as picking / packing / receiving. Product basics
+ * and pricing come from the DB; per-warehouse figures (on hand, reserved, bins,
+ * batches, serials) are generated here.
  */
 function generateStock(count: number, seed: number): WarehouseStockItem[] {
   const out: WarehouseStockItem[] = []
-  // SKU qty = distinct SKUs stocked, so never exceed the master catalog size and
-  // never repeat a SKU (each row is a distinct product).
-  const n = Math.min(count, CATALOG.length)
+  // SKU qty = distinct SKUs stocked, so never exceed the product-DB size and never
+  // repeat a SKU (each row is a distinct product).
+  const n = Math.min(count, PRODUCTS.length)
   for (let i = 0; i < n; i++) {
-    const c = CATALOG[i]!
+    const c = PRODUCTS[i]!
     const cycle = 1
     const onHand = ((i * 53 + seed * 7 + 17) % 1500) + 5
     const reserved = onHand > 40 ? (i * 13 + seed) % 40 : 0
@@ -155,10 +156,10 @@ function generateStock(count: number, seed: number): WarehouseStockItem[] {
       minStock,
       unit: c.unit,
       locations: binLocation(seed, i),
-      defaultSalesPrice: c.price,
-      averageCost: Math.round(c.price * 0.6),
-      lastPurchaseCost: Math.round(c.price * 0.62),
-      defaultPurchaseCost: Math.round(c.price * 0.58),
+      defaultSalesPrice: c.sellPrice,
+      averageCost: c.averageCost,
+      lastPurchaseCost: c.lastPurchaseCost,
+      defaultPurchaseCost: c.buyPrice,
       // batches for beans, serials for hardware, neither for accessories — first
       // occurrence only, so the Batches / Serial numbers tabs stay small subsets
       batches: cycle === 1 && isBatchTracked(c.category) ? makeBatches(onHand, reserved, seed, i) : undefined,
@@ -223,4 +224,21 @@ export function getLocationStock(warehouseId: string, skuStart: number, skuQty: 
   if (!wh || skuQty <= 0) return []
   const start = Math.max(0, Math.min(skuStart, wh.stock.length))
   return wh.stock.slice(start, start + skuQty)
+}
+
+/**
+ * The real storage-tree bin path for a SKU in a warehouse (e.g. "L1 / ZA / A01 / R01 /
+ * RK01 / SA / B001") — the single source of truth for "where does this SKU live". Used
+ * by inbound/outbound (picking, packing, delivery, receiving, put-away) so their
+ * per-line location matches the warehouse's storage locations. Falls back to a stable
+ * bin for SKUs not currently stocked, so the format is always consistent.
+ */
+export function binForSku(warehouseId: string, sku: string): string {
+  const wh = getWarehouseDetail(warehouseId)
+  if (!wh || !wh.stock.length) return '—'
+  const item = wh.stock.find((s) => s.sku === sku)
+  if (item) return item.locations[0] ?? '—'
+  let h = 0
+  for (const ch of sku) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return wh.stock[h % wh.stock.length]!.locations[0] ?? '—'
 }

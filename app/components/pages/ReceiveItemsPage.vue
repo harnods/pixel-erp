@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { formatDateTimeLong } from '~/utils/date'
 import {
   MpButton, MpSpinner,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
@@ -19,14 +20,7 @@ const task      = computed(() => entry.value?.task)
 const po        = computed(() => entry.value?.po)
 const lineItems = computed(() => task.value ? getTaskLineItems(task.value) : [])
 
-const startDateLabel = computed(() => {
-  const d = task.value?.startDate
-  if (!d) return '—'
-  const dt = new Date(d)
-  const date = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-  const time = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  return `${date}, ${time}`
-})
+const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
 // ── Draft quantities ─────────────────────────────────────────────────────────
 const draftQty = ref<Record<string, number>>({})

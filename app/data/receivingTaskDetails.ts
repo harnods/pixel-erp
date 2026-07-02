@@ -1,7 +1,7 @@
 import { receivingPOs, saveReceivingDraft, type ReceivingTask, type ReceivingPO } from './receivingTasks'
 import { putAwayTasks } from './putAwayTasks'
-import { BINS } from './receiptLineItems'
 import { CATALOG } from './catalog'
+import { binForSku } from './warehouseDetails'
 
 export interface TaskLineItem {
   productName: string
@@ -17,10 +17,6 @@ export interface TaskLineItem {
 
 const CATALOG_BY_SKU = new Map(CATALOG.map((p) => [p.sku, p]))
 
-function strSeed(s: string): number {
-  return s.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-}
-
 /** Save received qty per SKU for a task (kept name for callers) → persists as draft. */
 export function setTaskReceived(taskId: string, received: Record<string, number>): void {
   saveReceivingDraft(taskId, received)
@@ -31,8 +27,7 @@ export function setTaskReceived(taskId: string, received: Record<string, number>
  * truth), enriched with product image/colour/unit from the shared catalog.
  */
 export function getTaskLineItems(task: ReceivingTask): TaskLineItem[] {
-  const seed = strSeed(task.id)
-  return task.items.map((it, i) => {
+  return task.items.map((it) => {
     const p = CATALOG_BY_SKU.get(it.sku)
     return {
       productName: it.productName || p?.name || it.sku,
@@ -40,7 +35,7 @@ export function getTaskLineItems(task: ReceivingTask): TaskLineItem[] {
       skuCode:     it.sku,
       image:       p?.img ?? '',
       colorHue:    p?.hue ?? 200,
-      binLocation: BINS[(seed + i * 5) % BINS.length]!,
+      binLocation: binForSku(task.warehouseId, it.sku),
       expectedQty: it.expectedQty,
       receivedQty: it.receivedQty,
       unit:        it.unit || p?.unit || 'Unit',
