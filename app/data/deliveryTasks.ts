@@ -1,6 +1,6 @@
 import { reactive } from "vue";
 import { picForWarehouse } from "./warehouses";
-import { outgoingOrders } from "./outgoing";
+import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from "./outgoing";
 import { packingTasks } from "./packingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
@@ -42,6 +42,26 @@ export interface DeliveryTask {
 }
 
 const COURIERS = ["JNE", "SiCepat", "J&T Express", "AnterAja", "Internal fleet"];
+
+// A Desty marketplace channel never hands over to the seller's internal fleet.
+const MARKETPLACE_COURIERS = COURIERS.filter((c) => c !== "Internal fleet");
+function seedNum(id: string): number { return Number(id.replace(/\D/g, "")) || 0; }
+
+/**
+ * Courier + tracking no. a Desty marketplace channel pre-assigns to an order — these
+ * arrive with the sales order (shown on its detail page) before shipping is processed.
+ * Deterministic from the order id so the order detail page and the shipping handover
+ * always show the same values. Returns undefined for non-marketplace orders.
+ */
+export function marketplaceShipping(
+  order: OutgoingOrder | undefined | null,
+): { courier: string; trackingNo: string } | undefined {
+  if (!isMarketplaceOrder(order) || !order) return undefined;
+  const s = seedNum(order.id);
+  const courier = MARKETPLACE_COURIERS[s % MARKETPLACE_COURIERS.length]!;
+  const digits = String(1_000_000_000 + ((s * 2654435761) % 9_000_000_000));
+  return { courier, trackingNo: `TRK${digits}` };
+}
 
 // Stage status assigned to a seed task — mostly Open, some Shipped, the occasional
 // Canceled, so all states are demonstrable (deterministic).

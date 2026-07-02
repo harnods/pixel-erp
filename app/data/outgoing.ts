@@ -127,6 +127,16 @@ export function skuLineQty(seed: number, i: number): number {
 const MARKETPLACES = ['Shopee', 'Tokopedia', 'Lazada', 'TikTok Shop', 'Blibli']
 const STORE_NAME = 'Central Perk'
 
+/**
+ * True when an order came from a Desty marketplace channel — its source is
+ * "{Marketplace}: {store name}" (e.g. "Shopee: Central Perk"). ERP ("Sales Order")
+ * and manual ("Manual") orders return false. Marketplace orders are fulfilled in
+ * full: their SKU lines cannot be deselected during picking or packing.
+ */
+export function isMarketplaceOrder(o: OutgoingOrder | undefined | null): boolean {
+  return !!o && o.source !== "Sales Order" && o.source !== "Manual" && o.source.includes(":");
+}
+
 // Customers the outbound orders ship to (parallels the receipt vendor).
 const CUSTOMERS = [
   'Anomali Coffee', 'Tanamera Coffee Roastery', 'Hotel Mulia Senayan',
