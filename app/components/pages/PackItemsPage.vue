@@ -10,6 +10,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getPackingLineItems } from '~/data/packingTaskDetails'
 import { getPackingTask, savePackingDraft, endPacking } from '~/data/packingTasks'
+import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -17,11 +18,34 @@ const router = useRouter()
 const task = computed(() => getPackingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPackingLineItems(task.value) : [])
 
+// Marketplace orders must be fulfilled in full — every picked unit has to be packed
+// (no short-packing). The order = picked side is enforced upstream at picking, where a
+// marketplace order can't be short-picked, so a full flow ends with packed = picked = order.
+const order = computed(() => outgoingOrders.find(o => o.id === task.value?.salesOrderId))
+const isMarketplace = computed(() => isMarketplaceOrder(order.value))
+const allPicked = computed(() =>
+  lineItems.value.length > 0 &&
+  lineItems.value.every(it => (draftQty.value[it.key] ?? 0) === it.pickedQty),
+)
+const canEndPacking = computed(() => !isMarketplace.value || allPicked.value)
+
 const startDateLabel = computed(() => {
   const d = task.value?.startDate
   if (!d) return '—'
   const dt = new Date(d)
   const date = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  const time = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+  return `${date}, ${time}`
+})
+
+// Due date carries an end-of-day cut-off for marketplace orders (…T23:59); show the
+// time only when the ISO string includes one.
+const dueDateLabel = computed(() => {
+  const d = order.value?.dueDate
+  if (!d) return '—'
+  const dt = new Date(d)
+  const date = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  if (!d.includes('T')) return date
   const time = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
   return `${date}, ${time}`
 })
@@ -88,6 +112,11 @@ function endPackingClick() {
     toast.notify({ variant: 'danger', title: 'Enter packed qty for at least 1 item' })
     return
   }
+  if (!canEndPacking.value) {
+    showQtyErrors.value = true
+    toast.notify({ variant: 'danger', title: 'Marketplace orders must be packed in full', description: 'Pack every picked unit — packed qty must match the picked qty for every item.' })
+    return
+  }
   showConfirm.value = true
 }
 function commit() {
@@ -141,6 +170,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
       <div class="pak-header">
         <ContentList label="Sales order" :value="task.salesNo" />
+        <ContentList label="Source" :value="order?.source || '—'" />
+        <ContentList label="Due date" :value="dueDateLabel" />
         <ContentList label="Warehouse" :value="task.warehouseName" />
         <ContentList label="Assignee" :value="task.assignee" />
         <ContentList label="Start date" :value="startDateLabel" />
@@ -156,7 +187,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <div class="pak-sku-section">
         <div class="pak-filter-bar">
           <div class="pak-filter-bar-left">
-            <span class="pak-editing-hint">Match the picked goods to this order and enter the packed qty.</span>
+            <span class="pak-editing-hint">
+              {{ isMarketplace
+                ? 'Marketplace order — pack every picked unit in full to end packing.'
+                : 'Match the picked goods to this order and enter the packed qty.' }}
+            </span>
             <button class="pak-link-btn" @click="packAll">Pack all</button>
           </div>
           <div class="pak-search-wrap">
@@ -174,7 +209,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <tr>
                   <th class="pak-th">Product</th>
                   <th class="pak-th">SKU</th>
-                  <th class="pak-th">Storage location</th>
+                  <th class="pak-th pak-th--num">Order qty</th>
                   <th class="pak-th pak-th--num">Picked qty</th>
                   <th class="pak-th pak-th--num">Packed qty</th>
                   <th class="pak-th pak-th--num">Outstanding</th>
@@ -185,7 +220,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <tr v-for="item in pagedItems" :key="item.key" class="pak-row">
                   <td class="pak-td"><ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" /></td>
                   <td class="pak-td">{{ item.skuCode }}</td>
-                  <td class="pak-td">{{ item.binLocation }}</td>
+                  <td class="pak-td pak-td--num">{{ fmt(item.orderQty) }}</td>
                   <td class="pak-td pak-td--num">{{ fmt(item.pickedQty) }}</td>
                   <td class="pak-td pak-td--input" :class="{ 'pak-td--input--error': showQtyErrors && !(draftQty[item.key] ?? 0) }">
                     <input
@@ -217,7 +252,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="pak-btn pak-btn--ghost" @click="goBack">Cancel</button>
       <button class="pak-btn pak-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="pak-btn pak-btn--primary" @click="endPackingClick">End packing</button>
+      <button class="pak-btn pak-btn--primary" :disabled="!canEndPacking" @click="endPackingClick">End packing</button>
     </footer>
   </div>
 
@@ -267,7 +302,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
-.pak-header { display: flex; gap: var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.pak-header { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .pak-header :deep(.content-list) { padding-top: 0; }
 .pak-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pak-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
@@ -312,6 +347,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pak-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-8) 0; }
 
 .pak-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; transition: background 0.15s; }
+.pak-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.pak-btn--primary:disabled:hover { background: var(--mp-background-brand-bold, #029861); }
 .pak-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-secondary); }
 .pak-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .pak-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }

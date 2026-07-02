@@ -10,7 +10,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getDeliveryLineItems, allDeliveryTasksFlat } from '~/data/deliveryTaskDetails'
-import { getDeliveryTask, handoverToCourier } from '~/data/deliveryTasks'
+import { getDeliveryTask, handoverToCourier, marketplaceShipping } from '~/data/deliveryTasks'
 import { getPackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { outgoingOrders, outgoingStage } from '~/data/outgoing'
@@ -55,8 +55,15 @@ function openShip() {
 }
 // Scan the physical package label → marks the package out of the warehouse.
 // (Demo: clicking Scan auto-fills the package label with the packing no.)
+// For a marketplace order the scan also pulls the courier + tracking no. the channel
+// pre-assigned on the sales order, so the operator doesn't key them in by hand.
 function verifyPackage() {
   if (!packageScan.value.trim()) packageScan.value = task.value?.packingTaskNo ?? 'Package'
+  const mp = marketplaceShipping(linkedOrder.value)
+  if (mp) {
+    if (!courierId.value.trim())  courierId.value  = mp.courier
+    if (!trackingNo.value.trim()) trackingNo.value = mp.trackingNo
+  }
   packageVerified.value = true
 }
 const evidenceFiles = ref<FileList | null>(null)

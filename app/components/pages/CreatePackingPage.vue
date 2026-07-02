@@ -7,7 +7,7 @@ import {
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getPickingTask } from '~/data/pickingTasks'
 import { addPackingTask } from '~/data/packingTasks'
-import { outgoingOrders, skuLineQty } from '~/data/outgoing'
+import { outgoingOrders, skuLineQty, isMarketplaceOrder } from '~/data/outgoing'
 import { CATALOG } from '~/data/catalog'
 
 const router = useRouter()
@@ -43,7 +43,7 @@ const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.val
 // ─── Picked items per sales order (what's available to pack) ─────────────────────
 function seedNum(id: string): number { return Number(id.replace(/\D/g, '')) || 0 }
 interface PackLine { key: string; sku: string; product: string; desc: string; img: string; unit: string; order: number; picked: number }
-interface OrderTable { orderId: string; salesNo: string; customer: string; lines: PackLine[] }
+interface OrderTable { orderId: string; salesNo: string; customer: string; isMarketplace: boolean; lines: PackLine[] }
 
 const orderTables = computed<OrderTable[]>(() => {
   const p = pick.value
@@ -69,17 +69,29 @@ const orderTables = computed<OrderTable[]>(() => {
       orderId,
       salesNo: p.salesNos[oi] ?? o?.salesNo ?? orderId,
       customer: o?.customer ?? '',
+      isMarketplace: isMarketplaceOrder(o),
       lines,
     }
   })
 })
+const hasMarketplaceOrder = computed(() => orderTables.value.some(t => t.isMarketplace))
 
 // ─── Supervisor edits: include/exclude a SKU / a whole sales order (default on) ──
 // Packed qty is NOT editable — packing packs exactly what was picked; any shortfall
 // already happened at picking. The supervisor only chooses WHAT to pack.
 const excludedKeys = ref(new Set<string>())
-function isSelected(key: string) { return !excludedKeys.value.has(key) }
+// Marketplace orders are packed in full — every SKU of that sales order stays in.
+const lockedKeys = computed(() => {
+  const s = new Set<string>()
+  for (const t of orderTables.value) {
+    if (t.isMarketplace) t.lines.forEach(l => s.add(l.key))
+  }
+  return s
+})
+function isLocked(key: string) { return lockedKeys.value.has(key) }
+function isSelected(key: string) { return isLocked(key) || !excludedKeys.value.has(key) }
 function toggleLine(key: string) {
+  if (isLocked(key)) return
   const s = new Set(excludedKeys.value)
   s.has(key) ? s.delete(key) : s.add(key)
   excludedKeys.value = s
@@ -91,6 +103,7 @@ function someSel(t: OrderTable) {
   return sel > 0 && sel < t.lines.length
 }
 function toggleTable(t: OrderTable) {
+  if (t.isMarketplace) return
   const s = new Set(excludedKeys.value)
   if (allSel(t)) tableKeys(t).forEach(k => s.add(k))
   else tableKeys(t).forEach(k => s.delete(k))
@@ -238,6 +251,7 @@ function handleCreate() {
         <div class="pk-sku-section">
           <h2 class="pk-section-title">Items to pack</h2>
           <p class="pk-section-desc">One packing task is created per sales order. Adjust quantities or remove SKUs as needed.</p>
+          <p v-if="hasMarketplaceOrder" class="pk-section-desc">Marketplace orders must be packed in full — their items can't be removed.</p>
           <p v-if="orderError" class="pk-tasks-error">Select at least one SKU to pack.</p>
 
           <div v-for="t in orderTables" :key="t.orderId" class="pk-order-block">
@@ -247,6 +261,7 @@ function handleCreate() {
                   :id="`pc-ord-${t.orderId}`"
                   :is-checked="allSel(t)"
                   :is-indeterminate="someSel(t)"
+                  :is-disabled="t.isMarketplace"
                   @change="toggleTable(t)"
                 />
               </span>
@@ -285,6 +300,7 @@ function handleCreate() {
                             <MpCheckbox
                               :id="`pc-line-${row.key}`"
                               :is-checked="isSelected(row.key)"
+                              :is-disabled="t.isMarketplace"
                               @change="toggleLine(row.key)"
                             />
                           </span>

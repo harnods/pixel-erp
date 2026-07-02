@@ -5,7 +5,7 @@ import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { pickableOrders, skuLineQty, type OutgoingOrder } from '~/data/outgoing'
+import { pickableOrders, skuLineQty, isMarketplaceOrder, type OutgoingOrder } from '~/data/outgoing'
 import { addPickingTask, type PickingLine } from '~/data/pickingTasks'
 import { CATALOG } from '~/data/catalog'
 import { BINS } from '~/data/receiptLineItems'
@@ -119,11 +119,29 @@ const orderTables = computed<OrderTable[]>(() =>
   })),
 )
 
+// ─── Marketplace orders are fulfilled in full ─────────────────────────────────
+// A marketplace (Desty) sales order must be picked completely — the supervisor can't
+// drop any of its SKUs. A merged row is locked whenever ANY of its member orders is a
+// marketplace order (so the SKU stays on the list to satisfy that order).
+const marketplaceOrderIds = computed(
+  () => new Set(selectedOrders.value.filter(isMarketplaceOrder).map(o => o.id)),
+)
+const hasMarketplaceOrder = computed(() => marketplaceOrderIds.value.size > 0)
+
 // ─── Supervisor edits: include/exclude a SKU (checkbox, default on) + edit qty ──
 const excludedKeys = ref(new Set<string>())
 const qtyOverrides = ref<Record<string, number>>({})
-function isSelected(key: string) { return !excludedKeys.value.has(key) }
+const lockedKeys = computed(() => {
+  const s = new Set<string>()
+  for (const g of pickRows.value) {
+    if (g.members.some(m => marketplaceOrderIds.value.has(m.orderId))) s.add(g.key)
+  }
+  return s
+})
+function isLocked(key: string) { return lockedKeys.value.has(key) }
+function isSelected(key: string) { return isLocked(key) || !excludedKeys.value.has(key) }
 function toggleLine(key: string) {
+  if (isLocked(key)) return
   const s = new Set(excludedKeys.value)
   s.has(key) ? s.delete(key) : s.add(key)
   excludedKeys.value = s
@@ -188,9 +206,12 @@ const someLinesSelected = computed(() => {
   const sel = pickRows.value.filter(g => isSelected(g.key)).length
   return sel > 0 && sel < pickRows.value.length
 })
+const allLinesLocked = computed(() => pickRows.value.length > 0 && pickRows.value.every(g => isLocked(g.key)))
 function toggleAllLines() {
+  if (allLinesLocked.value) return
   const s = new Set(excludedKeys.value)
-  if (allLinesSelected.value) pickRows.value.forEach(g => s.add(g.key))
+  // Locked (marketplace) rows can never be excluded.
+  if (allLinesSelected.value) pickRows.value.forEach(g => { if (!isLocked(g.key)) s.add(g.key) })
   else pickRows.value.forEach(g => s.delete(g.key))
   excludedKeys.value = s
 }
@@ -377,6 +398,7 @@ function handleCreate() {
       <div v-if="selectedOrders.length" class="pk-sku-section">
         <h2 class="pk-section-title">Picking list</h2>
         <p class="pk-section-desc">Items to collect for this picking list. Set the quantity to pick for each line.</p>
+        <p v-if="hasMarketplaceOrder" class="pk-section-desc">Marketplace orders must be picked in full — their items can't be removed.</p>
         <p class="pk-selection-summary">
           {{ selectedOrders.length }} order{{ selectedOrders.length > 1 ? 's' : '' }}
           &nbsp;·&nbsp;
@@ -396,12 +418,14 @@ function handleCreate() {
                         id="pk-all-lines"
                         :is-checked="allLinesSelected"
                         :is-indeterminate="someLinesSelected"
+                        :is-disabled="allLinesLocked"
                         @change="toggleAllLines"
                       />
                     </span>
                   </th>
                   <th class="pk-th">Product</th>
                   <th class="pk-th">SKU</th>
+                  <th class="pk-th">Storage location</th>
                   <th class="pk-th pk-th--num">Order qty</th>
                   <th class="pk-th pk-th--num">Qty to pick</th>
                   <th class="pk-th">Unit</th>
@@ -419,6 +443,7 @@ function handleCreate() {
                       <MpCheckbox
                         :id="`pk-line-${row.key}`"
                         :is-checked="isSelected(row.key)"
+                        :is-disabled="isLocked(row.key)"
                         @change="toggleLine(row.key)"
                       />
                     </span>
@@ -427,12 +452,13 @@ function handleCreate() {
                     <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
                   </td>
                   <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
+                  <td class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
                   <td class="pk-td pk-td--num">{{ formatNum(row.orderQty) }}</td>
                   <td class="pk-td pk-td--input">
                     <input
                       type="number" min="0" :max="stockOf(row.key).cap" class="pk-qty-input"
                       :value="stockOf(row.key).toPick"
-                      :disabled="!isSelected(row.key)"
+                      :disabled="!isSelected(row.key) || isLocked(row.key)"
                       @input="setQty(row.key, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
                       @click.stop
                     />

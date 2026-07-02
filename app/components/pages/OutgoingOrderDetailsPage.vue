@@ -12,7 +12,7 @@ import { outgoingOrders, outgoingStage } from '~/data/outgoing'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
 import { getPackingForOrder } from '~/data/packingTasks'
-import { deliveryTasks, DELIVERY_COURIERS } from '~/data/deliveryTasks'
+import { deliveryTasks, marketplaceShipping } from '~/data/deliveryTasks'
 import { formatDate, formatDateTime } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
@@ -96,23 +96,18 @@ const isMarketplace = computed(() => !!order.value && order.value.source !== 'Sa
 const dueDateDisplay = computed(() =>
   order.value ? (isMarketplace.value ? formatDateTime(order.value.dueDate) : formatDate(order.value.dueDate)) : '—',
 )
-const MP_COURIERS = DELIVERY_COURIERS.filter(c => c !== 'Internal fleet')
 // Courier / tracking no. surface from the linked delivery task; for marketplace orders
-// they're pre-assigned by the channel even before shipping is processed.
+// they're pre-assigned by the channel even before shipping is processed (same source of
+// truth the shipping handover auto-fills from).
 const courier = computed(() => {
   const fromTask = linkedDelivery.value.find(d => d.courier)?.courier
   if (fromTask) return fromTask
-  if (isMarketplace.value && order.value) return MP_COURIERS[seedNum(order.value.id) % MP_COURIERS.length]!
-  return '—'
+  return marketplaceShipping(order.value)?.courier ?? '—'
 })
 const trackingNo = computed(() => {
   const fromTask = linkedDelivery.value.find(d => d.trackingNo)?.trackingNo
   if (fromTask) return fromTask
-  if (isMarketplace.value && order.value) {
-    const digits = String(1_000_000_000 + (seedNum(order.value.id) * 2654435761) % 9_000_000_000)
-    return `TRK${digits}`
-  }
-  return '—'
+  return marketplaceShipping(order.value)?.trackingNo ?? '—'
 })
 
 // ── Notes / attachment / audit (mirrors Sales order & Receipt detail) ─────────────
