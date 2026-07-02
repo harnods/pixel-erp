@@ -59,6 +59,7 @@
       :is-adding-mode="isAddingMode"
       :pins-visible="pinsVisible"
       :annotations-count="annotations.length"
+      :hidden-count="hiddenAnnotationsCount"
       @toggle-add-mode="toggleAddMode"
       @toggle-pins="togglePins"
       @exit-review-mode="exitReviewMode"
@@ -159,11 +160,25 @@ function bumpLayout() {
 let resizeObserver: ResizeObserver | null = null
 let intervalId: ReturnType<typeof setInterval> | null = null
 
+// Press "c" to start dropping a comment (like Figma). Ignored while typing
+// in a field, holding a modifier (so browser/app shortcuts still work), or
+// when review mode is off.
+function onKeydown(e: KeyboardEvent) {
+  if (!isReviewMode.value) return
+  if (e.key !== 'c' && e.key !== 'C') return
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  const el = e.target as HTMLElement | null
+  if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
+  e.preventDefault()
+  if (!isAddingMode.value) toggleAddMode()
+}
+
 onMounted(() => {
   initFromQuery()
   // capture: true also catches scrolls of inner scrollable containers
   window.addEventListener('scroll', bumpLayout, { capture: true, passive: true })
   window.addEventListener('resize', bumpLayout)
+  window.addEventListener('keydown', onKeydown)
   // Reflows that fire no scroll/resize event (async data landing, fonts,
   // images) still move anchor elements — a body ResizeObserver catches most
   // of those, and a slow interval sweeps up anything that changes layout
@@ -176,21 +191,27 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('scroll', bumpLayout, { capture: true })
   window.removeEventListener('resize', bumpLayout)
+  window.removeEventListener('keydown', onKeydown)
   resizeObserver?.disconnect()
   if (intervalId !== null) clearInterval(intervalId)
   if (rafId !== null) cancelAnimationFrame(rafId)
 })
 
 /** Current viewport position of an annotation: element anchor first, else
- *  the stored viewport percentages (legacy rows / anchor element gone). */
-function resolvePoint(ann: Annotation): { x: number; y: number } {
+ *  the stored viewport percentages (legacy rows with no anchor recorded).
+ *  Returns null when the annotation *has* an anchor but its element isn't
+ *  in the DOM right now — e.g. it lives inside a drawer/modal that's
+ *  currently closed and unmounted. In that case we don't know where it
+ *  really belongs, so we hide the pin rather than show it in the wrong
+ *  spot (falling back to the raw viewport % would land it on whatever
+ *  page content happens to sit under that pixel, e.g. the index page). */
+function resolvePoint(ann: Annotation): { x: number; y: number } | null {
   if (ann.anchor_selector && ann.anchor_x_pct != null && ann.anchor_y_pct != null) {
-    const p = pointFromAnchor({
+    return pointFromAnchor({
       selector: ann.anchor_selector,
       xPct: ann.anchor_x_pct,
       yPct: ann.anchor_y_pct,
     })
-    if (p) return p
   }
   return {
     x: (ann.x_pct / 100) * window.innerWidth,
@@ -200,12 +221,30 @@ function resolvePoint(ann: Annotation): { x: number; y: number } {
 
 const positionedAnnotations = computed(() => {
   layoutTick.value // re-resolve on scroll/resize
-  return annotations.value.map((ann, index) => ({ ann, index, ...resolvePoint(ann) }))
+  return annotations.value
+    .map((ann, index) => ({ ann, index, point: resolvePoint(ann) }))
+    .filter((p) => p.point !== null)
+    .map((p) => ({ ann: p.ann, index: p.index, x: p.point!.x, y: p.point!.y }))
+})
+
+// Anchored annotations whose element isn't currently in the DOM (e.g. a
+// closed drawer/modal) — surfaced as a count in the toolbar so they don't
+// just silently vanish from view.
+const hiddenAnnotationsCount = computed(() => {
+  layoutTick.value
+  return annotations.value.filter(a => resolvePoint(a) === null).length
 })
 
 const activePoint = computed(() => {
   layoutTick.value
   return activeAnnotation.value ? resolvePoint(activeAnnotation.value) : null
+})
+
+// If the open popover's anchor disappears mid-view (its drawer/modal just
+// closed), the pin is no longer rendered — close the popover instead of
+// leaving it invisibly "open" with no way to re-toggle it.
+watch(activePoint, (p) => {
+  if (activeAnnotationId.value && !p) activeAnnotationId.value = null
 })
 
 const pendingPoint = computed(() => {

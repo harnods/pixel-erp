@@ -56,6 +56,24 @@
       </div>
     </div>
 
+    <!-- Fix with Claude — only rendered when the local bridge is running -->
+    <div v-if="fixAvailable" class="pr-popover__fix">
+      <button
+        v-if="fixState === 'idle' || fixState === 'error'"
+        class="pr-fix-btn"
+        @click="runFix"
+      >
+        ⚡ Fix with Claude
+      </button>
+      <div v-else-if="fixState === 'running'" class="pr-fix-status pr-fix-status--running">
+        <span class="pr-fix-spinner" /> Claude is fixing…
+      </div>
+      <div v-else-if="fixState === 'done'" class="pr-fix-status pr-fix-status--done">
+        ✓ Fixed{{ fixChangedCount ? ` · ${fixChangedCount} file${fixChangedCount === 1 ? '' : 's'} changed` : '' }}
+      </div>
+      <p v-if="fixState === 'error'" class="pr-fix-error">{{ fixError }}</p>
+    </div>
+
     <div class="pr-popover__footer">
       <button
         class="pr-btn pr-btn--ghost"
@@ -74,9 +92,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { Annotation } from '../types'
 import { getAuthorColor } from '../lib/authorColor'
+import { useFixBridge } from '../composables/useFixBridge'
 
 const props = defineProps<{
   annotation: Annotation
@@ -86,6 +105,47 @@ const props = defineProps<{
   y: number
   reviewerName: string
 }>()
+
+// ── Fix with Claude (local bridge) ──────────────────────────────────────
+const { available: fixAvailable, checkAvailability, requestFix, pollStatus } = useFixBridge()
+const fixState = ref<'idle' | 'running' | 'done' | 'error'>('idle')
+const fixError = ref('')
+const fixChangedCount = ref(0)
+
+onMounted(checkAvailability)
+
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+async function runFix() {
+  fixState.value = 'running'
+  fixError.value = ''
+  try {
+    const jobId = await requestFix(props.annotation)
+    const poll = async () => {
+      try {
+        const s = await pollStatus(jobId)
+        if (s.state === 'running') {
+          pollTimer = setTimeout(poll, 1500)
+          return
+        }
+        if (s.state === 'done') {
+          fixState.value = 'done'
+          fixChangedCount.value = s.changedFiles?.length ?? 0
+        } else {
+          fixState.value = 'error'
+          fixError.value = s.error || 'Fix failed.'
+        }
+      } catch (e) {
+        fixState.value = 'error'
+        fixError.value = 'Lost connection to the fix bridge.'
+      }
+    }
+    poll()
+  } catch {
+    fixState.value = 'error'
+    fixError.value = 'Could not reach the fix bridge. Is `npx proto-review bridge` running?'
+  }
+}
 
 const emit = defineEmits<{
   close: []
@@ -290,4 +350,51 @@ function submitReply() {
   margin-left: auto;
 }
 .pr-btn--danger:hover { background: #fef2f2; }
+
+/* ── Fix with Claude ─────────────────────────────────────── */
+.pr-popover__fix {
+  padding: 8px 12px;
+  border-top: 1px solid #f0f0f0;
+}
+.pr-fix-btn {
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(90deg, #d97706, #b45309);
+  border: none;
+}
+.pr-fix-btn:hover { filter: brightness(1.07); }
+
+.pr-fix-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 2px;
+}
+.pr-fix-status--running { color: #b45309; }
+.pr-fix-status--done { color: #15803d; }
+
+.pr-fix-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #f0c896;
+  border-top-color: #b45309;
+  border-radius: 50%;
+  animation: pr-fix-spin 0.7s linear infinite;
+}
+@keyframes pr-fix-spin { to { transform: rotate(360deg); } }
+
+.pr-fix-error {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #dc2626;
+}
 </style>

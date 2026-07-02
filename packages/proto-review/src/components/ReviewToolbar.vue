@@ -33,6 +33,9 @@
         <span class="pr-toolbar__name">{{ reviewerName }}</span>
         <span class="pr-toolbar__count" v-if="annotationsCount">
           {{ annotationsCount }} comment{{ annotationsCount === 1 ? '' : 's' }}
+          <template v-if="hiddenCount">
+            · <span :title="`${hiddenCount} comment${hiddenCount === 1 ? '' : 's'} inside a closed panel — open it to see the pin`">{{ hiddenCount }} hidden</span>
+          </template>
         </span>
       </div>
       <div class="pr-toolbar__actions">
@@ -71,6 +74,7 @@ const props = defineProps<{
   isAddingMode: boolean
   pinsVisible: boolean
   annotationsCount: number
+  hiddenCount: number
 }>()
 
 const emit = defineEmits<{

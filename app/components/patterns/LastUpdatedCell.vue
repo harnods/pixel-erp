@@ -4,21 +4,14 @@
  * line, the user who made the change as a caption below. Used by the (default-hidden)
  * Last updated column across every table that has column settings.
  */
-const props = defineProps<{ at?: string; by?: string }>()
+import { formatDateTime } from '~/utils/date'
 
-function fmt(iso?: string) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  const date = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
-  const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
-  return `${date}, ${time}`
-}
+defineProps<{ at?: string; by?: string }>()
 </script>
 
 <template>
   <div class="lu-cell">
-    <span class="lu-date">{{ fmt(at) }}</span>
+    <span class="lu-date">{{ formatDateTime(at) }}</span>
     <span class="lu-by">{{ by || '—' }}</span>
   </div>
 </template>

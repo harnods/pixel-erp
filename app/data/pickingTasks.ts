@@ -1,8 +1,8 @@
 import { reactive } from "vue";
 import { warehouses, picForWarehouse } from "./warehouses";
-import { outgoingOrders, pickableOrders, canCreatePicking, skuLineQty, shippedSeeds, type OutgoingOrder } from "./outgoing";
-import { CATALOG } from "./catalog";
-import { BINS } from "./receiptLineItems";
+import { outgoingOrders, pickableOrders, canCreatePicking, shippedSeeds, type OutgoingOrder } from "./outgoing";
+import { orderSkuLines } from "./inventory";
+import { binForSku } from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
@@ -56,30 +56,22 @@ const PICKING_WAREHOUSES = warehouses.filter(
   (w) => !w.isDefault && w.status === "active",
 );
 
-function seedNum(id: string): number { return Number(id.replace(/\D/g, "")) || 0; }
-function hashStr(s: string): number {
-  let h = 0;
-  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return h;
-}
-function binForSku(sku: string): string { return BINS[hashStr(sku) % BINS.length]!; }
-
-/** Build the default pick lines (all SKUs of the given orders). */
+/** Build the default pick lines (all SKUs of the given orders). SKUs come from the
+ *  product DB, drawn from what each order's warehouse actually stocks, so every pick
+ *  line maps to a real bin. */
 export function buildPickingLines(salesOrderIds: string[], salesNos: string[]): PickingLine[] {
   const lines: PickingLine[] = [];
   salesOrderIds.forEach((orderId, oi) => {
     const o = outgoingOrders.find((x) => x.id === orderId);
     if (!o) return;
-    const n = Math.min(o.skuQty, CATALOG.length);
-    const base = seedNum(orderId);
-    for (let i = 0; i < n; i++) {
-      const item = CATALOG[(base * 7 + i * 13) % CATALOG.length]!;
+    for (const l of orderSkuLines(o)) {
+      const p = l.product;
       lines.push({
-        key: `${orderId}::${item.sku}`,
+        key: `${orderId}::${p.sku}`,
         orderId,
         salesNo: salesNos[oi] ?? o.salesNo,
-        sku: item.sku, product: item.name, desc: item.desc, img: item.img,
-        unit: item.unit, bin: binForSku(item.sku), qty: skuLineQty(base, i),
+        sku: p.sku, product: p.name, desc: p.desc, img: p.img,
+        unit: p.unit, bin: binForSku(o.warehouseId, p.sku), qty: l.qty,
       });
     }
   });
