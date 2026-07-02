@@ -172,6 +172,28 @@ export function getStorageTree(warehouseId: string): LocNode[] {
   return store[warehouseId]!
 }
 
+/**
+ * For each stock index [0, skuTotal), the code-path of the leaf bin that holds it
+ * (root → leaf codes, e.g. "L1 / ZA / A01 / R01 / RK03"). Leaves tile the stock array
+ * exactly, so every product maps to a real location — this is what makes the location
+ * shown on a product/batch/serial match the location you opened it from.
+ */
+export function stockLocationPaths(warehouseId: string): string[] {
+  const paths: string[] = []
+  const walk = (nodes: LocNode[], trail: string[]) => {
+    for (const n of nodes) {
+      const here = [...trail, n.code]
+      if (n.children.length) walk(n.children, here)
+      else {
+        const p = here.join(' / ')
+        for (let i = 0; i < n.skuQty; i++) paths[n.skuStart + i] = p
+      }
+    }
+  }
+  walk(getStorageTree(warehouseId), [])
+  return paths
+}
+
 /** A location node + its ancestor path (root → node), for the detail page. */
 export function findLocation(warehouseId: string, locId: string): { node: LocNode; path: LocNode[] } | undefined {
   const walk = (nodes: LocNode[], trail: LocNode[]): { node: LocNode; path: LocNode[] } | undefined => {

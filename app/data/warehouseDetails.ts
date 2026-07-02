@@ -2,6 +2,7 @@ import { warehouses } from './warehouses'
 import { CATALOG } from './catalog'
 import { TODAY } from './master'
 import type { Warehouse } from './types'
+import { stockLocationPaths } from './storageLocations'
 
 /** A tracked batch (lot) of a product within a warehouse (Batches tab).
  *  A batch sits in one bin; a batch split across bins is modelled as separate rows. */
@@ -187,12 +188,27 @@ function seedFromId(id: string): number {
 export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   const wh = warehouses.find((w) => w.id === id)
   if (!wh) return undefined
+  // stock count matches the index "SKU Total" exactly
+  const stock = generateStock(wh.skuTotal, seedFromId(id))
+  // Assign each product the REAL storage-tree bin it occupies (leaves tile the stock
+  // array 1:1), so a product/batch/serial's location always matches the location you
+  // opened it from — no more "Rack 03 contains an item tagged Rack 05".
+  const paths = stockLocationPaths(id)
+  stock.forEach((item, i) => {
+    const loc = paths[i]
+    if (!loc) return
+    item.locations = [loc]
+    item.batches?.forEach((b) => { b.location = loc })
+    if (item.serials) {
+      item.serials.available.forEach((u) => { u.location = loc })
+      item.serials.reserved.forEach((u) => { u.location = loc })
+    }
+  })
   return {
     ...wh,
     description: wh.description ?? descriptions[id] ?? '—',
     pic: wh.pics.map((p) => p.name).join(', ') || '—',
-    // stock count matches the index "SKU Total" exactly
-    stock: generateStock(wh.skuTotal, seedFromId(id)),
+    stock,
   }
 }
 
