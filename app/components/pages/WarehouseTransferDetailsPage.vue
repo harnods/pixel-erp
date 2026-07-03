@@ -2,33 +2,22 @@
 import { ref, computed } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpIcon, MpSpinner, toast,
+  MpTooltip, MpIcon, MpSpinner,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
-import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
-import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import { formatDateLong } from '~/utils/date'
 import {
   warehouseTransfers, getTransfer, transferLineItems, transferMemo, transferAttachments,
-  transferUpdatedBy, transferUpdatedAt, transferActivityEntries, transferApprovalLog,
-  deleteTransfers, duplicateTransfer, approveTransfer,
+  transferUpdatedBy, transferUpdatedAt, transferActivityEntries, deleteTransfers, duplicateTransfer,
 } from '~/data/warehouseTransfers'
-import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
-
-// Shared with the index page — "As user" (no Approve) vs "As manager" (can approve).
-const { viewAs, setViewAs } = useApprovalViewAs()
-const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
-  { value: 'user', label: 'As user' },
-  { value: 'manager', label: 'As manager' },
-]
 
 const transfer = computed(() => getTransfer(props.orderId))
 const lineItems = computed(() => transfer.value ? transferLineItems(transfer.value) : [])
@@ -37,15 +26,6 @@ const attachments = computed(() => transfer.value ? transferAttachments(transfer
 const lastUpdatedBy = computed(() => transfer.value ? transferUpdatedBy(transfer.value) : '')
 const lastUpdatedAt = computed(() => transfer.value ? transferUpdatedAt(transfer.value) : new Date().toISOString())
 const activityEntries = computed(() => transfer.value ? transferActivityEntries(transfer.value) : [])
-const approvalLog = computed(() => transfer.value ? transferApprovalLog(transfer.value) : null)
-const approvalLogOpen = ref(false)
-// Approve is only offered to a manager viewing a transfer that's still awaiting approval.
-const canApprove = computed(() => viewAs.value === 'manager' && transfer.value?.status === 'awaiting approval')
-function approve() {
-  if (!transfer.value) return
-  approveTransfer(transfer.value.id)
-  toast.notify({ variant: 'success', title: `${transfer.value.number} approved` })
-}
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
@@ -161,10 +141,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         <button class="detail-breadcrumb" @click="goBack">All warehouse transfers</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ transfer.number }}</h1>
-          <ErpStatusBadge
-            v-if="transfer.status === 'awaiting approval'"
-            status="awaiting approval" badge-for="additionalInformation" size="md"
-          />
           <MpPopover id="wtd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">
@@ -191,12 +167,10 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </div>
       </div>
 
-      <!-- Right-side actions (warehouse transfer has an approval flow) —
-           manager view adds a primary Approve button ahead of the icon actions. -->
+      <!-- Right-side icon actions (warehouse transfer has an approval flow) -->
       <div class="detail-titlerow-right">
-        <button v-if="canApprove" class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
         <MpTooltip id="wtd-tt-tasks" label="Approval log" placement="bottom" use-portal>
-          <button class="detail-icon-btn" aria-label="Approval log" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></button>
+          <button class="detail-icon-btn" aria-label="Approval log"><MpIcon name="task-todo" size="md" /></button>
         </MpTooltip>
         <MpTooltip id="wtd-tt-comments" label="Comments" placement="bottom" use-portal>
           <button class="detail-icon-btn" aria-label="Comments"><MpIcon name="comment" size="md" /></button>
@@ -310,13 +284,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       @close="activityOpen = false"
     />
 
-    <ApprovalLogModal
-      :is-open="approvalLogOpen"
-      :subject="transfer.number"
-      :log="approvalLog"
-      @close="approvalLogOpen = false"
-    />
-
     <!-- Delete warehouse transfer -->
     <MpModal
       id="wtd-delete" :is-open="deleteOpen" size="md"
@@ -358,24 +325,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     <p>Warehouse transfer not found.</p>
     <button class="detail-breadcrumb" @click="goBack">Back to warehouse transfers</button>
   </div>
-
-  <!-- ── Demo scenario FAB (bottom-right) — shared with the index page ── -->
-  <MpPopover id="wtd-demo-fab" is-close-on-select use-portal placement="top-end">
-    <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change approval view">
-        <MpIcon name="sliders" size="md" color="icon.inverse" />
-      </button>
-    </MpPopoverTrigger>
-    <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Approval view</p>
-      <MpPopoverList>
-        <MpPopoverListItem
-          v-for="v in viewAsOptions" :key="v.value"
-          :is-active="v.value === viewAs" @click="setViewAs(v.value)"
-        >{{ v.label }}</MpPopoverListItem>
-      </MpPopoverList>
-    </MpPopoverContent>
-  </MpPopover>
 </template>
 
 <style scoped>
@@ -385,7 +334,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px); }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.detail-titlerow-right { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
+.detail-titlerow-right { display: flex; align-items: center; gap: var(--mp-spacing-1); flex-shrink: 0; }
 .detail-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
@@ -464,17 +413,4 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .wt-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
 .wt-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
 .wt-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
-
-/* Demo scenario FAB (matches the index page) */
-.demo-fab {
-  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
-  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: #fff;
-  cursor: pointer; z-index: 1200;
-  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
-}
-.demo-fab:hover { opacity: 0.9; }
-.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>

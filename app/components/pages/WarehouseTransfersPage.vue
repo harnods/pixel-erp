@@ -2,32 +2,22 @@
 import { ref, reactive, computed, onMounted, watch, inject } from 'vue'
 import {
   MpIcon, MpTooltip, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css, toast,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
-import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import {
   warehouseTransfers, transferWarehouseOptions, transferMemo, transferUpdatedBy, transferUpdatedAt,
-  transferApprovalLog, deleteTransfers, duplicateTransfer, approveTransfer,
-  type WarehouseTransfer, type ApprovalLog,
+  deleteTransfers, duplicateTransfer,
+  type WarehouseTransfer,
 } from '~/data/warehouseTransfers'
-import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
 const route = useRoute()
 const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
-
-// ─── Approval view — demo toggle: "As user" (no Approve) vs "As manager" (can approve).
-// Shared with the transfer detail page (module-level singleton) so it carries over. ────
-const { viewAs, setViewAs } = useApprovalViewAs()
-const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
-  { value: 'user', label: 'As user' },
-  { value: 'manager', label: 'As manager' },
-]
 
 // ─── Columns (checkbox is rendered by ErpTablePage as the first column) ──────────
 const columns: TableColumn[] = [
@@ -59,15 +49,6 @@ function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Tab: "All warehouse transfers" vs "Awaiting approval" (driven by ?tab=) ──────
 const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
-// A regular user has no bulk/approve capability on the Awaiting approval tab — hide
-// the row checkboxes entirely so there's nothing to select.
-const showCheckbox = computed(() => !(isAwaiting.value && viewAs.value === 'user'))
-// Sticky actions column width — wide enough for whichever button set the row shows:
-// manager = Approve + 2 icons + kebab (4); user = Approval log + Comment + View details (3).
-const actionsWidth = computed(() => {
-  if (!isAwaiting.value) return undefined
-  return viewAs.value === 'manager' ? '236px' : '148px'
-})
 
 // ─── Demo scenario state (FAB) + first-load skeleton ─────────────────────────────
 type DemoState = 'data' | 'empty'
@@ -93,8 +74,9 @@ const destLabel = computed(() => whOptions.value.find(o => o.value === destFilte
 // ─── Rows (demo state → tab → origin/destination filter; search handled below) ────
 const baseRows = computed<WarehouseTransfer[]>(() => {
   if (demoState.value === 'empty') return []
+  // Awaiting-approval flow is parked — show the table's empty state for now.
+  if (isAwaiting.value) return []
   let list = [...warehouseTransfers]
-  if (isAwaiting.value) list = list.filter(t => t.status === 'awaiting approval')
   if (originFilter.value) list = list.filter(t => t.originId === originFilter.value)
   if (destFilter.value) list = list.filter(t => t.destinationId === destFilter.value)
   return list
@@ -124,33 +106,11 @@ function duplicate(row: WarehouseTransfer) {
   const copy = duplicateTransfer(row.id)
   if (copy) router.push(`/warehouse-transfers/${copy.id}/edit`)
 }
-function approve(row: WarehouseTransfer) {
-  approveTransfer(row.id)
-  toast.notify({ variant: 'success', title: `${row.number} approved` })
-}
 
-// ─── Approval log (single shared modal, keyed to whichever row's icon was clicked) ──
-const approvalLogSubject = ref('')
-const approvalLogData = ref<ApprovalLog | null>(null)
-const approvalLogOpen = ref(false)
-function openApprovalLog(row: WarehouseTransfer) {
-  approvalLogSubject.value = row.number
-  approvalLogData.value = transferApprovalLog(row)
-  approvalLogOpen.value = true
-}
-
-// ─── Bulk approve (Awaiting approval tab, manager view) ───────────────────────────
+// ─── Bulk delete ─────────────────────────────────────────────────────────────────
 function selectedTransfersOf(sel: Set<number>): WarehouseTransfer[] {
   return [...sel].map(i => paginated.value[i]).filter(Boolean) as WarehouseTransfer[]
 }
-function bulkApprove(sel: Set<number>, deselectAll: () => void) {
-  const rows = selectedTransfersOf(sel)
-  for (const row of rows) approveTransfer(row.id)
-  deselectAll()
-  toast.notify({ variant: 'success', title: `${rows.length} transfer${rows.length > 1 ? 's' : ''} approved` })
-}
-
-// ─── Bulk delete ─────────────────────────────────────────────────────────────────
 const bulkDeleteOpen = ref(false)
 const bulkDeleteIds = ref<string[]>([])
 const deleteReason = ref('')
@@ -189,8 +149,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
-    :actions-width="actionsWidth"
-    :has-checkbox="showCheckbox"
+    has-checkbox
     bulk-label="transfer"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -276,14 +235,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Bulk bar → delete ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
-      <!-- Awaiting approval (manager view) — bulk Approve alongside Delete -->
-      <button
-        v-if="isAwaiting && viewAs === 'manager'"
-        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-        @click="bulkApprove(selectedRows as Set<number>, deselectAll)"
-      >
-        Approve
-      </button>
       <button
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         :class="css({ color: 'var(--mp-text-critical)' })"
@@ -352,66 +303,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Actions kebab ── -->
     <template #actions="{ row }">
-      <!-- Awaiting approval, AS MANAGER — Approve (secondary) + Approval log / Comments
-           (ghost icon) + kebab, all in the one sticky actions column. -->
-      <div v-if="isAwaiting && viewAs === 'manager'" class="wt-approval-actions">
-        <button
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-          @click.stop="approve(row as unknown as WarehouseTransfer)"
-        >Approve</button>
-        <MpTooltip :id="`wt-tt-log-${row.id}`" label="Approval log" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="Approval log" @click.stop="openApprovalLog(row as unknown as WarehouseTransfer)">
-            <MpIcon name="task-todo" size="md" />
-          </button>
-        </MpTooltip>
-        <MpTooltip :id="`wt-tt-comment-${row.id}`" label="Comments" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="Comments" @click.stop>
-            <MpIcon name="comment" size="md" />
-          </button>
-        </MpTooltip>
-        <MpPopover :id="`wt-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <button class="row-kebab" aria-label="More actions">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
-              </svg>
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="viewDetails(row as unknown as WarehouseTransfer)">View details</MpPopoverListItem>
-              <MpPopoverListItem @click="duplicate(row as unknown as WarehouseTransfer)">Duplicate</MpPopoverListItem>
-              <MpPopoverListItem @click="editTransfer(row as unknown as WarehouseTransfer)">Edit</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-      </div>
-
-      <!-- Awaiting approval, AS USER — no Approve: just Approval log / Comments / View
-           details (ghost icon buttons only, no kebab — nothing else is editable). -->
-      <div v-else-if="isAwaiting" class="wt-approval-actions">
-        <MpTooltip :id="`wt-tt-log-${row.id}`" label="Approval log" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="Approval log" @click.stop="openApprovalLog(row as unknown as WarehouseTransfer)">
-            <MpIcon name="task-todo" size="md" />
-          </button>
-        </MpTooltip>
-        <MpTooltip :id="`wt-tt-comment-${row.id}`" label="Comments" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="Comments" @click.stop>
-            <MpIcon name="comment" size="md" />
-          </button>
-        </MpTooltip>
-        <MpTooltip :id="`wt-tt-view-${row.id}`" label="View details" placement="top" use-portal>
-          <button class="row-icon-ghost" aria-label="View details" @click.stop="viewDetails(row as unknown as WarehouseTransfer)">
-            <svg width="20" height="20" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpTooltip>
-      </div>
-
-      <!-- All warehouse transfers — kebab only -->
-      <MpPopover v-else :id="`wt-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+      <MpPopover :id="`wt-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <button class="row-kebab" aria-label="More actions">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -442,13 +334,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
-
-  <ApprovalLogModal
-    :is-open="approvalLogOpen"
-    :subject="approvalLogSubject"
-    :log="approvalLogData"
-    @close="approvalLogOpen = false"
-  />
 
   <!-- ── Bulk delete confirmation ── -->
   <MpModal
@@ -500,13 +385,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           v-for="s in demoStates" :key="s.value"
           :is-active="s.value === demoState" @click="setDemoState(s.value)"
         >{{ s.label }}</MpPopoverListItem>
-      </MpPopoverList>
-      <p class="demo-fab-heading">Approval view</p>
-      <MpPopoverList>
-        <MpPopoverListItem
-          v-for="v in viewAsOptions" :key="v.value"
-          :is-active="v.value === viewAs" @click="setViewAs(v.value)"
-        >{{ v.label }}</MpPopoverListItem>
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>
@@ -600,18 +478,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
-
-/* Awaiting-approval row actions — Approve (secondary) + ghost icon buttons + kebab,
-   grouped and right-aligned in the one sticky actions column. */
-.wt-approval-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
-.wt-approval-actions .row-kebab { margin-left: 0; }
-.row-icon-ghost {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
-}
-.row-icon-ghost:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Empty state */
 .empty-full { display: flex; flex-direction: column; align-items: center; }
