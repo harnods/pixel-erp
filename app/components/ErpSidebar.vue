@@ -495,6 +495,9 @@ function resolveActive(pageKey: string): {
   sub: string | null
   panel: ActivePanel | null
 } {
+  // A shortcut entry (iconType 'shortcut') points at a page owned elsewhere — record
+  // it only as a fallback so the real (non-shortcut) owner wins the active highlight.
+  let fallback: { nav: string; sub: string | null; panel: ActivePanel | null } | null = null
   for (const group of navGroups.value) {
     for (const item of group) {
       // slug-based match so names with caps/slashes (e.g. 'Stock in/out') still
@@ -508,7 +511,7 @@ function resolveActive(pageKey: string): {
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
               if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
-                return {
+                const match = {
                   nav: item.name,
                   sub: p.label,
                   // level-3 panel opened from a flyout sub-item (e.g. Products)
@@ -518,6 +521,8 @@ function resolveActive(pageKey: string): {
                     parentNavName: item.name,
                   },
                 }
+                if (p.iconType === 'shortcut') { fallback ??= match; continue }
+                return match
               }
             }
           }
@@ -526,18 +531,20 @@ function resolveActive(pageKey: string): {
       for (const pGroup of item.panelSubmenu ?? []) {
         for (const p of pGroup) {
           if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
-            return {
+            const match = {
               nav: item.name,
               sub: p.label,
               // level-2 panel opened directly from the nav item (e.g. Settings, Reports)
               panel: { title: item.name, groups: item.panelSubmenu!, parentNavName: item.name },
             }
+            if (p.iconType === 'shortcut') { fallback ??= match; continue }
+            return match
           }
         }
       }
     }
   }
-  return { nav: 'Home', sub: null, panel: null }
+  return fallback ?? { nav: 'Home', sub: null, panel: null }
 }
 
 // Map URL-first-segment keys that don't appear directly in the nav tree to their
