@@ -42,7 +42,10 @@ export function useTableState<T>(
     return [...filtered.value].sort((a, b) => {
       const av = (a as Record<string, unknown>)[sortKey.value]
       const bv = (b as Record<string, unknown>)[sortKey.value]
-      const cmp = av === bv ? 0 : av! > bv! ? 1 : -1
+      let cmp: number
+      if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv
+      // strings (incl. ISO date strings — chronological) via natural, case-insensitive compare
+      else cmp = String(av ?? '').localeCompare(String(bv ?? ''), undefined, { numeric: true, sensitivity: 'base' })
       return sortDir.value === 'asc' ? cmp : -cmp
     })
   })
@@ -71,6 +74,11 @@ export function useTableState<T>(
       sortDir.value = 'asc'
     }
   }
+  /** Set an explicit sort direction (used by the column-header sort menu). */
+  function setSort(key: string, dir: 'asc' | 'desc') {
+    sortKey.value = key
+    sortDir.value = dir
+  }
 
   return {
     search,
@@ -85,5 +93,6 @@ export function useTableState<T>(
     setPage,
     setPerPage,
     toggleSort,
+    setSort,
   }
 }

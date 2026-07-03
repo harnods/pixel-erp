@@ -91,7 +91,9 @@ function seedTasks(): PackingTask[] {
   const out: PackingTask[] = [];
   let seq = 40090;
   let idx = 0;
-  for (const pick of pickingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pick-sh-"))) {
+  // Curated demo picking lists (pick-demo-*) are left UN-packed on purpose so the
+  // "Create packing" flow is demoable; only the pre-shipped chain seeds packing here.
+  for (const pick of pickingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pick-sh-") && !t.id.startsWith("pick-demo-"))) {
     pick.salesOrderIds.forEach((orderId, j) => {
       const order = outgoingOrders.find((o) => o.id === orderId);
       if (!order) return;

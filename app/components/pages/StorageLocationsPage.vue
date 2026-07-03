@@ -162,8 +162,8 @@ function saveEdit() {
         </MpModalBody>
         <MpModalFooter>
           <div class="sl-modal-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="editOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="saveEdit">Save</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="saveEdit">Save changes</button>
           </div>
         </MpModalFooter>
       </MpModalContent>

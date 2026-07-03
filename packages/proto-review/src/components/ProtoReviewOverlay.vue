@@ -23,7 +23,7 @@
     <div
       v-if="pendingPin && pendingPoint"
       class="pr-pin-pending"
-      :style="{ left: pendingPoint.x + 'px', top: pendingPoint.y + 'px' }"
+      :style="{ left: pendingPoint.x + 'px', top: pendingPoint.y + 'px', background: authorColor }"
     >
       +
     </div>
@@ -104,6 +104,7 @@ import { useAnnotations } from '../composables/useAnnotations'
 import { showLauncher, cornerPosition } from '../lib/launcherConfig'
 import { focusAnnotationId } from '../lib/focusAnnotation'
 import { anchorFromPoint, pointFromAnchor } from '../lib/anchor'
+import { getAuthorColor } from '../lib/authorColor'
 import type { Annotation, PendingPin } from '../types'
 import AnnotationPin from './AnnotationPin.vue'
 import AnnotationPopover from './AnnotationPopover.vue'
@@ -120,6 +121,7 @@ const {
   pinsVisible,
   reviewerName,
   routeKey,
+  viewPath,
   initFromQuery,
   exitReviewMode,
   enterReviewMode,
@@ -132,6 +134,9 @@ const {
 
 const { annotations, addAnnotation, addReply, updatePosition, toggleResolved, deleteAnnotation } =
   useAnnotations(routeKey)
+
+// Pending pin uses the reviewer's own color, matching the pin it becomes.
+const authorColor = computed(() => getAuthorColor(reviewerName.value))
 
 const pendingPin = ref<PendingPin | null>(null)
 const activeAnnotationId = ref<string | null>(null)
@@ -328,7 +333,7 @@ async function handleNewComment(author: string, body: string) {
     anchorYPct: p.anchor?.yPct ?? null,
     author,
     body,
-    path: route.path,
+    path: viewPath.value,
   })
   pendingPin.value = null
   cancelAddMode()
@@ -379,15 +384,14 @@ async function handleDelete(annotationId: string) {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #f5a623;
   color: #fff;
   font-size: 18px;
-  font-weight: 300;
+  font-weight: 400;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px dashed #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   transform: translate(-50%, -50%);
   pointer-events: none;
   animation: pr-pulse 1s ease-in-out infinite;

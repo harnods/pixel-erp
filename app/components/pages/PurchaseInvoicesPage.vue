@@ -14,13 +14,13 @@ const aireneOpen = inject<Ref<boolean>>('aireneOpen')
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',       label: 'Date',       width: '120px'                                  },
-  { key: 'number',     label: 'Number',     width: '200px', sortable: true                  },
+  { key: 'date',       label: 'Date',       width: '120px',                                 sortType: 'date'   },
+  { key: 'number',     label: 'Number',     width: '200px', sortable: true,                 sortType: 'text'   },
   { key: 'attachment', label: '',           width: '40px',  noHeader: true, align: 'center' },
-  { key: 'vendorName', label: 'Vendor',     width: '240px', sortable: true                  },
-  { key: 'dueDate',    label: 'Due date',   width: '108px'                                  },
-  { key: 'status',     label: 'Status',     width: '160px'                                  },
-  { key: 'amount',     label: 'Amount',     width: '160px', align: 'right', sortable: true  },
+  { key: 'vendorName', label: 'Vendor',     width: '240px', sortable: true,                 sortType: 'text'   },
+  { key: 'dueDate',    label: 'Due date',   width: '108px',                                 sortType: 'date'   },
+  { key: 'status',     label: 'Status',     width: '160px',                                 sortType: 'text'   },
+  { key: 'amount',     label: 'Amount',     width: '160px', align: 'right', sortable: true,  sortType: 'number' },
   { key: 'tags',       label: 'Tags',       width: '160px'                                  },
 ]
 
@@ -56,7 +56,7 @@ const rows = computed<Row[]>(() =>
 
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState(rows, {
   filterFn: (row: Row, s, status) =>
     (row.number.toLowerCase().includes(s) || row.vendorName.toLowerCase().includes(s)) &&
@@ -94,6 +94,7 @@ const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last u
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
+function hideColumn(key: string) { columnVisibility[key] = false }
 </script>
 
 <template>
@@ -111,6 +112,8 @@ const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnV
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
   >
 
     <!-- ── Stats section ── -->

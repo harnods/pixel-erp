@@ -32,7 +32,7 @@
  *   sort(key)
  */
 
-import { MpCheckbox, MpSkeleton } from '@mekari/pixel3'
+import { MpCheckbox, MpSkeleton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpPagination from './ErpPagination.vue'
 
 const sendAireneMessage = inject<(text: string, context?: string) => void>('sendAireneMessage')
@@ -44,6 +44,10 @@ export interface TableColumn {
   width?: string
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
+  /** Enables the ERP column-header sort menu (hover icon → popover). The options shown
+   *  depend on the type: text = A–Z / Z–A, number = Low→High / High→Low, date =
+   *  Oldest / Newest first. Plus "Hide column". */
+  sortType?: 'text' | 'number' | 'date'
   isFixed?: boolean  // sticky right (for a data column; actions are always sticky)
   noHeader?: boolean // render empty <th> — use for icon-only columns (e.g. attachment)
 }
@@ -86,9 +90,18 @@ const emit = defineEmits<{
   pageChange: [page: number]
   perPageChange: [perPage: number]
   sort: [key: string]
+  sortChange: [key: string, dir: 'asc' | 'desc']
+  hideColumn: [key: string]
   clearFilters: []
   selectionChange: [count: number]
 }>()
+
+// ERP column sort: picking the already-active direction clears the sort (back to
+// default order); otherwise apply the chosen direction. Empty key = unsorted.
+function onSortOpt(key: string, dir: 'asc' | 'desc') {
+  if (props.sortKey === key && props.sortDir === dir) emit('sortChange', '', 'asc')
+  else emit('sortChange', key, dir)
+}
 
 // ─── Pagination skeleton ────────────────────────────────────────────────────
 // Briefly show the skeleton when the user changes page or rows-per-page, so every
@@ -394,16 +407,18 @@ const bulkCountLabel = computed(() => {
               :key="col.key"
               class="erp-th"
               :class="{
-                'erp-th--sortable': col.sortable,
+                'erp-th--sortable': col.sortable && !col.sortType,
+                'erp-th--menu':     !!col.sortType,
                 'erp-th--right':    col.align === 'right',
                 'erp-th--center':   col.align === 'center',
                 'erp-th--fixed':    col.isFixed,
               }"
               :style="col.width ? { width: col.width, minWidth: col.width } : {}"
-              @click="col.sortable ? emit('sort', col.key) : undefined"
+              @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
             >
-              <span v-if="hasCheckbox && ci === 0" class="erp-cell-check">
+              <span class="th-inner">
                 <MpCheckbox
+                  v-if="hasCheckbox && ci === 0"
                   id="erp-select-all"
                   :is-checked="allSelected"
                   :is-indeterminate="someSelected"
@@ -411,9 +426,40 @@ const bulkCountLabel = computed(() => {
                   @click.stop
                 />
                 <span v-if="!col.noHeader" class="th-label">{{ col.label }}</span>
-              </span>
-              <span v-else-if="!col.noHeader" class="th-label">
-                {{ col.label }}
+                <!-- ERP column sort menu: hover reveals the icon; click opens options -->
+                <MpPopover
+                  v-if="col.sortType"
+                  :id="`erp-sort-${col.key}`"
+                  is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start"
+                >
+                  <MpPopoverTrigger>
+                    <button
+                      class="erp-sort-btn"
+                      :class="{ 'erp-sort-btn--active': sortKey === col.key }"
+                      aria-label="Sort column" @click.stop
+                    >
+                      <MpIcon name="sort-default" size="sm" />
+                    </button>
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
+                    <MpPopoverList>
+                      <template v-if="col.sortType === 'number'">
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'asc')"><span class="erp-sort-opt"><MpIcon name="arrows-up" size="sm" />Low to high<MpTooltip v-if="sortKey === col.key && sortDir === 'asc'" :id="`erp-sort-reset-${col.key}-a`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'desc')"><span class="erp-sort-opt"><MpIcon name="arrows-down" size="sm" />High to low<MpTooltip v-if="sortKey === col.key && sortDir === 'desc'" :id="`erp-sort-reset-${col.key}-d`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                      </template>
+                      <template v-else-if="col.sortType === 'date'">
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'asc')"><span class="erp-sort-opt"><MpIcon name="arrows-up" size="sm" />Oldest first<MpTooltip v-if="sortKey === col.key && sortDir === 'asc'" :id="`erp-sort-reset-${col.key}-a`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'desc')"><span class="erp-sort-opt"><MpIcon name="arrows-down" size="sm" />Newest first<MpTooltip v-if="sortKey === col.key && sortDir === 'desc'" :id="`erp-sort-reset-${col.key}-d`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                      </template>
+                      <template v-else>
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'asc')"><span class="erp-sort-opt"><MpIcon name="arrows-up" size="sm" />A - Z<MpTooltip v-if="sortKey === col.key && sortDir === 'asc'" :id="`erp-sort-reset-${col.key}-a`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'desc')"><span class="erp-sort-opt"><MpIcon name="arrows-down" size="sm" />Z - A<MpTooltip v-if="sortKey === col.key && sortDir === 'desc'" :id="`erp-sort-reset-${col.key}-d`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                      </template>
+                      <div class="erp-sort-divider" />
+                      <MpPopoverListItem @click="emit('hideColumn', col.key)"><span class="erp-sort-opt"><MpIcon name="hide" size="sm" />Hide column</span></MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
               </span>
             </th>
 
@@ -777,6 +823,28 @@ const bulkCountLabel = computed(() => {
   align-items: center;
   gap: var(--mp-spacing-1);
 }
+
+/* ── Column sort menu (ERP behaviour) ── */
+/* header content wraps label + sort icon; right-aligned columns push it to the end */
+.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); max-width: 100%; }
+.erp-th--right .th-inner { flex-direction: row-reverse; }
+/* icon button revealed on header hover; stays visible while its column is the sort */
+.erp-sort-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex-shrink: 0;
+  border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  visibility: hidden;
+}
+.erp-th:hover .erp-sort-btn,
+.erp-sort-btn--active { visibility: visible; }
+.erp-sort-btn:hover { background: var(--mp-background-neutral-hovered); }
+.erp-sort-btn--active { color: var(--mp-text-selected, var(--mp-text-default)); }
+/* popover option row: icon + label */
+.erp-sort-opt { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); text-transform: none; width: 100%; }
+.erp-sort-check-tt { margin-left: auto; display: inline-flex; }
+.erp-sort-check { color: var(--mp-text-selected); }
+.erp-sort-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
 
 .sort-arrows {
   display: inline-flex;

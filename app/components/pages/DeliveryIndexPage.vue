@@ -6,6 +6,7 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
 import { deliveryTasksFor, type DeliveryTask } from '~/data/deliveryTasks'
 import { warehouses } from '~/data/warehouses'
@@ -43,18 +44,24 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Columns ───────────────────────────────────────────────────────────────────
 // Delivery is per sales order — one delivery = one order.
 const columns: TableColumn[] = [
-  { key: 'taskNo',        label: 'Number',      width: '180px' },
-  { key: 'salesNo',       label: 'Sales order', width: '200px' },
-  { key: 'warehouseName', label: 'Warehouse',   width: '180px' },
-  { key: 'assignee',      label: 'Assignee',    width: '160px' },
-  { key: 'skuQty',        label: 'SKU qty',     width: '90px',  align: 'right' },
-  { key: 'orderQty',      label: 'Order qty',   width: '90px',  align: 'right' },
-  { key: 'toShipQty',     label: 'To ship',     width: '90px',  align: 'right' },
-  { key: 'status',        label: 'Status',      width: '130px' },
-  { key: 'courier',       label: 'Courier',     width: '140px' },
-  { key: 'trackingNo',    label: 'Tracking no.', width: '150px' },
-  { key: 'shippedDate',   label: 'Ship date',   width: '170px' },
+  { key: 'taskNo',        label: 'Number',      width: '180px', sortType: 'text' },
+  { key: 'salesNo',       label: 'Sales order', width: '200px', sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse',   width: '180px', sortType: 'text' },
+  { key: 'assignee',      label: 'Assignee',    width: '160px', sortType: 'text' },
+  { key: 'skuQty',        label: 'SKU qty',     width: '90px',  align: 'right', sortType: 'number' },
+  { key: 'orderQty',      label: 'Order qty',   width: '90px',  align: 'right', sortType: 'number' },
+  { key: 'toShipQty',     label: 'To ship',     width: '90px',  align: 'right', sortType: 'number' },
+  { key: 'status',        label: 'Status',      width: '130px', sortType: 'text' },
+  { key: 'courier',       label: 'Courier',     width: '140px', sortType: 'text' },
+  { key: 'trackingNo',    label: 'Tracking no.', width: '150px', sortType: 'text' },
+  { key: 'shippedDate',   label: 'Ship date',   width: '170px', sortType: 'date' },
 ]
+// Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
+// the ColumnSettings menu turns them back on.
+const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — Status + Warehouse (hidden when scoped) ───
 const warehouseFilter = ref('')
@@ -82,7 +89,7 @@ const statusLabel    = computed(() => statusOptions.find(o => o.value === status
 
 const {
   search, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<DeliveryTask>(baseTasks, {
   perPage: 25,
   filterFn: (row, s) => {
@@ -113,7 +120,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 <template>
   <ErpTablePage
-    :columns="columns"
+    :columns="visibleColumns"
     :rows="(paginated as Record<string, unknown>[])"
     :total="total"
     :current-page="currentPage"
@@ -126,6 +133,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
     <!-- ── Filter bar ── -->
@@ -172,6 +181,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
+          <ColumnSettingsMenu id="del-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-del-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">

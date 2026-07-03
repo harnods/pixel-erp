@@ -303,7 +303,7 @@ function generateCanceled(count = 7): OutgoingOrder[] {
 // "Reset demo data" clears it.
 const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
-  outgoingSnapshot ?? [...generateOrders(), ...generateShipped(), ...generateCanceled()],
+  outgoingSnapshot ?? [...generateOrders(), ...generateShipped(3), ...generateCanceled()],
 );
 
 /** Orders with a pre-wired shipped chain — consumed by the task seeds. `partial`

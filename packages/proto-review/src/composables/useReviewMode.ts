@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { normalizeRouteKey } from '../lib/routeKey'
+import { viewQuerySuffix } from '../lib/viewKey'
 
 const SESSION_KEY = 'pr-review-mode'
 
@@ -16,7 +17,13 @@ const _hideResolved = ref(true)
 export function useReviewMode() {
   const route = useRoute()
 
-  const routeKey = computed(() => normalizeRouteKey(route.path))
+  // Scope key folds in view-defining query params (e.g. ?tab=), so comments
+  // made on one tab don't leak onto the others.
+  const routeKey = computed(() => normalizeRouteKey(route.path) + viewQuerySuffix(route.query))
+
+  // Concrete path to store & navigate back to — includes the tab so the
+  // All comments panel lands on the exact tab a comment was left on.
+  const viewPath = computed(() => route.path + viewQuerySuffix(route.query))
 
   function initFromQuery() {
     const triggeredByQuery = 'review' in (route.query ?? {})
@@ -75,6 +82,7 @@ export function useReviewMode() {
     reviewerName: _reviewerName,
     hideResolved: _hideResolved,
     routeKey,
+    viewPath,
     initFromQuery,
     exitReviewMode,
     enterReviewMode,

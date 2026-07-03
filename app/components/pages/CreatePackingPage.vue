@@ -5,7 +5,7 @@ import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQtyInTask } from '~/data/pickingTasks'
+import { getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQtyInTask, type PickingTask } from '~/data/pickingTasks'
 import { addPackingTask, getPackingForOrder } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { orderSkuLines } from '~/data/inventory'
@@ -24,9 +24,18 @@ const ASSIGNEES = [
   { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
 ]
 
-// ─── Source picking task ────────────────────────────────────────────────────────
-const pickingId = route.query.pickingId as string | undefined
-const pick = computed(() => (pickingId ? getPickingTask(pickingId) : undefined))
+// ─── Source picking task(s) ─────────────────────────────────────────────────────
+// Opened from one picking list (?pickingId) or a bulk selection (?pickingIds=a,b,c).
+// All selected lists are the same warehouse (validated on the Picking index).
+const pickingIds = computed<string[]>(() => {
+  const multi = (route.query.pickingIds as string | undefined)?.split(',').map(s => s.trim()).filter(Boolean)
+  if (multi?.length) return multi
+  const single = route.query.pickingId as string | undefined
+  return single ? [single] : []
+})
+const picks = computed<PickingTask[]>(() => pickingIds.value.map(id => getPickingTask(id)).filter(Boolean) as PickingTask[])
+// Primary list — drives the warehouse + form context; order packing aggregates all lists.
+const pick = computed(() => picks.value[0])
 const warehouseName = computed(() => pick.value?.warehouseName ?? '')
 // Display-only warehouse autocomplete (locked to the picking task's warehouse)
 const warehouseAc = computed(() =>
@@ -45,9 +54,16 @@ interface PackLine { key: string; sku: string; product: string; desc: string; im
 interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; packable: boolean; lines: PackLine[] }
 
 const orderTables = computed<OrderTable[]>(() => {
-  const p = pick.value
-  if (!p) return []
-  return p.salesOrderIds.map((orderId, oi) => {
+  if (!picks.value.length) return []
+  // Union of every selected list's orders, deduped — an order split across lists (or
+  // repeated because two selected lists include it) becomes ONE packing task.
+  const orderNo = new Map<string, string>()
+  for (const p of picks.value) {
+    p.salesOrderIds.forEach((orderId, oi) => {
+      if (!orderNo.has(orderId)) orderNo.set(orderId, p.salesNos[oi] ?? orderId)
+    })
+  }
+  return [...orderNo.entries()].map(([orderId, salesNoFallback]) => {
     const o = outgoingOrders.find(x => x.id === orderId)
     // Pack the order's TOTAL picked across every picking list (an order split over 2
     // lists still packs as one), so completeness is judged at the order level.
@@ -68,7 +84,7 @@ const orderTables = computed<OrderTable[]>(() => {
     const packable = !alreadyPacked && pickedAny && (isMarketplace ? fullyPicked : true)
     return {
       orderId,
-      salesNo: p.salesNos[oi] ?? o?.salesNo ?? orderId,
+      salesNo: o?.salesNo ?? salesNoFallback,
       customer: o?.customer ?? '',
       source: o?.source ?? '',
       isMarketplace, fullyPicked, alreadyPacked, packable,
@@ -84,7 +100,7 @@ const packedTables = computed(() => orderTables.value.filter(t => t.alreadyPacke
 // several lists shows them all, not just the one this form was opened from).
 const sourcePickingNos = computed(() => {
   const seen = new Map<string, string>()
-  if (pick.value) seen.set(pick.value.id, pick.value.taskNo)
+  for (const p of picks.value) seen.set(p.id, p.taskNo)
   for (const t of packableTables.value) {
     for (const pt of getPickingForOrder(t.orderId)) {
       if (pt.status !== 'canceled' && orderPickedQtyInTask(pt, t.orderId) > 0) seen.set(pt.id, pt.taskNo)

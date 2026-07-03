@@ -58,4 +58,11 @@ export interface ProtoReviewConfig {
    * the button auto-hides for everyone else.
    */
   fixBridgeUrl?: string
+  /**
+   * Query params that define a distinct "view" (e.g. a tab) — comments scope
+   * to them so a comment on ?tab=A doesn't show on ?tab=B. Default ['tab'].
+   * Other params (?page=, ?saved=, ?review) are ignored and never fragment
+   * threads. Set [] to scope purely by path.
+   */
+  viewParams?: string[]
 }

@@ -299,7 +299,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <h3 class="linked-section-title">Picking list tasks</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
+                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Picked qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
                 <tbody>
                   <tr v-for="t in linkedPicking" :key="t.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
@@ -315,6 +315,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                       </div>
                     </td>
                     <td class="detail-td">{{ t.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(t.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(t.pickedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
                     <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
                     <td class="detail-td">{{ t.endDate ? formatDateTime(t.endDate) : '—' }}</td>
@@ -327,7 +329,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <h3 class="linked-section-title">Packing tasks</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Order qty</th><th class="detail-th detail-th--num">Packed qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
+                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Packed qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
                 <tbody>
                   <tr v-for="t in linkedPacking" :key="t.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
@@ -344,7 +346,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                     </td>
                     <td class="detail-td">{{ t.assignee }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(t.skuQty) }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(order.orderQty) }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(t.packedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
                     <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
@@ -358,7 +359,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <h3 class="linked-section-title">Delivery tasks</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Courier</th><th class="detail-th">Tracking no.</th><th class="detail-th">Status</th></tr></thead>
+                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Shipped qty</th><th class="detail-th">Status</th></tr></thead>
                 <tbody>
                   <tr v-for="d in linkedDelivery" :key="d.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
@@ -373,8 +374,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                         </button>
                       </div>
                     </td>
-                    <td class="detail-td">{{ d.courier ?? '—' }}</td>
-                    <td class="detail-td">{{ d.trackingNo ?? '—' }}</td>
+                    <td class="detail-td">{{ d.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(d.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(d.shippedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="d.status" /></td>
                   </tr>
                 </tbody>

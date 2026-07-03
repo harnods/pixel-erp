@@ -15,12 +15,21 @@
   border: 1px solid transparent;
 }
 
+/* Secondary (ERP) — black border, black text on a neutral fill. */
 .btn-enterprise--secondary {
   background: var(--mp-background-neutral);
-  border-color: var(--mp-border-bold);
-  color: var(--mp-text-secondary);
+  border-color: var(--mp-text-default);
+  color: var(--mp-text-default);
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
+
+/* Ghost — used for Cancel / dismiss actions across the app (no fill, no border). */
+.btn-enterprise--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--mp-text-secondary);
+}
+.btn-enterprise--ghost:hover { background: var(--mp-background-neutral-hovered); }
 
 .btn-enterprise--primary {
   background: var(--mp-colors-emerald-700, #029861);

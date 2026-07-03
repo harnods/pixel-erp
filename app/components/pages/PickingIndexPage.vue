@@ -6,8 +6,10 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
-import { pickingTasksFor, pickingTaskAgingDays, type PickingTask } from '~/data/pickingTasks'
+import { pickingTasksFor, pickingTaskAgingDays, isPickingFinished, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
+import { getPackingForOrder } from '~/data/packingTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 
@@ -42,17 +44,23 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'taskNo',        label: 'Number',       width: '180px' },
+  { key: 'taskNo',        label: 'Number',       width: '180px', sortType: 'text' },
   { key: 'salesNos',      label: 'Sales orders', width: '240px' },
-  { key: 'warehouseName', label: 'Warehouse',    width: '180px' },
-  { key: 'assignee',      label: 'Assignee',     width: '160px' },
-  { key: 'skuQty',        label: 'SKU qty',      width: '100px', align: 'right' },
-  { key: 'toPickQty',     label: 'To pick',      width: '100px', align: 'right' },
-  { key: 'pickedQty',     label: 'Picked qty',   width: '100px', align: 'right' },
-  { key: 'status',        label: 'Status',       width: '140px' },
-  { key: 'startDate',     label: 'Start date',   width: '170px' },
-  { key: 'endDate',       label: 'End date',     width: '190px' },
+  { key: 'warehouseName', label: 'Warehouse',    width: '180px', sortType: 'text' },
+  { key: 'assignee',      label: 'Assignee',     width: '160px', sortType: 'text' },
+  { key: 'skuQty',        label: 'SKU qty',      width: '100px', align: 'right', sortType: 'number' },
+  { key: 'toPickQty',     label: 'To pick',      width: '100px', align: 'right', sortType: 'number' },
+  { key: 'pickedQty',     label: 'Picked qty',   width: '100px', align: 'right', sortType: 'number' },
+  { key: 'status',        label: 'Status',       width: '140px', sortType: 'text' },
+  { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
+  { key: 'endDate',       label: 'End date',     width: '190px', sortType: 'date' },
 ]
+// Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
+// the ColumnSettings menu turns them back on.
+const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — max 2 quick filters: Status + Warehouse (hidden when scoped) ───
 const warehouseFilter = ref('')
@@ -71,17 +79,18 @@ const warehouseOptions = computed(() => {
   return src.map(w => ({ label: w.name, value: w.id }))
 })
 const statusOptions = [
-  { label: 'Open',        value: 'open' },
-  { label: 'In process', value: 'in progress' },
-  { label: 'Completed',   value: 'completed' },
-  { label: 'Canceled',    value: 'canceled' },
+  { label: 'Open',            value: 'open' },
+  { label: 'In process',      value: 'in progress' },
+  { label: 'Partially picked', value: 'partially picked' },
+  { label: 'Completed',       value: 'completed' },
+  { label: 'Canceled',        value: 'canceled' },
 ]
 const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
 const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
 
 const {
   search, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<PickingTask>(baseTasks, {
   perPage: 25,
   filterFn: (row, s) => {
@@ -119,12 +128,38 @@ function createPacking(row: PickingTask) {
   router.push({ path: '/barang-keluar/packing/create', query: { pickingId: row.id } })
 }
 
+// ─── Bulk → create packing tasks for several finished picking lists at once ───────
+function selectedPickingsOf(sel: Set<number>): PickingTask[] {
+  return [...sel].map(i => paginated.value[i]).filter(Boolean) as PickingTask[]
+}
+// A picking list can spawn packing tasks when it's finished (completed / partially
+// picked) and has ≥1 packable order not already on a packing task.
+function pickingEligibleForPacking(t: PickingTask): boolean {
+  return isPickingFinished(t) && packableOrderIds(t).some(id => getPackingForOrder(id).length === 0)
+}
+// Show "Create packing" only when EVERY selected list is the SAME warehouse and ≥1 is
+// eligible (a packing batch is single-warehouse). Mixed warehouses ⇒ hidden.
+function bulkPackable(sel: Set<number>): boolean {
+  const rows = selectedPickingsOf(sel)
+  if (!rows.length) return false
+  const wh = rows[0]!.warehouseId
+  if (!rows.every(t => t.warehouseId === wh)) return false
+  return rows.some(pickingEligibleForPacking)
+}
+// Open the multi-picking Create packing form for the eligible lists (one warehouse).
+function bulkCreatePacking(sel: Set<number>, deselectAll: () => void) {
+  const eligible = selectedPickingsOf(sel).filter(pickingEligibleForPacking)
+  if (!eligible.length) return
+  router.push({ path: '/barang-keluar/packing/create', query: { pickingIds: eligible.map(t => t.id).join(',') } })
+  deselectAll()
+}
+
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
 <template>
   <ErpTablePage
-    :columns="columns"
+    :columns="visibleColumns"
     :rows="(paginated as Record<string, unknown>[])"
     :total="total"
     :current-page="currentPage"
@@ -134,11 +169,25 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :loading="loading"
     :has-active-filter="hasActiveFilter"
     has-checkbox
+    bulk-label="picking list"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
+    <!-- ── Bulk bar → create packing for the selected finished picking lists ── -->
+    <template #bulk-actions="{ deselectAll, selectedRows }">
+      <button
+        v-if="bulkPackable(selectedRows as Set<number>)"
+        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+        @click="bulkCreatePacking(selectedRows as Set<number>, deselectAll)"
+      >
+        Create packing
+      </button>
+    </template>
+
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
@@ -183,6 +232,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
+          <ColumnSettingsMenu id="pick-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pick-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -273,7 +323,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as PickingTask)">View details</MpPopoverListItem>
             <MpPopoverListItem
-              v-if="(row as unknown as PickingTask).status === 'completed'"
+              v-if="pickingEligibleForPacking(row as unknown as PickingTask)"
               @click="createPacking(row as unknown as PickingTask)"
             >Create packing</MpPopoverListItem>
           </MpPopoverList>

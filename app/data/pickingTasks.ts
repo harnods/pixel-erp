@@ -78,39 +78,47 @@ export function buildPickingLines(salesOrderIds: string[], salesNos: string[]): 
   return lines;
 }
 
-// Stage status assigned to a seed task — mostly Open, some In progress / Completed,
-// the occasional Canceled, so all states are demonstrable (deterministic).
-const SEED_STATUSES: PickingTask["status"][] = [
-  "open", "in progress", "open", "completed", "open", "in progress", "completed", "canceled",
-];
-
 // Fraction picked vs planned, per seed status (in progress = partway; completed =
 // usually full, sometimes a short pick).
 const PICK_FRACTIONS = [0.4, 0.6, 0.3, 0.7, 0.5];
 const SHORT_PICK_FRACTIONS = [0.6, 0.75, 0.85, 0.9, 0.7];
 function pickRatioFor(status: PickingTask["status"], idx: number): number {
-  if (status === "completed") return idx % 3 === 0 ? SHORT_PICK_FRACTIONS[idx % SHORT_PICK_FRACTIONS.length]! : 1;
+  if (status === "completed") return 1; // fully picked
+  if (status === "partially picked") return SHORT_PICK_FRACTIONS[idx % SHORT_PICK_FRACTIONS.length]!; // finished short
   if (status === "in progress") return PICK_FRACTIONS[idx % PICK_FRACTIONS.length]!;
   return 0; // open / canceled
 }
 
-// ── Seed: bundle each warehouse's pickable orders into picking tasks ──────────────
+// ── Seed: a small, CURATED demo set — one picking list per status in a single
+// warehouse, consuming only a few orders. Deliberately leaves MOST orders un-picked
+// (so "Create picking" is demoable) and the FINISHED lists un-packed (so the bulk
+// "Create packing" flow is demoable). The pre-shipped chain (below) still populates
+// the Completed / Delivery stages so those tabs aren't empty. ──
 function seedTasks(): PickingTask[] {
   const out: PickingTask[] = [];
   let seq = 30090;
-  PICKING_WAREHOUSES.forEach((wh, p) => {
-    const orders = pickableOrders([wh.id]);
-    if (!orders.length) return;
-    const bundleSize = 2 + (p % 2); // 2 or 3 orders per task
-    for (let start = 0, t = 0; start < orders.length; start += bundleSize, t++) {
-      const bundle = orders.slice(start, start + bundleSize);
-      const status = SEED_STATUSES[(p + t) % SEED_STATUSES.length]!;
-      const lines = buildPickingLines(bundle.map((o) => o.id), bundle.map((o) => o.salesNo));
+  // One picking list per status, each consuming ONE order. Allocate from the richest
+  // warehouse first (so the finished/packable lists — partially picked + completed —
+  // land in the SAME warehouse and the bulk "Create packing" demo works), then borrow
+  // from other warehouses for the remaining statuses. No warehouse has 5 pickable
+  // orders on its own, so the canceled list may sit in another warehouse — fine, it
+  // isn't packable anyway.
+  const cands = PICKING_WAREHOUSES.map((w) => ({ w, orders: pickableOrders([w.id]) }))
+    .sort((a, b) => b.orders.length - a.orders.length);
+  const pool = cands.flatMap((c) => c.orders); // richest warehouse's orders come first
+  if (pool.length) {
+    const plan: PickingTask["status"][] = ["partially picked", "completed", "open", "in progress", "canceled"];
+    plan.forEach((status, t) => {
+      const o = pool[t];
+      if (!o) return;
+      const lines = buildPickingLines([o.id], [o.salesNo]);
       const toPickQty = lines.reduce((s, l) => s + l.qty, 0);
-      const ratio = pickRatioFor(status, p + t);
+      const ratio = pickRatioFor(status, t);
+      const started = status !== "open" && status !== "canceled";
+      const finished = status === "completed" || status === "partially picked";
       let pickedByKey: Record<string, number> | undefined;
       let pickedQty = 0;
-      if (status === "in progress" || status === "completed") {
+      if (started) {
         pickedByKey = {};
         for (const l of lines) {
           const q = Math.min(l.qty, Math.max(0, Math.round(l.qty * ratio)));
@@ -118,26 +126,26 @@ function seedTasks(): PickingTask[] {
           pickedQty += q;
         }
       }
-      const dayOffset = -(((p + t) * 3) % 12) - 1;
+      const dayOffset = -(t * 2) - 1;
       out.push({
-        id: `pick-${p}-${t}`,
+        id: `pick-demo-${t}`,
         taskNo: `Picking #${seq++}`,
-        salesOrderIds: bundle.map((o) => o.id),
-        salesNos: bundle.map((o) => o.salesNo),
-        warehouseId: wh.id,
-        warehouseName: wh.name,
-        assignee: picForWarehouse(wh.id, p + t),
+        salesOrderIds: [o.id],
+        salesNos: [o.salesNo],
+        warehouseId: o.warehouseId,
+        warehouseName: o.warehouseName,
+        assignee: picForWarehouse(o.warehouseId, t),
         skuQty: lines.length,
         toPickQty,
         pickedQty,
         status,
-        startDate: status === "open" || status === "canceled" ? undefined : isoAt(dayOffset, 8, 30),
-        endDate: status === "completed" ? isoAt(dayOffset, 11, 15) : undefined,
+        startDate: started ? isoAt(dayOffset, 8, 30) : undefined,
+        endDate: finished ? isoAt(dayOffset, 11, 15) : undefined,
         lines,
         pickedByKey,
       });
-    }
-  });
+    });
+  }
   out.push(...seedShippedPicks(seq));
   return out;
 }

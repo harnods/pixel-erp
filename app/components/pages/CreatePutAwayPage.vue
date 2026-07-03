@@ -648,7 +648,7 @@ function handleCreate() {
       <MpModalFooter>
         <div class="modal-footer-btns">
           <MpButton variant="ghost" is-rounded @click="closeLocationEdit">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save</MpButton>
+          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save changes</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

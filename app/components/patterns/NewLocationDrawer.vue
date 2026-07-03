@@ -7,9 +7,9 @@
  * location store and emits `saved` with the parent id so callers can expand it.
  */
 import {
-  MpDrawer, MpDrawerContent, MpDrawerHeader, MpDrawerBody, MpDrawerFooter, MpDrawerOverlay,
-  MpDrawerCloseButton, MpFormControl, MpFormLabel, MpFormHelpText, MpInput, MpAutocomplete,
-  MpButton, MpButtonGroup, toast,
+  MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
+  MpFormControl, MpFormLabel, MpFormHelpText, MpInput, MpAutocomplete,
+  MpButton, MpText, toast,
 } from '@mekari/pixel3'
 import {
   addRootLocation, addSubLocation, updateLocation, suggestCode, defaultTypeForLevel, findLocation,
@@ -121,12 +121,15 @@ function save() {
     @close="close"
   >
     <MpDrawerContent>
-      <MpDrawerHeader>
-        {{ isEdit ? 'Edit location' : 'New location' }}
-        <MpDrawerCloseButton />
-      </MpDrawerHeader>
+      <!-- Floating variant: the drawer body IS the white card; header/content/footer
+           all live inside it (MpDrawerHeader/Footer would render outside the card). -->
       <MpDrawerBody>
-        <div class="nl-form">
+        <div class="nl-card">
+          <div class="nl-header">
+            <MpText weight="semiBold">{{ isEdit ? 'Edit location' : 'New location' }}</MpText>
+            <MpButton left-icon="close" variant="ghost" size="sm" aria-label="Close" @click="close" />
+          </div>
+          <div class="nl-form">
           <div v-if="crumbs.length" class="nl-crumbs">
             <template v-for="(c, i) in crumbs" :key="i">
               <span class="nl-crumb">{{ c }}</span>
@@ -156,7 +159,7 @@ function save() {
           </MpFormControl>
 
           <MpFormControl id="nl-type" is-required>
-            <MpFormLabel>Location type</MpFormLabel>
+            <MpFormLabel>Storage preference</MpFormLabel>
             <div class="nl-type-cards">
               <button
                 v-for="opt in [
@@ -175,21 +178,38 @@ function save() {
             </div>
             <MpFormHelpText>{{ typeHelp }}</MpFormHelpText>
           </MpFormControl>
+          </div>
+          <div class="nl-footer">
+            <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
+            <MpButton variant="primary" is-rounded @click="save">{{ isEdit ? 'Save changes' : 'Save' }}</MpButton>
+          </div>
         </div>
       </MpDrawerBody>
-      <MpDrawerFooter>
-        <MpButtonGroup>
-          <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="save">Save</MpButton>
-        </MpButtonGroup>
-      </MpDrawerFooter>
     </MpDrawerContent>
     <MpDrawerOverlay />
   </MpDrawer>
 </template>
 
 <style scoped>
-.nl-form { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+/* Floating drawer: MpDrawerBody is the rounded white card (no built-in padding),
+   so the card owns header / scrollable form / pinned footer. */
+.nl-card { display: flex; flex-direction: column; height: 100%; }
+.nl-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.nl-form {
+  display: flex; flex-direction: column; gap: var(--mp-spacing-5);
+  flex: 1; overflow-y: auto;
+  padding: var(--mp-spacing-4);
+}
+.nl-footer {
+  display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) 0;
+  border-top: 1px solid var(--mp-border-default);
+}
 .nl-crumbs {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--mp-spacing-1);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);

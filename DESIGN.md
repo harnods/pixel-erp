@@ -62,6 +62,22 @@ Use these directly from `@mekari/pixel3`:
 
 > **`MpTable` is not used.** The Enterprise variant does not match the ERP Figma design. Use `ErpTablePage` instead.
 
+### Buttons (`.btn-enterprise` in `app/assets/css/erp.css`)
+
+| Variant | Fill | Border | Text | Use for |
+|---------|------|--------|------|---------|
+| `--primary` | emerald‑700 | emerald‑700 | white | The one primary action per page/screen |
+| `--secondary` | neutral | **black (`--mp-text-default`)** | **black (`--mp-text-default`)** | Secondary page actions, empty‑state CTAs |
+| `--ghost` | none | none | secondary | **Cancel / dismiss — always ghost, project‑wide** |
+| `--danger` | red‑600 | red‑600 | white | Destructive confirm (Delete) |
+
+Rules:
+- **Secondary = black border + black text** on a neutral fill (ERP convention).
+- **Cancel / dismiss is always `--ghost`** — never a bordered or filled button.
+- **Edit forms use "Save changes"; create forms use "Save".**
+- **No disabled action buttons.** Keep them clickable; validate on click and show an inline error (danger caption) or toast instead of greying out.
+- Only **one** `--primary` per screen.
+
 ### MpBadge — status mapping
 
 `for="tableStatus"` inside table cells:

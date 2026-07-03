@@ -242,7 +242,7 @@ function confirmDeleteLocation() {
         </MpModalBody>
         <MpModalFooter>
           <div class="sld-modal-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="deleteConfirmOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteConfirmOpen = false">Cancel</button>
             <button class="btn-enterprise btn-enterprise--danger" @click="confirmDeleteLocation">Delete</button>
           </div>
         </MpModalFooter>

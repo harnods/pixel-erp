@@ -19,6 +19,7 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseActivity } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { TODAY } from '~/data/master'
+import { useUrlModal } from '@ds/proto-review'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -112,21 +113,21 @@ function confirmDelete() {
 
 // ── Products table (Products tab) — ErpTablePage (read-only, single page) ──────
 const allStockColumns: TableColumn[] = [
-  { key: 'name',                label: 'Name',                 width: '320px' },
-  { key: 'sku',                 label: 'SKU',                  width: '120px' },
-  { key: 'barcode',             label: 'Barcode',              width: '170px' },
-  { key: 'category',            label: 'Category',             width: '150px' },
-  { key: 'onHand',              label: 'On hand',              width: '120px', align: 'right' },
-  { key: 'reserved',            label: 'Reserved',             width: '120px', align: 'right' },
-  { key: 'available',           label: 'Available',            width: '120px', align: 'right' },
-  { key: 'onTheWay',            label: 'On the way',           width: '130px', align: 'right' },
-  { key: 'minStock',            label: 'Min. stock',           width: '130px', align: 'right' },
-  { key: 'unit',                label: 'Unit',                 width: '90px'  },
+  { key: 'name',                label: 'Name',                 width: '320px', sortType: 'text'   },
+  { key: 'sku',                 label: 'SKU',                  width: '120px', sortType: 'text'   },
+  { key: 'barcode',             label: 'Barcode',              width: '170px', sortType: 'text'   },
+  { key: 'category',            label: 'Category',             width: '150px', sortType: 'text'   },
+  { key: 'onHand',              label: 'On hand',              width: '120px', align: 'right', sortType: 'number' },
+  { key: 'reserved',            label: 'Reserved',             width: '120px', align: 'right', sortType: 'number' },
+  { key: 'available',           label: 'Available',            width: '120px', align: 'right', sortType: 'number' },
+  { key: 'onTheWay',            label: 'On the way',           width: '130px', align: 'right', sortType: 'number' },
+  { key: 'minStock',            label: 'Min. stock',           width: '130px', align: 'right', sortType: 'number' },
+  { key: 'unit',                label: 'Unit',                 width: '90px',  sortType: 'text'   },
   { key: 'locations',           label: 'Location',             width: '230px' },
-  { key: 'defaultSalesPrice',   label: 'Default sales price',  width: '180px', align: 'right' },
-  { key: 'averageCost',         label: 'Average cost',         width: '170px', align: 'right' },
-  { key: 'lastPurchaseCost',    label: 'Last purchase cost',   width: '180px', align: 'right' },
-  { key: 'defaultPurchaseCost', label: 'Default purchase cost', width: '190px', align: 'right' },
+  { key: 'defaultSalesPrice',   label: 'Default sales price',  width: '180px', align: 'right', sortType: 'number' },
+  { key: 'averageCost',         label: 'Average cost',         width: '170px', align: 'right', sortType: 'number' },
+  { key: 'lastPurchaseCost',    label: 'Last purchase cost',   width: '180px', align: 'right', sortType: 'number' },
+  { key: 'defaultPurchaseCost', label: 'Default purchase cost', width: '190px', align: 'right', sortType: 'number' },
 ]
 // Column show/hide — first column (Name) always on; Last updated appended, hidden by default.
 const allStockCols: TableColumn[] = [...allStockColumns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
@@ -135,6 +136,17 @@ const stockColVisibility = reactive<Record<string, boolean>>(
 )
 const stockColItems = allStockCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const stockColumns = computed<TableColumn[]>(() => allStockCols.filter(c => stockColVisibility[c.key]))
+// Sort menu's "Hide column" flips a column off; ColumnSettings turns it back on.
+function hideStockColumn(key: string) { stockColVisibility[key] = false }
+
+// Products-tab sort (this table uses manual pagination, not useTableState).
+const stockSortKey = ref('')
+const stockSortDir = ref<'asc' | 'desc'>('asc')
+function setStockSort(key: string, dir: 'asc' | 'desc') {
+  stockSortKey.value = key
+  stockSortDir.value = dir
+  productsPage.value = 1
+}
 
 // Column show/hide for the Batches / Serial custom tables (Product + SKU always on).
 const batchColItems = [
@@ -201,7 +213,9 @@ function viewLocation(node: LocNode) {
 }
 
 // Add-location drawer (shared <NewLocationDrawer>). parentId null = root location.
-const newLocOpen = ref(false)
+// URL-driven (?overlay=new-location) via proto-review's useUrlModal so review
+// comments left inside it scope to it and reopen it from the All comments panel.
+const newLocOpen = useUrlModal('new-location')
 const newLocParentId = ref<string | null>(null)
 function openNewLoc() {
   newLocParentId.value = null
@@ -228,12 +242,24 @@ const filteredStock = computed(() => {
       s.category.toLowerCase().includes(q),
   )
 })
+// column-sort (mirrors useTableState's compare: numeric diff, else natural string compare)
+const sortedStock = computed(() => {
+  if (!stockSortKey.value) return filteredStock.value
+  return [...filteredStock.value].sort((a, b) => {
+    const av = (a as Record<string, unknown>)[stockSortKey.value]
+    const bv = (b as Record<string, unknown>)[stockSortKey.value]
+    let cmp: number
+    if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv
+    else cmp = String(av ?? '').localeCompare(String(bv ?? ''), undefined, { numeric: true, sensitivity: 'base' })
+    return stockSortDir.value === 'asc' ? cmp : -cmp
+  })
+})
 // real pagination — only render the current page (warehouses can hold 1000+ SKUs)
 const productsPage = ref(1)
 const productsPerPage = ref(25)
 const pagedStock = computed(() => {
   const start = (productsPage.value - 1) * productsPerPage.value
-  return filteredStock.value.slice(start, start + productsPerPage.value)
+  return sortedStock.value.slice(start, start + productsPerPage.value)
 })
 function onProductsPageChange(page: number) { productsPage.value = page }
 function onProductsPerPageChange(per: number) { productsPerPage.value = per; productsPage.value = 1 }
@@ -467,9 +493,13 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               :total="filteredStock.length"
               :current-page="productsPage"
               :per-page="productsPerPage"
+              :sort-key="stockSortKey"
+              :sort-dir="stockSortDir"
               :has-active-filter="!!search"
               @page-change="onProductsPageChange"
               @per-page-change="onProductsPerPageChange"
+              @sort-change="setStockSort"
+              @hide-column="hideStockColumn"
               @clear-filters="search = ''"
             >
               <!-- toolbar: airene · columns · export · search (right-aligned) -->
@@ -991,7 +1021,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="archiveModalOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="archiveModalOpen = false">Cancel</button>
             <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">
               {{ isArchived ? 'Unarchive' : 'Archive' }}
             </button>
@@ -1021,7 +1051,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="deleteModalOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">Cancel</button>
             <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
           </div>
         </MpModalFooter>

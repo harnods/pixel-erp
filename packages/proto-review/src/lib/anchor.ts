@@ -92,6 +92,15 @@ export function pointFromAnchor(anchor: ElementAnchor): { x: number; y: number }
     return null
   }
   if (!el) return null
+  // Hide the pin when its element isn't actually visible — inside a closed
+  // modal/drawer/accordion that stays in the DOM (v-show, display:none,
+  // visibility:hidden, off-screen transforms). checkVisibility() handles all
+  // those and, unlike offsetParent, doesn't false-negative on position:fixed
+  // (modals). This is what scopes a comment to the overlay it was made in:
+  // the anchor only resolves while that overlay is open.
+  if (typeof (el as any).checkVisibility === 'function') {
+    if (!(el as any).checkVisibility({ checkVisibilityCSS: true })) return null
+  }
   const rect = el.getBoundingClientRect()
   if (rect.width === 0 || rect.height === 0) return null
   return {

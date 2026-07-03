@@ -11,6 +11,7 @@ import { pickingOpenCount } from '~/data/pickingTasks'
 syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
+import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
@@ -37,6 +38,7 @@ const pageRegistry: Record<string, Component> = {
   'Completed':         defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
   'Inbound completed': defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
   'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
+  'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Company profile':   defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Playground':        defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
@@ -64,6 +66,7 @@ const PackingTaskDetailsPage = defineAsyncComponent(() => import('~/components/p
 const PackItemsPage = defineAsyncComponent(() => import('~/components/pages/PackItemsPage.vue'))
 const DeliveryTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
 const OutgoingOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
+const WarehouseTransferDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
 const ReceivingIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue'))
 const PutAwayIndexPage = defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue'))
 const PartialReceptionIndexPage = defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
@@ -76,11 +79,18 @@ const CreatePutAwayPage = defineAsyncComponent(() => import('~/components/pages/
 const CreateReceiptPage = defineAsyncComponent(() => import('~/components/pages/CreateReceiptPage.vue'))
 const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
+const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
+  // forms (not built yet → placeholder). The bare index falls through to the registry.
+  if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
+    if (segs[1] === 'new' || segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
+    return { component: WarehouseTransferDetailsPage, id: segs[1]! }
+  }
   // /barang-keluar/picking/create → create a new picking list (bundles sales orders)
   if (segs.length >= 3 && segs[0] === 'barang-keluar' && segs[1] === 'picking' && segs[2] === 'create') {
     return { component: CreatePickingPage, id: 'create' }
@@ -182,6 +192,7 @@ const currentComponent = computed<Component>(
 const pageTabs: Record<string, string[]> = {
   'Barang keluar': ['Outgoing', 'Picking', 'Packing', 'Delivery'],
   'Barang masuk': ['Receipts', 'Receiving', 'Put-away'],
+  'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -213,6 +224,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     if (delivery) out['Delivery'] = delivery
     return out
   }
+  if (currentPageKey.value === 'Warehouse transfers') {
+    const awaiting = awaitingApprovalCount()
+    return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
   return {}
 })
 
@@ -221,8 +236,20 @@ const activeTab = ref('')
 watch([currentPageKey, () => route.query.tab], () => {
   const tabs = currentTabs.value
   const queryTab = route.query.tab as string | undefined
-  activeTab.value = (queryTab && tabs.includes(queryTab)) ? queryTab : (tabs[0] ?? '')
+  const resolved = (queryTab && tabs.includes(queryTab)) ? queryTab : (tabs[0] ?? '')
+  activeTab.value = resolved
+  // Keep the active tab in the URL (?tab=) so it's a distinct "view" — this is
+  // what lets proto-review scope comments per tab, and makes tabs deep-linkable.
+  if (resolved && route.query.tab !== resolved) {
+    router.replace({ query: { ...route.query, tab: resolved } })
+  }
 }, { immediate: true })
+
+// Tab-bar click: drive the tab through the URL (the watch above syncs activeTab).
+function selectTab(tab: string) {
+  if (route.query.tab === tab) return
+  router.push({ query: { ...route.query, tab } })
+}
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {
@@ -236,6 +263,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Picking': PickingIndexPage,
     'Packing': PackingIndexPage,
     'Delivery': DeliveryIndexPage,
+  },
+  'Warehouse transfers': {
+    'All warehouse transfers': WarehouseTransfersPage,
+    'Awaiting approval': WarehouseTransfersPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -251,6 +282,13 @@ const BARANG_MASUK_PAGES = [
 const showNewPurchaseOrder = computed(() =>
   activeScenario.value === 'WMS Standalone' && BARANG_MASUK_PAGES.includes(currentPageKey.value),
 )
+
+// Warehouse transfers is an ERP-only module — its "New warehouse transfer" action
+// shows only in the ERP scenario, on the Warehouse transfers page.
+const showNewWarehouseTransfer = computed(() =>
+  activeScenario.value === 'ERP' && currentPageKey.value === 'Warehouse transfers',
+)
+function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
 
 // ── Airene panel open/close ───────────────────────────────────────────────
 const aireneOpen = ref(false)
@@ -734,6 +772,14 @@ function startResize(e: MouseEvent) {
             New purchase order
           </button>
         </div>
+        <div v-else-if="showNewWarehouseTransfer" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newWarehouseTransfer">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New warehouse transfer
+          </button>
+        </div>
       </div>
 
       <!-- Status tabs (below the title, outside the stage) -->
@@ -745,7 +791,7 @@ function startResize(e: MouseEvent) {
           :class="{ 'page-tab--active': activeTab === tab }"
           role="tab"
           :aria-selected="activeTab === tab"
-          @click="activeTab = tab"
+          @click="selectTab(tab)"
         >
           {{ tab }}
           <span v-if="currentTabCounts[tab] != null" class="page-tab-count">{{ currentTabCounts[tab] }}</span>
@@ -1239,7 +1285,7 @@ function startResize(e: MouseEvent) {
   color: var(--mp-text-inverse, #fff);
 }
 
-.page-tab:hover {
+.page-tab:not(.page-tab--active):hover {
   color: var(--mp-text-default);
 }
 

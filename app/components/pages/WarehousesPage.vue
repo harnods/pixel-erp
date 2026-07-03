@@ -18,12 +18,12 @@ function goEdit(id: string) { router.push(`/warehouses/${id}/edit`) }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const allColumns: TableColumn[] = [
-  { key: 'name',        label: 'Name',         width: '155px' },
-  { key: 'code',        label: 'Code',         width: '78px'  },
-  { key: 'skuTotal',    label: 'SKU qty',      width: '78px', align: 'right' },
+  { key: 'name',        label: 'Name',         width: '155px', sortType: 'text' },
+  { key: 'code',        label: 'Code',         width: '78px',  sortType: 'text' },
+  { key: 'skuTotal',    label: 'SKU qty',      width: '78px', align: 'right', sortType: 'number' },
   { key: 'pics',        label: 'PIC',          width: '108px' },
-  { key: 'address',     label: 'Address',      width: '90px'  },
-  { key: 'status',      label: 'Status',       width: '90px'  },
+  { key: 'address',     label: 'Address',      width: '90px',  sortType: 'text' },
+  { key: 'status',      label: 'Status',       width: '90px',  sortType: 'text' },
   { key: 'lastUpdated', label: 'Last updated', width: '120px' },
 ]
 
@@ -52,6 +52,9 @@ const columns = computed<TableColumn[]>(() =>
   allColumns.filter(col => columnVisibility[col.key]),
 )
 
+// The sort menu's "Hide column" flips visibility off; the Column settings popover turns it back on.
+function hideColumn(key: string) { columnVisibility[key] = false }
+
 function formatUpdatedAt(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -63,7 +66,7 @@ const rows = computed<Warehouse[]>(() => warehouses)
 
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Warehouse>(rows, {
   perPage: 25,
   filterFn: (row, s, status) =>
@@ -217,6 +220,8 @@ function clearFilters() {
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
     @clear-filters="clearFilters"
     @selection-change="count => selectedCount = count"
   >
@@ -444,7 +449,7 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeDeleteModal">Cancel</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="closeDeleteModal">Delete</button>
         </div>
       </MpModalFooter>
@@ -482,7 +487,7 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeArchiveModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeArchiveModal">Cancel</button>
           <button class="btn-enterprise btn-enterprise--primary" @click="closeArchiveModal">Archive</button>
         </div>
       </MpModalFooter>
@@ -510,7 +515,7 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeBulkArchiveModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkArchiveModal">Cancel</button>
           <button class="btn-enterprise btn-enterprise--primary" @click="closeBulkArchiveModal">Archive</button>
         </div>
       </MpModalFooter>
@@ -625,7 +630,7 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeExportModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeExportModal">Cancel</button>
           <button class="btn-enterprise btn-enterprise--primary" @click="closeExportModal">Export</button>
         </div>
       </MpModalFooter>
@@ -653,7 +658,7 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeBulkDeleteModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkDeleteModal">Cancel</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="closeBulkDeleteModal">Delete</button>
         </div>
       </MpModalFooter>

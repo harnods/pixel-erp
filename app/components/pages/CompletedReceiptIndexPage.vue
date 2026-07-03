@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
 import { receiptsForStage, type Receipt } from '~/data/receipts'
@@ -28,13 +29,19 @@ function setDemoState(s: DemoState) {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'purchaseNo',    label: 'Purchase no.',  width: '260px' },
-  { key: 'warehouseName', label: 'Warehouse',     width: '180px' },
-  { key: 'skuQty',        label: 'SKU qty',       width: '90px',  align: 'right' },
-  { key: 'purchaseQty',   label: 'Purchase qty',  width: '120px', align: 'right' },
-  { key: 'receivedQty',   label: 'Received',      width: '110px', align: 'right' },
-  { key: 'receivedDate',  label: 'Received date', width: '150px' },
+  { key: 'purchaseNo',    label: 'Purchase no.',  width: '260px', sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse',     width: '180px', sortType: 'text' },
+  { key: 'skuQty',        label: 'SKU qty',       width: '90px',  align: 'right', sortType: 'number' },
+  { key: 'purchaseQty',   label: 'Purchase qty',  width: '120px', align: 'right', sortType: 'number' },
+  { key: 'receivedQty',   label: 'Received',      width: '110px', align: 'right', sortType: 'number' },
+  { key: 'receivedDate',  label: 'Received date', width: '150px', sortType: 'date' },
 ]
+// Column show/hide — first column stays on; the sort menu's "Hide column" flips
+// these off, the ColumnSettings menu turns them back on.
+const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Scenario scoping (Ops = assigned warehouse(s)) ────────────────────────────
 const { assignedWarehouses } = useWarehouseContext()
@@ -59,7 +66,7 @@ const rows = computed<Receipt[]>(() => (demoState.value === 'data' ? scopedRecei
 
 const {
   search, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Receipt>(rows, {
   perPage: 25,
   filterFn: (row, s) => {
@@ -87,7 +94,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 <template>
   <ErpTablePage
-    :columns="columns"
+    :columns="visibleColumns"
     :rows="(paginated as Record<string, unknown>[])"
     :total="total"
     :current-page="currentPage"
@@ -99,6 +106,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
     <!-- ── Filter bar ── -->
@@ -126,6 +135,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
+          <ColumnSettingsMenu id="cmp-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-cmp-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">

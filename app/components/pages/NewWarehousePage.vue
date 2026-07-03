@@ -178,7 +178,7 @@ function save() {
         <div class="nw-action-group">
           <div class="nw-action-right">
             <button class="nw-btn-cancel" @click="goBack">Cancel</button>
-            <button class="nw-btn-save" @click="save">Save</button>
+            <button class="nw-btn-save" @click="save">{{ isEdit ? 'Save changes' : 'Save' }}</button>
           </div>
         </div>
 

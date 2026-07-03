@@ -440,7 +440,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <MpModalFooter>
         <div :class="css({ display: 'flex', justifyContent: 'flex-end', gap: 'spacing-2', width: '100%' })">
           <MpButton variant="ghost" is-rounded @click="closeLocationEdit">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save</MpButton>
+          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save changes</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

@@ -14,6 +14,7 @@ import {
 } from '@mekari/pixel3'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import { getStorageTree, findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { useUrlModal } from '@ds/proto-review'
 
 const props = withDefaults(defineProps<{
   warehouseId: string
@@ -80,8 +81,10 @@ function confirmDelete() {
   deleteTarget.value = null
 }
 
-// New / sub-location / edit drawer (shared form)
-const drawerOpen = ref(false)
+// New / sub-location / edit drawer (shared form). URL-driven via proto-review's
+// useUrlModal so review comments left inside it scope to it and reopen it when
+// clicked from the All comments panel (?overlay=new-location).
+const drawerOpen = useUrlModal('new-location')
 const drawerParentId = ref<string | null>(null)
 const drawerEditId = ref<string | null>(null)
 function openNew() { drawerEditId.value = null; drawerParentId.value = props.parentId; drawerOpen.value = true }
@@ -221,7 +224,7 @@ function onSaved(pid: string | null) {
         </MpModalBody>
         <MpModalFooter>
           <div class="slt-modal-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="deleteTarget = null">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteTarget = null">Cancel</button>
             <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
           </div>
         </MpModalFooter>
