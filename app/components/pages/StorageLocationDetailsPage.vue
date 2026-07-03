@@ -264,9 +264,9 @@ function confirmDeleteLocation() {
 /* ── Title bar ── */
 .detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
-.sld-crumbs { display: flex; align-items: center; gap: var(--mp-spacing-1); }
+.sld-crumbs { display: flex; align-items: center; gap: var(--mp-spacing-1); line-height: 1; }
 .sld-crumb-sep { color: var(--mp-text-subtle); font-size: 12px; }
-.detail-breadcrumb { background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
+.detail-breadcrumb { background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: 1; }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); color: var(--mp-text-default); }
 

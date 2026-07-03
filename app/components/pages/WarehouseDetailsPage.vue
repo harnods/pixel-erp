@@ -16,7 +16,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { getWarehouseActivity, archiveWarehouses, unarchiveWarehouses } from '~/data/warehouses'
+import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { TODAY } from '~/data/master'
 import { useUrlModal } from '@ds/proto-review'
@@ -122,13 +122,13 @@ const allStockColumns: TableColumn[] = [
   { key: 'sku',                 label: 'SKU',                  width: '120px', sortType: 'text'   },
   { key: 'barcode',             label: 'Barcode',              width: '170px', sortType: 'text'   },
   { key: 'category',            label: 'Category',             width: '150px', sortType: 'text'   },
+  { key: 'locations',           label: 'Location',             width: '230px' },
   { key: 'onHand',              label: 'On hand qty',          width: '120px', align: 'right', sortType: 'number' },
   { key: 'reserved',            label: 'Reserved qty',         width: '120px', align: 'right', sortType: 'number' },
   { key: 'available',           label: 'Available qty',        width: '120px', align: 'right', sortType: 'number' },
   { key: 'onTheWay',            label: 'On the way qty',       width: '130px', align: 'right', sortType: 'number' },
   { key: 'minStock',            label: 'Min. stock',           width: '130px', align: 'right', sortType: 'number' },
   { key: 'unit',                label: 'Unit',                 width: '90px',  sortType: 'text'   },
-  { key: 'locations',           label: 'Location',             width: '230px' },
   { key: 'defaultSalesPrice',   label: 'Default sales price',  width: '180px', align: 'right', sortType: 'number' },
   { key: 'averageCost',         label: 'Average cost',         width: '170px', align: 'right', sortType: 'number' },
   { key: 'lastPurchaseCost',    label: 'Last purchase cost',   width: '180px', align: 'right', sortType: 'number' },
@@ -235,6 +235,8 @@ function onLocSaved(parentId: string | null) {
 }
 
 const search = ref('')
+// If any product in this warehouse has multiple bin locations, all table columns get side borders
+const hasMultiLocProduct = computed(() => warehouse.value?.stock.some((s) => s.locations.length > 1) ?? false)
 // tracks which product rows have their category list expanded (beyond 3)
 const expandedCategories = reactive<Set<string>>(new Set())
 function toggleCategories(id: string) {
@@ -278,6 +280,45 @@ function onProductsPageChange(page: number) { productsPage.value = page }
 function onProductsPerPageChange(per: number) { productsPerPage.value = per; productsPage.value = 1 }
 // reset to page 1 when the search or the warehouse changes
 watch([search, () => props.orderId], () => { productsPage.value = 1 })
+
+// ── Split-row height sync: make qty rows match the height of their location counterpart ──
+const productsTableRef = ref<InstanceType<typeof ErpTablePage> | null>(null)
+let splitRowObserver: ResizeObserver | null = null
+
+function syncLocQtyRowHeights() {
+  const el = productsTableRef.value?.$el as HTMLElement | undefined
+  if (!el) return
+  el.querySelectorAll('tr').forEach((tr) => {
+    const locCell = tr.querySelector<HTMLElement>('td[data-col="locations"]')
+    if (!locCell) return
+    const locRows = Array.from(locCell.querySelectorAll<HTMLElement>('.wh-col-row'))
+    if (locRows.length <= 1) return
+    // Reset before measuring so natural heights are used
+    ;(['onHand', 'reserved', 'available'] as const).forEach((col) => {
+      tr.querySelector(`td[data-col="${col}"]`)?.querySelectorAll<HTMLElement>('.wh-col-row')
+        .forEach((r) => { r.style.minHeight = '' })
+    })
+    const heights = locRows.map((r) => r.offsetHeight)
+    ;(['onHand', 'reserved', 'available'] as const).forEach((col) => {
+      const qtyCell = tr.querySelector<HTMLElement>(`td[data-col="${col}"]`)
+      if (!qtyCell) return
+      qtyCell.querySelectorAll<HTMLElement>('.wh-col-row').forEach((r, i) => {
+        if (heights[i]) r.style.minHeight = `${heights[i]}px`
+      })
+    })
+  })
+}
+
+onMounted(() => nextTick(() => {
+  syncLocQtyRowHeights()
+  const el = productsTableRef.value?.$el as HTMLElement | undefined
+  if (el) {
+    splitRowObserver = new ResizeObserver(() => nextTick(syncLocQtyRowHeights))
+    splitRowObserver.observe(el)
+  }
+}))
+onUnmounted(() => splitRowObserver?.disconnect())
+watch(pagedStock, () => nextTick(syncLocQtyRowHeights))
 
 // ── Batches table (Batches tab) — custom table with merged (rowspan) Product/SKU
 const batchSearch = ref('')
@@ -377,6 +418,27 @@ function formatIDR(amount: number) {
 function formatNum(n: number) {
   return n.toLocaleString('id-ID')
 }
+
+// Split a multi-location row into per-location qty breakdowns
+// 2 locations: 60% / 40%; 3 locations: 50% / 30% / 20%
+function locBreakdown(row: { locations: string[]; onHand: number; reserved: number }) {
+  const locs = row.locations
+  if (locs.length <= 1) return null
+  const weights = locs.length === 2 ? [0.6, 0.4] : [0.5, 0.3, 0.2]
+  const split = (total: number) => {
+    const parts = weights.slice(0, -1).map((w) => Math.round(total * w))
+    parts.push(Math.max(0, total - parts.reduce((a, b) => a + b, 0)))
+    return parts
+  }
+  const ohs = split(row.onHand)
+  const rvs = split(row.reserved)
+  return locs.map((loc, i) => {
+    const oh = ohs[i] ?? 0
+    const rv = Math.min(rvs[i] ?? 0, oh)
+    return { loc, onHand: oh, reserved: rv, available: oh - rv }
+  })
+}
+
 function formatUpdatedAt(iso: string) {
   const d = new Date(iso)
   const date = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(d)
@@ -385,6 +447,22 @@ function formatUpdatedAt(iso: string) {
 }
 
 function goBack() { router.push('/warehouses') }
+
+// ── Jump-to-warehouse switcher ─────────────────────────────────────────────
+const jumpSearch = ref('')
+const jumpResults = computed(() => {
+  const active = warehouses.filter((w) => !w.isDefault && w.id !== props.orderId)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const q = jumpSearch.value.trim().toLowerCase()
+  const matched = q
+    ? active.filter((w) => w.name.toLowerCase().includes(q) || w.code.toLowerCase().includes(q))
+    : active
+  return matched.slice(0, 5)
+})
+function jumpTo(id: string) {
+  jumpSearch.value = ''
+  router.push(`/warehouses/${id}`)
+}
 
 // ── Scroll-position-aware sticky columns ───────────────────────────────────────
 // The kebab (actions) column is sticky-right from the start (wide table); at the
@@ -434,6 +512,31 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         <button v-if="showBreadcrumb" class="detail-breadcrumb" @click="goBack">Warehouses</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ warehouse.name }}</h1>
+
+          <!-- Chevron → jump-to-warehouse switcher -->
+          <MpPopover id="wh-detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
+            <MpPopoverTrigger>
+              <button class="detail-jump-chevron" aria-label="Switch warehouse">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ width: '304px' })">
+              <div class="detail-jump">
+                <div class="detail-jump-search-wrap">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search warehouse…" />
+                </div>
+                <div class="detail-jump-list">
+                  <button v-for="w in jumpResults" :key="w.id" class="detail-jump-item" @click="jumpTo(w.id)">
+                    <span class="detail-jump-item-name">{{ w.name }}</span>
+                    <span class="detail-jump-item-sub">{{ w.code }}</span>
+                  </button>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">No warehouses found.</p>
+                </div>
+              </div>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
       </div>
 
@@ -501,6 +604,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <MpTabPanel value="products">
             <div ref="productsTableEl" class="wh-products-table" @scroll.capture="onTableScroll">
             <ErpTablePage
+              ref="productsTableRef"
+              :class="['erp-products', { 'erp-products--bordered': hasMultiLocProduct }]"
               :columns="stockColumns"
               :rows="pagedStock"
               :total="filteredStock.length"
@@ -559,10 +664,25 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </div>
               </template>
 
-              <!-- numeric stock columns -->
-              <template #cell-onHand="{ value }">{{ formatNum(value as number) }}</template>
-              <template #cell-reserved="{ value }">{{ formatNum(value as number) }}</template>
-              <template #cell-available="{ value }">{{ formatNum(value as number) }}</template>
+              <!-- qty columns: always wrapped with top-align + 10px padding; split per location when multi-bin -->
+              <template #cell-onHand="{ row, value }">
+                <template v-if="locBreakdown(row as any)">
+                  <div v-for="bd in locBreakdown(row as any)!" :key="bd.loc" class="wh-col-row wh-col-row--right">{{ formatNum(bd.onHand) }}</div>
+                </template>
+                <div v-else class="wh-col-row wh-col-row--right">{{ formatNum(value as number) }}</div>
+              </template>
+              <template #cell-reserved="{ row, value }">
+                <template v-if="locBreakdown(row as any)">
+                  <div v-for="bd in locBreakdown(row as any)!" :key="bd.loc" class="wh-col-row wh-col-row--right">{{ formatNum(bd.reserved) }}</div>
+                </template>
+                <div v-else class="wh-col-row wh-col-row--right">{{ formatNum(value as number) }}</div>
+              </template>
+              <template #cell-available="{ row, value }">
+                <template v-if="locBreakdown(row as any)">
+                  <div v-for="bd in locBreakdown(row as any)!" :key="bd.loc" class="wh-col-row wh-col-row--right">{{ formatNum(bd.available) }}</div>
+                </template>
+                <div v-else class="wh-col-row wh-col-row--right">{{ formatNum(value as number) }}</div>
+              </template>
               <template #cell-onTheWay="{ value }">{{ formatNum(value as number) }}</template>
               <template #cell-minStock="{ value }">{{ formatNum(value as number) }}</template>
 
@@ -579,9 +699,12 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <template v-else>{{ (row as any).category }}</template>
               </template>
 
-              <!-- location: one line per bin -->
-              <template #cell-locations="{ value }">
-                <span v-for="loc in (value as string[])" :key="loc" class="wh-loc">{{ loc }}</span>
+              <!-- location: always bordered left+right (via :deep td[data-col]); split rows per bin when multi-bin -->
+              <template #cell-locations="{ row }">
+                <template v-if="locBreakdown(row as any)">
+                  <div v-for="bd in locBreakdown(row as any)!" :key="bd.loc" class="wh-col-row wh-col-row--loc">{{ bd.loc }}</div>
+                </template>
+                <div v-else class="wh-col-row wh-col-row--loc">{{ (row as any).locations[0] }}</div>
               </template>
 
               <!-- money columns -->
@@ -1201,6 +1324,36 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   color: var(--mp-text-default);
 }
 
+/* Jump-to-warehouse chevron + popover */
+.detail-jump-chevron {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
+  background: none; border: none; padding: 0;
+  border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default);
+}
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump { display: flex; flex-direction: column; }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search {
+  width: 100%; box-sizing: border-box;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+  background: var(--mp-background-surface);
+}
+.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.detail-jump-list { display: flex; flex-direction: column; }
+.detail-jump-item {
+  display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5);
+  width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+}
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-jump-item-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.detail-jump-empty { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
 /* Actions button (primary, emerald) */
 .detail-btn {
   display: inline-flex;
@@ -1407,10 +1560,53 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   color: var(--mp-text-subtle);
   margin-top: var(--mp-spacing-0\.5);
 }
-/* Location paths can be long (e.g. "Lantai 1 / Zone A / Rack 03 / Bin A01"); wrap
-   them inside the column instead of overflowing (bleeding) into neighbour cells. */
-.wh-loc { display: block; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
-.wh-cat-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+/* Strip td padding on the 4 wrapper columns so .wh-col-row fills the full cell */
+:deep(.erp-products td[data-col="locations"]),
+:deep(.erp-products td[data-col="onHand"]),
+:deep(.erp-products td[data-col="reserved"]),
+:deep(.erp-products td[data-col="available"]) {
+  padding: 0;
+}
+/* If any product has multiple locations, border ALL columns in the whole table.
+   border-collapse: collapse on the table prevents double borders between adjacent cells. */
+:deep(.erp-products--bordered td:not(.erp-td--actions)),
+:deep(.erp-products--bordered th:not(.erp-th--actions)) {
+  border-right: 1px solid var(--mp-border-default);
+}
+:deep(.erp-products--bordered td:first-child),
+:deep(.erp-products--bordered th:first-child) {
+  border-left: 1px solid var(--mp-border-default);
+}
+
+/* Row within a bordered td — restores the cell padding and handles multi-row split */
+.wh-col-row {
+  min-height: var(--mp-sizes-10);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--mp-spacing-4) 0 var(--mp-spacing-2);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
+}
+/* Location: top-aligned, 10px padding top/bottom */
+.wh-col-row--loc {
+  align-items: flex-start;
+  padding-top: var(--mp-spacing-2\.5);
+  padding-bottom: var(--mp-spacing-2\.5);
+}
+/* Qty: right-aligned, top-aligned, 10px top/bottom padding */
+.wh-col-row--right {
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4);
+  font-variant-numeric: tabular-nums;
+}
+/* Divider between split sub-rows */
+.wh-col-row:not(:last-child) {
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.wh-cat-list { margin: 0; padding: 0 0 0 var(--mp-spacing-4); list-style: disc; display: flex; flex-direction: column; gap: 2px; }
 .wh-cat-item { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: normal; }
 .wh-cat-toggle {
   margin-top: var(--mp-spacing-1); padding: 0; border: none; background: none;

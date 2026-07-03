@@ -418,6 +418,7 @@ const bulkCountLabel = computed(() => {
                 'erp-th--center':   col.align === 'center',
                 'erp-th--fixed':    col.isFixed,
               }"
+              :data-col="col.key"
               :style="col.width ? { width: col.width, minWidth: col.width } : {}"
               @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
             >
@@ -505,6 +506,7 @@ const bulkCountLabel = computed(() => {
                   'erp-td--center': col.align === 'center',
                   'erp-td--fixed':  col.isFixed,
                 }"
+                :data-col="col.key"
               >
                 <span v-if="hasCheckbox && ci === 0" class="erp-cell-check">
                   <MpCheckbox

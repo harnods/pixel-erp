@@ -2,7 +2,7 @@ import { warehouses } from './warehouses'
 import { warehouseProducts, type Product } from './inventory'
 import { TODAY } from './master'
 import type { Warehouse } from './types'
-import { stockLocationPaths } from './storageLocations'
+import { stockLocationPaths, getMultiLocConfig } from './storageLocations'
 
 /** A tracked batch (lot) of a product within a warehouse (Batches tab).
  *  A batch sits in one bin; a batch split across bins is modelled as separate rows. */
@@ -214,10 +214,23 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   // array 1:1), so a product/batch/serial's location always matches the location you
   // opened it from — no more "Rack 03 contains an item tagged Rack 05".
   const paths = stockLocationPaths(id)
+  const multiLoc = getMultiLocConfig(id)
+  const L = paths.length
   stock.forEach((item, i) => {
-    const loc = paths[i]
-    if (!loc) return
-    item.locations = [loc]
+    const loc = paths[i % L] ?? '—'
+    const mlCfg = multiLoc.find((m) => m.idx === i)
+    if (mlCfg && L > 1) {
+      // Pick `count` distinct paths spread across the tree using an even step
+      const step = Math.max(1, Math.floor(L / mlCfg.count))
+      const locs: string[] = [loc]
+      for (let k = 1; k < mlCfg.count; k++) {
+        const candidate = paths[(i + step * k) % L]
+        if (candidate && !locs.includes(candidate)) locs.push(candidate)
+      }
+      item.locations = locs.length >= 2 ? locs : [loc]
+    } else {
+      item.locations = [loc]
+    }
     item.batches?.forEach((b) => { b.location = loc })
     if (item.serials) {
       item.serials.available.forEach((u) => { u.location = loc })
