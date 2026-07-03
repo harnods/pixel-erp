@@ -293,6 +293,32 @@ export function updateWarehouse(id: string, data: {
   return wh
 }
 
+/** Archive a warehouse (or several) — the default warehouse can't be archived. */
+export function archiveWarehouses(ids: string[]): void {
+  const set = new Set(ids)
+  for (const wh of warehouses) {
+    if (!set.has(wh.id) || wh.isDefault || wh.status === 'archived') continue
+    wh.status = 'archived'
+    wh.updatedAt = new Date().toISOString()
+    wh.updatedBy = ACTING_USER
+    logActivity(wh.id, 'Archived', [{ label: 'Status', value: 'Active → Archived' }])
+  }
+  persistWarehouses()
+}
+
+/** Unarchive a warehouse (or several), returning it to active. */
+export function unarchiveWarehouses(ids: string[]): void {
+  const set = new Set(ids)
+  for (const wh of warehouses) {
+    if (!set.has(wh.id) || wh.status !== 'archived') continue
+    wh.status = 'active'
+    wh.updatedAt = new Date().toISOString()
+    wh.updatedBy = ACTING_USER
+    logActivity(wh.id, 'Unarchived', [{ label: 'Status', value: 'Archived → Active' }])
+  }
+  persistWarehouses()
+}
+
 /** PIC names for a warehouse (empty when none / unknown id). */
 export function warehousePics(warehouseId: string): string[] {
   return warehouses.find((w) => w.id === warehouseId)?.pics.map((p) => p.name) ?? []

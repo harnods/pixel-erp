@@ -3,11 +3,11 @@ import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, MpBadge,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpRadio, css,
+  MpModalOverlay, MpModalCloseButton, MpRadio, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { warehouses } from '~/data'
+import { warehouses, archiveWarehouses, unarchiveWarehouses } from '~/data'
 import type { Warehouse } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -120,6 +120,19 @@ function closeArchiveModal() {
   warehouseToArchive.value = null
 }
 
+function confirmArchive() {
+  if (!warehouseToArchive.value) return
+  archiveWarehouses([warehouseToArchive.value.id])
+  toast.notify({ variant: 'success', title: `${warehouseToArchive.value.name} archived` })
+  closeArchiveModal()
+}
+
+/** Unarchive is a low-friction, reversible action — no confirmation needed. */
+function unarchive(row: Warehouse) {
+  unarchiveWarehouses([row.id])
+  toast.notify({ variant: 'success', title: `${row.name} unarchived` })
+}
+
 // ─── Bulk delete confirmation ─────────────────────────────────────────────────
 const bulkDeleteModalOpen = ref(false)
 const bulkDeleteCount = ref(0)
@@ -135,15 +148,28 @@ function closeBulkDeleteModal() {
 
 // ─── Bulk archive confirmation ────────────────────────────────────────────────
 const bulkArchiveModalOpen = ref(false)
-const bulkArchiveCount = ref(0)
+const bulkArchiveIds = ref<string[]>([])
+const bulkArchiveCount = computed(() => bulkArchiveIds.value.length)
+let bulkArchiveDeselect: (() => void) | null = null
 
-function openBulkArchiveModal(count: number) {
-  bulkArchiveCount.value = count
+function openBulkArchiveModal(sel: Set<number>, deselectAll: () => void) {
+  bulkArchiveIds.value = [...sel]
+    .map((i) => (paginated.value[i] as unknown as Warehouse)?.id)
+    .filter(Boolean) as string[]
+  bulkArchiveDeselect = deselectAll
   bulkArchiveModalOpen.value = true
 }
 
 function closeBulkArchiveModal() {
   bulkArchiveModalOpen.value = false
+}
+
+function confirmBulkArchive() {
+  const count = bulkArchiveCount.value
+  archiveWarehouses(bulkArchiveIds.value)
+  toast.notify({ variant: 'success', title: `${count} warehouse${count !== 1 ? 's' : ''} archived` })
+  bulkArchiveDeselect?.()
+  closeBulkArchiveModal()
 }
 
 // ─── Export modal ─────────────────────────────────────────────────────────────
@@ -227,10 +253,10 @@ function clearFilters() {
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions="{ count, deselectAll }">
+    <template #bulk-actions="{ count, selectedRows, deselectAll }">
       <button
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-        @click="openBulkArchiveModal(count)"
+        @click="openBulkArchiveModal(selectedRows as Set<number>, deselectAll)"
       >
         Archive
       </button>
@@ -411,7 +437,7 @@ function clearFilters() {
               >
                 Archive
               </MpPopoverListItem>
-              <MpPopoverListItem v-else>
+              <MpPopoverListItem v-else @click="unarchive(row as unknown as Warehouse)">
                 Unarchive
               </MpPopoverListItem>
               <MpPopoverListItem
@@ -488,7 +514,7 @@ function clearFilters() {
       <MpModalFooter>
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--ghost" @click="closeArchiveModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="closeArchiveModal">Archive</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">Archive</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -516,7 +542,7 @@ function clearFilters() {
       <MpModalFooter>
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkArchiveModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="closeBulkArchiveModal">Archive</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmBulkArchive">Archive</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
