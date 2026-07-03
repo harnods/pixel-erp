@@ -87,6 +87,7 @@ const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/p
 const StockAdjustmentsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue'))
 const StockAdjustmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
 const StockCountFormPage = defineAsyncComponent(() => import('~/components/pages/StockCountFormPage.vue'))
+const StockInOutFormPage = defineAsyncComponent(() => import('~/components/pages/StockInOutFormPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -103,7 +104,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'stock-adjustments') {
     if (segs[1] === 'new') {
       return route.query.type === 'in-out'
-        ? { component: PlaceholderPage, id: 'new' }
+        ? { component: StockInOutFormPage, id: 'new' }
         : { component: StockCountFormPage, id: 'new' }
     }
     if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }

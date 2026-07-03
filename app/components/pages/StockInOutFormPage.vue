@@ -12,7 +12,7 @@ import ManageSerialDrawer from '~/components/patterns/ManageSerialDrawer.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { addAdjustment, accountOptions } from '~/data/stockAdjustments'
+import { addAdjustment, accountOptions, IN_OUT_CATEGORIES } from '~/data/stockAdjustments'
 
 const router = useRouter()
 
@@ -20,17 +20,20 @@ function toDisplayDate(iso: string) { const [y, m, d] = iso.split('-'); return `
 function toISODate(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
 const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 
-// ── Warehouse + account options ─────────────────────────────────────────────────
+// ── Warehouse + account + category options ──────────────────────────────────────
 const warehouseOptions = computed(() => warehouses.filter(w => w.status === 'active').map(w => ({ id: w.id, name: w.name })))
 const realWarehouses = warehouses.filter(w => w.status === 'active' && !w.isDefault)
 function warehouseName(id: string) { return warehouseOptions.value.find(w => w.id === id)?.name ?? '' }
 const acctOptions = accountOptions()
+const categoryOptions = IN_OUT_CATEGORIES.map(c => ({ id: c, name: c }))
 
 // ── Form state ───────────────────────────────────────────────────────────────────
 const transactionDate = ref(todayDisplay)
 const transactionDateError = ref(false)
 const warehouseId = ref(realWarehouses[0]?.id ?? warehouseOptions.value[0]?.id ?? '')
 const warehouseError = ref(false)
+const categoryId = ref(IN_OUT_CATEGORIES[0])
+const categoryError = ref(false)
 const accountId = ref(acctOptions.find(a => a.id === 'Inventory adjustment')?.id ?? acctOptions[0]?.id ?? '')
 const tags = ref<DataInterface[]>([])
 const memo = ref('')
@@ -68,66 +71,94 @@ function isSerialTrackedSku(sku: string): boolean {
   return p ? SERIAL_CATS.has(p.category) : false
 }
 
-// ── Product rows (each a counted product) ──────────────────────────────────────────
-interface CountRow { sku: string; counted: string; countedError: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[] }
-const rows = ref<CountRow[]>([])
+// ── Product rows (each an in/out product) ──────────────────────────────────────────
+interface InOutRow { sku: string; delta: string; deltaError: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[] }
+const rows = ref<InOutRow[]>([])
 const selectedSkus = computed(() => rows.value.map(r => r.sku))
 
 const drawerOpen = ref(false)
-const batchDrawerRow = ref<CountRow | null>(null)
+const batchDrawerRow = ref<InOutRow | null>(null)
 const batchDrawerOpen = computed({
   get: () => batchDrawerRow.value !== null,
   set: (v) => { if (!v) batchDrawerRow.value = null }
 })
-function openBatchDrawer(row: CountRow) { batchDrawerRow.value = row }
+function openBatchDrawer(row: InOutRow) { batchDrawerRow.value = row }
 function saveBatchLines(batches: CommittedBatch[]) {
   if (!batchDrawerRow.value) return
   batchDrawerRow.value.batchLines = batches
 }
-function batchHasCounts(row: CountRow): boolean {
+function batchHasCounts(row: InOutRow): boolean {
   return (row.batchLines ?? []).some(b => b.counted !== null)
 }
-function batchTotalFor(row: CountRow): number {
+function batchTotalFor(row: InOutRow): number {
   return (row.batchLines ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
 }
 
-const serialDrawerRow = ref<CountRow | null>(null)
+const serialDrawerRow = ref<InOutRow | null>(null)
 const serialDrawerOpen = computed({
   get: () => serialDrawerRow.value !== null,
   set: (v) => { if (!v) serialDrawerRow.value = null }
 })
-function openSerialDrawer(row: CountRow) { serialDrawerRow.value = row }
+function openSerialDrawer(row: InOutRow) { serialDrawerRow.value = row }
 function saveSerialLines(serials: string[]) {
   if (!serialDrawerRow.value) return
   serialDrawerRow.value.serialLines = serials
 }
-function serialHasCounts(row: CountRow): boolean {
+function serialHasCounts(row: InOutRow): boolean {
   return (row.serialLines?.length ?? 0) > 0
 }
-function serialTotalFor(row: CountRow): number {
+function serialTotalFor(row: InOutRow): number {
   return row.serialLines?.length ?? 0
 }
 
 function applyPicker(skus: string[]) {
   const existing = new Map(rows.value.map(r => [r.sku, r]))
-  rows.value = skus.map(sku => existing.get(sku) ?? { sku, counted: '', countedError: false, avgMode: 'auto', avgCostInput: '' })
+  rows.value = skus.map(sku => existing.get(sku) ?? { sku, delta: '', deltaError: false, avgMode: 'auto', avgCostInput: '' })
 }
 function removeRow(sku: string) { rows.value = rows.value.filter(r => r.sku !== sku) }
 
-// Average cost per row: 'auto' shows the product's moving-average cost (read-only);
-// 'custom' turns the cell into an input. Switch via the hover edit menu.
-function fmtAvgInput(raw: string): string {
-  const digits = raw.replace(/\D/g, '')
-  if (!digits) return ''
-  return Number(digits).toLocaleString('id-ID')
+// ── Delta input (allows negative for stock out) ──────────────────────────────────
+function onDeltaInput(row: InOutRow, ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const raw = input.value
+  const isNeg = raw.startsWith('-')
+  const digits = raw.replace(/[^0-9]/g, '')
+  const formatted = digits
+    ? (isNeg ? '-' : '') + Number(digits).toLocaleString('id-ID')
+    : (isNeg ? '-' : '')
+  row.delta = formatted
+  row.deltaError = false
+  nextTick(() => { input.setSelectionRange(input.value.length, input.value.length) })
 }
-function onAvgInput(row: CountRow, ev: Event) {
+
+function parseDelta(val: string): number {
+  const isNeg = val.trim().startsWith('-')
+  const abs = Number(val.replace(/[^0-9]/g, '')) || 0
+  return isNeg ? -abs : abs
+}
+
+function hasMovement(row: InOutRow): boolean {
+  if (isBatchTrackedSku(row.sku)) return batchHasCounts(row)
+  return row.delta.trim() !== '' && row.delta.trim() !== '-'
+}
+
+function newOnHandFor(row: InOutRow): number | null {
+  if (isBatchTrackedSku(row.sku)) {
+    if (!batchHasCounts(row)) return null
+    return onHandFor(row.sku) + batchTotalFor(row)
+  }
+  if (!hasMovement(row)) return null
+  return onHandFor(row.sku) + parseDelta(row.delta)
+}
+
+// Average cost per row
+function onAvgInput(row: InOutRow, ev: Event) {
   const input = ev.target as HTMLInputElement
   const digits = input.value.replace(/\D/g, '')
   row.avgCostInput = digits ? Number(digits).toLocaleString('id-ID') : ''
   nextTick(() => { input.setSelectionRange(input.value.length, input.value.length) })
 }
-function setAvgMode(row: CountRow, mode: 'auto' | 'custom') {
+function setAvgMode(row: InOutRow, mode: 'auto' | 'custom') {
   row.avgMode = mode
   if (mode === 'custom' && row.avgCostInput === '') {
     const cost = avgCostFor(row.sku)
@@ -136,55 +167,16 @@ function setAvgMode(row: CountRow, mode: 'auto' | 'custom') {
 }
 function fmtIDR(n: number) { return n.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }) }
 
-function onCountedInput(row: CountRow, ev: Event) {
-  const input = ev.target as HTMLInputElement
-  const digits = input.value.replace(/\D/g, '')
-  row.counted = digits ? Number(digits).toLocaleString('id-ID') : ''
-  row.countedError = false
-  nextTick(() => { input.setSelectionRange(input.value.length, input.value.length) })
-}
-function parseCounted(val: string): number {
-  return Number(val.replace(/\./g, '')) || 0
-}
-function isCounted(row: CountRow) {
-  if (isBatchTrackedSku(row.sku)) return batchHasCounts(row)
-  return row.counted.trim() !== ''
-}
-function differenceOf(row: CountRow): number | null {
-  if (isBatchTrackedSku(row.sku)) {
-    if (!batchHasCounts(row)) return null
-    return batchTotalFor(row) - onHandFor(row.sku)
-  }
-  return isCounted(row) ? parseCounted(row.counted) - onHandFor(row.sku) : null
-}
-function diffLabel(row: CountRow): string {
-  const d = differenceOf(row)
-  if (d === null) return 'Uncounted'
-  return d > 0 ? `+${d.toLocaleString('id-ID')}` : d.toLocaleString('id-ID')
-}
-
-// ── Count progress + search filters ────────────────────────────────────────────────
-type Progress = '' | 'counted' | 'uncounted'
-const progress = ref<Progress>('')
-const progressOptions: { value: Progress; label: string }[] = [
-  { value: '', label: 'All items' },
-  { value: 'counted', label: 'Counted' },
-  { value: 'uncounted', label: 'Not counted' },
-]
-// Default (all items) shows the field name "Count progress" as a placeholder.
-const progressLabel = computed(() => progress.value === '' ? 'Count progress' : (progressOptions.find(o => o.value === progress.value)?.label ?? 'Count progress'))
+// ── Search filter ────────────────────────────────────────────────────────────────
 const search = ref('')
 const displayRows = computed(() => {
   const q = search.value.trim().toLowerCase()
   return rows.value.filter(r => {
-    if (progress.value === 'counted' && !isCounted(r)) return false
-    if (progress.value === 'uncounted' && isCounted(r)) return false
     if (q && !nameFor(r.sku).toLowerCase().includes(q) && !r.sku.toLowerCase().includes(q)) return false
     return true
   })
 })
 function importProducts() { /* bulk import — not built in this prototype */ }
-function printStockCard() { /* print stock card — not built in this prototype */ }
 
 // ── Tags ─────────────────────────────────────────────────────────────────────────
 function onTagsChange(data: DataInterface[]) { tags.value = data }
@@ -210,27 +202,27 @@ function handleSave() {
   let valid = true
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
-  if (!rows.value.length) { formError.value = 'Add at least one product to count.'; valid = false }
+  if (!categoryId.value) { categoryError.value = true; valid = false }
+  if (!rows.value.length) { formError.value = 'Add at least one product.'; valid = false }
   if (!valid) return
 
-  // Store each line's counted qty (uncounted rows default to on-hand = no change).
   const lines = rows.value.map(r => ({
     sku: r.sku,
     qty: isBatchTrackedSku(r.sku)
-      ? (batchHasCounts(r) ? batchTotalFor(r) : onHandFor(r.sku))
-      : (isCounted(r) ? parseCounted(r.counted) : onHandFor(r.sku))
+      ? (batchHasCounts(r) ? batchTotalFor(r) : 0)
+      : parseDelta(r.delta),
   }))
   const adj = addAdjustment({
-    kind: 'count',
+    kind: 'in-out',
     date: toISODate(transactionDate.value),
     warehouseId: warehouseId.value,
     warehouseName: warehouseName(warehouseId.value),
-    category: 'Stock count',
+    category: categoryId.value as any,
     tags: tagStrings(),
     memo: memo.value.trim() || undefined,
     lines,
   })
-  toast.notify({ variant: 'success', title: 'Stock count created' })
+  toast.notify({ variant: 'success', title: 'Stock in/out created' })
   router.push(`/stock-adjustments/${adj.id}`)
 }
 
@@ -253,7 +245,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <div class="detail-bar-left">
         <button class="detail-breadcrumb" @click="goBack">All stock adjustments</button>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New stock count</h1>
+          <h1 class="detail-title">New stock in/out</h1>
         </div>
       </div>
     </header>
@@ -290,28 +282,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpFormErrorMessage>Please select a warehouse</MpFormErrorMessage>
           </MpFormControl>
 
+          <MpFormControl id="scf-category" class="scf-f-category" is-required :is-invalid="categoryError">
+            <MpFormLabel>Category</MpFormLabel>
+            <MpAutocomplete id="scf-category-ac" v-model="categoryId" :data="categoryOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width :is-invalid="categoryError" @update:model-value="categoryError = false" />
+            <MpFormErrorMessage>Please select a category</MpFormErrorMessage>
+          </MpFormControl>
+
           <MpFormControl id="scf-account" class="scf-f-account">
             <MpFormLabel>Account</MpFormLabel>
             <MpAutocomplete id="scf-account-ac" v-model="accountId" :data="acctOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width />
           </MpFormControl>
         </div>
 
-        <!-- Product table toolbar -->
+        <!-- Product table toolbar — right-aligned only (no count progress filter) -->
         <div class="scf-table-toolbar">
-          <MpPopover id="scf-progress" is-close-on-select>
-            <MpPopoverTrigger>
-              <button class="scf-progress-btn" :class="{ 'scf-progress-btn--placeholder': progress === '' }" type="button">
-                {{ progressLabel }}
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-              <MpPopoverList>
-                <MpPopoverListItem v-for="o in progressOptions" :key="o.value" :is-active="o.value === progress" @click="progress = o.value">{{ o.label }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-
           <div class="scf-toolbar-right">
             <div class="scf-search">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -333,8 +317,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <th class="scf-th">Product</th>
                   <th class="scf-th">SKU</th>
                   <th class="scf-th scf-th--num">On hand qty</th>
-                  <th class="scf-th scf-th--num">Counted qty</th>
-                  <th class="scf-th scf-th--num">Difference</th>
+                  <th class="scf-th scf-th--num">Stock in/out qty</th>
+                  <th class="scf-th scf-th--num">New on hand qty</th>
                   <th class="scf-th">Unit</th>
                   <th class="scf-th scf-th--num">Average cost</th>
                   <th class="scf-th scf-th--del" />
@@ -358,33 +342,36 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--batch-counted">
                     <div class="scf-batch-row scf-batch-row--total">
                       <span v-if="batchHasCounts(row)" class="scf-batch-total">{{ batchTotalFor(row).toLocaleString('id-ID') }}</span>
-                      <span v-else class="scf-batch-uncounted">Uncounted</span>
+                      <span v-else class="scf-batch-uncounted">—</span>
                     </div>
                     <div class="scf-batch-row scf-batch-row--action">
                       <button class="scf-batch-link" type="button" @click="openBatchDrawer(row)">Manage batch</button>
                     </div>
                   </td>
+                  <!-- serial-tracked SKU -->
                   <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--batch-counted scf-td--serial">
                     <div class="scf-batch-row scf-batch-row--total scf-batch-row--bare">
-                      <input
-                        :id="`scf-counted-${row.sku}`"
-                        class="scf-qty-input"
-                        type="text"
-                        inputmode="numeric"
-                        :value="row.counted"
-                        placeholder="0"
-                        @input="onCountedInput(row, $event)"
-                      />
+                      <input class="scf-qty-input" type="text" inputmode="numeric" :value="row.delta" placeholder="0" @input="onDeltaInput(row, $event)" />
                     </div>
                     <div class="scf-batch-row scf-batch-row--action">
                       <button class="scf-batch-link" type="button" @click="openSerialDrawer(row)">Manage serial number</button>
                     </div>
                   </td>
-                  <!-- regular SKU (existing behavior unchanged) -->
+                  <!-- regular SKU -->
                   <td v-else class="scf-td scf-td--input">
-                    <input :id="`scf-counted-${row.sku}`" class="scf-qty-input" type="text" inputmode="numeric" :value="row.counted" placeholder="0" @input="onCountedInput(row, $event)" />
+                    <input class="scf-qty-input" type="text" inputmode="numeric" :value="row.delta" placeholder="0" @input="onDeltaInput(row, $event)" />
                   </td>
-                  <td class="scf-td scf-td--num" :class="{ 'scf-diff--pos': (differenceOf(row) ?? 0) > 0, 'scf-diff--neg': (differenceOf(row) ?? 0) < 0, 'scf-diff--uncounted': differenceOf(row) === null }">{{ diffLabel(row) }}</td>
+                  <!-- New on hand qty -->
+                  <td
+                    class="scf-td scf-td--num"
+                    :class="{
+                      'scf-diff--pos': (newOnHandFor(row) ?? onHandFor(row.sku)) > onHandFor(row.sku),
+                      'scf-diff--neg': (newOnHandFor(row) ?? onHandFor(row.sku)) < onHandFor(row.sku),
+                      'scf-diff--uncounted': newOnHandFor(row) === null,
+                    }"
+                  >
+                    {{ newOnHandFor(row) !== null ? newOnHandFor(row)!.toLocaleString('id-ID') : '—' }}
+                  </td>
                   <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
                   <td class="scf-td scf-td--num scf-td--avg" :class="{ 'scf-td--input': row.avgMode === 'custom' }">
                     <div class="scf-avg-wrap">
@@ -452,7 +439,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">Cancel</button>
-      <button class="btn-enterprise btn-enterprise--secondary" @click="printStockCard">Print stock card</button>
       <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">Save</button>
     </footer>
 
@@ -462,6 +448,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :open="batchDrawerOpen"
       :sku="batchDrawerRow.sku"
       :warehouse-id="warehouseId"
+      kind="in-out"
       :model-value="batchDrawerRow.batchLines ?? []"
       @update:open="batchDrawerOpen = $event"
       @save="saveBatchLines"
@@ -471,7 +458,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :open="true"
       :sku="serialDrawerRow.sku"
       :warehouse-id="warehouseId"
-      :target-count="parseCounted(serialDrawerRow.counted)"
+      kind="in-out"
+      :delta="parseDelta(serialDrawerRow.delta)"
+      :target-count="Math.abs(parseDelta(serialDrawerRow.delta))"
       :model-value="serialDrawerRow.serialLines ?? []"
       @update:open="serialDrawerOpen = false"
       @save="saveSerialLines"
@@ -497,16 +486,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-f-transno { grid-column: 2; grid-row: 1; }
 .scf-f-tags { grid-column: 3; grid-row: 1; }
 .scf-f-warehouse { grid-column: 1; grid-row: 2; }
-.scf-f-account { grid-column: 2; grid-row: 2; }
+.scf-f-category { grid-column: 2; grid-row: 2; }
+.scf-f-account { grid-column: 3; grid-row: 2; }
 .scf-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .scf-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 .scf-datepicker { width: 100%; }
 .scf-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
-.scf-table-toolbar { margin-top: 32px; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
-.scf-progress-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer; }
-.scf-progress-btn svg { color: var(--mp-icon-default); }
-.scf-progress-btn--placeholder { color: var(--mp-text-placeholder); }
+.scf-table-toolbar { margin-top: 32px; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
 .scf-toolbar-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .scf-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 280px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
 .scf-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
@@ -521,7 +508,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
 .scf-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .scf-th--del { padding: 0; }
-/* Read-only cells are gray; editable cells (Counted, custom Average cost) are white. */
 .scf-td { padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; background: var(--mp-background-neutral-subtle); }
 .scf-tr:last-child .scf-td { border-bottom: none; }
 .scf-td--muted { color: var(--mp-text-secondary); }
@@ -529,14 +515,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-diff--pos { color: var(--mp-text-success, #18794e); }
 .scf-diff--neg { color: var(--mp-text-danger, #a8352d); }
 .scf-diff--uncounted { color: var(--mp-text-secondary); }
-/* Average cost — value + edit icon to its right. The icon's space is always reserved
-   (visibility toggled, not display) so hovering never shifts the row or the icon. */
-/* height:1px on the td enables height:100% on the child wrap — actual rendered height wins. */
 .scf-td--avg.scf-td--input { height: 1px; }
 .scf-avg-wrap { display: flex; align-items: center; width: 100%; height: 100%; min-height: var(--mp-sizes-10, 40px); }
 .scf-avg-val { margin-left: auto; font-variant-numeric: tabular-nums; padding-right: var(--mp-spacing-2); }
-/* Custom average cost — table-input format (edge-to-edge, cell owns the focus ring)
-   with a gray "Rp" prefix box that spans the full cell height. */
 .scf-avg-prefix { align-self: stretch; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); border-right: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); white-space: nowrap; }
 .scf-avg-num { flex: 1; min-width: 0; text-align: right; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
 .scf-avg-edit { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: var(--mp-spacing-1); padding: 0; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }

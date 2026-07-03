@@ -46,8 +46,8 @@ watch(() => props.isOpen, (open) => { if (open) collapsedStages.value = new Set(
 type LogRow =
   | { kind: 'requested'; user: string; date: string }
   | { kind: 'stageHeader'; index: number; stage: ApprovalStage; done: boolean; expanded: boolean }
-  | { kind: 'approved'; user: string; date: string }
-  | { kind: 'pending'; label: string }
+  | { kind: 'approved'; user: string; date: string; child: true }
+  | { kind: 'pending'; label: string; child: true }
 
 const displayRows = computed<LogRow[]>(() => {
   const log = props.log
@@ -58,14 +58,14 @@ const displayRows = computed<LogRow[]>(() => {
     const expanded = !collapsedStages.value.has(i)
     rows.push({ kind: 'stageHeader', index: i, stage, done, expanded })
     if (!expanded) return
-    for (const step of stage.approvals) rows.push({ kind: 'approved', user: step.user, date: step.date })
+    for (const step of stage.approvals) rows.push({ kind: 'approved', user: step.user, date: step.date, child: true })
     if (done) return
     const pending = pendingApprovers(stage)
     if (!pending.length) return
     if (stage.rule === 'everyone') {
-      for (const name of pending) rows.push({ kind: 'pending', label: `Awaiting approval from ${name}` })
+      for (const name of pending) rows.push({ kind: 'pending', label: `Awaiting approval from ${name}`, child: true })
     } else {
-      rows.push({ kind: 'pending', label: `Awaiting approval from ${pending.join(' or ')}` })
+      rows.push({ kind: 'pending', label: `Awaiting approval from ${pending.join(' or ')}`, child: true })
     }
   })
   return rows
@@ -74,7 +74,7 @@ const displayRows = computed<LogRow[]>(() => {
 
 <template>
   <MpModal
-    id="approval-log-modal" :is-open="isOpen" size="sm"
+    id="approval-log-modal" :is-open="isOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="emit('close')"
   >
     <MpModalContent>
@@ -84,7 +84,7 @@ const displayRows = computed<LogRow[]>(() => {
       </MpModalHeader>
       <MpModalBody>
         <div class="al-list">
-          <div v-for="(row, i) in displayRows" :key="i" class="al-row">
+          <div v-for="(row, i) in displayRows" :key="i" class="al-row" :class="{ 'al-row--child': 'child' in row }">
             <div class="al-rail">
               <span v-if="row.kind === 'requested'" class="al-dot al-dot--submitted" />
               <button
@@ -97,10 +97,10 @@ const displayRows = computed<LogRow[]>(() => {
                 </svg>
               </button>
               <span v-else-if="row.kind === 'approved'" class="al-dot al-dot--approved">
-                <MpIcon name="check" size="sm" color="icon.inverse" />
+                <MpIcon name="done" variant="fill" size="sm" color="icon.inverse" />
               </span>
               <span v-else class="al-dot al-dot--pending">
-                <MpIcon name="pending" size="sm" color="icon.inverse" />
+                <MpIcon name="time" variant="fill" size="sm" color="icon.inverse" />
               </span>
             </div>
 
@@ -136,8 +136,11 @@ const displayRows = computed<LogRow[]>(() => {
 
 <style scoped>
 .al-list { display: flex; flex-direction: column; width: 100%; }
-.al-row { display: flex; gap: var(--mp-spacing-3); align-items: stretch; width: 100%; }
+.al-row { display: flex; gap: var(--mp-spacing-3); align-items: stretch; width: 100%; box-sizing: border-box; }
 .al-row:last-child .al-rail::before { display: none; }
+/* Approver rows (approved/pending) are the accordion's content — indent them under
+   their stage header instead of sharing its rail column. */
+.al-row--child { padding-left: 32px; }
 
 /* Left rail — the connecting line runs continuously behind every marker; the marker
    itself sits on top (z-index) so the line reads as passing through it. */

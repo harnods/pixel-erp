@@ -116,9 +116,10 @@ function makeSerials(sku: string, onHand: number, reserved: number, seed: number
       serial: `${prefix}${String(base + k).padStart(5, '0')}`,
       location: binLocation(seed, i + k)[0]!,
     }))
+  const avail = Math.max(0, onHand - reserved)
   return {
-    available: mk(Math.min(6, Math.max(1, onHand)), seed * 100 + i * 10 + 100),
-    reserved: mk(Math.min(2, Math.max(0, reserved)), seed * 100 + i * 10 + 900),
+    available: mk(avail, seed * 100 + i * 10 + 100),
+    reserved: mk(reserved, seed * 100 + i * 10 + 900),
   }
 }
 

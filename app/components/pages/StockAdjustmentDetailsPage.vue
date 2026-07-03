@@ -9,11 +9,15 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { formatDateLong } from '~/utils/date'
 import {
   stockAdjustments, getAdjustment, adjustmentLineItems, adjustmentMemo, adjustmentAttachments,
   adjustmentUpdatedBy, adjustmentUpdatedAt, accountCodeFor, deleteAdjustments,
+  type AdjustmentLine,
 } from '~/data/stockAdjustments'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
@@ -27,6 +31,32 @@ const attachments = computed(() => adjustment.value ? adjustmentAttachments(adju
 const lastUpdatedBy = computed(() => adjustment.value ? adjustmentUpdatedBy(adjustment.value) : '')
 const lastUpdatedAt = computed(() => adjustment.value ? adjustmentUpdatedAt(adjustment.value) : new Date().toISOString())
 const accountCode = computed(() => adjustment.value ? accountCodeFor(adjustment.value.account) : '')
+
+// ── Batch / serial detection ───────────────────────────────────────────────────
+const warehouseStockMap = computed(() => {
+  if (!adjustment.value) return {}
+  const wh = getWarehouseDetail(adjustment.value.warehouseId)
+  if (!wh) return {}
+  return Object.fromEntries(wh.stock.map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string) { return !!warehouseStockMap.value[sku]?.batches }
+function isSerialTrackedSku(sku: string) { return !!warehouseStockMap.value[sku]?.serials }
+
+// ── View batch drawer ──────────────────────────────────────────────────────────
+const viewBatchOpen = ref(false)
+const viewBatchItem = ref<AdjustmentLine | null>(null)
+function openViewBatch(item: AdjustmentLine) {
+  viewBatchItem.value = item
+  viewBatchOpen.value = true
+}
+
+// ── View serial drawer ─────────────────────────────────────────────────────────
+const viewSerialOpen = ref(false)
+const viewSerialItem = ref<AdjustmentLine | null>(null)
+function openViewSerial(item: AdjustmentLine) {
+  viewSerialItem.value = item
+  viewSerialOpen.value = true
+}
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 function diffLabel(n: number) { return n > 0 ? `+${fmt(n)}` : fmt(n) }
@@ -238,15 +268,46 @@ onUnmounted(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in visibleItems" :key="item.key" class="detail-item-row">
+              <tr
+                v-for="item in visibleItems" :key="item.key" class="detail-item-row"
+                :class="{ 'detail-item-row--batch': isBatchTrackedSku(item.sku) || isSerialTrackedSku(item.sku) }"
+              >
                 <td class="detail-td"><ProductCell :name="item.product.name" :desc="item.product.desc" :image="item.product.img" /></td>
                 <td class="detail-td">{{ item.sku }}</td>
                 <template v-if="isCount">
                   <td class="detail-td detail-td--num">{{ fmt(item.prevOnHand) }}</td>
-                  <td class="detail-td detail-td--num">{{ fmt(item.counted) }}</td>
+                  <!-- Batch-tracked: 2-row counted cell -->
+                  <td v-if="isBatchTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
+                    <div class="detail-counted-qty">{{ fmt(item.counted) }}</div>
+                    <div class="detail-counted-action">
+                      <button class="detail-view-link" type="button" @click="openViewBatch(item)">View batch</button>
+                    </div>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
+                    <div class="detail-counted-qty">{{ fmt(item.counted) }}</div>
+                    <div class="detail-counted-action">
+                      <button class="detail-view-link" type="button" @click="openViewSerial(item)">View serial numbers</button>
+                    </div>
+                  </td>
+                  <td v-else class="detail-td detail-td--num">{{ fmt(item.counted) }}</td>
                   <td class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
                 </template>
-                <td v-else class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
+                <!-- in-out: batch/serial gets 2-row qty cell -->
+                <template v-else>
+                  <td v-if="isBatchTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
+                    <div class="detail-counted-qty detail-counted-qty--delta" :class="{ 'detail-diff--pos': item.difference > 0, 'detail-diff--neg': item.difference < 0 }">{{ diffLabel(item.difference) }}</div>
+                    <div class="detail-counted-action">
+                      <button class="detail-view-link" type="button" @click="openViewBatch(item)">View batch</button>
+                    </div>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
+                    <div class="detail-counted-qty detail-counted-qty--delta" :class="{ 'detail-diff--pos': item.difference > 0, 'detail-diff--neg': item.difference < 0 }">{{ diffLabel(item.difference) }}</div>
+                    <div class="detail-counted-action">
+                      <button class="detail-view-link" type="button" @click="openViewSerial(item)">View serial numbers</button>
+                    </div>
+                  </td>
+                  <td v-else class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
+                </template>
                 <td class="detail-td">{{ item.unit }}</td>
                 <td class="detail-td detail-td--num">{{ formatIDR(item.averageCost) }}</td>
               </tr>
@@ -313,6 +374,30 @@ onUnmounted(() => {
       :updated-by="lastUpdatedBy"
       :updated-at="lastUpdatedAt"
       @close="activityOpen = false"
+    />
+
+    <ViewBatchDrawer
+      v-if="viewBatchItem"
+      :open="viewBatchOpen"
+      :sku="viewBatchItem.sku"
+      :warehouse-id="adjustment.warehouseId"
+      :kind="isCount ? 'count' : 'in-out'"
+      :counted-total="isCount ? viewBatchItem.counted : undefined"
+      :delta-total="isCount ? undefined : viewBatchItem.difference"
+      :product-name="viewBatchItem.product.name"
+      :product-img="viewBatchItem.product.img"
+      @update:open="viewBatchOpen = $event"
+    />
+
+    <ViewSerialDrawer
+      v-if="viewSerialItem"
+      :open="viewSerialOpen"
+      :sku="viewSerialItem.sku"
+      :warehouse-id="adjustment.warehouseId"
+      :counted-total="viewSerialItem.counted"
+      :product-name="viewSerialItem.product.name"
+      :product-img="viewSerialItem.product.img"
+      @update:open="viewSerialOpen = $event"
     />
 
     <!-- Delete stock adjustment -->
@@ -405,6 +490,30 @@ onUnmounted(() => {
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default); }
 .detail-items-section--bordered .detail-items-count { border-top: 1px solid var(--mp-border-default); border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+
+/* Batch/serial 2-row counted cell */
+.detail-item-row--batch .detail-td { vertical-align: middle; }
+.detail-td--counted-batch { display: table-cell; vertical-align: top; border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
+.detail-counted-qty {
+  height: 40px; display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default);
+  white-space: nowrap;
+}
+.detail-counted-action {
+  height: 40px; display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-4);
+}
+.detail-counted-qty--delta { justify-content: flex-end; }
+.detail-diff--pos { color: var(--mp-text-success, #18794e); }
+.detail-diff--neg { color: var(--mp-text-danger, #a8352d); }
+.detail-view-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
+  white-space: nowrap;
+}
+.detail-view-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .detail-notes-left { display: flex; flex-direction: column; }
 .detail-note-text { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); white-space: pre-line; }
