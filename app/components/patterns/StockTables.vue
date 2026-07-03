@@ -39,10 +39,10 @@ const allStockColumns: TableColumn[] = [
   { key: 'sku',                 label: 'SKU',                  width: '120px' },
   { key: 'barcode',             label: 'Barcode',              width: '170px' },
   { key: 'category',            label: 'Category',             width: '150px' },
-  { key: 'onHand',              label: 'On hand',              width: '120px', align: 'right' },
-  { key: 'reserved',            label: 'Reserved',             width: '120px', align: 'right' },
-  { key: 'available',           label: 'Available',            width: '120px', align: 'right' },
-  { key: 'onTheWay',            label: 'On the way',           width: '130px', align: 'right' },
+  { key: 'onHand',              label: 'On hand qty',          width: '120px', align: 'right' },
+  { key: 'reserved',            label: 'Reserved qty',         width: '120px', align: 'right' },
+  { key: 'available',           label: 'Available qty',        width: '120px', align: 'right' },
+  { key: 'onTheWay',            label: 'On the way qty',       width: '130px', align: 'right' },
   { key: 'minStock',            label: 'Min. stock',           width: '130px', align: 'right' },
   { key: 'unit',                label: 'Unit',                 width: '90px'  },
   { key: 'locations',           label: 'Location',             width: '230px' },
@@ -66,9 +66,9 @@ const batchColItems = [
   { key: 'batch', label: 'Batch' },
   { key: 'location', label: 'Location' },
   { key: 'expiry', label: 'Expiry date' },
-  { key: 'onHand', label: 'On hand' },
-  { key: 'reserved', label: 'Reserved' },
-  { key: 'available', label: 'Available' },
+  { key: 'onHand', label: 'On hand qty' },
+  { key: 'reserved', label: 'Reserved qty' },
+  { key: 'available', label: 'Available qty' },
   { key: 'unit', label: 'Unit' },
   { key: 'lastUpdated', label: 'Last updated' },
 ]
@@ -76,8 +76,8 @@ const batchColVisibility = reactive<Record<string, boolean>>(Object.fromEntries(
 const serialColItems = [
   { key: 'product', label: 'Product', disabled: true },
   { key: 'sku', label: 'SKU', disabled: true },
-  { key: 'available', label: 'Available' },
-  { key: 'reserved', label: 'Reserved' },
+  { key: 'available', label: 'Available qty' },
+  { key: 'reserved', label: 'Reserved qty' },
   { key: 'lastUpdated', label: 'Last updated' },
 ]
 const serialColVisibility = reactive<Record<string, boolean>>(Object.fromEntries(serialColItems.map(c => [c.key, c.key !== 'lastUpdated'])))
@@ -360,9 +360,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <th v-if="batchColVisibility.batch" class="wh-bth">Batch</th>
                 <th v-if="batchColVisibility.location" class="wh-bth">Location</th>
                 <th v-if="batchColVisibility.expiry" class="wh-bth">Expiry date</th>
-                <th v-if="batchColVisibility.onHand" class="wh-bth wh-bth--num">On hand</th>
-                <th v-if="batchColVisibility.reserved" class="wh-bth wh-bth--num">Reserved</th>
-                <th v-if="batchColVisibility.available" class="wh-bth wh-bth--num">Available</th>
+                <th v-if="batchColVisibility.onHand" class="wh-bth wh-bth--num">On hand qty</th>
+                <th v-if="batchColVisibility.reserved" class="wh-bth wh-bth--num">Reserved qty</th>
+                <th v-if="batchColVisibility.available" class="wh-bth wh-bth--num">Available qty</th>
                 <th v-if="batchColVisibility.unit" class="wh-bth">Unit</th>
                 <th v-if="batchColVisibility.lastUpdated" class="wh-bth">Last updated</th>
               </tr>
@@ -476,8 +476,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <tr>
                 <th class="wh-bth">Product</th>
                 <th v-if="serialColVisibility.sku" class="wh-bth">SKU</th>
-                <th v-if="serialColVisibility.available" class="wh-bth">Available</th>
-                <th v-if="serialColVisibility.reserved" class="wh-bth">Reserved</th>
+                <th v-if="serialColVisibility.available" class="wh-bth">Available qty</th>
+                <th v-if="serialColVisibility.reserved" class="wh-bth">Reserved qty</th>
                 <th v-if="serialColVisibility.lastUpdated" class="wh-bth">Last updated</th>
               </tr>
             </thead>
