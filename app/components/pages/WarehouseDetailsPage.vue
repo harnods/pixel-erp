@@ -16,7 +16,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { getWarehouseActivity } from '~/data/warehouses'
+import { getWarehouseActivity, archiveWarehouses, unarchiveWarehouses } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { TODAY } from '~/data/master'
 import { useUrlModal } from '@ds/proto-review'
@@ -99,11 +99,16 @@ function goEdit() {
   router.push(`/warehouses/${props.orderId}/edit`)
 }
 function confirmArchive() {
+  if (!warehouse.value) return
+  archiveWarehouses([warehouse.value.id])
   archiveModalOpen.value = false
-  toast.notify({
-    variant: 'success',
-    title: isArchived.value ? 'Warehouse unarchived' : 'Warehouse archived',
-  })
+  toast.notify({ variant: 'success', title: 'Warehouse archived' })
+}
+/** Unarchive is a low-friction, reversible action — no confirmation modal (matches the index). */
+function unarchive() {
+  if (!warehouse.value) return
+  unarchiveWarehouses([warehouse.value.id])
+  toast.notify({ variant: 'success', title: 'Warehouse unarchived' })
 }
 function confirmDelete() {
   deleteModalOpen.value = false
@@ -230,6 +235,14 @@ function onLocSaved(parentId: string | null) {
 }
 
 const search = ref('')
+// tracks which product rows have their category list expanded (beyond 3)
+const expandedCategories = reactive<Set<string>>(new Set())
+function toggleCategories(id: string) {
+  if (expandedCategories.has(id)) expandedCategories.delete(id)
+  else expandedCategories.add(id)
+}
+const CAT_MAX = 3
+
 const filteredStock = computed(() => {
   const q = search.value.trim().toLowerCase()
   const list = warehouse.value?.stock ?? []
@@ -239,7 +252,7 @@ const filteredStock = computed(() => {
       s.name.toLowerCase().includes(q) ||
       s.sku.toLowerCase().includes(q) ||
       s.barcode.toLowerCase().includes(q) ||
-      s.category.toLowerCase().includes(q),
+      (s.categories ?? [s.category]).some(c => c.toLowerCase().includes(q)),
   )
 })
 // column-sort (mirrors useTableState's compare: numeric diff, else natural string compare)
@@ -437,7 +450,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="goEdit">Edit</MpPopoverListItem>
-            <MpPopoverListItem v-if="canArchive" @click="archiveModalOpen = true">
+            <MpPopoverListItem v-if="canArchive" @click="isArchived ? unarchive() : (archiveModalOpen = true)">
               {{ isArchived ? 'Unarchive' : 'Archive' }}
             </MpPopoverListItem>
             <MpPopoverListItem
@@ -552,6 +565,19 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <template #cell-available="{ value }">{{ formatNum(value as number) }}</template>
               <template #cell-onTheWay="{ value }">{{ formatNum(value as number) }}</template>
               <template #cell-minStock="{ value }">{{ formatNum(value as number) }}</template>
+
+              <!-- category: multi-category list with view more/less -->
+              <template #cell-category="{ row }">
+                <template v-if="(row as any).categories?.length">
+                  <ul class="wh-cat-list">
+                    <li v-for="cat in (expandedCategories.has((row as any).id) ? (row as any).categories : (row as any).categories.slice(0, CAT_MAX))" :key="cat" class="wh-cat-item">{{ cat }}</li>
+                  </ul>
+                  <button v-if="(row as any).categories.length > CAT_MAX" class="wh-cat-toggle" type="button" @click.stop="toggleCategories((row as any).id)">
+                    {{ expandedCategories.has((row as any).id) ? 'View less' : `+${(row as any).categories.length - CAT_MAX} more` }}
+                  </button>
+                </template>
+                <template v-else>{{ (row as any).category }}</template>
+              </template>
 
               <!-- location: one line per bin -->
               <template #cell-locations="{ value }">
@@ -999,11 +1025,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
     </div><!-- /detail-stage -->
 
-    <!-- ── Archive confirmation modal ── -->
+    <!-- ── Archive confirmation modal (same content as the index page's) ── -->
     <MpModal
       id="wh-detail-archive-modal"
       :is-open="archiveModalOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -1011,20 +1037,26 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     >
       <MpModalContent>
         <MpModalHeader>
-          {{ isArchived ? 'Unarchive warehouse?' : 'Archive warehouse?' }}
+          Archive warehouse?
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
-          {{ isArchived
-            ? 'This warehouse will be active again and available for new transactions.'
-            : 'Archived warehouses are hidden from selection but their data is kept.' }}
+          <div class="archive-modal-body">
+            <p>Archiving this warehouse will:</p>
+            <ul>
+              <li>Hide it from all transaction forms.</li>
+              <li>Stop recurring transactions in Sales and Purchases.</li>
+              <li>Block draft transactions linked to this warehouse from being approved.</li>
+              <li>Disable multilevel storage.</li>
+              <li>May cause sync issues with Moka POS.</li>
+            </ul>
+            <p class="archive-modal-body__note">To avoid disruption, reassign open transactions to another warehouse before archiving.</p>
+          </div>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--ghost" @click="archiveModalOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">
-              {{ isArchived ? 'Unarchive' : 'Archive' }}
-            </button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">Archive</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1378,6 +1410,14 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 /* Location paths can be long (e.g. "Lantai 1 / Zone A / Rack 03 / Bin A01"); wrap
    them inside the column instead of overflowing (bleeding) into neighbour cells. */
 .wh-loc { display: block; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.wh-cat-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.wh-cat-item { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: normal; }
+.wh-cat-toggle {
+  margin-top: var(--mp-spacing-1); padding: 0; border: none; background: none;
+  cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
+  white-space: nowrap;
+}
+.wh-cat-toggle:hover { text-decoration: underline; }
 
 /* ── Batch table cells ── */
 .wh-batch-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }
@@ -1589,4 +1629,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
 /* ── Modal footer ── */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
+
+/* Archive modal body (matches the index page's WarehousesPage.vue) */
+.archive-modal-body { display: flex; flex-direction: column; gap: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); }
+.archive-modal-body p { margin: 0; }
+.archive-modal-body ul { margin: 0; padding-left: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.archive-modal-body li { list-style: disc; }
+.archive-modal-body__note { color: var(--mp-text-secondary); }
 </style>

@@ -226,6 +226,15 @@ function clearFilters() {
   search.value = ''
   statusFilter.value = 'active'
 }
+
+// ─── Empty state — illustrated (matches every other index page); the status tab
+// (Active/Archived) has its own tailored copy, not the generic "adjust your filters"
+// text (that's reserved for an actual search miss, via hasActiveFilter below). ────────
+const emptyIllustration = '/illustrations/empty-folder.png'
+const emptyTitle = computed(() => statusFilter.value === 'archived' ? 'No archived warehouses' : 'No warehouses')
+const emptyDesc = computed(() =>
+  statusFilter.value === 'archived' ? 'Warehouses you archive will appear here.' : 'Warehouses will appear here once created.',
+)
 </script>
 
 <template>
@@ -238,7 +247,7 @@ function clearFilters() {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     :loading="loading"
-    :has-active-filter="!!search || (statusFilter !== 'active')"
+    :has-active-filter="!!search"
     has-checkbox
     :row-disabled="isRowDisabled"
     bulk-label="warehouse"
@@ -451,6 +460,15 @@ function clearFilters() {
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
+    </template>
+
+    <!-- ── Full empty state (no active-search result — status tab genuinely has none) ── -->
+    <template #empty>
+      <div class="empty-full">
+        <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+        <p class="empty-full-title">{{ emptyTitle }}</p>
+        <p class="empty-full-desc">{{ emptyDesc }}</p>
+      </div>
     </template>
 
   </ErpTablePage>
@@ -694,6 +712,12 @@ function clearFilters() {
 </template>
 
 <style scoped>
+/* Full empty state (illustrated — matches every other index page) */
+.empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
 /* Filter bar layout — reused from other index pages */
 .filter-left {
   display: flex;

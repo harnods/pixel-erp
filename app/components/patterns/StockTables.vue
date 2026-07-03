@@ -24,7 +24,9 @@ const props = withDefaults(defineProps<{
   subject?: string
   /** label for the optional trailing tab, rendered when the #extra slot is filled */
   extraLabel?: string
-}>(), { subject: 'this location', extraLabel: 'Storage location' })
+  /** column keys to hide from the products table (e.g. ['minStock']) */
+  excludeColumns?: string[]
+}>(), { subject: 'this location', extraLabel: 'Storage location', excludeColumns: () => [] })
 
 const slots = useSlots()
 const hasExtra = computed(() => !!slots.extra)
@@ -54,7 +56,9 @@ const stockColVisibility = reactive<Record<string, boolean>>(
   Object.fromEntries(allStockCols.map(c => [c.key, c.key !== 'lastUpdated'])),
 )
 const stockColItems = allStockCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
-const stockColumns = computed<TableColumn[]>(() => allStockCols.filter(c => stockColVisibility[c.key]))
+const stockColumns = computed<TableColumn[]>(() =>
+  allStockCols.filter(c => stockColVisibility[c.key] && !props.excludeColumns!.includes(c.key))
+)
 
 const batchColItems = [
   { key: 'product', label: 'Product', disabled: true },
@@ -583,7 +587,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-product-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .wh-product-name { color: var(--mp-text-default); }
 .wh-product-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); margin-top: var(--mp-spacing-0\.5); }
-.wh-loc { display: block; }
+.wh-loc { display: block; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 
 /* Batch/serial table cells */
 .wh-batch-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }

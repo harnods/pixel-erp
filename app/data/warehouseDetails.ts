@@ -40,6 +40,8 @@ export interface WarehouseStockItem {
   sku: string
   barcode: string
   category: string
+  /** optional multi-category tags; overrides `category` in the products table display */
+  categories?: string[]
   onHand: number
   reserved: number
   available: number
@@ -81,6 +83,20 @@ const BATCH_CATEGORIES = new Set(['Green Beans', 'Roasted Beans'])
 const SERIAL_CATEGORIES = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 function isBatchTracked(category: string): boolean { return BATCH_CATEGORIES.has(category) }
 function isSerialized(category: string): boolean { return SERIAL_CATEGORIES.has(category) }
+
+// Sample products that belong to more than one category (sku → category list)
+const MULTI_CATEGORIES: Record<string, string[]> = {
+  '1101': ['Roasted Beans', 'Single Origin', 'Specialty Coffee'],
+  '1102': ['Roasted Beans', 'Blend', 'Specialty Coffee', 'House Blend'],
+  '1103': ['Roasted Beans', 'Single Origin', 'Decaf'],
+  '2001': ['Espresso Machine', 'Commercial', 'Semi-Automatic'],
+  '2002': ['Espresso Machine', 'Home', 'Semi-Automatic'],
+  '2003': ['Espresso Machine', 'Commercial', 'Fully Automatic', 'IoT-Enabled'],
+  '2101': ['Grinder', 'Commercial', 'Burr Grinder'],
+  '2201': ['Grinder', 'Home', 'Burr Grinder', 'Compact'],
+  '3001': ['Accessory', 'Brew Tools', 'Pour Over'],
+  '3002': ['Accessory', 'Maintenance', 'Cleaning'],
+}
 
 // Batches for a consumable — 1–2 lots that sum to the row's on-hand / reserved.
 function makeBatches(onHand: number, reserved: number, seed: number, i: number): ProductBatch[] {
@@ -150,6 +166,7 @@ function generateStock(products: Product[], seed: number): WarehouseStockItem[] 
       sku: cycle > 1 ? `${c.sku}-${cycle}` : c.sku,
       barcode: String(8_991_000_000_000 + seed * 100_000 + i),
       category: c.category,
+      categories: MULTI_CATEGORIES[c.sku],
       onHand,
       reserved,
       available: onHand - reserved,

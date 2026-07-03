@@ -188,6 +188,7 @@ function confirmDeleteLocation() {
         :stock="locStock"
         :subject="node.name"
         extra-label="Storage location"
+        :exclude-columns="['minStock']"
       >
         <template v-if="hasChildren" #extra>
           <StorageLocationTree :warehouse-id="warehouseId" :parent-id="node.id" />

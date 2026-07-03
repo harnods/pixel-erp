@@ -589,10 +589,12 @@ const bulkCountLabel = computed(() => {
               class="erp-td erp-td--empty"
               :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
             >
-              <!-- Inline empty — search/filter eliminated all results (no illustration) -->
+              <!-- Inline empty — search/filter eliminated all results (same illustration as
+                   the full empty state, so both empty states read consistently) -->
               <div v-if="hasActiveFilter" class="empty-inline">
+                <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
                 <p class="empty-inline-title">No results found</p>
-                <p class="empty-inline-desc">Try adjusting your filters.</p>
+                <p class="empty-inline-desc">Try adjusting your search or filters.</p>
                 <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
               </div>
               <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
@@ -1075,22 +1077,30 @@ const bulkCountLabel = computed(() => {
   margin: 0;
 }
 
-/* Inline empty (filtered/search → no results) — no illustration */
+/* Inline empty (filtered/search → no results) — illustrated the same as the full
+   empty state, so both read consistently across every index page. */
 .empty-inline {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-10, 40px) 0;
+}
+.empty-inline-illustration {
+  width: 288px;
+  height: 240px;
+  object-fit: contain;
+  margin-bottom: var(--mp-spacing-1);
 }
 .empty-inline-title {
   margin: 0;
-  font-size: var(--mp-font-sizes-md);
+  font-size: var(--mp-font-sizes-lg);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
 .empty-inline-desc {
   margin: 0;
-  font-size: var(--mp-font-sizes-sm);
+  font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
 }
 .empty-inline-clear {

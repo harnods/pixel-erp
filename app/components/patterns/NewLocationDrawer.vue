@@ -30,7 +30,15 @@ const emit = defineEmits<{
 }>()
 
 const isEdit = computed(() => !!props.editId)
-const levelPickerOptions = computed(() => levelOptions())
+const levelPickerOptions = computed(() => {
+  const all = levelOptions()
+  if (isEdit.value || !props.parentId) return all
+  const parent = findLocation(props.warehouseId, props.parentId)?.node
+  if (!parent) return all
+  const parentIdx = STORAGE_LEVELS.indexOf(parent.level)
+  // only allow levels strictly deeper than the parent
+  return all.filter((_, i) => i > parentIdx)
+})
 const level = ref<string>(STORAGE_LEVELS[0]!)
 const name = ref('')
 const code = ref('')
@@ -97,6 +105,17 @@ function close() { emit('update:isOpen', false) }
 function save() {
   const nm = name.value.trim()
   if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a location name' }); return }
+  if (!isEdit.value && props.parentId) {
+    const parent = findLocation(props.warehouseId, props.parentId)?.node
+    if (parent) {
+      const parentIdx = STORAGE_LEVELS.indexOf(parent.level)
+      const chosenIdx = STORAGE_LEVELS.indexOf(level.value)
+      if (chosenIdx <= parentIdx) {
+        toast.notify({ variant: 'danger', title: 'Level must be deeper than its parent' })
+        return
+      }
+    }
+  }
   if (isEdit.value) {
     updateLocation(props.warehouseId, props.editId!, { level: level.value, name: nm, type: type.value, description: description.value.trim() })
     emit('saved', props.parentId)
@@ -144,7 +163,8 @@ function save() {
           <MpFormControl id="nl-level" is-required>
             <MpFormLabel>Level</MpFormLabel>
             <MpAutocomplete
-              id="nl-level-ac"
+              :id="`nl-level-ac-${parentId}`"
+              :key="`nl-level-ac-${parentId}`"
               v-model="level"
               :data="levelPickerOptions"
               label-prop="label"
