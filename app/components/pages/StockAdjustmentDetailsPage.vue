@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTooltip, MpIcon, MpSpinner,
@@ -11,23 +11,28 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import { formatDateLong } from '~/utils/date'
 import {
-  warehouseTransfers, getTransfer, transferLineItems, transferMemo, transferAttachments,
-  transferUpdatedBy, transferUpdatedAt, transferActivityEntries, deleteTransfers, duplicateTransfer,
-} from '~/data/warehouseTransfers'
+  stockAdjustments, getAdjustment, adjustmentLineItems, adjustmentMemo, adjustmentAttachments,
+  adjustmentUpdatedBy, adjustmentUpdatedAt, accountCodeFor, deleteAdjustments,
+} from '~/data/stockAdjustments'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
-const transfer = computed(() => getTransfer(props.orderId))
-const lineItems = computed(() => transfer.value ? transferLineItems(transfer.value) : [])
-const memo = computed(() => transfer.value ? transferMemo(transfer.value) : '')
-const attachments = computed(() => transfer.value ? transferAttachments(transfer.value) : [])
-const lastUpdatedBy = computed(() => transfer.value ? transferUpdatedBy(transfer.value) : '')
-const lastUpdatedAt = computed(() => transfer.value ? transferUpdatedAt(transfer.value) : new Date().toISOString())
-const activityEntries = computed(() => transfer.value ? transferActivityEntries(transfer.value) : [])
+const adjustment = computed(() => getAdjustment(props.orderId))
+const isCount = computed(() => adjustment.value?.kind === 'count')
+const lineItems = computed(() => adjustment.value ? adjustmentLineItems(adjustment.value) : [])
+const memo = computed(() => adjustment.value ? adjustmentMemo(adjustment.value) : '')
+const attachments = computed(() => adjustment.value ? adjustmentAttachments(adjustment.value) : [])
+const lastUpdatedBy = computed(() => adjustment.value ? adjustmentUpdatedBy(adjustment.value) : '')
+const lastUpdatedAt = computed(() => adjustment.value ? adjustmentUpdatedAt(adjustment.value) : new Date().toISOString())
+const accountCode = computed(() => adjustment.value ? accountCodeFor(adjustment.value.account) : '')
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+function diffLabel(n: number) { return n > 0 ? `+${fmt(n)}` : fmt(n) }
+function formatIDR(amount: number) {
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount)
+}
 
 // ── Line items — auto lazy-load, internal scroll & border past 10 rows ─────────
 const PAGE_SIZE = 10
@@ -36,6 +41,11 @@ const loadingMore = ref(false)
 const visibleItems = computed(() => lineItems.value.slice(0, shownCount.value))
 const hasMoreItems = computed(() => shownCount.value < lineItems.value.length)
 const itemsProgressive = computed(() => lineItems.value.length > PAGE_SIZE)
+// Documented rule (details-page-format.md): a scrolling items table — vertical
+// (>10 rows) OR horizontal (wide) — becomes a contained panel with a border-bold
+// outer outline. Track horizontal overflow so wide tables get the outline too.
+const itemsOverflowX = ref(false)
+const itemsBordered = computed(() => itemsProgressive.value || itemsOverflowX.value)
 
 function loadMoreItems() {
   if (loadingMore.value || !hasMoreItems.value) return
@@ -47,6 +57,7 @@ function loadMoreItems() {
 }
 
 const itemsScrollEl = ref<HTMLElement | null>(null)
+const itemsTableEl = ref<HTMLElement | null>(null)
 const itemsSentinelEl = ref<HTMLElement | null>(null)
 let itemsObserver: IntersectionObserver | null = null
 function setupItemsObserver() {
@@ -66,6 +77,7 @@ watch(() => props.orderId, () => {
   nextTick(() => {
     if (itemsScrollEl.value) itemsScrollEl.value.scrollTop = 0
     setupItemsObserver()
+    checkOverflow()
   })
 })
 
@@ -92,22 +104,18 @@ const jumpSearch = ref('')
 const jumpResults = computed(() => {
   const q = jumpSearch.value.trim().toLowerCase()
   const matched = q
-    ? warehouseTransfers.filter(t => t.number.toLowerCase().includes(q) || t.originName.toLowerCase().includes(q) || t.destinationName.toLowerCase().includes(q))
-    : warehouseTransfers
+    ? stockAdjustments.filter(a => a.number.toLowerCase().includes(q) || a.warehouseName.toLowerCase().includes(q) || a.category.toLowerCase().includes(q))
+    : stockAdjustments
   return matched.slice(0, 6)
 })
-function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/warehouse-transfers/${id}`) }
+function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/stock-adjustments/${id}`) }
 
-function goBack() { router.push('/warehouse-transfers') }
+function goBack() { router.push('/stock-adjustments') }
 function preview() { /* opens the printable preview — not built in this prototype */ }
-function printPdf() { /* generates the transfer PDF — not built in this prototype */ }
-function editTransfer() { router.push(`/warehouse-transfers/${props.orderId}/edit`) }
-function duplicate() {
-  const copy = duplicateTransfer(props.orderId)
-  if (copy) router.push(`/warehouse-transfers/${copy.id}/edit`)
-}
+function printPdf() { /* generates the adjustment PDF — not built in this prototype */ }
+function editAdjustment() { router.push(`/stock-adjustments/${props.orderId}/edit`) }
 
-// ── Delete (single) — same alert as the index bulk delete ──────────────────────
+// ── Delete (single) — same alert as the index ──────────────────────────────────
 const deleteOpen = ref(false)
 const deleteReason = ref('')
 const deleteError = ref('')
@@ -115,33 +123,45 @@ const REASON_MAX = 256
 function askDelete() { deleteReason.value = ''; deleteError.value = ''; deleteOpen.value = true }
 function confirmDelete() {
   if (!deleteReason.value.trim()) { deleteError.value = 'Enter a reason for deleting'; return }
-  deleteTransfers([props.orderId])
+  deleteAdjustments([props.orderId])
   deleteOpen.value = false
-  router.push('/warehouse-transfers')
+  router.push('/stock-adjustments')
 }
 
 // Footer divider appears only when the stage actually scrolls.
 const stageEl = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)
-function checkOverflow() { const el = stageEl.value; if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1 }
+function checkOverflow() {
+  const el = stageEl.value; if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
+  const it = itemsScrollEl.value; if (it) itemsOverflowX.value = it.scrollWidth > it.clientWidth + 1
+}
 let ro: ResizeObserver | null = null
 onMounted(() => nextTick(() => {
   checkOverflow()
   ro = new ResizeObserver(checkOverflow)
   if (stageEl.value) { ro.observe(stageEl.value); stageEl.value.addEventListener('scroll', checkOverflow, { passive: true }) }
+  // Observe BOTH the scroll container AND the table itself, so content-driven width
+  // growth (fonts/columns) is caught — a container-only observer misses it.
+  if (itemsScrollEl.value) ro.observe(itemsScrollEl.value)
+  if (itemsTableEl.value) ro.observe(itemsTableEl.value)
+  window.addEventListener('resize', checkOverflow)
 }))
-onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll', checkOverflow) })
+onUnmounted(() => {
+  ro?.disconnect()
+  stageEl.value?.removeEventListener('scroll', checkOverflow)
+  window.removeEventListener('resize', checkOverflow)
+})
 </script>
 
 <template>
-  <div v-if="transfer" class="detail-page">
+  <div v-if="adjustment" class="detail-page">
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">All warehouse transfers</button>
+        <button class="detail-breadcrumb" @click="goBack">All stock adjustments</button>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ transfer.number }}</h1>
-          <MpPopover id="wtd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
+          <h1 class="detail-title">{{ adjustment.number }}</h1>
+          <MpPopover id="sad-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -155,9 +175,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
-                    <span class="detail-jump-item-number">{{ t.number }}</span>
-                    <span class="detail-jump-item-customer">{{ t.originName }} → {{ t.destinationName }}</span>
+                  <button v-for="a in jumpResults" :key="a.id" class="detail-jump-item" @click="jumpTo(a.id)">
+                    <span class="detail-jump-item-number">{{ a.number }}</span>
+                    <span class="detail-jump-item-customer">{{ a.warehouseName }} · {{ a.category }}</span>
                   </button>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
                 </div>
@@ -167,12 +187,11 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </div>
       </div>
 
-      <!-- Right-side icon actions (warehouse transfer has an approval flow) -->
       <div class="detail-titlerow-right">
-        <MpTooltip id="wtd-tt-tasks" label="Approval log" placement="bottom" use-portal>
-          <button class="detail-icon-btn" aria-label="Approval log"><MpIcon name="task-todo" size="md" /></button>
+        <MpTooltip id="sad-tt-tasks" label="Activity log" placement="bottom" use-portal>
+          <button class="detail-icon-btn" aria-label="Activity log" @click="activityOpen = true"><MpIcon name="task-todo" size="md" /></button>
         </MpTooltip>
-        <MpTooltip id="wtd-tt-comments" label="Comments" placement="bottom" use-portal>
+        <MpTooltip id="sad-tt-comments" label="Comments" placement="bottom" use-portal>
           <button class="detail-icon-btn" aria-label="Comments"><MpIcon name="comment" size="md" /></button>
         </MpTooltip>
       </div>
@@ -181,41 +200,55 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     <div ref="stageEl" class="detail-stage">
 
       <!-- Header summary -->
-      <section class="wtd-summary">
+      <section class="sad-summary">
         <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDateLong(transfer.date)" />
-          <ContentList label="Transaction no." :value="transfer.number" />
+          <ContentList label="Transaction date" :value="formatDateLong(adjustment.date)" />
+          <ContentList label="Account" :value="accountCode ? `${accountCode} ${adjustment.account}` : adjustment.account" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Origin warehouse" :value="transfer.originName" />
-          <ContentList label="Destination warehouse" :value="transfer.destinationName" />
+          <ContentList label="Transaction no." :value="adjustment.number" />
+          <ContentList label="Warehouse" :value="adjustment.warehouseName" />
         </div>
         <div class="content-list-col">
+          <ContentList v-if="!isCount" label="Category" :value="adjustment.category" />
           <ContentList label="Tags">
-            <ErpTagList v-if="transfer.tags.length" :tags="transfer.tags" />
+            <ErpTagList v-if="adjustment.tags.length" :tags="adjustment.tags" />
             <span v-else class="detail-note-text">—</span>
           </ContentList>
         </div>
+        <a class="sad-journal" @click.prevent>View journal entry</a>
       </section>
 
       <!-- Line items -->
-      <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsProgressive }">
+      <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsBordered }">
         <div ref="itemsScrollEl" class="detail-items-scroll">
-          <table class="detail-items">
+          <table ref="itemsTableEl" class="detail-items">
             <thead>
               <tr>
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
-                <th class="detail-th detail-th--num">Transfer qty</th>
+                <template v-if="isCount">
+                  <th class="detail-th detail-th--num">Prev. on hand</th>
+                  <th class="detail-th detail-th--num">Counted</th>
+                  <th class="detail-th detail-th--num">Difference</th>
+                </template>
+                <th v-else class="detail-th detail-th--num">Qty in/out</th>
                 <th class="detail-th">Unit</th>
+                <th class="detail-th detail-th--num">Average cost</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="item in visibleItems" :key="item.key" class="detail-item-row">
                 <td class="detail-td"><ProductCell :name="item.product.name" :desc="item.product.desc" :image="item.product.img" /></td>
                 <td class="detail-td">{{ item.sku }}</td>
-                <td class="detail-td detail-td--num">{{ fmt(item.qty) }}</td>
+                <template v-if="isCount">
+                  <td class="detail-td detail-td--num">{{ fmt(item.prevOnHand) }}</td>
+                  <td class="detail-td detail-td--num">{{ fmt(item.counted) }}</td>
+                  <td class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
+                </template>
+                <td v-else class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
                 <td class="detail-td">{{ item.unit }}</td>
+                <td class="detail-td detail-td--num">{{ formatIDR(item.averageCost) }}</td>
               </tr>
             </tbody>
           </table>
@@ -254,7 +287,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary" @click="printPdf">Print PDF</button>
-      <MpPopover id="wtd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+      <MpPopover id="sad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
             Actions
@@ -266,9 +299,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="preview">Preview</MpPopoverListItem>
-            <div class="wtd-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
-            <MpPopoverListItem @click="editTransfer">Edit</MpPopoverListItem>
-            <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>
+            <div class="sad-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
+            <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
             <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -277,36 +309,35 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <ActivityLogModal
       :is-open="activityOpen"
-      :subject="transfer.number"
+      :subject="adjustment.number"
       :updated-by="lastUpdatedBy"
       :updated-at="lastUpdatedAt"
-      :entries="activityEntries"
       @close="activityOpen = false"
     />
 
-    <!-- Delete warehouse transfer -->
+    <!-- Delete stock adjustment -->
     <MpModal
-      id="wtd-delete" :is-open="deleteOpen" size="md"
+      id="sad-delete" :is-open="deleteOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteOpen = false"
     >
       <MpModalContent>
-        <MpModalHeader>Delete warehouse transfer?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>Delete stock adjustment?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="wt-del-intro">This action cannot be undone. Deleting this transfer will:</p>
-          <ul class="wt-del-list">
+          <p class="sa-del-intro">This action cannot be undone. Deleting this adjustment will:</p>
+          <ul class="sa-del-list">
             <li>Remove the related journal entry</li>
             <li>Trigger recalculation that may affect COGS and product stock quantity</li>
           </ul>
-          <div class="wt-del-field">
-            <div class="wt-del-label-row">
-              <label class="wt-del-label" for="wtd-del-reason">Reason for deleting<span class="wt-del-req">*</span></label>
-              <span class="wt-del-count">{{ deleteReason.length }} / {{ REASON_MAX }}</span>
+          <div class="sa-del-field">
+            <div class="sa-del-label-row">
+              <label class="sa-del-label" for="sad-del-reason">Reason for deleting<span class="sa-del-req">*</span></label>
+              <span class="sa-del-count">{{ deleteReason.length }} / {{ REASON_MAX }}</span>
             </div>
             <textarea
-              id="wtd-del-reason" class="wt-del-textarea" :class="{ 'wt-del-textarea--error': deleteError }"
+              id="sad-del-reason" class="sa-del-textarea" :class="{ 'sa-del-textarea--error': deleteError }"
               :maxlength="REASON_MAX" v-model="deleteReason" rows="3" @input="deleteError = ''"
             ></textarea>
-            <p v-if="deleteError" class="wt-del-error">{{ deleteError }}</p>
+            <p v-if="deleteError" class="sa-del-error">{{ deleteError }}</p>
           </div>
         </MpModalBody>
         <MpModalFooter>
@@ -321,9 +352,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
   </div>
 
-  <div v-else class="wtd-not-found">
-    <p>Warehouse transfer not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to warehouse transfers</button>
+  <div v-else class="sad-not-found">
+    <p>Stock adjustment not found.</p>
+    <button class="detail-breadcrumb" @click="goBack">Back to stock adjustments</button>
   </div>
 </template>
 
@@ -353,10 +384,11 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-8); }
-/* Three columns, each up to 318px; they shrink together (minmax floor 0) when the
-   viewport is tight so the grid stays 3-up and responsive instead of overflowing. */
-.wtd-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 318px)); column-gap: var(--mp-spacing-6); row-gap: 0; }
+/* 3 content columns + a trailing column that pushes "View journal entry" to the right. */
+.sad-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 318px)) 1fr; column-gap: var(--mp-spacing-6); row-gap: 0; }
 .content-list-col { display: flex; flex-direction: column; }
+.sad-journal { justify-self: end; align-self: start; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; white-space: nowrap; }
+.sad-journal:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 .detail-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
@@ -394,23 +426,21 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
 
-.wtd-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.sad-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-/* Divider between action-menu groups (background line — reliably visible inside the
-   portaled popover list, where a 0-height border can get reset away). */
-.wtd-menu-divider { display: block; height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
+.sad-menu-divider { display: block; height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
 
-/* Delete modal (matches index bulk-delete alert) */
+/* Delete modal */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
-.wt-del-intro { color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.wt-del-list { margin: var(--mp-spacing-2) 0 0; padding-left: 21px; list-style: disc; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.wt-del-field { margin-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.wt-del-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; }
-.wt-del-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.wt-del-req { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
-.wt-del-count { margin-left: auto; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.wt-del-textarea { width: 100%; min-height: 80px; resize: vertical; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral, #fff); color: var(--mp-text-default); font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
-.wt-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
-.wt-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
-.wt-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+.sa-del-intro { color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
+.sa-del-list { margin: var(--mp-spacing-2) 0 0; padding-left: 21px; list-style: disc; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
+.sa-del-field { margin-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.sa-del-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; }
+.sa-del-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.sa-del-req { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
+.sa-del-count { margin-left: auto; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.sa-del-textarea { width: 100%; min-height: 80px; resize: vertical; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral, #fff); color: var(--mp-text-default); font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
+.sa-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
+.sa-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
+.sa-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 </style>

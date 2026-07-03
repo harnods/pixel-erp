@@ -12,7 +12,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
 import { packingTasksFor, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
-import { addDeliveryTask } from '~/data/deliveryTasks'
+import { addDeliveryTask, orderHasDelivery } from '~/data/deliveryTasks'
 import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
 import { warehouses } from '~/data/warehouses'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
@@ -121,10 +121,20 @@ function agingDays(t: PackingTask) { return packingTaskAgingDays(t) }
 const router = useRouter()
 function viewDetails(row: PackingTask) { router.push(`/packing/${row.id}`) }
 
-// A completed packing task that hasn't been shipped yet can create a shipping
-// (delivery). Each packing task is one sales order → one delivery.
+// A completed packing task can create a delivery only if its sales order doesn't
+// already have a live delivery — one delivery per order (an order already being
+// delivered/shipped can't spawn another, even from a different packing task).
 function canCreateShipping(t: PackingTask) {
-  return t.status === 'completed' && getDeliveryForPackingTask(t.id).length === 0
+  return t.status === 'completed'
+    && getDeliveryForPackingTask(t.id).length === 0
+    && !orderHasDelivery(t.salesOrderId)
+}
+// A completed task whose order already has a delivery can't be selected for the
+// bulk "Create delivery" action — so a duplicate can't be started from bulk.
+function rowNotSelectable(row: Record<string, unknown>) {
+  const t = row as unknown as PackingTask
+  return t.status === 'completed'
+    && (getDeliveryForPackingTask(t.id).length > 0 || orderHasDelivery(t.salesOrderId))
 }
 
 // ── Create delivery → pick an assignee, then make a delivery per packing task ──
@@ -191,11 +201,20 @@ function bulkCreateShipping(selectedRows: Set<number>, deselectAll: () => void) 
   const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as PackingTask[]
   const eligible = rows.filter(canCreateShipping)
   deselectAll()
-  if (eligible.length) openShipModal(eligible)
+  if (eligible.length) {
+    openShipModal(eligible)
+  } else {
+    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' })
+  }
 }
 function confirmShipping() {
   if (!shipAssigneeId.value) { shipAssigneeError.value = true; return }
+  let created = 0
   for (const t of shipQueue.value) {
+    // Skip orders that already have a live delivery — including duplicates within
+    // this same batch (addDeliveryTask updates the store immediately).
+    if (orderHasDelivery(t.salesOrderId)) continue
+    created++
     addDeliveryTask({
       salesOrderId: t.salesOrderId, salesNo: t.salesNo,
       packingTaskId: t.id, packingTaskNo: t.taskNo,
@@ -207,6 +226,10 @@ function confirmShipping() {
     })
   }
   shipModalOpen.value = false
+  if (!created) {
+    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' })
+    return
+  }
   router.push({ path: '/barang-keluar', query: { tab: 'Delivery', saved: '1' } })
 }
 
@@ -225,6 +248,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :loading="loading"
     :has-active-filter="hasActiveFilter"
     has-checkbox
+    :row-disabled="rowNotSelectable"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"

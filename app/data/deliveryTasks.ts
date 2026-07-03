@@ -223,6 +223,15 @@ export function getDeliveryForOrder(orderId: string): DeliveryTask[] {
   return deliveryTasks.filter((t) => t.salesOrderId === orderId);
 }
 
+/** True if an order already has a live (non-canceled) delivery — a canceled one
+ *  doesn't block, so the order can be re-delivered. Used to prevent creating a
+ *  second delivery for an order that is already being delivered/shipped. */
+export function orderHasDelivery(orderId: string): boolean {
+  return deliveryTasks.some(
+    (t) => t.salesOrderId === orderId && t.status !== "canceled",
+  );
+}
+
 export function getDeliveryTask(taskId: string): DeliveryTask | undefined {
   return deliveryTasks.find((t) => t.id === taskId);
 }

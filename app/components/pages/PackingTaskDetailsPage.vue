@@ -4,7 +4,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpFormControl, MpFormLabel, MpAutocomplete, MpInput, MpButton, css,
+  MpFormControl, MpFormLabel, MpAutocomplete, MpInput, MpButton, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -14,7 +14,7 @@ import {
 } from '~/data/packingTaskDetails'
 import { getPackingTask, startPacking, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
-import { addDeliveryTask } from '~/data/deliveryTasks'
+import { addDeliveryTask, orderHasDelivery } from '~/data/deliveryTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
@@ -47,6 +47,9 @@ function rowPacked(key: string, fallback: number): number { return localPacked.v
 
 const linkedOrder = computed(() => outgoingOrders.find(o => o.id === task.value?.salesOrderId))
 const linkedDelivery = computed(() => task.value ? getDeliveryForPackingTask(task.value.id) : [])
+// Order-level: an order that already has a live delivery can't create another
+// (even from a different packing task) — prevents duplicate delivery tasks.
+const orderDelivered = computed(() => task.value ? orderHasDelivery(task.value.salesOrderId) : false)
 // All picking lists this packing task came from (an order can be split over several).
 const linkedPickings = computed(() => {
   const t = task.value
@@ -117,6 +120,11 @@ function applyShipScan() {
 function confirmShipping() {
   const t = task.value
   if (!t) return
+  if (orderHasDelivery(t.salesOrderId)) {
+    shipModalOpen.value = false
+    toast.notify({ variant: 'error', title: 'Delivery already exists', description: `${t.salesNo} already has a delivery task.` })
+    return
+  }
   if (!shipAssigneeId.value) { shipAssigneeError.value = true; return }
   addDeliveryTask({
     salesOrderId: t.salesOrderId, salesNo: t.salesNo,
@@ -459,7 +467,7 @@ function goBack() { router.push('/barang-keluar?tab=Packing') }
       <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/packing/${orderId}/pack`)">
         Continue matching
       </button>
-      <button v-else-if="localStatus === 'completed' && !linkedDelivery.length" class="detail-btn detail-btn--primary" @click="createShipping">
+      <button v-else-if="localStatus === 'completed' && !orderDelivered" class="detail-btn detail-btn--primary" @click="createShipping">
         Create delivery
       </button>
     </footer>

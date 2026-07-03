@@ -1375,7 +1375,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   color: var(--mp-text-subtle);
   margin-top: var(--mp-spacing-0\.5);
 }
-.wh-loc { display: block; }
+/* Location paths can be long (e.g. "Lantai 1 / Zone A / Rack 03 / Bin A01"); wrap
+   them inside the column instead of overflowing (bleeding) into neighbour cells. */
+.wh-loc { display: block; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 
 /* ── Batch table cells ── */
 .wh-batch-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }
@@ -1430,6 +1432,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm, 16px);
   color: var(--mp-text-secondary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 /* "View details" chip on hover — Product cell + each Batch cell */
 .wh-batch-cell { position: relative; }
@@ -1523,6 +1528,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   border-right: 1px solid var(--mp-border-default);
 }
 .wh-btd--empty { color: var(--mp-text-secondary); white-space: normal; text-align: center; padding: var(--mp-spacing-6); }
+/* batch Location cell — wrap long location paths instead of bleeding */
+.wh-loc-cell { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 /* last group has no trailing border (panel border closes it) */
 .wh-batch-table tbody tr:last-child .wh-btd { border-bottom: none; }
 .wh-batch-table tbody tr:hover .wh-btd { background: var(--mp-background-neutral-hovered); }

@@ -766,12 +766,18 @@ const bulkCountLabel = computed(() => {
   padding: var(--mp-spacing-1) var(--mp-spacing-2);
 }
 
-/* Checkbox merged into the first column's cell (header + body) */
+/* Checkbox merged into the first column's cell (body). Fill the cell so a slotted
+   cell (e.g. a Number cell with a right-aligned "View details" chip) spans the full
+   column width instead of shrink-wrapping to the text — otherwise the chip's right:0
+   lands on top of the text. */
 .erp-cell-check {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
+  width: 100%;
+  min-width: 0;
 }
+.erp-cell-check > :last-child { flex: 1 1 auto; min-width: 0; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
