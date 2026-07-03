@@ -35,6 +35,7 @@ const level = ref<string>(STORAGE_LEVELS[0]!)
 const name = ref('')
 const code = ref('')
 const type = ref<LocType>('Organizational')
+const description = ref('')
 
 // Breadcrumb (root → parent). For edit it's the edited node's ancestors; for a
 // sub-location it's the parent's path; empty for a root-level add.
@@ -74,12 +75,14 @@ function reset() {
     name.value = node?.name ?? ''
     type.value = node?.type ?? 'Organizational'
     code.value = node?.code ?? ''
+    description.value = node?.description ?? ''
     return
   }
   level.value = defaultLevelFor()
   name.value = ''
   type.value = defaultTypeForLevel(level.value)
   code.value = suggestCode(props.warehouseId, props.parentId, level.value)
+  description.value = ''
 }
 // Reset each time the drawer opens.
 watch(() => props.isOpen, (open) => { if (open) reset() })
@@ -95,7 +98,7 @@ function save() {
   const nm = name.value.trim()
   if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a location name' }); return }
   if (isEdit.value) {
-    updateLocation(props.warehouseId, props.editId!, { level: level.value, name: nm, type: type.value })
+    updateLocation(props.warehouseId, props.editId!, { level: level.value, name: nm, type: type.value, description: description.value.trim() })
     emit('saved', props.parentId)
     close()
     return
@@ -156,6 +159,17 @@ function save() {
           <MpFormControl id="nl-name" is-required>
             <MpFormLabel>Location name</MpFormLabel>
             <MpInput id="nl-name-input" v-model="name" is-full-width placeholder="e.g. Cold Zone" />
+          </MpFormControl>
+
+          <MpFormControl id="nl-desc">
+            <MpFormLabel>Description</MpFormLabel>
+            <textarea
+              id="nl-desc-input"
+              v-model="description"
+              class="nl-textarea"
+              placeholder="Optional notes about this location"
+              rows="3"
+            />
           </MpFormControl>
 
           <MpFormControl id="nl-type" is-required>
@@ -232,4 +246,14 @@ function save() {
 .nl-type-card--active { border-color: var(--mp-border-selected, #0f6d4d); background: var(--mp-background-nav-stack-hovered, #d6f4e9); }
 .nl-type-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .nl-type-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.nl-textarea {
+  width: 100%; resize: vertical;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  background: var(--mp-background-neutral); font-family: inherit; line-height: 1.5;
+  outline: none;
+}
+.nl-textarea:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
+.nl-textarea::placeholder { color: var(--mp-text-placeholder); }
 </style>

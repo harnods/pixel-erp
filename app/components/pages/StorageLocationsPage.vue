@@ -57,18 +57,19 @@ const TYPE_OPTIONS = [
 const editOpen = ref(false)
 const editingKey = ref<string | null>(null)
 const editName = ref('')
+const editDesc = ref('')
 const editType = ref<'Organizational' | 'Storage'>('Organizational')
 
 function openEdit(lvl: LevelRow) {
   editingKey.value = lvl.key
   editName.value = lvl.name
+  editDesc.value = lvl.description === '—' ? '' : lvl.description
   editType.value = lvl.defaultType
   editOpen.value = true
 }
 function saveEdit() {
   if (editingKey.value) {
-    // Persists to the shared master + propagates to the warehouse level picker.
-    updateStorageLevel(editingKey.value, { name: editName.value, defaultType: editType.value })
+    updateStorageLevel(editingKey.value, { name: editName.value, defaultType: editType.value, description: editDesc.value })
   }
   editOpen.value = false
 }
@@ -128,7 +129,7 @@ function saveEdit() {
     <MpModal
       id="sl-edit-modal"
       :is-open="editOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -144,6 +145,10 @@ function saveEdit() {
             <MpFormControl id="sl-edit-name">
               <MpFormLabel>Name</MpFormLabel>
               <MpInput id="sl-edit-name-input" v-model="editName" is-full-width placeholder="Level name" />
+            </MpFormControl>
+            <MpFormControl id="sl-edit-desc">
+              <MpFormLabel>Description</MpFormLabel>
+              <textarea id="sl-edit-desc-input" v-model="editDesc" class="sl-textarea" rows="3" placeholder="Describe this storage level" />
             </MpFormControl>
             <MpFormControl id="sl-edit-type">
               <MpFormLabel>Storing preference</MpFormLabel>
@@ -229,4 +234,14 @@ function saveEdit() {
 
 .sl-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .sl-modal-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+.sl-textarea {
+  width: 100%; resize: vertical;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  background: var(--mp-background-neutral); font-family: inherit; line-height: 1.5;
+  outline: none;
+}
+.sl-textarea:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
+.sl-textarea::placeholder { color: var(--mp-text-placeholder); }
 </style>

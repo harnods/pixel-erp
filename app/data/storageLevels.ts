@@ -40,13 +40,13 @@ export function levelDefaultType(key: string): LocType { return storageLevels.fi
 /** Options for the level picker — label is the (editable) name, value is the key. */
 export function levelOptions() { return storageLevels.map(l => ({ label: l.name, value: l.key })) }
 
-/** Edit a level's name + default type (Storage locations master). Clears description. */
-export function updateStorageLevel(key: string, data: { name: string; defaultType: LocType }): void {
+/** Edit a level's name, description and default type (Storage locations master). */
+export function updateStorageLevel(key: string, data: { name: string; defaultType: LocType; description?: string }): void {
   const l = storageLevels.find(x => x.key === key)
   if (!l) return
   l.name = data.name.trim() || l.name
   l.defaultType = data.defaultType
-  l.description = '—'
+  if (data.description !== undefined) l.description = data.description.trim() || '—'
   l.updatedAt = new Date().toISOString()
   l.updatedBy = 'Rizal Candra'
   persist()

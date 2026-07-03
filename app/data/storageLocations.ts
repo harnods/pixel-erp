@@ -15,6 +15,7 @@ import { levelDefaultType } from './storageLevels'
 export type LocType = 'Organizational' | 'Storage'
 export interface LocNode {
   id: string; level: string; code: string; name: string; type: LocType
+  description?: string
   /** distinct SKUs stored at (or, for a branch, across) this location */
   skuQty: number
   /** start index into the warehouse's stock array — the location's SKU slice is
@@ -219,10 +220,10 @@ export function addSubLocation(warehouseId: string, parentId: string, data: NewL
   if (parent) parent.children.push({ id: newId(), level: data.level, code: data.code, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
   persist()
 }
-/** Edit an existing location's level, name and type (keeps its code + children). */
-export function updateLocation(warehouseId: string, id: string, data: { level: string; name: string; type: LocType }): void {
+/** Edit an existing location's level, name, type and description (keeps its code + children). */
+export function updateLocation(warehouseId: string, id: string, data: { level: string; name: string; type: LocType; description?: string }): void {
   const node = findNode(getStorageTree(warehouseId), id)
-  if (node) { node.level = data.level; node.name = data.name; node.type = data.type; persist() }
+  if (node) { node.level = data.level; node.name = data.name; node.type = data.type; node.description = data.description ?? ''; persist() }
 }
 /** Suggested next code for a level — warehouse-wide unique (never collides with an
  *  existing code anywhere in this warehouse's tree). */
