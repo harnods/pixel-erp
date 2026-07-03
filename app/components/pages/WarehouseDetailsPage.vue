@@ -1573,10 +1573,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 :deep(.erp-products--bordered th:not(.erp-th--actions)) {
   border-right: 1px solid var(--mp-border-default);
 }
-:deep(.erp-products--bordered td:first-child),
-:deep(.erp-products--bordered th:first-child) {
-  border-left: 1px solid var(--mp-border-default);
-}
 
 /* Row within a bordered td — restores the cell padding and handles multi-row split */
 .wh-col-row {
