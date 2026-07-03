@@ -73,6 +73,9 @@ const props = withDefaults(defineProps<{
   rowDisabled?: (row: Record<string, unknown>, index: number) => boolean
   /** Singular noun shown in the bulk bar count, e.g. "warehouse" → "2 warehouses selected" */
   bulkLabel?: string
+  /** Override the sticky actions column width (default 44px) — use when the #actions
+   *  slot renders more than a single kebab button (several buttons in a row). */
+  actionsWidth?: string
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -84,6 +87,7 @@ const props = withDefaults(defineProps<{
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
+  actionsWidth: undefined,
 })
 
 const emit = defineEmits<{
@@ -351,6 +355,7 @@ const bulkCountLabel = computed(() => {
       ref="tableWrapperEl"
       class="erp-table-wrapper"
       :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing }"
+      :style="actionsWidth ? { '--erp-actions-width': actionsWidth } : undefined"
     >
       <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty }">
 
@@ -362,7 +367,7 @@ const bulkCountLabel = computed(() => {
             :key="col.key"
             :style="col.width ? { width: col.width, minWidth: col.width } : {}"
           />
-          <col v-if="$slots.actions" style="width: 44px; min-width: 44px" />
+          <col v-if="$slots.actions" :style="{ width: actionsWidth ?? '44px', minWidth: actionsWidth ?? '44px' }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
 
@@ -806,10 +811,10 @@ const bulkCountLabel = computed(() => {
   right: var(--mp-sizes-7);
 }
 
-/* Actions header (no label) */
+/* Actions header (no label) — width overridable via --erp-actions-width (actionsWidth prop) */
 .erp-th--actions {
-  width: var(--mp-sizes-11);
-  min-width: var(--mp-sizes-11);
+  width: var(--erp-actions-width, var(--mp-sizes-11));
+  min-width: var(--erp-actions-width, var(--mp-sizes-11));
 }
 
 /* AI chat header column */
@@ -933,10 +938,10 @@ const bulkCountLabel = computed(() => {
   right: var(--mp-sizes-7);
 }
 
-/* Actions cell — Figma: px-8 py-6 justify-end */
+/* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width. */
 .erp-td--actions {
-  width: var(--mp-sizes-11);
-  min-width: var(--mp-sizes-11);
+  width: var(--erp-actions-width, var(--mp-sizes-11));
+  min-width: var(--erp-actions-width, var(--mp-sizes-11));
   text-align: right;
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-2);
 }

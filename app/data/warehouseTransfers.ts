@@ -228,6 +228,58 @@ export function transferActivityEntries(t: WarehouseTransfer): TransferActivity[
   }]
 }
 
+// ── Approval log (Figma "Modal / View / Approval log") ──────────────────────────
+export interface ApprovalStep { user: string; date: string }
+export interface ApprovalStage {
+  title: string
+  /** 'everyone' — every listed approver must sign off; 'anyone' — the first one wins. */
+  rule: 'everyone' | 'anyone'
+  approvers: string[]
+  approvals: ApprovalStep[]
+}
+export interface ApprovalLog {
+  requestedBy: string
+  requestedAt: string
+  stages: ApprovalStage[]
+}
+
+const REQUESTER_POOL = ['Budi Santoso', 'Rizki Pratama', 'Hendra Wijaya', 'Andi Kusuma', 'Ratna Sari', 'Farhan Nugroho', 'Lestari Putri', 'Yusuf Hakim', 'Bayu Pradana']
+const STAGE1_POOL = ['Dewi Rahayu', 'Agus Firmansyah', 'Sari Indah', 'Ni Made Ayu']
+const STAGE2_OTHER_POOL = ['Kevin Surya', 'Christin Purnama Sari']
+
+/**
+ * Two-stage approval chain: stage 1 requires everyone listed to sign off; stage 2 is
+ * "anyone can approve" and always includes the current user (ACTOR) among the eligible
+ * approvers. Stage 1 is deterministically fully approved; stage 2 reflects the real
+ * "Approve" action (from `approveTransfer`) once it's happened, else stays pending.
+ */
+export function transferApprovalLog(t: WarehouseTransfer): ApprovalLog {
+  const s = seedNum(t.id)
+  const requestedBy = REQUESTER_POOL[s % REQUESTER_POOL.length]!
+  const requestedAt = t.activity?.[0]?.date ?? derivedUpdatedAt(t)
+
+  const stage1Approvers = [STAGE1_POOL[s % STAGE1_POOL.length]!, STAGE1_POOL[(s + 1) % STAGE1_POOL.length]!]
+  const reqDate = new Date(requestedAt)
+  const stage1Approvals: ApprovalStep[] = stage1Approvers.map((user, i) => {
+    const d = new Date(reqDate)
+    d.setHours(d.getHours() + 2 + i * 4)
+    return { user, date: d.toISOString() }
+  })
+
+  const stage2Other = STAGE2_OTHER_POOL[s % STAGE2_OTHER_POOL.length]!
+  const approvedEntry = t.activity?.find((a) => a.activity === 'Approved')
+  const stage2Approvals: ApprovalStep[] = approvedEntry ? [{ user: approvedEntry.user, date: approvedEntry.date }] : []
+
+  return {
+    requestedBy,
+    requestedAt,
+    stages: [
+      { title: 'Approval stage 1', rule: 'everyone', approvers: stage1Approvers, approvals: stage1Approvals },
+      { title: 'Approval stage 2', rule: 'anyone', approvers: [stage2Other, ACTOR], approvals: stage2Approvals },
+    ],
+  }
+}
+
 /** Distinct origin/destination warehouses actually used — for the filter dropdown. */
 export function transferWarehouseOptions(): { value: string; label: string }[] {
   const seen = new Map<string, string>()
@@ -241,6 +293,25 @@ export function transferWarehouseOptions(): { value: string; label: string }[] {
 /** Count still awaiting approval — badge for the "Awaiting approval" tab. */
 export function awaitingApprovalCount(): number {
   return warehouseTransfers.filter((t) => t.status === 'awaiting approval').length
+}
+
+/** Approve a transfer — moves it out of "Awaiting approval" and logs the activity. */
+export function approveTransfer(id: string): WarehouseTransfer | undefined {
+  const t = warehouseTransfers.find((x) => x.id === id)
+  if (!t || t.status !== 'awaiting approval') return t
+  if (!t.activity?.length) {
+    t.activity = [{
+      date: derivedUpdatedAt(t), user: derivedUpdatedBy(t), activity: 'Created',
+      details: [
+        { label: 'Origin warehouse', value: t.originName },
+        { label: 'Destination warehouse', value: t.destinationName },
+      ],
+    }]
+  }
+  t.activity.push({ date: new Date().toISOString(), user: ACTOR, activity: 'Approved', details: [{ label: 'Status', value: 'Awaiting approval → Approved' }] })
+  t.status = 'approved'
+  persistTransfers()
+  return t
 }
 
 /** Delete transfers by id (bulk delete). */
