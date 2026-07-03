@@ -69,6 +69,7 @@ const statusConfig: Record<string, StatusConfig> = {
   declined:   { type: 'critical',     label: 'Declined'   },
 
   // ── announcement — GRAY (neutral / final / inactive) ──
+  'awaiting approval':{ type: 'announcement', label: 'Draft' },
   closed:     { type: 'announcement', label: 'Closed'     },
   voided:     { type: 'announcement', label: 'Voided'     },
   inactive:   { type: 'announcement', label: 'Inactive'   },

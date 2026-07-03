@@ -13,6 +13,7 @@ syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
+import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
@@ -243,8 +244,8 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     return out
   }
   if (currentPageKey.value === 'Warehouse transfers') {
-    // Awaiting-approval flow is parked — no badge until the tab is built out.
-    return {}
+    const awaiting = awaitingApprovalCount()
+    return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
@@ -815,7 +816,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="showNewWarehouseTransfer" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newWarehouseTransfer">
-            <MpIcon name="add" size="md" />
+            <MpIcon name="add" size="md" color="icon.inverse" />
             New warehouse transfer
           </button>
         </div>
