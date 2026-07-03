@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, type Component, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { MpIcon } from '@mekari/pixel3'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
@@ -11,6 +12,7 @@ import { pickingOpenCount } from '~/data/pickingTasks'
 syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
+import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 
 const { pageTitle, currentPageKey } = useNavigation()
@@ -39,6 +41,7 @@ const pageRegistry: Record<string, Component> = {
   'Inbound completed': defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
   'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
+  'Stock adjustments': defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Company profile':   defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Playground':        defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
@@ -67,6 +70,7 @@ const PackItemsPage = defineAsyncComponent(() => import('~/components/pages/Pack
 const DeliveryTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
 const OutgoingOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
 const WarehouseTransferDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
+const WarehouseTransferFormPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
 const ReceivingIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue'))
 const PutAwayIndexPage = defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue'))
 const PartialReceptionIndexPage = defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
@@ -80,16 +84,31 @@ const CreateReceiptPage = defineAsyncComponent(() => import('~/components/pages/
 const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
+const StockAdjustmentsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue'))
+const StockAdjustmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
+const StockCountFormPage = defineAsyncComponent(() => import('~/components/pages/StockCountFormPage.vue'))
+const StockInOutFormPage = defineAsyncComponent(() => import('~/components/pages/StockInOutFormPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
-  // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
-  // forms (not built yet → placeholder). The bare index falls through to the registry.
+  // /warehouse-transfers/new → create form; /:id/edit → edit form; /:id → detail.
+  // The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
-    if (segs[1] === 'new' || segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
+    if (segs[1] === 'new') return { component: WarehouseTransferFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: WarehouseTransferFormPage, id: segs[1]! }
     return { component: WarehouseTransferDetailsPage, id: segs[1]! }
+  }
+  // /stock-adjustments/:id → detail; /new & /:id/edit → create/edit form (TBD → placeholder)
+  if (segs.length >= 2 && segs[0] === 'stock-adjustments') {
+    if (segs[1] === 'new') {
+      return route.query.type === 'in-out'
+        ? { component: StockInOutFormPage, id: 'new' }
+        : { component: StockCountFormPage, id: 'new' }
+    }
+    if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
+    return { component: StockAdjustmentDetailsPage, id: segs[1]! }
   }
   // /barang-keluar/picking/create → create a new picking list (bundles sales orders)
   if (segs.length >= 3 && segs[0] === 'barang-keluar' && segs[1] === 'picking' && segs[2] === 'create') {
@@ -193,6 +212,7 @@ const pageTabs: Record<string, string[]> = {
   'Barang keluar': ['Outgoing', 'Picking', 'Packing', 'Delivery'],
   'Barang masuk': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
+  'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -226,6 +246,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Warehouse transfers') {
     const awaiting = awaitingApprovalCount()
+    return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Stock adjustments') {
+    const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   return {}
@@ -268,6 +292,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'All warehouse transfers': WarehouseTransfersPage,
     'Awaiting approval': WarehouseTransfersPage,
   },
+  'Stock adjustments': {
+    'All stock adjustments': StockAdjustmentsPage,
+    'Awaiting approval': StockAdjustmentsPage,
+  },
 }
 const activeTabComponent = computed<Component | null>(
   () => tabComponents[currentPageKey.value]?.[activeTab.value] ?? null,
@@ -304,6 +332,19 @@ function onImportOutsideClick(e: MouseEvent) {
   if (!importBtnWrapEl.value?.contains(e.target as Node)) {
     importDropdownOpen.value = false
   }
+}
+
+// ── Stock adjustments "Actions" dropdown (page title) ─────────────────────
+const stockActionsOpen = ref(false)
+const stockActionsWrapEl = ref<HTMLElement | null>(null)
+function onStockActionsOutsideClick(e: MouseEvent) {
+  if (!stockActionsWrapEl.value?.contains(e.target as Node)) {
+    stockActionsOpen.value = false
+  }
+}
+function newStockAdjustment(kind: 'count' | 'in-out') {
+  stockActionsOpen.value = false
+  router.push({ path: '/stock-adjustments/new', query: { type: kind } })
 }
 
 // ── Chat sessions + history ───────────────────────────────────────────────
@@ -468,6 +509,7 @@ function onMouseMoveMascot(e: MouseEvent) {
 onMounted(() => {
   document.addEventListener('click', onOutsideClick)
   document.addEventListener('click', onImportOutsideClick)
+  document.addEventListener('click', onStockActionsOutsideClick)
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('mousemove', onMouseMoveMascot)
   _mascotRaf = requestAnimationFrame(_tickMascot)
@@ -475,6 +517,7 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', onOutsideClick)
   document.removeEventListener('click', onImportOutsideClick)
+  document.removeEventListener('click', onStockActionsOutsideClick)
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('mousemove', onMouseMoveMascot)
   if (_mascotRaf !== null) cancelAnimationFrame(_mascotRaf)
@@ -774,11 +817,31 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="showNewWarehouseTransfer" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newWarehouseTransfer">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+            <MpIcon name="add" size="md" color="icon.inverse" />
             New warehouse transfer
           </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Stock adjustments'" class="page-title-actions">
+          <div ref="stockActionsWrapEl" class="import-wrap">
+            <button
+              class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-after"
+              @click.stop="stockActionsOpen = !stockActionsOpen"
+            >
+              Actions
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                class="import-chevron" :class="{ 'import-chevron--open': stockActionsOpen }"
+              >
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <div v-if="stockActionsOpen" class="import-dropdown" @click.stop>
+              <div class="import-group">
+                <button class="import-item" @click="newStockAdjustment('count')">Stock count</button>
+                <button class="import-item" @click="newStockAdjustment('in-out')">Stock in/out</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

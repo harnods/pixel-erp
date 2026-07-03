@@ -10,10 +10,10 @@ import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import {
-  warehouseTransfers, transferWarehouseOptions, transferMemo, transferUpdatedBy, transferUpdatedAt,
-  deleteTransfers, duplicateTransfer,
-  type WarehouseTransfer,
-} from '~/data/warehouseTransfers'
+  stockAdjustments, adjustmentWarehouseOptions, adjustmentMemo, adjustmentUpdatedBy, adjustmentUpdatedAt,
+  deleteAdjustments, ADJUSTMENT_CATEGORIES,
+  type StockAdjustment,
+} from '~/data/stockAdjustments'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,18 +21,19 @@ const toggleAirene = inject<() => void>('toggleAirene')
 
 // ─── Columns (checkbox is rendered by ErpTablePage as the first column) ──────────
 const columns: TableColumn[] = [
-  { key: 'number',          label: 'Number',      width: '240px', sortable: true, sortType: 'text' },
-  { key: 'date',            label: 'Date',        width: '130px', sortable: true, sortType: 'date' },
-  { key: 'originName',      label: 'Origin',      width: '220px', sortType: 'text' },
-  { key: 'destinationName', label: 'Destination', width: '220px', sortType: 'text' },
-  { key: 'tags',            label: 'Tags',        width: '220px' },
-  { key: 'lastUpdated',     label: 'Last updated', width: '220px' },
+  { key: 'number',        label: 'Number',       width: '230px', sortable: true, sortType: 'text' },
+  { key: 'date',          label: 'Date',         width: '130px', sortable: true, sortType: 'date' },
+  { key: 'warehouseName', label: 'Warehouse',    width: '200px', sortType: 'text' },
+  { key: 'category',      label: 'Category',     width: '170px', sortType: 'text' },
+  { key: 'account',       label: 'Account',      width: '190px', sortType: 'text' },
+  { key: 'tags',          label: 'Tags',         width: '200px' },
+  { key: 'lastUpdated',   label: 'Last updated', width: '220px' },
 ]
 
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
-// these off, the ColumnSettings menu turns them back on. "Last updated" is an opt-in
-// column (off by default); "Memo" is a settings-only toggle — not its own column, it
-// surfaces the memo under the transfer number.
+// these off, the ColumnSettings menu turns them back on. "Last updated" is opt-in
+// (off by default); "Memo" is a settings-only toggle — not its own column, it
+// surfaces the memo under the adjustment number.
 const colVis = reactive<Record<string, boolean>>({
   ...Object.fromEntries(columns.map(c => [c.key, true])),
   lastUpdated: false,
@@ -47,7 +48,7 @@ const columnItems = [
 ]
 function hideColumn(key: string) { colVis[key] = false }
 
-// ─── Tab: "All warehouse transfers" vs "Awaiting approval" (driven by ?tab=) ──────
+// ─── Tab: "All stock adjustments" vs "Awaiting approval" (driven by ?tab=) ────────
 const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
 
 // ─── Demo scenario state (FAB) + first-load skeleton ─────────────────────────────
@@ -64,75 +65,78 @@ function setDemoState(s: DemoState) {
   if (s === 'data') { loading.value = true; setTimeout(() => { loading.value = false }, 1200) }
 }
 
-// ─── Origin / Destination filters (independent MpSelect dropdowns) ────────────────
-const originFilter = ref('')
-const destFilter = ref('')
-const whOptions = computed(() => transferWarehouseOptions())
-const originLabel = computed(() => whOptions.value.find(o => o.value === originFilter.value)?.label ?? '')
-const destLabel = computed(() => whOptions.value.find(o => o.value === destFilter.value)?.label ?? '')
+// ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
+const warehouseFilter = ref('')
+const categoryFilter = ref('')
+const whOptions = computed(() => adjustmentWarehouseOptions())
+const warehouseLabel = computed(() => whOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
 
-// ─── Rows (demo state → tab → origin/destination filter; search handled below) ────
-const baseRows = computed<WarehouseTransfer[]>(() => {
+// ─── Rows (demo state → tab → warehouse/category filter; search handled below) ────
+const baseRows = computed<StockAdjustment[]>(() => {
   if (demoState.value === 'empty') return []
-  // Awaiting-approval flow is parked — show the table's empty state for now.
-  if (isAwaiting.value) return []
-  let list = [...warehouseTransfers]
-  if (originFilter.value) list = list.filter(t => t.originId === originFilter.value)
-  if (destFilter.value) list = list.filter(t => t.destinationId === destFilter.value)
+  let list = [...stockAdjustments]
+  if (isAwaiting.value) list = list.filter(a => a.status === 'awaiting approval')
+  if (warehouseFilter.value) list = list.filter(a => a.warehouseId === warehouseFilter.value)
+  if (categoryFilter.value) list = list.filter(a => a.category === categoryFilter.value)
   return list
 })
 
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
-} = useTableState<WarehouseTransfer>(baseRows, {
+} = useTableState<StockAdjustment>(baseRows, {
   filterFn: (row, s) =>
     !s
     || row.number.toLowerCase().includes(s)
-    || row.originName.toLowerCase().includes(s)
-    || row.destinationName.toLowerCase().includes(s),
+    || row.warehouseName.toLowerCase().includes(s)
+    || row.category.toLowerCase().includes(s)
+    || row.account.toLowerCase().includes(s),
 })
 
-const hasActiveFilter = computed(() => !!search.value || !!originFilter.value || !!destFilter.value)
-function clearFilters() { search.value = ''; originFilter.value = ''; destFilter.value = '' }
-watch([originFilter, destFilter, isAwaiting], () => setPage(1))
+const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!categoryFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = ''; categoryFilter.value = '' }
+watch([warehouseFilter, categoryFilter, isAwaiting], () => setPage(1))
 
 // ─── Row actions ─────────────────────────────────────────────────────────────────
-function viewDetails(row: WarehouseTransfer) { router.push(`/warehouse-transfers/${row.id}`) }
+function viewDetails(row: StockAdjustment) { router.push(`/stock-adjustments/${row.id}`) }
+function editAdjustment(row: StockAdjustment) { router.push(`/stock-adjustments/${row.id}/edit`) }
 function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
-function newTransfer() { router.push('/warehouse-transfers/new') }
-function editTransfer(row: WarehouseTransfer) { router.push(`/warehouse-transfers/${row.id}/edit`) }
-function duplicate(row: WarehouseTransfer) {
-  const copy = duplicateTransfer(row.id)
-  if (copy) router.push(`/warehouse-transfers/${copy.id}/edit`)
+function newAdjustment(kind: 'count' | 'in-out') {
+  router.push({ path: '/stock-adjustments/new', query: { type: kind } })
 }
 
-// ─── Bulk delete ─────────────────────────────────────────────────────────────────
-function selectedTransfersOf(sel: Set<number>): WarehouseTransfer[] {
-  return [...sel].map(i => paginated.value[i]).filter(Boolean) as WarehouseTransfer[]
+// ─── Delete (row kebab + bulk) → confirmation modal ────────────────────────────────
+function selectedAdjustmentsOf(sel: Set<number>): StockAdjustment[] {
+  return [...sel].map(i => paginated.value[i]).filter(Boolean) as StockAdjustment[]
 }
-const bulkDeleteOpen = ref(false)
-const bulkDeleteIds = ref<string[]>([])
+const deleteOpen = ref(false)
+const deleteIds = ref<string[]>([])
 const deleteReason = ref('')
 const deleteError = ref('')
 const REASON_MAX = 256
 let _bulkDeselect: (() => void) | null = null
+function resetDelete() { deleteReason.value = ''; deleteError.value = '' }
+function askDeleteRow(row: StockAdjustment) {
+  deleteIds.value = [row.id]
+  _bulkDeselect = null
+  resetDelete()
+  deleteOpen.value = true
+}
 function askBulkDelete(sel: Set<number>, deselectAll: () => void) {
-  bulkDeleteIds.value = selectedTransfersOf(sel).map(t => t.id)
+  deleteIds.value = selectedAdjustmentsOf(sel).map(a => a.id)
   _bulkDeselect = deselectAll
-  deleteReason.value = ''
-  deleteError.value = ''
-  bulkDeleteOpen.value = true
+  resetDelete()
+  deleteOpen.value = true
 }
 // Keep the button clickable (no disabled buttons) — validate on click, show inline error.
-function confirmBulkDelete() {
+function confirmDelete() {
   if (!deleteReason.value.trim()) {
     deleteError.value = 'Enter a reason for deleting'
     return
   }
-  deleteTransfers(bulkDeleteIds.value)
+  deleteAdjustments(deleteIds.value)
   _bulkDeselect?.()
-  bulkDeleteOpen.value = false
+  deleteOpen.value = false
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
@@ -150,7 +154,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :loading="loading"
     :has-active-filter="hasActiveFilter"
     has-checkbox
-    bulk-label="transfer"
+    bulk-label="stock adjustment"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -161,42 +165,42 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <!-- Origin -->
-        <MpPopover id="wt-origin-filter" is-close-on-select>
+        <!-- Warehouse -->
+        <MpPopover id="sa-warehouse-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
-              id="wt-origin-select" placeholder="Origin" :model-value="originFilter" is-clearable
-              :class="css({ width: '180px' })" @mousedown.prevent @clear="originFilter = ''"
+              id="sa-warehouse-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
+              :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = ''"
             >
-              <option v-if="originFilter" :value="originFilter">{{ originLabel }}</option>
+              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="opt in whOptions" :key="opt.value"
-                :is-active="opt.value === originFilter" @click="originFilter = opt.value"
+                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
               >{{ opt.label }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Destination -->
-        <MpPopover id="wt-dest-filter" is-close-on-select>
+        <!-- Category -->
+        <MpPopover id="sa-category-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
-              id="wt-dest-select" placeholder="Destination" :model-value="destFilter" is-clearable
-              :class="css({ width: '180px' })" @mousedown.prevent @clear="destFilter = ''"
+              id="sa-category-select" placeholder="Category" :model-value="categoryFilter" is-clearable
+              :class="css({ width: '180px' })" @mousedown.prevent @clear="categoryFilter = ''"
             >
-              <option v-if="destFilter" :value="destFilter">{{ destLabel }}</option>
+              <option v-if="categoryFilter" :value="categoryFilter">{{ categoryFilter }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
             <MpPopoverList>
               <MpPopoverListItem
-                v-for="opt in whOptions" :key="opt.value"
-                :is-active="opt.value === destFilter" @click="destFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
+                v-for="opt in ADJUSTMENT_CATEGORIES" :key="opt"
+                :is-active="opt === categoryFilter" @click="categoryFilter = opt"
+              >{{ opt }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -211,8 +215,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="wt-col-settings" :items="columnItems" :visibility="colVis" />
-          <MpTooltip id="tt-wt-airene" label="Ask Airene" placement="bottom" use-portal>
+          <ColumnSettingsMenu id="sa-col-settings" :items="columnItems" :visibility="colVis" />
+          <MpTooltip id="tt-sa-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
@@ -220,7 +224,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
-          <MpTooltip id="tt-wt-export" label="Export" placement="bottom" use-portal>
+          <MpTooltip id="tt-sa-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
         </div>
@@ -246,10 +250,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Number — View details chip on hover; memo below when the toggle is on ── -->
     <template #cell-number="{ value, row }">
-      <div class="wt-number-cell">
+      <div class="sa-number-cell">
         <div class="cell-with-action">
-          <span class="cell-text wt-link">{{ value }}</span>
-          <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as WarehouseTransfer)">
+          <span class="cell-text sa-link">{{ value }}</span>
+          <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as StockAdjustment)">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
               <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
               <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -257,31 +261,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <span class="row-hover-btn__label">VIEW DETAILS</span>
           </button>
         </div>
-        <ClampText v-if="colVis.memo" :text="transferMemo(row as unknown as WarehouseTransfer)" :lines="2" class="wt-memo" />
+        <ClampText v-if="colVis.memo" :text="adjustmentMemo(row as unknown as StockAdjustment)" :lines="2" class="sa-memo" />
       </div>
     </template>
 
     <template #cell-date="{ value }">{{ formatDate(value as string) }}</template>
 
-    <!-- ── Origin — View details chip → warehouse detail ── -->
-    <template #cell-originName="{ value, row }">
+    <!-- ── Warehouse — View details chip → warehouse detail ── -->
+    <template #cell-warehouseName="{ value, row }">
       <div class="cell-with-action">
         <span class="cell-text">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as WarehouseTransfer).originId)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
-    </template>
-
-    <!-- ── Destination — View details chip → warehouse detail ── -->
-    <template #cell-destinationName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as WarehouseTransfer).destinationId)">
+        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as StockAdjustment).warehouseId)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -295,15 +285,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Last updated — timestamp + who (opt-in column) ── -->
     <template #cell-lastUpdated="{ row }">
-      <div class="wt-updated">
-        <span class="wt-updated-date">{{ formatDateTime(transferUpdatedAt(row as unknown as WarehouseTransfer)) }}</span>
-        <span class="wt-updated-by">{{ transferUpdatedBy(row as unknown as WarehouseTransfer) }}</span>
+      <div class="sa-updated">
+        <span class="sa-updated-date">{{ formatDateTime(adjustmentUpdatedAt(row as unknown as StockAdjustment)) }}</span>
+        <span class="sa-updated-by">{{ adjustmentUpdatedBy(row as unknown as StockAdjustment) }}</span>
       </div>
     </template>
 
     <!-- ── Actions kebab ── -->
     <template #actions="{ row }">
-      <MpPopover :id="`wt-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+      <MpPopover :id="`sa-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <button class="row-kebab" aria-label="More actions">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -313,9 +303,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails(row as unknown as WarehouseTransfer)">View details</MpPopoverListItem>
-            <MpPopoverListItem @click="duplicate(row as unknown as WarehouseTransfer)">Duplicate</MpPopoverListItem>
-            <MpPopoverListItem @click="editTransfer(row as unknown as WarehouseTransfer)">Edit</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails(row as unknown as StockAdjustment)">View details</MpPopoverListItem>
+            <MpPopoverListItem @click="editAdjustment(row as unknown as StockAdjustment)">Edit</MpPopoverListItem>
+            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askDeleteRow(row as unknown as StockAdjustment)">Delete</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -325,46 +315,58 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No warehouse transfers</p>
-        <p class="empty-full-desc">Move stock between your warehouses. Create your first warehouse transfer to get started.</p>
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before empty-full-cta" @click="newTransfer">
-          <MpIcon name="add" size="md" />
-          New warehouse transfer
-        </button>
+        <p class="empty-full-title">No stock adjustments</p>
+        <p class="empty-full-desc">Correct on-hand stock from counts or manual in/out. Create your first stock adjustment to get started.</p>
+        <MpPopover id="sa-empty-new" is-close-on-select use-portal placement="bottom">
+          <MpPopoverTrigger>
+            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after empty-full-cta">
+              New stock adjustment
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="newAdjustment('count')">Stock count</MpPopoverListItem>
+              <MpPopoverListItem @click="newAdjustment('in-out')">Stock in/out</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
       </div>
     </template>
   </ErpTablePage>
 
-  <!-- ── Bulk delete confirmation ── -->
+  <!-- ── Delete confirmation ── -->
   <MpModal
-    id="wt-bulk-delete" :is-open="bulkDeleteOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkDeleteOpen = false"
+    id="sa-delete" :is-open="deleteOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteOpen = false"
   >
     <MpModalContent>
-      <MpModalHeader>Delete {{ bulkDeleteIds.length > 1 ? bulkDeleteIds.length + ' warehouse transfers' : 'warehouse transfer' }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Delete {{ deleteIds.length > 1 ? deleteIds.length + ' stock adjustments' : 'stock adjustment' }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <p class="wt-del-intro">This action cannot be undone. Deleting {{ bulkDeleteIds.length > 1 ? 'these transfers' : 'this transfer' }} will:</p>
-        <ul class="wt-del-list">
+        <p class="sa-del-intro">This action cannot be undone. Deleting {{ deleteIds.length > 1 ? 'these adjustments' : 'this adjustment' }} will:</p>
+        <ul class="sa-del-list">
           <li>Remove the related journal entry</li>
           <li>Trigger recalculation that may affect COGS and product stock quantity</li>
         </ul>
-        <div class="wt-del-field">
-          <div class="wt-del-label-row">
-            <label class="wt-del-label" for="wt-del-reason">Reason for deleting<span class="wt-del-req">*</span></label>
-            <span class="wt-del-count">{{ deleteReason.length }} / {{ REASON_MAX }}</span>
+        <div class="sa-del-field">
+          <div class="sa-del-label-row">
+            <label class="sa-del-label" for="sa-del-reason">Reason for deleting<span class="sa-del-req">*</span></label>
+            <span class="sa-del-count">{{ deleteReason.length }} / {{ REASON_MAX }}</span>
           </div>
           <textarea
-            id="wt-del-reason" class="wt-del-textarea" :class="{ 'wt-del-textarea--error': deleteError }"
+            id="sa-del-reason" class="sa-del-textarea" :class="{ 'sa-del-textarea--error': deleteError }"
             :maxlength="REASON_MAX" v-model="deleteReason" rows="3"
             @input="deleteError = ''"
           ></textarea>
-          <p v-if="deleteError" class="wt-del-error">{{ deleteError }}</p>
+          <p v-if="deleteError" class="sa-del-error">{{ deleteError }}</p>
         </div>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="bulkDeleteOpen = false">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">Delete</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="deleteOpen = false">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -372,7 +374,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Demo scenario FAB (bottom-right) ── -->
-  <MpPopover id="wt-demo-fab" is-close-on-select use-portal placement="top-end">
+  <MpPopover id="sa-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
       <button class="demo-fab" aria-label="Change scenario state">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
@@ -396,22 +398,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 
-.filter-select-wrap {
-  position: relative; display: inline-flex; align-items: center; width: 200px;
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-}
-.filter-select {
-  appearance: none; background: transparent; border: none; outline: none; width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-9) var(--mp-spacing-2) var(--mp-spacing-3);
-  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-placeholder); cursor: pointer;
-}
-.filter-select:focus { outline: none; }
-.filter-select-chevron {
-  position: absolute; right: var(--mp-spacing-2); pointer-events: none;
-  color: var(--mp-text-default); width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px);
-}
 .filter-all-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3);
@@ -446,16 +432,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Cell hover chip */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.wt-link { color: var(--mp-text-default); }
+.sa-link { color: var(--mp-text-default); }
 
 /* Number cell with optional memo underneath */
-.wt-number-cell { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
-.wt-memo { max-width: 100%; }
+.sa-number-cell { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
+.sa-memo { max-width: 100%; }
 
 /* Last updated cell — timestamp + who */
-.wt-updated { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
-.wt-updated-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
-.wt-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-updated { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
+.sa-updated-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
+.sa-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .row-hover-btn {
   position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
@@ -489,27 +476,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Modal footer */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
 
-/* Delete warehouse transfer modal */
-.wt-del-intro { color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.wt-del-list {
+/* Delete modal */
+.sa-del-intro { color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
+.sa-del-list {
   margin: var(--mp-spacing-2) 0 0; padding-left: 21px; list-style: disc;
   color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px);
 }
-.wt-del-field { margin-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.wt-del-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; }
-.wt-del-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.wt-del-req { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
-.wt-del-count { margin-left: auto; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.wt-del-textarea {
+.sa-del-field { margin-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.sa-del-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; }
+.sa-del-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.sa-del-req { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
+.sa-del-count { margin-left: auto; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.sa-del-textarea {
   width: 100%; min-height: 80px; resize: vertical;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
   background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
   font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
 }
-.wt-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
-.wt-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
-.wt-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+.sa-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
+.sa-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
+.sa-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
 /* Demo scenario FAB */
 .demo-fab {
