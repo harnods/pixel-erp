@@ -154,8 +154,16 @@ function generateStock(products: Product[], seed: number): WarehouseStockItem[] 
   for (let i = 0; i < n; i++) {
     const c = products[i]!
     const cycle = 1
-    const onHand = ((i * 53 + seed * 7 + 17) % 1500) + 5
-    const reserved = onHand > 40 ? (i * 13 + seed) % 40 : 0
+    // Serialized hardware (machines, grinders): realistic warehouse qty — 3 to 22 units,
+    // reserved 0–3. Batch/consumable products can have hundreds of units.
+    const isSerial = isSerialized(c.category)
+    const onHand = isSerial
+      ? ((i * 7 + seed * 3 + 2) % 20) + 3
+      : ((i * 53 + seed * 7 + 17) % 1500) + 5
+    const reservedRaw = isSerial
+      ? (((i * 5 + seed * 2) % 4 === 0) ? 0 : (i + seed) % 4)
+      : (onHand > 40 ? (i * 13 + seed) % 40 : 0)
+    const reserved = isSerial ? Math.min(reservedRaw, onHand - 1) : reservedRaw
     const onTheWay = (i * 7) % 60
     const minStock = ((i * 11) % 200) + 10
     out.push({

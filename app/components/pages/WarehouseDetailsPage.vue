@@ -5,17 +5,18 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpDatePicker, MpButton, MpBadge, toast, css,
+  MpModalOverlay, MpModalCloseButton, MpDatePicker, MpSelect, MpButton, MpBadge, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
+import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
-import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { TODAY } from '~/data/master'
@@ -119,7 +120,7 @@ function confirmDelete() {
 // ── Products table (Products tab) — ErpTablePage (read-only, single page) ──────
 const allStockColumns: TableColumn[] = [
   { key: 'name',                label: 'Name',                 width: '320px', sortType: 'text'   },
-  { key: 'sku',                 label: 'SKU',                  width: '120px', sortType: 'text'   },
+  { key: 'sku',                 label: 'SKU',                  width: '200px', sortType: 'text'   },
   { key: 'barcode',             label: 'Barcode',              width: '170px', sortType: 'text'   },
   { key: 'category',            label: 'Category',             width: '150px', sortType: 'text'   },
   { key: 'locations',           label: 'Location',             width: '230px' },
@@ -247,7 +248,8 @@ const CAT_MAX = 3
 
 const filteredStock = computed(() => {
   const q = search.value.trim().toLowerCase()
-  const list = warehouse.value?.stock ?? []
+  // Batch-tracked products belong only in Batches tab; serial-tracked only in Serial numbers tab
+  const list = (warehouse.value?.stock ?? []).filter(s => !s.batches?.length && !s.serials)
   if (!q) return list
   return list.filter(
     (s) =>
@@ -337,23 +339,58 @@ function toggleBatch(id: string) {
   expandedBatches.value = s
 }
 
-// expiry-date filter (MpDatePicker) — show batches expiring on/before the date.
-// MpDatePicker emits the value in its display format (DD/MM/YYYY), so parse it
-// to a Date rather than relying on value-type.
-const expiryFilter = ref('')
-function parseExpiry(v: string): Date | null {
-  if (!v) return null
-  const dmy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v)        // DD/MM/YYYY (datepicker display)
-  if (dmy) return new Date(+dmy[3], +dmy[2] - 1, +dmy[1])
-  const d = new Date(v)                                     // ISO fallback
-  return Number.isNaN(d.getTime()) ? null : d
+// ── Expiry range filter (Batches tab) ─────────────────────────────────────────
+const expiryPreset = ref('')   // '' | expired | thismonth | next2m | next3m | custom
+const expiryFrom  = ref('')    // DD/MM/YYYY — only used when preset === 'custom'
+const expiryTo    = ref('')
+
+const expiryPresets = [
+  { label: 'Already expired',  value: 'expired'    },
+  { label: 'This month',       value: 'thismonth'  },
+  { label: 'Next 2 months',    value: 'next2m'     },
+  { label: 'Next 3 months',    value: 'next3m'     },
+  { label: 'Custom range',     value: 'custom'     },
+]
+const expiryLabel = computed(() => {
+  if (expiryPreset.value === 'custom')
+    return expiryFrom.value && expiryTo.value ? `${expiryFrom.value} – ${expiryTo.value}` : 'Custom range'
+  return expiryPresets.find((o) => o.value === expiryPreset.value)?.label ?? ''
+})
+
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+function parseDMY(s: string): Date | null {
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null
 }
+
+const expiryRange = computed<[Date, Date] | null>(() => {
+  const today = dayStart(TODAY)
+  switch (expiryPreset.value) {
+    case 'expired':   return [new Date(0), new Date(today.getTime() - 1)]
+    case 'thismonth': return [
+      new Date(today.getFullYear(), today.getMonth(), 1),
+      new Date(today.getFullYear(), today.getMonth() + 1, 0),
+    ]
+    case 'next2m': return [today, new Date(today.getFullYear(), today.getMonth() + 2, today.getDate())]
+    case 'next3m': return [today, new Date(today.getFullYear(), today.getMonth() + 3, today.getDate())]
+    case 'custom': {
+      const from = parseDMY(expiryFrom.value)
+      const to   = parseDMY(expiryTo.value)
+      return from && to ? [dayStart(from), dayStart(to)] : null
+    }
+    default: return null
+  }
+})
+
+function clearExpiryFilter() { expiryPreset.value = ''; expiryFrom.value = ''; expiryTo.value = '' }
+
 function visibleBatches(p: { batches?: { expiryDate: string }[] }) {
   const batches = p.batches ?? []
-  const sel = parseExpiry(expiryFilter.value)
-  if (!sel) return batches
-  sel.setHours(23, 59, 59, 999)
-  return batches.filter((b) => new Date(b.expiryDate) <= sel)
+  const range = expiryRange.value
+  if (!range) return batches
+  const [from, to] = range
+  to.setHours(23, 59, 59, 999)
+  return batches.filter((b) => { const d = new Date(b.expiryDate); return d >= from && d <= to })
 }
 
 const filteredBatchProducts = computed(() => {
@@ -373,16 +410,6 @@ const serialProducts = computed(() =>
   (warehouse.value?.stock ?? []).filter((s) => s.serials &&
     (s.serials.available.length > 0 || s.serials.reserved.length > 0)),
 )
-const expandedSerials = ref<Set<string>>(new Set())
-watch(serialProducts, (list) => {
-  if (list.length && expandedSerials.value.size === 0) expandedSerials.value = new Set([list[0].id])
-}, { immediate: true })
-function toggleSerial(id: string) {
-  const s = new Set(expandedSerials.value)
-  s.has(id) ? s.delete(id) : s.add(id)
-  expandedSerials.value = s
-}
-function isSerialExpanded(id: string) { return expandedSerials.value.has(id) }
 const filteredSerialProducts = computed(() => {
   const q = serialSearch.value.trim().toLowerCase()
   if (!q) return serialProducts.value
@@ -391,6 +418,17 @@ const filteredSerialProducts = computed(() => {
   )
 })
 function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' : 'serial numbers'}` }
+const hasBatchMergedRows = computed(() => filteredBatchProducts.value.length > 0)
+const hasSerialMergedRows = computed(() => filteredSerialProducts.value.length > 0)
+
+const serialDrawerProduct = ref<WarehouseStockItem | null>(null)
+const serialDrawerOpen    = ref(false)
+const serialDrawerTab     = ref<'available' | 'reserved'>('available')
+function openSerialDrawer(p: WarehouseStockItem, tab: 'available' | 'reserved' = 'available') {
+  serialDrawerProduct.value = p
+  serialDrawerTab.value     = tab
+  serialDrawerOpen.value    = true
+}
 
 function formatDateNumeric(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
@@ -753,14 +791,34 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <!-- toolbar: expiry filter (left) + airene · columns · export · search (right) -->
             <div class="wh-filter-bar">
               <div class="wh-expiry-filter">
-                <MpDatePicker
-                  id="wh-expiry-filter"
-                  v-model="expiryFilter"
-                  placeholder="Select expiry date"
-                  format="DD/MM/YYYY"
-                  is-clearable
-                  use-portal
-                />
+                <MpPopover id="wh-expiry-preset" :is-close-on-select="false" use-portal placement="bottom-start">
+                  <MpPopoverTrigger>
+                    <MpSelect
+                      id="wh-expiry-select"
+                      placeholder="Expiry date range"
+                      :model-value="expiryPreset"
+                      is-clearable
+                      @mousedown.prevent
+                      @clear="clearExpiryFilter"
+                    >
+                      <option v-if="expiryPreset" :value="expiryPreset">{{ expiryLabel }}</option>
+                    </MpSelect>
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
+                    <MpPopoverList>
+                      <MpPopoverListItem
+                        v-for="opt in expiryPresets"
+                        :key="opt.value"
+                        :is-active="opt.value === expiryPreset"
+                        @click="expiryPreset = opt.value"
+                      >{{ opt.label }}</MpPopoverListItem>
+                    </MpPopoverList>
+                    <div v-if="expiryPreset === 'custom'" class="wh-expiry-custom">
+                      <MpDatePicker id="wh-expiry-from" v-model="expiryFrom" placeholder="From" format="DD/MM/YYYY" use-portal />
+                      <MpDatePicker id="wh-expiry-to"   v-model="expiryTo"   placeholder="To"   format="DD/MM/YYYY" use-portal />
+                    </div>
+                  </MpPopoverContent>
+                </MpPopover>
               </div>
               <div class="wh-toolbar">
                 <MpTooltip id="wh-bt-airene" label="Ask Airene" placement="bottom" use-portal>
@@ -784,10 +842,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
             <!-- custom table: Product & SKU are merged (rowspan) across each group's batch rows -->
             <div v-if="filteredBatchProducts.length" class="wh-batch-scroll">
-              <table class="wh-batch-table">
+              <table :class="['wh-batch-table', { 'wh-batch-table--bordered': hasBatchMergedRows }]">
                 <colgroup>
                   <col style="width: 320px" />
-                  <col v-if="batchColVisibility.sku" style="width: 130px" />
+                  <col v-if="batchColVisibility.sku" style="width: 200px" />
                   <col v-if="batchColVisibility.batch" style="width: 160px" />
                   <col v-if="batchColVisibility.location" style="width: 210px" />
                   <col v-if="batchColVisibility.expiry" style="width: 170px" />
@@ -851,8 +909,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <td v-if="batchColVisibility.sku" class="wh-btd wh-btd--sku" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">
                         {{ p.sku }}
                       </td>
-                      <td v-if="batchColVisibility.batch" class="wh-btd"><span class="wh-batch-summary">{{ batchCountLabel(visibleBatches(p).length) }}</span></td>
-                      <td v-if="batchColVisibility.location" class="wh-btd"></td><!-- Location (per batch row) -->
+                      <td v-if="batchColVisibility.batch" class="wh-btd" :colspan="batchColVisibility.location ? 2 : 1"><span class="wh-batch-summary">{{ batchCountLabel(visibleBatches(p).length) }}</span></td>
+                      <td v-if="!batchColVisibility.batch && batchColVisibility.location" class="wh-btd"></td>
                       <td v-if="batchColVisibility.expiry" class="wh-btd"></td><!-- Expiry date -->
                       <td v-if="batchColVisibility.onHand" class="wh-btd wh-btd--num">{{ formatNum(p.onHand) }}</td>
                       <td v-if="batchColVisibility.reserved" class="wh-btd wh-btd--num">{{ formatNum(p.reserved) }}</td>
@@ -942,8 +1000,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <table class="wh-batch-table">
                 <colgroup>
                   <col style="width: 320px" />
-                  <col v-if="serialColVisibility.sku" style="width: 150px" />
-                  <col v-if="serialColVisibility.available" />
+                  <col v-if="serialColVisibility.sku" style="width: 200px" />
+                  <col v-if="serialColVisibility.available" style="width: 260px" />
                   <col v-if="serialColVisibility.reserved" style="width: 260px" />
                   <col v-if="serialColVisibility.lastUpdated" style="width: 200px" />
                 </colgroup>
@@ -958,22 +1016,9 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </thead>
                 <tbody>
                   <template v-for="p in filteredSerialProducts" :key="p.id">
-                    <!-- summary row — Product & SKU span the group;
-                         click anywhere on the row toggles the accordion -->
-                    <tr class="wh-batch-group-row" @click="toggleSerial(p.id)">
-                      <td class="wh-btd wh-btd--product wh-batch-cell" :rowspan="isSerialExpanded(p.id) ? 2 : 1">
+                    <tr class="wh-batch-group-row">
+                      <td class="wh-btd wh-btd--product wh-batch-cell">
                         <div class="wh-batch-product">
-                          <button
-                            class="wh-expand-btn"
-                            :aria-label="isSerialExpanded(p.id) ? 'Collapse' : 'Expand'"
-                          >
-                            <svg
-                              width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-                              class="wh-expand-chevron" :class="{ 'wh-expand-chevron--open': isSerialExpanded(p.id) }"
-                            >
-                              <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                          </button>
                           <div class="wh-product">
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                             <span class="wh-product-text">
@@ -990,30 +1035,24 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           <span class="row-hover-btn__label">VIEW DETAILS</span>
                         </button>
                       </td>
-                      <td v-if="serialColVisibility.sku" class="wh-btd wh-btd--sku" :rowspan="isSerialExpanded(p.id) ? 2 : 1">{{ p.sku }}</td>
-                      <td v-if="serialColVisibility.available" class="wh-btd"><span class="wh-batch-summary">{{ serialCountLabel(p.serials.available.length) }}</span></td>
-                      <td v-if="serialColVisibility.reserved" class="wh-btd"><span class="wh-batch-summary">{{ serialCountLabel(p.serials.reserved.length) }}</span></td>
-                      <td v-if="serialColVisibility.lastUpdated" class="wh-btd"><LastUpdatedCell v-bind="lastUpdatedFor(p.id)" /></td>
-                    </tr>
-                    <!-- detail row (when expanded): serial lists -->
-                    <tr v-if="isSerialExpanded(p.id)" class="wh-batch-child-row">
-                      <td v-if="serialColVisibility.available" class="wh-btd wh-btd--top">
-                        <ul class="wh-serial-list">
-                          <li v-for="u in p.serials.available" :key="u.serial" class="wh-serial-unit">
-                            <a class="wh-serial-link" @click.prevent>{{ u.serial }}</a>
-                            <span class="wh-serial-loc">{{ u.location }}</span>
-                          </li>
-                        </ul>
-                      </td>
-                      <td v-if="serialColVisibility.reserved" class="wh-btd wh-btd--top">
-                        <div class="wh-serial-reserved">
-                          <div v-for="u in p.serials.reserved" :key="u.serial" class="wh-serial-unit">
-                            <a class="wh-serial-link" @click.prevent>{{ u.serial }}</a>
-                            <span class="wh-serial-loc">{{ u.location }}</span>
-                          </div>
+                      <td v-if="serialColVisibility.sku" class="wh-btd wh-btd--sku">{{ p.sku }}</td>
+                      <td v-if="serialColVisibility.available" class="wh-btd">
+                        <div class="cell-with-action">
+                          <span class="wh-serial-count">{{ serialCountLabel(p.serials.available.length) }}</span>
+                          <button class="row-hover-btn" @click.stop="openSerialDrawer(p, 'available')">
+                            <span class="row-hover-btn__label">VIEW DETAILS</span>
+                          </button>
                         </div>
                       </td>
-                      <td v-if="serialColVisibility.lastUpdated" class="wh-btd wh-btd--top" />
+                      <td v-if="serialColVisibility.reserved" class="wh-btd">
+                        <div class="cell-with-action">
+                          <span class="wh-serial-count">{{ serialCountLabel(p.serials.reserved.length) }}</span>
+                          <button class="row-hover-btn" @click.stop="openSerialDrawer(p, 'reserved')">
+                            <span class="row-hover-btn__label">VIEW DETAILS</span>
+                          </button>
+                        </div>
+                      </td>
+                      <td v-if="serialColVisibility.lastUpdated" class="wh-btd"><LastUpdatedCell v-bind="lastUpdatedFor(p.id)" /></td>
                     </tr>
                   </template>
                 </tbody>
@@ -1230,6 +1269,13 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       :parent-id="newLocParentId"
       @update:is-open="newLocOpen = $event"
       @saved="onLocSaved"
+    />
+
+    <StockSerialDrawer
+      :open="serialDrawerOpen"
+      :product="serialDrawerProduct"
+      :initial-tab="serialDrawerTab"
+      @update:open="serialDrawerOpen = $event"
     />
 
   </div>
@@ -1461,9 +1507,12 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-filter-bar .wh-toolbar { width: auto; }
 /* serial tab has only the toolbar (no expiry filter) → push it to the right */
 .wh-filter-bar--end { justify-content: flex-end; }
-/* expiry-date filter — just a width wrapper; MpDatePicker brings its own input + border */
-.wh-expiry-filter { width: 240px; }
-.wh-expiry-filter :deep(.mp-datepicker__root) { width: 100%; }
+.wh-expiry-filter { flex-shrink: 0; }
+.wh-expiry-custom {
+  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-3);
+  border-top: 1px solid var(--mp-border-default);
+}
 
 /* ── Products toolbar (right-aligned inside ErpTablePage's #filters slot) ── */
 .wh-toolbar {
@@ -1632,42 +1681,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-expand-chevron--open { transform: rotate(90deg); }
 /* summary row: "N batches" semibold; child row: batch no. default */
 .wh-batch-summary { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-/* top-align the expanded serial detail cells (2 classes → beats base .wh-btd) */
+.wh-serial-count { color: var(--mp-text-default); }
 .wh-btd.wh-btd--top { vertical-align: top; }
-/* Available serials: bulleted list flowing into 2 columns */
-.wh-serial-list {
-  margin: 0;
-  padding-left: var(--mp-spacing-4);
-  /* content-sized columns packed left, so serials sit close together instead of
-     spreading across the full-width Available column */
-  column-width: 190px;
-  column-gap: var(--mp-spacing-5);
-  list-style: disc;
-}
-.wh-serial-list li { break-inside: avoid; }
-/* Reserved serials: stacked, no bullets */
-.wh-serial-reserved { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-/* one serialized unit = clickable serial number + its bin location below */
-.wh-serial-unit { margin-bottom: var(--mp-spacing-2); break-inside: avoid; }
-.wh-serial-reserved .wh-serial-unit { margin-bottom: 0; }
-.wh-serial-link {
-  display: block;
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-link);
-  cursor: pointer;
-  text-decoration: none;
-}
-.wh-serial-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.wh-serial-loc {
-  display: block;
-  font-size: var(--mp-font-sizes-sm);
-  line-height: var(--mp-line-heights-sm, 16px);
-  color: var(--mp-text-secondary);
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
 /* "View details" chip on hover — Product cell + each Batch cell */
 .wh-batch-cell { position: relative; }
 .wh-batch-cell:hover .row-hover-btn { display: flex; }
@@ -1753,17 +1768,20 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: var(--mp-background-neutral);
 }
 .wh-btd--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
-/* merged Product/SKU cells: top-aligned, right divider so the group reads as one block */
 .wh-btd--product, .wh-btd--sku {
   vertical-align: top;
   white-space: normal;
-  border-right: 1px solid var(--mp-border-default);
 }
 .wh-btd--empty { color: var(--mp-text-secondary); white-space: normal; text-align: center; padding: var(--mp-spacing-6); }
 /* batch Location cell — wrap long location paths instead of bleeding */
 .wh-loc-cell { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+/* All-column borders when merged rows exist. border-collapse collapses adjacent rights — no doubling.
+   No border-left on first col, no border-right on last col. */
+.wh-batch-table--bordered .wh-btd,
+.wh-batch-table--bordered .wh-bth { border-right: 1px solid var(--mp-border-default); }
+.wh-batch-table--bordered .wh-btd:last-child,
+.wh-batch-table--bordered .wh-bth:last-child { border-right: none; }
 /* last group has no trailing border (panel border closes it) */
-.wh-batch-table tbody tr:last-child .wh-btd { border-bottom: none; }
 .wh-batch-table tbody tr:hover .wh-btd { background: var(--mp-background-neutral-hovered); }
 .wh-batch-group-row { cursor: pointer; }
 /* summary cells (Batch/Serial count, qty) align to the top so they line up with the

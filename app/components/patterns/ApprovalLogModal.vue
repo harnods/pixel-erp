@@ -75,7 +75,7 @@ const displayRows = computed<LogRow[]>(() => {
 <template>
   <MpModal
     id="approval-log-modal" :is-open="isOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="emit('close')"
+    is-close-on-overlay-click :is-keep-alive="false" @close="emit('close')"
   >
     <MpModalContent>
       <MpModalHeader>

@@ -135,9 +135,8 @@ function save() {
     id="new-loc-drawer"
     :is-open="isOpen"
     placement="right"
-    size="sm"
+    size="md"
     variant="floating"
-    is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
     @close="close"

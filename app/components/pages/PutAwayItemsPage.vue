@@ -532,7 +532,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-items-section--bordered {
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden;
 }
-.pi-items-section--bordered .pi-items-count { border-top: 1px solid var(--mp-border-default); }
 .pi-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pi-items thead .pi-th { position: sticky; top: 0; z-index: 1; }
 .pi-items { width: 100%; border-collapse: collapse; table-layout: auto; }
@@ -559,7 +558,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   vertical-align: top;
 }
 .pi-td:last-child { border-right: none; }
-.pi-items-section--bordered .pi-row:last-child .pi-td { border-bottom: none; }
 .pi-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pi-td--action { padding: 0; width: 48px; min-width: 48px; position: sticky; right: 0; z-index: 2; background: var(--mp-background-neutral-hovered); }
 

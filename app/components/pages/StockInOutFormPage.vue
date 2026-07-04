@@ -509,7 +509,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .scf-th--del { padding: 0; }
 .scf-td { padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; background: var(--mp-background-neutral-subtle); }
-.scf-tr:last-child .scf-td { border-bottom: none; }
 .scf-td--muted { color: var(--mp-text-secondary); }
 .scf-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 .scf-diff--pos { color: var(--mp-text-success, #18794e); }

@@ -96,6 +96,7 @@ function close() { emit('update:open', false) }
 </script>
 
 <template>
+  <Transition name="vbd">
   <div v-if="open" class="vbd-overlay" @click.self="close">
     <div class="vbd-panel" role="dialog" aria-label="View batch">
 
@@ -198,15 +199,20 @@ function close() { emit('update:open', false) }
 
       </div>
 
-      <footer class="vbd-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Close</button>
-      </footer>
-
     </div>
   </div>
+  </Transition>
 </template>
 
 <style scoped>
+.vbd-enter-active,
+.vbd-leave-active { transition: background-color 250ms ease; }
+.vbd-enter-from, .vbd-leave-to { background-color: transparent; }
+.vbd-enter-active :deep(.vbd-panel) { transition: transform 350ms ease-out; }
+.vbd-leave-active :deep(.vbd-panel)  { transition: transform 250ms ease-in; }
+.vbd-enter-from :deep(.vbd-panel),
+.vbd-leave-to :deep(.vbd-panel) { transform: translateX(calc(100% + 12px)); }
+
 .vbd-overlay {
   position: fixed; inset: 0; z-index: 1300;
   background: rgba(8, 13, 14, 0.45);
@@ -299,17 +305,10 @@ function close() { emit('update:open', false) }
   vertical-align: top;
   background: var(--mp-background-neutral, #fff);
 }
-.vbd-tr:last-child .vbd-td { border-bottom: none; }
 .vbd-td--muted { color: var(--mp-text-secondary); }
 .vbd-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .vbd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
 .vbd-diff--pos { color: var(--mp-text-success, #18794e); }
 .vbd-diff--neg { color: var(--mp-text-danger, #a8352d); }
 
-.vbd-footer {
-  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
-  background: var(--mp-background-stage);
-}
 </style>

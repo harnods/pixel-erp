@@ -527,7 +527,6 @@ function fmtNum(n: number | null): string {
   background: var(--mp-background-stage, #fff);
   border-radius: var(--mp-radii-lg, 12px);
   overflow: hidden;
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────────── */
@@ -654,7 +653,6 @@ function fmtNum(n: number | null): string {
   background: var(--mp-background-neutral-subtle);
 }
 .mbd-td:last-child { border-right: none; }
-.mbd-tr:last-child .mbd-td { border-bottom: none; }
 .mbd-td--muted { color: var(--mp-text-secondary); }
 .mbd-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 
@@ -722,7 +720,7 @@ function fmtNum(n: number | null): string {
 .mbd-td--pagination {
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-  text-align: left; border-top: 1px solid var(--mp-border-default); border-bottom: 1px solid var(--mp-border-default);
+  text-align: left; border-bottom: none;
 }
 
 /* Select batch row — same pattern as "Select product" in warehouse transfer */

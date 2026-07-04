@@ -45,6 +45,7 @@ function save() { emit('save', [...sel.value]); emit('update:open', false) }
 </script>
 
 <template>
+  <Transition name="spd">
   <div v-if="open" class="spd-overlay" @click.self="close">
     <div class="spd-panel" role="dialog" aria-label="Select product">
       <!-- Header -->
@@ -113,16 +114,24 @@ function save() { emit('save', [...sel.value]); emit('update:open', false) }
       </footer>
     </div>
   </div>
+  </Transition>
 </template>
 
 <style scoped>
+.spd-enter-active,
+.spd-leave-active { transition: background-color 250ms ease; }
+.spd-enter-from, .spd-leave-to { background-color: transparent; }
+.spd-enter-active :deep(.spd-panel) { transition: transform 350ms ease-out; }
+.spd-leave-active :deep(.spd-panel)  { transition: transform 250ms ease-in; }
+.spd-enter-from :deep(.spd-panel),
+.spd-leave-to :deep(.spd-panel) { transform: translateX(calc(100% + 12px)); }
+
 .spd-overlay { position: fixed; inset: 0; z-index: 1300; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
 /* Floating ERP drawer — 12px margin, 12px rounded corners. */
 .spd-panel {
   margin: var(--mp-spacing-3); width: min(920px, calc(100% - 24px)); height: calc(100% - 24px);
   display: flex; flex-direction: column; background: var(--mp-background-stage, #fff);
   border-radius: var(--mp-radii-lg, 12px); overflow: hidden;
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
 }
 .spd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;

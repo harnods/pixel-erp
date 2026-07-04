@@ -82,7 +82,6 @@ const rangeEnd    = computed(() => Math.min(props.currentPage * props.perPage, p
   align-items: center;
   justify-content: space-between;
   padding: var(--mp-spacing-2, 8px);
-  border-top: 1px solid var(--mp-border-default);
   flex-shrink: 0;
 }
 

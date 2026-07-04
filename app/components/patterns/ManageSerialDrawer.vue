@@ -389,7 +389,6 @@ function handleSave() {
   background: var(--mp-background-neutral, #fff);
 }
 .msn-td:last-child { border-right: none; }
-.msn-tr:last-child .msn-td { border-bottom: none; }
 .msn-td--strike { text-decoration: line-through; color: var(--mp-text-secondary); }
 .msn-tr--removed .msn-td { background: var(--mp-background-danger-subtle, #fff5f5); }
 

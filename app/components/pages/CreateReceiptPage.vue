@@ -684,7 +684,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
   vertical-align: middle;
 }
 .cr-td:last-child { border-right: none; }
-.cr-tr:last-child .cr-td { border-bottom: none; }
 
 /* Drag row states */
 .cr-tr--dragging { opacity: 0.4; }

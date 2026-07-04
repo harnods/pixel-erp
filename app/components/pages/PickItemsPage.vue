@@ -386,7 +386,6 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
 .pik-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 .pik-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
-.pik-items-section--bordered .pik-items-count { border-top: 1px solid var(--mp-border-default); }
 .pik-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pik-items thead .pik-th { position: sticky; top: 0; z-index: 1; }
 .pik-items { width: 100%; border-collapse: collapse; table-layout: auto; }
@@ -407,7 +406,6 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .pik-td:last-child { border-right: none; }
-.pik-items-section--bordered .pik-row:last-child .pik-td { border-bottom: none; }
 .pik-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pik-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .pik-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }

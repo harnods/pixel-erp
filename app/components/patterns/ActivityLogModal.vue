@@ -98,7 +98,6 @@ function formatWhen(iso: string) {
     id="activity-log-modal"
     :is-open="isOpen"
     size="xl"
-    is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
     @close="emit('close')"

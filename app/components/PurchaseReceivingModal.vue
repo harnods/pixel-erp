@@ -164,7 +164,6 @@ function handleCreate() {
     id="pr-modal"
     :is-open="open"
     size="xl"
-    is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
     @close="emit('close')"
@@ -442,7 +441,6 @@ function handleCreate() {
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
 }
-.pr-item-row:last-child .pr-td { border-bottom: none; }
 .pr-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4);

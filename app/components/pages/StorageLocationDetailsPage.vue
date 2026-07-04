@@ -167,6 +167,10 @@ function confirmDeleteLocation() {
               <span class="sld-type-desc">{{ typeDesc }}</span>
             </dd>
           </div>
+          <div v-if="node.description" class="sld-info-row">
+            <dt class="sld-info-label">Description</dt>
+            <dd class="sld-info-value sld-info-value--desc">{{ node.description }}</dd>
+          </div>
           <div class="sld-info-row">
             <dt class="sld-info-label">Sub-locations</dt>
             <dd class="sld-info-value">{{ fmt(subLocationCount) }}</dd>
@@ -283,6 +287,7 @@ function confirmDeleteLocation() {
 .sld-info-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; }
 .sld-info-label { flex: 0 0 200px; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-secondary); }
 .sld-info-value { margin: 0; flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); }
+.sld-info-value--desc { white-space: pre-wrap; }
 .sld-type-desc { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .sld-path { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); flex-wrap: wrap; }
 .sld-path-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }

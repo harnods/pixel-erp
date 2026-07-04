@@ -680,7 +680,6 @@ function goBack() {
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-td--product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detail-td--secondary { color: var(--mp-text-secondary); }
@@ -694,7 +693,6 @@ function goBack() {
 .rcvgd-linked-wrap { overflow-x: auto; }
 .rcvgd-linked { width: 100%; border-collapse: collapse; }
 .rcvgd-linked .detail-th { background: var(--mp-background-neutral-subtle); }
-.rcvgd-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .rcvgd-linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 /* Number cell — "View details" chip on row hover */
 .rcvgd-linked .detail-td--number { position: relative; }

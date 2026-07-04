@@ -80,6 +80,7 @@ function close() { emit('update:open', false) }
 </script>
 
 <template>
+  <Transition name="vsd">
   <div v-if="open" class="vsd-overlay" @click.self="close">
     <div class="vsd-panel" role="dialog" aria-label="View serial numbers">
 
@@ -160,15 +161,20 @@ function close() { emit('update:open', false) }
 
       </div>
 
-      <footer class="vsd-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Close</button>
-      </footer>
-
     </div>
   </div>
+  </Transition>
 </template>
 
 <style scoped>
+.vsd-enter-active,
+.vsd-leave-active { transition: background-color 250ms ease; }
+.vsd-enter-from, .vsd-leave-to { background-color: transparent; }
+.vsd-enter-active :deep(.vsd-panel) { transition: transform 350ms ease-out; }
+.vsd-leave-active :deep(.vsd-panel)  { transition: transform 250ms ease-in; }
+.vsd-enter-from :deep(.vsd-panel),
+.vsd-leave-to :deep(.vsd-panel) { transform: translateX(calc(100% + 12px)); }
+
 .vsd-overlay {
   position: fixed; inset: 0; z-index: 1300;
   background: rgba(8, 13, 14, 0.45);
@@ -182,7 +188,6 @@ function close() { emit('update:open', false) }
   background: var(--mp-background-stage, #fff);
   border-radius: var(--mp-radii-lg, 12px);
   overflow: hidden;
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
 }
 
 .vsd-header {
@@ -258,7 +263,6 @@ function close() { emit('update:open', false) }
   vertical-align: middle;
   background: var(--mp-background-neutral, #fff);
 }
-.vsd-table-wrap .vsd-tr:last-child .vsd-td { border-bottom: none; }
 .vsd-td--muted { color: var(--mp-text-secondary); }
 .vsd-td--mono { font-family: monospace; font-size: var(--mp-font-sizes-md); }
 .vsd-td--strike { text-decoration: line-through; }
@@ -277,10 +281,4 @@ function close() { emit('update:open', false) }
 }
 .vsd-count { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.vsd-footer {
-  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
-  background: var(--mp-background-stage);
-}
 </style>

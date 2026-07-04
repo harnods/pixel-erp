@@ -460,7 +460,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-items-section--bordered {
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden;
 }
-.ri-items-section--bordered .ri-items-count { border-top: 1px solid var(--mp-border-default); }
 
 /* Scroll container — same max-height as other create pages */
 .ri-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
@@ -487,7 +486,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   vertical-align: top;
 }
 .ri-td:last-child { border-right: none; }
-.ri-items-section--bordered .ri-row:last-child .ri-td { border-bottom: none; }
 .ri-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .ri-td--input { padding: 0; }
 

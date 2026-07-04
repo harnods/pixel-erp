@@ -497,7 +497,6 @@ function handleCreate() {
 /* ── Items table (form-table look) ───────────────────────────────────────────── */
 .pk-items-section { display: flex; flex-direction: column; }
 .pk-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
-.pk-items-section--bordered .pk-items-count { border-top: 1px solid var(--mp-border-default); }
 .pk-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pk-items-sentinel { height: 1px; }
 .pk-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }

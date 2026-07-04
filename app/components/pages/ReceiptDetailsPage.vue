@@ -534,7 +534,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
@@ -615,7 +614,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   border-top: 1px solid var(--mp-border-default);
 }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
-.detail-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 
 /* Number cell with "View details" chip on row hover */
 .detail-td--number { position: relative; }

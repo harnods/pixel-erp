@@ -520,7 +520,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: var(--mp-background-neutral-subtle);
 }
 .wtf-td:last-child { border-right: none; }
-.wtf-tr:last-child .wtf-td { border-bottom: none; }
 .wtf-td--muted { color: var(--mp-text-secondary); }
 /* Empty add-row filler — plain white, spans to the right edge */
 .wtf-td--empty { background: var(--mp-background-neutral, #fff); }
