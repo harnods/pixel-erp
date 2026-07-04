@@ -165,7 +165,7 @@ function generateStock(products: Product[], seed: number): WarehouseStockItem[] 
       : (onHand > 40 ? (i * 13 + seed) % 40 : 0)
     const reserved = isSerial ? Math.min(reservedRaw, onHand - 1) : reservedRaw
     const onTheWay = (i * 7) % 60
-    const minStock = ((i * 11) % 200) + 10
+    const minStock = Math.round((((i * 11) % 200) + 10) / 10) * 10
     out.push({
       id: `${seed}-p${i}`,
       name: cycle > 1 ? `${c.name} #${cycle}` : c.name,
