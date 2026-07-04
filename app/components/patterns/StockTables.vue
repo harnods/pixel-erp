@@ -47,10 +47,6 @@ const allStockColumns: TableColumn[] = [
   { key: 'minStock',            label: 'Min. stock',           width: '130px', align: 'right' },
   { key: 'unit',                label: 'Unit',                 width: '90px'  },
   { key: 'locations',           label: 'Location',             width: '230px' },
-  { key: 'defaultSalesPrice',   label: 'Default sales price',  width: '180px', align: 'right' },
-  { key: 'averageCost',         label: 'Average cost',         width: '170px', align: 'right' },
-  { key: 'lastPurchaseCost',    label: 'Last purchase cost',   width: '180px', align: 'right' },
-  { key: 'defaultPurchaseCost', label: 'Default purchase cost', width: '190px', align: 'right' },
 ]
 const allStockCols: TableColumn[] = [...allStockColumns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
 const stockColVisibility = reactive<Record<string, boolean>>(
@@ -220,9 +216,6 @@ function expiryTooltip(iso: string) {
   if (days === 0) return `Expires today (${d})`
   return `Expiring in ${days} day${days === 1 ? '' : 's'} (${d})`
 }
-function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount)
-}
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
 // ── Scroll-aware sticky columns (Products table) ────────────────────────────────────
@@ -320,10 +313,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <template #cell-locations="{ value }">
               <span v-for="loc in (value as string[])" :key="loc" class="wh-loc">{{ loc }}</span>
             </template>
-            <template #cell-defaultSalesPrice="{ value }">{{ formatIDR(value as number) }}</template>
-            <template #cell-averageCost="{ value }">{{ formatIDR(value as number) }}</template>
-            <template #cell-lastPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
-            <template #cell-defaultPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
             <template #cell-lastUpdated="{ row }">
               <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
             </template>
