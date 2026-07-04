@@ -169,6 +169,8 @@ const serialColItems = [
   { key: 'sku', label: 'SKU', disabled: true },
   { key: 'available', label: 'Available qty' },
   { key: 'reserved', label: 'Reserved qty' },
+  { key: 'minStock', label: 'Min. stock' },
+  { key: 'unit', label: 'Unit' },
   { key: 'lastUpdated', label: 'Last updated' },
 ]
 const serialColVisibility = reactive<Record<string, boolean>>(Object.fromEntries(serialColItems.map(c => [c.key, c.key !== 'lastUpdated'])))
@@ -990,6 +992,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <col v-if="serialColVisibility.sku" style="width: 200px" />
                   <col v-if="serialColVisibility.available" style="width: 260px" />
                   <col v-if="serialColVisibility.reserved" style="width: 260px" />
+                  <col v-if="serialColVisibility.minStock" style="width: 130px" />
+                  <col v-if="serialColVisibility.unit" style="width: 90px" />
                   <col v-if="serialColVisibility.lastUpdated" style="width: 200px" />
                 </colgroup>
                 <thead>
@@ -998,6 +1002,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <th v-if="serialColVisibility.sku" class="wh-bth">SKU</th>
                     <th v-if="serialColVisibility.available" class="wh-bth">Available qty</th>
                     <th v-if="serialColVisibility.reserved" class="wh-bth">Reserved qty</th>
+                    <th v-if="serialColVisibility.minStock" class="wh-bth wh-bth--num">Min. stock</th>
+                    <th v-if="serialColVisibility.unit" class="wh-bth">Unit</th>
                     <th v-if="serialColVisibility.lastUpdated" class="wh-bth">Last updated</th>
                   </tr>
                 </thead>
@@ -1039,6 +1045,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           </button>
                         </div>
                       </td>
+                      <td v-if="serialColVisibility.minStock" class="wh-btd wh-btd--num">{{ formatNum(p.minStock) }}</td>
+                      <td v-if="serialColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
                       <td v-if="serialColVisibility.lastUpdated" class="wh-btd"><LastUpdatedCell v-bind="lastUpdatedFor(p.id)" /></td>
                     </tr>
                   </template>
