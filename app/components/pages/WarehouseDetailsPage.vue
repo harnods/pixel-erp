@@ -160,6 +160,7 @@ const batchColItems = [
   { key: 'onHand', label: 'On hand qty' },
   { key: 'reserved', label: 'Reserved qty' },
   { key: 'available', label: 'Available qty' },
+  { key: 'minStock', label: 'Min. stock' },
   { key: 'unit', label: 'Unit' },
   { key: 'lastUpdated', label: 'Last updated' },
 ]
@@ -841,6 +842,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <col v-if="batchColVisibility.onHand" style="width: 120px" />
                   <col v-if="batchColVisibility.reserved" style="width: 120px" />
                   <col v-if="batchColVisibility.available" style="width: 120px" />
+                  <col v-if="batchColVisibility.minStock" style="width: 130px" />
                   <col v-if="batchColVisibility.unit" style="width: 90px" />
                   <col v-if="batchColVisibility.lastUpdated" style="width: 200px" />
                 </colgroup>
@@ -854,6 +856,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <th v-if="batchColVisibility.onHand" class="wh-bth wh-bth--num">On hand qty</th>
                     <th v-if="batchColVisibility.reserved" class="wh-bth wh-bth--num">Reserved qty</th>
                     <th v-if="batchColVisibility.available" class="wh-bth wh-bth--num">Available qty</th>
+                    <th v-if="batchColVisibility.minStock" class="wh-bth wh-bth--num">Min. stock</th>
                     <th v-if="batchColVisibility.unit" class="wh-bth">Unit</th>
                     <th v-if="batchColVisibility.lastUpdated" class="wh-bth">Last updated</th>
                   </tr>
@@ -904,6 +907,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <td v-if="batchColVisibility.onHand" class="wh-btd wh-btd--num">{{ formatNum(p.onHand) }}</td>
                       <td v-if="batchColVisibility.reserved" class="wh-btd wh-btd--num">{{ formatNum(p.reserved) }}</td>
                       <td v-if="batchColVisibility.available" class="wh-btd wh-btd--num">{{ formatNum(p.available) }}</td>
+                      <td v-if="batchColVisibility.minStock" class="wh-btd wh-btd--num" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">{{ formatNum(p.minStock) }}</td>
                       <td v-if="batchColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
                       <td v-if="batchColVisibility.lastUpdated" class="wh-btd"><LastUpdatedCell v-bind="lastUpdatedFor(p.id)" /></td>
                     </tr>
