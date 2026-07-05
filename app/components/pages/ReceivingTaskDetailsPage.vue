@@ -203,7 +203,7 @@ function jumpTo(id: string) {
   router.push(`/receiving/${id}`)
 }
 
-// goBack: return to the Barang masuk page on the Receiving tab so the inbound
+// goBack: return to the Inbound delivery page on the Receiving tab so the inbound
 // stage tabs (On the way / Receiving / Put-away / …) stay visible.
 function goBack() {
   router.push('/barang-masuk?tab=Receiving')

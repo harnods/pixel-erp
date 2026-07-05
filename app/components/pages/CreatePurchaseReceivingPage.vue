@@ -324,7 +324,7 @@ function handleCreate() {
   <!-- Not found fallback -->
   <div v-else class="pr-not-found">
     <p>Purchase order not found.</p>
-    <button class="detail-breadcrumb" @click="router.push('/barang-masuk')">Back to Barang masuk</button>
+    <button class="detail-breadcrumb" @click="router.push('/barang-masuk')">Back to Inbound delivery</button>
   </div>
 </template>
 

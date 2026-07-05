@@ -314,8 +314,8 @@ const erpNavGroups: NavItem[][] = [
         [
           { label: 'Overview' },
           { label: 'Warehouses' },
-          { label: 'Barang keluar' },
-          { label: 'Barang masuk' },
+          { label: 'Outbound delivery' },
+          { label: 'Inbound delivery' },
           { label: 'Warehouse transfers' },
           { label: 'Stock adjustments' },
         ],
@@ -400,7 +400,7 @@ const erpNavGroups: NavItem[][] = [
 
 // Shared WMS nav items (reused across WMS scenarios).
 const barangKeluarNav: NavItem = {
-  name: 'Barang keluar', icon: 'sales',
+  name: 'Outbound delivery', icon: 'sales',
   panelSubmenu: [[
     { label: 'Orders', count: 8 },
     { label: 'Picking', count: 6 },
@@ -410,7 +410,7 @@ const barangKeluarNav: NavItem = {
     { label: 'Voided orders' },
   ]],
 }
-// Barang masuk nav — counts derive live from receipt data (warehouse-scoped),
+// Inbound delivery nav — counts derive live from receipt data (warehouse-scoped),
 // so panel badges match what the table shows. Standalone adds Draft; Ops doesn't.
 function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean): NavItem {
   const c = receiptCountsByStage(scopeIds)
@@ -422,7 +422,7 @@ function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean):
   items.push({ label: 'Partial reception', count: c['Partial reception'] })
   items.push({ label: 'Completed', to: 'Inbound completed' })
   items.push({ label: 'Canceled' })
-  return { name: 'Barang masuk', icon: 'cart', panelSubmenu: [items] }
+  return { name: 'Inbound delivery', icon: 'cart', panelSubmenu: [items] }
 }
 const stockCountNav: NavItem[] = [
   { name: 'Stock count', icon: 'table-view-list' },
@@ -446,8 +446,8 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Warehouses', icon: 'warehouse' },
   ],
   [
-    { name: 'Barang keluar', icon: 'sales' },
-    { name: 'Barang masuk', icon: 'cart' },
+    { name: 'Outbound delivery', icon: 'sales' },
+    { name: 'Inbound delivery', icon: 'cart' },
   ],
   stockCountNav,
   [
@@ -457,12 +457,12 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
 
 // WMS Ops — trimmed menu scoped to the user's assigned warehouse(s). The
 // fulfillment group depends on what the active warehouse handles (out / in);
-// Barang masuk counts are scoped to the assigned warehouses.
+// Inbound delivery counts are scoped to the assigned warehouses.
 const wmsOpsNavGroups = computed<NavItem[][]>(() => {
   const flows = activeWarehouse.value?.flows ?? ['out']
   const fulfillment: NavItem[] = []
-  if (flows.includes('out')) fulfillment.push({ name: 'Barang keluar', icon: 'sales' })
-  if (flows.includes('in')) fulfillment.push({ name: 'Barang masuk', icon: 'cart' })
+  if (flows.includes('out')) fulfillment.push({ name: 'Outbound delivery', icon: 'sales' })
+  if (flows.includes('in')) fulfillment.push({ name: 'Inbound delivery', icon: 'cart' })
   return [
     [{ name: 'Home', icon: 'home' }],
     [{ name: 'Warehouses', icon: 'warehouse', path: `/warehouses/${activeWarehouse.value?.id ?? 'wh-001'}` }],
@@ -561,8 +561,8 @@ function resolveActive(pageKey: string): {
 // detail pages (e.g. receiving task detail in ERP scenario) don't snap the
 // sidebar away from the relevant section.
 const SECTION_PARENT: Record<string, string> = {
-  Receiving: 'Barang masuk',
-  'Put away': 'Barang masuk',
+  Receiving: 'Inbound delivery',
+  'Put away': 'Inbound delivery',
 }
 
 watch(currentPageKey, (key) => {
@@ -621,20 +621,15 @@ function handleNavClick(item: NavItem) {
   flyoutItem.value = null
 
   if (item.panelSubmenu) {
-    // Nav item that directly opens a panel (e.g. Reports)
-    if (activePanel.value?.parentNavName === item.name) {
-      // Clicking same item again — close panel
-      closePanel()
-      activeItem.value = ''
-    } else {
-      const firstItem = item.panelSubmenu[0][0]
-      openPanel({ title: item.name, groups: item.panelSubmenu, parentNavName: item.name })
-      activePanelSubItem.value = firstItem.label
-      navigate(firstItem.to ?? firstItem.label)
-      activeItem.value = item.name
-    }
+    const firstItem = item.panelSubmenu[0][0]
+    // Re-clicking the same panel nav item always goes back to first item (e.g. Company profile)
+    // instead of toggling the panel closed.
+    openPanel({ title: item.name, groups: item.panelSubmenu, parentNavName: item.name })
+    activePanelSubItem.value = firstItem.label
+    navigate(firstItem.to ?? firstItem.label)
+    activeItem.value = item.name
   } else if (!item.submenu) {
-    // Simple leaf nav item (e.g. Home, Expenses, Settings)
+    // Simple leaf nav item (e.g. Home, Expenses)
     activeItem.value = item.name
     if (item.path) router.push(item.path)
     else navigate(item.name)
@@ -652,7 +647,20 @@ function handleFlyoutSubItemClick(sub: SubItem) {
   const parentName = flyoutItem.value!.name
   flyoutItem.value = null
 
-  if (sub.panelSubmenu) {
+  if (sub.iconType === 'settings') {
+    // Settings shortcut — open the Settings panel and navigate to the matching item.
+    // Find the settings panel item whose `to` or `label` matches the flyout item label;
+    // fall back to the first item (Company profile) if no match is found.
+    const settingsNav = navGroups.value.flat().find(n => n.name === 'Settings')
+    if (settingsNav?.panelSubmenu) {
+      const allItems = settingsNav.panelSubmenu.flat()
+      const matched  = allItems.find(i => (i.to ?? i.label) === sub.label) ?? allItems[0]
+      openPanel({ title: 'Settings', groups: settingsNav.panelSubmenu, parentNavName: 'Settings' })
+      activePanelSubItem.value = matched.label
+      navigate(matched.to ?? matched.label)
+      activeItem.value = 'Settings'
+    }
+  } else if (sub.panelSubmenu) {
     // Level-2 item that opens a level-3 panel — auto-select first panel item
     const panelTitle = sub.panelTitle ?? parentName
     const firstItem = sub.panelSubmenu[0][0]

@@ -53,7 +53,8 @@ const draft     = reactive({ ...committed })
 
 const isEditingStorage  = ref(false)
 const isEditingOutbound = ref(false)
-const isSaving          = ref(false)
+const isSavingStorage   = ref(false)
+const isSavingOutbound  = ref(false)
 const discardOpen       = ref(false)
 const discardSection    = ref<'storage' | 'outbound'>('storage')
 
@@ -90,13 +91,13 @@ function exitEdit(section: 'storage' | 'outbound') {
 }
 
 async function saveEdit(section: 'storage' | 'outbound') {
-  isSaving.value = true
+  if (section === 'storage')  isSavingStorage.value  = true
+  if (section === 'outbound') isSavingOutbound.value = true
   await new Promise(r => setTimeout(r, 600))
   Object.assign(committed, draft)
   persistSettings({ ...committed })
-  isSaving.value = false
-  if (section === 'storage')  isEditingStorage.value  = false
-  if (section === 'outbound') isEditingOutbound.value = false
+  if (section === 'storage')  { isSavingStorage.value  = false; isEditingStorage.value  = false }
+  if (section === 'outbound') { isSavingOutbound.value = false; isEditingOutbound.value = false }
   toast.notify({ variant: 'success', title: 'Warehouse settings saved.' })
 }
 </script>
@@ -104,16 +105,13 @@ async function saveEdit(section: 'storage' | 'outbound') {
 <template>
   <div class="ws-page">
 
-    <!-- ── Page header ────────────────────────────────────────────────────── -->
-    <div class="ws-page-header">
-      <h2 class="ws-page-title">Warehouse settings</h2>
-      <p class="ws-page-desc">Configure how products are stored and tracked across warehouse locations.</p>
-    </div>
-
     <!-- ── Storage section ───────────────────────────────────────────────── -->
     <section class="ws-section">
       <div class="ws-section-header">
-        <h3 class="ws-section-title">Storage</h3>
+        <div class="ws-section-meta">
+          <h2 class="ws-section-title">Storage</h2>
+          <p class="ws-section-desc">Configure how products are stored and tracked across warehouse locations.</p>
+        </div>
         <button
           v-if="!isEditingStorage"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
@@ -161,9 +159,9 @@ async function saveEdit(section: 'storage' | 'outbound') {
       </div>
 
       <div v-if="isEditingStorage" class="ws-action-bar">
-        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel('storage')">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit('storage')">
-          {{ isSaving ? 'Saving…' : 'Save changes' }}
+        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSavingStorage" @click="requestCancel('storage')">Cancel</button>
+        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSavingStorage" @click="saveEdit('storage')">
+          {{ isSavingStorage ? 'Saving…' : 'Save changes' }}
         </button>
       </div>
     </section>
@@ -171,7 +169,10 @@ async function saveEdit(section: 'storage' | 'outbound') {
     <!-- ── Outbound section ───────────────────────────────────────────────── -->
     <section class="ws-section">
       <div class="ws-section-header">
-        <h3 class="ws-section-title">Outbound</h3>
+        <div class="ws-section-meta">
+          <h2 class="ws-section-title">Outbound delivery</h2>
+          <p class="ws-section-desc">Set rules for outbound order fulfillment, including shipping label handling and print restrictions.</p>
+        </div>
         <button
           v-if="!isEditingOutbound"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
@@ -213,9 +214,9 @@ async function saveEdit(section: 'storage' | 'outbound') {
       </div>
 
       <div v-if="isEditingOutbound" class="ws-action-bar">
-        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel('outbound')">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit('outbound')">
-          {{ isSaving ? 'Saving…' : 'Save changes' }}
+        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSavingOutbound" @click="requestCancel('outbound')">Cancel</button>
+        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSavingOutbound" @click="saveEdit('outbound')">
+          {{ isSavingOutbound ? 'Saving…' : 'Save changes' }}
         </button>
       </div>
     </section>
@@ -260,28 +261,6 @@ async function saveEdit(section: 'storage' | 'outbound') {
   height: 100%;
 }
 
-/* ─── Page header ─────────────────────────────────────────────────────────── */
-
-.ws-page-header {
-  grid-column: 1 / 7;
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-1);
-}
-
-.ws-page-title {
-  margin: 0;
-  font-size: var(--mp-font-sizes-xl);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-
-.ws-page-desc {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-subtle);
-}
-
 /* ─── Section ─────────────────────────────────────────────────────────────── */
 
 .ws-section {
@@ -298,16 +277,27 @@ async function saveEdit(section: 'storage' | 'outbound') {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(12, 1fr);
-  align-items: center;
+  align-items: start;
   margin-bottom: var(--mp-spacing-3);
 }
 
-.ws-section-title {
+.ws-section-meta {
   grid-column: 1 / 7;
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-section-title {
   margin: 0;
-  font-size: var(--mp-font-sizes-lg);
+  font-size: var(--mp-font-sizes-xl);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
+}
+
+.ws-section-desc {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-subtle);
 }
 
 .ws-section-header > button {

@@ -153,7 +153,7 @@ const jumpResults = computed(() => {
 })
 function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/barang-keluar/${id}`) }
 
-function goBack() { router.push('/barang-keluar?tab=Outgoing') }
+function goBack() { router.push('/barang-keluar?tab=Requests') }
 function createPicking() {
   if (!order.value) return
   router.push({ path: '/barang-keluar/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id } })
@@ -177,7 +177,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Barang keluar</button>
+        <button class="detail-breadcrumb" @click="goBack">Outbound delivery</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ order.salesNo }}</h1>
           <ErpStatusBadge :status="outgoingStage(order)" badge-for="additionalInformation" size="md" />
@@ -422,7 +422,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
   <div v-else class="ood-not-found">
     <p>Order not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Barang keluar</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to Outbound delivery</button>
   </div>
 </template>
 

@@ -11,7 +11,7 @@ export type OutgoingStatus =
   | "completed"
   | "canceled";
 
-/** An outbound order (Barang keluar → Outgoing): a sales order whose goods are
+/** An outbound order (Outbound delivery → Outgoing): a sales order whose goods are
  *  leaving the warehouse. Mirrors {@link Receipt} on the inbound side — the source
  *  document is a Sales Order rather than a Purchase Order, and the goods flow OUT
  *  (picking → packing → delivery) rather than IN (receiving → put-away). */

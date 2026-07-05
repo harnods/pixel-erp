@@ -148,7 +148,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   // /barang-masuk/:id → inbound PO detail (kept under the section path so the
   // level-2 sidebar submenu stays active, like /sales-orders/:id).
-  // /receiving/:taskId → task detail; "Receiving" resolves as Barang masuk panel sub-item
+  // /receiving/:taskId → task detail; "Receiving" resolves as Inbound delivery panel sub-item
   // so the level-2 sidebar panel stays open with "Receiving" highlighted.
   if (segs.length >= 3 && segs[0] === 'receiving' && segs[2] === 'receive') {
     return { component: ReceiveItemsPage, id: segs[1] }
@@ -210,8 +210,8 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  'Barang keluar': ['Outgoing', 'Picking', 'Packing', 'Delivery'],
-  'Barang masuk': ['Receipts', 'Receiving', 'Put-away'],
+  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Delivery'],
+  'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
 }
@@ -219,7 +219,7 @@ const pageTabs: Record<string, string[]> = {
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
 // Partial reception (Completed / Canceled are terminal, hidden by default).
 const currentTabCounts = computed<Record<string, number>>(() => {
-  if (currentPageKey.value === 'Barang masuk') {
+  if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage() // ERP = all warehouses
     const out: Record<string, number> = {}
     const receipts = (counts['On the way'] ?? 0) + (counts['Partial reception'] ?? 0)
@@ -231,11 +231,11 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     if (putaway) out['Put-away'] = putaway
     return out
   }
-  if (currentPageKey.value === 'Barang keluar') {
+  if (currentPageKey.value === 'Outbound delivery') {
     const out: Record<string, number> = {}
     // Outgoing badges the actionable orders: everything not yet Completed/Canceled.
     const outgoing = outgoingOpenCount() // ERP = all warehouses
-    if (outgoing) out['Outgoing'] = outgoing
+    if (outgoing) out['Requests'] = outgoing
     // Picking / Packing / Delivery are task-based (a different dataset than the orders)
     const picking = pickingOpenCount()
     if (picking) out['Picking'] = picking
@@ -278,13 +278,13 @@ function selectTab(tab: string) {
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {
-  'Barang masuk': {
+  'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
     'Put-away': PutAwayIndexPage,
   },
-  'Barang keluar': {
-    'Outgoing': OutgoingIndexPage,
+  'Outbound delivery': {
+    'Requests': OutgoingIndexPage,
     'Picking': PickingIndexPage,
     'Packing': PackingIndexPage,
     'Delivery': DeliveryIndexPage,
@@ -303,10 +303,10 @@ const activeTabComponent = computed<Component | null>(
 )
 
 // New PO / Import buttons — POs are manually created from the WMS module (→ Draft),
-// so these show only in WMS Standalone, on Barang masuk pages.
+// so these show only in WMS Standalone, on Inbound delivery pages.
 const { activeScenario } = useScenario()
 const BARANG_MASUK_PAGES = [
-  'Barang masuk', 'Draft', 'On the way', 'Receiving', 'Partial reception', 'Inbound completed', 'Canceled',
+  'Inbound delivery', 'Draft', 'On the way', 'Receiving', 'Partial reception', 'Inbound completed', 'Canceled',
 ]
 const showNewPurchaseOrder = computed(() =>
   activeScenario.value === 'WMS Standalone' && BARANG_MASUK_PAGES.includes(currentPageKey.value),
@@ -725,7 +725,7 @@ function startResize(e: MouseEvent) {
             New warehouse
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Barang masuk'" class="page-title-actions">
+        <div v-else-if="currentPageKey === 'Inbound delivery'" class="page-title-actions">
           <template v-if="activeTab === 'Put-away'">
             <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/barang-masuk/put-away/create')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">

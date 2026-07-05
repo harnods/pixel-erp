@@ -17,7 +17,7 @@ const SCENARIO_WAREHOUSES: Record<string, string[]> = {
 
 /**
  * Fulfillment flows enabled per warehouse — drives which fulfillment menus show:
- *   "out" → Barang keluar, "in" → Barang masuk.
+ *   "out" → Outbound delivery, "in" → Inbound delivery.
  */
 type WarehouseFlow = "out" | "in";
 const WAREHOUSE_FLOWS: Record<string, WarehouseFlow[]> = {

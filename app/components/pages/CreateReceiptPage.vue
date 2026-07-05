@@ -230,7 +230,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goReceipts">Barang masuk</button>
+          <button class="detail-breadcrumb" @click="goReceipts">Inbound delivery</button>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New receipt</h1>
