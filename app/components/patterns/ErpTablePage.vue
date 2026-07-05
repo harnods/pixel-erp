@@ -886,8 +886,6 @@ const bulkCountLabel = computed(() => {
 
 .erp-tr {
   background: var(--mp-background-neutral);
-}
-.erp-tr:not(:last-child) {
   border-bottom: 1px solid var(--mp-border-default);
 }
 .erp-tr:hover .erp-td {

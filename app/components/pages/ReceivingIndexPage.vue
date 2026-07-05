@@ -496,9 +496,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; color: var(--mp-text-secondary); text-align: left; white-space: nowrap;
 }
+.rcvg-th:last-child { border-right: none; }
 .rcvg-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 
 /* Checkbox column + bulk bar */
@@ -526,8 +528,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle; white-space: nowrap;
 }
+.rcvg-td:last-child { border-right: none; }
 .rcvg-td--right { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .rcvg-td--muted { color: var(--mp-text-secondary); }
 .rcvg-th--actions,
@@ -556,8 +560,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* Merged PO + Warehouse cells */
-.rcvg-td--po { vertical-align: top; border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
-.rcvg-td--warehouse { vertical-align: top; border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
+.rcvg-td--po { vertical-align: top; }
+.rcvg-td--warehouse { vertical-align: top; }
 .rcvg-po-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rcvg-po-no { color: var(--mp-text-default); }
 

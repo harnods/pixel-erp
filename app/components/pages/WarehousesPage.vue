@@ -368,7 +368,7 @@ const emptyDesc = computed(() =>
             v-model="search"
             class="filter-search-input"
             type="text"
-            placeholder="Search..."
+            placeholder="Search warehouse name..."
           />
         </div>
       </div>

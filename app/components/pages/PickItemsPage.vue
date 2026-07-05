@@ -395,17 +395,15 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
-.pik-th:last-child { border-right: none; }
 .pik-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pik-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   background: var(--mp-background-neutral-hovered);
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: top;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-.pik-td:last-child { border-right: none; }
 .pik-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pik-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .pik-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }

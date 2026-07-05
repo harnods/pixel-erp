@@ -70,7 +70,10 @@ const batchColItems = [
   { key: 'unit', label: 'Unit' },
   { key: 'lastUpdated', label: 'Last updated' },
 ]
-const batchColVisibility = reactive<Record<string, boolean>>(Object.fromEntries(batchColItems.map(c => [c.key, c.key !== 'lastUpdated'])))
+const batchColVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(batchColItems.map(c => [c.key, c.key !== 'lastUpdated' && !props.excludeColumns!.includes(c.key)]))
+)
+const batchColItemsVisible = computed(() => batchColItems.filter(c => !props.excludeColumns!.includes(c.key)))
 const serialColItems = [
   { key: 'product', label: 'Product', disabled: true },
   { key: 'sku', label: 'SKU', disabled: true },
@@ -196,6 +199,8 @@ function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' 
 // Borders on all columns when any row has merged cells (rowspan > 1 = expanded product)
 const hasBatchMergedRows  = computed(() => filteredBatchProducts.value.length > 0)
 const hasSerialMergedRows = computed(() => filteredSerialProducts.value.length > 0)
+const hasBatchTab  = computed(() => batchProducts.value.length > 0)
+const hasSerialTab = computed(() => serialProducts.value.length > 0)
 
 const serialDrawerProduct = ref<WarehouseStockItem | null>(null)
 const serialDrawerOpen    = ref(false)
@@ -250,8 +255,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   <MpTabs id="stock-tabs" :default-value="0" variant-color="green" class="detail-tabs stock-tabs">
     <MpTabList>
       <MpTab id="st-tab-products" value="products">Products</MpTab>
-      <MpTab id="st-tab-batches" value="batches">Batches</MpTab>
-      <MpTab id="st-tab-serial" value="serial">Serial numbers</MpTab>
+      <MpTab v-if="hasBatchTab" id="st-tab-batches" value="batches">Batches</MpTab>
+      <MpTab v-if="hasSerialTab" id="st-tab-serial" value="serial">Serial numbers</MpTab>
       <MpTab v-if="hasExtra" id="st-tab-extra" value="extra">{{ extraLabel }}</MpTab>
     </MpTabList>
     <MpTabPanels>
@@ -349,7 +354,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </div>
       </MpTabPanel>
 
-      <MpTabPanel value="batches">
+      <MpTabPanel v-if="hasBatchTab" value="batches">
         <div class="wh-filter-bar">
           <div class="wh-expiry-filter">
             <MpPopover id="st-expiry-preset" :is-close-on-select="false" use-portal placement="bottom-start">
@@ -390,7 +395,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </svg>
               </button>
             </MpTooltip>
-            <ColumnSettingsMenu id="st-bt-columns" :items="batchColItems" :visibility="batchColVisibility" />
+            <ColumnSettingsMenu id="st-bt-columns" :items="batchColItemsVisible" :visibility="batchColVisibility" />
             <MpTooltip id="st-bt-export" label="Export" placement="bottom" use-portal>
               <button class="wh-tool-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
             </MpTooltip>
@@ -506,7 +511,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         <ErpPagination v-if="filteredBatchProducts.length" :current-page="1" :per-page="25" :total="filteredBatchProducts.length" />
       </MpTabPanel>
 
-      <MpTabPanel value="serial">
+      <MpTabPanel v-if="hasSerialTab" value="serial">
         <div class="wh-filter-bar wh-filter-bar--end">
           <div class="wh-toolbar">
             <MpTooltip id="st-st-airene" label="Ask Airene" placement="bottom" use-portal>

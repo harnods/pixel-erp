@@ -179,7 +179,7 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Sales' },
     { label: 'Purchases' },
     { label: 'Inventory' },
-    { label: 'Warehouses' },
+    { label: 'Warehouses', to: 'Warehouse settings' },
     { label: 'Production' },
     { label: 'Default accounts' },
   ],
@@ -507,7 +507,16 @@ function resolveActive(pageKey: string): {
       }
       for (const subGroup of item.submenu ?? []) {
         for (const sub of subGroup) {
-          if (sub.label === pageKey) return { nav: item.name, sub: sub.label, panel: null }
+          if (sub.label === pageKey) {
+            const match = { nav: item.name, sub: sub.label, panel: null }
+            // Settings/shortcut flyout items are secondary pointers — store as
+            // fallback so the canonical Settings panel entry wins when present.
+            if (sub.iconType === 'settings' || sub.iconType === 'shortcut') {
+              fallback ??= match
+            } else {
+              return match
+            }
+          }
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
               if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {

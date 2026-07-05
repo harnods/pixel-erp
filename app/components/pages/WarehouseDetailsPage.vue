@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip,
@@ -16,7 +16,9 @@ import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
+import { formatDate } from '~/utils/date'
 import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
 import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { TODAY } from '~/data/master'
@@ -24,6 +26,27 @@ import { useUrlModal } from '@ds/proto-review'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const route  = useRoute()
+
+// ── Tab persistence via URL query (?tab=products|batches|serial|transactions|locations)
+// Lets browser back/forward restore the exact tab the user was on.
+const TAB_NAMES = computed(() => {
+  const t = ['products', 'batches', 'serial']
+  if (!isWmsOps.value) t.push('transactions')
+  t.push('locations')
+  return t
+})
+const activeTabIndex = computed({
+  get(): number {
+    const tab = route.query.tab as string | undefined
+    const idx = tab ? TAB_NAMES.value.indexOf(tab) : -1
+    return idx >= 0 ? idx : 0
+  },
+  set(idx: number) {
+    const tab = TAB_NAMES.value[idx] ?? 'products'
+    router.replace({ query: { ...route.query, tab } })
+  },
+})
 
 const warehouse = computed(() => getWarehouseDetail(props.orderId))
 const activityOpen = ref(false)
@@ -235,8 +258,6 @@ function onLocSaved(parentId: string | null) {
 }
 
 const search = ref('')
-// If any product in this warehouse has multiple bin locations, all table columns get side borders
-const hasMultiLocProduct = computed(() => warehouse.value?.stock.some((s) => s.locations.length > 1) ?? false)
 // tracks which product rows have their category list expanded (beyond 3)
 const expandedCategories = reactive<Set<string>>(new Set())
 function toggleCategories(id: string) {
@@ -418,6 +439,41 @@ const filteredSerialProducts = computed(() => {
 })
 function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' : 'serial numbers'}` }
 const hasBatchMergedRows = computed(() => filteredBatchProducts.value.length > 0)
+const hasBatchTab  = computed(() => batchProducts.value.length > 0)
+const hasSerialTab = computed(() => serialProducts.value.length > 0)
+
+// ── Transactions tab ───────────────────────────────────────────────────────────
+const txSearch     = ref('')
+const txTypeFilter = ref('')
+const txDateRange  = ref<Date[]>([])
+const txPage       = ref(1)
+const txPerPage    = ref(25)
+
+const allTransactions = computed(() =>
+  warehouse.value ? getWarehouseTransactions(props.orderId) : [],
+)
+const filteredTransactions = computed(() => {
+  let list = allTransactions.value
+  if (txDateRange.value.length === 2) {
+    const from = txDateRange.value[0]!
+    const to   = txDateRange.value[1]!
+    list = list.filter((tx) => {
+      const d = new Date(tx.date.slice(0, 10))
+      if (d < from) return false
+      const toEnd = new Date(to); toEnd.setHours(23, 59, 59, 999); if (d > toEnd) return false
+      return true
+    })
+  }
+  if (txTypeFilter.value) list = list.filter((tx) => tx.type === txTypeFilter.value)
+  const q = txSearch.value.trim().toLowerCase()
+  if (q) list = list.filter((tx) => tx.number.toLowerCase().includes(q) || tx.type.toLowerCase().includes(q))
+  return list
+})
+const pagedTransactions = computed(() => {
+  const start = (txPage.value - 1) * txPerPage.value
+  return filteredTransactions.value.slice(start, start + txPerPage.value)
+})
+watch([txTypeFilter, txDateRange, txSearch], () => { txPage.value = 1 })
 const hasSerialMergedRows = computed(() => filteredSerialProducts.value.length > 0)
 
 const serialDrawerProduct = ref<WarehouseStockItem | null>(null)
@@ -544,6 +600,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         <button v-if="showBreadcrumb" class="detail-breadcrumb" @click="goBack">Warehouses</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ warehouse.name }}</h1>
+          <MpBadge v-if="warehouse.isDefault" for="additionalInformation" type="information" size="sm">Default</MpBadge>
+          <MpBadge v-else-if="isArchived" for="additionalInformation" type="announcement" size="sm">Archived</MpBadge>
 
           <!-- Chevron → jump-to-warehouse switcher -->
           <MpPopover id="wh-detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
@@ -624,11 +682,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       </section>
 
       <!-- ── Tabs ── -->
-      <MpTabs id="wh-detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
+      <MpTabs id="wh-detail-tabs" v-model="activeTabIndex" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="wh-tab-products" value="products">Products</MpTab>
-          <MpTab id="wh-tab-batches" value="batches">Batches</MpTab>
-          <MpTab id="wh-tab-serial" value="serial">Serial numbers</MpTab>
+          <MpTab v-if="hasBatchTab" id="wh-tab-batches" value="batches">Batches</MpTab>
+          <MpTab v-if="hasSerialTab" id="wh-tab-serial" value="serial">Serial numbers</MpTab>
           <MpTab v-if="!isWmsOps" id="wh-tab-transactions" value="transactions">Transactions</MpTab>
           <MpTab id="wh-tab-locations" value="locations">Storage locations</MpTab>
         </MpTabList>
@@ -637,7 +695,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <div ref="productsTableEl" class="wh-products-table" @scroll.capture="onTableScroll">
             <ErpTablePage
               ref="productsTableRef"
-              :class="['erp-products', { 'erp-products--bordered': hasMultiLocProduct }]"
+              class="erp-products"
               :columns="stockColumns"
               :rows="pagedStock"
               :total="filteredStock.length"
@@ -777,7 +835,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             </div>
           </MpTabPanel>
 
-          <MpTabPanel value="batches">
+          <MpTabPanel v-if="hasBatchTab" value="batches">
             <!-- toolbar: expiry filter (left) + airene · columns · export · search (right) -->
             <div class="wh-filter-bar">
               <div class="wh-expiry-filter">
@@ -965,7 +1023,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               :total="filteredBatchProducts.length"
             />
           </MpTabPanel>
-          <MpTabPanel value="serial">
+          <MpTabPanel v-if="hasSerialTab" value="serial">
             <!-- toolbar: airene · columns · export · search (right-aligned) -->
             <div class="wh-filter-bar wh-filter-bar--end">
               <div class="wh-toolbar">
@@ -1073,11 +1131,106 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             />
           </MpTabPanel>
           <MpTabPanel v-if="!isWmsOps" value="transactions">
-            <div class="empty-full">
+            <!-- toolbar: date range + type filter (left) | airene · export · search (right) -->
+            <div class="wh-filter-bar">
+              <div class="wh-tx-filters">
+                <MpDatePicker id="wh-tx-range" v-model="txDateRange" placeholder="Date range" format="DD/MM/YYYY" is-range is-clearable use-portal />
+                <MpPopover id="wh-tx-type-pop" :is-close-on-select="false" use-portal placement="bottom-start">
+                  <MpPopoverTrigger>
+                    <MpSelect
+                      id="wh-tx-type"
+                      placeholder="Transaction type"
+                      :model-value="txTypeFilter"
+                      is-clearable
+                      class="wh-tx-type-select"
+                      @mousedown.prevent
+                      @clear="txTypeFilter = ''"
+                    >
+                      <option v-if="txTypeFilter" :value="txTypeFilter">{{ txTypeFilter }}</option>
+                    </MpSelect>
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
+                    <MpPopoverList>
+                      <MpPopoverListItem
+                        v-for="t in TRANSACTION_TYPES"
+                        :key="t"
+                        :is-active="t === txTypeFilter"
+                        @click="txTypeFilter = t"
+                      >{{ t }}</MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
+              </div>
+              <div class="wh-toolbar">
+                <MpTooltip id="wh-tx-airene" label="Ask Airene" placement="bottom" use-portal>
+                  <button class="wh-tool-btn wh-tool-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                      <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
+                      <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
+                    </svg>
+                  </button>
+                </MpTooltip>
+                <MpTooltip id="wh-tx-export" label="Export" placement="bottom" use-portal>
+                  <button class="wh-tool-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
+                </MpTooltip>
+                <div class="wh-search">
+                  <MpIcon name="search" size="md" />
+                  <input v-model="txSearch" class="wh-search-input" type="text" placeholder="Search..." />
+                </div>
+              </div>
+            </div>
+
+            <div v-if="filteredTransactions.length" class="wh-batch-scroll">
+              <table class="wh-batch-table wh-tx-table">
+                <colgroup>
+                  <col style="width: 320px" />
+                  <col style="width: 180px" />
+                  <col style="width: 120px" />
+                  <col />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="wh-bth">Number</th>
+                    <th class="wh-bth">Date</th>
+                    <th class="wh-bth wh-bth--num">SKU qty</th>
+                    <th class="wh-bth" />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="tx in pagedTransactions" :key="tx.id" class="wh-batch-group-row wh-tx-row">
+                    <td class="wh-btd">
+                      <div class="cell-with-action">
+                        <span>{{ tx.number }}</span>
+                        <button v-if="tx.link" class="row-hover-btn" @click.stop="router.push(tx.link)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="wh-btd">{{ formatDate(tx.date) }}</td>
+                    <td class="wh-btd wh-btd--num">{{ tx.skuQty }}</td>
+                    <td class="wh-btd" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <p class="empty-full-title">No transactions</p>
               <p class="empty-full-desc">Transactions in this warehouse will appear here.</p>
             </div>
+
+            <ErpPagination
+              v-if="filteredTransactions.length"
+              :current-page="txPage"
+              :per-page="txPerPage"
+              :total="filteredTransactions.length"
+              @page-change="txPage = $event"
+              @per-page-change="txPerPage = $event; txPage = 1"
+            />
           </MpTabPanel>
 
           <!-- Storage locations — tree table (Floor → Zone → Rack → Bin) -->
@@ -1507,6 +1660,16 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 /* serial tab has only the toolbar (no expiry filter) → push it to the right */
 .wh-filter-bar--end { justify-content: flex-end; }
 .wh-expiry-filter { flex-shrink: 0; }
+.wh-tx-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  flex-shrink: 0;
+}
+.wh-tx-type-select { min-width: 200px; }
+.wh-tx-table { min-width: unset; width: 100%; }
+.wh-tx-row td.wh-btd { font-size: var(--mp-font-sizes-md); }
+.wh-tx-row:hover .row-hover-btn { display: flex; }
 .wh-expiry-custom {
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-3);
@@ -1615,13 +1778,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 :deep(.erp-products td[data-col="available"]) {
   padding: 0;
 }
-/* If any product has multiple locations, border ALL columns in the whole table.
-   border-collapse: collapse on the table prevents double borders between adjacent cells. */
-:deep(.erp-products--bordered td:not(.erp-td--actions)),
-:deep(.erp-products--bordered th:not(.erp-th--actions)) {
-  border-right: 1px solid var(--mp-border-default);
-}
-
 /* Row within a bordered td — restores the cell padding and handles multi-row split */
 .wh-col-row {
   min-height: var(--mp-sizes-10);

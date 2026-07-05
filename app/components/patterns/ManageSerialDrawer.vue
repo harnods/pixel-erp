@@ -374,21 +374,17 @@ function handleSave() {
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   white-space: nowrap;
 }
-.msn-th:last-child { border-right: none; }
 .msn-th--del { padding: 0; }
 
 .msn-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   vertical-align: top;
   background: var(--mp-background-neutral, #fff);
 }
-.msn-td:last-child { border-right: none; }
 .msn-td--strike { text-decoration: line-through; color: var(--mp-text-secondary); }
 .msn-tr--removed .msn-td { background: var(--mp-background-danger-subtle, #fff5f5); }
 

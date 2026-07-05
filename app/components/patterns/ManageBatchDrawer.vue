@@ -636,23 +636,18 @@ function fmtNum(n: number | null): string {
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   white-space: nowrap;
 }
-.mbd-th:last-child { border-right: none; }
 .mbd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .mbd-th--del { padding: 0; }
 
-/* Body cells: gray by default (read-only). Right border on every cell, none on last. */
 .mbd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   vertical-align: top;
   background: var(--mp-background-neutral-subtle);
 }
-.mbd-td:last-child { border-right: none; }
 .mbd-td--muted { color: var(--mp-text-secondary); }
 .mbd-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 

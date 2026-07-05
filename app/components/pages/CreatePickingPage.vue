@@ -641,14 +641,10 @@ function handleCreate() {
 .pk-th--check { width: var(--mp-sizes-12, 48px); }
 .pk-item-row--off { opacity: 0.45; }
 
-/* Form-table look: column dividers + grey read-only cells, white editable cell */
-.pk-items .pk-th { border-right: 1px solid var(--mp-border-default); }
-.pk-items .pk-th:last-child { border-right: none; }
+/* Form-table look: grey read-only cells, white editable cell */
 .pk-items .pk-td {
-  border-right: 1px solid var(--mp-border-default);
   background: var(--mp-background-neutral-subtle);
 }
-.pk-items .pk-td:last-child { border-right: none; }
 /* Editable qty cell — white, input fills edge-to-edge, focus ring */
 .pk-items .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
 .pk-items .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }

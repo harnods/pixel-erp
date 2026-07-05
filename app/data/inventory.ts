@@ -69,6 +69,17 @@ function warehouseSeed(warehouseId: string): number {
   return s >>> 0
 }
 
+// Per-warehouse category restrictions. Warehouses not listed here draw from the full
+// catalog. Warehouses listed here are limited to the specified categories, which
+// determines whether their Batches / Serial numbers tabs appear at all:
+//   Green Beans, Roasted Beans  → batch-tracked
+//   Espresso Machine, Grinder, Equipment → serial-tracked
+//   Accessory                   → neither
+const WAREHOUSE_CATEGORIES: Record<string, Set<string>> = {
+  'wh-004': new Set(['Accessory']),                                                    // no batch, no serial
+  'wh-005': new Set(['Green Beans', 'Roasted Beans', 'Accessory']),                   // batch only, no serial
+}
+
 /**
  * The products a warehouse stocks — a deterministic RANDOM subset of `skuTotal`
  * distinct catalog products (seeded by the warehouse id), so each warehouse carries a
@@ -81,14 +92,16 @@ function warehouseSeed(warehouseId: string): number {
 export function warehouseProducts(warehouseId: string): Product[] {
   const wh = warehouses.find((w) => w.id === warehouseId)
   if (!wh || wh.isDefault || !wh.skuTotal) return []
-  const n = Math.min(wh.skuTotal, PRODUCTS.length)
-  // Seeded Fisher–Yates over the catalog indices, then take the first n.
+  const allowed = WAREHOUSE_CATEGORIES[warehouseId]
+  const pool = allowed ? PRODUCTS.filter((p) => allowed.has(p.category)) : PRODUCTS
+  const n = Math.min(wh.skuTotal, pool.length)
+  // Seeded Fisher–Yates over the pool indices, then take the first n.
   let s = warehouseSeed(warehouseId)
   const rand = () => {
     s = (s * 1664525 + 1013904223) >>> 0
     return s / 4294967296
   }
-  const idx = PRODUCTS.map((_, i) => i)
+  const idx = pool.map((_, i) => i)
   for (let i = idx.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1))
     ;[idx[i], idx[j]] = [idx[j]!, idx[i]!]
@@ -96,7 +109,7 @@ export function warehouseProducts(warehouseId: string): Product[] {
   return idx
     .slice(0, n)
     .sort((a, b) => a - b) // back to catalog order for a tidy, stable list
-    .map((i) => PRODUCTS[i]!)
+    .map((i) => pool[i]!)
 }
 
 /** SKUs a warehouse stocks. */

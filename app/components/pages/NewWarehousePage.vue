@@ -55,8 +55,8 @@ onMounted(() => {
 })
 
 // Errors are only triggered from the Save action — never inline while typing
-const nameError = ref(false)
-const codeError = ref(false)
+const nameError = ref('')
+const codeError = ref('')
 const picError = ref(false)
 
 function handlePicChange(data: DataInterface[]) {
@@ -70,9 +70,26 @@ function goBack() {
 
 // Save is never disabled — validation fires here on click
 function save() {
-  nameError.value = name.value.trim().length === 0
-  codeError.value = code.value.trim().length === 0
+  nameError.value = ''
+  codeError.value = ''
   picError.value = picData.value.length === 0
+
+  if (!name.value.trim()) {
+    nameError.value = 'You must fill in warehouse name'
+  } else {
+    const nameLower = name.value.trim().toLowerCase()
+    const dup = warehouses.some(w => w.name.toLowerCase() === nameLower && (!isEdit.value || w.id !== props.orderId))
+    if (dup) nameError.value = 'Warehouse name already exists'
+  }
+
+  if (!code.value.trim()) {
+    codeError.value = 'You must fill in warehouse code'
+  } else {
+    const codeUpper = code.value.trim().toUpperCase()
+    const dup = warehouses.some(w => w.code.toUpperCase() === codeUpper && (!isEdit.value || w.id !== props.orderId))
+    if (dup) codeError.value = 'Warehouse code already exists'
+  }
+
   if (nameError.value || codeError.value || picError.value) return
 
   const payload = {
@@ -119,22 +136,22 @@ function save() {
 
             <!-- Row: Warehouse name + Warehouse code -->
             <div class="nw-row">
-              <MpFormControl id="warehouse-name" class="nw-field-name" is-required :is-invalid="nameError">
+              <MpFormControl id="warehouse-name" class="nw-field-name" is-required :is-invalid="!!nameError">
                 <div class="nw-label-row">
                   <MpFormLabel>Warehouse name</MpFormLabel>
                   <span class="nw-counter">{{ name.length }} / {{ NAME_MAX }}</span>
                 </div>
-                <MpInput id="warehouse-name-input" v-model="name" :maxlength="NAME_MAX" />
-                <MpFormErrorMessage>You must fill in warehouse name</MpFormErrorMessage>
+                <MpInput id="warehouse-name-input" v-model="name" :maxlength="NAME_MAX" @update:model-value="nameError = ''" />
+                <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
               </MpFormControl>
 
-              <MpFormControl id="warehouse-code" class="nw-field-code" is-required :is-invalid="codeError">
+              <MpFormControl id="warehouse-code" class="nw-field-code" is-required :is-invalid="!!codeError">
                 <div class="nw-label-row">
                   <MpFormLabel>Warehouse code</MpFormLabel>
                   <span class="nw-counter">{{ code.length }} / {{ CODE_MAX }}</span>
                 </div>
-                <MpInput id="warehouse-code-input" v-model="code" :maxlength="CODE_MAX" />
-                <MpFormErrorMessage>You must fill in warehouse code</MpFormErrorMessage>
+                <MpInput id="warehouse-code-input" v-model="code" :maxlength="CODE_MAX" @update:model-value="codeError = ''" />
+                <MpFormErrorMessage>{{ codeError }}</MpFormErrorMessage>
               </MpFormControl>
             </div>
 
