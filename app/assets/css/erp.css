@@ -28,6 +28,7 @@
   background: transparent;
   border-color: transparent;
   color: var(--mp-text-secondary);
+  font-weight: var(--mp-font-weights-regular);
 }
 .btn-enterprise--ghost:hover { background: var(--mp-background-neutral-hovered); }
 
