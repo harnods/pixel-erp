@@ -37,6 +37,7 @@ const pageRegistry: Record<string, Component> = {
   'Completed':         defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
   'Inbound completed': defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
   'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
+  'Work orders':       defineAsyncComponent(() => import('~/components/pages/WorkOrdersIndexPage.vue')),
   'Company profile':   defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Playground':        defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
@@ -75,11 +76,21 @@ const CreatePutAwayPage = defineAsyncComponent(() => import('~/components/pages/
 const CreateReceiptPage = defineAsyncComponent(() => import('~/components/pages/CreateReceiptPage.vue'))
 const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
+const CreateWorkOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateWorkOrderPage.vue'))
+const WorkOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /work-orders/new → create a new work order (full page, brings its own title bar)
+  if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
+    return { component: CreateWorkOrderPage, id: 'new' }
+  }
+  // /work-orders/:id → work order detail (read-only, status-aware)
+  if (segs.length >= 2 && segs[0] === 'work-orders') {
+    return { component: WorkOrderDetailsPage, id: segs[1] }
+  }
   // /barang-keluar/picking/create → create a new picking list (bundles sales orders)
   if (segs.length >= 3 && segs[0] === 'barang-keluar' && segs[1] === 'picking' && segs[2] === 'create') {
     return { component: CreatePickingPage, id: 'create' }
@@ -636,6 +647,14 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New warehouse
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New work order
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Barang masuk'" class="page-title-actions">
