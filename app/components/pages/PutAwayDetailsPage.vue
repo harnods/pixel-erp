@@ -11,7 +11,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { putAwayTasks, startPutAway as startPutAwayTask } from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -204,24 +204,24 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Start date" :value="formatDateTime(task.startDate)" />
-          <ContentList label="End date" :value="formatDateTime(task.endDate)" />
+          <ContentList label="Start date" :value="formatDateTimeLong(task.startDate)" />
+          <ContentList label="End date" :value="formatDateTimeLong(task.endDate)" />
         </div>
       </section>
 
       <!-- ── Progress stats ── -->
       <section class="pad-progress">
         <div class="pad-progress-stat">
-          <span class="pad-progress-val">{{ fmt(lineItems.length) }}</span>
           <span class="pad-progress-label">SKU qty</span>
+          <span class="pad-progress-val">{{ fmt(lineItems.length) }}</span>
         </div>
         <div class="pad-progress-stat">
-          <span class="pad-progress-val">{{ fmt(task.itemQty) }}</span>
           <span class="pad-progress-label">Received qty</span>
+          <span class="pad-progress-val">{{ fmt(task.itemQty) }}</span>
         </div>
         <div class="pad-progress-stat">
-          <span class="pad-progress-val">{{ fmt(storedQty) }}</span>
           <span class="pad-progress-label">Stored qty</span>
+          <span class="pad-progress-val">{{ fmt(storedQty) }}</span>
         </div>
       </section>
 

@@ -10,11 +10,13 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import {
   getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask,
 } from '~/data/pickingTaskDetails'
-import { getPickingTask, startPicking, pickingTaskAgingDays, type PickingTask } from '~/data/pickingTasks'
-import { outgoingOrders, outgoingStage } from '~/data/outgoing'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
+import { getPackingForOrder } from '~/data/packingTasks'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { toast } from '@mekari/pixel3'
 
-type TaskStatus = 'open' | 'in progress' | 'completed' | 'canceled'
+type TaskStatus = 'open' | 'in progress' | 'partially picked' | 'completed' | 'canceled'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -67,10 +69,36 @@ function startPickingAndNavigate() {
   router.push(`/picking/${props.orderId}/pick`)
 }
 function createPacking() {
+  // Packability is judged at the ORDER level across all picking lists, and an order
+  // that already has a packing task is excluded. Only block when nothing is left.
+  const t = task.value
+  if (t) {
+    const packable = packableOrderIds(t).filter(id => getPackingForOrder(id).length === 0)
+    if (packable.length === 0) {
+      const anyPickComplete = packableOrderIds(t).length > 0
+      toast.notify({
+        variant: 'danger',
+        title: anyPickComplete ? 'Already packed' : 'Nothing can be packed yet',
+        description: anyPickComplete
+          ? 'These orders already have a packing task.'
+          : 'Marketplace orders must be fully picked (across their picking lists) before packing.',
+      })
+      return
+    }
+  }
   router.push({ path: '/barang-keluar/packing/create', query: { pickingId: props.orderId } })
 }
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+// Marketplace (Desty) orders carry a due time → show date+time, and flag those due
+// within 24h with an "Expire in N hours" danger caption. ERP orders are date-only.
+function isMarketplaceDue(o: { dueDate: string }) { return typeof o.dueDate === 'string' && o.dueDate.includes('T') }
+function dueDisplay(o: { dueDate: string }) { return isMarketplaceDue(o) ? formatDateTime(o.dueDate) : formatDate(o.dueDate) }
+function expireHours(o: { dueDate: string }): number | null {
+  if (!isMarketplaceDue(o)) return null
+  const h = (new Date(o.dueDate).getTime() - OUTGOING_TODAY.getTime()) / 3_600_000
+  return h > 0 && h < 24 ? Math.max(1, Math.ceil(h)) : null
+}
 function agingLabel(): string {
   if (!task.value) return ''
   const d = pickingTaskAgingDays({ ...task.value, endDate: localEndDate.value ?? undefined, status: localStatus.value } as PickingTask)
@@ -91,7 +119,6 @@ const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.value))
-const isProgressive = computed(() => filteredItems.value.length > PAGE_SIZE)
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -121,24 +148,36 @@ function checkStageOverflow() {
   const el = stageEl.value
   if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
 }
+// The items table gets an outer border only once its scroll area actually overflows
+// (i.e. the rows exceed its max height and it can scroll) — not merely by row count.
+const itemsOverflowing = ref(false)
+function checkItemsOverflow() {
+  const el = itemsScrollEl.value
+  itemsOverflowing.value = !!el && el.scrollHeight > el.clientHeight + 1
+}
 let stageObserver: ResizeObserver | null = null
+let itemsResizeObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
     setupItemsObserver()
     checkStageOverflow()
+    checkItemsOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
     if (stageEl.value) {
       stageObserver.observe(stageEl.value)
       stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true })
     }
+    itemsResizeObserver = new ResizeObserver(checkItemsOverflow)
+    if (itemsScrollEl.value) itemsResizeObserver.observe(itemsScrollEl.value)
   })
 })
 onUnmounted(() => {
   itemsObserver?.disconnect()
   stageObserver?.disconnect()
+  itemsResizeObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
 })
-watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
+watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { checkStageOverflow(); checkItemsOverflow() }))
 
 // ── Jump-to-task switcher ────────────────────────────────────────────────────
 const jumpSearch = ref('')
@@ -192,7 +231,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
 
       <div v-if="isInProgress && lastUpdated" class="detail-bar-right">
         <span class="pkd-last-updated-label">Last updated</span>
-        <span class="pkd-last-updated-val">{{ formatDateTime(lastUpdated) }}</span>
+        <span class="pkd-last-updated-val">{{ formatDateTimeLong(lastUpdated) }}</span>
       </div>
     </header>
 
@@ -204,14 +243,12 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
         <div class="content-list-col">
           <ContentList label="Warehouse" :value="task.warehouseName" />
           <ContentList label="Assignee" :value="task.assignee" />
-          <ContentList label="Sales orders" :value="task.salesNos.join(', ')" />
         </div>
         <div class="content-list-col">
-          <ContentList label="SKU qty" :value="String(task.skuQty)" />
-          <ContentList label="Start date" :value="task.startDate ? formatDateTime(task.startDate) : '—'" />
+          <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="pkd-end-cell">
-              <span>{{ localEndDate ? formatDateTime(localEndDate) : '—' }}</span>
+              <span>{{ localEndDate ? formatDateTimeLong(localEndDate) : '—' }}</span>
               <span v-if="agingLabel()" class="pkd-aging">{{ agingLabel() }}</span>
             </span>
           </ContentList>
@@ -221,20 +258,20 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
       <!-- Progress stats -->
       <section class="pkd-progress">
         <div class="pkd-progress-stat">
+          <span class="pkd-progress-label">SKU qty</span>
           <span class="pkd-progress-val">{{ task.skuQty }}</span>
-          <span class="pkd-progress-label">SKUs</span>
         </div>
         <div class="pkd-progress-stat">
+          <span class="pkd-progress-label">To pick qty</span>
           <span class="pkd-progress-val">{{ fmt(toPickTotal) }}</span>
-          <span class="pkd-progress-label">To pick</span>
         </div>
         <div class="pkd-progress-stat">
+          <span class="pkd-progress-label">Picked qty</span>
           <span class="pkd-progress-val">{{ fmt(pickedTotal) }}</span>
-          <span class="pkd-progress-label">Picked</span>
         </div>
         <div class="pkd-progress-stat">
+          <span class="pkd-progress-label">Outstanding qty</span>
           <span class="pkd-progress-val">{{ fmt(outstandingTotal) }}</span>
-          <span class="pkd-progress-label">Outstanding</span>
         </div>
       </section>
 
@@ -248,7 +285,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
             <input v-model="itemSearch" class="pkd-search" type="text" placeholder="Search product or SKU…" />
           </div>
         </div>
-        <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
+        <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <thead>
@@ -256,9 +293,9 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
                   <th class="detail-th">Product</th>
                   <th class="detail-th">SKU</th>
                   <th class="detail-th">Storage location</th>
-                  <th class="detail-th detail-th--num">To pick</th>
+                  <th class="detail-th detail-th--num">To pick qty</th>
                   <th v-if="showPickedCols" class="detail-th detail-th--num">Picked qty</th>
-                  <th v-if="showPickedCols" class="detail-th detail-th--num">Outstanding</th>
+                  <th v-if="showPickedCols" class="detail-th detail-th--num">Outstanding qty</th>
                   <th class="detail-th">Unit</th>
                 </tr>
               </thead>
@@ -304,12 +341,16 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
+            <h3 class="linked-section-title">Sales orders</h3>
             <div class="pkd-linked-wrap">
               <table class="pkd-linked">
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Customer</th>
+                    <th class="detail-th">Source</th>
+                    <th class="detail-th detail-th--num">SKU qty</th>
+                    <th class="detail-th detail-th--num">Order qty</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Due date</th>
                   </tr>
@@ -329,8 +370,16 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
                       </div>
                     </td>
                     <td class="detail-td">{{ o.customer ?? '—' }}</td>
+                    <td class="detail-td">{{ o.source }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(o.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(o.orderQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="outgoingStage(o)" /></td>
-                    <td class="detail-td">{{ formatDate(o.dueDate) }}</td>
+                    <td class="detail-td">
+                      <span class="pkd-due">
+                        <span>{{ dueDisplay(o) }}</span>
+                        <span v-if="expireHours(o) !== null" class="pkd-due-expire">Expire in {{ expireHours(o) }} hours</span>
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -338,6 +387,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
           </MpTabPanel>
 
           <MpTabPanel v-if="linkedPacking.length" :value="1">
+            <h3 class="linked-section-title">Packing tasks</h3>
             <div class="pkd-linked-wrap">
               <table class="pkd-linked">
                 <thead>
@@ -399,8 +449,8 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
       <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/picking/${orderId}/pick`)">
         Continue picking
       </button>
-      <button v-else-if="localStatus === 'completed'" class="detail-btn detail-btn--primary" @click="createPacking">
-        Create packing
+      <button v-else-if="localStatus === 'completed' || localStatus === 'partially picked'" class="detail-btn detail-btn--primary" @click="createPacking">
+        Create packing task
       </button>
     </footer>
 
@@ -514,7 +564,6 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
 
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 .detail-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
-.detail-items-section--bordered .detail-items-count { border-top: 1px solid var(--mp-border-default); }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: 1px; }
@@ -535,7 +584,6 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
@@ -543,15 +591,18 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
 .pkd-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
 .pkd-qty--zero { color: var(--mp-text-placeholder); }
 .pkd-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
+/* Linked-order due date + marketplace expiry caption */
+.pkd-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
+.pkd-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
 
 /* Linked tabs */
 .pkd-tabs { flex-shrink: 0; }
 .pkd-tabs :deep(.mp-tab--isSelected_true), .pkd-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
 .pkd-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .pkd-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pkd-linked-wrap { overflow-x: auto; }
 .pkd-linked { width: 100%; border-collapse: collapse; }
-.pkd-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .pkd-linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pkd-linked .detail-td--number { position: relative; }
 .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }

@@ -16,12 +16,12 @@ const toggleAirene = inject<() => void>('toggleAirene')
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',           label: 'Date',            width: '120px'                                 },
-  { key: 'number',         label: 'Number',          width: '200px', sortable: true                 },
-  { key: 'customerName',   label: 'Customer',        width: '240px', sortable: true                 },
-  { key: 'expirationDate', label: 'Expiration date', width: '140px'                                 },
-  { key: 'status',         label: 'Status',          width: '140px'                                 },
-  { key: 'total',          label: 'Total',           width: '160px', align: 'right', sortable: true },
+  { key: 'date',           label: 'Date',            width: '120px',                                sortType: 'date'   },
+  { key: 'number',         label: 'Number',          width: '200px', sortable: true,                sortType: 'number' },
+  { key: 'customerName',   label: 'Customer',        width: '240px', sortable: true,                sortType: 'text'   },
+  { key: 'expirationDate', label: 'Expiration date', width: '140px',                                sortType: 'date'   },
+  { key: 'status',         label: 'Status',          width: '140px',                                sortType: 'text'   },
+  { key: 'total',          label: 'Total',           width: '160px', align: 'right', sortable: true, sortType: 'number' },
   { key: 'tags',           label: 'Tags',            width: '160px'                                 },
 ]
 
@@ -40,7 +40,7 @@ const rows = computed<Row[]>(() =>
 // ─── Table state ──────────────────────────────────────────────────────────────
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Row>(rows, {
   perPage: 25,
   filterFn: (row, s, status) =>
@@ -93,6 +93,7 @@ const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last u
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
+function hideColumn(key: string) { columnVisibility[key] = false }
 </script>
 
 <template>
@@ -111,6 +112,8 @@ const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnV
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
 

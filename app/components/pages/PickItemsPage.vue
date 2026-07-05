@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { formatDateTimeLong } from '~/utils/date'
 import {
   MpSpinner,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
@@ -10,6 +11,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getPickingLineItems } from '~/data/pickingTaskDetails'
 import { getPickingTask, savePickingDraft, endPicking } from '~/data/pickingTasks'
+import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -17,14 +19,15 @@ const router = useRouter()
 const task = computed(() => getPickingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPickingLineItems(task.value) : [])
 
-const startDateLabel = computed(() => {
-  const d = task.value?.startDate
-  if (!d) return '—'
-  const dt = new Date(d)
-  const date = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-  const time = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  return `${date}, ${time}`
-})
+// Any picking task can be finished partially (regardless of marketplace) → it becomes
+// "partially picked". The marketplace "must be complete" rule applies only when turning
+// the task into a packing task (here: the "Finish & create packing" shortcut).
+const marketplaceOrderIds = computed(
+  () => new Set((task.value?.salesOrderIds ?? []).filter(id => isMarketplaceOrder(outgoingOrders.find(o => o.id === id)))),
+)
+const hasMarketplaceOrder = computed(() => marketplaceOrderIds.value.size > 0)
+
+const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
 // ── Draft picked qty (keyed by line key) ──────────────────────────────────────
 const draftQty = ref<Record<string, number>>({})
@@ -52,7 +55,6 @@ const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const pagedItems = computed(() => filteredItems.value.slice(0, shownCount.value))
-const isProgressive = computed(() => filteredItems.value.length > PAGE_SIZE)
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -79,38 +81,52 @@ function pickAll() {
 }
 
 const showQtyErrors = ref(false)
+// Inline validation caption under the toolbar (shown on a failed Finish attempt), not a toast.
+const finishError = ref('')
 function onQtyInput(key: string, expected: number, e: Event) {
   let n = Math.floor(Number((e.target as HTMLInputElement).value))
   if (!Number.isFinite(n) || n < 0) n = 0
   if (n > expected) n = expected
   draftQty.value = { ...draftQty.value, [key]: n }
   if (showQtyErrors.value) showQtyErrors.value = false
+  if (finishError.value) finishError.value = ''
 }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
-// ── End picking confirmation ──────────────────────────────────────────────────
+// ── Finish picking confirmation ───────────────────────────────────────────────
 const showConfirm = ref(false)
 function endPickingClick() {
   if (draftPickedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'danger', title: 'Enter picked qty for at least 1 item' })
+    finishError.value = 'Enter picked qty for at least 1 item'
     return
   }
+  finishError.value = ''
   showConfirm.value = true
 }
 function commitPicking(createPacking = false) {
   showConfirm.value = false
   const complete = draftPickedTotal.value >= toPickTotal.value
   endPicking(props.orderId, { ...draftQty.value })
-  if (createPacking) {
+  // Marketplace orders can only become a packing task when fully picked.
+  const blockPacking = createPacking && hasMarketplaceOrder.value && !complete
+  if (createPacking && !blockPacking) {
     router.push({ path: '/barang-keluar/packing/create', query: { pickingId: props.orderId } })
+    return
+  }
+  if (blockPacking) {
+    toast.notify({
+      variant: 'warning',
+      title: 'Saved as partially picked',
+      description: 'Marketplace orders must be fully picked before a packing task can be created.',
+    })
   } else {
     toast.notify({
       variant: complete ? 'success' : 'warning',
-      title: complete ? 'Picking completed, ready to pack' : 'Picking saved with a short pick',
+      title: complete ? 'Picking finished, ready to pack' : 'Picking finished (partially picked)',
     })
-    router.push(`/picking/${props.orderId}`)
   }
+  router.push(`/picking/${props.orderId}`)
 }
 function saveDraft() {
   savePickingDraft(props.orderId, { ...draftQty.value })
@@ -124,21 +140,33 @@ function goPicking() { router.push('/barang-keluar?tab=Picking') }
 const stageEl = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)
 function checkStageOverflow() { const el = stageEl.value; if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1 }
+// The items table gets an outer border only once its scroll area actually overflows
+// (rows exceed its max height and it can scroll) — not merely by row count.
+const itemsOverflowing = ref(false)
+function checkItemsOverflow() {
+  const el = itemsScrollEl.value
+  itemsOverflowing.value = !!el && el.scrollHeight > el.clientHeight + 1
+}
 let stageObserver: ResizeObserver | null = null
+let itemsResizeObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
     checkStageOverflow()
+    checkItemsOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
     if (stageEl.value) { stageObserver.observe(stageEl.value); stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true }) }
+    itemsResizeObserver = new ResizeObserver(checkItemsOverflow)
+    if (itemsScrollEl.value) itemsResizeObserver.observe(itemsScrollEl.value)
     setupItemsObserver()
   })
 })
 onUnmounted(() => {
   stageObserver?.disconnect()
+  itemsResizeObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
   itemsObserver?.disconnect()
 })
-watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
+watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { checkStageOverflow(); checkItemsOverflow() }))
 </script>
 
 <template>
@@ -153,7 +181,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Pick items</h1>
+          <h1 class="detail-title">Picking list</h1>
         </div>
       </div>
     </header>
@@ -166,19 +194,24 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         <ContentList label="Assignee" :value="task.assignee" />
         <ContentList label="Sales orders" :value="task.salesNos.join(', ')" />
         <ContentList label="Start date" :value="startDateLabel" />
+        <ContentList label="End date" :value="task.endDate ? formatDateTimeLong(task.endDate) : '—'" />
       </div>
 
       <div class="pik-summary">
-        <div class="pik-stat"><span class="pik-stat-val">{{ fmt(lineItems.length) }}</span><span class="pik-stat-label">SKU qty</span></div>
-        <div class="pik-stat"><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span><span class="pik-stat-label">To pick</span></div>
-        <div class="pik-stat"><span class="pik-stat-val">{{ fmt(draftPickedTotal) }}</span><span class="pik-stat-label">Picked</span></div>
-        <div class="pik-stat"><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span><span class="pik-stat-label">Outstanding</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">SKU qty</span><span class="pik-stat-val">{{ fmt(lineItems.length) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">To pick qty</span><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">Picked qty</span><span class="pik-stat-val">{{ fmt(draftPickedTotal) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">Outstanding qty</span><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pik-sku-section">
         <div class="pik-filter-bar">
           <div class="pik-filter-bar-left">
-            <span class="pik-editing-hint">Pick each item from its storage location and enter the picked qty.</span>
+            <span class="pik-editing-hint">
+              {{ hasMarketplaceOrder
+                ? 'Marketplace order — pick every item in full to finish picking.'
+                : 'Pick each item from its storage location and enter the picked qty.' }}
+            </span>
             <button class="pik-link-btn" @click="pickAll">Pick all</button>
           </div>
           <div class="pik-search-wrap">
@@ -188,8 +221,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
             <input v-model="search" class="pik-search" type="text" placeholder="Search product or SKU…" />
           </div>
         </div>
+        <p v-if="finishError" class="pik-finish-error">{{ finishError }}</p>
 
-        <section class="pik-items-section" :class="{ 'pik-items-section--bordered': isProgressive }">
+        <section class="pik-items-section" :class="{ 'pik-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pik-items-scroll">
             <table class="pik-items">
               <thead>
@@ -197,9 +231,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <th class="pik-th">Product</th>
                   <th class="pik-th">SKU</th>
                   <th class="pik-th">Storage location</th>
-                  <th class="pik-th pik-th--num">To pick</th>
+                  <th class="pik-th pik-th--num">To pick qty</th>
                   <th class="pik-th pik-th--num">Picked qty</th>
-                  <th class="pik-th pik-th--num">Outstanding</th>
+                  <th class="pik-th pik-th--num">Outstanding qty</th>
                   <th class="pik-th">Unit</th>
                 </tr>
               </thead>
@@ -247,7 +281,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="pik-btn pik-btn--ghost" @click="goBack">Cancel</button>
       <button class="pik-btn pik-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="pik-btn pik-btn--primary" @click="endPickingClick">End picking</button>
+      <button class="pik-btn pik-btn--primary" @click="endPickingClick">Finish picking</button>
     </footer>
   </div>
 
@@ -256,18 +290,22 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <button class="detail-breadcrumb" @click="goPicking">Back to Picking</button>
   </div>
 
-  <!-- ── End picking confirmation ── -->
+  <!-- ── Finish picking confirmation ── -->
   <MpModal id="pik-confirm" :is-open="showConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showConfirm = false">
     <MpModalContent>
       <MpModalHeader>
-        {{ draftOutstanding > 0 ? 'End picking with a short pick?' : 'End picking task?' }}
+        {{ draftOutstanding > 0 ? 'Finish picking with a short pick?' : 'Finish picking?' }}
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
         <template v-if="draftOutstanding > 0">
           {{ fmt(draftOutstanding) }} of {{ fmt(toPickTotal) }} units couldn't be picked
           across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'item' : 'items' }}.
-          This picking will be completed short.
+          This picking will be saved as <strong>partially picked</strong>.
+          <template v-if="hasMarketplaceOrder">
+            A marketplace order here must be fully picked before a packing task can be created —
+            pick the remaining items later on a new picking list.
+          </template>
         </template>
         <template v-else>
           All {{ fmt(toPickTotal) }} units have been picked.
@@ -276,8 +314,12 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <MpModalFooter>
         <div class="pik-modal-footer">
           <button class="pik-btn pik-btn--ghost" @click="showConfirm = false">Cancel</button>
-          <button class="pik-btn pik-btn--secondary" @click="commitPicking(false)">End picking</button>
-          <button class="pik-btn pik-btn--primary" @click="commitPicking(true)">End &amp; Create packing</button>
+          <button class="pik-btn pik-btn--secondary" @click="commitPicking(false)">Finish picking</button>
+          <button
+            v-if="!(hasMarketplaceOrder && draftOutstanding > 0)"
+            class="pik-btn pik-btn--primary"
+            @click="commitPicking(true)"
+          >Finish &amp; create packing</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -329,6 +371,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pik-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
 .pik-filter-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .pik-editing-hint { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pik-finish-error { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
 .pik-link-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-link); }
 .pik-link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .pik-search-wrap {
@@ -343,7 +386,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 .pik-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 .pik-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
-.pik-items-section--bordered .pik-items-count { border-top: 1px solid var(--mp-border-default); }
 .pik-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pik-items thead .pik-th { position: sticky; top: 0; z-index: 1; }
 .pik-items { width: 100%; border-collapse: collapse; table-layout: auto; }
@@ -353,18 +395,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
-.pik-th:last-child { border-right: none; }
 .pik-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pik-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   background: var(--mp-background-neutral-hovered);
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: top;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-.pik-td:last-child { border-right: none; }
-.pik-items-section--bordered .pik-row:last-child .pik-td { border-bottom: none; }
 .pik-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pik-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .pik-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
@@ -391,6 +430,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   cursor: pointer; border: 1px solid transparent; white-space: nowrap; transition: background 0.15s;
 }
+.pik-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.pik-btn--primary:disabled:hover { background: var(--mp-background-brand-bold, #029861); }
 .pik-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-secondary); }
 .pik-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .pik-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }

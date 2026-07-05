@@ -8,6 +8,7 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
 import { outgoingForStages, outgoingStage, OUTGOING_TODAY, type OutgoingOrder } from '~/data/outgoing'
@@ -39,14 +40,20 @@ function setDemoState(s: DemoState) {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'salesNo',       label: 'Number',    width: '220px' },
-  { key: 'source',        label: 'Source',    width: '180px' },
-  { key: 'warehouseName', label: 'Warehouse', width: '180px' },
-  { key: 'status',        label: 'Status',    width: '150px' },
-  { key: 'skuQty',        label: 'SKU qty',   width: '100px', align: 'right' },
-  { key: 'orderQty',      label: 'Order qty', width: '120px', align: 'right' },
-  { key: 'dueDate',       label: 'Due date',  width: '180px' },
+  { key: 'salesNo',       label: 'Number',    width: '220px', sortType: 'text' },
+  { key: 'source',        label: 'Source',    width: '180px', sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse', width: '180px', sortType: 'text' },
+  { key: 'status',        label: 'Status',    width: '150px', sortType: 'text' },
+  { key: 'skuQty',        label: 'SKU qty',   width: '100px', align: 'right', sortType: 'number' },
+  { key: 'orderQty',      label: 'Order qty', width: '120px', align: 'right', sortType: 'number' },
+  { key: 'dueDate',       label: 'Due date',  width: '180px', sortType: 'date' },
 ]
+// Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
+// the ColumnSettings menu turns them back on.
+const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
 // Status — multi-select. Completed & Canceled are terminal, hidden by default, so
@@ -153,7 +160,7 @@ const rows = computed<OutgoingOrder[]>(() => (demoState.value === 'data' ? scope
 
 const {
   search, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<OutgoingOrder>(rows, {
   perPage: 25,
   filterFn: (row, s) => {
@@ -260,7 +267,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 <template>
   <ErpTablePage
-    :columns="columns"
+    :columns="visibleColumns"
     :rows="(paginated as Record<string, unknown>[])"
     :total="total"
     :current-page="currentPage"
@@ -274,6 +281,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
     <!-- ── Bulk actions ── -->
@@ -373,6 +382,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
+          <ColumnSettingsMenu id="out-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-out-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">

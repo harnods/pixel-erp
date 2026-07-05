@@ -11,7 +11,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask } from '~/data/receivingTaskDetails'
 import { taskAgingDays, startReceiving, type ReceivingTask } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed'
 
@@ -203,7 +203,7 @@ function jumpTo(id: string) {
   router.push(`/receiving/${id}`)
 }
 
-// goBack: return to the Barang masuk page on the Receiving tab so the inbound
+// goBack: return to the Inbound delivery page on the Receiving tab so the inbound
 // stage tabs (On the way / Receiving / Put-away / …) stay visible.
 function goBack() {
   router.push('/barang-masuk?tab=Receiving')
@@ -267,7 +267,7 @@ function goBack() {
         </div>
         <div class="content-list-col">
           <ContentList label="Sku qty" :value="task.skuScope" />
-          <ContentList label="Start date" :value="task.startDate ? formatDateTime(task.startDate) : '—'" />
+          <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="rcvgd-end-cell">
               <span>{{ localEndDate ? formatDateTime(localEndDate) : '—' }}</span>
@@ -280,20 +280,20 @@ function goBack() {
       <!-- ── Progress stats ── -->
       <section class="rcvgd-progress">
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-val">{{ task.skuCount }}</span>
           <span class="rcvgd-progress-label">SKUs</span>
+          <span class="rcvgd-progress-val">{{ task.skuCount }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-val">{{ fmt(task.purchaseQty) }}</span>
           <span class="rcvgd-progress-label">Purchase qty</span>
+          <span class="rcvgd-progress-val">{{ fmt(task.purchaseQty) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-val">{{ fmt(savedReceivedTotal) }}</span>
           <span class="rcvgd-progress-label">Received qty</span>
+          <span class="rcvgd-progress-val">{{ fmt(savedReceivedTotal) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
+          <span class="rcvgd-progress-label">Outstanding qty</span>
           <span class="rcvgd-progress-val">{{ fmt(outstandingTotal) }}</span>
-          <span class="rcvgd-progress-label">Outstanding</span>
         </div>
       </section>
 
@@ -325,7 +325,7 @@ function goBack() {
                 <th class="detail-th">SKU</th>
                 <th class="detail-th detail-th--num">Purchase qty</th>
                 <th v-if="showReceivedCols" class="detail-th detail-th--num">Received qty</th>
-                <th v-if="showReceivedCols" class="detail-th detail-th--num">Outstanding</th>
+                <th v-if="showReceivedCols" class="detail-th detail-th--num">Outstanding qty</th>
                 <th class="detail-th">Unit</th>
               </tr>
             </thead>
@@ -680,7 +680,6 @@ function goBack() {
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-td--product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detail-td--secondary { color: var(--mp-text-secondary); }
@@ -694,7 +693,6 @@ function goBack() {
 .rcvgd-linked-wrap { overflow-x: auto; }
 .rcvgd-linked { width: 100%; border-collapse: collapse; }
 .rcvgd-linked .detail-th { background: var(--mp-background-neutral-subtle); }
-.rcvgd-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .rcvgd-linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 /* Number cell — "View details" chip on row hover */
 .rcvgd-linked .detail-td--number { position: relative; }

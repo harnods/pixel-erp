@@ -10,11 +10,11 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getDeliveryLineItems, allDeliveryTasksFlat } from '~/data/deliveryTaskDetails'
-import { getDeliveryTask, handoverToCourier } from '~/data/deliveryTasks'
+import { getDeliveryTask, handoverToCourier, marketplaceShipping } from '~/data/deliveryTasks'
 import { getPackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
-import { outgoingOrders, outgoingStage } from '~/data/outgoing'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -22,9 +22,9 @@ const route = useRoute()
 
 const task = computed(() => getDeliveryTask(props.orderId))
 const lineItems = computed(() => task.value ? getDeliveryLineItems(task.value) : [])
-const status = computed(() => task.value?.status ?? 'pending pick-up')
+const status = computed(() => task.value?.status ?? 'ready to ship')
 const isShipped = computed(() => status.value === 'shipped')
-const isPending = computed(() => status.value === 'pending pick-up')
+const isPending = computed(() => status.value === 'ready to ship')
 
 const shipTotal = computed(() => task.value?.toShipQty ?? 0)
 
@@ -34,6 +34,15 @@ const linkedPacking = computed(() => task.value ? getPackingTask(task.value.pack
 const linkedPicking = computed(() => linkedPacking.value ? getPickingTask(linkedPacking.value.pickingTaskId) : undefined)
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+// Marketplace (Desty) orders carry a due time → show date+time, and flag those due
+// within 24h with an "Expire in N hours" caption. ERP orders are date-only.
+function isMarketplaceDue(o: { dueDate: string }) { return typeof o.dueDate === 'string' && o.dueDate.includes('T') }
+function dueDisplay(o: { dueDate: string }) { return isMarketplaceDue(o) ? formatDateTime(o.dueDate) : formatDate(o.dueDate) }
+function expireHours(o: { dueDate: string }): number | null {
+  if (!isMarketplaceDue(o)) return null
+  const h = (new Date(o.dueDate).getTime() - OUTGOING_TODAY.getTime()) / 3_600_000
+  return h > 0 && h < 24 ? Math.max(1, Math.ceil(h)) : null
+}
 
 // ── Handover-to-courier modal ────────────────────────────────────────────────
 const showShip = ref(false)
@@ -43,6 +52,14 @@ const packageScan = ref('')
 const packageVerified = ref(false)
 const proofFile = ref('')
 const shipError = ref(false)
+const scanError = ref(false)
+
+// The scanned package / AWB / shipping label must belong to THIS delivery — match it
+// against the delivery's own identifiers (Delivery no., AWB/tracking, packing no.).
+const expectedScanCodes = computed(() =>
+  [task.value?.taskNo, task.value?.trackingNo, task.value?.packingTaskNo]
+    .filter(Boolean).map(c => String(c).trim().toLowerCase()),
+)
 
 function openShip() {
   courierId.value = task.value?.courier ?? ''
@@ -51,12 +68,29 @@ function openShip() {
   packageVerified.value = false
   proofFile.value = ''
   shipError.value = false
+  scanError.value = false
   showShip.value = true
 }
-// Scan the physical package label → marks the package out of the warehouse.
-// (Demo: clicking Scan auto-fills the package label with the packing no.)
+function onScanInput() { if (scanError.value) scanError.value = false }
+// Scan the physical package label → must match this delivery before handover.
+// (Demo: clicking Scan with an empty field simulates scanning the correct label.)
+// For a marketplace order a valid scan also pulls the channel's courier + tracking no.
 function verifyPackage() {
-  if (!packageScan.value.trim()) packageScan.value = task.value?.packingTaskNo ?? 'Package'
+  const scanned = packageScan.value.trim()
+  // empty → simulate scanning the correct label for this delivery
+  if (!scanned) packageScan.value = task.value?.trackingNo || task.value?.taskNo || 'Package'
+  const val = packageScan.value.trim().toLowerCase()
+  if (expectedScanCodes.value.length && !expectedScanCodes.value.includes(val)) {
+    packageVerified.value = false
+    scanError.value = true
+    return
+  }
+  scanError.value = false
+  const mp = marketplaceShipping(linkedOrder.value)
+  if (mp) {
+    if (!courierId.value.trim())  courierId.value  = mp.courier
+    if (!trackingNo.value.trim()) trackingNo.value = mp.trackingNo
+  }
   packageVerified.value = true
 }
 const evidenceFiles = ref<FileList | null>(null)
@@ -70,6 +104,7 @@ function printDeliveryNote() {
   toast.notify({ variant: 'success', title: 'Surat jalan sent to printer' })
 }
 function confirmShip() {
+  if (!packageVerified.value) { scanError.value = true; return } // must scan a matching label first
   if (!courierId.value.trim() || !trackingNo.value.trim()) { shipError.value = true; return }
   handoverToCourier(props.orderId, {
     courier: courierId.value.trim(),
@@ -183,14 +218,14 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
         <div class="content-list-col">
           <ContentList label="Courier" :value="task.courier ?? '—'" />
           <ContentList label="Tracking no." :value="task.trackingNo ?? '—'" />
-          <ContentList label="Ship date" :value="task.shippedDate ? formatDateTime(task.shippedDate) : '—'" />
+          <ContentList label="Ship date" :value="task.shippedDate ? formatDateTimeLong(task.shippedDate) : '—'" />
         </div>
       </section>
 
       <section class="del-progress">
-        <div class="del-progress-stat"><span class="del-progress-val">{{ task.skuQty }}</span><span class="del-progress-label">SKUs</span></div>
-        <div class="del-progress-stat"><span class="del-progress-val">{{ fmt(shipTotal) }}</span><span class="del-progress-label">To ship</span></div>
-        <div class="del-progress-stat"><span class="del-progress-val">{{ fmt(task.shippedQty) }}</span><span class="del-progress-label">Shipped</span></div>
+        <div class="del-progress-stat"><span class="del-progress-label">SKUs</span><span class="del-progress-val">{{ task.skuQty }}</span></div>
+        <div class="del-progress-stat"><span class="del-progress-label">To ship</span><span class="del-progress-val">{{ fmt(shipTotal) }}</span></div>
+        <div class="del-progress-stat"><span class="del-progress-label">Shipped</span><span class="del-progress-val">{{ fmt(task.shippedQty) }}</span></div>
       </section>
 
       <div class="del-table-wrap">
@@ -238,15 +273,25 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
       <!-- Linked transactions -->
       <MpTabs id="del-tabs" :default-value="0" variant-color="green" class="del-tabs">
         <MpTabList>
-          <MpTab id="del-tab-so" :value="0">Sales order</MpTab>
-          <MpTab id="del-tab-pack" :value="1">Packing</MpTab>
-          <MpTab id="del-tab-pick" :value="2">Picking</MpTab>
+          <MpTab id="del-tab-so" :value="0">Sales order ({{ linkedOrder ? 1 : 0 }})</MpTab>
+          <MpTab id="del-tab-pick" :value="1">Picking ({{ linkedPicking ? 1 : 0 }})</MpTab>
+          <MpTab id="del-tab-pack" :value="2">Packing ({{ linkedPacking ? 1 : 0 }})</MpTab>
         </MpTabList>
         <MpTabPanels>
+          <!-- Sales order -->
           <MpTabPanel :value="0">
+            <h3 class="linked-section-title">Sales order</h3>
             <div class="del-linked-wrap">
               <table class="del-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Customer</th><th class="detail-th">Status</th><th class="detail-th">Due date</th></tr></thead>
+                <thead><tr>
+                  <th class="detail-th">Number</th>
+                  <th class="detail-th">Customer</th>
+                  <th class="detail-th">Source</th>
+                  <th class="detail-th detail-th--num">SKU qty</th>
+                  <th class="detail-th detail-th--num">Order qty</th>
+                  <th class="detail-th">Status</th>
+                  <th class="detail-th">Due date</th>
+                </tr></thead>
                 <tbody>
                   <tr v-if="linkedOrder" class="detail-item-row">
                     <td class="detail-td detail-td--number">
@@ -262,44 +307,36 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
                       </div>
                     </td>
                     <td class="detail-td">{{ linkedOrder.customer ?? '—' }}</td>
+                    <td class="detail-td">{{ linkedOrder.source }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(linkedOrder.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(linkedOrder.orderQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="outgoingStage(linkedOrder)" /></td>
-                    <td class="detail-td">{{ formatDate(linkedOrder.dueDate) }}</td>
-                  </tr>
-                  <tr v-else><td class="detail-td del-empty" colspan="4">—</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </MpTabPanel>
-          <MpTabPanel :value="1">
-            <div class="del-linked-wrap">
-              <table class="del-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th">Status</th></tr></thead>
-                <tbody>
-                  <tr v-if="linkedPacking" class="detail-item-row">
-                    <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="del-link-num">{{ linkedPacking.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/packing/${linkedPacking.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                    <td class="detail-td">
+                      <span class="del-due">
+                        <span>{{ dueDisplay(linkedOrder) }}</span>
+                        <span v-if="expireHours(linkedOrder) !== null" class="del-due-expire">Expire in {{ expireHours(linkedOrder) }} hours</span>
+                      </span>
                     </td>
-                    <td class="detail-td">{{ linkedPacking.assignee }}</td>
-                    <td class="detail-td"><ErpStatusBadge :status="linkedPacking.status" /></td>
                   </tr>
-                  <tr v-else><td class="detail-td del-empty" colspan="3">—</td></tr>
+                  <tr v-else><td class="detail-td del-empty" colspan="7">—</td></tr>
                 </tbody>
               </table>
             </div>
           </MpTabPanel>
-          <MpTabPanel :value="2">
+          <!-- Picking -->
+          <MpTabPanel :value="1">
+            <h3 class="linked-section-title">Picking task</h3>
             <div class="del-linked-wrap">
               <table class="del-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th">Status</th></tr></thead>
+                <thead><tr>
+                  <th class="detail-th">Number</th>
+                  <th class="detail-th">Assignee</th>
+                  <th class="detail-th detail-th--num">SKU qty</th>
+                  <th class="detail-th detail-th--num">Picked qty</th>
+                  <th class="detail-th">Status</th>
+                  <th class="detail-th">Start date</th>
+                  <th class="detail-th">End date</th>
+                </tr></thead>
                 <tbody>
                   <tr v-if="linkedPicking" class="detail-item-row">
                     <td class="detail-td detail-td--number">
@@ -315,9 +352,53 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
                       </div>
                     </td>
                     <td class="detail-td">{{ linkedPicking.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(linkedPicking.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(linkedPicking.pickedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="linkedPicking.status" /></td>
+                    <td class="detail-td">{{ linkedPicking.startDate ? formatDateTime(linkedPicking.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ linkedPicking.endDate ? formatDateTime(linkedPicking.endDate) : '—' }}</td>
                   </tr>
-                  <tr v-else><td class="detail-td del-empty" colspan="3">—</td></tr>
+                  <tr v-else><td class="detail-td del-empty" colspan="7">—</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+          <!-- Packing -->
+          <MpTabPanel :value="2">
+            <h3 class="linked-section-title">Packing task</h3>
+            <div class="del-linked-wrap">
+              <table class="del-linked">
+                <thead><tr>
+                  <th class="detail-th">Number</th>
+                  <th class="detail-th">Assignee</th>
+                  <th class="detail-th detail-th--num">SKU qty</th>
+                  <th class="detail-th detail-th--num">Packed qty</th>
+                  <th class="detail-th">Status</th>
+                  <th class="detail-th">Start date</th>
+                  <th class="detail-th">End date</th>
+                </tr></thead>
+                <tbody>
+                  <tr v-if="linkedPacking" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="del-link-num">{{ linkedPacking.taskNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/packing/${linkedPacking.id}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ linkedPacking.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(linkedPacking.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(linkedPacking.packedQty) }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="linkedPacking.status" /></td>
+                    <td class="detail-td">{{ linkedPacking.startDate ? formatDateTime(linkedPacking.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ linkedPacking.endDate ? formatDateTime(linkedPacking.endDate) : '—' }}</td>
+                  </tr>
+                  <tr v-else><td class="detail-td del-empty" colspan="7">—</td></tr>
                 </tbody>
               </table>
             </div>
@@ -359,8 +440,14 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
   <!-- ── Handover-to-courier modal ── -->
   <MpModal id="del-ship" :is-open="showShip" size="lg" is-close-on-esc :is-keep-alive="false" @close="showShip = false">
     <MpModalContent>
-      <MpModalHeader>Handover to courier — {{ task?.taskNo }}<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Handover to courier<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
+        <dl v-if="task" class="del-ship-context">
+          <div><dt>Sales order</dt><dd>{{ task.salesNo }}<span v-if="linkedOrder?.source && linkedOrder.source !== 'Sales Order'" class="del-ship-src">{{ linkedOrder.source }}</span></dd></div>
+          <div><dt>Delivery</dt><dd>{{ task.taskNo }}</dd></div>
+          <div><dt>Warehouse</dt><dd>{{ task.warehouseName }}</dd></div>
+        </dl>
+
         <div class="del-ship-grid">
           <MpFormControl id="del-courier" is-required :is-invalid="shipError && !courierId.trim()">
             <MpFormLabel>Courier</MpFormLabel>
@@ -374,12 +461,13 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
         <p v-if="shipError" class="del-ship-error">Courier and tracking no. are required.</p>
 
         <MpFormControl id="del-pkg-scan" :class="css({ marginTop: '16px' })">
-          <MpFormLabel>Scan package/shipping label</MpFormLabel>
+          <MpFormLabel>Scan package / AWB / shipping label</MpFormLabel>
           <div class="del-scan-field">
-            <MpInput id="del-pkg-scan-input" v-model="packageScan" placeholder="Scan the package/shipping label…" is-full-width @keyup.enter="verifyPackage" />
+            <MpInput id="del-pkg-scan-input" v-model="packageScan" placeholder="Scan the package/shipping label…" is-full-width @input="onScanInput" @keyup.enter="verifyPackage" />
             <button class="detail-btn detail-btn--secondary" @click="verifyPackage">Scan</button>
           </div>
-          <span v-if="packageVerified" class="del-verified">✓ {{ task?.packingTaskNo }} scanned</span>
+          <span v-if="packageVerified" class="del-verified">✓ Matches {{ task?.taskNo }}</span>
+          <span v-else-if="scanError" class="del-ship-error">This label doesn't match delivery {{ task?.taskNo }}. Scan the package for this delivery.</span>
         </MpFormControl>
 
         <MpFormControl id="del-evidence" :class="css({ marginTop: '16px' })">
@@ -454,7 +542,6 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
 
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 .detail-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
-.detail-items-section--bordered .detail-items-count { border-top: 1px solid var(--mp-border-default); }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: 1px; }
@@ -464,7 +551,6 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
 .detail-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
 .detail-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .detail-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
@@ -472,9 +558,11 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
 .del-tabs :deep(.mp-tab--isSelected_true), .del-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
 .del-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .del-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.del-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
+.del-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
 .del-linked-wrap { overflow-x: auto; }
 .del-linked { width: 100%; border-collapse: collapse; }
-.del-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .del-link-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .del-empty { color: var(--mp-text-secondary); }
 /* Number cell — "View details" chip on row hover (same as index tables) */
@@ -499,6 +587,10 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
 .del-shipped-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .del-ship-hint { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.del-ship-context { margin: 0 0 var(--mp-spacing-5); display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtlest, #f5f6f7); border-radius: var(--mp-radii-md); }
+.del-ship-context dt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.del-ship-context dd { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.del-ship-src { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .del-scan-field { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .del-scan-field > :first-child { flex: 1; min-width: 0; }
 .del-ship-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }

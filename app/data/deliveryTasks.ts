@@ -1,6 +1,6 @@
 import { reactive } from "vue";
 import { picForWarehouse } from "./warehouses";
-import { outgoingOrders } from "./outgoing";
+import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from "./outgoing";
 import { packingTasks } from "./packingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
@@ -29,8 +29,10 @@ export interface DeliveryTask {
   toShipQty: number;
   /** units actually shipped (0 until handed over, then = toShipQty) */
   shippedQty: number;
-  /** pending pick-up = shipment created, waiting for courier; shipped = handed over */
-  status: "pending pick-up" | "shipped" | "canceled";
+  /** ready to ship = created & packed, waiting to leave; shipped = handed over */
+  status: "ready to ship" | "shipped" | "canceled";
+  /** how it leaves: self delivery (own driver) or online shipping (3rd-party courier) */
+  deliveryMethod?: "self" | "online";
   /** ISO date the goods were handed to the courier (shipped only) */
   shippedDate?: string;
   /** carrier handling the shipment (set at create shipping) */
@@ -43,10 +45,30 @@ export interface DeliveryTask {
 
 const COURIERS = ["JNE", "SiCepat", "J&T Express", "AnterAja", "Internal fleet"];
 
+// A Desty marketplace channel never hands over to the seller's internal fleet.
+const MARKETPLACE_COURIERS = COURIERS.filter((c) => c !== "Internal fleet");
+function seedNum(id: string): number { return Number(id.replace(/\D/g, "")) || 0; }
+
+/**
+ * Courier + tracking no. a Desty marketplace channel pre-assigns to an order — these
+ * arrive with the sales order (shown on its detail page) before shipping is processed.
+ * Deterministic from the order id so the order detail page and the shipping handover
+ * always show the same values. Returns undefined for non-marketplace orders.
+ */
+export function marketplaceShipping(
+  order: OutgoingOrder | undefined | null,
+): { courier: string; trackingNo: string } | undefined {
+  if (!isMarketplaceOrder(order) || !order) return undefined;
+  const s = seedNum(order.id);
+  const courier = MARKETPLACE_COURIERS[s % MARKETPLACE_COURIERS.length]!;
+  const digits = String(1_000_000_000 + ((s * 2654435761) % 9_000_000_000));
+  return { courier, trackingNo: `TRK${digits}` };
+}
+
 // Stage status assigned to a seed task — mostly Open, some Shipped, the occasional
 // Canceled, so all states are demonstrable (deterministic).
 const SEED_STATUSES: DeliveryTask["status"][] = [
-  "pending pick-up", "shipped", "pending pick-up", "shipped", "canceled", "pending pick-up",
+  "ready to ship", "shipped", "ready to ship", "shipped", "canceled", "ready to ship",
 ];
 
 // ── Seed: a delivery for SOME completed packing tasks (one per sales order). The
@@ -61,6 +83,8 @@ function seedTasks(): DeliveryTask[] {
     const order = outgoingOrders.find((o) => o.id === pack.salesOrderId);
     const status = SEED_STATUSES[idx % SEED_STATUSES.length]!;
     const toShipQty = pack.toPackQty;
+    // marketplace ⇒ always online shipping; others alternate self / online
+    const method: "self" | "online" = isMarketplaceOrder(order) ? "online" : (idx % 2 === 0 ? "self" : "online");
     out.push({
       id: `del-${seq}`,
       taskNo: `Delivery #${seq++}`,
@@ -76,10 +100,11 @@ function seedTasks(): DeliveryTask[] {
       toShipQty,
       shippedQty: status === "shipped" ? toShipQty : 0,
       status,
+      deliveryMethod: method,
       shippedDate: status === "shipped" ? new Date().toISOString() : undefined,
-      // courier + tracking are captured at Create shipping → present unless canceled
-      courier: status !== "canceled" ? COURIERS[idx % COURIERS.length] : undefined,
-      trackingNo: status !== "canceled" ? `SD${String(9000 + seq).padStart(7, "0")}` : undefined,
+      // online shipping → courier + tracking; self delivery → optional (often blank)
+      courier: status !== "canceled" && method === "online" ? COURIERS[idx % 4] : undefined,
+      trackingNo: status !== "canceled" && method === "online" ? `SD${String(9000 + seq).padStart(7, "0")}` : undefined,
       proofFile: status === "shipped" ? "pickup-proof.jpg" : undefined,
     });
     void order;
@@ -121,11 +146,11 @@ function seedShippedDeliveries(startSeq: number): DeliveryTask[] {
   return out;
 }
 
-const snapshot = loadSnapshot<DeliveryTask>("delivery");
+const snapshot = loadSnapshot<DeliveryTask>("delivery-v2");
 export const deliveryTasks = reactive<DeliveryTask[]>(snapshot ?? seedTasks());
 
 function persistDelivery(): void {
-  saveSnapshot("delivery", deliveryTasks);
+  saveSnapshot("delivery-v2", deliveryTasks);
 }
 
 let nextSeq = 50090 + deliveryTasks.length;
@@ -147,6 +172,7 @@ export function addDeliveryTask(opts: {
   warehouseId: string;
   warehouseName: string;
   assignee: string;
+  deliveryMethod?: "self" | "online";
   courier?: string;
   trackingNo?: string;
   skuQty?: number;
@@ -167,8 +193,9 @@ export function addDeliveryTask(opts: {
     skuQty: opts.skuQty ?? order?.skuQty ?? 0,
     orderQty: order?.orderQty ?? opts.toShipQty ?? 0,
     toShipQty: opts.toShipQty ?? order?.orderQty ?? 0,
-    shippedQty: 0, // created → waiting for courier
-    status: "pending pick-up",
+    shippedQty: 0, // created → waiting to leave
+    status: "ready to ship",
+    deliveryMethod: opts.deliveryMethod ?? "online",
     courier: opts.courier,
     trackingNo: opts.trackingNo,
   };
@@ -196,6 +223,15 @@ export function getDeliveryForOrder(orderId: string): DeliveryTask[] {
   return deliveryTasks.filter((t) => t.salesOrderId === orderId);
 }
 
+/** True if an order already has a live (non-canceled) delivery — a canceled one
+ *  doesn't block, so the order can be re-delivered. Used to prevent creating a
+ *  second delivery for an order that is already being delivered/shipped. */
+export function orderHasDelivery(orderId: string): boolean {
+  return deliveryTasks.some(
+    (t) => t.salesOrderId === orderId && t.status !== "canceled",
+  );
+}
+
 export function getDeliveryTask(taskId: string): DeliveryTask | undefined {
   return deliveryTasks.find((t) => t.id === taskId);
 }
@@ -203,7 +239,7 @@ export function getDeliveryTask(taskId: string): DeliveryTask | undefined {
 /** Hand the package over to the courier → shipped, records courier/tracking/proof + timestamp. */
 export function handoverToCourier(taskId: string, opts?: { courier?: string; trackingNo?: string; proofFile?: string }): void {
   const t = getDeliveryTask(taskId);
-  if (!t || t.status !== "pending pick-up") return;
+  if (!t || t.status !== "ready to ship") return;
   t.status = "shipped";
   t.shippedQty = t.toShipQty;
   t.shippedDate = nowIso();

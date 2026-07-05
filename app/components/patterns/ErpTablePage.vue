@@ -32,7 +32,7 @@
  *   sort(key)
  */
 
-import { MpCheckbox, MpSkeleton } from '@mekari/pixel3'
+import { MpCheckbox, MpSkeleton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpPagination from './ErpPagination.vue'
 
 const sendAireneMessage = inject<(text: string, context?: string) => void>('sendAireneMessage')
@@ -44,6 +44,10 @@ export interface TableColumn {
   width?: string
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
+  /** Enables the ERP column-header sort menu (hover icon → popover). The options shown
+   *  depend on the type: text = A–Z / Z–A, number = Low→High / High→Low, date =
+   *  Oldest / Newest first. Plus "Hide column". */
+  sortType?: 'text' | 'number' | 'date'
   isFixed?: boolean  // sticky right (for a data column; actions are always sticky)
   noHeader?: boolean // render empty <th> — use for icon-only columns (e.g. attachment)
 }
@@ -69,6 +73,9 @@ const props = withDefaults(defineProps<{
   rowDisabled?: (row: Record<string, unknown>, index: number) => boolean
   /** Singular noun shown in the bulk bar count, e.g. "warehouse" → "2 warehouses selected" */
   bulkLabel?: string
+  /** Override the sticky actions column width (default 44px) — use when the #actions
+   *  slot renders more than a single kebab button (several buttons in a row). */
+  actionsWidth?: string
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -80,15 +87,25 @@ const props = withDefaults(defineProps<{
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
+  actionsWidth: undefined,
 })
 
 const emit = defineEmits<{
   pageChange: [page: number]
   perPageChange: [perPage: number]
   sort: [key: string]
+  sortChange: [key: string, dir: 'asc' | 'desc']
+  hideColumn: [key: string]
   clearFilters: []
   selectionChange: [count: number]
 }>()
+
+// ERP column sort: picking the already-active direction clears the sort (back to
+// default order); otherwise apply the chosen direction. Empty key = unsorted.
+function onSortOpt(key: string, dir: 'asc' | 'desc') {
+  if (props.sortKey === key && props.sortDir === dir) emit('sortChange', '', 'asc')
+  else emit('sortChange', key, dir)
+}
 
 // ─── Pagination skeleton ────────────────────────────────────────────────────
 // Briefly show the skeleton when the user changes page or rows-per-page, so every
@@ -338,6 +355,7 @@ const bulkCountLabel = computed(() => {
       ref="tableWrapperEl"
       class="erp-table-wrapper"
       :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing }"
+      :style="actionsWidth ? { '--erp-actions-width': actionsWidth } : undefined"
     >
       <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty }">
 
@@ -349,7 +367,7 @@ const bulkCountLabel = computed(() => {
             :key="col.key"
             :style="col.width ? { width: col.width, minWidth: col.width } : {}"
           />
-          <col v-if="$slots.actions" style="width: 44px; min-width: 44px" />
+          <col v-if="$slots.actions" :style="{ width: actionsWidth ?? '44px', minWidth: actionsWidth ?? '44px' }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
 
@@ -394,16 +412,19 @@ const bulkCountLabel = computed(() => {
               :key="col.key"
               class="erp-th"
               :class="{
-                'erp-th--sortable': col.sortable,
+                'erp-th--sortable': col.sortable && !col.sortType,
+                'erp-th--menu':     !!col.sortType,
                 'erp-th--right':    col.align === 'right',
                 'erp-th--center':   col.align === 'center',
                 'erp-th--fixed':    col.isFixed,
               }"
+              :data-col="col.key"
               :style="col.width ? { width: col.width, minWidth: col.width } : {}"
-              @click="col.sortable ? emit('sort', col.key) : undefined"
+              @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
             >
-              <span v-if="hasCheckbox && ci === 0" class="erp-cell-check">
+              <span class="th-inner">
                 <MpCheckbox
+                  v-if="hasCheckbox && ci === 0"
                   id="erp-select-all"
                   :is-checked="allSelected"
                   :is-indeterminate="someSelected"
@@ -411,9 +432,40 @@ const bulkCountLabel = computed(() => {
                   @click.stop
                 />
                 <span v-if="!col.noHeader" class="th-label">{{ col.label }}</span>
-              </span>
-              <span v-else-if="!col.noHeader" class="th-label">
-                {{ col.label }}
+                <!-- ERP column sort menu: hover reveals the icon; click opens options -->
+                <MpPopover
+                  v-if="col.sortType"
+                  :id="`erp-sort-${col.key}`"
+                  is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start"
+                >
+                  <MpPopoverTrigger>
+                    <button
+                      class="erp-sort-btn"
+                      :class="{ 'erp-sort-btn--active': sortKey === col.key }"
+                      aria-label="Sort column" @click.stop
+                    >
+                      <MpIcon name="sort-default" size="sm" />
+                    </button>
+                  </MpPopoverTrigger>
+                  <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
+                    <MpPopoverList>
+                      <template v-if="col.sortType === 'number'">
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'asc')"><span class="erp-sort-opt"><MpIcon name="arrows-up" size="sm" />Low to high<MpTooltip v-if="sortKey === col.key && sortDir === 'asc'" :id="`erp-sort-reset-${col.key}-a`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'desc')"><span class="erp-sort-opt"><MpIcon name="arrows-down" size="sm" />High to low<MpTooltip v-if="sortKey === col.key && sortDir === 'desc'" :id="`erp-sort-reset-${col.key}-d`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                      </template>
+                      <template v-else-if="col.sortType === 'date'">
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'asc')"><span class="erp-sort-opt"><MpIcon name="arrows-up" size="sm" />Oldest first<MpTooltip v-if="sortKey === col.key && sortDir === 'asc'" :id="`erp-sort-reset-${col.key}-a`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'desc')"><span class="erp-sort-opt"><MpIcon name="arrows-down" size="sm" />Newest first<MpTooltip v-if="sortKey === col.key && sortDir === 'desc'" :id="`erp-sort-reset-${col.key}-d`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                      </template>
+                      <template v-else>
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'asc')"><span class="erp-sort-opt"><MpIcon name="arrows-up" size="sm" />A - Z<MpTooltip v-if="sortKey === col.key && sortDir === 'asc'" :id="`erp-sort-reset-${col.key}-a`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                        <MpPopoverListItem @click="onSortOpt(col.key, 'desc')"><span class="erp-sort-opt"><MpIcon name="arrows-down" size="sm" />Z - A<MpTooltip v-if="sortKey === col.key && sortDir === 'desc'" :id="`erp-sort-reset-${col.key}-d`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
+                      </template>
+                      <div class="erp-sort-divider" />
+                      <MpPopoverListItem @click="emit('hideColumn', col.key)"><span class="erp-sort-opt"><MpIcon name="hide" size="sm" />Hide column</span></MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
               </span>
             </th>
 
@@ -454,6 +506,7 @@ const bulkCountLabel = computed(() => {
                   'erp-td--center': col.align === 'center',
                   'erp-td--fixed':  col.isFixed,
                 }"
+                :data-col="col.key"
               >
                 <span v-if="hasCheckbox && ci === 0" class="erp-cell-check">
                   <MpCheckbox
@@ -538,10 +591,12 @@ const bulkCountLabel = computed(() => {
               class="erp-td erp-td--empty"
               :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
             >
-              <!-- Inline empty — search/filter eliminated all results (no illustration) -->
+              <!-- Inline empty — search/filter eliminated all results (same illustration as
+                   the full empty state, so both empty states read consistently) -->
               <div v-if="hasActiveFilter" class="empty-inline">
+                <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
                 <p class="empty-inline-title">No results found</p>
-                <p class="empty-inline-desc">Try adjusting your filters.</p>
+                <p class="empty-inline-desc">Try adjusting your search or filters.</p>
                 <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
               </div>
               <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
@@ -720,12 +775,18 @@ const bulkCountLabel = computed(() => {
   padding: var(--mp-spacing-1) var(--mp-spacing-2);
 }
 
-/* Checkbox merged into the first column's cell (header + body) */
+/* Checkbox merged into the first column's cell (body). Fill the cell so a slotted
+   cell (e.g. a Number cell with a right-aligned "View details" chip) spans the full
+   column width instead of shrink-wrapping to the text — otherwise the chip's right:0
+   lands on top of the text. */
 .erp-cell-check {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
+  width: 100%;
+  min-width: 0;
 }
+.erp-cell-check > :last-child { flex: 1 1 auto; min-width: 0; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
@@ -754,10 +815,10 @@ const bulkCountLabel = computed(() => {
   right: var(--mp-sizes-7);
 }
 
-/* Actions header (no label) */
+/* Actions header (no label) — width overridable via --erp-actions-width (actionsWidth prop) */
 .erp-th--actions {
-  width: var(--mp-sizes-11);
-  min-width: var(--mp-sizes-11);
+  width: var(--erp-actions-width, var(--mp-sizes-11));
+  min-width: var(--erp-actions-width, var(--mp-sizes-11));
 }
 
 /* AI chat header column */
@@ -777,6 +838,28 @@ const bulkCountLabel = computed(() => {
   align-items: center;
   gap: var(--mp-spacing-1);
 }
+
+/* ── Column sort menu (ERP behaviour) ── */
+/* header content wraps label + sort icon; right-aligned columns push it to the end */
+.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); max-width: 100%; }
+.erp-th--right .th-inner { flex-direction: row-reverse; }
+/* icon button revealed on header hover; stays visible while its column is the sort */
+.erp-sort-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex-shrink: 0;
+  border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  visibility: hidden;
+}
+.erp-th:hover .erp-sort-btn,
+.erp-sort-btn--active { visibility: visible; }
+.erp-sort-btn:hover { background: var(--mp-background-neutral-hovered); }
+.erp-sort-btn--active { color: var(--mp-text-selected, var(--mp-text-default)); }
+/* popover option row: icon + label */
+.erp-sort-opt { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); text-transform: none; width: 100%; }
+.erp-sort-check-tt { margin-left: auto; display: inline-flex; }
+.erp-sort-check { color: var(--mp-text-selected); }
+.erp-sort-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
 
 .sort-arrows {
   display: inline-flex;
@@ -803,8 +886,6 @@ const bulkCountLabel = computed(() => {
 
 .erp-tr {
   background: var(--mp-background-neutral);
-}
-.erp-tr:not(:last-child) {
   border-bottom: 1px solid var(--mp-border-default);
 }
 .erp-tr:hover .erp-td {
@@ -859,10 +940,10 @@ const bulkCountLabel = computed(() => {
   right: var(--mp-sizes-7);
 }
 
-/* Actions cell — Figma: px-8 py-6 justify-end */
+/* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width. */
 .erp-td--actions {
-  width: var(--mp-sizes-11);
-  min-width: var(--mp-sizes-11);
+  width: var(--erp-actions-width, var(--mp-sizes-11));
+  min-width: var(--erp-actions-width, var(--mp-sizes-11));
   text-align: right;
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-2);
 }
@@ -996,22 +1077,30 @@ const bulkCountLabel = computed(() => {
   margin: 0;
 }
 
-/* Inline empty (filtered/search → no results) — no illustration */
+/* Inline empty (filtered/search → no results) — illustrated the same as the full
+   empty state, so both read consistently across every index page. */
 .empty-inline {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-10, 40px) 0;
+}
+.empty-inline-illustration {
+  width: 288px;
+  height: 240px;
+  object-fit: contain;
+  margin-bottom: var(--mp-spacing-1);
 }
 .empty-inline-title {
   margin: 0;
-  font-size: var(--mp-font-sizes-md);
+  font-size: var(--mp-font-sizes-lg);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
 .empty-inline-desc {
   margin: 0;
-  font-size: var(--mp-font-sizes-sm);
+  font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
 }
 .empty-inline-clear {

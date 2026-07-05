@@ -1,5 +1,6 @@
 import type { Receipt } from './receipts'
 import { CATALOG } from './catalog'
+import { binForSku } from './warehouseDetails'
 
 export interface ReceiptLineItem {
   productId: string
@@ -58,6 +59,6 @@ export function lineItemsForReceipt(receipt: Receipt): ReceiptLineItem[] {
     image: p.img,
     unit: p.unit,
     purchaseQty: qtys[i]!,
-    storageLocation: BINS[(seed + i * 5) % BINS.length]!,
+    storageLocation: binForSku(receipt.warehouseId, p.sku),
   }))
 }

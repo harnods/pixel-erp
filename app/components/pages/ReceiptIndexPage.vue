@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpDatePicker, MpCheckbox,
@@ -8,6 +8,7 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
 import { receiptsForStages, receiptStage, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
@@ -38,14 +39,20 @@ function setDemoState(s: DemoState) {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'purchaseNo',       label: 'Number',            width: '260px' },
-  { key: 'warehouseName',    label: 'Warehouse',         width: '180px' },
-  { key: 'status',           label: 'Status',            width: '150px' },
+  { key: 'purchaseNo',       label: 'Number',            width: '260px', sortType: 'text' },
+  { key: 'warehouseName',    label: 'Warehouse',         width: '180px', sortType: 'text' },
+  { key: 'status',           label: 'Status',            width: '150px', sortType: 'text' },
   { key: 'trackingNos',      label: 'Tracking no.',      width: '150px' },
-  { key: 'skuQty',           label: 'SKU qty',           width: '100px', align: 'right' },
-  { key: 'purchaseQty',      label: 'Purchase qty',      width: '120px', align: 'right' },
-  { key: 'estimatedArrival', label: 'Estimated arrival', width: '150px' },
+  { key: 'skuQty',           label: 'SKU qty',           width: '100px', align: 'right', sortType: 'number' },
+  { key: 'purchaseQty',      label: 'Purchase qty',      width: '120px', align: 'right', sortType: 'number' },
+  { key: 'estimatedArrival', label: 'Estimated arrival', width: '150px', sortType: 'date' },
 ]
+// Column show/hide — first column stays on; the sort menu's "Hide column" flips
+// these off, the ColumnSettings menu turns them back on.
+const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
 // Status — multi-select. Completed & Canceled are terminal, hidden by default, so
@@ -153,7 +160,7 @@ const rows = computed<Receipt[]>(() => (demoState.value === 'data' ? scopedRecei
 
 const {
   search, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Receipt>(rows, {
   perPage: 25,
   filterFn: (row, s) => {
@@ -239,7 +246,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 <template>
   <ErpTablePage
-    :columns="columns"
+    :columns="visibleColumns"
     :rows="(paginated as Record<string, unknown>[])"
     :total="total"
     :current-page="currentPage"
@@ -253,6 +260,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
     <!-- ── Bulk actions ── -->
@@ -361,6 +370,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
+          <ColumnSettingsMenu id="rcv-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-rcv-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -525,8 +535,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeTrackingModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="saveTracking">Save</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeTrackingModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="saveTracking">Save changes</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

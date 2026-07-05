@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { formatDateTimeLong } from '~/utils/date'
 import {
   MpButton, MpSpinner,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
@@ -19,14 +20,7 @@ const task      = computed(() => entry.value?.task)
 const po        = computed(() => entry.value?.po)
 const lineItems = computed(() => task.value ? getTaskLineItems(task.value) : [])
 
-const startDateLabel = computed(() => {
-  const d = task.value?.startDate
-  if (!d) return '—'
-  const dt = new Date(d)
-  const date = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-  const time = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  return `${date}, ${time}`
-})
+const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
 // ── Draft quantities ─────────────────────────────────────────────────────────
 const draftQty = ref<Record<string, number>>({})
@@ -217,20 +211,20 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <!-- Live summary -->
       <div class="ri-summary">
         <div class="ri-stat">
-          <span class="ri-stat-val">{{ fmt(lineItems.length) }}</span>
           <span class="ri-stat-label">SKU qty</span>
+          <span class="ri-stat-val">{{ fmt(lineItems.length) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-val">{{ fmt(purchaseTotal) }}</span>
           <span class="ri-stat-label">Purchase qty</span>
+          <span class="ri-stat-val">{{ fmt(purchaseTotal) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-val">{{ fmt(draftReceivedTotal) }}</span>
           <span class="ri-stat-label">Received qty</span>
+          <span class="ri-stat-val">{{ fmt(draftReceivedTotal) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-val">{{ fmt(draftOutstanding) }}</span>
           <span class="ri-stat-label">Difference qty</span>
+          <span class="ri-stat-val">{{ fmt(draftOutstanding) }}</span>
         </div>
       </div>
 
@@ -466,7 +460,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-items-section--bordered {
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden;
 }
-.ri-items-section--bordered .ri-items-count { border-top: 1px solid var(--mp-border-default); }
 
 /* Scroll container — same max-height as other create pages */
 .ri-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
@@ -480,20 +473,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default); white-space: nowrap;
+  white-space: nowrap;
 }
-.ri-th:last-child { border-right: none; }
 .ri-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .ri-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   background: var(--mp-background-neutral-hovered);
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   vertical-align: top;
 }
-.ri-td:last-child { border-right: none; }
-.ri-items-section--bordered .ri-row:last-child .ri-td { border-bottom: none; }
 .ri-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .ri-td--input { padding: 0; }
 

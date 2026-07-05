@@ -1,7 +1,7 @@
 import { putAwayTasks, type PutAwayTask } from './putAwayTasks'
 import { getReceivingTask } from './receivingTasks'
-import { BINS } from './receiptLineItems'
 import { CATALOG } from './catalog'
+import { binForSku } from './warehouseDetails'
 
 export interface PutAwayLineItem {
   productName: string
@@ -93,7 +93,7 @@ export function getPutAwayLineItems(taskId: string): PutAwayLineItem[] {
         image: p?.img ?? '',
         qty,
         stored,
-        binLocation: BINS[(seed + i * 3) % BINS.length]!,
+        binLocation: binForSku(task.warehouseId, it.sku),
         unit: it.unit || p?.unit || 'Unit',
         receivingTaskNo: rt.taskNo,
       })

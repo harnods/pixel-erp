@@ -4,8 +4,8 @@
     class="pr-pin"
     :class="{ 'pr-pin--active': active, 'pr-pin--dragging': isDragging }"
     :style="{
-      left: displayX + '%',
-      top: displayY + '%',
+      left: displayX + 'px',
+      top: displayY + 'px',
       background: authorColor,
     }"
     :title="annotation.author + ': ' + annotation.body"
@@ -27,13 +27,17 @@ import { getAuthorColor } from '../lib/authorColor'
 const props = defineProps<{
   annotation: Annotation
   index: number
+  /** Viewport pixel position, resolved by the overlay (element anchor or fallback). */
+  x: number
+  y: number
   pinsVisible: boolean
   active: boolean
 }>()
 
 const emit = defineEmits<{
   click: []
-  move: [xPct: number, yPct: number]
+  /** Drop position in viewport pixels — the overlay re-anchors from here. */
+  move: [clientX: number, clientY: number]
 }>()
 
 const authorColor = computed(() => getAuthorColor(props.annotation.author))
@@ -43,14 +47,13 @@ const DRAG_THRESHOLD_PX = 4
 const isDragging = ref(false)
 const dragPos = ref<{ x: number; y: number } | null>(null)
 
-const displayX = computed(() => dragPos.value?.x ?? props.annotation.x_pct)
-const displayY = computed(() => dragPos.value?.y ?? props.annotation.y_pct)
+const displayX = computed(() => dragPos.value?.x ?? props.x)
+const displayY = computed(() => dragPos.value?.y ?? props.y)
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
 }
 
-let overlayRect: DOMRect | null = null
 let startClientX = 0
 let startClientY = 0
 
@@ -58,10 +61,6 @@ function onPointerDown(e: PointerEvent) {
   if (e.button !== 0) return
   e.stopPropagation()
 
-  const overlay = (e.currentTarget as HTMLElement).closest('.pr-overlay') as HTMLElement | null
-  if (!overlay) return
-
-  overlayRect = overlay.getBoundingClientRect()
   startClientX = e.clientX
   startClientY = e.clientY
   isDragging.value = false
@@ -77,10 +76,9 @@ function onPointerMove(e: PointerEvent) {
   if (!isDragging.value && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
   isDragging.value = true
 
-  if (!overlayRect) return
   dragPos.value = {
-    x: clamp(((e.clientX - overlayRect.left) / overlayRect.width) * 100, 0, 100),
-    y: clamp(((e.clientY - overlayRect.top) / overlayRect.height) * 100, 0, 100),
+    x: clamp(e.clientX, 0, window.innerWidth),
+    y: clamp(e.clientY, 0, window.innerHeight),
   }
 }
 
@@ -96,13 +94,12 @@ function onPointerUp() {
 
   isDragging.value = false
   dragPos.value = null
-  overlayRect = null
 }
 </script>
 
 <style scoped>
 .pr-pin {
-  position: absolute;
+  position: fixed;
   width: 28px;
   height: 28px;
   border-radius: 50%;

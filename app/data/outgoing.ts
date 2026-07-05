@@ -11,7 +11,7 @@ export type OutgoingStatus =
   | "completed"
   | "canceled";
 
-/** An outbound order (Barang keluar → Outgoing): a sales order whose goods are
+/** An outbound order (Outbound delivery → Outgoing): a sales order whose goods are
  *  leaving the warehouse. Mirrors {@link Receipt} on the inbound side — the source
  *  document is a Sales Order rather than a Purchase Order, and the goods flow OUT
  *  (picking → packing → delivery) rather than IN (receiving → put-away). */
@@ -126,6 +126,16 @@ export function skuLineQty(seed: number, i: number): number {
 // Desty omnichannel marketplaces + the seller's store name shown as the source.
 const MARKETPLACES = ['Shopee', 'Tokopedia', 'Lazada', 'TikTok Shop', 'Blibli']
 const STORE_NAME = 'Central Perk'
+
+/**
+ * True when an order came from a Desty marketplace channel — its source is
+ * "{Marketplace}: {store name}" (e.g. "Shopee: Central Perk"). ERP ("Sales Order")
+ * and manual ("Manual") orders return false. Marketplace orders are fulfilled in
+ * full: their SKU lines cannot be deselected during picking or packing.
+ */
+export function isMarketplaceOrder(o: OutgoingOrder | undefined | null): boolean {
+  return !!o && o.source !== "Sales Order" && o.source !== "Manual" && o.source.includes(":");
+}
 
 // Customers the outbound orders ship to (parallels the receipt vendor).
 const CUSTOMERS = [
@@ -293,7 +303,7 @@ function generateCanceled(count = 7): OutgoingOrder[] {
 // "Reset demo data" clears it.
 const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
-  outgoingSnapshot ?? [...generateOrders(), ...generateShipped(), ...generateCanceled()],
+  outgoingSnapshot ?? [...generateOrders(), ...generateShipped(3), ...generateCanceled()],
 );
 
 /** Orders with a pre-wired shipped chain — consumed by the task seeds. `partial`

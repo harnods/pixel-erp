@@ -1,7 +1,9 @@
 import { reactive } from "vue";
 import { picForWarehouse } from "./warehouses";
 import { outgoingOrders } from "./outgoing";
-import { pickingTasks, pickingLinesOf, getPickingTask, type PickingTask } from "./pickingTasks";
+import { pickingTasks, pickingLinesOf, getPickingTask, pickedQtyForOrderSku, type PickingTask } from "./pickingTasks";
+import { orderSkuLines } from "./inventory";
+import { binForSku } from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
@@ -17,9 +19,12 @@ export interface PackingTask {
   /** the single sales order this packing task is for */
   salesOrderId: string;
   salesNo: string;
-  /** the completed picking task this was created from */
+  /** the primary picking task this was created from (first contributing list) */
   pickingTaskId: string;
   pickingTaskNo: string;
+  /** ALL picking lists that picked this order (an order can be split over several) */
+  pickingTaskIds?: string[];
+  pickingTaskNos?: string[];
   warehouseId: string;
   warehouseName: string;
   assignee: string;
@@ -50,14 +55,21 @@ export interface PackedSourceLine {
 
 /** The picked lines belonging to a packing task's sales order. */
 export function pickedLinesForPacking(task: PackingTask): PackedSourceLine[] {
-  const pick = getPickingTask(task.pickingTaskId);
-  if (!pick) return [];
-  return pickingLinesOf(pick)
-    .filter((l) => l.orderId === task.salesOrderId)
-    .map((l) => ({
-      key: l.key, sku: l.sku, product: l.product, desc: l.desc, img: l.img,
-      unit: l.unit, bin: l.bin, picked: pick.pickedByKey?.[l.key] ?? 0,
-    }));
+  // Read the ORDER's total picked across ALL its picking lists (a packing task can come
+  // from several lists), not just the primary one — so match-order shows the full qty.
+  const order = outgoingOrders.find((o) => o.id === task.salesOrderId);
+  if (!order) return [];
+  const lines: PackedSourceLine[] = [];
+  for (const l of orderSkuLines(order)) {
+    const picked = pickedQtyForOrderSku(task.salesOrderId, l.sku);
+    if (picked <= 0) continue; // only what was actually picked can be packed
+    lines.push({
+      key: `${task.salesOrderId}::${l.sku}`,
+      sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
+      unit: l.product.unit, bin: binForSku(order.warehouseId, l.sku), picked,
+    });
+  }
+  return lines;
 }
 
 // Stage status assigned to a seed task — mostly Open, some In progress / Completed,
@@ -79,7 +91,9 @@ function seedTasks(): PackingTask[] {
   const out: PackingTask[] = [];
   let seq = 40090;
   let idx = 0;
-  for (const pick of pickingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pick-sh-"))) {
+  // Curated demo picking lists (pick-demo-*) are left UN-packed on purpose so the
+  // "Create packing" flow is demoable; only the pre-shipped chain seeds packing here.
+  for (const pick of pickingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pick-sh-") && !t.id.startsWith("pick-demo-"))) {
     pick.salesOrderIds.forEach((orderId, j) => {
       const order = outgoingOrders.find((o) => o.id === orderId);
       if (!order) return;
@@ -188,6 +202,9 @@ export function addPackingTask(opts: {
   salesNo: string;
   pickingTaskId: string;
   pickingTaskNo: string;
+  /** all picking lists that picked this order (defaults to just the primary one) */
+  pickingTaskIds?: string[];
+  pickingTaskNos?: string[];
   warehouseId: string;
   warehouseName: string;
   assignee: string;
@@ -208,6 +225,8 @@ export function addPackingTask(opts: {
     salesNo: opts.salesNo,
     pickingTaskId: opts.pickingTaskId,
     pickingTaskNo: opts.pickingTaskNo,
+    pickingTaskIds: opts.pickingTaskIds ?? [opts.pickingTaskId],
+    pickingTaskNos: opts.pickingTaskNos ?? [opts.pickingTaskNo],
     warehouseId: opts.warehouseId,
     warehouseName: opts.warehouseName,
     assignee: opts.assignee,

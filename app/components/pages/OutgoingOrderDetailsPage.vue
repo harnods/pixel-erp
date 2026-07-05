@@ -12,8 +12,8 @@ import { outgoingOrders, outgoingStage } from '~/data/outgoing'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
 import { getPackingForOrder } from '~/data/packingTasks'
-import { deliveryTasks, DELIVERY_COURIERS } from '~/data/deliveryTasks'
-import { formatDate, formatDateTime } from '~/utils/date'
+import { deliveryTasks, marketplaceShipping } from '~/data/deliveryTasks'
+import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -94,25 +94,20 @@ const transactionDate = computed(() => {
 // with the courier + tracking no. already assigned by the channel.
 const isMarketplace = computed(() => !!order.value && order.value.source !== 'Sales Order')
 const dueDateDisplay = computed(() =>
-  order.value ? (isMarketplace.value ? formatDateTime(order.value.dueDate) : formatDate(order.value.dueDate)) : '—',
+  order.value ? (isMarketplace.value ? formatDateTimeLong(order.value.dueDate) : formatDateLong(order.value.dueDate)) : '—',
 )
-const MP_COURIERS = DELIVERY_COURIERS.filter(c => c !== 'Internal fleet')
 // Courier / tracking no. surface from the linked delivery task; for marketplace orders
-// they're pre-assigned by the channel even before shipping is processed.
+// they're pre-assigned by the channel even before shipping is processed (same source of
+// truth the shipping handover auto-fills from).
 const courier = computed(() => {
   const fromTask = linkedDelivery.value.find(d => d.courier)?.courier
   if (fromTask) return fromTask
-  if (isMarketplace.value && order.value) return MP_COURIERS[seedNum(order.value.id) % MP_COURIERS.length]!
-  return '—'
+  return marketplaceShipping(order.value)?.courier ?? '—'
 })
 const trackingNo = computed(() => {
   const fromTask = linkedDelivery.value.find(d => d.trackingNo)?.trackingNo
   if (fromTask) return fromTask
-  if (isMarketplace.value && order.value) {
-    const digits = String(1_000_000_000 + (seedNum(order.value.id) * 2654435761) % 9_000_000_000)
-    return `TRK${digits}`
-  }
-  return '—'
+  return marketplaceShipping(order.value)?.trackingNo ?? '—'
 })
 
 // ── Notes / attachment / audit (mirrors Sales order & Receipt detail) ─────────────
@@ -141,7 +136,7 @@ function formatUpdatedAt(iso: string) {
   const d = new Date(iso)
   const date = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(d)
   const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
-  return `${date}, ${time} (GMT+7)`
+  return `${date}, ${time}`
 }
 
 const activityOpen = ref(false)
@@ -158,7 +153,7 @@ const jumpResults = computed(() => {
 })
 function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/barang-keluar/${id}`) }
 
-function goBack() { router.push('/barang-keluar?tab=Outgoing') }
+function goBack() { router.push('/barang-keluar?tab=Requests') }
 function createPicking() {
   if (!order.value) return
   router.push({ path: '/barang-keluar/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id } })
@@ -182,7 +177,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Barang keluar</button>
+        <button class="detail-breadcrumb" @click="goBack">Outbound delivery</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ order.salesNo }}</h1>
           <ErpStatusBadge :status="outgoingStage(order)" badge-for="additionalInformation" size="md" />
@@ -217,7 +212,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
       <section class="ood-summary">
         <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDate(transactionDate)" />
+          <ContentList label="Transaction date" :value="formatDateLong(transactionDate)" />
           <ContentList label="Transaction no." :value="order.salesNo" />
           <ContentList label="Customer" :value="order.customer ?? '—'" />
           <ContentList label="Source" :value="order.source" />
@@ -304,7 +299,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <h3 class="linked-section-title">Picking list tasks</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
+                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Picked qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
                 <tbody>
                   <tr v-for="t in linkedPicking" :key="t.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
@@ -320,6 +315,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                       </div>
                     </td>
                     <td class="detail-td">{{ t.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(t.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(t.pickedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
                     <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
                     <td class="detail-td">{{ t.endDate ? formatDateTime(t.endDate) : '—' }}</td>
@@ -332,7 +329,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <h3 class="linked-section-title">Packing tasks</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Order qty</th><th class="detail-th detail-th--num">Packed qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
+                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Packed qty</th><th class="detail-th">Status</th><th class="detail-th">Start date</th><th class="detail-th">End date</th></tr></thead>
                 <tbody>
                   <tr v-for="t in linkedPacking" :key="t.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
@@ -349,7 +346,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                     </td>
                     <td class="detail-td">{{ t.assignee }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(t.skuQty) }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(order.orderQty) }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(t.packedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
                     <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
@@ -363,7 +359,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <h3 class="linked-section-title">Delivery tasks</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Courier</th><th class="detail-th">Tracking no.</th><th class="detail-th">Status</th></tr></thead>
+                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Shipped qty</th><th class="detail-th">Status</th></tr></thead>
                 <tbody>
                   <tr v-for="d in linkedDelivery" :key="d.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
@@ -378,8 +374,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                         </button>
                       </div>
                     </td>
-                    <td class="detail-td">{{ d.courier ?? '—' }}</td>
-                    <td class="detail-td">{{ d.trackingNo ?? '—' }}</td>
+                    <td class="detail-td">{{ d.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(d.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(d.shippedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="d.status" /></td>
                   </tr>
                 </tbody>
@@ -425,7 +422,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
   <div v-else class="ood-not-found">
     <p>Order not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Barang keluar</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to Outbound delivery</button>
   </div>
 </template>
 
@@ -476,7 +473,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
 .detail-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .detail-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-items .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: 1px; }
 .detail-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
@@ -487,7 +483,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.detail-items-section--bordered .detail-items-count { border-top: 1px solid var(--mp-border-default); border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 
 .ood-tabs { flex-shrink: 0; }
@@ -497,7 +492,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ood-linked-wrap { overflow-x: auto; }
 .ood-linked { width: 100%; border-collapse: collapse; }
-.ood-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .ood-link-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ood-empty { color: var(--mp-text-secondary); }
 /* Number cell — "View details" chip on row hover (same as index tables) */

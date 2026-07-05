@@ -26,7 +26,7 @@
           variant-color="sky"
         />
         <div class="erp-user__meta">
-          <MpText size="label" color="text.inverse.static" weight="semiBold">
+          <MpText size="label" color="text.inverse.static" weight="semiBold" is-truncated>
             {{ currentUser }}
           </MpText>
           <div class="erp-user__company">
@@ -151,7 +151,7 @@ import {
 } from "@mekari/pixel3";
 import { picForWarehouse } from "~/data/warehouses";
 import { resetDb } from "~/data/persist";
-import { useReviewMode } from "@ds/proto-review";
+import { useReviewMode, clearDynamicAnnotations } from "@ds/proto-review";
 
 // Public asset (place your attached megaphone here). Bound dynamically so a missing
 // file degrades to a 404 at runtime instead of breaking the Vite build.
@@ -193,8 +193,13 @@ function selectScenario(scenario: Scenario, closePopover: () => void) {
 
 // Wipe everything created during the demo (receivings, put-aways, receipts) and
 // reload to the original seed data. Nothing else resets on its own.
-function resetData(closePopover: () => void) {
+//
+// Also prunes proto-review comments left on dynamic detail pages (e.g.
+// /warehouses/wh-042) — that record won't exist after reset, so the comment
+// would otherwise point at an empty page. Comments on static pages are kept.
+async function resetData(closePopover: () => void) {
   resetDb();
+  await clearDynamicAnnotations().catch(() => {});
   closePopover();
   if (import.meta.client) window.location.reload();
 }
@@ -231,14 +236,21 @@ function toggleReview(closePopover: () => void) {
 .erp-user__meta {
   display: none;
   flex-direction: column;
-  align-items: flex-start;
+  /* align-items: stretch (the flex default) so children fill the 160px cap —
+     with flex-start they'd shrink to their own content width instead, and
+     the line-clamp/truncation below would have nothing to truncate against. */
+  min-width: 0;
+  max-width: 160px;
+  white-space: nowrap;
 }
 .erp-user__company {
   display: flex;
   max-width: 160px;
   overflow: hidden;
 }
-@media (min-width: 992px) {
+/* Below this, the header (logo + search + icons + user block) is too tight
+   for name/company to reliably fit on one line — hide them, avatar only. */
+@media (min-width: 1200px) {
   .erp-user__meta {
     display: flex;
   }

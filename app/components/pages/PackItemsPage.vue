@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { formatDateLong, formatDateTimeLong } from '~/utils/date'
 import {
   MpSpinner,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
@@ -10,6 +11,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getPackingLineItems } from '~/data/packingTaskDetails'
 import { getPackingTask, savePackingDraft, endPacking } from '~/data/packingTasks'
+import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -17,13 +19,24 @@ const router = useRouter()
 const task = computed(() => getPackingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPackingLineItems(task.value) : [])
 
-const startDateLabel = computed(() => {
-  const d = task.value?.startDate
-  if (!d) return '—'
-  const dt = new Date(d)
-  const date = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-  const time = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  return `${date}, ${time}`
+// Marketplace orders must be fulfilled in full — every picked unit has to be packed
+// (no short-packing). The order = picked side is enforced upstream at picking, where a
+// marketplace order can't be short-picked, so a full flow ends with packed = picked = order.
+const order = computed(() => outgoingOrders.find(o => o.id === task.value?.salesOrderId))
+const isMarketplace = computed(() => isMarketplaceOrder(order.value))
+const allPicked = computed(() =>
+  lineItems.value.length > 0 &&
+  lineItems.value.every(it => (draftQty.value[it.key] ?? 0) === it.pickedQty),
+)
+const canEndPacking = computed(() => !isMarketplace.value || allPicked.value)
+
+const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
+
+// Due date carries an end-of-day cut-off for marketplace orders (…T23:59); show the
+// time only when the ISO string includes one.
+const dueDateLabel = computed(() => {
+  const d = order.value?.dueDate
+  return d?.includes('T') ? formatDateTimeLong(d) : formatDateLong(d)
 })
 
 const draftQty = ref<Record<string, number>>({})
@@ -49,7 +62,6 @@ const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const pagedItems = computed(() => filteredItems.value.slice(0, shownCount.value))
-const isProgressive = computed(() => filteredItems.value.length > PAGE_SIZE)
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -72,29 +84,38 @@ function packAll() {
   draftQty.value = map
 }
 const showQtyErrors = ref(false)
+// Inline validation caption under the toolbar (shown on a failed Finish attempt), not a toast.
+const finishError = ref('')
 function onQtyInput(key: string, max: number, e: Event) {
   let n = Math.floor(Number((e.target as HTMLInputElement).value))
   if (!Number.isFinite(n) || n < 0) n = 0
   if (n > max) n = max
   draftQty.value = { ...draftQty.value, [key]: n }
   if (showQtyErrors.value) showQtyErrors.value = false
+  if (finishError.value) finishError.value = ''
 }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 const showConfirm = ref(false)
 function endPackingClick() {
-  if (draftPackedTotal.value === 0) {
+  if (!canEndPacking.value) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'danger', title: 'Enter packed qty for at least 1 item' })
+    finishError.value = 'Marketplace orders must be packed in full — pack every picked unit before finishing.'
     return
   }
+  if (draftPackedTotal.value === 0) {
+    showQtyErrors.value = true
+    finishError.value = 'Enter packed qty for at least 1 item'
+    return
+  }
+  finishError.value = ''
   showConfirm.value = true
 }
 function commit() {
   showConfirm.value = false
   if (!task.value) return
   endPacking(props.orderId, { ...draftQty.value })
-  toast.notify({ variant: 'success', title: 'Packing completed, ready to ship' })
+  toast.notify({ variant: 'success', title: 'Packing finished, ready to ship' })
   router.push(`/packing/${props.orderId}`)
 }
 function saveDraft() {
@@ -108,17 +129,24 @@ function goPacking() { router.push('/barang-keluar?tab=Packing') }
 const stageEl = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)
 function checkStageOverflow() { const el = stageEl.value; if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1 }
+// Outer border only once the items scroll area actually overflows (can scroll).
+const itemsOverflowing = ref(false)
+function checkItemsOverflow() { const el = itemsScrollEl.value; itemsOverflowing.value = !!el && el.scrollHeight > el.clientHeight + 1 }
 let stageObserver: ResizeObserver | null = null
+let itemsResizeObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
     checkStageOverflow()
+    checkItemsOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
     if (stageEl.value) { stageObserver.observe(stageEl.value); stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true }) }
+    itemsResizeObserver = new ResizeObserver(checkItemsOverflow)
+    if (itemsScrollEl.value) itemsResizeObserver.observe(itemsScrollEl.value)
     setupItemsObserver()
   })
 })
-onUnmounted(() => { stageObserver?.disconnect(); stageEl.value?.removeEventListener('scroll', checkStageOverflow); itemsObserver?.disconnect() })
-watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
+onUnmounted(() => { stageObserver?.disconnect(); itemsResizeObserver?.disconnect(); stageEl.value?.removeEventListener('scroll', checkStageOverflow); itemsObserver?.disconnect() })
+watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { checkStageOverflow(); checkItemsOverflow() }))
 </script>
 
 <template>
@@ -141,22 +169,28 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
       <div class="pak-header">
         <ContentList label="Sales order" :value="task.salesNo" />
+        <ContentList label="Source" :value="order?.source || '—'" />
+        <ContentList label="Due date" :value="dueDateLabel" />
         <ContentList label="Warehouse" :value="task.warehouseName" />
         <ContentList label="Assignee" :value="task.assignee" />
         <ContentList label="Start date" :value="startDateLabel" />
       </div>
 
       <div class="pak-summary">
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span><span class="pak-stat-label">SKU qty</span></div>
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span><span class="pak-stat-label">Picked</span></div>
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span><span class="pak-stat-label">Packed</span></div>
-        <div class="pak-stat"><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span><span class="pak-stat-label">Outstanding</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">SKU qty</span><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">Picked qty</span><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">Packed qty</span><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">Outstanding qty</span><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pak-sku-section">
         <div class="pak-filter-bar">
           <div class="pak-filter-bar-left">
-            <span class="pak-editing-hint">Match the picked goods to this order and enter the packed qty.</span>
+            <span class="pak-editing-hint">
+              {{ isMarketplace
+                ? 'Marketplace order — pack every picked unit in full to finish packing.'
+                : 'Match the picked goods to this order and enter the packed qty.' }}
+            </span>
             <button class="pak-link-btn" @click="packAll">Pack all</button>
           </div>
           <div class="pak-search-wrap">
@@ -166,18 +200,19 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
             <input v-model="search" class="pak-search" type="text" placeholder="Search product or SKU…" />
           </div>
         </div>
+        <p v-if="finishError" class="pak-finish-error">{{ finishError }}</p>
 
-        <section class="pak-items-section" :class="{ 'pak-items-section--bordered': isProgressive }">
+        <section class="pak-items-section" :class="{ 'pak-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pak-items-scroll">
             <table class="pak-items">
               <thead>
                 <tr>
                   <th class="pak-th">Product</th>
                   <th class="pak-th">SKU</th>
-                  <th class="pak-th">Storage location</th>
+                  <th class="pak-th pak-th--num">Order qty</th>
                   <th class="pak-th pak-th--num">Picked qty</th>
                   <th class="pak-th pak-th--num">Packed qty</th>
-                  <th class="pak-th pak-th--num">Outstanding</th>
+                  <th class="pak-th pak-th--num">Outstanding qty</th>
                   <th class="pak-th">Unit</th>
                 </tr>
               </thead>
@@ -185,7 +220,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <tr v-for="item in pagedItems" :key="item.key" class="pak-row">
                   <td class="pak-td"><ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" /></td>
                   <td class="pak-td">{{ item.skuCode }}</td>
-                  <td class="pak-td">{{ item.binLocation }}</td>
+                  <td class="pak-td pak-td--num">{{ fmt(item.orderQty) }}</td>
                   <td class="pak-td pak-td--num">{{ fmt(item.pickedQty) }}</td>
                   <td class="pak-td pak-td--input" :class="{ 'pak-td--input--error': showQtyErrors && !(draftQty[item.key] ?? 0) }">
                     <input
@@ -217,7 +252,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="pak-btn pak-btn--ghost" @click="goBack">Cancel</button>
       <button class="pak-btn pak-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="pak-btn pak-btn--primary" @click="endPackingClick">End packing</button>
+      <button class="pak-btn pak-btn--primary" @click="endPackingClick">Finish packing</button>
     </footer>
   </div>
 
@@ -229,7 +264,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   <MpModal id="pak-confirm" :is-open="showConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showConfirm = false">
     <MpModalContent>
       <MpModalHeader>
-        {{ draftOutstanding > 0 ? 'End packing with unpacked items?' : 'End packing task?' }}
+        {{ draftOutstanding > 0 ? 'Finish packing with unpacked items?' : 'Finish packing?' }}
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
@@ -245,7 +280,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <MpModalFooter>
         <div class="pak-modal-footer">
           <button class="pak-btn pak-btn--ghost" @click="showConfirm = false">Cancel</button>
-          <button class="pak-btn pak-btn--primary" @click="commit">End packing</button>
+          <button class="pak-btn pak-btn--primary" @click="commit">Finish packing</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -267,7 +302,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
-.pak-header { display: flex; gap: var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.pak-header { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .pak-header :deep(.content-list) { padding-top: 0; }
 .pak-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pak-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
@@ -278,6 +313,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pak-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
 .pak-filter-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .pak-editing-hint { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pak-finish-error { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
 .pak-link-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-link); }
 .pak-link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .pak-search-wrap { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 240px; }
@@ -287,16 +323,12 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 .pak-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 .pak-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
-.pak-items-section--bordered .pak-items-count { border-top: 1px solid var(--mp-border-default); }
 .pak-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pak-items thead .pak-th { position: sticky; top: 0; z-index: 1; }
 .pak-items { width: 100%; border-collapse: collapse; table-layout: auto; }
-.pak-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); white-space: nowrap; }
-.pak-th:last-child { border-right: none; }
+.pak-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
 .pak-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-.pak-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); background: var(--mp-background-neutral-hovered); border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: top; }
-.pak-td:last-child { border-right: none; }
-.pak-items-section--bordered .pak-row:last-child .pak-td { border-bottom: none; }
+.pak-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); background: var(--mp-background-neutral-hovered); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .pak-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pak-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .pak-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
@@ -312,6 +344,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pak-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-8) 0; }
 
 .pak-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; transition: background 0.15s; }
+.pak-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.pak-btn--primary:disabled:hover { background: var(--mp-background-brand-bold, #029861); }
 .pak-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-secondary); }
 .pak-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .pak-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }

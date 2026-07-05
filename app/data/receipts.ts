@@ -3,7 +3,7 @@ import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY } from './master'
 
-/** An inbound goods receipt (Barang masuk → Receipt). */
+/** An inbound goods receipt (Inbound delivery → Receipt). */
 export interface Receipt {
   id: string;
   /** receipt number, e.g. RCV-2026-0001 */

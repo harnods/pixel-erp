@@ -119,7 +119,7 @@ function formatUpdatedAt(iso: string) {
   const d = new Date(iso)
   const date = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(d)
   const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
-  return `${date}, ${time} (GMT+7)`
+  return `${date}, ${time}`
 }
 function attachmentIcon(name: string): string {
   const ext = name.toLowerCase().split('.').pop() ?? ''
@@ -519,7 +519,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .rcd-product-thumb {
@@ -564,7 +563,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 .detail-linked-wrap { overflow-x: auto; }
 .detail-linked { width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: auto; border-top: 1px solid var(--mp-border-default); }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
-.detail-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--number { position: relative; }
 .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

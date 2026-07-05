@@ -15,12 +15,22 @@
   border: 1px solid transparent;
 }
 
+/* Secondary (ERP) — black border, black text on a neutral fill. */
 .btn-enterprise--secondary {
   background: var(--mp-background-neutral);
-  border-color: var(--mp-border-bold);
-  color: var(--mp-text-secondary);
+  border-color: var(--mp-text-default);
+  color: var(--mp-text-default);
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
+
+/* Ghost — used for Cancel / dismiss actions across the app (no fill, no border). */
+.btn-enterprise--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--mp-text-secondary);
+  font-weight: var(--mp-font-weights-regular);
+}
+.btn-enterprise--ghost:hover { background: var(--mp-background-neutral-hovered); }
 
 .btn-enterprise--primary {
   background: var(--mp-colors-emerald-700, #029861);
@@ -64,6 +74,32 @@
   color: var(--mp-text-secondary);
 }
 .btn-enterprise--plain:hover { background: var(--mp-background-neutral-hovered); }
+
+/* ── MpToggle: disabled+ON state (global ERP override) ──────────────────────
+ * Show brand-selected palette (light green track, dark green knob) when the
+ * toggle is checked (ON) but disabled (read-only view mode).
+ *
+ * Panda's _disabled rule lives in @layer pixel_recipes._base with !important.
+ * @layer pixel_reset !important has higher cascade priority than pixel_recipes,
+ * so this override always wins regardless of specificity.
+ */
+@layer pixel_reset {
+  .mp-toggle__root:is([aria-disabled=true], [data-disabled]):is([aria-checked=true], [data-checked], [data-state=checked]) .mp-toggle__control {
+    background: var(--mp-colors-background-brand-selected, #d6f4e9) !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+  .mp-toggle__root:is([aria-disabled=true], [data-disabled]):is([aria-checked=true], [data-checked], [data-state=checked]) .mp-toggle__control div {
+    background: var(--mp-colors-icon-selected, #029861) !important;
+  }
+}
+
+/* ── Toast: pill shape (global ERP override) ─────────────────────────────────
+ * Pixel's default toast uses a small border-radius. ERP design uses pill shape.
+ */
+[data-pixel-component="MpToast"] {
+  border-radius: var(--mp-radii-full, 999px) !important;
+}
 
 /* ── Form-field focus colour (global ERP override) ────────────────────────────
  * Pixel's default focus border + ring on form fields is the brand emerald green.

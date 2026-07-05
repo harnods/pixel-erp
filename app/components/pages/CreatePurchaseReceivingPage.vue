@@ -324,7 +324,7 @@ function handleCreate() {
   <!-- Not found fallback -->
   <div v-else class="pr-not-found">
     <p>Purchase order not found.</p>
-    <button class="detail-breadcrumb" @click="router.push('/barang-masuk')">Back to Barang masuk</button>
+    <button class="detail-breadcrumb" @click="router.push('/barang-masuk')">Back to Inbound delivery</button>
   </div>
 </template>
 
@@ -454,7 +454,6 @@ function handleCreate() {
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
 }
-.pr-item-row:last-child .pr-td { border-bottom: none; }
 .pr-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);

@@ -1,7 +1,8 @@
 import { warehouses } from './warehouses'
-import { CATALOG } from './catalog'
+import { warehouseProducts, type Product } from './inventory'
 import { TODAY } from './master'
 import type { Warehouse } from './types'
+import { stockLocationPaths, getMultiLocConfig } from './storageLocations'
 
 /** A tracked batch (lot) of a product within a warehouse (Batches tab).
  *  A batch sits in one bin; a batch split across bins is modelled as separate rows. */
@@ -39,6 +40,8 @@ export interface WarehouseStockItem {
   sku: string
   barcode: string
   category: string
+  /** optional multi-category tags; overrides `category` in the products table display */
+  categories?: string[]
   onHand: number
   reserved: number
   available: number
@@ -81,6 +84,20 @@ const SERIAL_CATEGORIES = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 function isBatchTracked(category: string): boolean { return BATCH_CATEGORIES.has(category) }
 function isSerialized(category: string): boolean { return SERIAL_CATEGORIES.has(category) }
 
+// Sample products that belong to more than one category (sku → category list)
+const MULTI_CATEGORIES: Record<string, string[]> = {
+  '1101': ['Roasted Beans', 'Single Origin', 'Specialty Coffee'],
+  '1102': ['Roasted Beans', 'Blend', 'Specialty Coffee', 'House Blend'],
+  '1103': ['Roasted Beans', 'Single Origin', 'Decaf'],
+  '2001': ['Espresso Machine', 'Commercial', 'Semi-Automatic'],
+  '2002': ['Espresso Machine', 'Home', 'Semi-Automatic'],
+  '2003': ['Espresso Machine', 'Commercial', 'Fully Automatic', 'IoT-Enabled'],
+  '2101': ['Grinder', 'Commercial', 'Burr Grinder'],
+  '2201': ['Grinder', 'Home', 'Burr Grinder', 'Compact'],
+  '3001': ['Accessory', 'Brew Tools', 'Pour Over'],
+  '3002': ['Accessory', 'Maintenance', 'Cleaning'],
+}
+
 // Batches for a consumable — 1–2 lots that sum to the row's on-hand / reserved.
 function makeBatches(onHand: number, reserved: number, seed: number, i: number): ProductBatch[] {
   const n = 1 + ((i + seed) % 2) // 1 or 2 lots
@@ -115,30 +132,40 @@ function makeSerials(sku: string, onHand: number, reserved: number, seed: number
       serial: `${prefix}${String(base + k).padStart(5, '0')}`,
       location: binLocation(seed, i + k)[0]!,
     }))
+  const avail = Math.max(0, onHand - reserved)
   return {
-    available: mk(Math.min(6, Math.max(1, onHand)), seed * 100 + i * 10 + 100),
-    reserved: mk(Math.min(2, Math.max(0, reserved)), seed * 100 + i * 10 + 900),
+    available: mk(avail, seed * 100 + i * 10 + 100),
+    reserved: mk(reserved, seed * 100 + i * 10 + 900),
   }
 }
 
 /**
- * Deterministically build `count` stock items for a warehouse (stable per id) by
- * cycling the master {@link CATALOG} — so a warehouse's Products tab shows the SAME
- * products (name, SKU, photo, unit, price) as picking / packing / receiving. Per-
- * warehouse figures (on hand, reserved, bins, batches, serials) are generated here.
+ * Deterministically build `count` stock items for a warehouse (stable per id) from the
+ * product DB {@link PRODUCTS} — so a warehouse's Products tab shows the SAME products
+ * (name, SKU, photo, unit, pricing) as picking / packing / receiving. Product basics
+ * and pricing come from the DB; per-warehouse figures (on hand, reserved, bins,
+ * batches, serials) are generated here.
  */
-function generateStock(count: number, seed: number): WarehouseStockItem[] {
+function generateStock(products: Product[], seed: number): WarehouseStockItem[] {
   const out: WarehouseStockItem[] = []
-  // SKU qty = distinct SKUs stocked, so never exceed the master catalog size and
-  // never repeat a SKU (each row is a distinct product).
-  const n = Math.min(count, CATALOG.length)
+  // The warehouse's own assortment (a deterministic random subset), so its Products tab
+  // shows exactly what orders sourced from it draw on — never a mismatched SKU.
+  const n = products.length
   for (let i = 0; i < n; i++) {
-    const c = CATALOG[i]!
+    const c = products[i]!
     const cycle = 1
-    const onHand = ((i * 53 + seed * 7 + 17) % 1500) + 5
-    const reserved = onHand > 40 ? (i * 13 + seed) % 40 : 0
+    // Serialized hardware (machines, grinders): realistic warehouse qty — 3 to 22 units,
+    // reserved 0–3. Batch/consumable products can have hundreds of units.
+    const isSerial = isSerialized(c.category)
+    const onHand = isSerial
+      ? ((i * 7 + seed * 3 + 2) % 20) + 3
+      : ((i * 53 + seed * 7 + 17) % 1500) + 5
+    const reservedRaw = isSerial
+      ? (((i * 5 + seed * 2) % 4 === 0) ? 0 : (i + seed) % 4)
+      : (onHand > 40 ? (i * 13 + seed) % 40 : 0)
+    const reserved = isSerial ? Math.min(reservedRaw, onHand - 1) : reservedRaw
     const onTheWay = (i * 7) % 60
-    const minStock = ((i * 11) % 200) + 10
+    const minStock = Math.round((((i * 11) % 200) + 10) / 10) * 10
     out.push({
       id: `${seed}-p${i}`,
       name: cycle > 1 ? `${c.name} #${cycle}` : c.name,
@@ -147,6 +174,7 @@ function generateStock(count: number, seed: number): WarehouseStockItem[] {
       sku: cycle > 1 ? `${c.sku}-${cycle}` : c.sku,
       barcode: String(8_991_000_000_000 + seed * 100_000 + i),
       category: c.category,
+      categories: MULTI_CATEGORIES[c.sku],
       onHand,
       reserved,
       available: onHand - reserved,
@@ -154,10 +182,10 @@ function generateStock(count: number, seed: number): WarehouseStockItem[] {
       minStock,
       unit: c.unit,
       locations: binLocation(seed, i),
-      defaultSalesPrice: c.price,
-      averageCost: Math.round(c.price * 0.6),
-      lastPurchaseCost: Math.round(c.price * 0.62),
-      defaultPurchaseCost: Math.round(c.price * 0.58),
+      defaultSalesPrice: c.sellPrice,
+      averageCost: c.averageCost,
+      lastPurchaseCost: c.lastPurchaseCost,
+      defaultPurchaseCost: c.buyPrice,
       // batches for beans, serials for hardware, neither for accessories — first
       // occurrence only, so the Batches / Serial numbers tabs stay small subsets
       batches: cycle === 1 && isBatchTracked(c.category) ? makeBatches(onHand, reserved, seed, i) : undefined,
@@ -187,11 +215,70 @@ function seedFromId(id: string): number {
 export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   const wh = warehouses.find((w) => w.id === id)
   if (!wh) return undefined
+  // stock rows = the warehouse's own assortment (deterministic random subset), which is
+  // exactly `skuTotal` distinct products.
+  const stock = generateStock(warehouseProducts(id), seedFromId(id))
+  // Assign each product the REAL storage-tree bin it occupies (leaves tile the stock
+  // array 1:1), so a product/batch/serial's location always matches the location you
+  // opened it from — no more "Rack 03 contains an item tagged Rack 05".
+  const paths = stockLocationPaths(id)
+  const multiLoc = getMultiLocConfig(id)
+  const L = paths.length
+  stock.forEach((item, i) => {
+    const loc = paths[i % L] ?? '—'
+    const mlCfg = multiLoc.find((m) => m.idx === i)
+    if (mlCfg && L > 1) {
+      // Pick `count` distinct paths spread across the tree using an even step
+      const step = Math.max(1, Math.floor(L / mlCfg.count))
+      const locs: string[] = [loc]
+      for (let k = 1; k < mlCfg.count; k++) {
+        const candidate = paths[(i + step * k) % L]
+        if (candidate && !locs.includes(candidate)) locs.push(candidate)
+      }
+      item.locations = locs.length >= 2 ? locs : [loc]
+    } else {
+      item.locations = [loc]
+    }
+    item.batches?.forEach((b) => { b.location = loc })
+    if (item.serials) {
+      item.serials.available.forEach((u) => { u.location = loc })
+      item.serials.reserved.forEach((u) => { u.location = loc })
+    }
+  })
   return {
     ...wh,
     description: wh.description ?? descriptions[id] ?? '—',
     pic: wh.pics.map((p) => p.name).join(', ') || '—',
-    // stock count matches the index "SKU Total" exactly
-    stock: generateStock(wh.skuTotal, seedFromId(id)),
+    stock,
   }
+}
+
+/**
+ * The stock stored at a single storage location — the location's own slice of the
+ * warehouse stock: [skuStart, skuStart + skuQty). Because the location tree tiles the
+ * whole stock array exactly (see buildTree), every warehouse SKU appears in exactly
+ * one bin and the per-location counts sum to the warehouse SKU total.
+ */
+export function getLocationStock(warehouseId: string, skuStart: number, skuQty: number): WarehouseStockItem[] {
+  const wh = getWarehouseDetail(warehouseId)
+  if (!wh || skuQty <= 0) return []
+  const start = Math.max(0, Math.min(skuStart, wh.stock.length))
+  return wh.stock.slice(start, start + skuQty)
+}
+
+/**
+ * The real storage-tree bin path for a SKU in a warehouse (e.g. "L1 / ZA / A01 / R01 /
+ * RK01 / SA / B001") — the single source of truth for "where does this SKU live". Used
+ * by inbound/outbound (picking, packing, delivery, receiving, put-away) so their
+ * per-line location matches the warehouse's storage locations. Falls back to a stable
+ * bin for SKUs not currently stocked, so the format is always consistent.
+ */
+export function binForSku(warehouseId: string, sku: string): string {
+  const wh = getWarehouseDetail(warehouseId)
+  if (!wh || !wh.stock.length) return '—'
+  const item = wh.stock.find((s) => s.sku === sku)
+  if (item) return item.locations[0] ?? '—'
+  let h = 0
+  for (const ch of sku) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return wh.stock[h % wh.stock.length]!.locations[0] ?? '—'
 }

@@ -14,25 +14,13 @@ import ErpFilterBar from '~/components/patterns/ErpFilterBar.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
+import { storageLevels, updateStorageLevel } from '~/data/storageLevels'
 
-interface StorageLevel {
-  level: number
-  name: string
-  description: string
-  defaultType: 'Organizational' | 'Storage'
-  updatedAt?: string
-  updatedBy?: string
-}
-
-const levels = reactive<StorageLevel[]>([
-  { level: 1, name: 'Floor',  description: 'A floor or building level.',                            defaultType: 'Organizational' },
-  { level: 2, name: 'Zone',   description: 'A zone or area within a floor.',                         defaultType: 'Organizational' },
-  { level: 3, name: 'Aisle',  description: 'An aisle or walkway between rows of racks.',             defaultType: 'Organizational' },
-  { level: 4, name: 'Row',    description: 'A row of racks within an aisle.',                        defaultType: 'Organizational' },
-  { level: 5, name: 'Rack',   description: 'A rack or shelving unit that holds stock.',              defaultType: 'Storage' },
-  { level: 6, name: 'Shelf',  description: 'A shelf level within a rack.',                           defaultType: 'Storage' },
-  { level: 7, name: 'Bin',    description: 'A bin — the smallest location where stock is placed.',   defaultType: 'Storage' },
-])
+// Rows = the shared master levels (persisted), with a display Level number (order).
+type LevelRow = (typeof storageLevels)[number] & { level: number }
+const levels = computed<LevelRow[]>(() =>
+  storageLevels.map((l, i) => ({ ...l, level: i + 1 })),
+)
 
 // Column show/hide — Level always on; Last updated appended, hidden by default.
 const colVis = reactive<Record<string, boolean>>({
@@ -42,18 +30,18 @@ const columnItems = [
   { key: 'level', label: 'Level', disabled: true },
   { key: 'name', label: 'Name' },
   { key: 'description', label: 'Description' },
-  { key: 'defaultType', label: 'Default type' },
+  { key: 'defaultType', label: 'Storing preference' },
   { key: 'lastUpdated', label: 'Last updated' },
 ]
-function luFor(lvl: StorageLevel) {
+function luFor(lvl: LevelRow) {
   return lvl.updatedAt ? { at: lvl.updatedAt, by: lvl.updatedBy } : lastUpdatedFor(`storage-${lvl.level}`)
 }
 
 const search = ref('')
 const filteredLevels = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return levels
-  return levels.filter(l =>
+  if (!q) return levels.value
+  return levels.value.filter(l =>
     l.name.toLowerCase().includes(q) ||
     l.description.toLowerCase().includes(q) ||
     l.defaultType.toLowerCase().includes(q) ||
@@ -67,24 +55,21 @@ const TYPE_OPTIONS = [
   { label: 'Storage', value: 'Storage' },
 ]
 const editOpen = ref(false)
-const editingLevel = ref<number | null>(null)
+const editingKey = ref<string | null>(null)
 const editName = ref('')
+const editDesc = ref('')
 const editType = ref<'Organizational' | 'Storage'>('Organizational')
 
-function openEdit(lvl: StorageLevel) {
-  editingLevel.value = lvl.level
+function openEdit(lvl: LevelRow) {
+  editingKey.value = lvl.key
   editName.value = lvl.name
+  editDesc.value = lvl.description === '—' ? '' : lvl.description
   editType.value = lvl.defaultType
   editOpen.value = true
 }
 function saveEdit() {
-  const lvl = levels.find(l => l.level === editingLevel.value)
-  if (lvl) {
-    lvl.name = editName.value.trim() || lvl.name
-    lvl.defaultType = editType.value
-    lvl.description = '—' // user-edited levels lose the stock description
-    lvl.updatedAt = new Date().toISOString()
-    lvl.updatedBy = 'Rizal Candra'
+  if (editingKey.value) {
+    updateStorageLevel(editingKey.value, { name: editName.value, defaultType: editType.value, description: editDesc.value })
   }
   editOpen.value = false
 }
@@ -118,13 +103,13 @@ function saveEdit() {
           <th class="sl-th">Level</th>
           <th v-if="colVis.name" class="sl-th">Name</th>
           <th v-if="colVis.description" class="sl-th">Description</th>
-          <th v-if="colVis.defaultType" class="sl-th">Default type</th>
+          <th v-if="colVis.defaultType" class="sl-th">Storing preference</th>
           <th v-if="colVis.lastUpdated" class="sl-th">Last updated</th>
           <th class="sl-th" />
         </tr>
       </thead>
       <tbody>
-        <tr v-for="lvl in filteredLevels" :key="lvl.level" class="sl-row">
+        <tr v-for="lvl in filteredLevels" :key="lvl.key" class="sl-row">
           <td class="sl-td">{{ lvl.level }}</td>
           <td v-if="colVis.name" class="sl-td">{{ lvl.name }}</td>
           <td v-if="colVis.description" class="sl-td sl-desc">{{ lvl.description }}</td>
@@ -144,7 +129,7 @@ function saveEdit() {
     <MpModal
       id="sl-edit-modal"
       :is-open="editOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -161,8 +146,12 @@ function saveEdit() {
               <MpFormLabel>Name</MpFormLabel>
               <MpInput id="sl-edit-name-input" v-model="editName" is-full-width placeholder="Level name" />
             </MpFormControl>
+            <MpFormControl id="sl-edit-desc">
+              <MpFormLabel>Description</MpFormLabel>
+              <textarea id="sl-edit-desc-input" v-model="editDesc" class="sl-textarea" rows="3" placeholder="Describe this storage level" />
+            </MpFormControl>
             <MpFormControl id="sl-edit-type">
-              <MpFormLabel>Default type</MpFormLabel>
+              <MpFormLabel>Storing preference</MpFormLabel>
               <MpAutocomplete
                 id="sl-edit-type-ac"
                 v-model="editType"
@@ -178,8 +167,8 @@ function saveEdit() {
         </MpModalBody>
         <MpModalFooter>
           <div class="sl-modal-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="editOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="saveEdit">Save</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="saveEdit">Save changes</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -245,4 +234,14 @@ function saveEdit() {
 
 .sl-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .sl-modal-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+.sl-textarea {
+  width: 100%; resize: vertical;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  background: var(--mp-background-neutral); font-family: inherit; line-height: 1.5;
+  outline: none;
+}
+.sl-textarea:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
+.sl-textarea::placeholder { color: var(--mp-text-placeholder); }
 </style>

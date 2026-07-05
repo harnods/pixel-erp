@@ -5,10 +5,10 @@ import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { pickableOrders, skuLineQty, type OutgoingOrder } from '~/data/outgoing'
-import { addPickingTask, type PickingLine } from '~/data/pickingTasks'
-import { CATALOG } from '~/data/catalog'
-import { BINS } from '~/data/receiptLineItems'
+import { pickableOrders, type OutgoingOrder } from '~/data/outgoing'
+import { addPickingTask, pickedQtyForOrderSku, type PickingLine } from '~/data/pickingTasks'
+import { orderSkuLines } from '~/data/inventory'
+import { binForSku } from '~/data/warehouseDetails'
 
 const router = useRouter()
 const route  = useRoute()
@@ -72,13 +72,11 @@ const selectedOrders = computed<OutgoingOrder[]>(() =>
 // ─── Picking list per sales order ───────────────────────────────────────────────
 // Each selected order is exploded into its own SKU lines (deterministic from the
 // catalog). Picking is reviewed PER ORDER, so each order gets its own table.
-function seedNum(id: string): number { return Number(id.replace(/\D/g, '')) || 0 }
 function hashStr(s: string): number {
   let h = 0
   for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0
   return h
 }
-function binForSku(sku: string): string { return BINS[hashStr(sku) % BINS.length]! }
 
 // Warehouse stock per SKU (deterministic). A WMS prevents overselling, so stock is
 // normally plentiful; ~1 in 6 SKUs is genuinely low. Available = On hand − Reserved
@@ -92,18 +90,20 @@ function reservedForSku(sku: string): number {
   return Math.round((oh * (hashStr(sku + 'r') % 30)) / 100) // 0–29% committed elsewhere
 }
 
-interface SkuLine { sku: string; product: string; desc: string; img: string; unit: string; qty: number; bin: string }
+interface SkuLine { sku: string; product: string; desc: string; img: string; unit: string; qty: number; picked: number; bin: string }
 
 function orderLines(o: OutgoingOrder): SkuLine[] {
-  const n = Math.min(o.skuQty, CATALOG.length)
-  const base = seedNum(o.id)
+  // SKUs + qty come from the product DB (drawn from what this warehouse stocks), so
+  // each line maps to a real bin — same source picking/packing use downstream.
+  // `qty` = the FULL order demand; `picked` = what's already been picked for this
+  // order+SKU on earlier lists. SKUs already fully picked are dropped (nothing left).
   const lines: SkuLine[] = []
-  for (let i = 0; i < n; i++) {
-    const item = CATALOG[(base * 7 + i * 13) % CATALOG.length]!
-    // same per-SKU qty (1..5) used to build the order total → they always agree
+  for (const l of orderSkuLines(o)) {
+    const picked = pickedQtyForOrderSku(o.id, l.sku)
+    if (l.qty - picked <= 0) continue
     lines.push({
-      sku: item.sku, product: item.name, desc: item.desc, img: item.img,
-      unit: item.unit, qty: skuLineQty(base, i), bin: binForSku(item.sku),
+      sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
+      unit: l.product.unit, qty: l.qty, picked, bin: binForSku(o.warehouseId, l.sku),
     })
   }
   // order each table by storage location so the picker route is ordered
@@ -119,11 +119,17 @@ const orderTables = computed<OrderTable[]>(() =>
   })),
 )
 
-// ─── Supervisor edits: include/exclude a SKU (checkbox, default on) + edit qty ──
+// ─── Supervisor edits: include/exclude ANY SKU (checkbox, default on) + edit qty ──
+// A picking list can cover any subset of SKUs regardless of whether an order is a
+// marketplace order — the marketplace "must be complete" rule is enforced later, at
+// packing-task creation, not here.
 const excludedKeys = ref(new Set<string>())
 const qtyOverrides = ref<Record<string, number>>({})
-function isSelected(key: string) { return !excludedKeys.value.has(key) }
+const lockedKeys = computed(() => new Set<string>()) // nothing is locked
+function isLocked(key: string) { return lockedKeys.value.has(key) }
+function isSelected(key: string) { return isLocked(key) || !excludedKeys.value.has(key) }
 function toggleLine(key: string) {
+  if (isLocked(key)) return
   const s = new Set(excludedKeys.value)
   s.has(key) ? s.delete(key) : s.add(key)
   excludedKeys.value = s
@@ -143,6 +149,7 @@ interface MergedRow {
   sku: string; product: string; desc: string; img: string; unit: string; bin: string
   key: string            // the SKU — unique per merged row
   orderQty: number       // combined ordered qty across orders
+  pickedQty: number      // combined qty already picked on earlier lists
   members: { orderId: string; salesNo: string; qty: number }[]
 }
 const pickRows = computed<MergedRow[]>(() => {
@@ -151,16 +158,19 @@ const pickRows = computed<MergedRow[]>(() => {
     for (const l of t.lines) {
       let g = map.get(l.sku)
       if (!g) {
-        g = { sku: l.sku, product: l.product, desc: l.desc, img: l.img, unit: l.unit, bin: l.bin, key: l.sku, orderQty: 0, members: [] }
+        g = { sku: l.sku, product: l.product, desc: l.desc, img: l.img, unit: l.unit, bin: l.bin, key: l.sku, orderQty: 0, pickedQty: 0, members: [] }
         map.set(l.sku, g)
       }
       g.orderQty += l.qty
+      g.pickedQty += l.picked
       g.members.push({ orderId: t.order.id, salesNo: t.order.salesNo, qty: l.qty })
     }
   }
   // storage-location order keeps the picker route tidy
   return [...map.values()].sort((a, b) => a.bin.localeCompare(b.bin))
 })
+// True once any SKU has been partially picked on a previous list → show Picked qty column.
+const hasPriorPicks = computed(() => pickRows.value.some(g => g.pickedQty > 0))
 
 // ─── Stock per merged SKU — one pool (On hand − Reserved); cap = min(demand, avail) ─
 interface RowStock { onHand: number; reserved: number; available: number; cap: number; toPick: number }
@@ -170,7 +180,10 @@ const rowStock = computed<Map<string, RowStock>>(() => {
     const onHand = onHandForSku(g.sku)
     const reserved = reservedForSku(g.sku)
     const available = Math.max(0, onHand - reserved)
-    const cap = Math.min(g.orderQty, available)
+    // Can't pick more than what's still outstanding (order qty − already picked), nor
+    // more than what's available in stock.
+    const remaining = Math.max(0, g.orderQty - g.pickedQty)
+    const cap = Math.min(remaining, available)
     const selected = isSelected(g.key)
     const desired = qtyOverrides.value[g.key] ?? cap
     const toPick = selected ? Math.min(Math.max(0, desired), cap) : 0
@@ -188,9 +201,12 @@ const someLinesSelected = computed(() => {
   const sel = pickRows.value.filter(g => isSelected(g.key)).length
   return sel > 0 && sel < pickRows.value.length
 })
+const allLinesLocked = computed(() => pickRows.value.length > 0 && pickRows.value.every(g => isLocked(g.key)))
 function toggleAllLines() {
+  if (allLinesLocked.value) return
   const s = new Set(excludedKeys.value)
-  if (allLinesSelected.value) pickRows.value.forEach(g => s.add(g.key))
+  // Locked (marketplace) rows can never be excluded.
+  if (allLinesSelected.value) pickRows.value.forEach(g => { if (!isLocked(g.key)) s.add(g.key) })
   else pickRows.value.forEach(g => s.delete(g.key))
   excludedKeys.value = s
 }
@@ -205,7 +221,6 @@ const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const visibleRows = computed(() => pickRows.value.slice(0, shownCount.value))
 const hasMoreRows = computed(() => shownCount.value < pickRows.value.length)
-const isProgressive = computed(() => pickRows.value.length > PAGE_SIZE)
 
 function loadMoreRows() {
   if (loadingMore.value || !hasMoreRows.value) return
@@ -235,8 +250,10 @@ watch(() => pickRows.value.length, () => {
   nextTick(() => {
     if (itemsScrollEl.value) itemsScrollEl.value.scrollTop = 0
     setupItemsObserver()
+    checkItemsOverflow()
   })
 })
+watch(shownCount, () => nextTick(checkItemsOverflow))
 
 // ─── Footer divider ────────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)
@@ -245,22 +262,30 @@ function checkStageOverflow() {
   const el = stageEl.value
   if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
 }
+// The items table gets an outer border only once its scroll area actually overflows.
+const itemsOverflowing = ref(false)
+function checkItemsOverflow() { const el = itemsScrollEl.value; itemsOverflowing.value = !!el && el.scrollHeight > el.clientHeight + 1 }
 let stageObserver: ResizeObserver | null = null
+let itemsResizeObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
     checkStageOverflow()
+    checkItemsOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
     if (stageEl.value) {
       stageObserver.observe(stageEl.value)
       stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true })
     }
+    itemsResizeObserver = new ResizeObserver(checkItemsOverflow)
+    if (itemsScrollEl.value) itemsResizeObserver.observe(itemsScrollEl.value)
   })
 })
 onUnmounted(() => {
   stageObserver?.disconnect()
+  itemsResizeObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
 })
-watch(selectedOrders, () => nextTick(checkStageOverflow))
+watch(selectedOrders, () => nextTick(() => { checkStageOverflow(); checkItemsOverflow() }))
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -376,16 +401,23 @@ function handleCreate() {
            is irrelevant to picking; lines are ordered by storage location) -->
       <div v-if="selectedOrders.length" class="pk-sku-section">
         <h2 class="pk-section-title">Picking list</h2>
-        <p class="pk-section-desc">Items to collect for this picking list. Set the quantity to pick for each line.</p>
-        <p class="pk-selection-summary">
-          {{ selectedOrders.length }} order{{ selectedOrders.length > 1 ? 's' : '' }}
-          &nbsp;·&nbsp;
-          {{ formatNum(totalSkus) }} SKU{{ totalSkus !== 1 ? 's' : '' }}
-          &nbsp;·&nbsp;
-          {{ formatNum(totalToPick) }} to pick
-        </p>
+        <p class="pk-section-desc">Items to collect for this picking list. Pick any subset of SKUs and set the quantity to pick for each line.</p>
+        <div class="pk-summary">
+          <div class="pk-stat">
+            <span class="pk-stat-label">Orders</span>
+            <span class="pk-stat-val">{{ formatNum(selectedOrders.length) }}</span>
+          </div>
+          <div class="pk-stat">
+            <span class="pk-stat-label">SKU qty</span>
+            <span class="pk-stat-val">{{ formatNum(totalSkus) }}</span>
+          </div>
+          <div class="pk-stat">
+            <span class="pk-stat-label">To pick qty</span>
+            <span class="pk-stat-val">{{ formatNum(totalToPick) }}</span>
+          </div>
+        </div>
 
-        <section class="pk-items-section" :class="{ 'pk-items-section--bordered': isProgressive }">
+        <section class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pk-items-scroll">
             <table class="pk-items">
               <thead>
@@ -396,13 +428,16 @@ function handleCreate() {
                         id="pk-all-lines"
                         :is-checked="allLinesSelected"
                         :is-indeterminate="someLinesSelected"
+                        :is-disabled="allLinesLocked"
                         @change="toggleAllLines"
                       />
                     </span>
                   </th>
                   <th class="pk-th">Product</th>
                   <th class="pk-th">SKU</th>
+                  <th class="pk-th">Storage location</th>
                   <th class="pk-th pk-th--num">Order qty</th>
+                  <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
                   <th class="pk-th pk-th--num">Qty to pick</th>
                   <th class="pk-th">Unit</th>
                 </tr>
@@ -419,6 +454,7 @@ function handleCreate() {
                       <MpCheckbox
                         :id="`pk-line-${row.key}`"
                         :is-checked="isSelected(row.key)"
+                        :is-disabled="isLocked(row.key)"
                         @change="toggleLine(row.key)"
                       />
                     </span>
@@ -427,12 +463,14 @@ function handleCreate() {
                     <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
                   </td>
                   <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
+                  <td class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
                   <td class="pk-td pk-td--num">{{ formatNum(row.orderQty) }}</td>
+                  <td v-if="hasPriorPicks" class="pk-td pk-td--num">{{ formatNum(row.pickedQty) }}</td>
                   <td class="pk-td pk-td--input">
                     <input
                       type="number" min="0" :max="stockOf(row.key).cap" class="pk-qty-input"
                       :value="stockOf(row.key).toPick"
-                      :disabled="!isSelected(row.key)"
+                      :disabled="!isSelected(row.key) || isLocked(row.key)"
                       @input="setQty(row.key, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
                       @click.stop
                     />
@@ -557,7 +595,6 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
 }
-.pk-task-row:last-child .pk-td, .pk-item-row:last-child .pk-td { border-bottom: none; }
 .pk-task-row { cursor: pointer; transition: background 80ms; }
 .pk-task-row:hover .pk-td { background: var(--mp-background-neutral-subtle); }
 .pk-cell-check { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -566,10 +603,10 @@ function handleCreate() {
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
 }
 
-.pk-selection-summary {
-  margin: var(--mp-spacing-3) 0 var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-}
+.pk-summary { display: flex; align-items: flex-start; gap: var(--mp-spacing-10); margin: var(--mp-spacing-4) 0 var(--mp-spacing-5); }
+.pk-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
+.pk-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 
 /* ── Picking list — per-order blocks ─────────────────────────────────────────── */
 .pk-order-block { margin-bottom: var(--mp-spacing-5); }
@@ -597,7 +634,6 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
   border-top: 1px solid var(--mp-border-default);
 }
-.pk-items-section--bordered .pk-items-count { border-top: 1px solid var(--mp-border-default); }
 .pk-items { width: 100%; table-layout: auto; border-collapse: collapse; }
 .pk-items thead .pk-th { position: sticky; top: 0; z-index: 1; }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
@@ -605,14 +641,10 @@ function handleCreate() {
 .pk-th--check { width: var(--mp-sizes-12, 48px); }
 .pk-item-row--off { opacity: 0.45; }
 
-/* Form-table look: column dividers + grey read-only cells, white editable cell */
-.pk-items .pk-th { border-right: 1px solid var(--mp-border-default); }
-.pk-items .pk-th:last-child { border-right: none; }
+/* Form-table look: grey read-only cells, white editable cell */
 .pk-items .pk-td {
-  border-right: 1px solid var(--mp-border-default);
   background: var(--mp-background-neutral-subtle);
 }
-.pk-items .pk-td:last-child { border-right: none; }
 /* Editable qty cell — white, input fills edge-to-edge, focus ring */
 .pk-items .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
 .pk-items .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }

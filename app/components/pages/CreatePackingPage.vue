@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
-  MpButton, MpCheckbox, MpAutocomplete,
+  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { getPickingTask } from '~/data/pickingTasks'
-import { addPackingTask } from '~/data/packingTasks'
-import { outgoingOrders, skuLineQty } from '~/data/outgoing'
-import { CATALOG } from '~/data/catalog'
+import { getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQtyInTask, type PickingTask } from '~/data/pickingTasks'
+import { addPackingTask, getPackingForOrder } from '~/data/packingTasks'
+import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
+import { orderSkuLines } from '~/data/inventory'
 
 const router = useRouter()
 const route  = useRoute()
@@ -24,9 +24,18 @@ const ASSIGNEES = [
   { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
 ]
 
-// ─── Source picking task ────────────────────────────────────────────────────────
-const pickingId = route.query.pickingId as string | undefined
-const pick = computed(() => (pickingId ? getPickingTask(pickingId) : undefined))
+// ─── Source picking task(s) ─────────────────────────────────────────────────────
+// Opened from one picking list (?pickingId) or a bulk selection (?pickingIds=a,b,c).
+// All selected lists are the same warehouse (validated on the Picking index).
+const pickingIds = computed<string[]>(() => {
+  const multi = (route.query.pickingIds as string | undefined)?.split(',').map(s => s.trim()).filter(Boolean)
+  if (multi?.length) return multi
+  const single = route.query.pickingId as string | undefined
+  return single ? [single] : []
+})
+const picks = computed<PickingTask[]>(() => pickingIds.value.map(id => getPickingTask(id)).filter(Boolean) as PickingTask[])
+// Primary list — drives the warehouse + form context; order packing aggregates all lists.
+const pick = computed(() => picks.value[0])
 const warehouseName = computed(() => pick.value?.warehouseName ?? '')
 // Display-only warehouse autocomplete (locked to the picking task's warehouse)
 const warehouseAc = computed(() =>
@@ -41,70 +50,88 @@ watch(assigneeId, (v) => { if (v) assigneeError.value = false })
 const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // ─── Picked items per sales order (what's available to pack) ─────────────────────
-function seedNum(id: string): number { return Number(id.replace(/\D/g, '')) || 0 }
 interface PackLine { key: string; sku: string; product: string; desc: string; img: string; unit: string; order: number; picked: number }
-interface OrderTable { orderId: string; salesNo: string; customer: string; lines: PackLine[] }
+interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; packable: boolean; lines: PackLine[] }
 
 const orderTables = computed<OrderTable[]>(() => {
-  const p = pick.value
-  if (!p) return []
-  // Picking may have been short — only what was picked can be packed. Scale each
-  // SKU's order qty by the picking task's pick ratio.
-  const pickRatio = p.toPickQty > 0 ? p.pickedQty / p.toPickQty : 1
-  return p.salesOrderIds.map((orderId, oi) => {
+  if (!picks.value.length) return []
+  // Union of every selected list's orders, deduped — an order split across lists (or
+  // repeated because two selected lists include it) becomes ONE packing task.
+  const orderNo = new Map<string, string>()
+  for (const p of picks.value) {
+    p.salesOrderIds.forEach((orderId, oi) => {
+      if (!orderNo.has(orderId)) orderNo.set(orderId, p.salesNos[oi] ?? orderId)
+    })
+  }
+  return [...orderNo.entries()].map(([orderId, salesNoFallback]) => {
     const o = outgoingOrders.find(x => x.id === orderId)
-    const n = Math.min(o?.skuQty ?? 0, CATALOG.length)
-    const base = seedNum(orderId)
-    const lines: PackLine[] = []
-    for (let i = 0; i < n; i++) {
-      const item = CATALOG[(base * 7 + i * 13) % CATALOG.length]!
-      const order = skuLineQty(base, i)
-      lines.push({
-        key: `${orderId}::${item.sku}`,
-        sku: item.sku, product: item.name, desc: item.desc, img: item.img,
-        unit: item.unit, order, picked: Math.min(order, Math.round(order * pickRatio)),
-      })
-    }
+    // Pack the order's TOTAL picked across every picking list (an order split over 2
+    // lists still packs as one), so completeness is judged at the order level.
+    const lines: PackLine[] = o
+      ? orderSkuLines(o).map((l) => ({
+          key: `${orderId}::${l.sku}`,
+          sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
+          unit: l.product.unit, order: l.qty,
+          picked: Math.min(l.qty, pickedQtyForOrderSku(orderId, l.sku)),
+        }))
+      : []
+    const isMarketplace = isMarketplaceOrder(o)
+    const fullyPicked = lines.length > 0 && lines.every(l => l.picked >= l.order)
+    const pickedAny = lines.some(l => l.picked > 0)
+    const alreadyPacked = getPackingForOrder(orderId).length > 0
+    // Marketplace ⇒ packable only when fully picked (across lists); others ⇒ any picked
+    // unit. Never twice — an order that already has a packing task is excluded.
+    const packable = !alreadyPacked && pickedAny && (isMarketplace ? fullyPicked : true)
     return {
       orderId,
-      salesNo: p.salesNos[oi] ?? o?.salesNo ?? orderId,
+      salesNo: o?.salesNo ?? salesNoFallback,
       customer: o?.customer ?? '',
+      source: o?.source ?? '',
+      isMarketplace, fullyPicked, alreadyPacked, packable,
       lines,
     }
   })
 })
+const packableTables = computed(() => orderTables.value.filter(t => t.packable))
+// Marketplace orders held back (not fully picked across lists), and orders already packed.
+const blockedTables = computed(() => orderTables.value.filter(t => !t.packable && !t.alreadyPacked && t.isMarketplace && t.lines.some(l => l.picked > 0)))
+const packedTables = computed(() => orderTables.value.filter(t => t.alreadyPacked))
+// Every picking list that contributed to the packable orders (an order split across
+// several lists shows them all, not just the one this form was opened from).
+const sourcePickingNos = computed(() => {
+  const seen = new Map<string, string>()
+  for (const p of picks.value) seen.set(p.id, p.taskNo)
+  for (const t of packableTables.value) {
+    for (const pt of getPickingForOrder(t.orderId)) {
+      if (pt.status !== 'canceled' && orderPickedQtyInTask(pt, t.orderId) > 0) seen.set(pt.id, pt.taskNo)
+    }
+  }
+  return [...seen.values()]
+})
 
-// ─── Supervisor edits: include/exclude a SKU / a whole sales order (default on) ──
-// Packed qty is NOT editable — packing packs exactly what was picked; any shortfall
-// already happened at picking. The supervisor only chooses WHAT to pack.
-const excludedKeys = ref(new Set<string>())
-function isSelected(key: string) { return !excludedKeys.value.has(key) }
-function toggleLine(key: string) {
-  const s = new Set(excludedKeys.value)
-  s.has(key) ? s.delete(key) : s.add(key)
-  excludedKeys.value = s
+// ─── Which sales orders to pack (order-level selection) ──────────────────────────
+// Items are NOT individually selectable — everything picked must be packed. Only WHICH
+// sales orders to pack is a choice, and only when there's more than one; a single
+// packable order is always included (no checkbox).
+const excludedOrderIds = ref(new Set<string>())
+const showOrderSelect = computed(() => packableTables.value.length > 1)
+function isOrderSelected(orderId: string) {
+  return !showOrderSelect.value || !excludedOrderIds.value.has(orderId)
 }
-function tableKeys(t: OrderTable) { return t.lines.map(l => l.key) }
-function allSel(t: OrderTable) { return t.lines.length > 0 && tableKeys(t).every(isSelected) }
-function someSel(t: OrderTable) {
-  const sel = tableKeys(t).filter(isSelected).length
-  return sel > 0 && sel < t.lines.length
-}
-function toggleTable(t: OrderTable) {
-  const s = new Set(excludedKeys.value)
-  if (allSel(t)) tableKeys(t).forEach(k => s.add(k))
-  else tableKeys(t).forEach(k => s.delete(k))
-  excludedKeys.value = s
+function toggleOrder(orderId: string) {
+  const s = new Set(excludedOrderIds.value)
+  s.has(orderId) ? s.delete(orderId) : s.add(orderId)
+  excludedOrderIds.value = s
 }
 
 const orderError = ref(false)
 const selectedTotals = computed(() => {
   let skus = 0, qty = 0, orders = 0
-  for (const t of orderTables.value) {
-    const sel = t.lines.filter(l => isSelected(l.key))
-    if (sel.length) orders++
-    skus += sel.length
-    qty += sel.reduce((a, l) => a + l.picked, 0)
+  for (const t of packableTables.value) {
+    if (!isOrderSelected(t.orderId)) continue
+    orders++
+    skus += t.lines.length
+    qty += t.lines.reduce((a, l) => a + l.picked, 0)
   }
   return { skus, qty, orders }
 })
@@ -116,11 +143,28 @@ function checkStageOverflow() {
   const el = stageEl.value
   if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1
 }
+// Each per-order table gets an outer border only when its OWN scroll area actually
+// overflows (rows exceed its max height) — measured, not by row count.
+const overflowingOrders = ref(new Set<string>())
+const scrollEls = new Map<string, HTMLElement>()
+function setScrollRef(orderId: string, el: unknown) {
+  const node = el as HTMLElement | null
+  if (node) scrollEls.set(orderId, node)
+  else scrollEls.delete(orderId)
+}
+function measureTableOverflow() {
+  const next = new Set<string>()
+  for (const [orderId, el] of scrollEls) {
+    if (el.scrollHeight > el.clientHeight + 1) next.add(orderId)
+  }
+  overflowingOrders.value = next
+}
+function recheckLayout() { checkStageOverflow(); measureTableOverflow() }
 let stageObserver: ResizeObserver | null = null
 onMounted(() => {
   nextTick(() => {
-    checkStageOverflow()
-    stageObserver = new ResizeObserver(checkStageOverflow)
+    recheckLayout()
+    stageObserver = new ResizeObserver(recheckLayout)
     if (stageEl.value) {
       stageObserver.observe(stageEl.value)
       stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true })
@@ -130,7 +174,44 @@ onMounted(() => {
 onUnmounted(() => {
   stageObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
+  tableObservers.forEach(o => o.disconnect())
 })
+watch(orderTables, () => nextTick(recheckLayout))
+
+// ─── Per-table progressive loading (10 rows, lazy-load the rest on scroll) ──────
+const PAGE_SIZE = 10
+const shownCounts = ref<Record<string, number>>({})
+const loadingOrders = ref<Set<string>>(new Set())
+function shownFor(orderId: string) { return shownCounts.value[orderId] ?? PAGE_SIZE }
+function visibleLines(t: OrderTable) { return t.lines.slice(0, shownFor(t.orderId)) }
+function isLoadingMore(orderId: string) { return loadingOrders.value.has(orderId) }
+function loadMore(orderId: string, total: number) {
+  if (loadingOrders.value.has(orderId) || shownFor(orderId) >= total) return
+  loadingOrders.value = new Set(loadingOrders.value).add(orderId)
+  setTimeout(() => {
+    shownCounts.value = { ...shownCounts.value, [orderId]: Math.min(shownFor(orderId) + PAGE_SIZE, total) }
+    const s = new Set(loadingOrders.value); s.delete(orderId); loadingOrders.value = s
+    nextTick(recheckLayout)
+  }, 400)
+}
+const tableObservers = new Map<string, IntersectionObserver>()
+function setSentinelRef(orderId: string, el: unknown) {
+  const prev = tableObservers.get(orderId)
+  if (prev) { prev.disconnect(); tableObservers.delete(orderId) }
+  const node = el as HTMLElement | null
+  const root = scrollEls.get(orderId)
+  if (!node || !root) return
+  const obs = new IntersectionObserver(
+    (entries) => {
+      if (!entries[0]!.isIntersecting) return
+      const t = orderTables.value.find(x => x.orderId === orderId)
+      if (t) loadMore(orderId, t.lines.length)
+    },
+    { root, rootMargin: '0px 0px 120px 0px' },
+  )
+  obs.observe(node)
+  tableObservers.set(orderId, obs)
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -146,20 +227,24 @@ function handleCreate() {
   if (selectedTotals.value.orders === 0) { orderError.value = true; valid = false }
   if (!valid) return
 
-  // One packing task per sales order that has at least one selected SKU.
-  for (const t of orderTables.value) {
-    const sel = t.lines.filter(l => isSelected(l.key))
-    if (!sel.length) continue
+  // One packing task per selected PACKABLE sales order — packs everything picked for it
+  // across ALL its picking lists, and records every contributing picking list.
+  for (const t of packableTables.value) {
+    if (!isOrderSelected(t.orderId) || !t.lines.length) continue
+    const lists = getPickingForOrder(t.orderId)
+      .filter(pt => pt.status !== 'canceled' && orderPickedQtyInTask(pt, t.orderId) > 0)
     addPackingTask({
       salesOrderId:  t.orderId,
       salesNo:       t.salesNo,
       pickingTaskId: p.id,
       pickingTaskNo: p.taskNo,
+      pickingTaskIds: lists.map(x => x.id),
+      pickingTaskNos: lists.map(x => x.taskNo),
       warehouseId:   p.warehouseId,
       warehouseName: p.warehouseName,
       assignee:      assigneeLabel.value,
-      skuQty:        sel.length,
-      toPackQty:     sel.reduce((a, l) => a + l.picked, 0),
+      skuQty:        t.lines.length,
+      toPackQty:     t.lines.reduce((a, l) => a + l.picked, 0),
     })
   }
 
@@ -192,8 +277,7 @@ function handleCreate() {
       </div>
 
       <template v-else>
-        <!-- Source + Warehouse + Assignee -->
-        <p class="pk-source">From <strong>{{ pick.taskNo }}</strong></p>
+        <!-- Warehouse + Assignee -->
         <div class="pk-section pk-grid">
           <MpFormControl id="pc-warehouse" :class="css({ gridColumn: 'span 3' })">
             <MpFormLabel>Warehouse</MpFormLabel>
@@ -237,24 +321,50 @@ function handleCreate() {
         <!-- Items to pack, per sales order -->
         <div class="pk-sku-section">
           <h2 class="pk-section-title">Items to pack</h2>
-          <p class="pk-section-desc">One packing task is created per sales order. Adjust quantities or remove SKUs as needed.</p>
+          <div class="pk-section-meta">
+            <div class="pk-picking-ref">
+              <span class="pk-picking-ref-label">{{ sourcePickingNos.length > 1 ? 'Picking lists' : 'Picking list' }}</span>
+              <span class="pk-picking-ref-val">{{ sourcePickingNos.join(', ') }}</span>
+            </div>
+            <div v-if="selectedTotals.orders" class="pk-picking-ref">
+              <span class="pk-picking-ref-label">Packing tasks</span>
+              <span class="pk-picking-ref-val">{{ formatNum(selectedTotals.orders) }}</span>
+            </div>
+          </div>
+          <p v-if="blockedTables.length" class="pk-tasks-note">
+            Note: {{ blockedTables.map(t => t.salesNo).join(', ') }} ({{ blockedTables.length > 1 ? 'marketplace orders' : 'marketplace order' }}) not fully picked yet across its picking lists, so {{ blockedTables.length > 1 ? 'they’re' : 'it’s' }} not included here — finish picking {{ blockedTables.length > 1 ? 'them' : 'it' }} to pack. You can still save this packing for the order{{ packableTables.length > 1 ? 's' : '' }} below.
+          </p>
+          <p v-if="packedTables.length" class="pk-tasks-note">
+            Note: {{ packedTables.map(t => t.salesNo).join(', ') }} already {{ packedTables.length > 1 ? 'have' : 'has a' }} packing task, so {{ packedTables.length > 1 ? 'they’re' : 'it’s' }} not shown here.
+          </p>
           <p v-if="orderError" class="pk-tasks-error">Select at least one SKU to pack.</p>
 
-          <div v-for="t in orderTables" :key="t.orderId" class="pk-order-block">
+          <div v-for="t in packableTables" :key="t.orderId" class="pk-order-block">
             <div class="pk-order-head">
-              <span @click.stop>
+              <span v-if="showOrderSelect" @click.stop>
                 <MpCheckbox
                   :id="`pc-ord-${t.orderId}`"
-                  :is-checked="allSel(t)"
-                  :is-indeterminate="someSel(t)"
-                  @change="toggleTable(t)"
+                  :is-checked="isOrderSelected(t.orderId)"
+                  @change="toggleOrder(t.orderId)"
                 />
               </span>
               <span class="pk-order-no">{{ t.salesNo }}</span>
               <span v-if="t.customer" class="pk-order-cust">{{ t.customer }}</span>
+              <span v-if="t.source" class="pk-order-source">
+                {{ t.source }}
+                <MpTooltip
+                  v-if="t.isMarketplace"
+                  :id="`pc-mkt-${t.orderId}`"
+                  label="Marketplace orders must be packed in full — their items can't be removed."
+                  placement="top"
+                  use-portal
+                >
+                  <span class="pk-source-info"><MpIcon name="info" size="sm" /></span>
+                </MpTooltip>
+              </span>
             </div>
-            <section class="pk-items-section pk-items-section--bordered">
-              <div class="pk-items-scroll">
+            <section class="pk-items-section" :class="{ 'pk-items-section--bordered': overflowingOrders.has(t.orderId) }">
+              <div :ref="el => setScrollRef(t.orderId, el)" class="pk-items-scroll">
                 <table class="pk-items">
                   <colgroup>
                     <col style="width: 42%" />
@@ -274,22 +384,13 @@ function handleCreate() {
                   </thead>
                   <tbody>
                     <tr
-                      v-for="row in t.lines"
+                      v-for="row in visibleLines(t)"
                       :key="row.key"
                       class="pk-item-row"
-                      :class="{ 'pk-item-row--off': !isSelected(row.key) }"
+                      :class="{ 'pk-item-row--off': !isOrderSelected(t.orderId) }"
                     >
                       <td class="pk-td">
-                        <div class="pk-cell-check">
-                          <span @click.stop>
-                            <MpCheckbox
-                              :id="`pc-line-${row.key}`"
-                              :is-checked="isSelected(row.key)"
-                              @change="toggleLine(row.key)"
-                            />
-                          </span>
-                          <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
-                        </div>
+                        <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
                       </td>
                       <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
                       <td class="pk-td pk-td--num">{{ formatNum(row.order) }}</td>
@@ -298,17 +399,16 @@ function handleCreate() {
                     </tr>
                   </tbody>
                 </table>
+                <div :ref="el => setSentinelRef(t.orderId, el)" class="pk-items-sentinel" aria-hidden="true" />
+                <div v-if="isLoadingMore(t.orderId)" class="pk-loading pk-items-loading">
+                  <MpSpinner size="sm" /> Loading products…
+                </div>
+              </div>
+              <div class="pk-items-count">
+                <span>Showing {{ visibleLines(t).length }} of {{ t.lines.length }} products</span>
               </div>
             </section>
           </div>
-
-          <p v-if="selectedTotals.orders" class="pk-selection-summary">
-            {{ selectedTotals.orders }} packing task{{ selectedTotals.orders > 1 ? 's' : '' }}
-            &nbsp;·&nbsp;
-            {{ formatNum(selectedTotals.skus) }} SKU{{ selectedTotals.skus !== 1 ? 's' : '' }}
-            &nbsp;·&nbsp;
-            {{ formatNum(selectedTotals.qty) }} to pack
-          </p>
         </div>
       </template>
 
@@ -317,7 +417,7 @@ function handleCreate() {
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goPacking">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded :is-disabled="!pick" @click="handleCreate">Save</MpButton>
+      <MpButton variant="primary" is-rounded @click="handleCreate">Save</MpButton>
     </footer>
   </div>
 </template>
@@ -361,6 +461,10 @@ function handleCreate() {
 /* ── Source + form grid ──────────────────────────────────────────────────────── */
 .pk-source { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .pk-source strong { color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
+.pk-section-meta { display: flex; align-items: flex-start; gap: var(--mp-spacing-10); margin: var(--mp-spacing-2) 0 var(--mp-spacing-5); }
+.pk-picking-ref { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
+.pk-picking-ref-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); }
+.pk-picking-ref-val { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); }
 .pk-section { margin-bottom: var(--mp-spacing-6); }
 .pk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--mp-spacing-4); max-width: 558px; }
 .pk-assignee-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -380,17 +484,24 @@ function handleCreate() {
 .pk-section-desc { margin: 0 0 var(--mp-spacing-5); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
 .pk-sku-section { margin-bottom: var(--mp-spacing-6); }
 .pk-tasks-error { margin: 0 0 var(--mp-spacing-3) 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c0392b); }
+.pk-tasks-note { margin: 0 0 var(--mp-spacing-3) 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
 
 /* ── Per-order blocks ────────────────────────────────────────────────────────── */
 .pk-order-block { margin-bottom: var(--mp-spacing-5); }
 .pk-order-head { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-2); }
 .pk-order-no { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pk-order-cust { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-source-info { display: inline-flex; align-items: center; color: var(--mp-icon-default, var(--mp-text-secondary)); cursor: default; }
 
 /* ── Items table (form-table look) ───────────────────────────────────────────── */
 .pk-items-section { display: flex; flex-direction: column; }
 .pk-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
 .pk-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.pk-items-sentinel { height: 1px; }
+.pk-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
+.pk-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
+.pk-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .pk-items { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .pk-cell-check { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .pk-items thead .pk-th { position: sticky; top: 0; z-index: 1; }
@@ -410,12 +521,14 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
 }
-.pk-item-row:last-child .pk-td { border-bottom: none; }
 .pk-item-row--off { opacity: 0.45; }
 .pk-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-.pk-selection-summary { margin: var(--mp-spacing-3) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; margin-top: var(--mp-spacing-4); }
+.pk-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
+.pk-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pk-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Empty state ─────────────────────────────────────────────────────────────── */
 .pk-empty {

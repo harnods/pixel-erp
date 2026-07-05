@@ -9,11 +9,13 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
 import { packingTasksFor, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
-import { addDeliveryTask } from '~/data/deliveryTasks'
+import { addDeliveryTask, orderHasDelivery } from '~/data/deliveryTasks'
 import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
 import { warehouses } from '~/data/warehouses'
+import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTime } from '~/utils/date'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -48,17 +50,23 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Columns ───────────────────────────────────────────────────────────────────
 // Packing is per sales order — one task = one order (no bundling).
 const columns: TableColumn[] = [
-  { key: 'taskNo',        label: 'Number',      width: '180px' },
-  { key: 'salesNo',       label: 'Sales order', width: '200px' },
-  { key: 'warehouseName', label: 'Warehouse',   width: '180px' },
-  { key: 'assignee',      label: 'Assignee',    width: '160px' },
-  { key: 'skuQty',        label: 'SKU qty',     width: '100px', align: 'right' },
-  { key: 'toPackQty',     label: 'To pack',     width: '100px', align: 'right' },
-  { key: 'packedQty',     label: 'Packed qty',  width: '100px', align: 'right' },
-  { key: 'status',        label: 'Status',      width: '140px' },
-  { key: 'startDate',     label: 'Start date',  width: '170px' },
-  { key: 'endDate',       label: 'End date',    width: '190px' },
+  { key: 'taskNo',        label: 'Number',      width: '180px', sortType: 'text' },
+  { key: 'salesNo',       label: 'Sales order', width: '200px', sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse',   width: '180px', sortType: 'text' },
+  { key: 'assignee',      label: 'Assignee',    width: '160px', sortType: 'text' },
+  { key: 'skuQty',        label: 'SKU qty',     width: '100px', align: 'right', sortType: 'number' },
+  { key: 'toPackQty',     label: 'To pack',     width: '100px', align: 'right', sortType: 'number' },
+  { key: 'packedQty',     label: 'Packed qty',  width: '100px', align: 'right', sortType: 'number' },
+  { key: 'status',        label: 'Status',      width: '140px', sortType: 'text' },
+  { key: 'startDate',     label: 'Start date',  width: '170px', sortType: 'date' },
+  { key: 'endDate',       label: 'End date',    width: '190px', sortType: 'date' },
 ]
+// Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
+// the ColumnSettings menu turns them back on.
+const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
+const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — Status + Warehouse (hidden when scoped) ───
 const warehouseFilter = ref('')
@@ -87,7 +95,7 @@ const statusLabel    = computed(() => statusOptions.find(o => o.value === status
 
 const {
   search, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<PackingTask>(baseTasks, {
   perPage: 25,
   filterFn: (row, s) => {
@@ -113,13 +121,23 @@ function agingDays(t: PackingTask) { return packingTaskAgingDays(t) }
 const router = useRouter()
 function viewDetails(row: PackingTask) { router.push(`/packing/${row.id}`) }
 
-// A completed packing task that hasn't been shipped yet can create a shipping
-// (delivery). Each packing task is one sales order → one delivery.
+// A completed packing task can create a delivery only if its sales order doesn't
+// already have a live delivery — one delivery per order (an order already being
+// delivered/shipped can't spawn another, even from a different packing task).
 function canCreateShipping(t: PackingTask) {
-  return t.status === 'completed' && getDeliveryForPackingTask(t.id).length === 0
+  return t.status === 'completed'
+    && getDeliveryForPackingTask(t.id).length === 0
+    && !orderHasDelivery(t.salesOrderId)
+}
+// A completed task whose order already has a delivery can't be selected for the
+// bulk "Create delivery" action — so a duplicate can't be started from bulk.
+function rowNotSelectable(row: Record<string, unknown>) {
+  const t = row as unknown as PackingTask
+  return t.status === 'completed'
+    && (getDeliveryForPackingTask(t.id).length > 0 || orderHasDelivery(t.salesOrderId))
 }
 
-// ── Create shipping → pick an assignee, then make a delivery per packing task ──
+// ── Create delivery → pick an assignee, then make a delivery per packing task ──
 const ASSIGNEES = [
   { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
   { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
@@ -141,19 +159,38 @@ const shipScan = ref('')
 const shipCourier = ref('')
 const shipTracking = ref('')
 const shipSingle = computed(() => shipQueue.value.length === 1)
+const SHIP_COURIERS = ['JNE', 'SiCepat', 'J&T Express', 'AnterAja', 'Internal fleet']
+function marketplaceShipInfo(salesNo: string) {
+  let h = 0; for (const c of salesNo) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return { courier: SHIP_COURIERS[h % 4]!, trackingNo: 'SD' + (1_000_000 + (h % 9_000_000)) }
+}
+// A single marketplace shipment already carries courier + tracking (fixed) → show them
+// locked; other single shipments let the user fill them in (not required).
+const shipHasFixedCourier = computed(() =>
+  shipSingle.value && isMarketplaceOrder(outgoingOrders.find(o => o.id === shipQueue.value[0]?.salesOrderId)),
+)
 
 function openShipModal(tasks: PackingTask[]) {
   shipQueue.value = tasks
   shipAssigneeId.value = ''
   shipAssigneeError.value = false
-  shipScan.value = ''
-  shipCourier.value = ''
-  shipTracking.value = ''
+  const single = tasks.length === 1 ? tasks[0] : undefined
+  const order = single ? outgoingOrders.find(o => o.id === single.salesOrderId) : undefined
+  if (single && isMarketplaceOrder(order)) {
+    const info = marketplaceShipInfo(single.salesNo)
+    shipCourier.value = info.courier
+    shipTracking.value = info.trackingNo
+    shipScan.value = info.trackingNo
+  } else {
+    shipScan.value = ''
+    shipCourier.value = ''
+    shipTracking.value = ''
+  }
   shipModalOpen.value = true
 }
-const SHIP_COURIERS = ['JNE', 'SiCepat', 'J&T Express', 'AnterAja', 'Internal fleet']
 // Scanning a shipping label (issued by OMS) → auto-fills courier + tracking (dummy random).
 function applyShipScan() {
+  if (shipHasFixedCourier.value) return // fixed
   shipCourier.value = SHIP_COURIERS[Math.floor(Math.random() * SHIP_COURIERS.length)]!
   shipTracking.value = 'SD' + Math.floor(1_000_000 + Math.random() * 9_000_000)
   if (!shipScan.value.trim()) shipScan.value = shipTracking.value
@@ -164,21 +201,35 @@ function bulkCreateShipping(selectedRows: Set<number>, deselectAll: () => void) 
   const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as PackingTask[]
   const eligible = rows.filter(canCreateShipping)
   deselectAll()
-  if (eligible.length) openShipModal(eligible)
+  if (eligible.length) {
+    openShipModal(eligible)
+  } else {
+    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' })
+  }
 }
 function confirmShipping() {
   if (!shipAssigneeId.value) { shipAssigneeError.value = true; return }
+  let created = 0
   for (const t of shipQueue.value) {
+    // Skip orders that already have a live delivery — including duplicates within
+    // this same batch (addDeliveryTask updates the store immediately).
+    if (orderHasDelivery(t.salesOrderId)) continue
+    created++
     addDeliveryTask({
       salesOrderId: t.salesOrderId, salesNo: t.salesNo,
       packingTaskId: t.id, packingTaskNo: t.taskNo,
       warehouseId: t.warehouseId, warehouseName: t.warehouseName,
       assignee: shipAssigneeLabel.value, skuQty: t.skuQty, toShipQty: t.packedQty,
+      deliveryMethod: (shipSingle.value && (shipHasFixedCourier.value || shipCourier.value.trim())) ? 'online' : (shipSingle.value ? 'self' : 'online'),
       courier: shipSingle.value ? (shipCourier.value.trim() || undefined) : undefined,
       trackingNo: shipSingle.value ? (shipTracking.value.trim() || undefined) : undefined,
     })
   }
   shipModalOpen.value = false
+  if (!created) {
+    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' })
+    return
+  }
   router.push({ path: '/barang-keluar', query: { tab: 'Delivery', saved: '1' } })
 }
 
@@ -187,7 +238,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 <template>
   <ErpTablePage
-    :columns="columns"
+    :columns="visibleColumns"
     :rows="(paginated as Record<string, unknown>[])"
     :total="total"
     :current-page="currentPage"
@@ -197,9 +248,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :loading="loading"
     :has-active-filter="hasActiveFilter"
     has-checkbox
+    :row-disabled="rowNotSelectable"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
     <!-- ── Bulk actions ── -->
@@ -208,7 +262,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
         @click="bulkCreateShipping(selectedRows as Set<number>, deselectAll)"
       >
-        Create shipping
+        Create delivery
       </button>
     </template>
     <!-- ── Filter bar ── -->
@@ -255,6 +309,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
+          <ColumnSettingsMenu id="pack-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pack-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -334,7 +389,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem
               v-if="canCreateShipping(row as unknown as PackingTask)"
               @click="createShipping(row as unknown as PackingTask)"
-            >Create shipping</MpPopoverListItem>
+            >Create delivery</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -366,14 +421,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </MpPopoverContent>
   </MpPopover>
 
-  <!-- ── Create shipping: pick assignee ── -->
+  <!-- ── Create delivery: pick assignee ── -->
   <MpModal id="pack-ship-modal" :is-open="shipModalOpen" size="lg" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="shipModalOpen = false">
     <MpModalContent>
-      <MpModalHeader>Create shipping<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Create delivery<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <p class="ship-modal-note">
-          {{ shipQueue.length }} shipment{{ shipQueue.length > 1 ? 's' : '' }} will be created (one per sales order).
-        </p>
         <MpFormControl id="pack-ship-assignee" is-required :is-invalid="shipAssigneeError" :class="css({ marginBottom: shipSingle ? '16px' : '0' })">
           <MpFormLabel>Assignee</MpFormLabel>
           <MpAutocomplete
@@ -388,23 +440,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           />
         </MpFormControl>
 
-        <!-- Courier + tracking (single shipment) — scan label or enter manually -->
+        <!-- Courier + AWB (single shipment): fixed & disabled when the order carries
+             them, else the user can fill them (not required) -->
         <template v-if="shipSingle">
-          <MpFormControl id="pack-ship-scan" :class="css({ marginBottom: '16px' })">
+          <MpFormControl v-if="!shipHasFixedCourier" id="pack-ship-scan" :class="css({ marginBottom: '16px' })">
             <MpFormLabel>Scan shipping label</MpFormLabel>
             <div class="ship-scan-field">
               <MpInput id="pack-ship-scan-input" v-model="shipScan" placeholder="Scan or paste label…" is-full-width @keyup.enter="applyShipScan" />
-              <MpButton variant="secondary" is-rounded @click="applyShipScan">Apply</MpButton>
+              <MpButton variant="secondary" is-rounded class="erp-outline-btn" @click="applyShipScan">Apply</MpButton>
             </div>
           </MpFormControl>
           <div class="ship-modal-grid">
             <MpFormControl id="pack-ship-courier">
               <MpFormLabel>Courier</MpFormLabel>
-              <MpInput id="pack-ship-courier-input" v-model="shipCourier" placeholder="e.g. JNE, SiCepat" is-full-width />
+              <MpInput id="pack-ship-courier-input" v-model="shipCourier" placeholder="e.g. JNE, SiCepat" is-full-width :is-disabled="shipHasFixedCourier" />
             </MpFormControl>
             <MpFormControl id="pack-ship-tracking">
-              <MpFormLabel>Tracking no.</MpFormLabel>
-              <MpInput id="pack-ship-tracking-input" v-model="shipTracking" placeholder="e.g. SD0009583" is-full-width />
+              <MpFormLabel>AWB / tracking no.</MpFormLabel>
+              <MpInput id="pack-ship-tracking-input" v-model="shipTracking" placeholder="e.g. SD0009583" is-full-width :is-disabled="shipHasFixedCourier" />
             </MpFormControl>
           </div>
         </template>
@@ -412,7 +465,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <MpModalFooter>
         <div class="ship-modal-footer">
           <MpButton variant="ghost" is-rounded @click="shipModalOpen = false">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="confirmShipping">Create shipping</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmShipping">Create delivery</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -499,8 +552,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .demo-fab:hover { opacity: 0.9; }
 .demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.ship-modal-note { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ship-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+/* secondary/outline button: gray-bold border + default text */
+:deep(.erp-outline-btn) { border-color: var(--mp-border-bold) !important; color: var(--mp-text-default) !important; }
+.ship-modal-note { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
 .ship-scan-field { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .ship-scan-field > :first-child { flex: 1; min-width: 0; }
 .ship-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }

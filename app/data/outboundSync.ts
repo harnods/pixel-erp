@@ -12,7 +12,7 @@ import { deliveryTasks } from "./deliveryTasks";
  * state so the Outgoing list and a row's linked transactions never contradict:
  *
  *   - shipped (delivery handed over): fully → completed, short → partially shipped
- *   - has any task underway (picking in progress / picked / packing / pending pickup) → in progress
+ *   - has any task underway (picking in progress / picked / packing / ready to ship) → in progress
  *   - only an open picking task, or no task yet → open
  *   - canceled stays canceled
  */
@@ -34,7 +34,7 @@ export function syncOutboundOrderStatuses(): void {
     } else if (
       packs.length ||
       dels.length ||
-      picks.some((p) => p.status === "in progress" || p.status === "completed")
+      picks.some((p) => p.status === "in progress" || p.status === "partially picked" || p.status === "completed")
     ) {
       o.status = "in progress";
     } else {

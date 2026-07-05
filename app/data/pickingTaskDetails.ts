@@ -1,9 +1,11 @@
 import { getPickingTask, pickingLinesOf, pickingTasks, type PickingTask } from "./pickingTasks";
 import { packingTasks, type PackingTask } from "./packingTasks";
+import { binForSku } from "./warehouseDetails";
 
 /** Enriched picking line for the detail / pick pages. */
 export interface PickLineItem {
   key: string;
+  orderId: string;
   salesNo: string;
   productName: string;
   productDesc: string;
@@ -18,12 +20,13 @@ export interface PickLineItem {
 export function getPickingLineItems(task: PickingTask): PickLineItem[] {
   return pickingLinesOf(task).map((l) => ({
     key: l.key,
+    orderId: l.orderId,
     salesNo: l.salesNo,
     productName: l.product,
     productDesc: l.desc,
     skuCode: l.sku,
     image: l.img,
-    binLocation: l.bin,
+    binLocation: binForSku(task.warehouseId, l.sku),
     expectedQty: l.qty,
     pickedQty: task.pickedByKey?.[l.key] ?? 0,
     unit: l.unit,
@@ -37,7 +40,11 @@ export function allPickingTasksFlat(): Array<{ id: string; taskNo: string; sales
 
 /** Packing tasks created from this picking task. */
 export function getPackingForPickingTask(taskId: string): PackingTask[] {
-  return packingTasks.filter((p) => p.pickingTaskId === taskId);
+  // Match any packing task this picking list contributed to (an order split across
+  // several lists records them all in pickingTaskIds).
+  return packingTasks.filter(
+    (p) => p.pickingTaskId === taskId || (p.pickingTaskIds?.includes(taskId) ?? false),
+  );
 }
 
 export { getPickingTask };

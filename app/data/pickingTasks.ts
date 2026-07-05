@@ -1,8 +1,8 @@
 import { reactive } from "vue";
 import { warehouses, picForWarehouse } from "./warehouses";
-import { outgoingOrders, pickableOrders, canCreatePicking, skuLineQty, shippedSeeds, type OutgoingOrder } from "./outgoing";
-import { CATALOG } from "./catalog";
-import { BINS } from "./receiptLineItems";
+import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, type OutgoingOrder } from "./outgoing";
+import { orderSkuLines } from "./inventory";
+import { binForSku } from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
@@ -43,7 +43,7 @@ export interface PickingTask {
   toPickQty: number;
   /** units actually picked so far (0 ≤ pickedQty ≤ toPickQty) */
   pickedQty: number;
-  status: "open" | "in progress" | "completed" | "canceled";
+  status: "open" | "in progress" | "partially picked" | "completed" | "canceled";
   startDate?: string;
   endDate?: string;
   /** planned pick lines (per SKU per order) */
@@ -56,69 +56,69 @@ const PICKING_WAREHOUSES = warehouses.filter(
   (w) => !w.isDefault && w.status === "active",
 );
 
-function seedNum(id: string): number { return Number(id.replace(/\D/g, "")) || 0; }
-function hashStr(s: string): number {
-  let h = 0;
-  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return h;
-}
-function binForSku(sku: string): string { return BINS[hashStr(sku) % BINS.length]!; }
-
-/** Build the default pick lines (all SKUs of the given orders). */
+/** Build the default pick lines (all SKUs of the given orders). SKUs come from the
+ *  product DB, drawn from what each order's warehouse actually stocks, so every pick
+ *  line maps to a real bin. */
 export function buildPickingLines(salesOrderIds: string[], salesNos: string[]): PickingLine[] {
   const lines: PickingLine[] = [];
   salesOrderIds.forEach((orderId, oi) => {
     const o = outgoingOrders.find((x) => x.id === orderId);
     if (!o) return;
-    const n = Math.min(o.skuQty, CATALOG.length);
-    const base = seedNum(orderId);
-    for (let i = 0; i < n; i++) {
-      const item = CATALOG[(base * 7 + i * 13) % CATALOG.length]!;
+    for (const l of orderSkuLines(o)) {
+      const p = l.product;
       lines.push({
-        key: `${orderId}::${item.sku}`,
+        key: `${orderId}::${p.sku}`,
         orderId,
         salesNo: salesNos[oi] ?? o.salesNo,
-        sku: item.sku, product: item.name, desc: item.desc, img: item.img,
-        unit: item.unit, bin: binForSku(item.sku), qty: skuLineQty(base, i),
+        sku: p.sku, product: p.name, desc: p.desc, img: p.img,
+        unit: p.unit, bin: binForSku(o.warehouseId, p.sku), qty: l.qty,
       });
     }
   });
   return lines;
 }
 
-// Stage status assigned to a seed task — mostly Open, some In progress / Completed,
-// the occasional Canceled, so all states are demonstrable (deterministic).
-const SEED_STATUSES: PickingTask["status"][] = [
-  "open", "in progress", "open", "completed", "open", "in progress", "completed", "canceled",
-];
-
 // Fraction picked vs planned, per seed status (in progress = partway; completed =
 // usually full, sometimes a short pick).
 const PICK_FRACTIONS = [0.4, 0.6, 0.3, 0.7, 0.5];
 const SHORT_PICK_FRACTIONS = [0.6, 0.75, 0.85, 0.9, 0.7];
 function pickRatioFor(status: PickingTask["status"], idx: number): number {
-  if (status === "completed") return idx % 3 === 0 ? SHORT_PICK_FRACTIONS[idx % SHORT_PICK_FRACTIONS.length]! : 1;
+  if (status === "completed") return 1; // fully picked
+  if (status === "partially picked") return SHORT_PICK_FRACTIONS[idx % SHORT_PICK_FRACTIONS.length]!; // finished short
   if (status === "in progress") return PICK_FRACTIONS[idx % PICK_FRACTIONS.length]!;
   return 0; // open / canceled
 }
 
-// ── Seed: bundle each warehouse's pickable orders into picking tasks ──────────────
+// ── Seed: a small, CURATED demo set — one picking list per status in a single
+// warehouse, consuming only a few orders. Deliberately leaves MOST orders un-picked
+// (so "Create picking" is demoable) and the FINISHED lists un-packed (so the bulk
+// "Create packing" flow is demoable). The pre-shipped chain (below) still populates
+// the Completed / Delivery stages so those tabs aren't empty. ──
 function seedTasks(): PickingTask[] {
   const out: PickingTask[] = [];
   let seq = 30090;
-  PICKING_WAREHOUSES.forEach((wh, p) => {
-    const orders = pickableOrders([wh.id]);
-    if (!orders.length) return;
-    const bundleSize = 2 + (p % 2); // 2 or 3 orders per task
-    for (let start = 0, t = 0; start < orders.length; start += bundleSize, t++) {
-      const bundle = orders.slice(start, start + bundleSize);
-      const status = SEED_STATUSES[(p + t) % SEED_STATUSES.length]!;
-      const lines = buildPickingLines(bundle.map((o) => o.id), bundle.map((o) => o.salesNo));
+  // One picking list per status, each consuming ONE order. Allocate from the richest
+  // warehouse first (so the finished/packable lists — partially picked + completed —
+  // land in the SAME warehouse and the bulk "Create packing" demo works), then borrow
+  // from other warehouses for the remaining statuses. No warehouse has 5 pickable
+  // orders on its own, so the canceled list may sit in another warehouse — fine, it
+  // isn't packable anyway.
+  const cands = PICKING_WAREHOUSES.map((w) => ({ w, orders: pickableOrders([w.id]) }))
+    .sort((a, b) => b.orders.length - a.orders.length);
+  const pool = cands.flatMap((c) => c.orders); // richest warehouse's orders come first
+  if (pool.length) {
+    const plan: PickingTask["status"][] = ["partially picked", "completed", "open", "in progress", "canceled"];
+    plan.forEach((status, t) => {
+      const o = pool[t];
+      if (!o) return;
+      const lines = buildPickingLines([o.id], [o.salesNo]);
       const toPickQty = lines.reduce((s, l) => s + l.qty, 0);
-      const ratio = pickRatioFor(status, p + t);
+      const ratio = pickRatioFor(status, t);
+      const started = status !== "open" && status !== "canceled";
+      const finished = status === "completed" || status === "partially picked";
       let pickedByKey: Record<string, number> | undefined;
       let pickedQty = 0;
-      if (status === "in progress" || status === "completed") {
+      if (started) {
         pickedByKey = {};
         for (const l of lines) {
           const q = Math.min(l.qty, Math.max(0, Math.round(l.qty * ratio)));
@@ -126,26 +126,26 @@ function seedTasks(): PickingTask[] {
           pickedQty += q;
         }
       }
-      const dayOffset = -(((p + t) * 3) % 12) - 1;
+      const dayOffset = -(t * 2) - 1;
       out.push({
-        id: `pick-${p}-${t}`,
+        id: `pick-demo-${t}`,
         taskNo: `Picking #${seq++}`,
-        salesOrderIds: bundle.map((o) => o.id),
-        salesNos: bundle.map((o) => o.salesNo),
-        warehouseId: wh.id,
-        warehouseName: wh.name,
-        assignee: picForWarehouse(wh.id, p + t),
+        salesOrderIds: [o.id],
+        salesNos: [o.salesNo],
+        warehouseId: o.warehouseId,
+        warehouseName: o.warehouseName,
+        assignee: picForWarehouse(o.warehouseId, t),
         skuQty: lines.length,
         toPickQty,
         pickedQty,
         status,
-        startDate: status === "open" || status === "canceled" ? undefined : isoAt(dayOffset, 8, 30),
-        endDate: status === "completed" ? isoAt(dayOffset, 11, 15) : undefined,
+        startDate: started ? isoAt(dayOffset, 8, 30) : undefined,
+        endDate: finished ? isoAt(dayOffset, 11, 15) : undefined,
         lines,
         pickedByKey,
       });
-    }
-  });
+    });
+  }
   out.push(...seedShippedPicks(seq));
   return out;
 }
@@ -248,10 +248,11 @@ export function pickingTasksFor(warehouseIds?: string[]): PickingTask[] {
     : pickingTasks;
 }
 
-/** Badge count for the Picking stage = unfinished picking tasks (scoped). */
+/** Badge count for the Picking stage = tasks still being picked (open / in progress).
+ *  Finished tasks (completed or partially picked) and canceled ones don't count. */
 export function pickingOpenCount(warehouseIds?: string[]): number {
   return pickingTasksFor(warehouseIds).filter(
-    (t) => t.status !== "completed" && t.status !== "canceled",
+    (t) => t.status === "open" || t.status === "in progress",
   ).length;
 }
 
@@ -260,12 +261,34 @@ export function getPickingForOrder(orderId: string): PickingTask[] {
   return pickingTasks.filter((t) => t.salesOrderIds.includes(orderId));
 }
 
-/** SKU line keys for an order already covered by an existing picking task. */
+/**
+ * SKU line keys for an order that are already "covered" — i.e. nothing left to pick.
+ * A key is covered when it's either still on an UNFINISHED picking task (open / in
+ * progress, so no duplicate list), or it has been FULLY picked. The un-picked remainder
+ * of a finished "partially picked" task is NOT covered → it can go on a new picking list.
+ */
 function pickedKeysForOrder(orderId: string): Set<string> {
-  const keys = new Set<string>();
-  for (const t of getPickingForOrder(orderId))
-    for (const l of pickingLinesOf(t)) if (l.orderId === orderId) keys.add(l.key);
-  return keys;
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  const demand = new Map<string, number>(); // planned qty per SKU line
+  if (order) for (const l of buildPickingLines([orderId], [order.salesNo])) demand.set(l.key, l.qty);
+
+  const picked = new Map<string, number>();
+  const onActive = new Set<string>();
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    const finished = t.status === "completed" || t.status === "partially picked";
+    for (const l of pickingLinesOf(t)) {
+      if (l.orderId !== orderId) continue;
+      if (!finished) onActive.add(l.key);
+      picked.set(l.key, (picked.get(l.key) ?? 0) + (t.pickedByKey?.[l.key] ?? 0));
+    }
+  }
+
+  const covered = new Set<string>();
+  for (const [key, need] of demand) {
+    if (onActive.has(key) || (picked.get(key) ?? 0) >= need) covered.add(key);
+  }
+  return covered;
 }
 
 /**
@@ -280,6 +303,18 @@ export function canPickOrder(order: OutgoingOrder): boolean {
 
 export function getPickingTask(taskId: string): PickingTask | undefined {
   return pickingTasks.find((t) => t.id === taskId);
+}
+
+/** Total units already picked for one order+SKU across every (non-canceled) picking
+ *  task — so a NEW picking list only asks for the remaining qty. */
+export function pickedQtyForOrderSku(orderId: string, sku: string): number {
+  const key = `${orderId}::${sku}`;
+  let sum = 0;
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    sum += t.pickedByKey?.[key] ?? 0;
+  }
+  return sum;
 }
 
 /** The pick lines of a task (stored, or generated for seed tasks without them). */
@@ -327,13 +362,77 @@ export function savePickingDraft(taskId: string, picked: Record<string, number>)
   persistPicking();
 }
 
-/** Operator clicks "End picking" → completed + end timestamp. */
+/**
+ * Operator clicks "Finish picking" → end timestamp. Fully picked ⇒ "completed";
+ * anything less ⇒ "partially picked" (allowed for ANY order, marketplace or not — the
+ * marketplace-completeness rule is enforced only when creating the packing task).
+ */
 export function endPicking(taskId: string, picked: Record<string, number>): void {
   const t = getPickingTask(taskId);
   if (!t) return;
   t.pickedByKey = { ...picked };
   t.pickedQty = sumPicked(t.pickedByKey);
-  t.status = "completed";
+  t.status = t.pickedQty >= t.toPickQty ? "completed" : "partially picked";
   t.endDate = nowIso();
   persistPicking();
+}
+
+/** True once picking is finished (fully or partially) — ready for a packing task. */
+export function isPickingFinished(t: PickingTask): boolean {
+  return t.status === "completed" || t.status === "partially picked";
+}
+/** True when every planned unit has been picked. */
+export function isFullyPicked(t: PickingTask): boolean {
+  return t.pickedQty >= t.toPickQty;
+}
+/** Does this task bundle any marketplace order? */
+export function hasMarketplaceOrder(t: PickingTask): boolean {
+  return t.salesOrderIds.some((id) => {
+    const o = outgoingOrders.find((x) => x.id === id);
+    return o ? isMarketplaceOrder(o) : false;
+  });
+}
+/** Units picked for one order's lines within this task. */
+export function orderPickedQtyInTask(t: PickingTask, orderId: string): number {
+  return pickingLinesOf(t)
+    .filter((l) => l.orderId === orderId)
+    .reduce((s, l) => s + (t.pickedByKey?.[l.key] ?? 0), 0);
+}
+/** Every line of one order picked to its full planned qty (within this task). */
+export function orderFullyPickedInTask(t: PickingTask, orderId: string): boolean {
+  const lines = pickingLinesOf(t).filter((l) => l.orderId === orderId);
+  return lines.length > 0 && lines.every((l) => (t.pickedByKey?.[l.key] ?? 0) >= l.qty);
+}
+/** Total planned demand for an order (sum of its SKU line qtys). */
+export function orderDemand(orderId: string): number {
+  const o = outgoingOrders.find((x) => x.id === orderId);
+  return o ? orderSkuLines(o).reduce((s, l) => s + l.qty, 0) : 0;
+}
+/** Units picked for an order ACROSS ALL its picking lists (not just one task). */
+export function orderPickedTotal(orderId: string): number {
+  const o = outgoingOrders.find((x) => x.id === orderId);
+  if (!o) return 0;
+  return orderSkuLines(o).reduce((s, l) => s + pickedQtyForOrderSku(orderId, l.sku), 0);
+}
+/** Order fully picked once its picked total across every list meets its demand. */
+export function orderFullyPickedAcrossTasks(orderId: string): boolean {
+  const demand = orderDemand(orderId);
+  return demand > 0 && orderPickedTotal(orderId) >= demand;
+}
+/**
+ * Order ids in this task that CAN become a packing task right now — evaluated at the
+ * ORDER level across all picking lists (an order split over 2 lists still counts):
+ * marketplace ⇒ fully picked across lists; non-marketplace ⇒ at least one unit picked.
+ * (Whether the order already HAS a packing task is checked by the caller.)
+ */
+export function packableOrderIds(t: PickingTask): string[] {
+  return t.salesOrderIds.filter((id) => {
+    const o = outgoingOrders.find((x) => x.id === id);
+    const marketplace = o ? isMarketplaceOrder(o) : false;
+    return marketplace ? orderFullyPickedAcrossTasks(id) : orderPickedTotal(id) > 0;
+  });
+}
+/** Can a packing task be created from this picking task yet? (any order packable) */
+export function canCreatePackingFrom(t: PickingTask): boolean {
+  return isPickingFinished(t) && packableOrderIds(t).length > 0;
 }

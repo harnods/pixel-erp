@@ -3,11 +3,11 @@ import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, MpBadge,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpRadio, css,
+  MpModalOverlay, MpModalCloseButton, MpRadio, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { warehouses } from '~/data'
+import { warehouses, archiveWarehouses, unarchiveWarehouses } from '~/data'
 import type { Warehouse } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -18,12 +18,12 @@ function goEdit(id: string) { router.push(`/warehouses/${id}/edit`) }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const allColumns: TableColumn[] = [
-  { key: 'name',        label: 'Name',         width: '155px' },
-  { key: 'code',        label: 'Code',         width: '78px'  },
-  { key: 'skuTotal',    label: 'SKU qty',      width: '78px', align: 'right' },
+  { key: 'name',        label: 'Name',         width: '155px', sortType: 'text' },
+  { key: 'code',        label: 'Code',         width: '78px',  sortType: 'text' },
+  { key: 'skuTotal',    label: 'SKU qty',      width: '78px', align: 'right', sortType: 'number' },
   { key: 'pics',        label: 'PIC',          width: '108px' },
-  { key: 'address',     label: 'Address',      width: '90px'  },
-  { key: 'status',      label: 'Status',       width: '90px'  },
+  { key: 'address',     label: 'Address',      width: '90px',  sortType: 'text' },
+  { key: 'status',      label: 'Status',       width: '90px',  sortType: 'text' },
   { key: 'lastUpdated', label: 'Last updated', width: '120px' },
 ]
 
@@ -52,6 +52,9 @@ const columns = computed<TableColumn[]>(() =>
   allColumns.filter(col => columnVisibility[col.key]),
 )
 
+// The sort menu's "Hide column" flips visibility off; the Column settings popover turns it back on.
+function hideColumn(key: string) { columnVisibility[key] = false }
+
 function formatUpdatedAt(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -63,7 +66,7 @@ const rows = computed<Warehouse[]>(() => warehouses)
 
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
-  setPage, setPerPage, sortKey, sortDir, toggleSort,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Warehouse>(rows, {
   perPage: 25,
   filterFn: (row, s, status) =>
@@ -117,6 +120,19 @@ function closeArchiveModal() {
   warehouseToArchive.value = null
 }
 
+function confirmArchive() {
+  if (!warehouseToArchive.value) return
+  archiveWarehouses([warehouseToArchive.value.id])
+  toast.notify({ variant: 'success', title: `${warehouseToArchive.value.name} archived` })
+  closeArchiveModal()
+}
+
+/** Unarchive is a low-friction, reversible action — no confirmation needed. */
+function unarchive(row: Warehouse) {
+  unarchiveWarehouses([row.id])
+  toast.notify({ variant: 'success', title: `${row.name} unarchived` })
+}
+
 // ─── Bulk delete confirmation ─────────────────────────────────────────────────
 const bulkDeleteModalOpen = ref(false)
 const bulkDeleteCount = ref(0)
@@ -132,15 +148,28 @@ function closeBulkDeleteModal() {
 
 // ─── Bulk archive confirmation ────────────────────────────────────────────────
 const bulkArchiveModalOpen = ref(false)
-const bulkArchiveCount = ref(0)
+const bulkArchiveIds = ref<string[]>([])
+const bulkArchiveCount = computed(() => bulkArchiveIds.value.length)
+let bulkArchiveDeselect: (() => void) | null = null
 
-function openBulkArchiveModal(count: number) {
-  bulkArchiveCount.value = count
+function openBulkArchiveModal(sel: Set<number>, deselectAll: () => void) {
+  bulkArchiveIds.value = [...sel]
+    .map((i) => (paginated.value[i] as unknown as Warehouse)?.id)
+    .filter(Boolean) as string[]
+  bulkArchiveDeselect = deselectAll
   bulkArchiveModalOpen.value = true
 }
 
 function closeBulkArchiveModal() {
   bulkArchiveModalOpen.value = false
+}
+
+function confirmBulkArchive() {
+  const count = bulkArchiveCount.value
+  archiveWarehouses(bulkArchiveIds.value)
+  toast.notify({ variant: 'success', title: `${count} warehouse${count !== 1 ? 's' : ''} archived` })
+  bulkArchiveDeselect?.()
+  closeBulkArchiveModal()
 }
 
 // ─── Export modal ─────────────────────────────────────────────────────────────
@@ -197,6 +226,15 @@ function clearFilters() {
   search.value = ''
   statusFilter.value = 'active'
 }
+
+// ─── Empty state — illustrated (matches every other index page); the status tab
+// (Active/Archived) has its own tailored copy, not the generic "adjust your filters"
+// text (that's reserved for an actual search miss, via hasActiveFilter below). ────────
+const emptyIllustration = '/illustrations/empty-folder.png'
+const emptyTitle = computed(() => statusFilter.value === 'archived' ? 'No archived warehouses' : 'No warehouses')
+const emptyDesc = computed(() =>
+  statusFilter.value === 'archived' ? 'Warehouses you archive will appear here.' : 'Warehouses will appear here once created.',
+)
 </script>
 
 <template>
@@ -209,7 +247,7 @@ function clearFilters() {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     :loading="loading"
-    :has-active-filter="!!search || (statusFilter !== 'active')"
+    :has-active-filter="!!search"
     has-checkbox
     :row-disabled="isRowDisabled"
     bulk-label="warehouse"
@@ -217,15 +255,17 @@ function clearFilters() {
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
+    @sort-change="setSort"
+    @hide-column="hideColumn"
     @clear-filters="clearFilters"
     @selection-change="count => selectedCount = count"
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions="{ count, deselectAll }">
+    <template #bulk-actions="{ count, selectedRows, deselectAll }">
       <button
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-        @click="openBulkArchiveModal(count)"
+        @click="openBulkArchiveModal(selectedRows as Set<number>, deselectAll)"
       >
         Archive
       </button>
@@ -328,7 +368,7 @@ function clearFilters() {
             v-model="search"
             class="filter-search-input"
             type="text"
-            placeholder="Search..."
+            placeholder="Search warehouse name..."
           />
         </div>
       </div>
@@ -406,7 +446,7 @@ function clearFilters() {
               >
                 Archive
               </MpPopoverListItem>
-              <MpPopoverListItem v-else>
+              <MpPopoverListItem v-else @click="unarchive(row as unknown as Warehouse)">
                 Unarchive
               </MpPopoverListItem>
               <MpPopoverListItem
@@ -420,6 +460,15 @@ function clearFilters() {
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
+    </template>
+
+    <!-- ── Full empty state (no active-search result — status tab genuinely has none) ── -->
+    <template #empty>
+      <div class="empty-full">
+        <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+        <p class="empty-full-title">{{ emptyTitle }}</p>
+        <p class="empty-full-desc">{{ emptyDesc }}</p>
+      </div>
     </template>
 
   </ErpTablePage>
@@ -444,7 +493,7 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeDeleteModal">Cancel</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="closeDeleteModal">Delete</button>
         </div>
       </MpModalFooter>
@@ -482,8 +531,8 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeArchiveModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="closeArchiveModal">Archive</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeArchiveModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">Archive</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -510,8 +559,8 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeBulkArchiveModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="closeBulkArchiveModal">Archive</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkArchiveModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmBulkArchive">Archive</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -625,7 +674,7 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeExportModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeExportModal">Cancel</button>
           <button class="btn-enterprise btn-enterprise--primary" @click="closeExportModal">Export</button>
         </div>
       </MpModalFooter>
@@ -653,7 +702,7 @@ function clearFilters() {
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeBulkDeleteModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkDeleteModal">Cancel</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="closeBulkDeleteModal">Delete</button>
         </div>
       </MpModalFooter>
@@ -663,6 +712,12 @@ function clearFilters() {
 </template>
 
 <style scoped>
+/* Full empty state (illustrated — matches every other index page) */
+.empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
 /* Filter bar layout — reused from other index pages */
 .filter-left {
   display: flex;

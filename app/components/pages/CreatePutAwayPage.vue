@@ -648,7 +648,7 @@ function handleCreate() {
       <MpModalFooter>
         <div class="modal-footer-btns">
           <MpButton variant="ghost" is-rounded @click="closeLocationEdit">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save</MpButton>
+          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save changes</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -753,7 +753,6 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
 }
-.pa-task-row:last-child .pa-td { border-bottom: none; }
 
 .pa-task-row { cursor: pointer; transition: background 80ms; }
 .pa-task-row:hover .pa-td { background: var(--mp-background-neutral-subtle); }
@@ -775,11 +774,9 @@ function handleCreate() {
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-lg); overflow: hidden;
 }
-.pa-items-section--bordered .pa-items-count { border-top: 1px solid var(--mp-border-default); }
 .pa-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pa-items { width: 100%; table-layout: auto; border-collapse: collapse; }
 .pa-items thead .pa-th { position: sticky; top: 0; z-index: 1; }
-.pa-item-row:last-child .pa-td { border-bottom: none; }
 
 /* Product cell */
 .pa-product { display: flex; align-items: center; gap: var(--mp-spacing-3); }

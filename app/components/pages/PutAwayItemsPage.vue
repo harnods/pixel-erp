@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { formatDateTimeLong } from '~/utils/date'
 import {
   MpSpinner,
   MpAutocomplete, MpFormControl, MpFormLabel,
@@ -218,14 +219,7 @@ function goBack()    { router.push(`/put-away/${props.orderId}`) }
 function goPutAway() { router.push('/barang-masuk?tab=Put-away') }
 
 // ── Start date label ──────────────────────────────────────────────────────────
-const startDateLabel = computed(() => {
-  const d = task.value?.startDate
-  if (!d) return '—'
-  const dt = new Date(d)
-  const date = dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-  const time = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  return `${date}, ${time}`
-})
+const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
 // ── Footer overflow divider ───────────────────────────────────────────────────
 const stageEl          = ref<HTMLElement | null>(null)
@@ -285,16 +279,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
       <div class="pi-summary">
         <div class="pi-stat">
-          <span class="pi-stat-val">{{ fmt(skuQty) }}</span>
           <span class="pi-stat-label">SKU qty</span>
+          <span class="pi-stat-val">{{ fmt(skuQty) }}</span>
         </div>
         <div class="pi-stat">
-          <span class="pi-stat-val">{{ fmt(receivedQty) }}</span>
           <span class="pi-stat-label">Received qty</span>
+          <span class="pi-stat-val">{{ fmt(receivedQty) }}</span>
         </div>
         <div class="pi-stat">
-          <span class="pi-stat-val">{{ fmt(draftHandled) }}</span>
           <span class="pi-stat-label">Qty to store</span>
+          <span class="pi-stat-val">{{ fmt(draftHandled) }}</span>
         </div>
       </div>
 
@@ -446,7 +440,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <MpModalFooter>
         <div :class="css({ display: 'flex', justifyContent: 'flex-end', gap: 'spacing-2', width: '100%' })">
           <MpButton variant="ghost" is-rounded @click="closeLocationEdit">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save</MpButton>
+          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save changes</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -538,7 +532,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-items-section--bordered {
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden;
 }
-.pi-items-section--bordered .pi-items-count { border-top: 1px solid var(--mp-border-default); }
 .pi-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pi-items thead .pi-th { position: sticky; top: 0; z-index: 1; }
 .pi-items { width: 100%; border-collapse: collapse; table-layout: auto; }
@@ -565,7 +558,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   vertical-align: top;
 }
 .pi-td:last-child { border-right: none; }
-.pi-items-section--bordered .pi-row:last-child .pi-td { border-bottom: none; }
 .pi-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pi-td--action { padding: 0; width: 48px; min-width: 48px; position: sticky; right: 0; z-index: 2; background: var(--mp-background-neutral-hovered); }
 

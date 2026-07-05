@@ -1,21 +1,31 @@
 # Date format
 
-**Helper**: `app/utils/date.ts` → `formatDate`, `formatDateTime`
-**Rule**: Dates in tables are **ALWAYS numeric `DD/MM/YYYY`** — never a spelled-out month.
+**Helper**: `app/utils/date.ts` → `formatDate`, `formatDateTime`, `formatDateLong`, `formatDateTimeLong`
+
+## 🏆 GOLDEN RULE — timestamps (date + time)
+
+| Context | Helper | Output |
+|---|---|---|
+| **In a TABLE** | `formatDateTime(iso)` | `23/06/2026, 15:30` |
+| **NOT in a table** (detail header, "Last updated by", form field, note) | `formatDateTimeLong(iso)` | `23 Jun 2026, 15:30` |
+
+- Table → numeric `DD/MM/YYYY, HH:MM`. Non-table → spelled-out `DD Mon YYYY, HH:MM`.
+- 24h time, colon separator, **comma** between date and time, **no `(GMT+7)` suffix**.
+- Applies **everywhere** a timestamp shows — index tables, activity log, LastUpdatedCell, detail headers, picking / packing / receiving / put-away pages, etc.
 
 ---
 
-## Standard
+## Standard (date only)
 
 | Need | Helper | Output |
 |---|---|---|
-| Date only | `formatDate(iso)` | `23/06/2026` |
-| Date + time (24h) | `formatDateTime(iso)` | `23/06/2026 14:30` |
-| Empty / invalid input | either | `—` |
+| Date only, **table** | `formatDate(iso)` | `23/06/2026` |
+| Date only, **non-table** | `formatDateLong(iso)` | `23 Jun 2026` |
+| Empty / invalid input | any | `—` |
 
-- Separator is `/`, zero-padded day & month, 4-digit year (`en-GB` numeric locale).
-- ❌ Never `23 Jun 2026` / `Jun 23, 2026` / `2026-06-23` in a table cell.
-- Use `formatDateTime` only when the time matters (e.g. receiving start/end timestamps); otherwise `formatDate`.
+- Table date is `/`-separated, zero-padded, 4-digit year (`en-GB` numeric).
+- ❌ Never `Jun 23, 2026` / `2026-06-23`, and never a spelled-out month in a **table** cell.
+- Never hand-roll `id-ID` / `toLocaleTimeString` in a component — call the shared helper.
 
 ---
 

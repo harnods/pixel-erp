@@ -230,7 +230,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goReceipts">Barang masuk</button>
+          <button class="detail-breadcrumb" @click="goReceipts">Inbound delivery</button>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New receipt</h1>
@@ -668,10 +668,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   white-space: nowrap;
 }
-.cr-th:last-child { border-right: none; }
 .cr-th--drag { padding: 0; }
 .cr-th--del  { padding: 0; }
 
@@ -680,11 +678,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   vertical-align: middle;
 }
-.cr-td:last-child { border-right: none; }
-.cr-tr:last-child .cr-td { border-bottom: none; }
 
 /* Drag row states */
 .cr-tr--dragging { opacity: 0.4; }
