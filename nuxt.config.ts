@@ -18,12 +18,35 @@ export default defineNuxtConfig({
   },
 
   css: [
+    // pixel.css is the sole Panda root — PostCSS injects all generated CSS here,
+    // starting with the @layer order declaration. erp.css comes after so every
+    // override (unlayered and @layer pixel_reset) lands after the Panda rules.
+    "@/assets/css/pixel.css",
     "@/assets/css/erp.css",
-    "@/assets/css/pixel.css" // make sure to load pixel.css file at the very last
   ],
   postcss: {
     plugins: {
       "@mekari/pixel3-postcss": {}
     }
+  },
+  vite: {
+    optimizeDeps: {
+      include: ['@mekari/pixel3'],
+    },
+    css: {
+      devSourcemap: false,
+    },
+    plugins: [
+      {
+        name: 'global-css-full-reload',
+        handleHotUpdate({ file, server }: { file: string; server: any }) {
+          // Global CSS changes → full reload to preserve @layer order
+          if (file.includes('/assets/css/')) {
+            server.ws.send({ type: 'full-reload' })
+            return []
+          }
+        },
+      },
+    ],
   }
 });

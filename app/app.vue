@@ -6,13 +6,6 @@
 </template>
 
 <script setup lang="ts">
-import { usePixelTheme } from "@mekari/pixel3";
-
-const { setNextTheme, setDarkMode, setProductTheme } = usePixelTheme();
-
-onMounted(() => {
-  setNextTheme(true);
-  setDarkMode(false);
-  setProductTheme("enterprise");
-});
+// Theme is applied synchronously in pixel.client.ts before mount.
+// Nothing needed here.
 </script>
