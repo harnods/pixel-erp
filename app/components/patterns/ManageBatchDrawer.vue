@@ -627,8 +627,7 @@ function fmtNum(n: number | null): string {
                         <template v-if="props.kind !== 'transfer'">
                           <div class="mbd-popover-divider" />
                           <MpPopoverListItem @click="addNewBatch">
-                            <MpIcon name="add" size="sm" />
-                            Add new batch
+                            <span class="mbd-popover-add-row"><MpIcon name="add" size="sm" />Add new batch</span>
                           </MpPopoverListItem>
                         </template>
                       </MpPopoverList>
@@ -892,6 +891,7 @@ function fmtNum(n: number | null): string {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
 }
 .mbd-popover-divider { height: 1px; background: var(--mp-border-default); margin: var(--mp-spacing-1) 0; }
+.mbd-popover-add-row { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .mbd-progress-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);

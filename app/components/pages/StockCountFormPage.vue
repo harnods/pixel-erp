@@ -5,6 +5,7 @@ import {
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon, MpInputTag, MpDatePicker,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
+  MpCheckbox,
   toast, css, type DataInterface,
 } from '@mekari/pixel3'
 import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
@@ -310,23 +311,70 @@ function flatStorageNodes(): FlatLoc[] {
   return result
 }
 
+interface TreeDrawerItem { id: string; name: string; fullPath: string; depth: number; isLeaf: boolean; isExpanded: boolean; leafIds: string[] }
+
 const locDrawerSel = ref<Set<string>>(new Set())
 const locDrawerSearch = ref('')
+const locDrawerExpanded = ref<Set<string>>(new Set())
 watch(locationDrawerOpen, (o) => {
   if (o) {
     locDrawerSel.value = new Set(selectedLocations.value.map(l => l.locId))
     locDrawerSearch.value = ''
+    // expand all nodes by default
+    const expanded = new Set<string>()
+    const walkExp = (nodes: LocNode[]) => {
+      for (const n of nodes) {
+        if (n.children.length > 0) { expanded.add(n.id); walkExp(n.children) }
+      }
+    }
+    walkExp(getStorageTree(warehouseId.value))
+    locDrawerExpanded.value = expanded
   }
 })
-const locDrawerItems = computed(() => {
+function collectLeafIds(nodes: LocNode[]): string[] {
+  const ids: string[] = []
+  const walk = (ns: LocNode[]) => ns.forEach(n => n.children.length ? walk(n.children) : ids.push(n.id))
+  walk(nodes)
+  return ids
+}
+const locDrawerItems = computed((): TreeDrawerItem[] => {
   const q = locDrawerSearch.value.trim().toLowerCase()
-  return flatStorageNodes().filter(n =>
-    !q || n.name.toLowerCase().includes(q)
-  )
+  const result: TreeDrawerItem[] = []
+  const walk = (nodes: LocNode[], depth: number, trail: string[]) => {
+    for (const n of nodes) {
+      const here = [...trail, n.name]
+      const isLeaf = n.children.length === 0
+      const fullPath = here.join(' / ')
+      if (q) {
+        // search mode: flat list of matching leaves
+        if (isLeaf && fullPath.toLowerCase().includes(q))
+          result.push({ id: n.id, name: n.name, fullPath, depth: 0, isLeaf: true, isExpanded: false, leafIds: [n.id] })
+        else if (!isLeaf) walk(n.children, 0, here)
+      } else {
+        const isExpanded = locDrawerExpanded.value.has(n.id)
+        const leafIds = isLeaf ? [n.id] : collectLeafIds(n.children)
+        result.push({ id: n.id, name: n.name, fullPath, depth, isLeaf, isExpanded, leafIds })
+        if (!isLeaf && isExpanded) walk(n.children, depth + 1, here)
+      }
+    }
+  }
+  walk(getStorageTree(warehouseId.value), 0, [])
+  return result
 })
 function toggleLocDrawerSel(id: string) {
   const s = new Set(locDrawerSel.value)
   s.has(id) ? s.delete(id) : s.add(id)
+  locDrawerSel.value = s
+}
+function toggleLocExpanded(id: string) {
+  const s = new Set(locDrawerExpanded.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  locDrawerExpanded.value = s
+}
+function toggleParentSel(leafIds: string[]) {
+  const s = new Set(locDrawerSel.value)
+  const allSelected = leafIds.every(id => s.has(id))
+  leafIds.forEach(id => allSelected ? s.delete(id) : s.add(id))
   locDrawerSel.value = s
 }
 function confirmLocSelection() {
@@ -767,10 +815,32 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <input v-model="locDrawerSearch" class="loc-spd-search-input" type="text" placeholder="Search location..." />
           </div>
           <div class="loc-spd-list">
-            <label v-for="node in locDrawerItems" :key="node.id" class="loc-drawer-item" :style="{ paddingLeft: `${16 + node.depth * 16}px` }">
-              <input type="checkbox" :checked="locDrawerSel.has(node.id)" @change="toggleLocDrawerSel(node.id)" />
-              <span class="loc-drawer-name">{{ node.name }}</span>
-            </label>
+            <template v-for="node in locDrawerItems" :key="node.id">
+              <div v-if="!node.isLeaf"
+                class="loc-drawer-item loc-drawer-item--parent"
+                :style="{ paddingLeft: `${16 + node.depth * 20}px` }"
+              >
+                <span class="loc-drawer-chevron" :class="{ 'loc-drawer-chevron--open': node.isExpanded }" @click="toggleLocExpanded(node.id)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <MpCheckbox
+                  :is-checked="node.leafIds.every(id => locDrawerSel.has(id))"
+                  :is-indeterminate="node.leafIds.some(id => locDrawerSel.has(id)) && !node.leafIds.every(id => locDrawerSel.has(id))"
+                  @change="toggleParentSel(node.leafIds)"
+                />
+                <span class="loc-drawer-name loc-drawer-name--parent" @click="toggleLocExpanded(node.id)">{{ node.name }}</span>
+              </div>
+              <div v-else
+                class="loc-drawer-item loc-drawer-item--leaf"
+                :style="{ paddingLeft: `${16 + node.depth * 20 + 40}px` }"
+              >
+                <MpCheckbox
+                  :is-checked="locDrawerSel.has(node.id)"
+                  @change="toggleLocDrawerSel(node.id)"
+                />
+                <span class="loc-drawer-name" @click="toggleLocDrawerSel(node.id)">{{ locDrawerSearch.trim() ? node.fullPath : node.name }}</span>
+              </div>
+            </template>
             <div v-if="!locDrawerItems.length" class="loc-drawer-empty">No storage locations found</div>
           </div>
           <div class="loc-spd-footer">
@@ -955,7 +1025,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 /* Location drawer — standalone styles (spd-* classes are scoped to SelectProductDrawer) */
 .loc-spd-overlay { position: fixed; inset: 0; z-index: 1300; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
-.loc-spd-panel { margin: var(--mp-spacing-3); width: min(480px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); overflow: hidden; }
+.loc-spd-panel { margin: var(--mp-spacing-3); width: min(480px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 24px; overflow: hidden; }
 .loc-spd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle); }
 .loc-spd-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .loc-spd-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
@@ -966,11 +1036,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .loc-spd-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 
 /* Location drawer items */
-.loc-drawer-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: 10px 16px; cursor: pointer; border-bottom: 1px solid var(--mp-border-default); }
+.loc-drawer-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: 8px 16px; border-bottom: 1px solid var(--mp-border-default); }
 .loc-drawer-item:last-child { border-bottom: none; }
-.loc-drawer-item:hover { background: var(--mp-background-neutral-subtle); }
-.loc-drawer-item input[type="checkbox"] { flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; accent-color: var(--mp-colors-emerald-700); }
-.loc-drawer-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.loc-drawer-item--parent { cursor: pointer; min-height: 36px; }
+.loc-drawer-item--parent:hover { background: var(--mp-background-neutral-subtle); }
+.loc-drawer-item--leaf { cursor: pointer; min-height: 40px; }
+.loc-drawer-item--leaf:hover { background: var(--mp-background-neutral-subtle); }
+.loc-drawer-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: 1.4; }
+.loc-drawer-name--parent { font-weight: var(--mp-font-weights-semi-bold); }
+.loc-drawer-chevron { display: inline-flex; align-items: center; justify-content: center; width: 20px; flex-shrink: 0; color: var(--mp-icon-subtle); transition: transform 150ms ease; }
+.loc-drawer-chevron--open { transform: rotate(90deg); }
 .loc-drawer-empty { padding: var(--mp-spacing-8); text-align: center; color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-md); }
 
 /* btn-enterprise variants used in storage-location mode */
