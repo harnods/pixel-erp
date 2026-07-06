@@ -223,7 +223,7 @@ function handleSave() {
     lines,
   })
   toast.notify({ variant: 'success', title: 'Stock in/out created' })
-  router.push(`/stock-adjustments/${adj.id}`)
+  router.push('/stock-adjustments')
 }
 
 // ── Sticky footer divider ────────────────────────────────────────────────────────
@@ -502,7 +502,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-import-btn:hover { opacity: 0.9; }
 
 .scf-table-section { margin-top: var(--mp-spacing-5); }
-.scf-table-scroll { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.scf-table-scroll { overflow-x: auto; }
 .scf-table { width: 100%; table-layout: auto; border-collapse: collapse; border-spacing: 0; min-width: 900px; }
 .scf-col-prod { width: 26%; } .scf-col-sku { width: 12%; } .scf-col-num { width: 12%; } .scf-col-unit { width: 8%; } .scf-col-del { width: 44px; }
 .scf-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }

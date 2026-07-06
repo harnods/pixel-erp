@@ -3,21 +3,25 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTooltip, MpIcon, MpSpinner,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { formatDateLong } from '~/utils/date'
 import {
   stockAdjustments, getAdjustment, adjustmentLineItems, adjustmentMemo, adjustmentAttachments,
-  adjustmentUpdatedBy, adjustmentUpdatedAt, accountCodeFor, deleteAdjustments,
+  adjustmentUpdatedBy, adjustmentUpdatedAt, accountCodeFor, deleteAdjustments, approveAdjustment,
+  adjustmentApprovalLog,
   type AdjustmentLine,
 } from '~/data/stockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
@@ -128,6 +132,22 @@ function formatUpdatedAt(iso: string) {
 }
 
 const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const a = adjustment.value
+  if (!a) return []
+  return [{
+    date: lastUpdatedAt.value,
+    user: lastUpdatedBy.value,
+    activity: 'Created',
+    details: [
+      { label: 'Transaction no.', value: a.number },
+      { label: 'Transaction date', value: formatDateLong(a.date) },
+      { label: 'Warehouse', value: a.warehouseName },
+      ...(a.kind !== 'count' ? [{ label: 'Category', value: a.category }] : []),
+      { label: 'Account', value: accountCode.value ? `${accountCode.value} ${a.account}` : a.account },
+    ],
+  }]
+})
 
 // ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
 const jumpSearch = ref('')
@@ -140,10 +160,25 @@ const jumpResults = computed(() => {
 })
 function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/stock-adjustments/${id}`) }
 
+// Shared approval view toggle (manager vs user) — same singleton as the index page.
+const { viewAs, setViewAs } = useApprovalViewAs()
+const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
+  { value: 'user', label: 'As user' },
+  { value: 'manager', label: 'As manager' },
+]
+const approvalLog = computed(() => adjustment.value ? adjustmentApprovalLog(adjustment.value) : null)
+const approvalLogOpen = ref(false)
+const canApprove = computed(() => viewAs.value === 'manager' && adjustment.value?.status === 'draft')
+
 function goBack() { router.push('/stock-adjustments') }
 function preview() { /* opens the printable preview — not built in this prototype */ }
 function printPdf() { /* generates the adjustment PDF — not built in this prototype */ }
 function editAdjustment() { router.push(`/stock-adjustments/${props.orderId}/edit`) }
+function approve() {
+  if (!adjustment.value) return
+  approveAdjustment(adjustment.value.id)
+  toast.notify({ variant: 'success', title: `${adjustment.value.number} approved` })
+}
 
 // ── Delete (single) — same alert as the index ──────────────────────────────────
 const deleteOpen = ref(false)
@@ -191,6 +226,10 @@ onUnmounted(() => {
         <button class="detail-breadcrumb" @click="goBack">All stock adjustments</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ adjustment.number }}</h1>
+          <ErpStatusBadge
+            v-if="adjustment.status === 'draft'"
+            status="draft" badge-for="additionalInformation" size="md"
+          />
           <MpPopover id="sad-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">
@@ -218,8 +257,9 @@ onUnmounted(() => {
       </div>
 
       <div class="detail-titlerow-right">
-        <MpTooltip id="sad-tt-tasks" label="Activity log" placement="bottom" use-portal>
-          <button class="detail-icon-btn" aria-label="Activity log" @click="activityOpen = true"><MpIcon name="task-todo" size="md" /></button>
+        <button v-if="canApprove" class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
+        <MpTooltip id="sad-tt-approval" label="Approval log" placement="bottom" use-portal>
+          <button class="detail-icon-btn" aria-label="Approval log" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></button>
         </MpTooltip>
         <MpTooltip id="sad-tt-comments" label="Comments" placement="bottom" use-portal>
           <button class="detail-icon-btn" aria-label="Comments"><MpIcon name="comment" size="md" /></button>
@@ -373,6 +413,7 @@ onUnmounted(() => {
       :subject="adjustment.number"
       :updated-by="lastUpdatedBy"
       :updated-at="lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
 
@@ -441,6 +482,31 @@ onUnmounted(() => {
     <p>Stock adjustment not found.</p>
     <button class="detail-breadcrumb" @click="goBack">Back to stock adjustments</button>
   </div>
+
+  <ApprovalLogModal
+    :is-open="approvalLogOpen"
+    :subject="adjustment?.number ?? ''"
+    :log="approvalLog"
+    @close="approvalLogOpen = false"
+  />
+
+  <!-- Demo scenario FAB — shared approval view toggle -->
+  <MpPopover id="sad-demo-fab" is-close-on-select use-portal placement="top-end">
+    <MpPopoverTrigger>
+      <button class="demo-fab" aria-label="Change approval view">
+        <MpIcon name="sliders" size="md" color="icon.inverse" />
+      </button>
+    </MpPopoverTrigger>
+    <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+      <p class="demo-fab-heading">Approval view</p>
+      <MpPopoverList>
+        <MpPopoverListItem
+          v-for="v in viewAsOptions" :key="v.value"
+          :is-active="v.value === viewAs" @click="setViewAs(v.value)"
+        >{{ v.label }}</MpPopoverListItem>
+      </MpPopoverList>
+    </MpPopoverContent>
+  </MpPopover>
 </template>
 
 <style scoped>
@@ -525,7 +591,7 @@ onUnmounted(() => {
 .detail-updated { margin: 0; align-self: flex-start; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; }
 .detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-.detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
+.detail-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 .detail-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; }
 .detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-text-default); color: var(--mp-text-default); }
@@ -550,4 +616,17 @@ onUnmounted(() => {
 .sa-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
 .sa-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
 .sa-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+
+/* Demo scenario FAB */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-inverse, #080d0e); color: #fff;
+  cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+}
+.demo-fab:hover { opacity: 0.9; }
+.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>

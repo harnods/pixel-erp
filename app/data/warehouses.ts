@@ -119,11 +119,12 @@ const SEED_WAREHOUSES: Warehouse[] = [
     id: 'wh-008',
     name: 'Gudang Palembang',
     code: 'GDG-PLB-01',
-    skuTotal: 0,
+    skuTotal: 10,
     pics: [{ id: 'p12', name: 'Yusuf Hakim' }],
     address: 'Jl. POM X No. 33, Kelurahan Srijaya, Kecamatan Alang-Alang Lebar, Kota Palembang, Sumatera Selatan 30153',
     status: 'active',
-    hasTransactions: false,
+    hasTransactions: true,
+    hasStorageLocations: false,
     updatedAt: '2026-06-01T17:25:00',
     updatedBy: 'Yusuf Hakim',
   },
@@ -160,7 +161,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
 // detail and forms all update live. "Reset demo data" clears the snapshot.
 // Bump the key when the SEED shape/values change so stale snapshots (e.g. the old
 // item-quantity skuTotal) are discarded instead of overriding the fresh seed.
-const WAREHOUSES_KEY = 'warehouses-v5'
+const WAREHOUSES_KEY = 'warehouses-v6'
 const snapshot = loadSnapshot<Warehouse>(WAREHOUSES_KEY)
 export const warehouses = reactive<Warehouse[]>(snapshot ?? [...SEED_WAREHOUSES])
 

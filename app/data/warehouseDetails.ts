@@ -1,8 +1,39 @@
+import { reactive } from 'vue'
 import { warehouses } from './warehouses'
 import { warehouseProducts, type Product } from './inventory'
 import { TODAY } from './master'
 import type { Warehouse } from './types'
 import { stockLocationPaths, getMultiLocConfig } from './storageLocations'
+import { loadSnapshot, saveSnapshot } from './persist'
+
+// ── Persisted on-hand overlay ─────────────────────────────────────────────────
+// Stores absolute onHand values that override the deterministic generated base.
+// Written by applyStockCount / applyStockInOut / applyTransfer.
+type StockOverlay = Record<string, Record<string, number>> // warehouseId → sku → onHand
+const OVERLAY_KEY = 'wh-stock-overlay-v1'
+const stockOverlay = reactive<StockOverlay>(loadSnapshot<StockOverlay>(OVERLAY_KEY) ?? {})
+function persistOverlay() { saveSnapshot(OVERLAY_KEY, stockOverlay) }
+
+export function applyStockCount(warehouseId: string, lines: { sku: string; qty: number }[]) {
+  if (!stockOverlay[warehouseId]) stockOverlay[warehouseId] = {}
+  for (const l of lines) stockOverlay[warehouseId]![l.sku] = Math.max(0, l.qty)
+  persistOverlay()
+}
+
+export function applyStockInOut(warehouseId: string, lines: { sku: string; qty: number }[]) {
+  if (!stockOverlay[warehouseId]) stockOverlay[warehouseId] = {}
+  const wh = getWarehouseDetail(warehouseId)
+  for (const l of lines) {
+    const current = stockOverlay[warehouseId]![l.sku] ?? wh?.stock.find(s => s.sku === l.sku)?.onHand ?? 0
+    stockOverlay[warehouseId]![l.sku] = Math.max(0, current + l.qty)
+  }
+  persistOverlay()
+}
+
+export function applyTransfer(originId: string, destinationId: string, lines: { sku: string; qty: number }[]) {
+  applyStockInOut(originId, lines.map(l => ({ sku: l.sku, qty: -l.qty })))
+  applyStockInOut(destinationId, lines)
+}
 
 /** A tracked batch (lot) of a product within a warehouse (Batches tab).
  *  A batch sits in one bin; a batch split across bins is modelled as separate rows. */
@@ -245,6 +276,19 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
       item.serials.reserved.forEach((u) => { u.location = loc })
     }
   })
+  // Apply any persisted on-hand overrides from stock counts / in-out / transfers
+  const overlay = stockOverlay[id]
+  if (overlay) {
+    stock.forEach(item => {
+      if (overlay[item.sku] !== undefined) {
+        const newOnHand = overlay[item.sku]!
+        const delta = newOnHand - item.onHand
+        item.onHand = newOnHand
+        item.available = Math.max(0, item.available + delta)
+      }
+    })
+  }
+
   return {
     ...wh,
     description: wh.description ?? descriptions[id] ?? '—',

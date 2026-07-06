@@ -2,22 +2,31 @@
 import { ref, reactive, computed, onMounted, watch, inject } from 'vue'
 import {
   MpIcon, MpTooltip, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import {
   stockAdjustments, adjustmentWarehouseOptions, adjustmentMemo, adjustmentUpdatedBy, adjustmentUpdatedAt,
-  deleteAdjustments, ADJUSTMENT_CATEGORIES,
-  type StockAdjustment,
+  adjustmentApprovalLog, deleteAdjustments, approveAdjustment, ADJUSTMENT_CATEGORIES,
+  type StockAdjustment, type ApprovalLog,
 } from '~/data/stockAdjustments'
+import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
 const route = useRoute()
 const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
+
+// ─── Approval view — demo toggle: "As user" (no Approve) vs "As manager" ──────
+const { viewAs, setViewAs } = useApprovalViewAs()
+const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
+  { value: 'user', label: 'As user' },
+  { value: 'manager', label: 'As manager' },
+]
 
 // ─── Columns (checkbox is rendered by ErpTablePage as the first column) ──────────
 const columns: TableColumn[] = [
@@ -50,6 +59,11 @@ function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Tab: "All stock adjustments" vs "Awaiting approval" (driven by ?tab=) ────────
 const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
+const showCheckbox = computed(() => !(isAwaiting.value && viewAs.value === 'user'))
+const actionsWidth = computed(() => {
+  if (!isAwaiting.value) return undefined
+  return viewAs.value === 'manager' ? '236px' : '148px'
+})
 
 // ─── Demo scenario state (FAB) + first-load skeleton ─────────────────────────────
 type DemoState = 'data' | 'empty'
@@ -75,7 +89,8 @@ const warehouseLabel = computed(() => whOptions.value.find(o => o.value === ware
 const baseRows = computed<StockAdjustment[]>(() => {
   if (demoState.value === 'empty') return []
   let list = [...stockAdjustments]
-  if (isAwaiting.value) list = list.filter(a => a.status === 'awaiting approval')
+  if (isAwaiting.value) list = list.filter(a => a.status === 'draft')
+  else list = list.filter(a => a.status !== 'draft')
   if (warehouseFilter.value) list = list.filter(a => a.warehouseId === warehouseFilter.value)
   if (categoryFilter.value) list = list.filter(a => a.category === categoryFilter.value)
   return list
@@ -104,11 +119,33 @@ function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
 function newAdjustment(kind: 'count' | 'in-out') {
   router.push({ path: '/stock-adjustments/new', query: { type: kind } })
 }
+function approve(row: StockAdjustment) {
+  approveAdjustment(row.id)
+  toast.notify({ variant: 'success', title: `${row.number} approved` })
+}
 
-// ─── Delete (row kebab + bulk) → confirmation modal ────────────────────────────────
+// ─── Approval log modal ──────────────────────────────────────────────────────
+const approvalLogSubject = ref('')
+const approvalLogData = ref<ApprovalLog | null>(null)
+const approvalLogOpen = ref(false)
+function openApprovalLog(row: StockAdjustment) {
+  approvalLogSubject.value = row.number
+  approvalLogData.value = adjustmentApprovalLog(row)
+  approvalLogOpen.value = true
+}
+
+// ─── Bulk approve (Awaiting approval tab, manager view) ──────────────────────
 function selectedAdjustmentsOf(sel: Set<number>): StockAdjustment[] {
   return [...sel].map(i => paginated.value[i]).filter(Boolean) as StockAdjustment[]
 }
+function bulkApprove(sel: Set<number>, deselectAll: () => void) {
+  const rows = selectedAdjustmentsOf(sel)
+  for (const row of rows) approveAdjustment(row.id)
+  deselectAll()
+  toast.notify({ variant: 'success', title: `${rows.length} adjustment${rows.length > 1 ? 's' : ''} approved` })
+}
+
+// ─── Delete (row kebab + bulk) → confirmation modal ────────────────────────────────
 const deleteOpen = ref(false)
 const deleteIds = ref<string[]>([])
 const deleteReason = ref('')
@@ -153,7 +190,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
-    has-checkbox
+    :actions-width="actionsWidth"
+    :has-checkbox="showCheckbox"
     bulk-label="stock adjustment"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -237,8 +275,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Bulk bar → delete ── -->
+    <!-- ── Bulk bar → approve (manager, awaiting tab) + delete ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
+      <button
+        v-if="isAwaiting && viewAs === 'manager'"
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        @click="bulkApprove(selectedRows as Set<number>, deselectAll)"
+      >
+        Approve
+      </button>
       <button
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         :class="css({ color: 'var(--mp-text-critical)' })"
@@ -291,9 +336,61 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Actions kebab ── -->
+    <!-- ── Actions ── -->
     <template #actions="{ row }">
-      <MpPopover :id="`sa-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+      <!-- Awaiting approval, AS MANAGER — Approve + icon actions + kebab -->
+      <div v-if="isAwaiting && viewAs === 'manager'" class="sa-approval-actions">
+        <button
+          class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+          @click.stop="approve(row as unknown as StockAdjustment)"
+        >Approve</button>
+        <MpTooltip :id="`sa-tt-log-${row.id}`" label="Approval log" placement="top" use-portal>
+          <button class="row-icon-ghost" aria-label="Approval log" @click.stop="openApprovalLog(row as unknown as StockAdjustment)">
+            <MpIcon name="task-todo" size="md" />
+          </button>
+        </MpTooltip>
+        <MpTooltip :id="`sa-tt-comment-${row.id}`" label="Comments" placement="top" use-portal>
+          <button class="row-icon-ghost" aria-label="Comments" @click.stop><MpIcon name="comment" size="md" /></button>
+        </MpTooltip>
+        <MpPopover :id="`sa-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+          <MpPopoverTrigger>
+            <button class="row-kebab" aria-label="More actions">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="viewDetails(row as unknown as StockAdjustment)">View details</MpPopoverListItem>
+              <MpPopoverListItem @click="editAdjustment(row as unknown as StockAdjustment)">Edit</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+      </div>
+
+      <!-- Awaiting approval, AS USER — Approval log + Comments + View details -->
+      <div v-else-if="isAwaiting" class="sa-approval-actions">
+        <MpTooltip :id="`sa-tt-log-${row.id}`" label="Approval log" placement="top" use-portal>
+          <button class="row-icon-ghost" aria-label="Approval log" @click.stop="openApprovalLog(row as unknown as StockAdjustment)">
+            <MpIcon name="task-todo" size="md" />
+          </button>
+        </MpTooltip>
+        <MpTooltip :id="`sa-tt-comment-${row.id}`" label="Comments" placement="top" use-portal>
+          <button class="row-icon-ghost" aria-label="Comments" @click.stop><MpIcon name="comment" size="md" /></button>
+        </MpTooltip>
+        <MpTooltip :id="`sa-tt-view-${row.id}`" label="View details" placement="top" use-portal>
+          <button class="row-icon-ghost" aria-label="View details" @click.stop="viewDetails(row as unknown as StockAdjustment)">
+            <svg width="20" height="20" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </MpTooltip>
+      </div>
+
+      <!-- All stock adjustments — kebab only -->
+      <MpPopover v-else :id="`sa-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <button class="row-kebab" aria-label="More actions">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -373,6 +470,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalOverlay />
   </MpModal>
 
+  <ApprovalLogModal
+    :is-open="approvalLogOpen"
+    :subject="approvalLogSubject"
+    :log="approvalLogData"
+    @close="approvalLogOpen = false"
+  />
+
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="sa-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
@@ -387,6 +491,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           v-for="s in demoStates" :key="s.value"
           :is-active="s.value === demoState" @click="setDemoState(s.value)"
         >{{ s.label }}</MpPopoverListItem>
+      </MpPopoverList>
+      <div style="height:1px;background:var(--mp-border-default);margin:var(--mp-spacing-1) 0;" />
+      <p class="demo-fab-heading">Approval view</p>
+      <MpPopoverList>
+        <MpPopoverListItem
+          v-for="v in viewAsOptions" :key="v.value"
+          :is-active="v.value === viewAs" @click="setViewAs(v.value)"
+        >{{ v.label }}</MpPopoverListItem>
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>
@@ -497,6 +609,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .sa-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
 .sa-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
 .sa-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+
+/* Awaiting approval row actions */
+.sa-approval-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
+.sa-approval-actions .row-kebab { margin-left: 0; }
+.row-icon-ghost {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  border: none; background: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-icon-default);
+}
+.row-icon-ghost:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Demo scenario FAB */
 .demo-fab {

@@ -40,7 +40,7 @@ const activityEntries = computed(() => transfer.value ? transferActivityEntries(
 const approvalLog = computed(() => transfer.value ? transferApprovalLog(transfer.value) : null)
 const approvalLogOpen = ref(false)
 // Approve is only offered to a manager viewing a transfer that's still awaiting approval.
-const canApprove = computed(() => viewAs.value === 'manager' && transfer.value?.status === 'awaiting approval')
+const canApprove = computed(() => viewAs.value === 'manager' && transfer.value?.status === 'draft')
 function approve() {
   if (!transfer.value) return
   approveTransfer(transfer.value.id)
@@ -162,8 +162,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ transfer.number }}</h1>
           <ErpStatusBadge
-            v-if="transfer.status === 'awaiting approval'"
-            status="awaiting approval" badge-for="additionalInformation" size="md"
+            v-if="transfer.status === 'draft'"
+            status="draft" badge-for="additionalInformation" size="md"
           />
           <MpPopover id="wtd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>

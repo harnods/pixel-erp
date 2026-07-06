@@ -19,6 +19,12 @@ const props = defineProps<{
   kind?: 'count' | 'in-out'
   /** Signed delta for in-out mode (e.g. +2 stock in, -5 stock out). */
   delta?: number
+  /**
+   * When counting inside a storage location, pass the bin-level on-hand.
+   * 0 means the SKU has no stock at this bin → start empty instead of
+   * pre-seeding from the warehouse-wide serial list.
+   */
+  locationOnHand?: number
 }>()
 
 const emit = defineEmits<{
@@ -55,6 +61,9 @@ watch(() => props.open, (isOpen) => {
       if (!seen.has(s)) result.push({ serial: s, counted: true })
     }
     rows.value = result
+  } else if (props.locationOnHand === 0) {
+    // SKU has no stock at this bin — start empty so serials from other bins don't bleed in
+    rows.value = []
   } else {
     rows.value = warehouseSerials.map(s => ({ serial: s, counted: true }))
   }
@@ -72,7 +81,7 @@ const warehouseStock = computed(() => {
 })
 const productImg = computed(() => product.value?.img ?? '')
 const productName = computed(() => warehouseStock.value?.name ?? product.value?.name ?? props.sku)
-const onHandCount = computed(() => warehouseStock.value?.onHand ?? 0)
+const onHandCount = computed(() => props.locationOnHand ?? warehouseStock.value?.onHand ?? 0)
 // countedCount = rows currently marked as counted (for table X/Y indicator + validation)
 const countedCount = computed(() => rows.value.filter(r => r.counted).length)
 // Info bar stats are driven by targetCount (what user entered in the form), not table state

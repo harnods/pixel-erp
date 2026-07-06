@@ -140,6 +140,21 @@ function formatUpdatedAt(iso: string) {
 }
 
 const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const o = order.value
+  if (!o) return []
+  return [{
+    date: lastUpdatedAt.value,
+    user: lastUpdatedBy.value,
+    activity: 'Created',
+    details: [
+      { label: 'Transaction no.', value: o.salesNo },
+      { label: 'Transaction date', value: formatDateLong(transactionDate.value) },
+      { label: 'Customer', value: o.customer ?? '—' },
+      { label: 'Warehouse', value: o.warehouseName },
+    ],
+  }]
+})
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 // ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
@@ -415,6 +430,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       :subject="order.salesNo"
       :updated-by="lastUpdatedBy"
       :updated-at="lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
 

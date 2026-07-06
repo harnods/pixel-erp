@@ -94,7 +94,8 @@ const destLabel = computed(() => whOptions.value.find(o => o.value === destFilte
 const baseRows = computed<WarehouseTransfer[]>(() => {
   if (demoState.value === 'empty') return []
   let list = [...warehouseTransfers]
-  if (isAwaiting.value) list = list.filter(t => t.status === 'awaiting approval')
+  if (isAwaiting.value) list = list.filter(t => t.status === 'draft')
+  else list = list.filter(t => t.status !== 'draft')
   if (originFilter.value) list = list.filter(t => t.originId === originFilter.value)
   if (destFilter.value) list = list.filter(t => t.destinationId === destFilter.value)
   return list

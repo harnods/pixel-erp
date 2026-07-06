@@ -21,6 +21,21 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
 const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const d = detail.value
+  if (!d) return []
+  return [{
+    date: d.lastUpdatedAt,
+    user: d.lastUpdatedBy,
+    activity: 'Created',
+    details: [
+      { label: 'Transaction no.', value: d.purchaseNo },
+      { label: 'Transaction date', value: formatDateLong(d.transactionDate) },
+      { label: 'Vendor', value: d.vendor ?? '—' },
+      { label: 'Warehouse', value: d.warehouseName },
+    ],
+  }]
+})
 const receipt = computed<Receipt | undefined>(() =>
   receiptsForStage('Partial reception').find((r) => r.id === props.orderId),
 )
@@ -486,6 +501,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
       :subject="detail.purchaseNo"
       :updated-by="detail.lastUpdatedBy"
       :updated-at="detail.lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
   </div>

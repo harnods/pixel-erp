@@ -201,7 +201,7 @@ function handleSave() {
   } else {
     const t = addTransfer(input)
     toast.notify({ variant: 'success', title: 'Warehouse transfer created' })
-    router.push(`/warehouse-transfers/${t.id}`)
+    router.push('/warehouse-transfers')
   }
 }
 
@@ -488,7 +488,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 /* ── Table ─────────────────────────────────────────────────────────────────── */
 .wtf-table-section { margin-top: var(--mp-spacing-5); }
-.wtf-table-scroll { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.wtf-table-scroll { overflow-x: auto; }
 .wtf-table { width: 100%; table-layout: auto; border-collapse: collapse; border-spacing: 0; min-width: 860px; }
 /* Proportional column widths; the remove column hugs its icon button (width:1px →
    shrinks to min-content in auto layout) and sits at the right edge. */

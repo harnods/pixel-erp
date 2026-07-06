@@ -1,9 +1,12 @@
 import { reactive } from 'vue'
 import { warehouses } from './warehouses'
 import { warehouseProducts, productBySku, PRODUCTS, type Product } from './inventory'
-import { getWarehouseDetail } from './warehouseDetails'
+import { getWarehouseDetail, applyStockCount, applyStockInOut } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { TODAY } from './master'
+import type { ApprovalLog, ApprovalStage, ApprovalStep } from './warehouseTransfers'
+
+export type { ApprovalLog, ApprovalStage, ApprovalStep }
 
 /**
  * Stock adjustments — manual corrections to on-hand stock. Two kinds share this list:
@@ -34,7 +37,7 @@ export const IN_OUT_CATEGORIES: AdjustmentCategory[] = [
   'Production output', 'Waste/damaged', 'General', 'Opening balance',
 ]
 
-export type AdjustmentStatus = 'awaiting approval' | 'completed'
+export type AdjustmentStatus = 'draft' | 'completed'
 
 // Offsetting GL account shown per row — derived from the category.
 const ACCOUNT_BY_CATEGORY: Record<AdjustmentCategory, string> = {
@@ -90,6 +93,9 @@ export interface StockAdjustment {
   memo?: string
   /** User-entered product lines (create form). Absent → demo lines are derived. */
   lines?: { sku: string; qty: number }[]
+  /** Filled when the adjustment is approved (to populate approval log stage 2). */
+  approvedAt?: string
+  approvedBy?: string
 }
 
 // Adjustments apply to real (non-default, active) warehouses — the default warehouse
@@ -120,9 +126,9 @@ function tagsFor(i: number): string[] {
   return [...new Set(out)]
 }
 
-// ~35% awaiting approval so the "Awaiting approval" tab is well-populated.
+// ~35% draft so the "Awaiting approval" tab is well-populated.
 function statusFor(i: number): AdjustmentStatus {
-  return hash100(i * 7 + 3) < 35 ? 'awaiting approval' : 'completed'
+  return hash100(i * 7 + 3) < 35 ? 'draft' : 'completed'
 }
 
 // Kind split — ~40% stock counts, ~60% stock in/out.
@@ -163,7 +169,7 @@ function generate(count = 26): StockAdjustment[] {
   return out
 }
 
-const KEY = 'stock-adjustments-v1'
+const KEY = 'stock-adjustments-v2'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const stockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 
@@ -274,6 +280,7 @@ export function adjustmentMemo(a: StockAdjustment): string {
 }
 
 const UPDATERS = ['Rizal Candra', 'Dewi Rahayu', 'Agus Firmansyah', 'Sari Indah']
+const ACTOR = 'Rizal Candra'
 export function adjustmentUpdatedBy(a: StockAdjustment): string {
   return UPDATERS[seedNum(a.id) % UPDATERS.length]!
 }
@@ -282,6 +289,43 @@ export function adjustmentUpdatedAt(a: StockAdjustment): string {
   const d = new Date(a.date)
   d.setHours(9 + (seedNum(a.id) % 8), (seedNum(a.id) * 7) % 60, 0, 0)
   return d.toISOString()
+}
+
+const REQUESTER_POOL = ['Budi Santoso', 'Rizki Pratama', 'Hendra Wijaya', 'Andi Kusuma', 'Ratna Sari']
+const STAGE1_POOL = ['Dewi Rahayu', 'Agus Firmansyah', 'Sari Indah', 'Ni Made Ayu']
+const STAGE2_OTHER_POOL = ['Kevin Surya', 'Christin Purnama Sari']
+
+/**
+ * Two-stage approval chain mirroring the warehouse transfer flow.
+ * Stage 1: everyone listed must sign off (deterministically pre-approved for demo data).
+ * Stage 2: anyone can approve — resolved once the user clicks Approve.
+ */
+export function adjustmentApprovalLog(a: StockAdjustment): ApprovalLog {
+  const s = seedNum(a.id)
+  const requestedBy = REQUESTER_POOL[s % REQUESTER_POOL.length]!
+  const requestedAt = adjustmentUpdatedAt(a)
+
+  const stage1Approvers = [STAGE1_POOL[s % STAGE1_POOL.length]!, STAGE1_POOL[(s + 1) % STAGE1_POOL.length]!]
+  const reqDate = new Date(requestedAt)
+  const stage1Approvals: ApprovalStep[] = stage1Approvers.map((user, i) => {
+    const d = new Date(reqDate)
+    d.setHours(d.getHours() + 2 + i * 4)
+    return { user, date: d.toISOString() }
+  })
+
+  const stage2Other = STAGE2_OTHER_POOL[s % STAGE2_OTHER_POOL.length]!
+  const stage2Approvals: ApprovalStep[] = a.approvedAt
+    ? [{ user: a.approvedBy ?? ACTOR, date: a.approvedAt }]
+    : []
+
+  return {
+    requestedBy,
+    requestedAt,
+    stages: [
+      { title: 'Approval stage 1', rule: 'everyone', approvers: stage1Approvers, approvals: stage1Approvals },
+      { title: 'Approval stage 2', rule: 'anyone', approvers: [stage2Other, ACTOR], approvals: stage2Approvals },
+    ],
+  }
 }
 
 /** Distinct warehouses actually used — for the filter dropdown. */
@@ -293,7 +337,7 @@ export function adjustmentWarehouseOptions(): { value: string; label: string }[]
 
 /** Count still awaiting approval — badge for the "Awaiting approval" tab. */
 export function awaitingAdjustmentCount(): number {
-  return stockAdjustments.filter((a) => a.status === 'awaiting approval').length
+  return stockAdjustments.filter((a) => a.status === 'draft').length
 }
 
 /** Delete adjustments by id (row kebab + bulk delete). */
@@ -338,7 +382,7 @@ export function addAdjustment(input: AdjustmentInput): StockAdjustment {
     warehouseName: input.warehouseName,
     category: input.category,
     account: accountForCategory(input.category),
-    status: 'awaiting approval',
+    status: 'draft',
     tags: input.tags,
     memo: input.memo,
     lines: input.lines,
@@ -346,6 +390,26 @@ export function addAdjustment(input: AdjustmentInput): StockAdjustment {
   stockAdjustments.unshift(adj)
   persistAdjustments()
   return adj
+}
+
+/** Approve a pending adjustment — updates stock on hand and marks it completed. */
+export function approveAdjustment(id: string): StockAdjustment | undefined {
+  const a = stockAdjustments.find((x) => x.id === id)
+  if (!a || a.status !== 'draft') return a
+  if (a.kind === 'count') {
+    // For count: stored lines.qty = absolute counted qty; fallback derives from line items.
+    const lines = a.lines ?? adjustmentLineItems(a).map(l => ({ sku: l.sku, qty: l.counted }))
+    applyStockCount(a.warehouseId, lines)
+  } else {
+    // For in-out: stored lines.qty = delta (+/-); fallback derives the difference.
+    const lines = a.lines ?? adjustmentLineItems(a).map(l => ({ sku: l.sku, qty: l.difference }))
+    applyStockInOut(a.warehouseId, lines)
+  }
+  a.status = 'completed'
+  a.approvedBy = ACTOR
+  a.approvedAt = new Date().toISOString()
+  persistAdjustments()
+  return a
 }
 
 /** Update an existing adjustment in place (edit form). */

@@ -246,7 +246,7 @@ function removeNode(nodes: LocNode[], id: string): boolean {
 export function getStorageTree(warehouseId: string): LocNode[] {
   if (!store[warehouseId]) {
     const wh = warehouses.find(w => w.id === warehouseId)
-    if (wh?.isDefault || !wh?.skuTotal) {
+    if (wh?.isDefault || !wh?.skuTotal || wh?.hasStorageLocations === false) {
       store[warehouseId] = []
     } else {
       const profile = WH_STORAGE_PROFILES[warehouseId]

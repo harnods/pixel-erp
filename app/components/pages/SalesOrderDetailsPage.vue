@@ -22,6 +22,17 @@ const hasApproval = true
 const router = useRouter()
 const order = computed(() => getSalesOrderDetail(props.orderId))
 const activityOpen = ref(false)
+const activityEntries = computed(() => [{
+  date: order.value.lastUpdatedAt,
+  user: order.value.lastUpdatedBy,
+  activity: 'Created',
+  details: [
+    { label: 'Transaction no.', value: `Sales Order #${order.value.number}` },
+    { label: 'Transaction date', value: formatDateLong(order.value.date) },
+    { label: 'Customer', value: order.value.customer.name },
+    { label: 'Warehouse', value: order.value.warehouse },
+  ],
+}])
 
 // ── Line-items progressive pagination (auto lazy-load on scroll) ───────────────
 const PAGE_SIZE = 10
@@ -468,6 +479,7 @@ function goBack() { router.push('/sales-orders') }
       :subject="`Sales Order #${order.number}`"
       :updated-by="order.lastUpdatedBy"
       :updated-at="order.lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
   </div>

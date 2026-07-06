@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon, MpInputTag, MpDatePicker,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
   toast, css, type DataInterface,
 } from '@mekari/pixel3'
 import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
@@ -11,8 +12,9 @@ import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/Ma
 import ManageSerialDrawer from '~/components/patterns/ManageSerialDrawer.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
-import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
 import { addAdjustment, accountOptions } from '~/data/stockAdjustments'
+import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
 
 const router = useRouter()
 
@@ -210,16 +212,38 @@ function handleSave() {
   let valid = true
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
-  if (!rows.value.length) { formError.value = 'Add at least one product to count.'; valid = false }
+  if (hasStorageLocs.value) {
+    if (!selectedLocations.value.length || !selectedLocations.value.some(l => l.rows.length)) {
+      formError.value = 'Select at least one location with products to count.'
+      valid = false
+    }
+  } else {
+    if (!rows.value.length) { formError.value = 'Add at least one product to count.'; valid = false }
+  }
   if (!valid) return
 
-  // Store each line's counted qty (uncounted rows default to on-hand = no change).
-  const lines = rows.value.map(r => ({
-    sku: r.sku,
-    qty: isBatchTrackedSku(r.sku)
-      ? (batchHasCounts(r) ? batchTotalFor(r) : onHandFor(r.sku))
-      : (isCounted(r) ? parseCounted(r.counted) : onHandFor(r.sku))
-  }))
+  let lines: { sku: string; qty: number }[]
+
+  if (hasStorageLocs.value) {
+    lines = []
+    for (const loc of selectedLocations.value) {
+      for (const r of loc.rows) {
+        const qty = isBatchTrackedSku(r.sku)
+          ? (locBatchHasCounts(r) ? locBatchTotalFor(r) : r.onHand)
+          : (r.counted.trim() ? parseCounted(r.counted) : r.onHand)
+        lines.push({ sku: r.sku, qty })
+      }
+    }
+  } else {
+    // Store each line's counted qty (uncounted rows default to on-hand = no change).
+    lines = rows.value.map(r => ({
+      sku: r.sku,
+      qty: isBatchTrackedSku(r.sku)
+        ? (batchHasCounts(r) ? batchTotalFor(r) : onHandFor(r.sku))
+        : (isCounted(r) ? parseCounted(r.counted) : onHandFor(r.sku))
+    }))
+  }
+
   const adj = addAdjustment({
     kind: 'count',
     date: toISODate(transactionDate.value),
@@ -231,7 +255,128 @@ function handleSave() {
     lines,
   })
   toast.notify({ variant: 'success', title: 'Stock count created' })
-  router.push(`/stock-adjustments/${adj.id}`)
+  router.push('/stock-adjustments')
+}
+
+// ── Storage-location mode ────────────────────────────────────────────────────────
+interface LocRow { sku: string; onHand: number; counted: string; countedError: boolean; isAuto: boolean; batchLines?: CommittedBatch[]; serialLines?: string[] }
+interface LocEntry {
+  locId: string; fullPath: string
+  skuStart: number; skuQty: number
+  rows: LocRow[]; productDrawerOpen: boolean
+}
+
+const hasStorageLocs = computed(() => getStorageTree(warehouseId.value).length > 0)
+const locationDrawerOpen = ref(false)
+const selectedLocations = ref<LocEntry[]>([])
+watch(warehouseId, () => { selectedLocations.value = [] })
+
+interface FlatLoc { id: string; name: string; level: string; depth: number; skuStart: number; skuQty: number }
+function flatStorageNodes(): FlatLoc[] {
+  const result: FlatLoc[] = []
+  const walk = (nodes: LocNode[], depth: number) => {
+    for (const n of nodes) {
+      if (n.type === 'Storage' && n.children.length === 0) result.push({ id: n.id, name: n.name, level: n.level, depth, skuStart: n.skuStart, skuQty: n.skuQty })
+      walk(n.children, depth + 1)
+    }
+  }
+  walk(getStorageTree(warehouseId.value), 0)
+  return result
+}
+
+const locDrawerSel = ref<Set<string>>(new Set())
+const locDrawerSearch = ref('')
+watch(locationDrawerOpen, (o) => {
+  if (o) {
+    locDrawerSel.value = new Set(selectedLocations.value.map(l => l.locId))
+    locDrawerSearch.value = ''
+  }
+})
+const locDrawerItems = computed(() => {
+  const q = locDrawerSearch.value.trim().toLowerCase()
+  return flatStorageNodes().filter(n =>
+    !q || n.name.toLowerCase().includes(q)
+  )
+})
+function toggleLocDrawerSel(id: string) {
+  const s = new Set(locDrawerSel.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  locDrawerSel.value = s
+}
+function confirmLocSelection() {
+  const all = flatStorageNodes()
+  const existing = new Map(selectedLocations.value.map(l => [l.locId, l]))
+  selectedLocations.value = [...locDrawerSel.value]
+    .map(id => {
+      if (existing.has(id)) return existing.get(id)!
+      const node = all.find(n => n.id === id)
+      if (!node) return null
+      const stockItems = getLocationStock(warehouseId.value, node.skuStart, node.skuQty)
+      const rows: LocRow[] = stockItems.map(s => ({ sku: s.sku, onHand: s.onHand, counted: '', countedError: false, isAuto: true }))
+      const fullPath = findLocation(warehouseId.value, id)?.path.map(n => n.name).join(' / ') ?? node.name
+      return { locId: id, fullPath, skuStart: node.skuStart, skuQty: node.skuQty, rows, productDrawerOpen: false }
+    })
+    .filter(Boolean) as LocEntry[]
+  locationDrawerOpen.value = false
+}
+
+function removeLoc(locId: string) { selectedLocations.value = selectedLocations.value.filter(l => l.locId !== locId) }
+
+const locBatchDrawerRow = ref<LocRow | null>(null)
+const locBatchDrawerOpen = computed({
+  get: () => locBatchDrawerRow.value !== null,
+  set: (v) => { if (!v) locBatchDrawerRow.value = null }
+})
+function openLocBatchDrawer(row: LocRow) { locBatchDrawerRow.value = row }
+function saveLocBatchLines(batches: CommittedBatch[]) {
+  if (!locBatchDrawerRow.value) return
+  locBatchDrawerRow.value.batchLines = batches
+}
+function locBatchHasCounts(row: LocRow): boolean {
+  return (row.batchLines ?? []).some(b => b.counted !== null)
+}
+function locBatchTotalFor(row: LocRow): number {
+  return (row.batchLines ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
+}
+
+const locSerialDrawerRow = ref<LocRow | null>(null)
+const locSerialDrawerOpen = computed({
+  get: () => locSerialDrawerRow.value !== null,
+  set: (v) => { if (!v) locSerialDrawerRow.value = null }
+})
+function openLocSerialDrawer(row: LocRow) { locSerialDrawerRow.value = row }
+function saveLocSerialLines(serials: string[]) {
+  if (!locSerialDrawerRow.value) return
+  locSerialDrawerRow.value.serialLines = serials
+}
+
+function locDiff(row: LocRow): number | null {
+  if (isBatchTrackedSku(row.sku)) {
+    if (!locBatchHasCounts(row)) return null
+    return locBatchTotalFor(row) - row.onHand
+  }
+  if (!row.counted.trim()) return null
+  return parseCounted(row.counted) - row.onHand
+}
+function locDiffLabel(row: LocRow): string {
+  const d = locDiff(row)
+  if (d === null) return 'Uncounted'
+  return d > 0 ? `+${d.toLocaleString('id-ID')}` : d.toLocaleString('id-ID')
+}
+function onLocCountedInput(row: LocRow, ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const digits = input.value.replace(/\D/g, '')
+  row.counted = digits ? Number(digits).toLocaleString('id-ID') : ''
+  row.countedError = false
+  nextTick(() => { input.setSelectionRange(input.value.length, input.value.length) })
+}
+function removeLocRow(loc: LocEntry, sku: string) { loc.rows = loc.rows.filter(r => r.sku !== sku) }
+function addProductsToLoc(loc: LocEntry, skus: string[]) {
+  const existingSkus = new Set(loc.rows.map(r => r.sku))
+  for (const sku of skus) {
+    if (!existingSkus.has(sku)) loc.rows.push({ sku, onHand: 0, counted: '', countedError: false, isAuto: false })
+  }
+  loc.productDrawerOpen = false
 }
 
 // ── Sticky footer divider ────────────────────────────────────────────────────────
@@ -321,8 +466,128 @@ onUnmounted(() => { stageObserver?.disconnect() })
           </div>
         </div>
 
-        <!-- Product table -->
-        <div class="scf-table-section">
+        <!-- Storage location mode -->
+        <template v-if="hasStorageLocs">
+          <div class="scf-loc-banner">
+            This warehouse uses storage locations. Select a location before making adjustments.
+          </div>
+          <div class="scf-loc-actions">
+            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="locationDrawerOpen = true">
+              <MpIcon name="add" size="sm" />
+              Select locations
+            </button>
+          </div>
+
+          <div v-if="!selectedLocations.length" class="scf-loc-empty">
+            No locations selected. Use "Select locations" to add locations to count.
+          </div>
+
+          <MpAccordion is-allow-multiple is-allow-toggle class="scf-loc-accordions">
+            <MpAccordionItem
+              v-for="loc in selectedLocations"
+              :key="loc.locId"
+              :id="`scf-acc-${loc.locId}`"
+              is-default-open
+              icon-position="start"
+            >
+              <MpAccordionHeader>
+                <MpAccordionIcon />
+                <span class="scf-acc-label">{{ loc.fullPath }}</span>
+                <span class="scf-acc-meta">SKU qty: {{ loc.rows.length }}</span>
+                <button class="scf-acc-remove" type="button" aria-label="Remove location" @click.stop="removeLoc(loc.locId)">
+                  <MpIcon name="minus-circular" size="sm" />
+                </button>
+              </MpAccordionHeader>
+              <MpAccordionPanel>
+              <div class="scf-acc-body">
+                <div class="scf-table-scroll">
+                  <table class="scf-table scf-table--loc">
+                    <colgroup>
+                      <col class="scf-col-prod" />
+                      <col class="scf-col-sku" />
+                      <col class="scf-col-num" />
+                      <col class="scf-col-counted" />
+                      <col class="scf-col-num" />
+                      <col class="scf-col-unit" />
+                      <col class="scf-col-del" />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th class="scf-th">Product</th>
+                        <th class="scf-th">SKU</th>
+                        <th class="scf-th scf-th--num">On hand qty</th>
+                        <th class="scf-th scf-th--num">Counted qty</th>
+                        <th class="scf-th scf-th--num">Difference</th>
+                        <th class="scf-th">Unit</th>
+                        <th class="scf-th scf-th--del" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in loc.rows" :key="row.sku" class="scf-tr">
+                        <td class="scf-td scf-td--prod">
+                          <span class="scf-prod">
+                            <img v-if="imgFor(row.sku)" class="scf-thumb" :src="imgFor(row.sku)" :alt="nameFor(row.sku)" loading="lazy" />
+                            <span v-else class="scf-thumb scf-thumb--empty" />
+                            <span class="scf-prod-info">
+                              <span class="scf-prod-name">{{ nameFor(row.sku) }}</span>
+                              <span v-if="descFor(row.sku)" class="scf-prod-desc">{{ descFor(row.sku) }}</span>
+                            </span>
+                          </span>
+                        </td>
+                        <td class="scf-td scf-td--muted">{{ row.sku }}</td>
+                        <td class="scf-td scf-td--num">{{ row.onHand.toLocaleString('id-ID') }}</td>
+                        <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--batch-counted">
+                          <div class="scf-batch-row scf-batch-row--total">
+                            <span v-if="locBatchHasCounts(row)" class="scf-batch-total">{{ locBatchTotalFor(row).toLocaleString('id-ID') }}</span>
+                            <span v-else class="scf-batch-uncounted">Uncounted</span>
+                          </div>
+                          <div class="scf-batch-row scf-batch-row--action">
+                            <button class="scf-batch-link" type="button" @click="openLocBatchDrawer(row)">Manage batch</button>
+                          </div>
+                        </td>
+                        <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--batch-counted scf-td--serial">
+                          <div class="scf-batch-row scf-batch-row--total scf-batch-row--bare">
+                            <input :id="`scf-loc-${loc.locId}-${row.sku}`" class="scf-qty-input" type="text" inputmode="numeric" :value="row.counted" placeholder="0" @input="onLocCountedInput(row, $event)" />
+                          </div>
+                          <div class="scf-batch-row scf-batch-row--action">
+                            <button class="scf-batch-link" type="button" @click="openLocSerialDrawer(row)">Manage serial number</button>
+                          </div>
+                        </td>
+                        <td v-else class="scf-td scf-td--input">
+                          <input :id="`scf-loc-${loc.locId}-${row.sku}`" class="scf-qty-input" type="text" inputmode="numeric" :value="row.counted" placeholder="0" @input="onLocCountedInput(row, $event)" />
+                        </td>
+                        <td class="scf-td scf-td--num" :class="{ 'scf-diff--pos': (locDiff(row) ?? 0) > 0, 'scf-diff--neg': (locDiff(row) ?? 0) < 0, 'scf-diff--uncounted': locDiff(row) === null }">
+                          {{ locDiffLabel(row) }}
+                        </td>
+                        <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
+                        <td class="scf-td scf-td--del">
+                          <button class="scf-del-btn" type="button" @click="removeLocRow(loc, row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <button class="scf-add-btn" type="button" @click="loc.productDrawerOpen = true">
+                  <MpIcon name="add" size="sm" /> Add product
+                </button>
+
+                <!-- Product drawer per location -->
+                <SelectProductDrawer
+                  v-model:open="loc.productDrawerOpen"
+                  :products="pickerProducts"
+                  :model-value="loc.rows.map(r => r.sku)"
+                  @save="skus => addProductsToLoc(loc, skus)"
+                />
+              </div>
+              </MpAccordionPanel>
+            </MpAccordionItem>
+          </MpAccordion>
+
+          <p v-if="formError" class="scf-form-error">{{ formError }}</p>
+        </template>
+
+        <!-- Existing flat-table (non-storage-location warehouses) -->
+        <div v-else class="scf-table-section">
           <div class="scf-table-scroll">
             <table class="scf-table">
               <colgroup>
@@ -457,6 +722,34 @@ onUnmounted(() => { stageObserver?.disconnect() })
     </footer>
 
     <SelectProductDrawer v-model:open="drawerOpen" :products="pickerProducts" :model-value="selectedSkus" @save="applyPicker" />
+
+    <!-- Select locations drawer -->
+    <Transition name="spd">
+      <div v-if="locationDrawerOpen" class="loc-spd-overlay" @click.self="locationDrawerOpen = false">
+        <div class="loc-spd-panel" role="dialog" aria-label="Select locations">
+          <div class="loc-spd-header">
+            <span class="loc-spd-title">Select locations</span>
+            <button class="loc-spd-close" type="button" @click="locationDrawerOpen = false"><MpIcon name="close" size="sm" /></button>
+          </div>
+          <div class="loc-spd-search-wrap">
+            <input v-model="locDrawerSearch" class="loc-spd-search-input" type="text" placeholder="Search location..." />
+          </div>
+          <div class="loc-spd-list">
+            <label v-for="node in locDrawerItems" :key="node.id" class="loc-drawer-item" :style="{ paddingLeft: `${16 + node.depth * 16}px` }">
+              <input type="checkbox" :checked="locDrawerSel.has(node.id)" @change="toggleLocDrawerSel(node.id)" />
+              <span class="loc-drawer-name">{{ node.name }}</span>
+            </label>
+            <div v-if="!locDrawerItems.length" class="loc-drawer-empty">No storage locations found</div>
+          </div>
+          <div class="loc-spd-footer">
+            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="locationDrawerOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmLocSelection">
+              Select ({{ locDrawerSel.size }})
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
     <ManageBatchDrawer
       v-if="batchDrawerRow"
       :open="batchDrawerOpen"
@@ -475,6 +768,27 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :model-value="serialDrawerRow.serialLines ?? []"
       @update:open="serialDrawerOpen = false"
       @save="saveSerialLines"
+    />
+    <ManageBatchDrawer
+      v-if="locBatchDrawerRow"
+      :open="locBatchDrawerOpen"
+      :sku="locBatchDrawerRow.sku"
+      :warehouse-id="warehouseId"
+      :model-value="locBatchDrawerRow.batchLines ?? []"
+      :location-on-hand="locBatchDrawerRow.onHand"
+      @update:open="locBatchDrawerOpen = $event"
+      @save="saveLocBatchLines"
+    />
+    <ManageSerialDrawer
+      v-if="locSerialDrawerRow"
+      :open="true"
+      :sku="locSerialDrawerRow.sku"
+      :warehouse-id="warehouseId"
+      :target-count="parseCounted(locSerialDrawerRow.counted)"
+      :model-value="locSerialDrawerRow.serialLines ?? []"
+      :location-on-hand="locSerialDrawerRow.onHand"
+      @update:open="locSerialDrawerOpen = false"
+      @save="saveLocSerialLines"
     />
   </div>
 </template>
@@ -515,8 +829,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-import-btn:hover { opacity: 0.9; }
 
 .scf-table-section { margin-top: var(--mp-spacing-5); }
-.scf-table-scroll { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.scf-table-scroll { overflow-x: auto; }
 .scf-table { width: 100%; table-layout: auto; border-collapse: collapse; border-spacing: 0; min-width: 900px; }
+.scf-table--loc { table-layout: fixed; }
+.scf-col-prod  { /* takes remaining width */ }
+.scf-col-sku   { width: 120px; }
+.scf-col-num   { width: 116px; }
+.scf-col-counted { width: 168px; }
+.scf-col-unit  { width: 72px; }
+.scf-col-del   { width: 44px; }
 .scf-col-prod { width: 26%; } .scf-col-sku { width: 12%; } .scf-col-num { width: 12%; } .scf-col-unit { width: 8%; } .scf-col-del { width: 44px; }
 .scf-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
 .scf-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
@@ -586,4 +907,40 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scf-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
 .scf-file-remove:hover { color: var(--mp-text-default); }
+
+/* Storage location banner + actions */
+.scf-loc-banner { margin-top: var(--mp-spacing-5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+.scf-loc-actions { margin-top: 12px; }
+.scf-loc-empty { margin-top: 20px; padding: var(--mp-spacing-8); text-align: center; border: 1.5px dashed var(--mp-border-default); border-radius: var(--mp-radii-lg); font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+.scf-loc-accordions { margin-top: 20px; }
+
+/* Accordion content slots */
+.scf-acc-label { flex: 1; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scf-acc-meta { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap; }
+.scf-acc-remove { margin-left: var(--mp-spacing-2); flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); }
+.scf-acc-remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+.scf-acc-body { padding: var(--mp-spacing-4) var(--mp-spacing-4) var(--mp-spacing-4) 0; }
+
+/* Location drawer — standalone styles (spd-* classes are scoped to SelectProductDrawer) */
+.loc-spd-overlay { position: fixed; inset: 0; z-index: 1300; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
+.loc-spd-panel { margin: var(--mp-spacing-3); width: min(480px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px); overflow: hidden; }
+.loc-spd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle); }
+.loc-spd-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.loc-spd-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.loc-spd-close:hover { background: var(--mp-background-neutral-hovered); }
+.loc-spd-search-wrap { padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.loc-spd-search-input { width: 100%; height: 36px; border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); padding: 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; box-sizing: border-box; }
+.loc-spd-list { flex: 1; overflow-y: auto; }
+.loc-spd-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+
+/* Location drawer items */
+.loc-drawer-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: 10px 16px; cursor: pointer; border-bottom: 1px solid var(--mp-border-default); }
+.loc-drawer-item:last-child { border-bottom: none; }
+.loc-drawer-item:hover { background: var(--mp-background-neutral-subtle); }
+.loc-drawer-item input[type="checkbox"] { flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; accent-color: var(--mp-colors-emerald-700); }
+.loc-drawer-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.loc-drawer-empty { padding: var(--mp-spacing-8); text-align: center; color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-md); }
+
+/* btn-enterprise variants used in storage-location mode */
+.btn-enterprise--icon-before { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 </style>

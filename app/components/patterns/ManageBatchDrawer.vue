@@ -26,6 +26,12 @@ const props = defineProps<{
   modelValue: CommittedBatch[]
   /** 'count' (default) = stock count; 'in-out' = stock in/out */
   kind?: 'count' | 'in-out'
+  /**
+   * When counting inside a storage location, pass the bin-level on-hand.
+   * 0 means the SKU has no stock at this bin → start empty instead of
+   * pre-seeding from the warehouse-wide batch list.
+   */
+  locationOnHand?: number
 }>()
 
 const emit = defineEmits<{
@@ -76,6 +82,12 @@ watch(() => props.open, (isOpen) => {
 
   // in-out mode: start empty — user manually picks which batches to affect
   if (props.kind === 'in-out') {
+    rows.value = []
+    return
+  }
+
+  // count mode with zero bin on-hand: SKU not in this bin → start empty
+  if (props.locationOnHand === 0) {
     rows.value = []
     return
   }
@@ -341,10 +353,6 @@ function fmtNum(n: number | null): string {
                 </MpPopoverList>
               </MpPopoverContent>
             </MpPopover>
-            <button class="mbd-add-new-btn" type="button" @click="addNewBatch">
-              <MpIcon name="plus" size="sm" />
-              Add new batch
-            </button>
           </div>
 
           <div class="mbd-search">
@@ -483,6 +491,11 @@ function fmtNum(n: number | null): string {
                         <MpPopoverListItem v-if="!availableBatches.length" disabled>
                           All batches added
                         </MpPopoverListItem>
+                        <div class="mbd-popover-divider" />
+                        <MpPopoverListItem @click="addNewBatch">
+                          <MpIcon name="add" size="sm" />
+                          Add new batch
+                        </MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -584,14 +597,7 @@ function fmtNum(n: number | null): string {
 .mbd-filter-left {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
 }
-.mbd-add-new-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-text-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral); font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default); cursor: pointer; white-space: nowrap;
-}
-.mbd-add-new-btn:hover { background: var(--mp-background-neutral-hovered); }
+.mbd-popover-divider { height: 1px; background: var(--mp-border-default); margin: var(--mp-spacing-1) 0; }
 .mbd-progress-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);

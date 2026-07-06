@@ -47,7 +47,7 @@ const statusConfig: Record<string, StatusConfig> = {
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
   pending:    { type: 'warning',      label: 'Pending'    },
-  draft:      { type: 'warning',      label: 'Draft'      },
+  draft:      { type: 'announcement', label: 'Draft'      },
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
   receiving:  { type: 'warning',      label: 'Receiving'  },
