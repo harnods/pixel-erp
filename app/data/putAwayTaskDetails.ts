@@ -30,8 +30,8 @@ export function getPutAwayLineItems(taskId: string): PutAwayLineItem[] {
   const task = putAwayTasks.find((t) => t.id === taskId)
   if (!task) return []
 
-  // When completed via the page, use the saved rows (preserves splits).
-  if (task.status === 'completed' && task.completedItems?.length) {
+  // When completed or draft-saved, use the saved rows (preserves splits and draft locations).
+  if ((task.status === 'completed' || task.status === 'in progress') && task.completedItems?.length) {
     // Build a sku → product+receiving info lookup from the source receiving tasks.
     const skuMeta = new Map<string, {
       productName: string; productDesc: string; image: string

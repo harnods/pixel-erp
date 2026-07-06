@@ -114,6 +114,7 @@ function toggleExpand(id: string) {
 // ─── Row actions ──────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(row: PutAwayTask) { router.push(`/put-away/${row.id}`) }
+function viewReceivingTask(taskId: string) { router.push(`/receiving/${taskId}`) }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -217,15 +218,33 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Receiving tasks — expandable list ── -->
+    <!-- ── Receiving tasks — expandable list, View details chip per task on hover ── -->
     <template #cell-receivingTaskNos="{ value, row }">
       <span class="pa-rtasks">
         <template v-if="expandedRows.has((row as unknown as PutAwayTask).id)">
-          <span v-for="no in (value as string[])" :key="no" class="pa-rtasks__item">{{ no }}</span>
+          <span v-for="(no, i) in (value as string[])" :key="no" class="cell-with-action pa-rtasks__row">
+            <span class="pa-rtasks__item">{{ no }}</span>
+            <button class="row-hover-btn" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[i]!)">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="row-hover-btn__label">VIEW DETAILS</span>
+            </button>
+          </span>
           <button class="pa-rtasks__toggle" @click.stop="toggleExpand((row as unknown as PutAwayTask).id)">Show less</button>
         </template>
         <template v-else>
-          <span class="pa-rtasks__item">{{ (value as string[])[0] }}</span>
+          <span class="cell-with-action pa-rtasks__row">
+            <span class="pa-rtasks__item">{{ (value as string[])[0] }}</span>
+            <button class="row-hover-btn" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[0]!)">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="row-hover-btn__label">VIEW DETAILS</span>
+            </button>
+          </span>
           <button
             v-if="(value as string[]).length > 1"
             class="pa-rtasks__toggle"

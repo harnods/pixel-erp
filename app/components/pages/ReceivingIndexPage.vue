@@ -344,10 +344,26 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <td v-if="tIdx === 0" :rowspan="po.tasks.length" class="rcvg-td rcvg-td--po">
                 <div class="rcvg-po-cell">
                   <span class="rcvg-po-no">{{ po.purchaseNo }}</span>
+                  <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${po.receiptId}`)">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="row-hover-btn__label">VIEW DETAILS</span>
+                  </button>
                 </div>
               </td>
               <td v-if="tIdx === 0" :rowspan="po.tasks.length" class="rcvg-td rcvg-td--warehouse">
-                {{ po.warehouseName }}
+                <div class="rcvg-wh-cell">
+                  <span>{{ po.warehouseName }}</span>
+                  <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${po.warehouseId}`)">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="row-hover-btn__label">VIEW DETAILS</span>
+                  </button>
+                </div>
               </td>
               <td v-if="!isScoped" class="rcvg-td">{{ t.assignee }}</td>
               <td class="rcvg-td">{{ t.skuCount }}</td>
@@ -560,9 +576,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* Merged PO + Warehouse cells */
-.rcvg-td--po { vertical-align: top; }
-.rcvg-td--warehouse { vertical-align: top; }
+.rcvg-td--po { vertical-align: middle; position: relative; }
+.rcvg-td--warehouse { vertical-align: middle; position: relative; }
 .rcvg-po-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.rcvg-wh-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rcvg-po-no { color: var(--mp-text-default); }
 
 /* Task row */

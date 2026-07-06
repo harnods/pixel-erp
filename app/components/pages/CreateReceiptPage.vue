@@ -199,7 +199,7 @@ function handleSave() {
     memo: memo.value.trim() || undefined,
   })
 
-  toast.notify({ variant: 'success', title: 'Receipt berhasil dibuat' })
+  toast.notify({ variant: 'success', title: 'Receipt created successfully' })
   goReceipts()
 }
 

@@ -171,7 +171,7 @@ function handleCreate() {
       skus: keptItems.value.map((i) => i.sku),
     })
   }
-  toast.notify({ variant: 'success', title: 'Tugas penerimaan berhasil dibuat' })
+  toast.notify({ variant: 'success', title: 'Receiving task created successfully' })
   router.push(`/inbound-delivery/${props.orderId}`)
 }
 </script>

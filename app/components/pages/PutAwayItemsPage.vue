@@ -3,26 +3,21 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { formatDateTimeLong } from '~/utils/date'
 import {
   MpSpinner,
-  MpAutocomplete, MpFormControl, MpFormLabel,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpButton, css,
-  toast,
+  css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
-import { BINS } from '~/data/receiptLineItems'
-
-const BINS_AC = BINS.map(b => ({ id: b, name: b }))
+import { stockLocationPaths } from '~/data/storageLocations'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
-const task      = computed(() => getPutAwayTask(props.orderId))
-const lineItems = computed(() => task.value ? getPutAwayLineItems(props.orderId) : [])
+const task            = computed(() => getPutAwayTask(props.orderId))
+const lineItems       = computed(() => task.value ? getPutAwayLineItems(props.orderId) : [])
+const locationOptions = computed(() => task.value ? stockLocationPaths(task.value.warehouseId) : [])
 
 // ── Draft rows — one per displayed table line (can be split into multiple) ────
 interface DraftRow {
@@ -40,11 +35,11 @@ const search    = ref('')
 
 watch([() => props.orderId, lineItems], () => {
   rowCounter = 0
-  draftRows.value = lineItems.value.map(it => ({
-    id: newRowId(),
-    skuCode: it.skuCode,
-    qty: 0,
-    binLocation: it.binLocation,
+  // Deduplicate by skuCode — one row per SKU, merging qty from multiple receiving tasks
+  const seen = new Map<string, string>()
+  lineItems.value.forEach(it => { if (!seen.has(it.skuCode)) seen.set(it.skuCode, it.binLocation) })
+  draftRows.value = [...seen.entries()].map(([skuCode, binLocation]) => ({
+    id: newRowId(), skuCode, qty: 0, binLocation,
   }))
   search.value = ''
 }, { immediate: true })
@@ -52,8 +47,15 @@ watch([() => props.orderId, lineItems], () => {
 // Lookup map: skuCode → line item (for product info)
 const itemBySkuCode = computed(() => new Map(lineItems.value.map(it => [it.skuCode, it])))
 
+// Summed received qty per SKU across all receiving tasks
+const totalQtyBySkuCode = computed(() => {
+  const map = new Map<string, number>()
+  lineItems.value.forEach(it => { map.set(it.skuCode, (map.get(it.skuCode) ?? 0) + it.qty) })
+  return map
+})
+
 // ── Summary ───────────────────────────────────────────────────────────────────
-const skuQty           = computed(() => lineItems.value.length)
+const skuQty           = computed(() => new Set(lineItems.value.map(it => it.skuCode)).size)
 const receivedQty      = computed(() => lineItems.value.reduce((s, it) => s + it.qty, 0))
 const draftHandled     = computed(() => draftRows.value.reduce((s, r) => s + (r.qty || 0), 0))
 const draftOutstanding = computed(() => Math.max(0, receivedQty.value - draftHandled.value))
@@ -142,56 +144,38 @@ function splitRow(rowId: string) {
   const idx = draftRows.value.findIndex(r => r.id === rowId)
   if (idx === -1) return
   const row = draftRows.value[idx]!
-  const item = itemBySkuCode.value.get(row.skuCode)
-  if (!item) return
-
+  const totalQty = totalQtyBySkuCode.value.get(row.skuCode) ?? 0
   const totalAssigned = draftRows.value
     .filter(r => r.skuCode === row.skuCode)
     .reduce((s, r) => s + (r.qty || 0), 0)
-  const remainder = Math.max(0, item.qty - totalAssigned)
-
-  const newRow: DraftRow = {
-    id: newRowId(),
-    skuCode: row.skuCode,
-    qty: remainder,
-    binLocation: row.binLocation,
-  }
-
+  const remainder = Math.max(0, totalQty - totalAssigned)
+  const newRow: DraftRow = { id: newRowId(), skuCode: row.skuCode, qty: remainder, binLocation: row.binLocation }
   const next = [...draftRows.value]
   next.splice(idx + 1, 0, newRow)
   draftRows.value = next
-
-  nextTick(() => openLocationEdit(newRow.id))
 }
 
-// ── Storage location edit modal ───────────────────────────────────────────────
-const editingLocationKey = ref<string | null>(null)  // rowId
-const editLocationValue  = ref('')
+// ── Storage location picker ───────────────────────────────────────────────────
+const activeLocRowId = ref<string | null>(null)
+const locSearch      = ref('')
 
-function openLocationEdit(rowId: string) {
-  const row = draftRows.value.find(r => r.id === rowId)
-  editingLocationKey.value = rowId
-  editLocationValue.value  = row?.binLocation ?? ''
+function openLocPicker(rowId: string)  { activeLocRowId.value = rowId; locSearch.value = '' }
+function closeLocPicker(rowId: string) { if (activeLocRowId.value === rowId) { activeLocRowId.value = null; locSearch.value = '' } }
+function locOptionsFiltered(rowId: string) {
+  const q = activeLocRowId.value === rowId ? locSearch.value.trim().toLowerCase() : ''
+  if (!q) return locationOptions.value
+  return locationOptions.value.filter(loc => loc.toLowerCase().includes(q))
 }
-function closeLocationEdit() {
-  editingLocationKey.value = null
-  editLocationValue.value  = ''
-}
-function saveLocationEdit() {
-  if (editingLocationKey.value) {
-    const key = editingLocationKey.value
-    draftRows.value = draftRows.value.map(r =>
-      r.id === key ? { ...r, binLocation: editLocationValue.value } : r,
-    )
-  }
-  closeLocationEdit()
+
+function updateLocation(rowId: string, loc: string) {
+  draftRows.value = draftRows.value.map(r => r.id === rowId ? { ...r, binLocation: loc } : r)
 }
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 function postPutAway() {
   if (draftOutstanding.value > 0) {
-    toast.notify({ variant: 'danger', title: `Masih ada ${fmt(draftOutstanding.value)} unit belum disimpan` })
+    toast.notify({ variant: 'danger', title: `${fmt(draftOutstanding.value)} units still need to be put away` })
     return
   }
   const items = draftRows.value.map(r => ({
@@ -200,7 +184,7 @@ function postPutAway() {
     binLocation: r.binLocation,
   }))
   endPutAwayTask(props.orderId, items)
-  toast.notify({ variant: 'success', title: 'Put-away selesai' })
+  toast.notify({ variant: 'success', title: 'Put-away finished' })
   router.push(`/put-away/${props.orderId}`)
 }
 
@@ -211,7 +195,7 @@ function saveDraft() {
     binLocation: r.binLocation,
   }))
   savePutAwayDraft(props.orderId, items)
-  toast.notify({ variant: 'success', title: 'Draf put-away tersimpan' })
+  toast.notify({ variant: 'success', title: 'Put-away draft saved' })
   router.push(`/put-away/${props.orderId}`)
 }
 
@@ -263,7 +247,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Store items</h1>
+          <h1 class="detail-title">Put away items</h1>
         </div>
       </div>
     </header>
@@ -287,7 +271,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <span class="pi-stat-val">{{ fmt(receivedQty) }}</span>
         </div>
         <div class="pi-stat">
-          <span class="pi-stat-label">Qty to store</span>
+          <span class="pi-stat-label">Put away qty</span>
           <span class="pi-stat-val">{{ fmt(draftHandled) }}</span>
         </div>
       </div>
@@ -295,7 +279,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <div class="pi-sku-section">
 
         <div class="pi-filter-bar">
-          <span class="pi-editing-hint">Scan or enter the qty to store and confirm the storage location for each item.</span>
+          <span class="pi-editing-hint">Scan or enter the put away qty and confirm the storage location for each item.</span>
           <div class="pi-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -315,15 +299,13 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <col />
                 <col />
                 <col />
-                <col />
               </colgroup>
               <thead>
                 <tr>
                   <th class="pi-th">Product</th>
                   <th class="pi-th">SKU</th>
-                  <th class="pi-th">Receiving task</th>
                   <th class="pi-th pi-th--num">Received qty</th>
-                  <th class="pi-th pi-th--num">Qty to store</th>
+                  <th class="pi-th pi-th--num">Put away qty</th>
                   <th class="pi-th">Unit</th>
                   <th class="pi-th">Storage location</th>
                   <th class="pi-th pi-th--action" aria-hidden="true" />
@@ -341,28 +323,46 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <!-- SKU — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ row.skuCode }}</td>
-                  <!-- Receiving task — merged -->
-                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.receivingTaskNo }}</td>
-                  <!-- Received qty — merged -->
-                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(itemBySkuCode.get(row.skuCode)?.qty ?? 0) }}</td>
-                  <!-- Qty to handle (editable — per split row) -->
+                  <!-- Received qty — merged, summed across all receiving tasks -->
+                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(totalQtyBySkuCode.get(row.skuCode) ?? 0) }}</td>
+                  <!-- Put away qty (editable — per split row) -->
                   <td class="pi-td pi-td--input">
                     <input
                       class="pi-qty-input"
-                      type="number" min="0" :max="itemBySkuCode.get(row.skuCode)?.qty ?? 0"
+                      type="number" min="0" :max="totalQtyBySkuCode.get(row.skuCode) ?? 0"
                       :value="row.qty"
-                      :aria-label="`Qty to store for ${itemBySkuCode.get(row.skuCode)?.productName}`"
-                      @input="onQtyInput(row.id, itemBySkuCode.get(row.skuCode)?.qty ?? 0, $event)"
+                      :aria-label="`Put away qty for ${itemBySkuCode.get(row.skuCode)?.productName}`"
+                      @input="onQtyInput(row.id, totalQtyBySkuCode.get(row.skuCode) ?? 0, $event)"
                     />
                   </td>
                   <!-- Unit — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.unit }}</td>
-                  <!-- Storage location (per split row) -->
+                  <!-- Storage location (popover picker, per split row) -->
                   <td class="pi-td pi-td--location">
-                    <span
-                      class="pi-location-value"
-                      :class="{ 'pi-location-value--empty': !row.binLocation }"
-                    >{{ row.binLocation || '—' }}</span>
+                    <MpPopover :id="`pi-loc-${row.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(row.id)">
+                      <MpPopoverTrigger>
+                        <div class="pi-loc-trigger">
+                          <input
+                            class="pi-loc-input"
+                            type="text"
+                            autocomplete="off"
+                            :value="activeLocRowId === row.id ? locSearch : row.binLocation"
+                            placeholder="Select location"
+                            @focus="openLocPicker(row.id)"
+                            @input="activeLocRowId = row.id; locSearch = ($event.target as HTMLInputElement).value"
+                          />
+                          <svg class="pi-loc-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </div>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem v-for="loc in locOptionsFiltered(row.id)" :key="loc" :is-active="loc === row.binLocation" @click="updateLocation(row.id, loc)">{{ loc }}</MpPopoverListItem>
+                          <p v-if="!locOptionsFiltered(row.id).length" class="pi-loc-none">No locations found.</p>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
                   </td>
                   <!-- Actions -->
                   <td class="pi-td pi-td--action">
@@ -376,7 +376,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
                         <MpPopoverList>
-                          <MpPopoverListItem @click="openLocationEdit(row.id)">Edit storage location</MpPopoverListItem>
                           <MpPopoverListItem @click="splitRow(row.id)">Split storage location</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
@@ -384,7 +383,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                 </tr>
                 <tr v-if="!filteredRows.length">
-                  <td class="pi-td pi-empty" colspan="8">No products match your search.</td>
+                  <td class="pi-td pi-empty" colspan="7">No products match your search.</td>
                 </tr>
               </tbody>
             </table>
@@ -404,8 +403,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="pi-btn pi-btn--ghost" @click="goBack">Cancel</button>
-      <button class="pi-btn pi-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="pi-btn pi-btn--primary" @click="postPutAway">Post</button>
+      <button class="pi-btn pi-btn--secondary" @click="saveDraft">Save as draft</button>
+      <button class="pi-btn pi-btn--primary" @click="postPutAway">Finish put-away</button>
     </footer>
   </div>
 
@@ -414,38 +413,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <button class="detail-breadcrumb" @click="goPutAway">Back to Put-away</button>
   </div>
 
-  <!-- ── Edit storage location modal ── -->
-  <MpModal :is-open="!!editingLocationKey" :is-keep-alive="false" is-close-on-esc @close="closeLocationEdit">
-    <MpModalContent>
-      <MpModalHeader>
-        Edit storage location
-        <MpModalCloseButton />
-      </MpModalHeader>
-      <MpModalBody>
-        <MpFormControl>
-          <MpFormLabel>Bin location</MpFormLabel>
-          <MpAutocomplete
-            id="pi-loc-modal-ac"
-            v-model="editLocationValue"
-            :data="BINS_AC"
-            label-prop="name"
-            value-prop="id"
-            is-searchable
-            is-full-width
-            use-portal
-            placeholder="Select bin location…"
-          />
-        </MpFormControl>
-      </MpModalBody>
-      <MpModalFooter>
-        <div :class="css({ display: 'flex', justifyContent: 'flex-end', gap: 'spacing-2', width: '100%' })">
-          <MpButton variant="ghost" is-rounded @click="closeLocationEdit">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save changes</MpButton>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
 
 </template>
 
@@ -539,15 +506,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-default, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default); white-space: nowrap;
+  white-space: nowrap;
 }
-.pi-th:last-child { border-right: none; }
 .pi-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-.pi-th--action { padding: 0; width: 48px; min-width: 48px; position: sticky; right: 0; z-index: 2; background: var(--mp-background-neutral-subtle); }
+.pi-th--action { padding: 0; width: 48px; min-width: 48px; position: sticky; right: 0; z-index: 2; background: var(--mp-background-default, #fff); }
 
 .pi-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
@@ -574,9 +540,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   line-height: var(--mp-line-heights-md);
 }
 
-/* ── Storage location cell ───────────────────────────────────────────────────── */
-.pi-location-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
-.pi-location-value--empty { color: var(--mp-text-secondary); }
+/* ── Storage location cell (popover picker) ──────────────────────────────────── */
+.pi-td--location { padding: 0; background: var(--mp-background-neutral, #fff); }
+.pi-td--location:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.pi-loc-trigger { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); cursor: text; }
+.pi-loc-input { flex: 1; min-width: 0; border: none; outline: none; background: none; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+.pi-loc-input::placeholder { color: var(--mp-text-placeholder); }
+.pi-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+.pi-loc-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 
 /* ── Row actions (kebab) ─────────────────────────────────────────────────────── */
 .pi-row-kebab {

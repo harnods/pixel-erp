@@ -11,7 +11,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { putAwayTasks, startPutAway as startPutAwayTask } from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
-import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { formatDate, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -22,7 +22,6 @@ const lineItems = computed(() => task.value ? getPutAwayLineItems(props.orderId)
 
 // ── Progress stats ─────────────────────────────────────────────────────────
 const storedQty = computed(() => lineItems.value.reduce((a, it) => a + it.stored, 0))
-const outstandingQty = computed(() => Math.max(0, (task.value?.itemQty ?? 0) - storedQty.value))
 
 // ── Aging badge ────────────────────────────────────────────────────────────
 const AGING_REF = '2026-06-25'
@@ -34,11 +33,8 @@ function agingDays(startDate?: string, endDate?: string): number {
 }
 
 // ── Linked receiving tasks (for the tab) ──────────────────────────────────
-// Completed tasks always have an end date; generate a fallback when the
-// underlying mock data doesn't have one (task was in-progress / open in data).
 function ensureEndDate(startDate: string | undefined, seed: number): string {
   if (!startDate) {
-    // No start date either — generate both relative to AGING_REF
     const base = new Date(AGING_REF)
     base.setDate(base.getDate() - 7 - (seed % 14))
     return base.toISOString().slice(0, 10)
@@ -185,7 +181,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.receivingTaskNos[0] }}{{ t.receivingTaskNos.length > 1 ? ` +${t.receivingTaskNos.length - 1} more` : '' }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">Tugas tidak ditemukan. Coba kata kunci lain.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">No tasks found.</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -220,20 +216,19 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <span class="pad-progress-val">{{ fmt(task.itemQty) }}</span>
         </div>
         <div class="pad-progress-stat">
-          <span class="pad-progress-label">Stored qty</span>
+          <span class="pad-progress-label">Put-away qty</span>
           <span class="pad-progress-val">{{ fmt(storedQty) }}</span>
         </div>
       </section>
 
       <!-- ── Items table ── -->
       <div class="pad-table-wrap">
-        <!-- Filter bar — search always right-aligned -->
         <div class="pad-filter-bar">
           <div class="pad-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="pad-search" type="text" placeholder="Cari produk atau SKU…" />
+            <input v-model="itemSearch" class="pad-search" type="text" placeholder="Search product or SKU…" />
           </div>
         </div>
 
@@ -241,13 +236,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <colgroup>
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
+                <col /><col /><col /><col /><col /><col />
+                <col v-if="task.status !== 'open'" />
               </colgroup>
               <thead>
                 <tr>
@@ -255,9 +245,9 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                   <th class="detail-th">SKU</th>
                   <th class="detail-th">Receiving task</th>
                   <th class="detail-th detail-th--num">Received qty</th>
-                  <th class="detail-th detail-th--num">Stored qty</th>
+                  <th class="detail-th detail-th--num">Put-away qty</th>
                   <th class="detail-th">Unit</th>
-                  <th class="detail-th">Storage location</th>
+                  <th v-if="task.status !== 'open'" class="detail-th">Storage location</th>
                 </tr>
               </thead>
               <tbody>
@@ -274,7 +264,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                     </span>
                   </td>
                   <td class="detail-td detail-td--secondary">{{ item.unit }}</td>
-                  <td class="detail-td">
+                  <td v-if="task.status !== 'open'" class="detail-td">
                     <span class="pad-bin">{{ item.binLocation }}</span>
                   </td>
                 </tr>
@@ -291,7 +281,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </section>
       </div>
 
-      <!-- ── Purchase receiving tab ── -->
+      <!-- ── Linked transactions ── -->
       <MpTabs id="pad-tabs" :default-value="0" variant-color="green" class="pad-tabs">
         <MpTabList>
           <MpTab id="pad-tab-linked" value="linked">Purchase receiving ({{ linkedReceivingTasks.length }})</MpTab>
@@ -302,12 +292,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <div class="pad-linked-wrap">
               <table class="pad-linked">
                 <colgroup>
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
+                  <col /><col /><col /><col /><col /><col />
                 </colgroup>
                 <thead>
                   <tr>
@@ -355,7 +340,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
     <!-- ── Footer action bar ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <!-- Print (secondary dropdown) -->
       <MpPopover id="pad-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--secondary">
@@ -373,7 +357,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </MpPopoverContent>
       </MpPopover>
 
-      <!-- Actions-only when completed; split button otherwise -->
       <template v-if="task.status === 'completed'">
         <MpPopover id="pad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
@@ -425,10 +408,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 </template>
 
 <style scoped>
-/* ── Page shell ── */
 .detail-page  { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
-/* ── Title bar ── */
 .detail-bar {
   height: var(--mp-sizes-18, 72px); flex-shrink: 0;
   background: var(--mp-background-neutral-subtle);
@@ -448,7 +429,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   color: var(--mp-text-default); line-height: 32px; letter-spacing: -0.2px; margin: 0;
 }
 
-/* ── Jump switcher ── */
 .detail-jump-chevron {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7); height: var(--mp-sizes-7); border: none; background: none;
@@ -467,24 +447,21 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 .detail-jump-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1) 0; }
 .detail-jump-item {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3); background: none; border: none; cursor: pointer;
-  text-align: left;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3); background: none; border: none; cursor: pointer; text-align: left;
 }
 .detail-jump-item:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty { padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-placeholder); margin: 0; }
 
-/* ── Stage ── */
 .detail-stage {
   flex: 1; overflow-y: auto;
   background: var(--mp-background-stage, var(--mp-background-neutral-subtle));
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
-  padding: var(--mp-spacing-6) var(--mp-spacing-6) var(--mp-spacing-6);
+  padding: var(--mp-spacing-6);
   display: flex; flex-direction: column; gap: var(--mp-spacing-8);
 }
 
-/* ── Summary grid (2 cols) ── */
 .pad-summary {
   display: grid;
   grid-template-columns: minmax(0, 318px) 1fr;
@@ -492,17 +469,12 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 .content-list-col { display: flex; flex-direction: column; }
 
-/* ── Progress stats ── */
 .pad-progress { display: flex; gap: var(--mp-spacing-10); }
 .pad-progress-stat { display: flex; flex-direction: column; min-width: 112px; }
-.pad-progress-val {
-  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
-}
+.pad-progress-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pad-progress-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-/* ── Items table wrapper ── */
 .pad-table-wrap { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-/* Search always right-aligned in filter bar */
 .pad-filter-bar { display: flex; align-items: center; justify-content: flex-end; }
 .pad-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
@@ -516,11 +488,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 .pad-search::placeholder { color: var(--mp-text-placeholder); }
 
-/* ── Table shared classes (reuse detail-* pattern) ── */
 .detail-items-section { display: flex; flex-direction: column; }
-.detail-items-section--bordered {
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden;
-}
+.detail-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; }
 .detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 
@@ -555,42 +524,19 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
 }
 
-/* ── Product cell ── */
-.pad-product { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.pad-product-thumb {
-  width: var(--mp-sizes-10); height: var(--mp-sizes-10); object-fit: cover; border-radius: var(--mp-radii-md); flex-shrink: 0;
-}
-.pad-product-name {
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-
-/* ── Quantity colouring ── */
 .pad-qty--full     { color: var(--mp-text-success); }
 .pad-qty--partial  { color: var(--mp-text-warning); }
 .pad-qty--zero     { color: var(--mp-text-placeholder); }
-.pad-outstanding   { color: var(--mp-text-default); }
+.pad-bin { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-/* ── Storage location bin ── */
-.pad-bin {
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-}
-
-/* ── Linked transactions tab ── */
 .pad-tabs :deep(.mp-tab--isSelected_true),
-.pad-tabs :deep(.mp-tab--isSelected_true:hover) {
-  color: var(--mp-text-selected) !important;
-}
-.pad-tabs :deep(.mp-tab-selected-border) {
-  background-color: var(--mp-border-selected, #029861) !important;
-}
+.pad-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.pad-tabs :deep(.mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .pad-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 
 .linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pad-linked-wrap { overflow-x: auto; }
 .pad-linked { width: 100%; border-collapse: collapse; }
-
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
@@ -609,7 +555,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 :global(.detail-item-row:hover .row-hover-btn) { display: flex; }
 
-/* ── Footer ── */
 .detail-footer {
   flex-shrink: 0;
   display: flex; justify-content: flex-end; gap: var(--mp-spacing-3);
@@ -628,7 +573,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 .detail-btn--secondary {
   background: var(--mp-background-neutral); border-color: var(--mp-border-bold);
-  color: var(--mp-text-secondary);
+  color: var(--mp-text-default);
 }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary {
@@ -649,7 +594,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   border-left: 1px solid rgba(255, 255, 255, 0.3); gap: 0;
 }
 
-/* ── Not found ── */
 .pad-not-found {
   display: flex; align-items: center; justify-content: center; height: 100%;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);

@@ -101,7 +101,7 @@ function onProofUpload(e: Event) {
 }
 function clearProof() { evidenceFiles.value = null; proofFile.value = '' }
 function printDeliveryNote() {
-  toast.notify({ variant: 'success', title: 'Surat jalan sent to printer' })
+  toast.notify({ variant: 'success', title: 'Delivery note sent to printer' })
 }
 function confirmShip() {
   if (!packageVerified.value) { scanError.value = true; return } // must scan a matching label first

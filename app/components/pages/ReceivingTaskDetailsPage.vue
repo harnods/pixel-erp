@@ -11,6 +11,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask } from '~/data/receivingTaskDetails'
 import { taskAgingDays, startReceiving, type ReceivingTask } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
+import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed'
@@ -99,6 +100,15 @@ function startReceivingAndNavigate() {
 // ── Formatters ────────────────────────────────────────────────────────────────
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
+
+// Distinct SKUs bundled into a linked put-away task, and how many units of them
+// have actually been stored so far (0/— until the put-away is completed).
+function paSkuQty(pa: { id: string }): number {
+  return getPutAwayLineItems(pa.id).length
+}
+function paStoredQty(pa: { id: string }): number {
+  return getPutAwayLineItems(pa.id).reduce((s, it) => s + it.stored, 0)
+}
 
 // Aging for a linked put-away row (start → end, or start → today while open).
 function paAging(pa: { startDate?: string; endDate?: string; status: string }): number {
@@ -274,7 +284,6 @@ function goBack() {
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Sku qty" :value="task.skuScope" />
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="rcvgd-end-cell">
@@ -442,12 +451,18 @@ function goBack() {
                   <col />
                   <col />
                   <col />
+                  <col />
+                  <col />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Assignee</th>
                     <th class="detail-th">Status</th>
+                    <th class="detail-th">SKU qty</th>
+                    <th class="detail-th">Received qty</th>
+                    <th class="detail-th">Put-away qty</th>
                     <th class="detail-th">Start date</th>
                     <th class="detail-th">End date</th>
                   </tr>
@@ -468,6 +483,9 @@ function goBack() {
                     </td>
                     <td class="detail-td">{{ pa.assignee }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
+                    <td class="detail-td">{{ fmt(paSkuQty(pa)) }}</td>
+                    <td class="detail-td">{{ fmt(pa.itemQty) }}</td>
+                    <td class="detail-td">{{ fmt(paStoredQty(pa)) }}</td>
                     <td class="detail-td">{{ pa.startDate ? formatDateTime(pa.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="rcvgd-end-cell">

@@ -116,7 +116,7 @@ const showConfirm = ref(false)
 function endReceiving() {
   if (draftReceivedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'danger', title: 'Masukkan received qty minimal 1 item' })
+    toast.notify({ variant: 'danger', title: 'Enter received qty for at least one item' })
     return
   }
   showConfirm.value = true
@@ -135,7 +135,7 @@ function commitReceiving(createPutAway = false) {
   } else {
     toast.notify({
       variant: complete ? 'success' : 'warning',
-      title: complete ? 'Penerimaan selesai, menunggu put-away' : 'Penerimaan disimpan, ada item kurang',
+      title: complete ? 'Receiving finished, awaiting put-away' : 'Receiving finished (items short)',
     })
     router.push(`/receiving/${props.orderId}`)
   }
@@ -143,7 +143,7 @@ function commitReceiving(createPutAway = false) {
 
 function saveDraft() {
   saveReceivingDraft(props.orderId, { ...draftQty.value })
-  toast.notify({ variant: 'success', title: 'Draf penerimaan tersimpan' })
+  toast.notify({ variant: 'success', title: 'Receiving draft saved' })
   router.push(`/receiving/${props.orderId}`)
 }
 

@@ -167,6 +167,7 @@ export function savePutAwayDraft(
   const t = getPutAwayTask(taskId);
   if (!t) return;
   if (t.status === 'open') { t.status = 'in progress'; t.startDate = nowIso(); }
+  t.completedItems = items.filter((it) => it.qty > 0);
   persistPutAways();
 }
 
