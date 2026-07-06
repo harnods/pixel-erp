@@ -25,6 +25,14 @@ const po    = computed(() => entry.value?.po)
 
 const lineItems = computed(() => task.value ? getTaskLineItems(task.value) : [])
 
+// The source receipt — single source of truth for PO-level totals. Purchase/Received
+// qty must come from here, not from summing task.receivedQty across po.tasks: a task's
+// receivedQty updates live as soon as a draft is saved, before the receiving is ended,
+// so summing it would leak still-in-progress numbers into the PO's Received qty.
+// receipt.receivedQty only advances via recomputeReceiptStatus(), once a task ends.
+const poReceipt = computed(() => receipts.find(r => r.id === po.value?.receiptId))
+const poSkuQty = computed(() => poReceipt.value?.skuQty ?? 0)
+
 // ── Local receiving state ───────────────────────────────────────────────────
 // Plain mock data isn't deeply reactive, so we mirror the mutable bits in local
 // refs that drive the view. Saving updates these (instant re-render) and also the
@@ -77,7 +85,7 @@ const lastUpdated = computed(() => {
 function createPutAway() {
   if (!task.value || !po.value) return
   router.push({
-    path: '/barang-masuk/put-away/create',
+    path: '/inbound-delivery/put-away/create',
     query: { warehouseId: po.value.warehouseId, taskId: task.value.id },
   })
 }
@@ -206,7 +214,7 @@ function jumpTo(id: string) {
 // goBack: return to the Inbound delivery page on the Receiving tab so the inbound
 // stage tabs (On the way / Receiving / Put-away / …) stay visible.
 function goBack() {
-  router.push('/barang-masuk?tab=Receiving')
+  router.push('/inbound-delivery?tab=Receiving')
 }
 </script>
 
@@ -385,6 +393,7 @@ function goBack() {
                   <col />
                   <col />
                   <col />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
@@ -392,6 +401,7 @@ function goBack() {
                     <th class="detail-th">Warehouse</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Estimated arrival</th>
+                    <th class="detail-th">SKU qty</th>
                     <th class="detail-th">Purchase qty</th>
                     <th class="detail-th">Received qty</th>
                   </tr>
@@ -401,7 +411,7 @@ function goBack() {
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
                         <span class="rcvgd-linked-num">{{ po.purchaseNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/barang-masuk/${po.receiptId}`)">
+                        <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${po.receiptId}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -413,8 +423,9 @@ function goBack() {
                     <td class="detail-td">{{ po.warehouseName }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="poStatus" /></td>
                     <td class="detail-td">{{ formatDate(po.estimatedArrival) }}</td>
-                    <td class="detail-td">{{ fmt(po.tasks.reduce((s, t) => s + t.purchaseQty, 0)) }}</td>
-                    <td class="detail-td">{{ fmt(po.tasks.reduce((s, t) => s + t.receivedQty, 0)) }}</td>
+                    <td class="detail-td">{{ fmt(poSkuQty) }}</td>
+                    <td class="detail-td">{{ fmt(poReceipt?.purchaseQty ?? 0) }}</td>
+                    <td class="detail-td">{{ fmt(poReceipt?.receivedQty ?? 0) }}</td>
                   </tr>
                 </tbody>
               </table>

@@ -125,7 +125,7 @@ const router = useRouter()
 function viewDetails(row: PickingTask) { router.push(`/picking/${row.id}`) }
 // A completed picking task can spawn packing tasks (one per sales order).
 function createPacking(row: PickingTask) {
-  router.push({ path: '/barang-keluar/packing/create', query: { pickingId: row.id } })
+  router.push({ path: '/outbound-delivery/packing/create', query: { pickingId: row.id } })
 }
 
 // ─── Bulk → create packing tasks for several finished picking lists at once ───────
@@ -150,7 +150,7 @@ function bulkPackable(sel: Set<number>): boolean {
 function bulkCreatePacking(sel: Set<number>, deselectAll: () => void) {
   const eligible = selectedPickingsOf(sel).filter(pickingEligibleForPacking)
   if (!eligible.length) return
-  router.push({ path: '/barang-keluar/packing/create', query: { pickingIds: eligible.map(t => t.id).join(',') } })
+  router.push({ path: '/outbound-delivery/packing/create', query: { pickingIds: eligible.map(t => t.id).join(',') } })
   deselectAll()
 }
 

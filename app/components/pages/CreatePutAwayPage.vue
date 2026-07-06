@@ -331,7 +331,7 @@ watch([selectedIds, shownCount], () => nextTick(checkStageOverflow))
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
 function goPutAway() {
-  router.push({ path: '/barang-masuk', query: { tab: 'Put-away' } })
+  router.push({ path: '/inbound-delivery', query: { tab: 'Put-away' } })
 }
 
 function handleCreate() {
@@ -352,7 +352,7 @@ function handleCreate() {
     itemQty: totalQty,
   })
 
-  router.push({ path: '/barang-masuk', query: { tab: 'Put-away', saved: '1' } })
+  router.push({ path: '/inbound-delivery', query: { tab: 'Put-away', saved: '1' } })
 }
 </script>
 

@@ -124,7 +124,7 @@ function saveDraft() {
   router.push(`/packing/${props.orderId}`)
 }
 function goBack() { router.push(`/packing/${props.orderId}`) }
-function goPacking() { router.push('/barang-keluar?tab=Packing') }
+function goPacking() { router.push('/outbound-delivery?tab=Packing') }
 
 const stageEl = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)

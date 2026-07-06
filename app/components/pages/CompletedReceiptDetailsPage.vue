@@ -123,7 +123,7 @@ const jumpResults = computed(() => {
   const matched = q ? all.filter(r => r.purchaseNo.toLowerCase().includes(q)) : all
   return matched.slice(0, 5)
 })
-function jumpTo(id: string) { router.push(`/barang-masuk/${id}`) }
+function jumpTo(id: string) { router.push(`/inbound-delivery/${id}`) }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -162,7 +162,7 @@ function agingDays(startDate?: string, endDate?: string): number {
   return Math.max(0, Math.round((ref.getTime() - start.getTime()) / 86400000) + 1)
 }
 
-function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
+function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } }) }
 </script>
 
 <template>

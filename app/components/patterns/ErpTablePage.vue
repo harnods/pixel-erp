@@ -444,7 +444,9 @@ const bulkCountLabel = computed(() => {
                       :class="{ 'erp-sort-btn--active': sortKey === col.key }"
                       aria-label="Sort column" @click.stop
                     >
-                      <MpIcon name="sort-default" size="sm" />
+                      <!-- Literal px, not "sm" — MpIcon's "sm" resolves to ~20px (token
+                           spacing.5), which doesn't fit the 28px-fixed header row. -->
+                      <MpIcon name="sort-default" size="16px" />
                     </button>
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -749,6 +751,10 @@ const bulkCountLabel = computed(() => {
   top: 0;
   z-index: 2;
   height: var(--mp-sizes-7);
+  /* Table cells otherwise treat `height` as a minimum and let a tall child (e.g. the
+     20px sort icon button) grow the row — this pins it at a hard 28px everywhere. */
+  overflow: hidden;
+  line-height: 1;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-sm);
@@ -846,7 +852,8 @@ const bulkCountLabel = computed(() => {
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; flex-shrink: 0;
+  /* Must fit inside the 28px header row (28 - 2×4px padding - 1px border ≈ 19px). */
+  width: 18px; height: 18px; flex-shrink: 0;
   border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm);
   color: var(--mp-icon-default, var(--mp-text-secondary));
   visibility: hidden;

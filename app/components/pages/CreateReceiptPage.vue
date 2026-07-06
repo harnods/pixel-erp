@@ -164,7 +164,7 @@ function removeFile(name: string) { attachedFiles.value = attachedFiles.value.fi
 
 // ── Navigation ────────────────────────────────────────────────────────────
 function goReceipts() {
-  router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } })
+  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
 }
 
 // ── Save ──────────────────────────────────────────────────────────────────

@@ -105,11 +105,11 @@ function close() { emit('update:open', false) }
           </div>
           <div class="vsd-info-stats">
             <div class="vsd-stat">
-              <span class="vsd-stat-label">On hand</span>
+              <span class="vsd-stat-label">On hand qty</span>
               <span class="vsd-stat-value">{{ fmt(totalOnHand) }}</span>
             </div>
             <div class="vsd-stat">
-              <span class="vsd-stat-label">Counted</span>
+              <span class="vsd-stat-label">Counted qty</span>
               <span class="vsd-stat-value">{{ fmt(countedTotal) }}</span>
             </div>
             <div

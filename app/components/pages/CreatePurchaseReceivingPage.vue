@@ -6,6 +6,7 @@ import {
   toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import { formatDateLong } from '~/utils/date'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { receipts, type Receipt } from '~/data/receipts'
 import { lineItemsForReceipt, type ReceiptLineItem } from '~/data/receiptLineItems'
@@ -50,11 +51,11 @@ const lineItems = computed<ReceiptLineItem[]>(() => {
 const keptItems = computed<ReceiptLineItem[]>(() =>
   lineItems.value.filter(i => !removed.value.has(i.productId)),
 )
-// What the table renders — kept items narrowed by the search box.
+// Table shows ALL items; removed rows stay visible but dimmed.
 const visibleItems = computed<ReceiptLineItem[]>(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return keptItems.value
-  return keptItems.value.filter(i =>
+  if (!q) return lineItems.value
+  return lineItems.value.filter(i =>
     i.productName.toLowerCase().includes(q) ||
     i.sku.toLowerCase().includes(q) ||
     i.productDesc.toLowerCase().includes(q),
@@ -109,6 +110,11 @@ function removeItem(id: string): void {
   s.add(id)
   removed.value = s
 }
+function restoreItem(id: string): void {
+  const s = new Set(removed.value)
+  s.delete(id)
+  removed.value = s
+}
 function resetItems(): void { removed.value = new Set() }
 
 // Reset the form whenever the order changes.
@@ -146,10 +152,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
 function goBack() {
-  router.push(`/barang-masuk/${props.orderId}`)
+  router.push(`/inbound-delivery/${props.orderId}`)
 }
 function goReceipts() {
-  router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } })
+  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
 }
 
 function handleCreate() {
@@ -166,7 +172,7 @@ function handleCreate() {
     })
   }
   toast.notify({ variant: 'success', title: 'Tugas penerimaan berhasil dibuat' })
-  router.push(`/barang-masuk/${props.orderId}`)
+  router.push(`/inbound-delivery/${props.orderId}`)
 }
 </script>
 
@@ -198,6 +204,7 @@ function handleCreate() {
           label="Tracking no."
           :value="receipt.trackingNos.length ? receipt.trackingNos.join(', ') : '—'"
         />
+        <ContentList label="Estimated arrival" :value="formatDateLong(receipt.estimatedArrival)" />
       </div>
 
       <!-- Assignee — select spans 3 of the 6-col (558px) form grid -->
@@ -230,7 +237,7 @@ function handleCreate() {
 
       <!-- SKU table — scope is whatever stays here -->
       <div class="pr-sku-section">
-        <h2 class="pr-section-title">SKUs to receive</h2>
+        <h2 class="pr-section-title">SKU to receive</h2>
 
         <!-- Filter bar: scope count (left) + search (always right) -->
         <div class="pr-filter-bar">
@@ -246,15 +253,8 @@ function handleCreate() {
           </div>
         </div>
 
-        <!-- Empty — scope emptied -->
-        <div v-if="!keptItems.length" class="pr-empty">
-          <p class="pr-empty-title">No SKUs included</p>
-          <p class="pr-empty-desc">You removed every SKU. Reset to include them again.</p>
-          <MpButton variant="textLink" size="sm" @click="resetItems">Reset SKUs</MpButton>
-        </div>
-
         <!-- Empty — search matched nothing -->
-        <div v-else-if="!visibleItems.length" class="pr-empty">
+        <div v-if="!visibleItems.length" class="pr-empty">
           <p class="pr-empty-title">No results found</p>
           <p class="pr-empty-desc">No SKU matches your search. Try a different keyword.</p>
         </div>
@@ -280,7 +280,7 @@ function handleCreate() {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="it in pagedItems" :key="it.productId" class="pr-item-row">
+                <tr v-for="it in pagedItems" :key="it.productId" class="pr-item-row" :class="{ 'pr-item-row--removed': removed.has(it.productId) }">
                   <td class="pr-td">
                     <ProductCell :name="it.productName" :desc="it.productDesc" :image="it.image" />
                   </td>
@@ -288,13 +288,24 @@ function handleCreate() {
                   <td class="pr-td pr-td--num">{{ formatNum(it.purchaseQty) }}</td>
                   <td class="pr-td">{{ it.unit }}</td>
                   <td class="pr-td pr-td--action">
-                    <MpTooltip :id="`pr-rm-${it.productId}`" label="Remove" placement="left" use-portal>
-                      <MpButton
-                        :aria-label="`Remove ${it.productName}`"
-                        variant="ghost" size="sm" left-icon="minus-circular"
-                        @click="removeItem(it.productId)"
-                      />
-                    </MpTooltip>
+                    <template v-if="removed.has(it.productId)">
+                      <MpTooltip :id="`pr-rs-${it.productId}`" label="Restore" placement="left" use-portal>
+                        <MpButton
+                          :aria-label="`Restore ${it.productName}`"
+                          variant="ghost" size="sm" left-icon="add"
+                          @click="restoreItem(it.productId)"
+                        />
+                      </MpTooltip>
+                    </template>
+                    <template v-else>
+                      <MpTooltip :id="`pr-rm-${it.productId}`" label="Remove" placement="left" use-portal>
+                        <MpButton
+                          :aria-label="`Remove ${it.productName}`"
+                          variant="ghost" size="sm" left-icon="minus-circular"
+                          @click="removeItem(it.productId)"
+                        />
+                      </MpTooltip>
+                    </template>
                   </td>
                 </tr>
               </tbody>
@@ -324,7 +335,7 @@ function handleCreate() {
   <!-- Not found fallback -->
   <div v-else class="pr-not-found">
     <p>Purchase order not found.</p>
-    <button class="detail-breadcrumb" @click="router.push('/barang-masuk')">Back to Inbound delivery</button>
+    <button class="detail-breadcrumb" @click="router.push('/inbound-delivery')">Back to Inbound delivery</button>
   </div>
 </template>
 
@@ -459,6 +470,10 @@ function handleCreate() {
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
 }
 .pr-td--action { text-align: right; padding-right: var(--mp-spacing-2); }
+.pr-item-row--removed .pr-td { background: var(--mp-background-neutral-subtle); color: var(--mp-text-disabled); }
+.pr-item-row--removed :deep(.pc-name),
+.pr-item-row--removed :deep(.pc-desc),
+.pr-item-row--removed .pr-sku-text { color: var(--mp-text-disabled); }
 
 /* Product cell — real photo + name + description */
 .pr-product { display: flex; align-items: center; gap: var(--mp-spacing-3); }

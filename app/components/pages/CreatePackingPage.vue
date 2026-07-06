@@ -216,7 +216,7 @@ function setSentinelRef(orderId: string, el: unknown) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function goPacking() {
-  router.push({ path: '/barang-keluar', query: { tab: 'Packing' } })
+  router.push({ path: '/outbound-delivery', query: { tab: 'Packing' } })
 }
 
 function handleCreate() {
@@ -248,7 +248,7 @@ function handleCreate() {
     })
   }
 
-  router.push({ path: '/barang-keluar', query: { tab: 'Packing', saved: '1' } })
+  router.push({ path: '/outbound-delivery', query: { tab: 'Packing', saved: '1' } })
 }
 </script>
 

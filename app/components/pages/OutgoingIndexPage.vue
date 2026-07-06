@@ -206,12 +206,12 @@ function expireHours(o: OutgoingOrder): number | null {
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
-function viewDetails(row: OutgoingOrder) { router.push(`/barang-keluar/${row.id}`) }
+function viewDetails(row: OutgoingOrder) { router.push(`/outbound-delivery/${row.id}`) }
 
 // Create a picking list for a single order → prefill the create form (warehouse
 // locked + order preselected). Supervisor can then trim SKUs / qty.
 function createPicking(row: OutgoingOrder) {
-  router.push({ path: '/barang-keluar/picking/create', query: { warehouseId: row.warehouseId, orderIds: row.id } })
+  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: row.warehouseId, orderIds: row.id } })
 }
 
 function selectedOrdersOf(selectedRows: Set<number>): OutgoingOrder[] {
@@ -233,7 +233,7 @@ function bulkCreatePicking(selectedRows: Set<number>, deselectAll: () => void) {
   const eligible = selectedOrdersOf(selectedRows).filter(canPickOrder)
   const wh = eligible[0]!.warehouseId
   deselectAll()
-  router.push({ path: '/barang-keluar/picking/create', query: { warehouseId: wh, orderIds: eligible.map(o => o.id).join(',') } })
+  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: wh, orderIds: eligible.map(o => o.id).join(',') } })
 }
 
 // Only open orders can be cancelled.

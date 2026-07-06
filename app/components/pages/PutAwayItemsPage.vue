@@ -216,7 +216,7 @@ function saveDraft() {
 }
 
 function goBack()    { router.push(`/put-away/${props.orderId}`) }
-function goPutAway() { router.push('/barang-masuk?tab=Put-away') }
+function goPutAway() { router.push('/inbound-delivery?tab=Put-away') }
 
 // ── Start date label ──────────────────────────────────────────────────────────
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))

@@ -87,7 +87,7 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
-function viewDetails(row: Receipt) { router.push(`/barang-masuk/${row.id}`) }
+function viewDetails(row: Receipt) { router.push(`/inbound-delivery/${row.id}`) }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>

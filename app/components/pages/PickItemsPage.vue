@@ -111,7 +111,7 @@ function commitPicking(createPacking = false) {
   // Marketplace orders can only become a packing task when fully picked.
   const blockPacking = createPacking && hasMarketplaceOrder.value && !complete
   if (createPacking && !blockPacking) {
-    router.push({ path: '/barang-keluar/packing/create', query: { pickingId: props.orderId } })
+    router.push({ path: '/outbound-delivery/packing/create', query: { pickingId: props.orderId } })
     return
   }
   if (blockPacking) {
@@ -134,7 +134,7 @@ function saveDraft() {
   router.push(`/picking/${props.orderId}`)
 }
 function goBack() { router.push(`/picking/${props.orderId}`) }
-function goPicking() { router.push('/barang-keluar?tab=Picking') }
+function goPicking() { router.push('/outbound-delivery?tab=Picking') }
 
 // ── Footer divider ────────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)

@@ -166,12 +166,12 @@ const jumpResults = computed(() => {
     : outgoingOrders
   return matched.slice(0, 6)
 })
-function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/barang-keluar/${id}`) }
+function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/outbound-delivery/${id}`) }
 
-function goBack() { router.push('/barang-keluar?tab=Requests') }
+function goBack() { router.push('/outbound-delivery?tab=Requests') }
 function createPicking() {
   if (!order.value) return
-  router.push({ path: '/barang-keluar/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id } })
+  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id } })
 }
 
 // footer divider

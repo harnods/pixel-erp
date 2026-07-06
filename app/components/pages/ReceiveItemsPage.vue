@@ -110,7 +110,7 @@ function onQtyInput(skuCode: string, expected: number, e: Event) {
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
-// ── Post confirmation modal ───────────────────────────────────────────────────
+// ── Finish receiving confirmation modal ─────────────────────────────────────────
 const showConfirm = ref(false)
 
 function endReceiving() {
@@ -129,7 +129,7 @@ function commitReceiving(createPutAway = false) {
   endReceivingTask(props.orderId, received)
   if (createPutAway) {
     router.push({
-      path: '/barang-masuk/put-away/create',
+      path: '/inbound-delivery/put-away/create',
       query: { warehouseId: po.value?.warehouseId, taskId: props.orderId },
     })
   } else {
@@ -148,7 +148,7 @@ function saveDraft() {
 }
 
 function goBack()      { router.push(`/receiving/${props.orderId}`) }
-function goReceiving() { router.push('/barang-masuk?tab=Receiving') }
+function goReceiving() { router.push('/inbound-delivery?tab=Receiving') }
 
 // ── Footer divider ────────────────────────────────────────────────────────────
 const stageEl          = ref<HTMLElement | null>(null)
@@ -317,7 +317,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="ri-btn ri-btn--ghost" @click="goBack">Cancel</button>
       <button class="ri-btn ri-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="ri-btn ri-btn--primary" @click="endReceiving">End receiving</button>
+      <button class="ri-btn ri-btn--primary" @click="endReceiving">Finish receiving</button>
     </footer>
   </div>
 
@@ -327,7 +327,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <button class="detail-breadcrumb" @click="goReceiving">Back to Receiving</button>
   </div>
 
-  <!-- ── Post confirmation modal ── -->
+  <!-- ── Finish receiving confirmation modal ── -->
   <MpModal
     id="ri-confirm"
     :is-open="showConfirm"
@@ -338,7 +338,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   >
     <MpModalContent>
       <MpModalHeader>
-        {{ draftOutstanding > 0 ? 'End receiving with outstanding items?' : 'Post receiving task?' }}
+        {{ draftOutstanding > 0 ? 'Finish receiving with outstanding items?' : 'Finish receiving task?' }}
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
@@ -354,8 +354,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <MpModalFooter>
         <div class="ri-modal-footer">
           <button class="ri-btn ri-btn--ghost" @click="showConfirm = false">Cancel</button>
-          <button class="ri-btn ri-btn--secondary" @click="commitReceiving(false)">Post</button>
-          <button class="ri-btn ri-btn--primary" @click="commitReceiving(true)">Post &amp; Create put-away</button>
+          <button class="ri-btn ri-btn--secondary" @click="commitReceiving(false)">Save</button>
+          <button class="ri-btn ri-btn--primary" @click="commitReceiving(true)">Save &amp; create put-away</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

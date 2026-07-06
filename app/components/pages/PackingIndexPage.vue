@@ -230,7 +230,7 @@ function confirmShipping() {
     toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' })
     return
   }
-  router.push({ path: '/barang-keluar', query: { tab: 'Delivery', saved: '1' } })
+  router.push({ path: '/outbound-delivery', query: { tab: 'Delivery', saved: '1' } })
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'

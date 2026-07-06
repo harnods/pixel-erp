@@ -153,7 +153,7 @@ function deleteTask() {
   toast.notify({ variant: 'info', title: 'Delete — coming soon' })
 }
 
-function goBack() { router.push('/barang-masuk?tab=Put-away') }
+function goBack() { router.push('/inbound-delivery?tab=Put-away') }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 </script>
 

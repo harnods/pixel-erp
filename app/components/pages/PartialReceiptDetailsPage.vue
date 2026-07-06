@@ -14,7 +14,7 @@ import { getReceiptDetail } from '~/data/receiptDetails'
 import { receiptsForStage, closeReceipt, type Receipt } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
-import { receivedSummaryForReceipt } from '~/data/receivingTasks'
+import { receivedSummaryForReceipt, canCreateReceivingTask } from '~/data/receivingTasks'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -127,7 +127,7 @@ const jumpResults = computed(() => {
   const matched = q ? all.filter(r => r.purchaseNo.toLowerCase().includes(q)) : all
   return matched.slice(0, 5)
 })
-function jumpTo(id: string) { router.push(`/barang-masuk/${id}`) }
+function jumpTo(id: string) { router.push(`/inbound-delivery/${id}`) }
 
 // ── Linked purchase receivings ─────────────────────────────────────────────────
 const linkedReceivings = computed(() => getPurchaseReceivingsForReceipt(props.orderId))
@@ -136,7 +136,7 @@ const linkedReceivings = computed(() => getPurchaseReceivingsForReceipt(props.or
 const linkedPutAways = computed(() => getPutAwayForReceipt(props.orderId))
 
 // ── Create purchase receiving (full page) ───────────────────────────────────────
-function openPurchaseReceiving() { router.push(`/barang-masuk/${props.orderId}/receive`) }
+function openPurchaseReceiving() { router.push(`/inbound-delivery/${props.orderId}/receive`) }
 
 // ── Close receipt modal ────────────────────────────────────────────────────────
 const closeModalOpen = ref(false)
@@ -145,7 +145,7 @@ function dismissCloseModal() { closeModalOpen.value = false }
 function confirmClose() {
   closeReceipt(props.orderId)
   closeModalOpen.value = false
-  router.push('/barang-masuk')
+  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ function agingDays(startDate?: string, endDate?: string): number {
   return Math.max(0, Math.round((end - start) / 86_400_000)) + 1
 }
 
-function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
+function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } }) }
 </script>
 
 <template>
@@ -453,8 +453,9 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
         </MpPopoverContent>
       </MpPopover>
 
-      <!-- Create purchase receiving (primary split button) -->
-      <div class="detail-split">
+      <!-- Create purchase receiving (primary split button) — hidden once every SKU
+           is already covered by a receiving task; Close stands alone. -->
+      <div v-if="canCreateReceivingTask(orderId)" class="detail-split">
         <button class="detail-btn detail-btn--primary detail-split-main" @click="openPurchaseReceiving">
           Create purchase receiving
         </button>
@@ -473,6 +474,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
           </MpPopoverContent>
         </MpPopover>
       </div>
+      <button v-else class="detail-btn detail-btn--secondary" @click="openCloseModal">Close</button>
     </div>
 
 

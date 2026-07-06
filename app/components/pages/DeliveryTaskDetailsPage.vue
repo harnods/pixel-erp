@@ -168,7 +168,7 @@ onMounted(() => {
 onUnmounted(() => { itemsObserver?.disconnect(); stageObserver?.disconnect(); stageEl.value?.removeEventListener('scroll', checkStageOverflow) })
 watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
-function goBack() { router.push('/barang-keluar?tab=Delivery') }
+function goBack() { router.push('/outbound-delivery?tab=Delivery') }
 </script>
 
 <template>
@@ -297,7 +297,7 @@ function goBack() { router.push('/barang-keluar?tab=Delivery') }
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
                         <span class="del-link-num">{{ linkedOrder.salesNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/barang-keluar/${linkedOrder.id}`)">
+                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/${linkedOrder.id}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>

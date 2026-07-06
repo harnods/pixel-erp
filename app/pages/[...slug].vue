@@ -111,16 +111,16 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
     return { component: StockAdjustmentDetailsPage, id: segs[1]! }
   }
-  // /barang-keluar/picking/create → create a new picking list (bundles sales orders)
-  if (segs.length >= 3 && segs[0] === 'barang-keluar' && segs[1] === 'picking' && segs[2] === 'create') {
+  // /outbound-delivery/picking/create → create a new picking list (bundles sales orders)
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'picking' && segs[2] === 'create') {
     return { component: CreatePickingPage, id: 'create' }
   }
-  // /barang-keluar/packing/create → create packing tasks from a completed picking task
-  if (segs.length >= 3 && segs[0] === 'barang-keluar' && segs[1] === 'packing' && segs[2] === 'create') {
+  // /outbound-delivery/packing/create → create packing tasks from a completed picking task
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'packing' && segs[2] === 'create') {
     return { component: CreatePackingPage, id: 'create' }
   }
-  // /barang-keluar/:id → outgoing sales order detail (not the picking/packing sub-routes)
-  if (segs.length >= 2 && segs[0] === 'barang-keluar' && segs[1] !== 'picking' && segs[1] !== 'packing') {
+  // /outbound-delivery/:id → outgoing sales order detail (not the picking/packing sub-routes)
+  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing') {
     return { component: OutgoingOrderDetailsPage, id: segs[1] }
   }
   // /picking/:taskId/pick → operator picks items from bins
@@ -146,7 +146,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
   }
-  // /barang-masuk/:id → inbound PO detail (kept under the section path so the
+  // /inbound-delivery/:id → inbound PO detail (kept under the section path so the
   // level-2 sidebar submenu stays active, like /sales-orders/:id).
   // /receiving/:taskId → task detail; "Receiving" resolves as Inbound delivery panel sub-item
   // so the level-2 sidebar panel stays open with "Receiving" highlighted.
@@ -162,19 +162,19 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'put-away') {
     return { component: PutAwayDetailsPage, id: segs[1] }
   }
-  // /barang-masuk/put-away/create → create put-away task form
-  if (segs.length >= 3 && segs[0] === 'barang-masuk' && segs[1] === 'put-away' && segs[2] === 'create') {
+  // /inbound-delivery/put-away/create → create put-away task form
+  if (segs.length >= 3 && segs[0] === 'inbound-delivery' && segs[1] === 'put-away' && segs[2] === 'create') {
     return { component: CreatePutAwayPage, id: 'create' }
   }
-  // /barang-masuk/new → create inbound receipt (PO) form
-  if (segs.length >= 2 && segs[0] === 'barang-masuk' && segs[1] === 'new') {
+  // /inbound-delivery/new → create inbound receipt (PO) form
+  if (segs.length >= 2 && segs[0] === 'inbound-delivery' && segs[1] === 'new') {
     return { component: CreateReceiptPage, id: 'new' }
   }
-  // /barang-masuk/:id/receive → create purchase receiving (full page, not a modal)
-  if (segs.length >= 3 && segs[0] === 'barang-masuk' && segs[2] === 'receive') {
+  // /inbound-delivery/:id/receive → create purchase receiving (full page, not a modal)
+  if (segs.length >= 3 && segs[0] === 'inbound-delivery' && segs[2] === 'receive') {
     return { component: CreatePurchaseReceivingPage, id: segs[1] }
   }
-  if (segs.length >= 2 && segs[0] === 'barang-masuk') {
+  if (segs.length >= 2 && segs[0] === 'inbound-delivery') {
     const r = receipts.find((x) => x.id === segs[1])
     let component = ReceiptDetailsPage
     if (r?.status === 'partial reception') component = PartialReceiptDetailsPage
@@ -727,7 +727,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Inbound delivery'" class="page-title-actions">
           <template v-if="activeTab === 'Put-away'">
-            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/barang-masuk/put-away/create')">
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/inbound-delivery/put-away/create')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
@@ -738,7 +738,7 @@ function startResize(e: MouseEvent) {
             <button class="btn-enterprise btn-enterprise--secondary">
               Import
             </button>
-            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/barang-masuk/new')">
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/inbound-delivery/new')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>

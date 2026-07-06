@@ -11,8 +11,9 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { receiptsForStages, receiptStage, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
+import { receiptsForStages, receiptStage, cancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
+import { canCreateReceivingTask } from '~/data/receivingTasks'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -197,13 +198,20 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
-function viewDetails(row: Receipt) { router.push(`/barang-masuk/${row.id}`) }
+function viewDetails(row: Receipt) { router.push(`/inbound-delivery/${row.id}`) }
 
-function purchaseReceiving(row: Receipt) { router.push(`/barang-masuk/${row.id}/receive`) }
+function purchaseReceiving(row: Receipt) { router.push(`/inbound-delivery/${row.id}/receive`) }
 
 // Bulk actions (stubs) — clear the selection after acting.
 function bulkPurchaseReceiving(deselectAll: () => void) { deselectAll() }
-function bulkAction(_kind: 'edit-tracking' | 'set-arrival' | 'cancel', deselectAll: () => void) { deselectAll() }
+
+// A purchase receiving task is scoped to one warehouse, so bulk-creating one across
+// receipts from different warehouses isn't valid. Once the selection spans more than
+// one warehouse, every bulk action except Cancel is hidden (Cancel is warehouse-agnostic).
+function selectionSpansWarehouses(selectedRows: Set<number>): boolean {
+  const ids = new Set([...selectedRows].map(i => paginated.value[i]?.warehouseId).filter(Boolean))
+  return ids.size > 1
+}
 
 // ─── Edit tracking no. modal (single row, or bulk grouped by PO) ────────────────
 interface TrackingGroup { receipt: Receipt; nos: string[] }
@@ -236,10 +244,30 @@ function bulkEditTracking(selectedRows: Set<number>, deselectAll: () => void) {
   deselectAll()
 }
 
+// Cancel confirmation — shared by the single-row action and the bulk action.
 const cancelModalOpen = ref(false)
-const receiptToCancel = ref<Receipt | null>(null)
-function openCancelModal(row: Receipt) { receiptToCancel.value = row; cancelModalOpen.value = true }
-function closeCancelModal() { cancelModalOpen.value = false; receiptToCancel.value = null }
+const receiptsToCancel = ref<Receipt[]>([])
+function openCancelModal(row: Receipt) { receiptsToCancel.value = [row]; cancelModalOpen.value = true }
+function openBulkCancelModal(selectedRows: Set<number>, deselectAll: () => void) {
+  const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as Receipt[]
+  if (rows.length) { receiptsToCancel.value = rows; cancelModalOpen.value = true }
+  deselectAll()
+}
+function closeCancelModal() { cancelModalOpen.value = false; receiptsToCancel.value = [] }
+function confirmCancel() {
+  for (const r of receiptsToCancel.value) cancelReceipt(r.id)
+  closeCancelModal()
+}
+
+// Delete confirmation — manually-created receipts only (no real PO behind them).
+const deleteModalOpen = ref(false)
+const receiptToDelete = ref<Receipt | null>(null)
+function openDeleteModal(row: Receipt) { receiptToDelete.value = row; deleteModalOpen.value = true }
+function closeDeleteModal() { deleteModalOpen.value = false; receiptToDelete.value = null }
+function confirmDelete() {
+  if (receiptToDelete.value) deleteReceipt(receiptToDelete.value.id)
+  closeDeleteModal()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -265,8 +293,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @clear-filters="clearFilters"
   >
     <!-- ── Bulk actions ── -->
+    <!-- Purchase receiving is per-warehouse, so it's hidden for a mixed-warehouse selection.
+         Edit tracking no. / Cancel don't care about warehouse. -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <button
+        v-if="!selectionSpansWarehouses(selectedRows as Set<number>)"
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
         @click="bulkPurchaseReceiving(deselectAll)"
       >
@@ -284,11 +315,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="bulkEditTracking(selectedRows as Set<number>, deselectAll)">Edit tracking no.</MpPopoverListItem>
-            <MpPopoverListItem @click="bulkAction('set-arrival', deselectAll)">Set estimated arrival time</MpPopoverListItem>
             <MpPopoverListItem
               :class="css({ color: 'var(--mp-text-critical)' })"
-              @click="bulkAction('cancel', deselectAll)"
-            >Cancel</MpPopoverListItem>
+              @click="openBulkCancelModal(selectedRows as Set<number>, deselectAll)"
+            >Cancel receipt</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -460,11 +490,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as Receipt)">View details</MpPopoverListItem>
-            <MpPopoverListItem @click="purchaseReceiving(row as unknown as Receipt)">Purchase receiving</MpPopoverListItem>
             <MpPopoverListItem
+              v-if="canCreateReceivingTask((row as unknown as Receipt).id)"
+              @click="purchaseReceiving(row as unknown as Receipt)"
+            >Create purchase receiving</MpPopoverListItem>
+            <!-- Manually-created receipts (New receipt form) have no real PO behind
+                 them, so they can be deleted outright; PO-derived ones can only be
+                 canceled. -->
+            <MpPopoverListItem
+              v-if="isManualReceipt(row as unknown as Receipt)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="openDeleteModal(row as unknown as Receipt)"
+            >Delete</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as Receipt)"
-            >Cancel</MpPopoverListItem>
+            >Cancel receipt</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -488,12 +530,37 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalContent>
       <MpModalHeader>Cancel receipt?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        Receipt {{ receiptToCancel?.number }} will be cancelled. This can't be undone.
+        <template v-if="receiptsToCancel.length === 1">
+          Receipt {{ receiptsToCancel[0]?.number }} will be cancelled. This can't be undone.
+        </template>
+        <template v-else>
+          {{ receiptsToCancel.length }} receipts will be cancelled. This can't be undone.
+        </template>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep receipt</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="closeCancelModal">Cancel receipt</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel receipt</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Delete confirmation modal (manually-created receipts only) ── -->
+  <MpModal
+    id="rcv-delete-modal" :is-open="deleteModalOpen" size="sm"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>Delete receipt?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        Receipt {{ receiptToDelete?.number }} will be permanently deleted. This can't be undone.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Keep receipt</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

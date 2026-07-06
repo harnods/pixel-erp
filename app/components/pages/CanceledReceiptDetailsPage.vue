@@ -106,7 +106,7 @@ const jumpResults = computed(() => {
   const matched = q ? all.filter(r => r.purchaseNo.toLowerCase().includes(q)) : all
   return matched.slice(0, 5)
 })
-function jumpTo(id: string) { router.push(`/barang-masuk/${id}`) }
+function jumpTo(id: string) { router.push(`/inbound-delivery/${id}`) }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -129,7 +129,7 @@ function attachmentIcon(name: string): string {
 }
 function trackingText(nos: string[]) { return nos.length ? nos.join(', ') : '—' }
 
-function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
+function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } }) }
 </script>
 
 <template>

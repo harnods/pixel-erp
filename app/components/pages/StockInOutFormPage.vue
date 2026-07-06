@@ -435,9 +435,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <thead>
                     <tr>
                       <th class="sio-th">Location</th>
-                      <th class="sio-th sio-th--num">On hand</th>
-                      <th class="sio-th sio-th--num">Stock in/out</th>
-                      <th class="sio-th sio-th--num">New on hand</th>
+                      <th class="sio-th sio-th--num">On hand qty</th>
+                      <th class="sio-th sio-th--num">Stock in/out qty</th>
+                      <th class="sio-th sio-th--num">New on hand qty</th>
                       <th class="sio-th">Unit</th>
                       <th class="sio-th sio-th--del" />
                     </tr>

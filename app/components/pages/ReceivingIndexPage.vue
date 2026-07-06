@@ -146,7 +146,7 @@ function bulkCreatePutAway() {
   const wh = selectedPutAwayWarehouseId.value
   if (!wh) return
   router.push({
-    path: '/barang-masuk/put-away/create',
+    path: '/inbound-delivery/put-away/create',
     query: { warehouseId: wh, taskIds: [...selectedTasks.value].join(',') },
   })
 }
@@ -179,7 +179,7 @@ function aging(t: ReceivingTask) {
 const router = useRouter()
 function viewDetails(t: ReceivingTask) { router.push(`/receiving/${t.id}`) }
 function createPutAway(t: ReceivingTask, po: ReceivingPO) {
-  router.push({ path: '/barang-masuk/put-away/create', query: { warehouseId: po.warehouseId, taskId: t.id } })
+  router.push({ path: '/inbound-delivery/put-away/create', query: { warehouseId: po.warehouseId, taskId: t.id } })
 }
 const deleteModalOpen = ref(false)
 const taskToDelete = ref<ReceivingTask | null>(null)

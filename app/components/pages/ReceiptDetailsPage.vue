@@ -3,6 +3,7 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpIcon, MpSpinner, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -10,8 +11,9 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage, type Receipt } from '~/data/receipts'
+import { receiptsForStage, cancelReceipt, isManualReceipt, deleteReceipt, type Receipt } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
+import { canCreateReceivingTask } from '~/data/receivingTasks'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -111,55 +113,15 @@ const jumpResults = computed(() => {
   const matched = q ? all.filter(r => r.purchaseNo.toLowerCase().includes(q)) : all
   return matched.slice(0, 5)
 })
-function jumpTo(id: string) { router.push(`/barang-masuk/${id}`) }
+function jumpTo(id: string) { router.push(`/inbound-delivery/${id}`) }
 
 // ── Linked purchase receivings ─────────────────────────────────────────────────
 const linkedReceivings = computed(() => getPurchaseReceivingsForReceipt(props.orderId))
 
-// ── Demo FAB — toggle between "has linked transactions" / "no linked transactions" ──
-type DemoLinked = 'none' | 'with-data'
-const demoLinked = ref<DemoLinked>('none')
-const demoLinkedStates: { value: DemoLinked; label: string }[] = [
-  { value: 'none', label: 'No linked transactions' },
-  { value: 'with-data', label: 'With linked transactions' },
-]
-
-const DEMO_STAFF = ['Budi Santoso', 'Dewi Rahayu', 'Rizki Pratama', 'Agus Firmansyah', 'Sari Indah', 'Hendra Wijaya']
-function idSeed(s: string): number { return s.split('').reduce((a, c) => a + c.charCodeAt(0), 0) }
-function shiftDate(iso: string, days: number): string {
-  const d = new Date(iso); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10)
-}
-
-const demoFakeReceivings = computed(() => {
-  if (demoLinked.value !== 'with-data' || !receipt.value) return []
-  const h = idSeed(props.orderId)
-  const r = receipt.value
-  const skuCount = Math.max(1, Math.ceil(r.skuQty * 0.6))
-  const purchaseQty = Math.round(r.purchaseQty * 0.65)
-  const receivedQty = Math.round(r.purchaseQty * 0.45)
-  const base = r.estimatedArrival ?? '2026-06-20'
-  return [{
-    id: `demo-${props.orderId}-1`,
-    receiptId: props.orderId,
-    receivingNo: `Receiving #${10001 + (h % 99)}`,
-    date: base,
-    assignee: DEMO_STAFF[h % DEMO_STAFF.length],
-    skuScope: String(skuCount),
-    purchaseQty,
-    receivedQty,
-    skuCount,
-    status: 'in progress' as const,
-    startDate: shiftDate(base, -1),
-    endDate: undefined as string | undefined,
-  }]
-})
-
-const displayedReceivings = computed(() =>
-  demoLinked.value === 'with-data' ? demoFakeReceivings.value : linkedReceivings.value,
-)
+const displayedReceivings = computed(() => linkedReceivings.value)
 
 // ── Create purchase receiving (full page) ───────────────────────────────────────
-function openPurchaseReceiving() { router.push(`/barang-masuk/${props.orderId}/receive`) }
+function openPurchaseReceiving() { router.push(`/inbound-delivery/${props.orderId}/receive`) }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -193,7 +155,28 @@ function agingDays(startDate?: string, endDate?: string): number {
   return Math.max(0, diff) + 1
 }
 
-function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
+function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } }) }
+
+const cancelModalOpen = ref(false)
+function openCancelModal() { cancelModalOpen.value = true }
+function closeCancelModal() { cancelModalOpen.value = false }
+function confirmCancel() {
+  cancelReceipt(props.orderId)
+  closeCancelModal()
+  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
+}
+
+// Manually-created receipts (New receipt form) have no real PO behind them, so they
+// can be deleted outright; PO-derived ones can only be canceled (above).
+const isManual = computed(() => !!receipt.value && isManualReceipt(receipt.value))
+const deleteModalOpen = ref(false)
+function openDeleteModal() { deleteModalOpen.value = true }
+function closeDeleteModal() { deleteModalOpen.value = false }
+function confirmDelete() {
+  deleteReceipt(props.orderId)
+  closeDeleteModal()
+  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
+}
 </script>
 
 <template>
@@ -406,8 +389,11 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
         </MpPopoverContent>
       </MpPopover>
 
-      <!-- Create purchase receiving (primary split button) -->
-      <div class="detail-split">
+      <!-- Create purchase receiving (primary split button) — hidden once every SKU
+           is already covered by a receiving task; Delete/Cancel receipt stands alone.
+           Manually-created receipts (New receipt form) have no real PO behind them,
+           so they can be deleted outright; PO-derived ones can only be canceled. -->
+      <div v-if="canCreateReceivingTask(orderId)" class="detail-split">
         <button class="detail-btn detail-btn--primary detail-split-main" @click="openPurchaseReceiving">
           Create purchase receiving
         </button>
@@ -421,31 +407,57 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>Cancel</MpPopoverListItem>
+              <MpPopoverListItem v-if="isManual" @click="openDeleteModal">Delete</MpPopoverListItem>
+              <MpPopoverListItem v-else @click="openCancelModal">Cancel receipt</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
       </div>
+      <button v-else-if="isManual" class="detail-btn detail-btn--secondary" @click="openDeleteModal">Delete</button>
+      <button v-else class="detail-btn detail-btn--secondary" @click="openCancelModal">Cancel receipt</button>
     </div>
 
+    <!-- ── Cancel confirmation modal ── -->
+    <MpModal
+      id="rcd-cancel-modal" :is-open="cancelModalOpen" size="sm"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
+    >
+      <MpModalContent>
+        <MpModalHeader>Cancel receipt?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          Receipt {{ detail?.purchaseNo }} will be cancelled. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep receipt</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel receipt</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
-    <!-- ── Demo scenario FAB (bottom-right) ── -->
-    <MpPopover id="rcd-demo-fab" is-close-on-select use-portal placement="top-end">
-      <MpPopoverTrigger>
-        <button class="demo-fab" aria-label="Change scenario state">
-          <MpIcon name="sliders" size="md" color="icon.inverse" />
-        </button>
-      </MpPopoverTrigger>
-      <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
-        <p class="demo-fab-heading">Linked transactions</p>
-        <MpPopoverList>
-          <MpPopoverListItem
-            v-for="s in demoLinkedStates" :key="s.value"
-            :is-active="s.value === demoLinked" @click="demoLinked = s.value"
-          >{{ s.label }}</MpPopoverListItem>
-        </MpPopoverList>
-      </MpPopoverContent>
-    </MpPopover>
+    <!-- ── Delete confirmation modal (manually-created receipts only) ── -->
+    <MpModal
+      id="rcd-delete-modal" :is-open="deleteModalOpen" size="sm"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
+    >
+      <MpModalContent>
+        <MpModalHeader>Delete receipt?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          Receipt {{ detail?.purchaseNo }} will be permanently deleted. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Keep receipt</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+
     <ActivityLogModal
       :is-open="activityOpen"
       :subject="detail.purchaseNo"
@@ -459,6 +471,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 
 <style scoped>
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 /* ── Title bar ── */
 .detail-bar {
@@ -660,20 +673,5 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
 
-/* Demo scenario FAB */
-.demo-fab {
-  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
-  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e);
-  cursor: pointer; z-index: 1200;
-  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
-}
-.demo-fab:hover { opacity: 0.9; }
-.demo-fab-heading {
-  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-  margin: 0;
-}
+
 </style>

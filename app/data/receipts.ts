@@ -253,6 +253,31 @@ export function closeReceipt(id: string): void {
   persistReceipts();
 }
 
+/** Cancel a receipt (PO) — terminal state; no further receiving/put-away can happen. */
+export function cancelReceipt(id: string): void {
+  const r = receipts.find((x) => x.id === id);
+  if (!r) return;
+  r.status = "canceled";
+  r.canceledDate = new Date(RECEIPT_TODAY).toISOString().slice(0, 10);
+  persistReceipts();
+}
+
+/**
+ * Manually-created receipts (New receipt form) have no real PO behind them, so they
+ * can be deleted outright. Seed/PO-derived receipts must go through Cancel instead.
+ */
+export function isManualReceipt(r: Receipt): boolean {
+  return r.id.startsWith("rcv-new-");
+}
+
+/** Delete a manually-created receipt entirely — only valid for isManualReceipt(). */
+export function deleteReceipt(id: string): void {
+  const i = receipts.findIndex((x) => x.id === id);
+  if (i === -1 || !isManualReceipt(receipts[i]!)) return;
+  receipts.splice(i, 1);
+  persistReceipts();
+}
+
 // status → stage label (used by tabs / sidebar panel)
 const STATUS_TO_STAGE: Record<string, string> = {
   "on the way": "On the way",

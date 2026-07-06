@@ -92,8 +92,8 @@ function outstanding(r: Receipt) { return Math.max(0, r.purchaseQty - r.received
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
-function createPurchaseReceiving(row: Receipt) { router.push(`/barang-masuk/${row.id}/receive`) }
-function viewDetails(row: Receipt) { router.push(`/barang-masuk/${row.id}`) }
+function createPurchaseReceiving(row: Receipt) { router.push(`/inbound-delivery/${row.id}/receive`) }
+function viewDetails(row: Receipt) { router.push(`/inbound-delivery/${row.id}`) }
 
 const closeModalOpen = ref(false)
 const receiptToClose = ref<Receipt | null>(null)

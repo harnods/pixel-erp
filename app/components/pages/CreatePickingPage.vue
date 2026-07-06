@@ -291,7 +291,7 @@ watch(selectedOrders, () => nextTick(() => { checkStageOverflow(); checkItemsOve
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
 function goPicking() {
-  router.push({ path: '/barang-keluar', query: { tab: 'Picking' } })
+  router.push({ path: '/outbound-delivery', query: { tab: 'Picking' } })
 }
 
 function handleCreate() {
@@ -330,7 +330,7 @@ function handleCreate() {
     lines,
   })
 
-  router.push({ path: '/barang-keluar', query: { tab: 'Picking', saved: '1' } })
+  router.push({ path: '/outbound-delivery', query: { tab: 'Picking', saved: '1' } })
 }
 </script>
 

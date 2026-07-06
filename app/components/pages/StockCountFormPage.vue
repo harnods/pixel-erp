@@ -558,10 +558,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </button>
           </div>
 
-          <div v-if="!selectedLocations.length" class="scf-loc-empty">
-            No locations selected. Use "Select locations" to add locations to count.
-          </div>
-
           <MpAccordion is-allow-multiple is-allow-toggle class="scf-loc-accordions">
             <MpAccordionItem
               v-for="loc in selectedLocations"
@@ -1013,7 +1009,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* Storage location banner + actions */
 .scf-loc-banner { margin-top: var(--mp-spacing-5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
 .scf-loc-actions { margin-top: 12px; }
-.scf-loc-empty { margin-top: 20px; padding: var(--mp-spacing-8); text-align: center; border: 1.5px dashed var(--mp-border-default); border-radius: var(--mp-radii-lg); font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
 .scf-loc-accordions { margin-top: 20px; }
 
 /* Accordion content slots */

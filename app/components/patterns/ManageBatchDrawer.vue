@@ -418,7 +418,7 @@ function fmtNum(n: number | null): string {
             <!-- stock count stats -->
             <template v-if="!isInOut">
               <div class="mbd-stat">
-                <span class="mbd-stat-label">Counted</span>
+                <span class="mbd-stat-label">Counted qty</span>
                 <span class="mbd-stat-value">{{ fmtNum(totalCounted) }}</span>
               </div>
               <div

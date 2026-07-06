@@ -136,7 +136,7 @@ function confirmShipping() {
     trackingNo: shipTracking.value.trim() || undefined,
   })
   shipModalOpen.value = false
-  router.push({ path: '/barang-keluar', query: { tab: 'Delivery', saved: '1' } })
+  router.push({ path: '/outbound-delivery', query: { tab: 'Delivery', saved: '1' } })
 }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 // Marketplace (Desty) orders carry a due time → show date+time, and flag those due
@@ -211,7 +211,7 @@ const jumpResults = computed(() => {
   return matched.slice(0, 6)
 })
 function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/packing/${id}`) }
-function goBack() { router.push('/barang-keluar?tab=Packing') }
+function goBack() { router.push('/outbound-delivery?tab=Packing') }
 </script>
 
 <template>
@@ -351,7 +351,7 @@ function goBack() { router.push('/barang-keluar?tab=Packing') }
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
                         <span class="pck-linked-num">{{ linkedOrder.salesNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/barang-keluar/${linkedOrder.id}`)">
+                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/${linkedOrder.id}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
