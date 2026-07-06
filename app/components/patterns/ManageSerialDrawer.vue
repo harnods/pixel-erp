@@ -7,6 +7,7 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 interface SerialRow {
   serial: string
   counted: boolean
+  reserved?: boolean
 }
 
 const props = defineProps<{
@@ -15,8 +16,8 @@ const props = defineProps<{
   warehouseId: string
   targetCount: number
   modelValue: string[]
-  /** 'count' (default) = stock count; 'in-out' = stock in/out */
-  kind?: 'count' | 'in-out'
+  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer */
+  kind?: 'count' | 'in-out' | 'transfer'
   /** Signed delta for in-out mode (e.g. +2 stock in, -5 stock out). */
   delta?: number
   /**
@@ -45,12 +46,21 @@ watch(() => props.open, (isOpen) => {
 
   const wh = getWarehouseDetail(props.warehouseId)
   const sr = wh?.stock.find(s => s.sku === props.sku)?.serials
+  const availableSerials: string[] = sr?.available.map(u => u.serial) ?? []
   const warehouseSerials: string[] = [
-    ...(sr?.available.map(u => u.serial) ?? []),
+    ...availableSerials,
     ...(sr?.reserved.map(u => u.serial) ?? []),
   ]
 
-  if (props.modelValue.length > 0) {
+  if (props.kind === 'transfer') {
+    // transfer mode: available SNs selectable, reserved shown but locked
+    const selectedSet = new Set(props.modelValue)
+    const reservedSerials: string[] = sr?.reserved.map(u => u.serial) ?? []
+    rows.value = [
+      ...availableSerials.map(s => ({ serial: s, counted: selectedSet.has(s), reserved: false })),
+      ...reservedSerials.map(s => ({ serial: s, counted: false, reserved: true })),
+    ]
+  } else if (props.modelValue.length > 0) {
     const countedSet = new Set(props.modelValue)
     const seen = new Set<string>()
     const result: SerialRow[] = warehouseSerials.map(s => {
@@ -81,14 +91,19 @@ const warehouseStock = computed(() => {
 })
 const productImg = computed(() => product.value?.img ?? '')
 const productName = computed(() => warehouseStock.value?.name ?? product.value?.name ?? props.sku)
-const onHandCount = computed(() => props.locationOnHand ?? warehouseStock.value?.onHand ?? 0)
+const onHandCount = computed(() =>
+  props.locationOnHand ?? (isTransfer.value ? warehouseStock.value?.available : warehouseStock.value?.onHand) ?? 0
+)
 // countedCount = rows currently marked as counted (for table X/Y indicator + validation)
 const countedCount = computed(() => rows.value.filter(r => r.counted).length)
 // Info bar stats are driven by targetCount (what user entered in the form), not table state
 const difference = computed(() => props.targetCount - onHandCount.value)
-const isInOut = computed(() => props.kind === 'in-out')
+const isInOut = computed(() => props.kind === 'in-out' || props.kind === 'transfer')
+const isTransfer = computed(() => props.kind === 'transfer')
+const qtyLabel = computed(() => props.kind === 'transfer' ? 'Transfer qty' : 'Stock in/out qty')
 const signedDelta = computed(() => props.delta ?? 0)
 const newOnHand = computed(() => onHandCount.value + signedDelta.value)
+const afterTransferCount = computed(() => onHandCount.value - countedCount.value)
 
 function fmtSerial(n: number): string {
   return n.toLocaleString('id-ID') + ' serial number' + (n !== 1 ? 's' : '')
@@ -113,6 +128,8 @@ function addToList() {
 }
 
 function toggleRow(row: SerialRow) {
+  if (row.reserved) return
+  if (isTransfer.value && !row.counted && countedCount.value >= props.targetCount) return
   row.counted = !row.counted
   saveError.value = ''
 }
@@ -169,7 +186,7 @@ function handleSave() {
           </div>
           <div class="msn-info-stats">
             <div class="msn-stat">
-              <span class="msn-stat-label">On hand qty</span>
+              <span class="msn-stat-label">{{ isTransfer ? 'Available qty' : 'On hand qty' }}</span>
               <span class="msn-stat-value">{{ fmtSerial(onHandCount) }}</span>
             </div>
             <!-- stock count stats -->
@@ -183,10 +200,21 @@ function handleSave() {
                 <span class="msn-stat-value">{{ fmtDiff(difference) }}</span>
               </div>
             </template>
+            <!-- transfer stats -->
+            <template v-else-if="isTransfer">
+              <div class="msn-stat">
+                <span class="msn-stat-label">Transfer qty</span>
+                <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
+              </div>
+              <div class="msn-stat">
+                <span class="msn-stat-label">After transfer qty</span>
+                <span class="msn-stat-value">{{ fmtSerial(afterTransferCount) }}</span>
+              </div>
+            </template>
             <!-- stock in/out stats -->
             <template v-else>
               <div class="msn-stat" :class="{ 'msn-stat--pos': signedDelta > 0, 'msn-stat--neg': signedDelta < 0 }">
-                <span class="msn-stat-label">Stock in/out qty</span>
+                <span class="msn-stat-label">{{ qtyLabel }}</span>
                 <span class="msn-stat-value">{{ fmtDiff(signedDelta) }}</span>
               </div>
               <div class="msn-stat">
@@ -197,7 +225,7 @@ function handleSave() {
           </div>
         </div>
 
-        <div class="msn-form-section">
+        <div v-if="!isTransfer" class="msn-form-section">
           <label class="msn-form-label">Serial number</label>
           <textarea
             v-model="inputText"
@@ -234,18 +262,32 @@ function handleSave() {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in displayRows" :key="row.serial" class="msn-tr" :class="{ 'msn-tr--removed': !row.counted }">
-                <td class="msn-td" :class="{ 'msn-td--strike': !row.counted }">{{ row.serial }}</td>
+              <tr
+                v-for="row in displayRows" :key="row.serial" class="msn-tr"
+                :class="isTransfer
+                  ? { 'msn-tr--selected': row.counted, 'msn-tr--reserved': row.reserved }
+                  : { 'msn-tr--removed': !row.counted }"
+              >
+                <td class="msn-td" :class="{ 'msn-td--strike': !isTransfer && !row.counted }">{{ row.serial }}</td>
                 <td class="msn-td msn-td--status">
-                  <MpBadge v-if="row.counted" type="success">Counted</MpBadge>
-                  <MpBadge v-else type="danger">Not counted</MpBadge>
+                  <template v-if="isTransfer">
+                    <MpBadge v-if="row.reserved" type="warning">Reserved</MpBadge>
+                    <MpBadge v-else-if="row.counted" type="success">Selected</MpBadge>
+                  </template>
+                  <template v-else>
+                    <MpBadge v-if="row.counted" type="success">Counted</MpBadge>
+                    <MpBadge v-else type="danger">Not counted</MpBadge>
+                  </template>
                 </td>
                 <td class="msn-td msn-td--del">
                   <button
                     class="msn-toggle-btn"
-                    :class="row.counted ? 'msn-toggle-btn--remove' : 'msn-toggle-btn--restore'"
+                    :class="[
+                      row.counted ? 'msn-toggle-btn--remove' : 'msn-toggle-btn--restore',
+                      (row.reserved || (isTransfer && !row.counted && countedCount >= targetCount)) ? 'msn-toggle-btn--disabled' : ''
+                    ]"
                     type="button"
-                    :aria-label="row.counted ? 'Mark as not counted' : 'Mark as counted'"
+                    :aria-label="row.counted ? (isTransfer ? 'Remove from transfer' : 'Mark as not counted') : (isTransfer ? 'Select for transfer' : 'Mark as counted')"
                     @click="toggleRow(row)"
                   >
                     <MpIcon :name="row.counted ? 'minus-circular' : 'add'" size="sm" />
@@ -396,6 +438,8 @@ function handleSave() {
 }
 .msn-td--strike { text-decoration: line-through; color: var(--mp-text-secondary); }
 .msn-tr--removed .msn-td { background: var(--mp-background-danger-subtle, #fff5f5); }
+.msn-tr--selected .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
+.msn-tr--reserved .msn-td { background: var(--mp-background-warning-subtle, #fffbeb); color: var(--mp-text-secondary); }
 
 .msn-td--status { padding: 8px var(--mp-spacing-2); vertical-align: middle; }
 .msn-td--del {
@@ -410,6 +454,8 @@ function handleSave() {
 .msn-toggle-btn--remove:hover { color: var(--mp-text-danger, #dc2626); }
 .msn-toggle-btn--restore { color: var(--mp-text-secondary); }
 .msn-toggle-btn--restore:hover { color: var(--mp-text-success, #18794e); }
+.msn-toggle-btn--disabled { opacity: 0.3; cursor: not-allowed; }
+.msn-toggle-btn--disabled:hover { color: var(--mp-text-secondary); }
 
 .msn-tr--info .msn-td { background: var(--mp-background-neutral, #fff); }
 .msn-td--pagination {

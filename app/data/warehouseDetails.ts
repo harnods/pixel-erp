@@ -14,6 +14,14 @@ const OVERLAY_KEY = 'wh-stock-overlay-v1'
 const stockOverlay = reactive<StockOverlay>(loadSnapshot<StockOverlay>(OVERLAY_KEY) ?? {})
 function persistOverlay() { saveSnapshot(OVERLAY_KEY, stockOverlay) }
 
+// ── Persisted serial-number overlay ──────────────────────────────────────────
+// Tracks SNs moved in/out between warehouses via approved transfers.
+type SerialEntry = { added: string[]; removed: string[] }
+type SerialOverlay = Record<string, Record<string, SerialEntry>> // warehouseId → sku → entry
+const SERIAL_OVERLAY_KEY = 'wh-serial-overlay-v1'
+const serialOverlay = reactive<SerialOverlay>(loadSnapshot<SerialOverlay>(SERIAL_OVERLAY_KEY) ?? {})
+function persistSerialOverlay() { saveSnapshot(SERIAL_OVERLAY_KEY, serialOverlay) }
+
 export function applyStockCount(warehouseId: string, lines: { sku: string; qty: number }[]) {
   if (!stockOverlay[warehouseId]) stockOverlay[warehouseId] = {}
   for (const l of lines) stockOverlay[warehouseId]![l.sku] = Math.max(0, l.qty)
@@ -30,9 +38,36 @@ export function applyStockInOut(warehouseId: string, lines: { sku: string; qty: 
   persistOverlay()
 }
 
-export function applyTransfer(originId: string, destinationId: string, lines: { sku: string; qty: number }[]) {
+export function applyTransfer(
+  originId: string,
+  destinationId: string,
+  lines: { sku: string; qty: number; serials?: string[] }[],
+) {
   applyStockInOut(originId, lines.map(l => ({ sku: l.sku, qty: -l.qty })))
   applyStockInOut(destinationId, lines)
+
+  for (const line of lines) {
+    if (!line.serials?.length) continue
+
+    // remove SNs from origin
+    if (!serialOverlay[originId]) serialOverlay[originId] = {}
+    if (!serialOverlay[originId]![line.sku]) serialOverlay[originId]![line.sku] = { added: [], removed: [] }
+    const originEntry = serialOverlay[originId]![line.sku]!
+    for (const sn of line.serials) {
+      if (!originEntry.removed.includes(sn)) originEntry.removed.push(sn)
+      originEntry.added = originEntry.added.filter(s => s !== sn)
+    }
+
+    // add SNs to destination
+    if (!serialOverlay[destinationId]) serialOverlay[destinationId] = {}
+    if (!serialOverlay[destinationId]![line.sku]) serialOverlay[destinationId]![line.sku] = { added: [], removed: [] }
+    const destEntry = serialOverlay[destinationId]![line.sku]!
+    for (const sn of line.serials) {
+      if (!destEntry.added.includes(sn)) destEntry.added.push(sn)
+      destEntry.removed = destEntry.removed.filter(s => s !== sn)
+    }
+  }
+  persistSerialOverlay()
 }
 
 /** A tracked batch (lot) of a product within a warehouse (Batches tab).
@@ -285,6 +320,30 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
         const delta = newOnHand - item.onHand
         item.onHand = newOnHand
         item.available = Math.max(0, item.available + delta)
+      }
+    })
+  }
+
+  // Apply serial-number movements from approved transfers
+  const sOverlay = serialOverlay[id]
+  if (sOverlay) {
+    stock.forEach(item => {
+      if (!item.serials) return
+      const so = sOverlay[item.sku]
+      if (!so) return
+      const removedSet = new Set(so.removed)
+      item.serials.available = item.serials.available.filter(u => !removedSet.has(u.serial))
+      item.serials.reserved = item.serials.reserved.filter(u => !removedSet.has(u.serial))
+      const existingSet = new Set([
+        ...item.serials.available.map(u => u.serial),
+        ...item.serials.reserved.map(u => u.serial),
+      ])
+      const defaultLocation = item.locations[0] ?? ''
+      for (const serial of so.added) {
+        if (!existingSet.has(serial)) {
+          item.serials.available.push({ serial, location: defaultLocation })
+          existingSet.add(serial)
+        }
       }
     })
   }

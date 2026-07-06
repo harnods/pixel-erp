@@ -8,6 +8,8 @@ import {
   toast, css,
   type DataInterface,
 } from '@mekari/pixel3'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import ManageSerialDrawer from '~/components/patterns/ManageSerialDrawer.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -65,8 +67,24 @@ function closePicker(row: { id: number }) { if (activeRow.value === row.id) acti
 function availableFor(sku: string): number { return originStockMap.value.get(sku)?.available ?? 0 }
 function onHandFor(sku: string): number | undefined { return destStockMap.value.get(sku)?.onHand }
 
+// ── Batch / serial detection (mirrors StockInOut logic) ────────────────────────────
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+function isBatchTrackedSku(sku: string): boolean {
+  const si = originStockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+function isSerialTrackedSku(sku: string): boolean {
+  const si = originStockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
 // ── Product line rows ──────────────────────────────────────────────────────────────
-interface LineRow { id: number; sku: string; productName: string; desc: string; img: string; unit: string; qty: string; qtyError: boolean }
+interface LineRow { id: number; sku: string; productName: string; desc: string; img: string; unit: string; qty: string; qtyError: boolean; batchLines?: CommittedBatch[]; serialLines?: string[] }
 let rowSeq = 0
 function makeRow(): LineRow { return { id: rowSeq++, sku: '', productName: '', desc: '', img: '', unit: '', qty: '0', qtyError: false } }
 const rows = ref<LineRow[]>([makeRow()])
@@ -89,9 +107,49 @@ function removeRow(id: number) {
   if (rows.value.length === 1) return
   rows.value = rows.value.filter(r => r.id !== id)
 }
-function afterTransfer(row: LineRow): number { return (onHandFor(row.sku) ?? 0) + (Number(row.qty) || 0) }
 // Origin stock left after this transfer — shown as a second line in the Available cell.
-function originAfter(row: LineRow): number { return availableFor(row.sku) - (Number(row.qty) || 0) }
+function originAfter(row: LineRow): number {
+  const qty = isBatchTrackedSku(row.sku) ? batchTotal(row) : (Number(row.qty) || 0)
+  return availableFor(row.sku) - qty
+}
+
+// ── Batch drawer ───────────────────────────────────────────────────────────────────
+const batchDrawerRow = ref<LineRow | null>(null)
+const batchDrawerOpen = computed({
+  get: () => batchDrawerRow.value !== null,
+  set: (v) => { if (!v) batchDrawerRow.value = null },
+})
+function openBatchDrawer(row: LineRow) { batchDrawerRow.value = row }
+function saveBatchLines(batches: CommittedBatch[]) {
+  if (!batchDrawerRow.value) return
+  batchDrawerRow.value.batchLines = batches
+}
+function batchHasCounts(row: LineRow): boolean { return (row.batchLines ?? []).some(b => b.counted !== null) }
+function batchTotal(row: LineRow): number { return (row.batchLines ?? []).reduce((s, b) => s + (b.counted ?? 0), 0) }
+
+// ── Serial drawer ──────────────────────────────────────────────────────────────────
+const serialDrawerRow = ref<LineRow | null>(null)
+const serialDrawerOpen = computed({
+  get: () => serialDrawerRow.value !== null,
+  set: (v) => { if (!v) serialDrawerRow.value = null },
+})
+function openSerialDrawer(row: LineRow) {
+  if (!row.qty || Number(row.qty) < 1) {
+    toast.notify({ variant: 'warning', title: 'Enter transfer qty first' })
+    return
+  }
+  serialDrawerRow.value = row
+}
+function saveSerialLines(serials: string[]) {
+  if (!serialDrawerRow.value) return
+  serialDrawerRow.value.serialLines = serials
+}
+
+function afterTransfer(row: LineRow): number {
+  const dest = onHandFor(row.sku) ?? 0
+  if (isBatchTrackedSku(row.sku)) return dest + batchTotal(row)
+  return dest + (Number(row.qty) || 0)
+}
 
 // Transfer qty is capped at the origin's available qty.
 function setQty(row: LineRow, val: string) {
@@ -176,10 +234,24 @@ function handleSave() {
   const filled = filledRows.value
   if (!filled.length) { formError.value = formError.value || 'Add at least one product to transfer.'; valid = false }
   for (const row of filled) {
-    const qty = Number(row.qty)
-    if (!qty || qty < 1) { row.qtyError = true; valid = false }
-    else if (qty > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Transfer qty cannot exceed available stock.' }
-    else row.qtyError = false
+    if (isBatchTrackedSku(row.sku)) {
+      if (!batchHasCounts(row)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Enter batch details for all batch-tracked products.' }
+      else row.qtyError = false
+    } else {
+      const qty = Number(row.qty)
+      if (!qty || qty < 1) { row.qtyError = true; valid = false }
+      else if (qty > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Transfer qty cannot exceed available stock.' }
+      else {
+        row.qtyError = false
+        if (isSerialTrackedSku(row.sku)) {
+          const actual = row.serialLines?.length ?? 0
+          if (actual !== qty) {
+            formError.value = formError.value || `Enter all serial numbers for "${row.productName}" (${actual}/${qty} entered)`
+            valid = false
+          }
+        }
+      }
+    }
   }
   if (!valid) return
 
@@ -191,7 +263,11 @@ function handleSave() {
     destinationName: warehouseName(destId.value),
     tags: tagStrings(),
     memo: memo.value.trim() || undefined,
-    lines: filled.map(r => ({ sku: r.sku, qty: Number(r.qty) })),
+    lines: filled.map(r => ({
+      sku: r.sku,
+      qty: isBatchTrackedSku(r.sku) ? batchTotal(r) : Number(r.qty),
+      ...(r.serialLines?.length ? { serials: r.serialLines } : {}),
+    })),
   }
 
   if (isEdit.value) {
@@ -373,10 +449,34 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <td class="wtf-td wtf-td--num">
                       <span class="wtf-avail">
                         <span>{{ availableFor(row.sku).toLocaleString('id-ID') }}</span>
-                        <span v-if="Number(row.qty) > 0" class="wtf-avail-after" title="Available after transfer">→ {{ originAfter(row).toLocaleString('id-ID') }}</span>
+                        <span v-if="isBatchTrackedSku(row.sku) ? batchHasCounts(row) : Number(row.qty) > 0" class="wtf-avail-after" title="Available after transfer">→ {{ originAfter(row).toLocaleString('id-ID') }}</span>
                       </span>
                     </td>
-                    <td class="wtf-td wtf-td--input">
+                    <!-- Transfer qty: batch -->
+                    <td v-if="isBatchTrackedSku(row.sku)" class="wtf-td wtf-td--batch-cell">
+                      <div class="wtf-batch-row wtf-batch-row--total">
+                        <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
+                        <span v-else class="wtf-batch-empty">No batches</span>
+                      </div>
+                      <div class="wtf-batch-row wtf-batch-row--action">
+                        <button class="wtf-batch-link" type="button" @click="openBatchDrawer(row)">Manage batch</button>
+                      </div>
+                    </td>
+                    <!-- Transfer qty: serial -->
+                    <td v-else-if="isSerialTrackedSku(row.sku)" class="wtf-td wtf-td--batch-cell wtf-td--serial-cell">
+                      <div class="wtf-batch-row wtf-batch-row--total wtf-batch-row--bare">
+                        <input
+                          :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
+                          :value="row.qty"
+                          @input="setQty(row, ($event.target as HTMLInputElement).value)"
+                        />
+                      </div>
+                      <div class="wtf-batch-row wtf-batch-row--action">
+                        <button class="wtf-batch-link" type="button" @click="openSerialDrawer(row)">Manage serial number</button>
+                      </div>
+                    </td>
+                    <!-- Transfer qty: regular -->
+                    <td v-else class="wtf-td wtf-td--input">
                       <input
                         :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
                         :value="row.qty"
@@ -437,6 +537,29 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
       </div>
     </div>
+
+    <ManageBatchDrawer
+      v-if="batchDrawerRow"
+      :open="batchDrawerOpen"
+      :sku="batchDrawerRow.sku"
+      :warehouse-id="originId"
+      kind="transfer"
+      :model-value="batchDrawerRow.batchLines ?? []"
+      @update:open="batchDrawerOpen = $event"
+      @save="saveBatchLines"
+    />
+    <ManageSerialDrawer
+      v-if="serialDrawerRow"
+      :open="true"
+      :sku="serialDrawerRow.sku"
+      :warehouse-id="originId"
+      kind="transfer"
+      :delta="Number(serialDrawerRow.qty)"
+      :target-count="Number(serialDrawerRow.qty)"
+      :model-value="serialDrawerRow.serialLines ?? []"
+      @update:open="serialDrawerOpen = false"
+      @save="saveSerialLines"
+    />
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
@@ -508,10 +631,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
   border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default);
   white-space: nowrap;
 }
-.wtf-th:last-child { border-right: none; }
 .wtf-th--group { text-align: center; padding: var(--mp-spacing-1) var(--mp-spacing-2); }
 .wtf-th--num { text-align: center; padding: var(--mp-spacing-1) var(--mp-spacing-2); }
-.wtf-th--del { padding: 0; }
+.wtf-th--del { padding: 0; border-right: none; }
 .wtf-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
@@ -573,6 +695,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-del-btn:hover { background: var(--mp-background-neutral); color: var(--mp-text-danger, #dc2626); }
 .wtf-count { padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .wtf-form-error { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+
+/* ── Batch / SN transfer qty cell ────────────────────────────────────────── */
+.wtf-td--batch-cell { padding: 0; height: auto; background: var(--mp-background-neutral-subtle); display: flex; flex-direction: column; vertical-align: top; }
+.wtf-td--serial-cell { background: var(--mp-background-neutral, #fff); }
+.wtf-td--serial-cell:focus-within .wtf-batch-row--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.wtf-batch-row { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
+.wtf-batch-row--total { border-bottom: 1px solid var(--mp-border-default); }
+.wtf-batch-row--bare { padding: 0; border-bottom: 1px solid var(--mp-border-default); }
+.wtf-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
+.wtf-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.wtf-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.wtf-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 /* ── Memo + Attachment ───────────────────────────────────────────────────── */
 .wtf-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); max-width: 440px; padding: var(--mp-spacing-6) 0; }

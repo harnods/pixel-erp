@@ -24,8 +24,8 @@ const props = defineProps<{
   sku: string
   warehouseId: string
   modelValue: CommittedBatch[]
-  /** 'count' (default) = stock count; 'in-out' = stock in/out */
-  kind?: 'count' | 'in-out'
+  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer */
+  kind?: 'count' | 'in-out' | 'transfer'
   /**
    * When counting inside a storage location, pass the bin-level on-hand.
    * 0 means the SKU has no stock at this bin → start empty instead of
@@ -80,8 +80,8 @@ watch(() => props.open, (isOpen) => {
     return
   }
 
-  // in-out mode: start empty — user manually picks which batches to affect
-  if (props.kind === 'in-out') {
+  // in-out / transfer: start empty — user manually picks which batches to affect
+  if (props.kind === 'in-out' || props.kind === 'transfer') {
     rows.value = []
     return
   }
@@ -120,7 +120,11 @@ const warehouseStock = computed(() => {
 const productImg = computed(() => product.value?.img ?? '')
 const productName = computed(() => warehouseStock.value?.name ?? product.value?.name ?? props.sku)
 
-const isInOut = computed(() => props.kind === 'in-out')
+const isInOut = computed(() => props.kind === 'in-out' || props.kind === 'transfer')
+const isTransfer = computed(() => props.kind === 'transfer')
+const qtyLabel = computed(() => props.kind === 'transfer' ? 'Transfer qty' : 'Stock in/out qty')
+const onHandLabel = computed(() => isTransfer.value ? 'Available qty' : 'On hand qty')
+const afterLabel = computed(() => isTransfer.value ? 'After transfer qty' : (isInOut.value ? 'New on hand qty' : 'Difference'))
 
 const totalOnHand = computed(() => rows.value.reduce((s, r) => s + r.onHand, 0))
 const totalCounted = computed(() => {
@@ -134,12 +138,14 @@ const totalDifference = computed(() => {
 })
 const totalNewOnHand = computed(() => {
   if (totalCounted.value === null) return null
-  return totalOnHand.value + totalCounted.value
+  return isTransfer.value
+    ? totalOnHand.value - totalCounted.value
+    : totalOnHand.value + totalCounted.value
 })
 
 function newOnHandOf(row: WorkRow): number | null {
   if (row.counted === null) return null
-  return row.onHand + row.counted
+  return isTransfer.value ? row.onHand - row.counted : row.onHand + row.counted
 }
 
 // ── Filter state ─────────────────────────────────────────────────────────────────
@@ -316,17 +322,17 @@ function fmtNum(n: number | null): string {
             <template v-else>
               <div
                 class="mbd-stat"
-                :class="{ 'mbd-stat--pos': (totalCounted ?? 0) > 0, 'mbd-stat--neg': (totalCounted ?? 0) < 0 }"
+                :class="isTransfer ? {} : { 'mbd-stat--pos': (totalCounted ?? 0) > 0, 'mbd-stat--neg': (totalCounted ?? 0) < 0 }"
               >
-                <span class="mbd-stat-label">Stock in/out qty</span>
+                <span class="mbd-stat-label">{{ qtyLabel }}</span>
                 <span class="mbd-stat-value">
                   <template v-if="totalCounted === null">—</template>
-                  <template v-else-if="totalCounted > 0">+{{ totalCounted.toLocaleString('id-ID') }}</template>
+                  <template v-else-if="!isTransfer && totalCounted > 0">+{{ totalCounted.toLocaleString('id-ID') }}</template>
                   <template v-else>{{ totalCounted.toLocaleString('id-ID') }}</template>
                 </span>
               </div>
               <div class="mbd-stat">
-                <span class="mbd-stat-label">New on hand qty</span>
+                <span class="mbd-stat-label">{{ afterLabel }}</span>
                 <span class="mbd-stat-value">{{ totalNewOnHand !== null ? totalNewOnHand.toLocaleString('id-ID') : '—' }}</span>
               </div>
             </template>
@@ -372,7 +378,7 @@ function fmtNum(n: number | null): string {
               <col class="mbd-col-desc" />
               <col class="mbd-col-num" />
               <col class="mbd-col-counted" />
-              <col class="mbd-col-num" />
+              <col class="mbd-col-after" />
               <col class="mbd-col-unit" />
               <col class="mbd-col-del" />
             </colgroup>
@@ -381,9 +387,9 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Batch</th>
                 <th class="mbd-th">Expiry date</th>
                 <th class="mbd-th">Description</th>
-                <th class="mbd-th mbd-th--num">On hand qty</th>
-                <th class="mbd-th mbd-th--num">{{ isInOut ? 'Stock in/out qty' : 'Counted qty' }}</th>
-                <th class="mbd-th mbd-th--num">{{ isInOut ? 'New on hand qty' : 'Difference' }}</th>
+                <th class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
+                <th class="mbd-th mbd-th--num">{{ isInOut ? qtyLabel : 'Counted qty' }}</th>
+                <th class="mbd-th mbd-th--num">{{ afterLabel }}</th>
                 <th class="mbd-th">Unit</th>
                 <th class="mbd-th mbd-th--del" />
               </tr>
@@ -491,11 +497,13 @@ function fmtNum(n: number | null): string {
                         <MpPopoverListItem v-if="!availableBatches.length" disabled>
                           All batches added
                         </MpPopoverListItem>
-                        <div class="mbd-popover-divider" />
-                        <MpPopoverListItem @click="addNewBatch">
-                          <MpIcon name="add" size="sm" />
-                          Add new batch
-                        </MpPopoverListItem>
+                        <template v-if="props.kind !== 'transfer'">
+                          <div class="mbd-popover-divider" />
+                          <MpPopoverListItem @click="addNewBatch">
+                            <MpIcon name="add" size="sm" />
+                            Add new batch
+                          </MpPopoverListItem>
+                        </template>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -631,6 +639,7 @@ function fmtNum(n: number | null): string {
 .mbd-col-expiry  { width: 172px; }
 .mbd-col-desc    { /* no width — flexibly absorbs remaining space after fixed cols */ }
 .mbd-col-num     { width: 150px; }
+.mbd-col-after   { width: 175px; }
 .mbd-col-counted { width: 160px; }
 .mbd-col-unit    { width: 78px; }
 .mbd-col-del     { width: 44px; }
@@ -725,14 +734,13 @@ function fmtNum(n: number | null): string {
 }
 
 /* Select batch row — same pattern as "Select product" in warehouse transfer */
-.mbd-tr--select .mbd-td { border-bottom: none; }
-.mbd-td--select-cell { padding: 0; background: var(--mp-background-neutral, #fff); border-bottom: none; position: relative; }
+.mbd-td--select-cell { padding: 0; background: var(--mp-background-neutral, #fff); position: relative; }
 .mbd-td--select-cell:focus-within::after {
   content: ''; position: absolute; inset: 0;
   border: 1px solid var(--mp-border-bold);
   z-index: 2; pointer-events: none;
 }
-.mbd-td--select-empty { background: var(--mp-background-neutral, #fff); border-bottom: none; }
+.mbd-td--select-empty { background: var(--mp-background-neutral, #fff); }
 .mbd-batch-trigger {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; min-height: var(--mp-sizes-10, 40px);

@@ -33,7 +33,7 @@ export interface WarehouseTransfer {
   /** User-entered memo (create form). Absent → a deterministic demo memo is shown. */
   memo?: string
   /** User-entered product lines (create form). Absent → lines are derived from stock. */
-  lines?: { sku: string; qty: number }[]
+  lines?: { sku: string; qty: number; serials?: string[] }[]
   /** Audit trail (chronological) — created/edited events from the form. */
   activity?: TransferActivity[]
 }
@@ -352,7 +352,7 @@ export interface TransferInput {
   destinationName: string
   tags: string[]
   memo?: string
-  lines: { sku: string; qty: number }[]
+  lines: { sku: string; qty: number; serials?: string[] }[]
 }
 
 /** Create a new (awaiting-approval) transfer from the create form. */
