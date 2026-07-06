@@ -224,7 +224,7 @@ function close() { emit('update:open', false) }
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-lg, 12px);
+  border-radius: 24px;
   overflow: hidden;
   box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
 }

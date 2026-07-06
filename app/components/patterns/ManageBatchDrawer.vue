@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, reactive } from 'vue'
 import {
   MpIcon,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -9,6 +9,8 @@ import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 
 // ── Public interface ─────────────────────────────────────────────────────────────
+export interface BatchLocEntry { locationId: string; qty: number }
+
 export interface CommittedBatch {
   key: string
   batchNo: string
@@ -17,6 +19,8 @@ export interface CommittedBatch {
   onHand: number
   counted: number | null  // null = uncounted
   unit: string
+  originLocations?: BatchLocEntry[]
+  destLocations?: BatchLocEntry[]
 }
 
 const props = defineProps<{
@@ -32,6 +36,10 @@ const props = defineProps<{
    * pre-seeding from the warehouse-wide batch list.
    */
   locationOnHand?: number
+  /** Bins available in the origin warehouse (filtered to where SKU has stock) */
+  originLocationPaths?: string[]
+  /** All bins available in the destination warehouse */
+  destLocationPaths?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -40,9 +48,21 @@ const emit = defineEmits<{
 }>()
 
 // ── Working rows ─────────────────────────────────────────────────────────────────
+interface LocRow { id: number; locationId: string; qty: string }
+
 interface WorkRow extends CommittedBatch {
   isNew: boolean
   expiryDisplay: string  // DD/MM/YYYY for the date picker
+  originLocRows: LocRow[]
+  destLocRows: LocRow[]
+}
+
+let locSeq = 0
+function makeLocRow(): LocRow { return { id: locSeq++, locationId: '', qty: '' } }
+
+function initLocRows(locs: BatchLocEntry[] | undefined): LocRow[] {
+  if (locs?.length) return [...locs.map(l => ({ id: locSeq++, locationId: l.locationId, qty: String(l.qty) })), makeLocRow()]
+  return [makeLocRow()]
 }
 
 const DEMO_DESCS = [
@@ -76,6 +96,8 @@ watch(() => props.open, (isOpen) => {
       ...b,
       isNew: false,
       expiryDisplay: isoToDisplay(b.expiryDate),
+      originLocRows: initLocRows(b.originLocations),
+      destLocRows: initLocRows(b.destLocations),
     }))
     return
   }
@@ -108,6 +130,8 @@ watch(() => props.open, (isOpen) => {
     counted: null,
     unit,
     isNew: false,
+    originLocRows: [makeLocRow()],
+    destLocRows: [makeLocRow()],
   }))
 }, { immediate: true })
 
@@ -198,6 +222,8 @@ function addWarehouseBatch(batchNo: string) {
     counted: null,
     unit,
     isNew: false,
+    originLocRows: [makeLocRow()],
+    destLocRows: [makeLocRow()],
   })
 }
 
@@ -215,6 +241,8 @@ function addNewBatch() {
     counted: null,
     unit,
     isNew: true,
+    originLocRows: [makeLocRow()],
+    destLocRows: [makeLocRow()],
   })
 }
 
@@ -230,6 +258,86 @@ function setCounted(row: WorkRow, val: string) {
 function setExpiryDisplay(row: WorkRow, val: string) {
   row.expiryDisplay = val
   row.expiryDate = displayToIso(val)
+}
+
+// ── Per-batch storage location (2nd drawer) ───────────────────────────────────────
+const hasOriginLoc = computed(() => (props.originLocationPaths?.length ?? 0) > 0)
+const hasDestLoc = computed(() => (props.destLocationPaths?.length ?? 0) > 0)
+const hasAnyLoc = computed(() => hasOriginLoc.value || hasDestLoc.value)
+
+// helper: does this row have any location assignments saved?
+function batchLocIsSet(row: WorkRow): boolean {
+  return row.originLocRows.some(r => r.locationId && Number(r.qty) > 0)
+    || row.destLocRows.some(r => r.locationId && Number(r.qty) > 0)
+}
+
+// 2nd drawer state
+const batchLocRow = ref<WorkRow | null>(null)
+const batchLocOriginRows = ref<LocRow[]>([])
+const batchLocDestRows = ref<LocRow[]>([])
+const batchLocError = ref('')
+const locActiveKey = ref<string | null>(null)
+const locSearches = reactive<Record<string, string>>({})
+
+const batchLocOriginTotal = computed(() => batchLocOriginRows.value.reduce((s, r) => s + (Number(r.qty) || 0), 0))
+const batchLocDestTotal = computed(() => batchLocDestRows.value.reduce((s, r) => s + (Number(r.qty) || 0), 0))
+
+function openBatchLocDrawer(row: WorkRow) {
+  batchLocRow.value = row
+  batchLocOriginRows.value = row.originLocRows.some(r => r.locationId)
+    ? row.originLocRows.map(r => ({ ...r }))
+    : [makeLocRow()]
+  batchLocDestRows.value = row.destLocRows.some(r => r.locationId)
+    ? row.destLocRows.map(r => ({ ...r }))
+    : [makeLocRow()]
+  batchLocError.value = ''
+}
+
+function closeBatchLocDrawer() { batchLocRow.value = null }
+
+function batchOriginLocOpts(lr: LocRow): string[] {
+  const used = new Set(batchLocOriginRows.value.filter(r => r.id !== lr.id && r.locationId).map(r => r.locationId))
+  const q = (locSearches[`o-${lr.id}`] ?? '').toLowerCase()
+  return (props.originLocationPaths ?? []).filter(p => !used.has(p) && (!q || p.toLowerCase().includes(q)))
+}
+
+function batchDestLocOpts(lr: LocRow): string[] {
+  const used = new Set(batchLocDestRows.value.filter(r => r.id !== lr.id && r.locationId).map(r => r.locationId))
+  const q = (locSearches[`d-${lr.id}`] ?? '').toLowerCase()
+  return (props.destLocationPaths ?? []).filter(p => !used.has(p) && (!q || p.toLowerCase().includes(q)))
+}
+
+function selectBatchOriginLoc(lr: LocRow, locationId: string) {
+  lr.locationId = locationId; locActiveKey.value = null; delete locSearches[`o-${lr.id}`]
+  if (batchLocOriginRows.value[batchLocOriginRows.value.length - 1]?.id === lr.id) batchLocOriginRows.value.push(makeLocRow())
+}
+
+function selectBatchDestLoc(lr: LocRow, locationId: string) {
+  lr.locationId = locationId; locActiveKey.value = null; delete locSearches[`d-${lr.id}`]
+  if (batchLocDestRows.value[batchLocDestRows.value.length - 1]?.id === lr.id) batchLocDestRows.value.push(makeLocRow())
+}
+
+function removeBatchOriginLoc(id: number) { batchLocOriginRows.value = batchLocOriginRows.value.filter(r => r.id !== id) }
+function removeBatchDestLoc(id: number) { batchLocDestRows.value = batchLocDestRows.value.filter(r => r.id !== id) }
+
+function saveBatchLocDrawer() {
+  const filledOrigin = batchLocOriginRows.value.filter(r => r.locationId && Number(r.qty) > 0)
+  const filledDest = batchLocDestRows.value.filter(r => r.locationId && Number(r.qty) > 0)
+  if (filledOrigin.length && filledDest.length && batchLocOriginTotal.value !== batchLocDestTotal.value) {
+    batchLocError.value = `Origin total (${batchLocOriginTotal.value}) doesn't match destination total (${batchLocDestTotal.value})`
+    return
+  }
+  const total = batchLocOriginTotal.value || batchLocDestTotal.value
+  if (total > (batchLocRow.value?.onHand ?? 0)) {
+    batchLocError.value = `Total qty (${total}) exceeds available qty (${batchLocRow.value?.onHand ?? 0})`
+    return
+  }
+  if (batchLocRow.value) {
+    batchLocRow.value.originLocRows = filledOrigin.length ? [...filledOrigin, makeLocRow()] : [makeLocRow()]
+    batchLocRow.value.destLocRows = filledDest.length ? [...filledDest, makeLocRow()] : [makeLocRow()]
+    if (total > 0) batchLocRow.value.counted = total
+  }
+  batchLocRow.value = null
 }
 
 // ── Difference helpers ────────────────────────────────────────────────────────────
@@ -250,15 +358,21 @@ function handleCancel() {
 }
 
 function handleSave() {
-  const committed: CommittedBatch[] = rows.value.map(r => ({
-    key: r.key,
-    batchNo: r.batchNo,
-    expiryDate: r.expiryDate,
-    desc: r.desc,
-    onHand: r.onHand,
-    counted: r.counted,
-    unit: r.unit,
-  }))
+  const committed: CommittedBatch[] = rows.value.map(r => {
+    const filledOrigin = r.originLocRows.filter(l => l.locationId && Number(l.qty) > 0)
+    const filledDest = r.destLocRows.filter(l => l.locationId && Number(l.qty) > 0)
+    return {
+      key: r.key,
+      batchNo: r.batchNo,
+      expiryDate: r.expiryDate,
+      desc: r.desc,
+      onHand: r.onHand,
+      counted: r.counted,
+      unit: r.unit,
+      ...(filledOrigin.length ? { originLocations: filledOrigin.map(l => ({ locationId: l.locationId, qty: Number(l.qty) })) } : {}),
+      ...(filledDest.length ? { destLocations: filledDest.map(l => ({ locationId: l.locationId, qty: Number(l.qty) })) } : {}),
+    }
+  })
   emit('save', committed)
   emit('update:open', false)
 }
@@ -271,6 +385,7 @@ function fmtNum(n: number | null): string {
 </script>
 
 <template>
+  <Transition name="mbd">
   <div v-if="open" class="mbd-overlay" @click.self="handleCancel">
     <div class="mbd-panel" role="dialog" aria-label="Manage batch">
 
@@ -371,7 +486,7 @@ function fmtNum(n: number | null): string {
 
         <!-- Table -->
         <div class="mbd-table-wrap">
-          <table class="mbd-table">
+          <table class="mbd-table" :class="{ 'mbd-table--split': isTransfer && hasAnyLoc }">
             <colgroup>
               <col class="mbd-col-batch" />
               <col class="mbd-col-expiry" />
@@ -395,7 +510,8 @@ function fmtNum(n: number | null): string {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in displayRows" :key="row.key" class="mbd-tr">
+              <template v-for="row in displayRows" :key="row.key">
+              <tr class="mbd-tr">
                 <!-- BATCH -->
                 <td v-if="row.isNew" class="mbd-td mbd-td--input">
                   <input
@@ -436,8 +552,17 @@ function fmtNum(n: number | null): string {
                 <!-- ON HAND -->
                 <td class="mbd-td mbd-td--num mbd-td--muted">{{ row.onHand.toLocaleString('id-ID') }}</td>
 
-                <!-- COUNTED (always editable) -->
-                <td class="mbd-td mbd-td--input mbd-td--counted">
+                <!-- COUNTED: 2-row cell (loc mode) or plain input -->
+                <td v-if="isTransfer && hasAnyLoc" class="mbd-td mbd-td--loc-cell">
+                  <div class="mbd-cell-row mbd-cell-row--total">
+                    <span v-if="row.counted !== null" class="mbd-cell-val">{{ row.counted.toLocaleString('id-ID') }}</span>
+                    <span v-else class="mbd-cell-empty">—</span>
+                  </div>
+                  <div class="mbd-cell-row mbd-cell-row--action">
+                    <button class="mbd-loc-link" :class="{ 'mbd-loc-link--set': batchLocIsSet(row) }" type="button" @click="openBatchLocDrawer(row)">Manage location</button>
+                  </div>
+                </td>
+                <td v-else class="mbd-td mbd-td--input mbd-td--counted">
                   <input
                     class="mbd-qty-input"
                     type="number"
@@ -472,6 +597,8 @@ function fmtNum(n: number | null): string {
                   </button>
                 </td>
               </tr>
+
+              </template>
 
               <!-- Select batch row — same pattern as "Select product" in warehouse transfer -->
               <tr class="mbd-tr mbd-tr--select">
@@ -531,9 +658,168 @@ function fmtNum(n: number | null): string {
 
     </div>
   </div>
+  </Transition>
+
+  <!-- ── 2nd drawer: manage storage location per batch ───────────────────────── -->
+  <Transition name="mbd-loc2">
+  <div v-if="batchLocRow" class="mbd-loc2-overlay" @click.self="closeBatchLocDrawer">
+    <div class="mbd-loc2-panel" role="dialog" aria-label="Manage storage location">
+      <header class="mbd-loc2-header">
+        <h2 class="mbd-loc2-title">Manage storage location</h2>
+        <button class="mbd-close" type="button" aria-label="Close" @click="closeBatchLocDrawer">
+          <MpIcon name="close" size="md" />
+        </button>
+      </header>
+
+      <div class="mbd-loc2-content">
+        <!-- Product + batch info bar -->
+        <div class="mbd-info-bar">
+          <div class="mbd-info-product">
+            <img v-if="productImg" class="mbd-info-thumb" :src="productImg" :alt="productName" loading="lazy" />
+            <span v-else class="mbd-info-thumb mbd-info-thumb--empty" />
+            <div class="mbd-info-names">
+              <span class="mbd-info-name">{{ productName }}</span>
+              <span class="mbd-info-sku">{{ sku }} · {{ batchLocRow.batchNo }}</span>
+            </div>
+          </div>
+          <div class="mbd-info-stats">
+            <div class="mbd-stat">
+              <span class="mbd-stat-label">Available qty</span>
+              <span class="mbd-stat-value">{{ batchLocRow.onHand.toLocaleString('id-ID') }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Out from (origin) -->
+        <div v-if="hasOriginLoc" class="mbd-loc2-section">
+          <div class="mbd-loc2-section-header">
+            <span class="mbd-loc2-section-title">Out from (origin warehouse)</span>
+            <span class="mbd-loc2-total">Total: {{ batchLocOriginTotal }}</span>
+          </div>
+          <div class="mbd-loc-tbl-wrap"><table class="mbd-loc-tbl">
+            <colgroup><col /><col class="mbd-loc-col-qty" /><col class="mbd-loc-col-del" /></colgroup>
+            <thead><tr>
+              <th class="mbd-loc-th">Storage location</th>
+              <th class="mbd-loc-th mbd-loc-th--num">Qty</th>
+              <th class="mbd-loc-th mbd-loc-th--del" />
+            </tr></thead>
+            <tbody>
+              <tr v-for="lr in batchLocOriginRows" :key="lr.id" class="mbd-loc-tr">
+                <td class="mbd-loc-td mbd-loc-td--sel">
+                  <MpPopover :id="`mbd2-lo-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="locActiveKey = null">
+                    <MpPopoverTrigger>
+                      <div class="mbd-loc-trigger">
+                        <input
+                          class="mbd-loc-input" type="text" autocomplete="off"
+                          :placeholder="lr.locationId || 'Select bin'"
+                          :value="locActiveKey === `o-${lr.id}` ? (locSearches[`o-${lr.id}`] ?? '') : ''"
+                          @focus="locActiveKey = `o-${lr.id}`"
+                          @input="locSearches[`o-${lr.id}`] = ($event.target as HTMLInputElement).value"
+                        />
+                        <svg class="mbd-loc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem v-for="p in batchOriginLocOpts(lr)" :key="p" @click="selectBatchOriginLoc(lr, p)">{{ p }}</MpPopoverListItem>
+                        <MpPopoverListItem v-if="!batchOriginLocOpts(lr).length" disabled>No bins found.</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </td>
+                <td class="mbd-loc-td mbd-loc-td--qty">
+                  <input v-model="lr.qty" class="mbd-loc-qty-input" type="number" min="0" placeholder="0" />
+                </td>
+                <td class="mbd-loc-td mbd-loc-td--del">
+                  <button class="mbd-loc-del-btn" type="button" :disabled="batchLocOriginRows.length <= 1" @click="removeBatchOriginLoc(lr.id)">
+                    <MpIcon name="minus-circular" size="sm" />
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table></div>
+        </div>
+
+        <!-- Into (destination) -->
+        <div v-if="hasDestLoc" class="mbd-loc2-section">
+          <div class="mbd-loc2-section-header">
+            <span class="mbd-loc2-section-title">Into (destination warehouse)</span>
+            <span class="mbd-loc2-total">Total: {{ batchLocDestTotal }}</span>
+          </div>
+          <div class="mbd-loc-tbl-wrap"><table class="mbd-loc-tbl">
+            <colgroup><col /><col class="mbd-loc-col-qty" /><col class="mbd-loc-col-del" /></colgroup>
+            <thead><tr>
+              <th class="mbd-loc-th">Storage location</th>
+              <th class="mbd-loc-th mbd-loc-th--num">Qty</th>
+              <th class="mbd-loc-th mbd-loc-th--del" />
+            </tr></thead>
+            <tbody>
+              <tr v-for="lr in batchLocDestRows" :key="lr.id" class="mbd-loc-tr">
+                <td class="mbd-loc-td mbd-loc-td--sel">
+                  <MpPopover :id="`mbd2-ld-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="locActiveKey = null">
+                    <MpPopoverTrigger>
+                      <div class="mbd-loc-trigger">
+                        <input
+                          class="mbd-loc-input" type="text" autocomplete="off"
+                          :placeholder="lr.locationId || 'Select bin'"
+                          :value="locActiveKey === `d-${lr.id}` ? (locSearches[`d-${lr.id}`] ?? '') : ''"
+                          @focus="locActiveKey = `d-${lr.id}`"
+                          @input="locSearches[`d-${lr.id}`] = ($event.target as HTMLInputElement).value"
+                        />
+                        <svg class="mbd-loc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem v-for="p in batchDestLocOpts(lr)" :key="p" @click="selectBatchDestLoc(lr, p)">{{ p }}</MpPopoverListItem>
+                        <MpPopoverListItem v-if="!batchDestLocOpts(lr).length" disabled>No bins found.</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </td>
+                <td class="mbd-loc-td mbd-loc-td--qty">
+                  <input v-model="lr.qty" class="mbd-loc-qty-input" type="number" min="0" placeholder="0" />
+                </td>
+                <td class="mbd-loc-td mbd-loc-td--del">
+                  <button class="mbd-loc-del-btn" type="button" :disabled="batchLocDestRows.length <= 1" @click="removeBatchDestLoc(lr.id)">
+                    <MpIcon name="minus-circular" size="sm" />
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table></div>
+        </div>
+
+        <p v-if="batchLocError" class="mbd-loc2-error">{{ batchLocError }}</p>
+      </div>
+
+      <footer class="mbd-loc2-footer">
+        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeBatchLocDrawer">Cancel</button>
+        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="saveBatchLocDrawer">Save changes</button>
+      </footer>
+    </div>
+  </div>
+  </Transition>
 </template>
 
 <style scoped>
+/* ── Transitions ─────────────────────────────────────────────────────────────── */
+.mbd-enter-active,
+.mbd-leave-active { transition: background-color 250ms ease; }
+.mbd-enter-from, .mbd-leave-to { background-color: transparent; }
+.mbd-enter-active :deep(.mbd-panel) { transition: transform 350ms ease-out; }
+.mbd-leave-active :deep(.mbd-panel) { transition: transform 250ms ease-in; }
+.mbd-enter-from :deep(.mbd-panel),
+.mbd-leave-to :deep(.mbd-panel) { transform: translateX(calc(100% + 12px)); }
+
+.mbd-loc2-enter-active,
+.mbd-loc2-leave-active { transition: background-color 250ms ease; }
+.mbd-loc2-enter-from, .mbd-loc2-leave-to { background-color: transparent; }
+.mbd-loc2-enter-active :deep(.mbd-loc2-panel) { transition: transform 350ms ease-out; }
+.mbd-loc2-leave-active :deep(.mbd-loc2-panel) { transition: transform 250ms ease-in; }
+.mbd-loc2-enter-from :deep(.mbd-loc2-panel),
+.mbd-loc2-leave-to :deep(.mbd-loc2-panel) { transform: translateX(calc(100% + 12px)); }
+
 /* ── Overlay + panel ─────────────────────────────────────────────────────────── */
 .mbd-overlay {
   position: fixed; inset: 0; z-index: 1300;
@@ -546,7 +832,7 @@ function fmtNum(n: number | null): string {
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-lg, 12px);
+  border-radius: 24px;
   overflow: hidden;
 }
 
@@ -725,6 +1011,12 @@ function fmtNum(n: number | null): string {
 }
 .mbd-del-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #dc2626); }
 
+/* When any column has split rows, all columns get left/right borders; no outer borders */
+.mbd-table--split .mbd-th { border-right: 1px solid var(--mp-border-default); }
+.mbd-table--split .mbd-th:last-child { border-right: none; }
+.mbd-table--split .mbd-td { border-right: 1px solid var(--mp-border-default); }
+.mbd-table--split .mbd-td:last-child { border-right: none; }
+
 /* Pagination row — white bg, no gray */
 .mbd-tr--info .mbd-td { background: var(--mp-background-neutral, #fff); }
 .mbd-td--pagination {
@@ -750,6 +1042,98 @@ function fmtNum(n: number | null): string {
 .mbd-batch-trigger:hover { background: var(--mp-background-neutral-subtle); }
 .mbd-batch-placeholder { color: var(--mp-text-placeholder); font-size: var(--mp-font-sizes-md); }
 .mbd-batch-chevron { color: var(--mp-icon-default); flex-shrink: 0; }
+
+/* ── 2-row "Manage location" cell in batch table ─────────────────────────────── */
+.mbd-td--loc-cell {
+  padding: 0; background: var(--mp-background-neutral-subtle);
+  display: flex; flex-direction: column; height: auto;
+}
+.mbd-cell-row { display: flex; align-items: center; height: 40px; padding: 0 var(--mp-spacing-2); }
+.mbd-cell-row--total { justify-content: flex-end; }
+.mbd-cell-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.mbd-cell-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.mbd-cell-row--action { border-top: 1px solid var(--mp-border-default); justify-content: flex-end; }
+.mbd-loc-link {
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link, #3b82f6); text-decoration: none;
+}
+.mbd-loc-link:hover { text-decoration: underline; }
+.mbd-loc-link--set { color: var(--mp-text-success, #18794e); }
+
+/* ── 2nd drawer: batch storage location ──────────────────────────────────────── */
+.mbd-loc2-overlay {
+  position: fixed; inset: 0; z-index: 1400;
+  background: rgba(8, 13, 14, 0.45);
+  display: flex; justify-content: flex-end;
+}
+.mbd-loc2-panel {
+  margin: var(--mp-spacing-3);
+  width: min(900px, calc(100% - 24px));
+  height: calc(100% - 24px);
+  display: flex; flex-direction: column;
+  background: var(--mp-background-stage, #fff);
+  border-radius: 24px;
+  overflow: hidden;
+}
+.mbd-loc2-header {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.mbd-loc2-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
+.mbd-loc2-content {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 20px;
+}
+.mbd-loc2-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.mbd-loc2-section-header { display: flex; align-items: center; justify-content: space-between; }
+.mbd-loc2-section-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.mbd-loc2-total { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.mbd-loc2-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+.mbd-loc2-footer {
+  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border-top: 1px solid var(--mp-border-default);
+  background: var(--mp-background-stage);
+}
+.mbd-loc-tbl-wrap { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
+.mbd-loc-tbl { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.mbd-loc-col-qty { width: 80px; }
+.mbd-loc-col-del { width: 36px; }
+.mbd-loc-th {
+  height: 28px; padding: 0 var(--mp-spacing-2); text-align: left;
+  font-size: var(--mp-font-sizes-xs); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); text-transform: uppercase; white-space: nowrap;
+  background: var(--mp-background-neutral); border-bottom: 1px solid var(--mp-border-default);
+}
+.mbd-loc-th--num { text-align: right; }
+.mbd-loc-th--del { padding: 0; }
+.mbd-loc-tr .mbd-loc-td { border-bottom: 1px solid var(--mp-border-default); }
+.mbd-loc-tr:last-child .mbd-loc-td { border-bottom: none; }
+.mbd-loc-td { background: var(--mp-background-neutral); padding: 0; vertical-align: middle; }
+.mbd-loc-td--sel:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.mbd-loc-td--qty { text-align: right; }
+.mbd-loc-td--qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.mbd-loc-td--del { text-align: center; }
+.mbd-loc-trigger { display: flex; align-items: center; height: 36px; padding: 0 var(--mp-spacing-2); gap: var(--mp-spacing-1); }
+.mbd-loc-input {
+  flex: 1; min-width: 0; height: 100%; border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); font-family: inherit;
+}
+.mbd-loc-input::placeholder { color: var(--mp-text-placeholder); }
+.mbd-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+.mbd-loc-qty-input {
+  width: 100%; height: 36px; padding: 0 var(--mp-spacing-2); text-align: right;
+  border: none; background: transparent; outline: none;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); font-variant-numeric: tabular-nums;
+}
+.mbd-loc-del-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary);
+}
+.mbd-loc-del-btn:hover { color: var(--mp-text-danger, #dc2626); }
+.mbd-loc-del-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* Footer */
 .mbd-footer {

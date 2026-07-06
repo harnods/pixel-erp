@@ -181,7 +181,7 @@ function close() { emit('update:open', false) }
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-lg, 12px);
+  border-radius: 24px;
   overflow: hidden;
 }
 

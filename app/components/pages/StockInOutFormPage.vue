@@ -8,7 +8,7 @@ import {
 } from '@mekari/pixel3'
 import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
-import ManageSerialDrawer from '~/components/patterns/ManageSerialDrawer.vue'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -204,9 +204,9 @@ function openSerialDrawer(row: ProductRow, locRow: LocationRow) {
   serialDrawerSku.value = row.sku
   serialDrawerLocRow.value = locRow
 }
-function saveSerialLines(serials: string[]) {
+function saveSerialLines(serials: CommittedSerial[]) {
   if (!serialDrawerLocRow.value) return
-  serialDrawerLocRow.value.serialLines = serials
+  serialDrawerLocRow.value.serialLines = serials.map(cs => cs.serial)
 }
 function locSerialHasCounts(locRow: LocationRow): boolean { return (locRow.serialLines?.length ?? 0) > 0 }
 function locSerialTotal(locRow: LocationRow): number { return locRow.serialLines?.length ?? 0 }
@@ -617,8 +617,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :warehouse-id="warehouseId"
       kind="in-out"
       :delta="parseDelta(serialDrawerLocRow.delta)"
-      :target-count="0"
-      :model-value="serialDrawerLocRow.serialLines ?? []"
+      :target-count="Math.abs(parseDelta(serialDrawerLocRow.delta))"
+      :model-value="(serialDrawerLocRow.serialLines ?? []).map(s => ({ serial: s }))"
       @update:open="serialDrawerOpen = false"
       @save="saveSerialLines"
     />

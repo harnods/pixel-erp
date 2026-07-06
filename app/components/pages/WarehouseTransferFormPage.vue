@@ -5,15 +5,17 @@ import {
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon,
   MpInputTag, MpDatePicker,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpBanner, MpBannerDescription,
   toast, css,
   type DataInterface,
 } from '@mekari/pixel3'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
-import ManageSerialDrawer from '~/components/patterns/ManageSerialDrawer.vue'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo } from '~/data/warehouseTransfers'
+import { stockLocationPaths } from '~/data/storageLocations'
 
 // The catch-all route binds the id via the generic `orderId` prop. 'new' → create mode.
 const props = defineProps<{ orderId: string }>()
@@ -84,7 +86,8 @@ function isSerialTrackedSku(sku: string): boolean {
 }
 
 // ── Product line rows ──────────────────────────────────────────────────────────────
-interface LineRow { id: number; sku: string; productName: string; desc: string; img: string; unit: string; qty: string; qtyError: boolean; batchLines?: CommittedBatch[]; serialLines?: string[] }
+interface LocationQty { locationId: string; qty: string }
+interface LineRow { id: number; sku: string; productName: string; desc: string; img: string; unit: string; qty: string; qtyError: boolean; batchLines?: CommittedBatch[]; serialLines?: CommittedSerial[]; originLocations?: LocationQty[]; destLocations?: LocationQty[] }
 let rowSeq = 0
 function makeRow(): LineRow { return { id: rowSeq++, sku: '', productName: '', desc: '', img: '', unit: '', qty: '0', qtyError: false } }
 const rows = ref<LineRow[]>([makeRow()])
@@ -140,9 +143,109 @@ function openSerialDrawer(row: LineRow) {
   }
   serialDrawerRow.value = row
 }
-function saveSerialLines(serials: string[]) {
+function saveSerialLines(serials: CommittedSerial[]) {
   if (!serialDrawerRow.value) return
   serialDrawerRow.value.serialLines = serials
+}
+
+// ── Storage location drawer ────────────────────────────────────────────────────────
+const originLocationPaths = computed(() => stockLocationPaths(originId.value))
+const destLocationPaths = computed(() => stockLocationPaths(destId.value))
+const originHasLocations = computed(() => originLocationPaths.value.length > 0)
+const destHasLocations = computed(() => destLocationPaths.value.length > 0)
+// bins in origin where the drawer's SKU actually has stock
+const locDrawerOriginBins = computed(() => {
+  if (!locDrawerRow.value) return []
+  return originStockMap.value.get(locDrawerRow.value.sku)?.locations ?? []
+})
+// bins in origin where the batch drawer's SKU has stock
+const batchDrawerOriginBins = computed(() => {
+  if (!batchDrawerRow.value) return []
+  return originStockMap.value.get(batchDrawerRow.value.sku)?.locations ?? []
+})
+function needsLocationMgmt(row: LineRow): boolean {
+  return !!row.sku && !isBatchTrackedSku(row.sku) && !isSerialTrackedSku(row.sku) && (originHasLocations.value || destHasLocations.value)
+}
+function locIsSet(row: LineRow): boolean {
+  return !!(row.originLocations?.some(l => l.locationId && Number(l.qty) > 0) || row.destLocations?.some(l => l.locationId && Number(l.qty) > 0))
+}
+function locTotalFor(row: LineRow): number {
+  if (row.originLocations?.length) return row.originLocations.reduce((s, l) => s + (Number(l.qty) || 0), 0)
+  return row.destLocations?.reduce((s, l) => s + (Number(l.qty) || 0), 0) ?? 0
+}
+
+interface LocQtyRow { id: number; locationId: string; qty: string }
+let locRowSeq = 0
+function makeLocRow(): LocQtyRow { return { id: locRowSeq++, locationId: '', qty: '' } }
+
+const locDrawerRow = ref<LineRow | null>(null)
+const locOriginRows = ref<LocQtyRow[]>([])
+const locDestRows = ref<LocQtyRow[]>([])
+const locSaveError = ref('')
+
+const locOriginTotal = computed(() => locOriginRows.value.reduce((s, r) => s + (Number(r.qty) || 0), 0))
+const locDestTotal = computed(() => locDestRows.value.reduce((s, r) => s + (Number(r.qty) || 0), 0))
+const locAvailable = computed(() => locDrawerRow.value ? availableFor(locDrawerRow.value.sku) : 0)
+const locOriginExceeds = computed(() => locOriginTotal.value > locAvailable.value)
+const locDestExceeds = computed(() => locDestTotal.value > locAvailable.value)
+
+function openLocDrawer(row: LineRow) {
+  locOriginRows.value = row.originLocations?.length
+    ? row.originLocations.map(l => ({ id: locRowSeq++, ...l }))
+    : [makeLocRow()]
+  locDestRows.value = row.destLocations?.length
+    ? row.destLocations.map(l => ({ id: locRowSeq++, ...l }))
+    : [makeLocRow()]
+  locSaveError.value = ''
+  locDrawerRow.value = row
+}
+function closeLocDrawer() { locDrawerRow.value = null; locActiveKey.value = null }
+function addLocOriginRow() { locOriginRows.value.push(makeLocRow()) }
+function addLocDestRow() { locDestRows.value.push(makeLocRow()) }
+function removeLocOriginRow(id: number) { if (locOriginRows.value.length > 1) locOriginRows.value = locOriginRows.value.filter(r => r.id !== id) }
+function removeLocDestRow(id: number) { if (locDestRows.value.length > 1) locDestRows.value = locDestRows.value.filter(r => r.id !== id) }
+
+// location picker state (shared across all rows in the drawer)
+const locActiveKey = ref<string | null>(null)
+const locPickerSearch = ref('')
+function openLocPicker(key: string) { locActiveKey.value = key; locPickerSearch.value = '' }
+function closeLocPicker(key: string) { if (locActiveKey.value === key) { locActiveKey.value = null; locPickerSearch.value = '' } }
+function locOptionsFor(paths: string[], rows: LocQtyRow[], currentId: string): { id: string; name: string }[] {
+  const usedByOthers = new Set(rows.filter(r => r.locationId !== currentId).map(r => r.locationId))
+  const q = locPickerSearch.value.trim().toLowerCase()
+  return paths
+    .filter(p => !usedByOthers.has(p) && (!q || p.toLowerCase().includes(q)))
+    .map(p => ({ id: p, name: p }))
+}
+function selectLocOrigin(row: LocQtyRow, locationId: string) {
+  row.locationId = locationId; locActiveKey.value = null; locPickerSearch.value = ''
+  if (locOriginRows.value[locOriginRows.value.length - 1]?.id === row.id) locOriginRows.value.push(makeLocRow())
+}
+function selectLocDest(row: LocQtyRow, locationId: string) {
+  row.locationId = locationId; locActiveKey.value = null; locPickerSearch.value = ''
+  if (locDestRows.value[locDestRows.value.length - 1]?.id === row.id) locDestRows.value.push(makeLocRow())
+}
+function saveLocDrawer() {
+  if (!locDrawerRow.value) return
+  const filledOrigin = locOriginRows.value.filter(r => r.locationId && Number(r.qty) > 0).map(({ locationId, qty }) => ({ locationId, qty }))
+  const filledDest = locDestRows.value.filter(r => r.locationId && Number(r.qty) > 0).map(({ locationId, qty }) => ({ locationId, qty }))
+  // if both sections are filled, their totals must match
+  if (filledOrigin.length && filledDest.length && locOriginTotal.value !== locDestTotal.value) {
+    locSaveError.value = `Origin total (${locOriginTotal.value}) doesn't match destination total (${locDestTotal.value})`
+    return
+  }
+  // cap against available qty
+  const total = locOriginTotal.value || locDestTotal.value
+  const cap = availableFor(locDrawerRow.value.sku)
+  if (total > cap) {
+    locSaveError.value = `Total qty (${total}) exceeds available qty (${cap})`
+    return
+  }
+  locDrawerRow.value.originLocations = filledOrigin.length ? filledOrigin : undefined
+  locDrawerRow.value.destLocations = filledDest.length ? filledDest : undefined
+  // qty is now derived from location totals
+  locDrawerRow.value.qty = total > 0 ? String(total) : '0'
+  locDrawerRow.value = null
 }
 
 function afterTransfer(row: LineRow): number {
@@ -236,6 +339,7 @@ function handleSave() {
   for (const row of filled) {
     if (isBatchTrackedSku(row.sku)) {
       if (!batchHasCounts(row)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Enter batch details for all batch-tracked products.' }
+      else if (batchTotal(row) > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Transfer qty cannot exceed available stock.' }
       else row.qtyError = false
     } else {
       const qty = Number(row.qty)
@@ -266,7 +370,7 @@ function handleSave() {
     lines: filled.map(r => ({
       sku: r.sku,
       qty: isBatchTrackedSku(r.sku) ? batchTotal(r) : Number(r.qty),
-      ...(r.serialLines?.length ? { serials: r.serialLines } : {}),
+      ...(r.serialLines?.length ? { serials: r.serialLines.map(cs => cs.serial) } : {}),
     })),
   }
 
@@ -475,7 +579,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         <button class="wtf-batch-link" type="button" @click="openSerialDrawer(row)">Manage serial number</button>
                       </div>
                     </td>
-                    <!-- Transfer qty: regular -->
+                    <!-- Transfer qty: regular with storage location -->
+                    <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--batch-cell">
+                      <div class="wtf-batch-row wtf-batch-row--total">
+                        <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
+                        <span v-else class="wtf-batch-empty">—</span>
+                      </div>
+                      <div class="wtf-batch-row wtf-batch-row--action">
+                        <button class="wtf-batch-link" :class="{ 'wtf-batch-link--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">Manage storage location</button>
+                      </div>
+                    </td>
+                    <!-- Transfer qty: regular plain -->
                     <td v-else class="wtf-td wtf-td--input">
                       <input
                         :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
@@ -539,27 +653,180 @@ onUnmounted(() => { stageObserver?.disconnect() })
     </div>
 
     <ManageBatchDrawer
-      v-if="batchDrawerRow"
       :open="batchDrawerOpen"
-      :sku="batchDrawerRow.sku"
+      :sku="batchDrawerRow?.sku ?? ''"
       :warehouse-id="originId"
       kind="transfer"
-      :model-value="batchDrawerRow.batchLines ?? []"
+      :model-value="batchDrawerRow?.batchLines ?? []"
+      :origin-location-paths="batchDrawerOriginBins"
+      :dest-location-paths="destLocationPaths"
       @update:open="batchDrawerOpen = $event"
       @save="saveBatchLines"
     />
     <ManageSerialDrawer
-      v-if="serialDrawerRow"
-      :open="true"
-      :sku="serialDrawerRow.sku"
+      :open="serialDrawerOpen"
+      :sku="serialDrawerRow?.sku ?? ''"
       :warehouse-id="originId"
       kind="transfer"
-      :delta="Number(serialDrawerRow.qty)"
-      :target-count="Number(serialDrawerRow.qty)"
-      :model-value="serialDrawerRow.serialLines ?? []"
-      @update:open="serialDrawerOpen = false"
+      :delta="Number(serialDrawerRow?.qty) || 0"
+      :target-count="Number(serialDrawerRow?.qty) || 0"
+      :model-value="serialDrawerRow?.serialLines ?? []"
+      :origin-location-paths="originLocationPaths"
+      :dest-location-paths="destLocationPaths"
+      @update:open="serialDrawerOpen = $event"
       @save="saveSerialLines"
     />
+
+    <!-- ── Storage location drawer ── -->
+    <Transition name="wtf-loc">
+    <div v-if="locDrawerRow" class="wtf-loc-overlay" @click.self="closeLocDrawer">
+      <div class="wtf-loc-panel" role="dialog" aria-label="Manage storage location">
+        <header class="wtf-loc-header">
+          <h2 class="wtf-loc-title">Manage storage location</h2>
+          <button class="wtf-loc-close" type="button" aria-label="Close" @click="closeLocDrawer">
+            <MpIcon name="close" size="md" />
+          </button>
+        </header>
+
+        <div class="wtf-loc-content">
+          <!-- Product info -->
+          <div class="wtf-loc-product">
+            <img v-if="locDrawerRow.img" class="wtf-loc-thumb" :src="locDrawerRow.img" :alt="locDrawerRow.productName" loading="lazy" />
+            <span v-else class="wtf-loc-thumb wtf-loc-thumb--empty" />
+            <div class="wtf-loc-names">
+              <span class="wtf-loc-name">{{ locDrawerRow.productName }}</span>
+              <span class="wtf-loc-sku">{{ locDrawerRow.sku }}</span>
+            </div>
+            <div class="wtf-loc-qty-badge">
+              <span class="wtf-loc-qty-label">Available qty</span>
+              <span class="wtf-loc-qty-value">{{ locDrawerRow ? availableFor(locDrawerRow.sku).toLocaleString('id-ID') : '—' }}</span>
+            </div>
+          </div>
+
+          <!-- Descriptions for mixed-location scenarios -->
+          <MpBanner v-if="originHasLocations && !destHasLocations" variant="info">
+            <MpBannerDescription>Stock will be taken from specific bins in {{ warehouseName(originId) }} and added to the general stock in {{ warehouseName(destId) }}, which doesn't use storage locations.</MpBannerDescription>
+          </MpBanner>
+          <MpBanner v-if="!originHasLocations && destHasLocations" variant="info">
+            <MpBannerDescription>Stock will be moved from the general stock in {{ warehouseName(originId) }} (no storage locations) and placed into specific bins in {{ warehouseName(destId) }}.</MpBannerDescription>
+          </MpBanner>
+
+          <!-- Origin locations -->
+          <div v-if="originHasLocations" class="wtf-loc-section">
+            <div class="wtf-loc-section-header">
+              <span class="wtf-loc-section-title">Out from ({{ warehouseName(originId) }})</span>
+              <span class="wtf-loc-total" :class="locOriginExceeds ? 'wtf-loc-total--warn' : ''">Total: {{ locOriginTotal }}</span>
+            </div>
+            <div class="wtf-loc-table-wrap"><table class="wtf-loc-table">
+              <colgroup><col /><col class="wtf-loc-col-qty" /><col class="wtf-loc-col-del" /></colgroup>
+              <thead>
+                <tr>
+                  <th class="wtf-loc-th">Storage location</th>
+                  <th class="wtf-loc-th wtf-loc-th--num">Qty</th>
+                  <th class="wtf-loc-th wtf-loc-th--del" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in locOriginRows" :key="r.id" class="wtf-loc-tr">
+                  <td class="wtf-loc-td wtf-loc-td--sel">
+                    <MpPopover :id="`wtf-loc-o-${r.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(`o-${r.id}`)">
+                      <MpPopoverTrigger>
+                        <div class="wtf-loc-trigger">
+                          <input
+                            class="wtf-loc-picker-input" type="text" autocomplete="off"
+                            :value="locActiveKey === `o-${r.id}` ? locPickerSearch : r.locationId"
+                            placeholder="Select location…"
+                            @focus="openLocPicker(`o-${r.id}`)"
+                            @input="locActiveKey = `o-${r.id}`; locPickerSearch = ($event.target as HTMLInputElement).value"
+                          />
+                          <svg class="wtf-loc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </div>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ width: '380px', maxHeight: '260px', overflowY: 'auto', padding: '0' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem v-for="opt in locOptionsFor(locDrawerOriginBins, locOriginRows, r.locationId)" :key="opt.id" :is-active="opt.id === r.locationId" @click="selectLocOrigin(r, opt.id)">{{ opt.name }}</MpPopoverListItem>
+                          <p v-if="!locOptionsFor(locDrawerOriginBins, locOriginRows, r.locationId).length" class="wtf-loc-none">No locations found.</p>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </td>
+                  <td class="wtf-loc-td wtf-loc-td--qty">
+                    <input v-model="r.qty" class="wtf-loc-qty-input" type="number" min="0" placeholder="0" />
+                  </td>
+                  <td class="wtf-loc-td wtf-loc-td--del">
+                    <button class="wtf-loc-del-btn" type="button" :disabled="locOriginRows.length === 1" @click="removeLocOriginRow(r.id)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table></div>
+          </div>
+
+          <!-- Destination locations -->
+          <div v-if="destHasLocations" class="wtf-loc-section">
+            <div class="wtf-loc-section-header">
+              <span class="wtf-loc-section-title">Into ({{ warehouseName(destId) }})</span>
+              <span class="wtf-loc-total" :class="locDestExceeds || (locOriginTotal > 0 && locDestTotal > 0 && locDestTotal !== locOriginTotal) ? 'wtf-loc-total--warn' : ''">
+                Total: {{ locDestTotal }}
+              </span>
+            </div>
+            <div class="wtf-loc-table-wrap"><table class="wtf-loc-table">
+              <colgroup><col /><col class="wtf-loc-col-qty" /><col class="wtf-loc-col-del" /></colgroup>
+              <thead>
+                <tr>
+                  <th class="wtf-loc-th">Storage location</th>
+                  <th class="wtf-loc-th wtf-loc-th--num">Qty</th>
+                  <th class="wtf-loc-th wtf-loc-th--del" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in locDestRows" :key="r.id" class="wtf-loc-tr">
+                  <td class="wtf-loc-td wtf-loc-td--sel">
+                    <MpPopover :id="`wtf-loc-d-${r.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(`d-${r.id}`)">
+                      <MpPopoverTrigger>
+                        <div class="wtf-loc-trigger">
+                          <input
+                            class="wtf-loc-picker-input" type="text" autocomplete="off"
+                            :value="locActiveKey === `d-${r.id}` ? locPickerSearch : r.locationId"
+                            placeholder="Select location…"
+                            @focus="openLocPicker(`d-${r.id}`)"
+                            @input="locActiveKey = `d-${r.id}`; locPickerSearch = ($event.target as HTMLInputElement).value"
+                          />
+                          <svg class="wtf-loc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </div>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ width: '380px', maxHeight: '260px', overflowY: 'auto', padding: '0' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem v-for="opt in locOptionsFor(destLocationPaths, locDestRows, r.locationId)" :key="opt.id" :is-active="opt.id === r.locationId" @click="selectLocDest(r, opt.id)">{{ opt.name }}</MpPopoverListItem>
+                          <p v-if="!locOptionsFor(destLocationPaths, locDestRows, r.locationId).length" class="wtf-loc-none">No locations found.</p>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </td>
+                  <td class="wtf-loc-td wtf-loc-td--qty">
+                    <input v-model="r.qty" class="wtf-loc-qty-input" type="number" min="0" placeholder="0" />
+                  </td>
+                  <td class="wtf-loc-td wtf-loc-td--del">
+                    <button class="wtf-loc-del-btn" type="button" :disabled="locDestRows.length === 1" @click="removeLocDestRow(r.id)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table></div>
+          </div>
+
+          <p v-if="locSaveError" class="wtf-loc-error">{{ locSaveError }}</p>
+        </div>
+
+        <footer class="wtf-loc-footer">
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeLocDrawer">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="saveLocDrawer">Save</button>
+        </footer>
+      </div>
+    </div>
+    </Transition>
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
@@ -603,7 +870,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 /* ── Table toolbar (search + import, right-aligned) ───────────────────────── */
 .wtf-table-toolbar { margin-top: 32px; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
-.wtf-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 280px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
+.wtf-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 200px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
 .wtf-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .wtf-search-input::placeholder { color: var(--mp-text-placeholder); }
 .wtf-import-btn { padding: var(--mp-spacing-2) var(--mp-spacing-4); border: 1px solid var(--mp-background-inverse, #080d0e); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-inverse, #080d0e); color: #fff; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; }
@@ -619,7 +886,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-col-sku  { width: 12%; }
 .wtf-col-num  { width: 14%; }
 .wtf-col-unit { width: 8%; }
-.wtf-col-del  { width: 44px; }
+.wtf-col-del  { width: 52px; }
 /* Form-row table: header + editable cells are white; read-only cells are grey
    (matches the picking / packing creation form-table look). */
 .wtf-th {
@@ -691,7 +958,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-prod-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .wtf-prod-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .wtf-td--del { padding: 0; text-align: center; }
-.wtf-del-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
+.wtf-del-btn { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 40px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
 .wtf-del-btn:hover { background: var(--mp-background-neutral); color: var(--mp-text-danger, #dc2626); }
 .wtf-count { padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .wtf-form-error { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
@@ -723,4 +990,124 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wtf-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
 .wtf-file-remove:hover { color: var(--mp-text-default); }
+
+/* ── Location button set indicator ──────────────────────────────────────── */
+.wtf-batch-link--set { color: var(--mp-text-success, #18794e); }
+
+/* ── Storage location drawer ─────────────────────────────────────────────── */
+.wtf-loc-enter-active,
+.wtf-loc-leave-active { transition: background-color 250ms ease; }
+.wtf-loc-enter-from, .wtf-loc-leave-to { background-color: transparent; }
+.wtf-loc-enter-active :deep(.wtf-loc-panel) { transition: transform 350ms ease-out; }
+.wtf-loc-leave-active :deep(.wtf-loc-panel) { transition: transform 250ms ease-in; }
+.wtf-loc-enter-from :deep(.wtf-loc-panel),
+.wtf-loc-leave-to :deep(.wtf-loc-panel) { transform: translateX(calc(100% + 12px)); }
+
+.wtf-loc-overlay {
+  position: fixed; inset: 0; z-index: 1300;
+  background: rgba(8, 13, 14, 0.45);
+  display: flex; justify-content: flex-end;
+}
+.wtf-loc-panel {
+  margin: var(--mp-spacing-3);
+  width: min(720px, calc(100% - 24px));
+  height: calc(100% - 24px);
+  display: flex; flex-direction: column;
+  background: var(--mp-background-stage, #fff);
+  border-radius: 24px;
+  overflow: hidden;
+}
+.wtf-loc-header {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.wtf-loc-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
+.wtf-loc-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border: none; background: none;
+  border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default);
+}
+.wtf-loc-close:hover { background: var(--mp-background-neutral-hovered); }
+.wtf-loc-content { flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 20px; }
+
+.wtf-loc-product {
+  display: flex; align-items: center; gap: var(--mp-spacing-4);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+}
+.wtf-loc-thumb {
+  width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0;
+  border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral);
+}
+.wtf-loc-thumb--empty { background: var(--mp-background-neutral-subtle); }
+.wtf-loc-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.wtf-loc-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wtf-loc-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.wtf-loc-qty-badge { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; flex-shrink: 0; }
+.wtf-loc-qty-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+.wtf-loc-qty-value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+
+.wtf-loc-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.wtf-loc-section-header { display: flex; align-items: center; justify-content: space-between; }
+.wtf-loc-section-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.wtf-loc-total { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.wtf-loc-total--warn { color: var(--mp-text-warning, #b45309); font-weight: var(--mp-font-weights-medium); }
+
+.wtf-loc-table-wrap { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
+.wtf-loc-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.wtf-loc-col-qty { width: 80px; }
+.wtf-loc-col-del { width: 44px; }
+.wtf-loc-th {
+  height: 28px; padding: 0 var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); text-transform: uppercase; text-align: left;
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.wtf-loc-th--num { text-align: right; }
+.wtf-loc-th--del { padding: 0; }
+.wtf-loc-tr .wtf-loc-td { border-bottom: 1px solid var(--mp-border-default); }
+.wtf-loc-tr:last-child .wtf-loc-td { border-bottom: none; }
+.wtf-loc-td { background: var(--mp-background-neutral, #fff); padding: 0; vertical-align: middle; }
+.wtf-loc-td--sel:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.wtf-loc-td--qty { text-align: right; }
+.wtf-loc-td--qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.wtf-loc-td--del { text-align: center; }
+.wtf-loc-trigger { display: flex; align-items: center; height: 40px; padding: 0 var(--mp-spacing-2); gap: var(--mp-spacing-1); }
+.wtf-loc-picker-input {
+  flex: 1; min-width: 0; height: 100%; border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-family: inherit;
+}
+.wtf-loc-picker-input::placeholder { color: var(--mp-text-placeholder); }
+.wtf-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+.wtf-loc-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.wtf-loc-qty-input {
+  width: 100%; height: 40px; padding: 0 var(--mp-spacing-2);
+  border: none; outline: none; background: transparent; text-align: right;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.wtf-loc-del-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 40px; border: none; background: none; cursor: pointer; color: var(--mp-text-secondary);
+}
+.wtf-loc-del-btn:hover:not(:disabled) { color: var(--mp-text-danger, #dc2626); }
+.wtf-loc-del-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.wtf-loc-add-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link);
+}
+.wtf-loc-add-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+.wtf-loc-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+.wtf-loc-footer {
+  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border-top: 1px solid var(--mp-border-default);
+  background: var(--mp-background-stage);
+}
 </style>

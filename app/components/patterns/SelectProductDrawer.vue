@@ -131,7 +131,7 @@ function save() { emit('save', [...sel.value]); emit('update:open', false) }
 .spd-panel {
   margin: var(--mp-spacing-3); width: min(920px, calc(100% - 24px)); height: calc(100% - 24px);
   display: flex; flex-direction: column; background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-lg, 12px); overflow: hidden;
+  border-radius: 24px; overflow: hidden;
 }
 .spd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;

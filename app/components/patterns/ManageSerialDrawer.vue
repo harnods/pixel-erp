@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { MpIcon, MpBadge } from '@mekari/pixel3'
+import { ref, computed, watch, reactive } from 'vue'
+import { MpIcon, MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+
+export interface CommittedSerial {
+  serial: string
+  destLocationId?: string
+}
 
 interface SerialRow {
   serial: string
   counted: boolean
   reserved?: boolean
+  originLocation?: string
+  destLocId?: string
 }
 
 const props = defineProps<{
@@ -15,7 +22,7 @@ const props = defineProps<{
   sku: string
   warehouseId: string
   targetCount: number
-  modelValue: string[]
+  modelValue: CommittedSerial[]
   /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer */
   kind?: 'count' | 'in-out' | 'transfer'
   /** Signed delta for in-out mode (e.g. +2 stock in, -5 stock out). */
@@ -26,11 +33,15 @@ const props = defineProps<{
    * pre-seeding from the warehouse-wide serial list.
    */
   locationOnHand?: number
+  /** Bins in origin warehouse where this SKU has stock — for read-only "From bin" display */
+  originLocationPaths?: string[]
+  /** All bins available in destination warehouse — for "To bin" picker */
+  destLocationPaths?: string[]
 }>()
 
 const emit = defineEmits<{
   'update:open': [boolean]
-  'save': [serials: string[]]
+  'save': [serials: CommittedSerial[]]
 }>()
 
 const PAGE_SIZE = 20
@@ -41,40 +52,59 @@ const search = ref('')
 const page = ref(1)
 const saveError = ref('')
 
+const locActiveKey = ref<string | null>(null)
+const locSearches = reactive<Record<string, string>>({})
+const hasOriginLoc = computed(() => (props.originLocationPaths?.length ?? 0) > 0)
+const hasDestLoc = computed(() => (props.destLocationPaths?.length ?? 0) > 0)
+
 watch(() => props.open, (isOpen) => {
   if (!isOpen) return
 
   const wh = getWarehouseDetail(props.warehouseId)
   const sr = wh?.stock.find(s => s.sku === props.sku)?.serials
-  const availableSerials: string[] = sr?.available.map(u => u.serial) ?? []
+  const availableUnits = sr?.available ?? []
+  const reservedUnits = sr?.reserved ?? []
+  const availableSerials: string[] = availableUnits.map(u => u.serial)
   const warehouseSerials: string[] = [
     ...availableSerials,
-    ...(sr?.reserved.map(u => u.serial) ?? []),
+    ...reservedUnits.map(u => u.serial),
   ]
 
   if (props.kind === 'transfer') {
-    // transfer mode: available SNs selectable, reserved shown but locked
-    const selectedSet = new Set(props.modelValue)
-    const reservedSerials: string[] = sr?.reserved.map(u => u.serial) ?? []
+    const selectedSet = new Set(props.modelValue.map(cs => cs.serial))
+    const selectedDestLoc = new Map(props.modelValue.map(cs => [cs.serial, cs.destLocationId ?? '']))
     rows.value = [
-      ...availableSerials.map(s => ({ serial: s, counted: selectedSet.has(s), reserved: false })),
-      ...reservedSerials.map(s => ({ serial: s, counted: false, reserved: true })),
+      ...availableUnits.map(u => ({
+        serial: u.serial,
+        counted: selectedSet.has(u.serial),
+        reserved: false as const,
+        originLocation: hasOriginLoc.value ? u.location : undefined,
+        destLocId: selectedDestLoc.get(u.serial) ?? '',
+      })),
+      ...reservedUnits.map(u => ({
+        serial: u.serial,
+        counted: false,
+        reserved: true as const,
+        originLocation: hasOriginLoc.value ? u.location : undefined,
+        destLocId: '',
+      })),
     ]
   } else if (props.modelValue.length > 0) {
-    const countedSet = new Set(props.modelValue)
+    const countedSet = new Set(props.modelValue.map(cs => cs.serial))
     const seen = new Set<string>()
     const result: SerialRow[] = warehouseSerials.map(s => {
       seen.add(s)
       return { serial: s, counted: countedSet.has(s) }
     })
-    for (const s of props.modelValue) {
-      if (!seen.has(s)) result.push({ serial: s, counted: true })
+    for (const cs of props.modelValue) {
+      if (!seen.has(cs.serial)) result.push({ serial: cs.serial, counted: true })
     }
     rows.value = result
   } else if (props.locationOnHand === 0) {
-    // SKU has no stock at this bin — start empty so serials from other bins don't bleed in
     rows.value = []
   } else {
+    // stock in/out and stock count: pre-populate all existing SNs as counted=true
+    // user adds new SNs or removes existing ones; target = newOnHand (= onHand ± delta)
     rows.value = warehouseSerials.map(s => ({ serial: s, counted: true }))
   }
 
@@ -82,6 +112,7 @@ watch(() => props.open, (isOpen) => {
   search.value = ''
   page.value = 1
   saveError.value = ''
+  locActiveKey.value = null
 }, { immediate: true })
 
 const product = computed(() => productBySku(props.sku))
@@ -103,6 +134,10 @@ const isTransfer = computed(() => props.kind === 'transfer')
 const qtyLabel = computed(() => props.kind === 'transfer' ? 'Transfer qty' : 'Stock in/out qty')
 const signedDelta = computed(() => props.delta ?? 0)
 const newOnHand = computed(() => onHandCount.value + signedDelta.value)
+// for in-out, target = new on-hand (e.g. 20 ± delta); validation counts checked rows
+const effectiveTargetCount = computed(() =>
+  props.kind === 'in-out' ? newOnHand.value : props.targetCount
+)
 const afterTransferCount = computed(() => onHandCount.value - countedCount.value)
 
 function fmtSerial(n: number): string {
@@ -147,22 +182,43 @@ function loadMore() {
   page.value++
 }
 
+function locOptions(search: string): string[] {
+  const q = search.trim().toLowerCase()
+  return (props.destLocationPaths ?? []).filter(p => !q || p.toLowerCase().includes(q))
+}
+function setDestLoc(row: SerialRow, locId: string) {
+  row.destLocId = locId
+  locActiveKey.value = null
+}
+const colspanCount = computed(() => 3 + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0))
+
 function handleCancel() {
   emit('update:open', false)
 }
 
 function handleSave() {
-  if (countedCount.value !== props.targetCount) {
-    saveError.value = `${countedCount.value} of ${props.targetCount} serial numbers specified. Add or remove serial numbers to match the counted quantity.`
+  if (countedCount.value !== effectiveTargetCount.value) {
+    saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers specified. Add or remove serial numbers to match the counted quantity.`
     return
   }
+  if (hasDestLoc.value) {
+    const missing = rows.value.filter(r => r.counted && !r.destLocId)
+    if (missing.length > 0) {
+      saveError.value = `${missing.length} selected serial number${missing.length !== 1 ? 's' : ''} don't have a destination bin assigned.`
+      return
+    }
+  }
   saveError.value = ''
-  emit('save', rows.value.filter(r => r.counted).map(r => r.serial))
+  emit('save', rows.value.filter(r => r.counted).map(r => ({
+    serial: r.serial,
+    destLocationId: r.destLocId || undefined,
+  })))
   emit('update:open', false)
 }
 </script>
 
 <template>
+  <Transition name="msn">
   <div v-if="open" class="msn-overlay" @click.self="handleCancel">
     <div class="msn-panel" role="dialog" aria-label="Manage serial number">
 
@@ -248,15 +304,19 @@ function handleSave() {
         </div>
 
         <div class="msn-table-wrap">
-          <table class="msn-table">
+          <table class="msn-table" :class="{ 'msn-table--locs': hasOriginLoc || hasDestLoc }">
             <colgroup>
               <col class="msn-col-serial" />
+              <col v-if="hasOriginLoc" class="msn-col-from-bin" />
+              <col v-if="hasDestLoc" class="msn-col-to-bin" />
               <col class="msn-col-status" />
               <col class="msn-col-toggle" />
             </colgroup>
             <thead>
               <tr>
-                <th class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ targetCount }})</th>
+                <th class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ effectiveTargetCount }})</th>
+                <th v-if="hasOriginLoc" class="msn-th">ORIGIN LOCATION</th>
+                <th v-if="hasDestLoc" class="msn-th">INTO LOCATION</th>
                 <th class="msn-th">STATUS</th>
                 <th class="msn-th msn-th--del" />
               </tr>
@@ -269,6 +329,42 @@ function handleSave() {
                   : { 'msn-tr--removed': !row.counted }"
               >
                 <td class="msn-td" :class="{ 'msn-td--strike': !isTransfer && !row.counted }">{{ row.serial }}</td>
+                <td v-if="hasOriginLoc" class="msn-td msn-td--from-bin">
+                  <span class="msn-bin-text" :title="row.originLocation">{{ row.originLocation ?? '—' }}</span>
+                </td>
+                <td v-if="hasDestLoc" class="msn-td msn-td--to-bin">
+                  <template v-if="row.reserved || !row.counted">
+                    <span class="msn-bin-empty">—</span>
+                  </template>
+                  <template v-else>
+                    <MpPopover use-portal is-close-on-select :is-open="locActiveKey === row.serial" @update:is-open="(v: boolean) => { if (!v) locActiveKey = null }">
+                      <MpPopoverTrigger as-child>
+                        <div class="msn-bin-trigger">
+                          <input
+                            class="msn-bin-input"
+                            type="text"
+                            :placeholder="row.destLocId ? '' : 'Select location…'"
+                            :value="locActiveKey === row.serial ? (locSearches[row.serial] ?? '') : (row.destLocId ?? '')"
+                            @focus="locActiveKey = row.serial; locSearches[row.serial] = ''"
+                            @input="locSearches[row.serial] = ($event.target as HTMLInputElement).value; locActiveKey = row.serial"
+                          />
+                          <svg class="msn-bin-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </div>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent>
+                        <MpPopoverList>
+                          <MpPopoverListItem
+                            v-for="opt in locOptions(locSearches[row.serial] ?? '')"
+                            :key="opt"
+                            :is-active="opt === row.destLocId"
+                            @click="setDestLoc(row, opt)"
+                          >{{ opt }}</MpPopoverListItem>
+                          <p v-if="!locOptions(locSearches[row.serial] ?? '').length" class="msn-loc-none">No locations found.</p>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </template>
+                </td>
                 <td class="msn-td msn-td--status">
                   <template v-if="isTransfer">
                     <MpBadge v-if="row.reserved" type="warning">Reserved</MpBadge>
@@ -296,7 +392,7 @@ function handleSave() {
               </tr>
 
               <tr class="msn-tr msn-tr--info">
-                <td colspan="3" class="msn-td msn-td--pagination">
+                <td :colspan="colspanCount" class="msn-td msn-td--pagination">
                   <span>Showing {{ displayRows.length }} of {{ filtered.length }} serial numbers</span>
                   <button v-if="hasMore" class="msn-load-more" type="button" @click="loadMore">Load more</button>
                 </td>
@@ -304,6 +400,8 @@ function handleSave() {
             </tbody>
           </table>
         </div>
+
+        <p v-if="isTransfer && saveError" class="msn-save-error msn-save-error--transfer">{{ saveError }}</p>
 
       </div>
 
@@ -314,9 +412,19 @@ function handleSave() {
 
     </div>
   </div>
+  </Transition>
 </template>
 
 <style scoped>
+/* ── Transitions ─────────────────────────────────────────────────────────────── */
+.msn-enter-active,
+.msn-leave-active { transition: background-color 250ms ease; }
+.msn-enter-from, .msn-leave-to { background-color: transparent; }
+.msn-enter-active :deep(.msn-panel) { transition: transform 350ms ease-out; }
+.msn-leave-active :deep(.msn-panel) { transition: transform 250ms ease-in; }
+.msn-enter-from :deep(.msn-panel),
+.msn-leave-to :deep(.msn-panel) { transform: translateX(calc(100% + 12px)); }
+
 .msn-overlay {
   position: fixed; inset: 0; z-index: 1300;
   background: rgba(8, 13, 14, 0.45);
@@ -324,11 +432,11 @@ function handleSave() {
 }
 .msn-panel {
   margin: var(--mp-spacing-3);
-  width: min(800px, calc(100% - 24px));
+  width: min(80vw, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-lg, 12px);
+  border-radius: 24px;
   overflow: hidden;
   box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
 }
@@ -394,6 +502,7 @@ function handleSave() {
 .msn-textarea:focus { border-color: var(--mp-border-bold); }
 .msn-form-action { display: flex; justify-content: flex-end; }
 .msn-save-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+.msn-save-error--transfer { margin-top: -12px; }
 
 .msn-filter-bar { display: flex; justify-content: flex-end; }
 .msn-search {
@@ -414,9 +523,15 @@ function handleSave() {
 .msn-table {
   width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0;
 }
+.msn-table--locs { table-layout: auto; }
 .msn-col-serial { /* fills remaining */ }
+.msn-table--locs .msn-col-serial,
+.msn-table--locs .msn-col-from-bin,
+.msn-table--locs .msn-col-to-bin { width: 33%; }
 .msn-col-status { width: 120px; }
 .msn-col-toggle { width: 44px; }
+.msn-col-from-bin { width: 220px; }
+.msn-col-to-bin { width: 220px; }
 .msn-th {
   height: var(--mp-sizes-7, 28px);
   text-align: left;
@@ -429,6 +544,10 @@ function handleSave() {
 }
 .msn-th--del { padding: 0; }
 
+/* Form-table rules — applied when Into location column is present */
+.msn-table--locs .msn-th { background: var(--mp-background-neutral, #fff); border-right: 1px solid var(--mp-border-default); }
+.msn-table--locs .msn-th:last-child { border-right: none; }
+
 .msn-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
@@ -436,21 +555,52 @@ function handleSave() {
   vertical-align: top;
   background: var(--mp-background-neutral, #fff);
 }
+/* Non-form columns get gray bg; all columns get left/right borders */
+.msn-table--locs .msn-td { background: var(--mp-background-neutral-subtle); border-right: 1px solid var(--mp-border-default); }
+.msn-table--locs .msn-td:last-child { border-right: none; }
+.msn-table--locs .msn-td--to-bin { background: var(--mp-background-neutral, #fff); }
 .msn-td--strike { text-decoration: line-through; color: var(--mp-text-secondary); }
 .msn-tr--removed .msn-td { background: var(--mp-background-danger-subtle, #fff5f5); }
 .msn-tr--selected .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
 .msn-tr--reserved .msn-td { background: var(--mp-background-warning-subtle, #fffbeb); color: var(--mp-text-secondary); }
+.msn-table--locs .msn-tr--selected .msn-td--to-bin,
+.msn-table--locs .msn-tr--removed .msn-td--to-bin { background: var(--mp-background-neutral, #fff); }
 
 .msn-td--status { padding: 8px var(--mp-spacing-2); vertical-align: middle; }
 .msn-td--del {
   padding: 0; text-align: center; background: inherit;
 }
+.msn-td--from-bin { padding: 10px var(--mp-spacing-2); }
+.msn-td--to-bin { padding: 0; vertical-align: middle; }
+.msn-td--to-bin:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.msn-bin-text {
+  display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+  white-space: normal; word-break: break-word;
+}
+.msn-bin-empty { padding: 10px var(--mp-spacing-2); display: block; font-size: var(--mp-font-sizes-md); color: var(--mp-text-placeholder); }
+.msn-bin-trigger {
+  display: flex; align-items: center;
+  width: 100%; height: var(--mp-sizes-10, 40px);
+  padding: 0 var(--mp-spacing-2);
+}
+.msn-bin-input {
+  flex: 1; min-width: 0; height: 100%; padding: 0;
+  border: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  outline: none; font-family: inherit;
+}
+.msn-bin-input::placeholder { color: var(--mp-text-placeholder); }
+.msn-bin-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+.msn-loc-none { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
 .msn-toggle-btn {
   display: flex; align-items: center; justify-content: center;
   width: 44px; height: var(--mp-sizes-10, 40px);
   border: none; background: none; cursor: pointer;
+  visibility: hidden;
 }
-.msn-toggle-btn--remove { color: var(--mp-text-secondary); }
+.msn-tr:hover .msn-toggle-btn { visibility: visible; }
+.msn-toggle-btn--remove { color: var(--mp-text-secondary); visibility: visible; }
 .msn-toggle-btn--remove:hover { color: var(--mp-text-danger, #dc2626); }
 .msn-toggle-btn--restore { color: var(--mp-text-secondary); }
 .msn-toggle-btn--restore:hover { color: var(--mp-text-success, #18794e); }

@@ -9,7 +9,7 @@ import {
 } from '@mekari/pixel3'
 import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
-import ManageSerialDrawer from '~/components/patterns/ManageSerialDrawer.vue'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
@@ -105,9 +105,9 @@ function openSerialDrawer(row: CountRow) {
   }
   serialDrawerRow.value = row
 }
-function saveSerialLines(serials: string[]) {
+function saveSerialLines(serials: CommittedSerial[]) {
   if (!serialDrawerRow.value) return
-  serialDrawerRow.value.serialLines = serials
+  serialDrawerRow.value.serialLines = serials.map(cs => cs.serial)
 }
 function serialHasCounts(row: CountRow): boolean {
   return (row.serialLines?.length ?? 0) > 0
@@ -377,9 +377,9 @@ function openLocSerialDrawer(row: LocRow) {
   }
   locSerialDrawerRow.value = row
 }
-function saveLocSerialLines(serials: string[]) {
+function saveLocSerialLines(serials: CommittedSerial[]) {
   if (!locSerialDrawerRow.value) return
-  locSerialDrawerRow.value.serialLines = serials
+  locSerialDrawerRow.value.serialLines = serials.map(cs => cs.serial)
 }
 
 function locDiff(row: LocRow): number | null {
@@ -797,7 +797,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :sku="serialDrawerRow.sku"
       :warehouse-id="warehouseId"
       :target-count="parseCounted(serialDrawerRow.counted)"
-      :model-value="serialDrawerRow.serialLines ?? []"
+      :model-value="(serialDrawerRow.serialLines ?? []).map(s => ({ serial: s }))"
       @update:open="serialDrawerOpen = false"
       @save="saveSerialLines"
     />
@@ -817,7 +817,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :sku="locSerialDrawerRow.sku"
       :warehouse-id="warehouseId"
       :target-count="parseCounted(locSerialDrawerRow.counted)"
-      :model-value="locSerialDrawerRow.serialLines ?? []"
+      :model-value="(locSerialDrawerRow.serialLines ?? []).map(s => ({ serial: s }))"
       :location-on-hand="locSerialDrawerRow.onHand"
       @update:open="locSerialDrawerOpen = false"
       @save="saveLocSerialLines"
