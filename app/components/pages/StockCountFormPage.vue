@@ -98,7 +98,13 @@ const serialDrawerOpen = computed({
   get: () => serialDrawerRow.value !== null,
   set: (v) => { if (!v) serialDrawerRow.value = null }
 })
-function openSerialDrawer(row: CountRow) { serialDrawerRow.value = row }
+function openSerialDrawer(row: CountRow) {
+  if (row.counted.trim() === '') {
+    toast.notify({ variant: 'warning', title: 'Enter counted qty first' })
+    return
+  }
+  serialDrawerRow.value = row
+}
 function saveSerialLines(serials: string[]) {
   if (!serialDrawerRow.value) return
   serialDrawerRow.value.serialLines = serials
@@ -217,8 +223,28 @@ function handleSave() {
       formError.value = 'Select at least one location with products to count.'
       valid = false
     }
+    for (const loc of selectedLocations.value) {
+      for (const r of loc.rows) {
+        if (!isSerialTrackedSku(r.sku) || !r.counted.trim()) continue
+        const expected = parseCounted(r.counted)
+        const actual = r.serialLines?.length ?? 0
+        if (actual !== expected) {
+          formError.value = `Enter all serial numbers for "${nameFor(r.sku)}" (${actual}/${expected} entered)`
+          valid = false
+        }
+      }
+    }
   } else {
     if (!rows.value.length) { formError.value = 'Add at least one product to count.'; valid = false }
+    for (const r of rows.value) {
+      if (!isSerialTrackedSku(r.sku) || !r.counted.trim()) continue
+      const expected = parseCounted(r.counted)
+      const actual = r.serialLines?.length ?? 0
+      if (actual !== expected) {
+        formError.value = `Enter all serial numbers for "${nameFor(r.sku)}" (${actual}/${expected} entered)`
+        valid = false
+      }
+    }
   }
   if (!valid) return
 
@@ -344,7 +370,13 @@ const locSerialDrawerOpen = computed({
   get: () => locSerialDrawerRow.value !== null,
   set: (v) => { if (!v) locSerialDrawerRow.value = null }
 })
-function openLocSerialDrawer(row: LocRow) { locSerialDrawerRow.value = row }
+function openLocSerialDrawer(row: LocRow) {
+  if (row.counted.trim() === '') {
+    toast.notify({ variant: 'warning', title: 'Enter counted qty first' })
+    return
+  }
+  locSerialDrawerRow.value = row
+}
 function saveLocSerialLines(serials: string[]) {
   if (!locSerialDrawerRow.value) return
   locSerialDrawerRow.value.serialLines = serials

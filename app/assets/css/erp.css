@@ -146,3 +146,16 @@
   border-color: #8c9596;
   box-shadow: 0 0 0 1px #8c9596;
 }
+
+/* ── Table cell form: no input/select border (project-wide rule) ──────────────
+ * Any .mp-select__control inside a cell marked .erp-td-form loses its own
+ * border — the column border is the visual boundary. erp.css is unlayered so
+ * this beats Pixel's @layer pixel_recipes rules without !important.
+ */
+.erp-td-form .mp-select__control {
+  border: none;
+  border-width: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}

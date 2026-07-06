@@ -12,6 +12,7 @@ import ManageSerialDrawer from '~/components/patterns/ManageSerialDrawer.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { stockLocationPaths } from '~/data/storageLocations'
 import { addAdjustment, accountOptions, IN_OUT_CATEGORIES } from '~/data/stockAdjustments'
 
 const router = useRouter()
@@ -20,41 +21,50 @@ function toDisplayDate(iso: string) { const [y, m, d] = iso.split('-'); return `
 function toISODate(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
 const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 
-// ── Warehouse + account + category options ──────────────────────────────────────
+// ── Options ───────────────────────────────────────────────────────────────────────
 const warehouseOptions = computed(() => warehouses.filter(w => w.status === 'active').map(w => ({ id: w.id, name: w.name })))
 const realWarehouses = warehouses.filter(w => w.status === 'active' && !w.isDefault)
 function warehouseName(id: string) { return warehouseOptions.value.find(w => w.id === id)?.name ?? '' }
 const acctOptions = accountOptions()
 const categoryOptions = IN_OUT_CATEGORIES.map(c => ({ id: c, name: c }))
 
-// ── Form state ───────────────────────────────────────────────────────────────────
+// ── Form state ────────────────────────────────────────────────────────────────────
 const transactionDate = ref(todayDisplay)
 const transactionDateError = ref(false)
 const warehouseId = ref(realWarehouses[0]?.id ?? warehouseOptions.value[0]?.id ?? '')
 const warehouseError = ref(false)
-const categoryId = ref(IN_OUT_CATEGORIES[0])
+const categoryId = ref<string>('General')
 const categoryError = ref(false)
 const accountId = ref(acctOptions.find(a => a.id === 'Inventory adjustment')?.id ?? acctOptions[0]?.id ?? '')
 const tags = ref<DataInterface[]>([])
 const memo = ref('')
 
-// ── Warehouse stock (system on-hand, coherent with the warehouse detail page) ──────
-const stock = computed(() => (warehouseId.value ? getWarehouseDetail(warehouseId.value)?.stock ?? [] : []))
+// ── Warehouse stock ───────────────────────────────────────────────────────────────
+const stock = computed(() => warehouseId.value ? getWarehouseDetail(warehouseId.value)?.stock ?? [] : [])
 const stockMap = computed(() => new Map(stock.value.map(s => [s.sku, s])))
 function onHandFor(sku: string): number { return stockMap.value.get(sku)?.onHand ?? 0 }
 function unitFor(sku: string): string { return stockMap.value.get(sku)?.unit ?? productBySku(sku)?.unit ?? '' }
 function avgCostFor(sku: string): number { return productBySku(sku)?.averageCost ?? 0 }
 function nameFor(sku: string): string { return stockMap.value.get(sku)?.name ?? productBySku(sku)?.name ?? sku }
-function imgFor(sku: string): string | undefined { return productBySku(sku)?.img }
-function descFor(sku: string): string | undefined { return productBySku(sku)?.desc }
+function photoFor(sku: string): string | undefined { return stockMap.value.get(sku)?.photo ?? productBySku(sku)?.img }
+function idFor(sku: string): string { return stockMap.value.get(sku)?.id ?? sku }
 
-// Products offered in the picker — the full product catalog (PRODUCTS). On-hand for
-// a chosen product comes from this warehouse's stock (0 if it doesn't stock it yet).
 const pickerProducts = computed<PickerProduct[]>(() =>
   PRODUCTS.map(p => ({ sku: p.sku, name: p.name, img: p.img, desc: p.desc })),
 )
 
-// ── Batch-tracking helpers ────────────────────────────────────────────────────────
+// ── Storage location options for the current warehouse ────────────────────────────
+const locationOptions = computed(() => {
+  const paths = stockLocationPaths(warehouseId.value)
+  const seen = new Set<string>()
+  const result: { id: string; name: string }[] = []
+  for (const p of paths) {
+    if (p && !seen.has(p)) { seen.add(p); result.push({ id: p, name: p }) }
+  }
+  return result
+})
+
+// ── Batch / serial helpers ────────────────────────────────────────────────────────
 const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
@@ -62,7 +72,6 @@ function isBatchTrackedSku(sku: string): boolean {
   const p = productBySku(sku)
   return p ? BATCH_CATS.has(p.category) : false
 }
-
 const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
@@ -71,54 +80,68 @@ function isSerialTrackedSku(sku: string): boolean {
   return p ? SERIAL_CATS.has(p.category) : false
 }
 
-// ── Product rows (each an in/out product) ──────────────────────────────────────────
-interface InOutRow { sku: string; delta: string; deltaError: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[] }
-const rows = ref<InOutRow[]>([])
+// ── Data model ────────────────────────────────────────────────────────────────────
+interface LocationRow { locationId: string; delta: string; deltaError: boolean; batchLines?: CommittedBatch[]; serialLines?: string[] }
+interface ProductRow {
+  sku: string
+  locationRows: LocationRow[]
+  avgMode: 'auto' | 'custom'
+  avgCostInput: string
+}
+
+const rows = ref<ProductRow[]>([])
 const selectedSkus = computed(() => rows.value.map(r => r.sku))
 
-const drawerOpen = ref(false)
-const batchDrawerRow = ref<InOutRow | null>(null)
-const batchDrawerOpen = computed({
-  get: () => batchDrawerRow.value !== null,
-  set: (v) => { if (!v) batchDrawerRow.value = null }
-})
-function openBatchDrawer(row: InOutRow) { batchDrawerRow.value = row }
-function saveBatchLines(batches: CommittedBatch[]) {
-  if (!batchDrawerRow.value) return
-  batchDrawerRow.value.batchLines = batches
-}
-function batchHasCounts(row: InOutRow): boolean {
-  return (row.batchLines ?? []).some(b => b.counted !== null)
-}
-function batchTotalFor(row: InOutRow): number {
-  return (row.batchLines ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
-}
-
-const serialDrawerRow = ref<InOutRow | null>(null)
-const serialDrawerOpen = computed({
-  get: () => serialDrawerRow.value !== null,
-  set: (v) => { if (!v) serialDrawerRow.value = null }
-})
-function openSerialDrawer(row: InOutRow) { serialDrawerRow.value = row }
-function saveSerialLines(serials: string[]) {
-  if (!serialDrawerRow.value) return
-  serialDrawerRow.value.serialLines = serials
-}
-function serialHasCounts(row: InOutRow): boolean {
-  return (row.serialLines?.length ?? 0) > 0
-}
-function serialTotalFor(row: InOutRow): number {
-  return row.serialLines?.length ?? 0
+function makeProductRow(sku: string): ProductRow {
+  return { sku, locationRows: [], avgMode: 'auto', avgCostInput: '' }
 }
 
 function applyPicker(skus: string[]) {
   const existing = new Map(rows.value.map(r => [r.sku, r]))
-  rows.value = skus.map(sku => existing.get(sku) ?? { sku, delta: '', deltaError: false, avgMode: 'auto', avgCostInput: '' })
+  rows.value = skus.map(sku => existing.get(sku) ?? makeProductRow(sku))
 }
-function removeRow(sku: string) { rows.value = rows.value.filter(r => r.sku !== sku) }
 
-// ── Delta input (allows negative for stock out) ──────────────────────────────────
-function onDeltaInput(row: InOutRow, ev: Event) {
+function removeRow(sku: string) { rows.value = rows.value.filter(r => r.sku !== sku) }
+function removeLocRow(row: ProductRow, idx: number) { row.locationRows.splice(idx, 1) }
+
+// ── Location picker (MpPopover pattern) ──────────────────────────────────────────
+const activeLocKey = ref<string | null>(null)
+const locSearch = ref('')
+function locKey(sku: string, li: number) { return `${sku}-${li}` }
+function pendingLocKey(sku: string) { return `pending-${sku}` }
+function openLocPicker(key: string) { activeLocKey.value = key; locSearch.value = '' }
+function closeLocPicker(key: string) { if (activeLocKey.value === key) { activeLocKey.value = null; locSearch.value = '' } }
+function locOptionsFiltered(row: ProductRow) {
+  const q = locSearch.value.trim().toLowerCase()
+  const used = new Set(row.locationRows.map(lr => lr.locationId).filter(Boolean))
+  return locationOptions.value.filter(o => !used.has(o.id) && (!q || o.name.toLowerCase().includes(q)))
+}
+function selectLocation(row: ProductRow, li: number, locId: string) {
+  const lr = row.locationRows[li]; if (lr) lr.locationId = locId
+  activeLocKey.value = null; locSearch.value = ''
+}
+function selectPendingLoc(row: ProductRow, locId: string) {
+  row.locationRows.push({ locationId: locId, delta: '', deltaError: false })
+  activeLocKey.value = null; locSearch.value = ''
+}
+
+// ── Per-location on-hand (mirrors WarehouseDetailsPage locBreakdown logic) ──────────
+function onHandForLocation(sku: string, locationId: string): number {
+  if (!locationId) return 0
+  const item = stockMap.value.get(sku)
+  if (!item) return 0
+  const locs = item.locations
+  const idx = locs.indexOf(locationId)
+  if (idx === -1) return 0
+  if (locs.length === 1) return item.onHand
+  const weights = locs.length === 2 ? [0.6, 0.4] : [0.5, 0.3, 0.2]
+  const parts = weights.slice(0, -1).map(w => Math.round(item.onHand * w))
+  parts.push(Math.max(0, item.onHand - parts.reduce((a, b) => a + b, 0)))
+  return parts[idx] ?? 0
+}
+
+// ── Delta input ───────────────────────────────────────────────────────────────────
+function onDeltaInput(locRow: LocationRow, ev: Event) {
   const input = ev.target as HTMLInputElement
   const raw = input.value
   const isNeg = raw.startsWith('-')
@@ -126,8 +149,8 @@ function onDeltaInput(row: InOutRow, ev: Event) {
   const formatted = digits
     ? (isNeg ? '-' : '') + Number(digits).toLocaleString('id-ID')
     : (isNeg ? '-' : '')
-  row.delta = formatted
-  row.deltaError = false
+  locRow.delta = formatted
+  locRow.deltaError = false
   nextTick(() => { input.setSelectionRange(input.value.length, input.value.length) })
 }
 
@@ -137,28 +160,65 @@ function parseDelta(val: string): number {
   return isNeg ? -abs : abs
 }
 
-function hasMovement(row: InOutRow): boolean {
-  if (isBatchTrackedSku(row.sku)) return batchHasCounts(row)
-  return row.delta.trim() !== '' && row.delta.trim() !== '-'
-}
-
-function newOnHandFor(row: InOutRow): number | null {
-  if (isBatchTrackedSku(row.sku)) {
-    if (!batchHasCounts(row)) return null
-    return onHandFor(row.sku) + batchTotalFor(row)
+function newOnHandForLocRow(sku: string, locRow: LocationRow): number | null {
+  if (isBatchTrackedSku(sku)) {
+    if (!locBatchHasCounts(locRow)) return null
+    return onHandForLocation(sku, locRow.locationId) + locBatchTotal(locRow)
   }
-  if (!hasMovement(row)) return null
-  return onHandFor(row.sku) + parseDelta(row.delta)
+  if (locRow.delta.trim() === '' || locRow.delta.trim() === '-') return null
+  return onHandForLocation(sku, locRow.locationId) + parseDelta(locRow.delta)
 }
 
-// Average cost per row
-function onAvgInput(row: InOutRow, ev: Event) {
+// ── Batch drawer (per location row) ───────────────────────────────────────────────
+const drawerOpen = ref(false)
+const batchDrawerLocRow = ref<LocationRow | null>(null)
+const batchDrawerSku = ref('')
+const batchDrawerOpen = computed({
+  get: () => batchDrawerLocRow.value !== null,
+  set: (v) => { if (!v) batchDrawerLocRow.value = null },
+})
+function openBatchDrawer(row: ProductRow, locRow: LocationRow) { batchDrawerSku.value = row.sku; batchDrawerLocRow.value = locRow }
+function saveBatchLines(batches: CommittedBatch[]) {
+  if (!batchDrawerLocRow.value) return
+  batchDrawerLocRow.value.batchLines = batches
+}
+function locBatchHasCounts(locRow: LocationRow): boolean {
+  return (locRow.batchLines ?? []).some(b => b.counted !== null)
+}
+function locBatchTotal(locRow: LocationRow): number {
+  return (locRow.batchLines ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
+}
+
+// ── Serial drawer (per location row) ──────────────────────────────────────────────
+const serialDrawerLocRow = ref<LocationRow | null>(null)
+const serialDrawerSku = ref('')
+const serialDrawerOpen = computed({
+  get: () => serialDrawerLocRow.value !== null,
+  set: (v) => { if (!v) serialDrawerLocRow.value = null },
+})
+function openSerialDrawer(row: ProductRow, locRow: LocationRow) {
+  if (locRow.delta.trim() === '' || locRow.delta.trim() === '-') {
+    toast.notify({ variant: 'warning', title: 'Enter stock in/out qty first' })
+    return
+  }
+  serialDrawerSku.value = row.sku
+  serialDrawerLocRow.value = locRow
+}
+function saveSerialLines(serials: string[]) {
+  if (!serialDrawerLocRow.value) return
+  serialDrawerLocRow.value.serialLines = serials
+}
+function locSerialHasCounts(locRow: LocationRow): boolean { return (locRow.serialLines?.length ?? 0) > 0 }
+function locSerialTotal(locRow: LocationRow): number { return locRow.serialLines?.length ?? 0 }
+
+// ── Average cost ──────────────────────────────────────────────────────────────────
+function onAvgInput(row: ProductRow, ev: Event) {
   const input = ev.target as HTMLInputElement
   const digits = input.value.replace(/\D/g, '')
   row.avgCostInput = digits ? Number(digits).toLocaleString('id-ID') : ''
   nextTick(() => { input.setSelectionRange(input.value.length, input.value.length) })
 }
-function setAvgMode(row: InOutRow, mode: 'auto' | 'custom') {
+function setAvgMode(row: ProductRow, mode: 'auto' | 'custom') {
   row.avgMode = mode
   if (mode === 'custom' && row.avgCostInput === '') {
     const cost = avgCostFor(row.sku)
@@ -167,22 +227,20 @@ function setAvgMode(row: InOutRow, mode: 'auto' | 'custom') {
 }
 function fmtIDR(n: number) { return n.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }) }
 
-// ── Search filter ────────────────────────────────────────────────────────────────
+// ── Search ────────────────────────────────────────────────────────────────────────
 const search = ref('')
 const displayRows = computed(() => {
   const q = search.value.trim().toLowerCase()
-  return rows.value.filter(r => {
-    if (q && !nameFor(r.sku).toLowerCase().includes(q) && !r.sku.toLowerCase().includes(q)) return false
-    return true
-  })
+  if (!q) return rows.value
+  return rows.value.filter(r => nameFor(r.sku).toLowerCase().includes(q) || r.sku.toLowerCase().includes(q))
 })
-function importProducts() { /* bulk import — not built in this prototype */ }
+function importProducts() {}
 
-// ── Tags ─────────────────────────────────────────────────────────────────────────
+// ── Tags ──────────────────────────────────────────────────────────────────────────
 function onTagsChange(data: DataInterface[]) { tags.value = data }
 function tagStrings(): string[] { return tags.value.map(t => String(t.text ?? t.value ?? '')).map(s => s.trim()).filter(Boolean) }
 
-// ── Attachment ─────────────────────────────────────────────────────────────────────
+// ── Attachment ────────────────────────────────────────────────────────────────────
 const fileInput = ref<HTMLInputElement | null>(null)
 const attachedFiles = ref<File[]>([])
 function onFileChange(ev: Event) {
@@ -194,7 +252,7 @@ function onFileChange(ev: Event) {
 }
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
 
-// ── Navigation + save ──────────────────────────────────────────────────────────────
+// ── Save ──────────────────────────────────────────────────────────────────────────
 function goBack() { router.push('/stock-adjustments') }
 const formError = ref('')
 function handleSave() {
@@ -204,15 +262,28 @@ function handleSave() {
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
   if (!categoryId.value) { categoryError.value = true; valid = false }
   if (!rows.value.length) { formError.value = 'Add at least one product.'; valid = false }
+  for (const r of rows.value) {
+    if (!isSerialTrackedSku(r.sku)) continue
+    for (const loc of r.locationRows) {
+      if (loc.delta.trim() === '' || loc.delta.trim() === '-') continue
+      const expected = Math.abs(parseDelta(loc.delta))
+      const actual = loc.serialLines?.length ?? 0
+      if (actual !== expected) {
+        formError.value = `Enter all serial numbers for "${nameFor(r.sku)}" (${actual}/${expected} entered)`
+        valid = false
+      }
+    }
+  }
   if (!valid) return
 
   const lines = rows.value.map(r => ({
     sku: r.sku,
-    qty: isBatchTrackedSku(r.sku)
-      ? (batchHasCounts(r) ? batchTotalFor(r) : 0)
-      : parseDelta(r.delta),
+    qty: r.locationRows.reduce((sum, loc) => {
+      if (isBatchTrackedSku(r.sku)) return sum + locBatchTotal(loc)
+      return sum + parseDelta(loc.delta)
+    }, 0),
   }))
-  const adj = addAdjustment({
+  addAdjustment({
     kind: 'in-out',
     date: toISODate(transactionDate.value),
     warehouseId: warehouseId.value,
@@ -226,7 +297,7 @@ function handleSave() {
   router.push('/stock-adjustments')
 }
 
-// ── Sticky footer divider ────────────────────────────────────────────────────────
+// ── Sticky footer ─────────────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)
 function checkStageOverflow() { const el = stageEl.value; if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1 }
@@ -276,12 +347,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpInputTag id="scf-tags-input" placeholder="Select tag" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
           </MpFormControl>
 
-          <MpFormControl id="scf-warehouse" class="scf-f-warehouse" is-required :is-invalid="warehouseError">
-            <MpFormLabel>Warehouse</MpFormLabel>
-            <MpAutocomplete id="scf-warehouse-ac" v-model="warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width :is-invalid="warehouseError" @update:model-value="warehouseError = false" />
-            <MpFormErrorMessage>Please select a warehouse</MpFormErrorMessage>
-          </MpFormControl>
-
           <MpFormControl id="scf-category" class="scf-f-category" is-required :is-invalid="categoryError">
             <MpFormLabel>Category</MpFormLabel>
             <MpAutocomplete id="scf-category-ac" v-model="categoryId" :data="categoryOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width :is-invalid="categoryError" @update:model-value="categoryError = false" />
@@ -292,117 +357,209 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpFormLabel>Account</MpFormLabel>
             <MpAutocomplete id="scf-account-ac" v-model="accountId" :data="acctOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width />
           </MpFormControl>
+
+          <MpFormControl id="scf-warehouse" class="scf-f-warehouse" is-required :is-invalid="warehouseError">
+            <MpFormLabel>Warehouse</MpFormLabel>
+            <MpAutocomplete id="scf-warehouse-ac" v-model="warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width :is-invalid="warehouseError" @update:model-value="warehouseError = false" />
+            <MpFormErrorMessage>Please select a warehouse</MpFormErrorMessage>
+          </MpFormControl>
         </div>
 
-        <!-- Product table toolbar — right-aligned only (no count progress filter) -->
-        <div class="scf-table-toolbar">
-          <div class="scf-toolbar-right">
-            <div class="scf-search">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-              <input v-model="search" class="scf-search-input" type="text" placeholder="Search..." />
+        <!-- Products section -->
+        <div class="sio-products-section">
+
+          <!-- Section toolbar: warehouse name + search + import -->
+          <div class="sio-toolbar">
+            <h2 class="sio-wh-name">{{ warehouseName(warehouseId) }}</h2>
+            <div class="sio-toolbar-right">
+              <div class="scf-search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <input v-model="search" class="scf-search-input" type="text" placeholder="Search..." />
+              </div>
+              <button class="scf-import-btn" type="button" @click="importProducts">Import</button>
             </div>
-            <button class="scf-import-btn" type="button" @click="importProducts">Import</button>
           </div>
-        </div>
 
-        <!-- Product table -->
-        <div class="scf-table-section">
-          <div class="scf-table-scroll">
-            <table class="scf-table">
-              <colgroup>
-                <col class="scf-col-prod" /><col class="scf-col-sku" /><col class="scf-col-num" /><col class="scf-col-num" /><col class="scf-col-num" /><col class="scf-col-unit" /><col class="scf-col-num" /><col class="scf-col-del" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th class="scf-th">Product</th>
-                  <th class="scf-th">SKU</th>
-                  <th class="scf-th scf-th--num">On hand qty</th>
-                  <th class="scf-th scf-th--num">Stock in/out qty</th>
-                  <th class="scf-th scf-th--num">New on hand qty</th>
-                  <th class="scf-th">Unit</th>
-                  <th class="scf-th scf-th--num">Average cost</th>
-                  <th class="scf-th scf-th--del" />
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in displayRows" :key="row.sku" class="scf-tr">
-                  <td class="scf-td scf-td--prod">
-                    <span class="scf-prod">
-                      <img v-if="imgFor(row.sku)" class="scf-thumb" :src="imgFor(row.sku)" :alt="nameFor(row.sku)" loading="lazy" />
-                      <span v-else class="scf-thumb scf-thumb--empty" />
-                      <span class="scf-prod-info">
-                        <span class="scf-prod-name">{{ nameFor(row.sku) }}</span>
-                        <span v-if="descFor(row.sku)" class="scf-prod-desc">{{ descFor(row.sku) }}</span>
-                      </span>
-                    </span>
-                  </td>
-                  <td class="scf-td scf-td--muted">{{ row.sku }}</td>
-                  <td class="scf-td scf-td--num">{{ onHandFor(row.sku).toLocaleString('id-ID') }}</td>
-                  <!-- batch-tracked SKU -->
-                  <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--batch-counted">
-                    <div class="scf-batch-row scf-batch-row--total">
-                      <span v-if="batchHasCounts(row)" class="scf-batch-total">{{ batchTotalFor(row).toLocaleString('id-ID') }}</span>
-                      <span v-else class="scf-batch-uncounted">—</span>
-                    </div>
-                    <div class="scf-batch-row scf-batch-row--action">
-                      <button class="scf-batch-link" type="button" @click="openBatchDrawer(row)">Manage batch</button>
-                    </div>
-                  </td>
-                  <!-- serial-tracked SKU -->
-                  <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--batch-counted scf-td--serial">
-                    <div class="scf-batch-row scf-batch-row--total scf-batch-row--bare">
-                      <input class="scf-qty-input" type="text" inputmode="numeric" :value="row.delta" placeholder="0" @input="onDeltaInput(row, $event)" />
-                    </div>
-                    <div class="scf-batch-row scf-batch-row--action">
-                      <button class="scf-batch-link" type="button" @click="openSerialDrawer(row)">Manage serial number</button>
-                    </div>
-                  </td>
-                  <!-- regular SKU -->
-                  <td v-else class="scf-td scf-td--input">
-                    <input class="scf-qty-input" type="text" inputmode="numeric" :value="row.delta" placeholder="0" @input="onDeltaInput(row, $event)" />
-                  </td>
-                  <!-- New on hand qty -->
-                  <td
-                    class="scf-td scf-td--num"
-                    :class="{
-                      'scf-diff--pos': (newOnHandFor(row) ?? onHandFor(row.sku)) > onHandFor(row.sku),
-                      'scf-diff--neg': (newOnHandFor(row) ?? onHandFor(row.sku)) < onHandFor(row.sku),
-                      'scf-diff--uncounted': newOnHandFor(row) === null,
-                    }"
-                  >
-                    {{ newOnHandFor(row) !== null ? newOnHandFor(row)!.toLocaleString('id-ID') : '—' }}
-                  </td>
-                  <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
-                  <td class="scf-td scf-td--num scf-td--avg" :class="{ 'scf-td--input': row.avgMode === 'custom' }">
-                    <div class="scf-avg-wrap">
-                      <template v-if="row.avgMode === 'custom'">
-                        <span class="scf-avg-prefix">Rp</span>
-                        <input class="scf-avg-num" type="text" inputmode="numeric" :value="row.avgCostInput" placeholder="0" @input="onAvgInput(row, $event)" />
-                      </template>
-                      <span v-else class="scf-avg-val">{{ fmtIDR(avgCostFor(row.sku)) }}</span>
-                      <MpPopover :id="`scf-avg-${row.sku}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-                        <MpPopoverTrigger>
-                          <button class="scf-avg-edit" type="button" aria-label="Edit average cost"><MpIcon name="edit" size="sm" /></button>
-                        </MpPopoverTrigger>
-                        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-                          <MpPopoverList>
-                            <MpPopoverListItem :is-active="row.avgMode === 'auto'" @click="setAvgMode(row, 'auto')">Auto-calculate</MpPopoverListItem>
-                            <MpPopoverListItem :is-active="row.avgMode === 'custom'" @click="setAvgMode(row, 'custom')">Custom</MpPopoverListItem>
-                          </MpPopoverList>
-                        </MpPopoverContent>
-                      </MpPopover>
-                    </div>
-                  </td>
-                  <td class="scf-td scf-td--del">
-                    <button class="scf-del-btn" type="button" aria-label="Remove product" @click="removeRow(row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <button class="scf-add-btn" type="button" @click="drawerOpen = true">
-            <MpIcon name="add" size="sm" /> Select product
+          <!-- Select product pill -->
+          <button class="sio-select-prod-btn" type="button" @click="drawerOpen = true">
+            <MpIcon name="add" size="sm" />
+            <span>Select product{{ rows.length ? ` (${rows.length})` : '' }}</span>
           </button>
+
+          <!-- Product groups -->
+          <div v-if="displayRows.length" class="sio-product-list">
+            <div v-for="row in displayRows" :key="row.sku" class="sio-product-group">
+
+              <!-- Product header row -->
+              <div class="sio-product-header">
+                <div class="sio-product-info">
+                  <img v-if="photoFor(row.sku)" class="sio-thumb" :src="photoFor(row.sku)" :alt="nameFor(row.sku)" loading="lazy" />
+                  <span v-else class="sio-thumb sio-thumb--empty" />
+                  <div class="sio-product-meta">
+                    <span class="sio-product-name">{{ nameFor(row.sku) }}</span>
+                    <span class="sio-product-id">{{ row.sku }}</span>
+                  </div>
+                </div>
+                <div class="sio-product-avg">
+                  <span class="sio-avg-label">Average cost</span>
+                  <div class="sio-avg-value-wrap">
+                    <template v-if="row.avgMode === 'custom'">
+                      <span class="sio-avg-prefix">Rp</span>
+                      <input class="sio-avg-num" type="text" inputmode="numeric" :value="row.avgCostInput" placeholder="0" @input="onAvgInput(row, $event)" />
+                    </template>
+                    <span v-else class="sio-avg-value">{{ fmtIDR(avgCostFor(row.sku)) }}</span>
+                    <MpPopover :id="`sio-avg-${row.sku}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                      <MpPopoverTrigger>
+                        <button class="sio-avg-edit" type="button" aria-label="Edit average cost"><MpIcon name="edit" size="sm" /></button>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem :is-active="row.avgMode === 'auto'" @click="setAvgMode(row, 'auto')">Auto-calculate</MpPopoverListItem>
+                          <MpPopoverListItem :is-active="row.avgMode === 'custom'" @click="setAvgMode(row, 'custom')">Custom</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </div>
+                </div>
+                <button class="sio-remove-prod" type="button" aria-label="Remove product" @click="removeRow(row.sku)">
+                  <MpIcon name="minus-circular" size="sm" />
+                </button>
+              </div>
+
+              <!-- Location sub-table: all products (batch, SN, regular) -->
+              <div class="sio-loc-table-wrap">
+                <table class="sio-loc-table">
+                  <colgroup>
+                    <col class="sio-col-loc" /><col class="sio-col-num" /><col class="sio-col-num" /><col class="sio-col-num" /><col class="sio-col-unit" /><col class="sio-col-del" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="sio-th">Location</th>
+                      <th class="sio-th sio-th--num">On hand</th>
+                      <th class="sio-th sio-th--num">Stock in/out</th>
+                      <th class="sio-th sio-th--num">New on hand</th>
+                      <th class="sio-th">Unit</th>
+                      <th class="sio-th sio-th--del" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(locRow, li) in row.locationRows" :key="li" class="sio-loc-row">
+                      <td class="sio-td sio-td--loc">
+                        <MpPopover :id="`sio-loc-${row.sku}-${li}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(locKey(row.sku, li))">
+                          <MpPopoverTrigger>
+                            <div class="sio-loc-trigger">
+                              <input
+                                :id="`sio-loc-input-${row.sku}-${li}`"
+                                class="sio-loc-input"
+                                type="text"
+                                autocomplete="off"
+                                :value="activeLocKey === locKey(row.sku, li) ? locSearch : locRow.locationId"
+                                placeholder="Select location"
+                                @focus="openLocPicker(locKey(row.sku, li))"
+                                @input="activeLocKey = locKey(row.sku, li); locSearch = ($event.target as HTMLInputElement).value"
+                              />
+                              <svg class="sio-loc-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </div>
+                          </MpPopoverTrigger>
+                          <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
+                            <MpPopoverList>
+                              <MpPopoverListItem v-for="opt in locOptionsFiltered(row)" :key="opt.id" :is-active="opt.id === locRow.locationId" @click="selectLocation(row, li, opt.id)">{{ opt.name }}</MpPopoverListItem>
+                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found.</p>
+                            </MpPopoverList>
+                          </MpPopoverContent>
+                        </MpPopover>
+                      </td>
+                      <td class="sio-td sio-td--num">{{ onHandForLocation(row.sku, locRow.locationId).toLocaleString('id-ID') }}</td>
+                      <!-- Stock in/out column: conditional on product type -->
+                      <td v-if="isBatchTrackedSku(row.sku)" class="sio-td sio-td--batch-cell">
+                        <div class="sio-batch-in-cell sio-batch-in-cell--total">
+                          <span v-if="locBatchHasCounts(locRow)" class="sio-batch-val">{{ locBatchTotal(locRow).toLocaleString('id-ID') }}</span>
+                          <span v-else class="sio-batch-empty">No batches</span>
+                        </div>
+                        <div class="sio-batch-in-cell sio-batch-in-cell--action">
+                          <button class="sio-batch-link" type="button" @click="openBatchDrawer(row, locRow)">Manage batch</button>
+                        </div>
+                      </td>
+                      <td v-else-if="isSerialTrackedSku(row.sku)" class="sio-td sio-td--batch-cell sio-td--serial-cell">
+                        <div class="sio-batch-in-cell sio-batch-in-cell--total sio-batch-in-cell--bare">
+                          <input
+                            class="sio-qty-input"
+                            type="text"
+                            inputmode="numeric"
+                            :value="locRow.delta"
+                            placeholder="0"
+                            @input="onDeltaInput(locRow, $event)"
+                          />
+                        </div>
+                        <div class="sio-batch-in-cell sio-batch-in-cell--action">
+                          <button class="sio-batch-link" type="button" @click="openSerialDrawer(row, locRow)">Manage serial number</button>
+                        </div>
+                      </td>
+                      <td v-else class="sio-td sio-td--input">
+                        <input
+                          class="sio-qty-input"
+                          type="text"
+                          inputmode="numeric"
+                          :value="locRow.delta"
+                          placeholder="0"
+                          @input="onDeltaInput(locRow, $event)"
+                        />
+                      </td>
+                      <td
+                        class="sio-td sio-td--num"
+                        :class="{
+                          'sio-diff--pos': (newOnHandForLocRow(row.sku, locRow) ?? onHandForLocation(row.sku, locRow.locationId)) > onHandForLocation(row.sku, locRow.locationId),
+                          'sio-diff--neg': (newOnHandForLocRow(row.sku, locRow) ?? onHandForLocation(row.sku, locRow.locationId)) < onHandForLocation(row.sku, locRow.locationId),
+                          'sio-diff--neutral': newOnHandForLocRow(row.sku, locRow) === null,
+                        }"
+                      >
+                        {{ newOnHandForLocRow(row.sku, locRow) !== null ? newOnHandForLocRow(row.sku, locRow)!.toLocaleString('id-ID') : onHandForLocation(row.sku, locRow.locationId).toLocaleString('id-ID') }}
+                      </td>
+                      <td class="sio-td sio-td--muted">{{ unitFor(row.sku) }}</td>
+                      <td class="sio-td sio-td--del">
+                        <button class="sio-del-loc-btn" type="button" aria-label="Remove location" @click="removeLocRow(row, li)">
+                          <MpIcon name="minus-circular" size="sm" />
+                        </button>
+                      </td>
+                    </tr>
+                    <!-- Add location row -->
+                    <tr class="sio-add-loc-row">
+                      <td class="sio-td sio-td--add-loc">
+                        <MpPopover :id="`sio-addloc-${row.sku}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(pendingLocKey(row.sku))">
+                          <MpPopoverTrigger>
+                            <div class="sio-loc-trigger">
+                              <input
+                                :id="`sio-addloc-input-${row.sku}`"
+                                class="sio-loc-input"
+                                type="text"
+                                autocomplete="off"
+                                :value="activeLocKey === pendingLocKey(row.sku) ? locSearch : ''"
+                                placeholder="Select location"
+                                @focus="openLocPicker(pendingLocKey(row.sku))"
+                                @input="activeLocKey = pendingLocKey(row.sku); locSearch = ($event.target as HTMLInputElement).value"
+                              />
+                              <svg class="sio-loc-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </div>
+                          </MpPopoverTrigger>
+                          <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
+                            <MpPopoverList>
+                              <MpPopoverListItem v-for="opt in locOptionsFiltered(row)" :key="opt.id" @click="selectPendingLoc(row, opt.id)">{{ opt.name }}</MpPopoverListItem>
+                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found.</p>
+                            </MpPopoverList>
+                          </MpPopoverContent>
+                        </MpPopover>
+                      </td>
+                      <td class="sio-td sio-td--add-loc-spacer" colspan="5" />
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Showing X of Y products -->
+          <p v-if="rows.length" class="sio-product-count">Showing {{ displayRows.length }} of {{ rows.length }} products</p>
           <p v-if="formError" class="scf-form-error">{{ formError }}</p>
         </div>
 
@@ -444,24 +601,24 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <SelectProductDrawer v-model:open="drawerOpen" :products="pickerProducts" :model-value="selectedSkus" @save="applyPicker" />
     <ManageBatchDrawer
-      v-if="batchDrawerRow"
+      v-if="batchDrawerLocRow"
       :open="batchDrawerOpen"
-      :sku="batchDrawerRow.sku"
+      :sku="batchDrawerSku"
       :warehouse-id="warehouseId"
       kind="in-out"
-      :model-value="batchDrawerRow.batchLines ?? []"
+      :model-value="batchDrawerLocRow.batchLines ?? []"
       @update:open="batchDrawerOpen = $event"
       @save="saveBatchLines"
     />
     <ManageSerialDrawer
-      v-if="serialDrawerRow"
+      v-if="serialDrawerLocRow"
       :open="true"
-      :sku="serialDrawerRow.sku"
+      :sku="serialDrawerSku"
       :warehouse-id="warehouseId"
       kind="in-out"
-      :delta="parseDelta(serialDrawerRow.delta)"
-      :target-count="Math.abs(parseDelta(serialDrawerRow.delta))"
-      :model-value="serialDrawerRow.serialLines ?? []"
+      :delta="parseDelta(serialDrawerLocRow.delta)"
+      :target-count="0"
+      :model-value="serialDrawerLocRow.serialLines ?? []"
       @update:open="serialDrawerOpen = false"
       @save="saveSerialLines"
     />
@@ -480,79 +637,112 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; transition: border-top-color 0.15s; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
+/* ── Form grid ─────────────────────────────────────────────────────────────────── */
 .scf-body { display: flex; flex-direction: column; }
 .scf-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 318px)); column-gap: var(--mp-spacing-6); row-gap: var(--mp-spacing-4); align-items: start; }
-.scf-f-date { grid-column: 1; grid-row: 1; }
+.scf-f-date    { grid-column: 1; grid-row: 1; }
 .scf-f-transno { grid-column: 2; grid-row: 1; }
-.scf-f-tags { grid-column: 3; grid-row: 1; }
-.scf-f-warehouse { grid-column: 1; grid-row: 2; }
-.scf-f-category { grid-column: 2; grid-row: 2; }
-.scf-f-account { grid-column: 3; grid-row: 2; }
+.scf-f-tags    { grid-column: 3; grid-row: 1; }
+.scf-f-category { grid-column: 1; grid-row: 2; }
+.scf-f-account  { grid-column: 2; grid-row: 2; }
+.scf-f-warehouse { grid-column: 1; grid-row: 3; }
 .scf-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .scf-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 .scf-datepicker { width: 100%; }
 .scf-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
-.scf-table-toolbar { margin-top: 32px; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
-.scf-toolbar-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+/* ── Products section ──────────────────────────────────────────────────────────── */
+.sio-products-section { margin-top: 32px; }
+
+.sio-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4); }
+.sio-wh-name { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.sio-toolbar-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .scf-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 280px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
 .scf-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .scf-search-input::placeholder { color: var(--mp-text-placeholder); }
 .scf-import-btn { padding: var(--mp-spacing-2) var(--mp-spacing-4); border: 1px solid var(--mp-background-inverse, #080d0e); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-inverse, #080d0e); color: #fff; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; }
 .scf-import-btn:hover { opacity: 0.9; }
 
-.scf-table-section { margin-top: var(--mp-spacing-5); }
-.scf-table-scroll { overflow-x: auto; }
-.scf-table { width: 100%; table-layout: auto; border-collapse: collapse; border-spacing: 0; min-width: 900px; }
-.scf-col-prod { width: 26%; } .scf-col-sku { width: 12%; } .scf-col-num { width: 12%; } .scf-col-unit { width: 8%; } .scf-col-del { width: 44px; }
-.scf-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
-.scf-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-.scf-th--del { padding: 0; }
-.scf-td { padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; background: var(--mp-background-neutral-subtle); }
-.scf-td--muted { color: var(--mp-text-secondary); }
-.scf-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
-.scf-diff--pos { color: var(--mp-text-success, #18794e); }
-.scf-diff--neg { color: var(--mp-text-danger, #a8352d); }
-.scf-diff--uncounted { color: var(--mp-text-secondary); }
-.scf-td--avg.scf-td--input { height: 1px; }
-.scf-avg-wrap { display: flex; align-items: center; width: 100%; height: 100%; min-height: var(--mp-sizes-10, 40px); }
-.scf-avg-val { margin-left: auto; font-variant-numeric: tabular-nums; padding-right: var(--mp-spacing-2); }
-.scf-avg-prefix { align-self: stretch; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); border-right: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); white-space: nowrap; }
-.scf-avg-num { flex: 1; min-width: 0; text-align: right; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
-.scf-avg-edit { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: var(--mp-spacing-1); padding: 0; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
-.scf-tr:hover .scf-avg-edit { visibility: visible; }
-.scf-avg-edit:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
-.scf-prod { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
-.scf-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral); }
-.scf-thumb--empty { background: var(--mp-background-neutral-subtle); }
-.scf-prod-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
-.scf-prod-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scf-prod-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scf-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
-.scf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
-.scf-td--batch-counted { padding: 0; background: var(--mp-background-neutral-subtle); display: flex; flex-direction: column; vertical-align: top; border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
-.scf-batch-row {
-  height: var(--mp-sizes-10, 40px); flex-shrink: 0;
-  display: flex; align-items: center; justify-content: flex-end;
-  padding: 0 var(--mp-spacing-2);
-}
-.scf-batch-row--total { border-bottom: 1px solid var(--mp-border-default); }
-.scf-batch-row--bare { padding: 0; border-bottom: 1px solid var(--mp-border-default); }
-.scf-td--serial { background: var(--mp-background-neutral, #fff); }
-.scf-td--serial:focus-within .scf-batch-row--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
-.scf-batch-total { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.scf-batch-uncounted { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.scf-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
-.scf-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.scf-qty-input { width: 100%; text-align: right; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
-.scf-qty-input::placeholder { color: var(--mp-text-placeholder); }
-.scf-td--del { padding: 0; text-align: center; }
-.scf-del-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
-.scf-del-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #dc2626); }
-.scf-add-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); background: none; border: none; padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
-.scf-add-btn:hover { background: var(--mp-background-neutral-subtle); }
+.sio-select-prod-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-4); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); background: none; cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
+.sio-select-prod-btn:hover { background: var(--mp-background-neutral-subtle); }
+
+/* ── Product group ──────────────────────────────────────────────────────────────── */
+.sio-product-list { margin-top: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 0; }
+.sio-product-group { margin-bottom: var(--mp-spacing-4); }
+
+.sio-product-header { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) 0; }
+.sio-product-info { display: flex; align-items: center; gap: var(--mp-spacing-3); flex: 0 0 320px; min-width: 0; }
+.sio-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral); }
+.sio-thumb--empty { display: block; background: var(--mp-background-neutral-subtle); }
+.sio-product-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sio-product-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sio-product-id { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+.sio-product-avg { display: flex; flex-direction: column; gap: 0; flex-shrink: 0; }
+.sio-avg-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; line-height: var(--mp-line-heights-sm); }
+.sio-avg-value-wrap { display: flex; align-items: center; gap: var(--mp-spacing-1); }
+.sio-avg-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sio-avg-prefix { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.sio-avg-num { width: 120px; border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); padding: var(--mp-spacing-1) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); text-align: right; background: var(--mp-background-neutral, #fff); outline: none; font-variant-numeric: tabular-nums; }
+.sio-avg-edit { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
+.sio-product-group:hover .sio-avg-edit { visibility: visible; }
+.sio-avg-edit:hover { background: var(--mp-background-neutral); }
+
+.sio-remove-prod { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0; margin-left: auto; }
+.sio-remove-prod:hover { background: var(--mp-background-neutral); color: var(--mp-text-danger, #dc2626); }
+
+/* ── Batch / serial values in location table ───────────────────────────────────── */
+.sio-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.sio-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── Location sub-table ─────────────────────────────────────────────────────────── */
+.sio-loc-table-wrap { overflow-x: auto; }
+.sio-loc-table { width: 100%; table-layout: auto; border-collapse: collapse; min-width: 640px; }
+.sio-col-loc  { width: 52%; }
+.sio-col-num  { width: 13%; }
+.sio-col-unit { width: 7%; }
+.sio-col-del  { width: 52px; }
+.sio-th { height: 28px; text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; letter-spacing: 0.04em; }
+.sio-th--num { text-align: right; }
+.sio-td { padding: 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; height: var(--mp-sizes-10, 40px); border-right: 1px solid var(--mp-border-default); background: var(--mp-background-neutral, #fff); }
+.sio-td--muted { color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); }
+.sio-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--mp-background-neutral-subtle); }
+.sio-td--del { border-right: none; text-align: center; padding: 0; background: var(--mp-background-neutral-subtle); }
+.sio-td--loc { padding: 0; }
+.sio-td--loc { padding: 0; }
+.sio-td--loc:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.sio-loc-trigger { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); cursor: text; }
+.sio-loc-input { flex: 1; min-width: 0; border: none; outline: none; background: none; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sio-loc-input::placeholder { color: var(--mp-text-placeholder); }
+.sio-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+.sio-loc-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
+.sio-td--input { padding: 0; }
+.sio-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.sio-td--add-loc { padding: 0; }
+.sio-qty-input { width: 100%; text-align: right; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
+.sio-qty-input::placeholder { color: var(--mp-text-placeholder); }
+.sio-diff--pos { color: var(--mp-text-success, #18794e); }
+.sio-diff--neg { color: var(--mp-text-danger, #a8352d); }
+.sio-diff--neutral { color: var(--mp-text-default); }
+.sio-del-loc-btn { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 100%; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
+.sio-del-loc-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #dc2626); }
+
+.sio-td--add-loc-spacer { background: var(--mp-background-neutral, #fff); border-right: none; }
+
+/* ── Batch / SN cell inside location table (mirrors scf-td--batch-counted) ────── */
+.sio-td--batch-cell { padding: 0; height: auto; background: var(--mp-background-neutral-subtle); display: flex; flex-direction: column; vertical-align: top; }
+.sio-td--serial-cell { background: var(--mp-background-neutral, #fff); }
+.sio-td--serial-cell:focus-within .sio-batch-in-cell--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.sio-batch-in-cell { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
+.sio-batch-in-cell--total { border-bottom: 1px solid var(--mp-border-default); }
+.sio-batch-in-cell--bare { padding: 0; border-bottom: 1px solid var(--mp-border-default); }
+.sio-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
+.sio-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+.sio-product-count { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .scf-form-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
+/* ── Memo / attachment ──────────────────────────────────────────────────────────── */
 .scf-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); max-width: 440px; padding: var(--mp-spacing-6) 0; }
 .scf-section--gap-top { padding-top: 32px; padding-bottom: 0; }
 .scf-section--last { padding-top: 20px; }
