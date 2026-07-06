@@ -439,6 +439,7 @@ const filteredSerialProducts = computed(() => {
 })
 function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' : 'serial numbers'}` }
 const hasBatchMergedRows = computed(() => filteredBatchProducts.value.length > 0)
+const hasMultiLocProduct = computed(() => filteredStock.value.some((s: any) => (s.locations?.length ?? 0) > 1))
 const hasBatchTab  = computed(() => batchProducts.value.length > 0)
 const hasSerialTab = computed(() => serialProducts.value.length > 0)
 
@@ -692,7 +693,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="products">
-            <div ref="productsTableEl" class="wh-products-table" @scroll.capture="onTableScroll">
+            <div ref="productsTableEl" :class="['wh-products-table', { 'wh-products-bordered': hasMultiLocProduct }]" @scroll.capture="onTableScroll">
             <ErpTablePage
               ref="productsTableRef"
               class="erp-products"
@@ -1806,6 +1807,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-col-row:not(:last-child) {
   border-bottom: 1px solid var(--mp-border-default);
 }
+/* Column borders when any product has multiple locations */
+.wh-products-bordered :deep(.erp-products .erp-th) { border-right: 1px solid var(--mp-border-default); }
+.wh-products-bordered :deep(.erp-products .erp-th:last-child) { border-right: none; }
+.wh-products-bordered :deep(.erp-products .erp-td) { border-right: 1px solid var(--mp-border-default); }
+.wh-products-bordered :deep(.erp-products .erp-td:last-child) { border-right: none; }
 .wh-cat-list { margin: 0; padding: 0 0 0 var(--mp-spacing-4); list-style: disc; display: flex; flex-direction: column; gap: 2px; }
 .wh-cat-item { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: normal; }
 .wh-cat-toggle {
