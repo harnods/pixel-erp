@@ -42,6 +42,7 @@ function setDemoState(s: DemoState) {
 const columns: TableColumn[] = [
   { key: 'purchaseNo',       label: 'Number',            width: '260px', sortType: 'text' },
   { key: 'warehouseName',    label: 'Warehouse',         width: '180px', sortType: 'text' },
+  { key: 'vendor',           label: 'Vendor',            width: '200px', sortType: 'text' },
   { key: 'status',           label: 'Status',            width: '150px', sortType: 'text' },
   { key: 'trackingNos',      label: 'Tracking no.',      width: '150px' },
   { key: 'skuQty',           label: 'SKU qty',           width: '100px', align: 'right', sortType: 'number' },
@@ -50,7 +51,10 @@ const columns: TableColumn[] = [
 ]
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on.
-const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+// trackingNos is hidden by default — user can enable it via column settings.
+const colVis = reactive<Record<string, boolean>>(
+  Object.fromEntries(columns.map(c => [c.key, c.key !== 'trackingNos'])),
+)
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
 const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 function hideColumn(key: string) { colVis[key] = false }
@@ -168,6 +172,7 @@ const {
     const matchesSearch = !s
       || row.purchaseNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
+      || (row.vendor ?? '').toLowerCase().includes(s)
     const matchesStatus = statusFilter.value.includes(receiptStage(row))
     const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
     let matchesArrival = true
@@ -445,6 +450,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Warehouse — wrap to 2 lines instead of bleeding ── -->
     <template #cell-warehouseName="{ value }">
       <span class="rcv-warehouse">{{ value }}</span>
+    </template>
+
+    <!-- ── Vendor ── -->
+    <template #cell-vendor="{ value }">
+      <span class="rcv-warehouse">{{ value ?? '—' }}</span>
     </template>
 
     <!-- ── Status badge ── -->

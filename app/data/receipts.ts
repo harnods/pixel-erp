@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
-import { TODAY } from './master'
+import { TODAY, VENDORS } from './master'
 
 /** An inbound goods receipt (Inbound delivery → Receipt). */
 export interface Receipt {
@@ -110,6 +110,11 @@ function hash100(i: number): number {
   return (x >>> 0) % 100;
 }
 
+// Same hash as receiptDetails.ts so vendor name is consistent across index and detail.
+function hashId(id: string): number {
+  return id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+}
+
 // Future arrival windows for not-yet-arrived (on the way) POs — spread so each
 // arrival-date preset (today / tomorrow / next 7 days / this month / beyond) hits some.
 const FUTURE_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7, 9, 12, 18, 23, 27, 34, 40];
@@ -147,8 +152,9 @@ function generateReceipts(count = 42): Receipt[] {
     const purchaseNo = fromDesty
       ? `#PO${String(60 + i).padStart(3, "0")}`
       : `Purchase Order #${10090 + i}`;
+    const id = `rcv-${String(i + 1).padStart(3, "0")}`
     out.push({
-      id: `rcv-${String(i + 1).padStart(3, "0")}`,
+      id,
       number: `RCV-2026-${String(i + 1).padStart(4, "0")}`,
       purchaseNo,
       warehouseId: wh.id,
@@ -162,6 +168,7 @@ function generateReceipts(count = 42): Receipt[] {
       estimatedArrival: isoOffset(offset),
       memo: generateMemo(i, isoOffset(offset)),
       trackingNos: generateTrackingNos(i),
+      vendor: VENDORS[hashId(id) % VENDORS.length],
     });
   }
   return out;
@@ -188,8 +195,9 @@ function generateCanceled(count = 7): Receipt[] {
     const purchaseNo = fromDesty
       ? `#PO${String(180 + k).padStart(3, "0")}`
       : `Purchase Order #${10210 + k}`;
+    const id = `rcv-cx-${String(k + 1).padStart(3, "0")}`
     out.push({
-      id: `rcv-cx-${String(k + 1).padStart(3, "0")}`,
+      id,
       number: `RCV-2026-${String(900 + k).padStart(4, "0")}`,
       purchaseNo,
       warehouseId: wh.id,
@@ -204,6 +212,7 @@ function generateCanceled(count = 7): Receipt[] {
       estimatedArrival: isoOffset(-((k % 12) + 3)),
       memo: generateMemo(i, isoOffset(0)),
       trackingNos: [],
+      vendor: VENDORS[hashId(id) % VENDORS.length],
     });
   }
   return out;
@@ -213,14 +222,14 @@ function generateCanceled(count = 7): Receipt[] {
 // full snapshot so seed records mutated by the flow (status derivation, received
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
-const receiptSnapshot = loadSnapshot<Receipt>("receipts");
+const receiptSnapshot = loadSnapshot<Receipt>("receipts-v2");
 export const receipts = reactive<Receipt[]>(
   receiptSnapshot ?? [...generateReceipts(), ...generateCanceled()],
 );
 
 /** Persist the receipts snapshot (call after any mutation). */
 export function persistReceipts(): void {
-  saveSnapshot("receipts", receipts);
+  saveSnapshot("receipts-v2", receipts);
 }
 
 let receiptAddSeq = receipts.filter((r) => r.id.startsWith("rcv-new-")).length;
