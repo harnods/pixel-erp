@@ -28,8 +28,8 @@ const props = defineProps<{
   sku: string
   warehouseId: string
   modelValue: CommittedBatch[]
-  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer */
-  kind?: 'count' | 'in-out' | 'transfer'
+  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer; 'receiving' = PO receiving; 'put-away' = assign received batches to bins */
+  kind?: 'count' | 'in-out' | 'transfer' | 'receiving' | 'put-away'
   /**
    * When counting inside a storage location, pass the bin-level on-hand.
    * 0 means the SKU has no stock at this bin → start empty instead of
@@ -102,8 +102,10 @@ watch(() => props.open, (isOpen) => {
     return
   }
 
-  // in-out / transfer: start empty — user manually picks which batches to affect
-  if (props.kind === 'in-out' || props.kind === 'transfer') {
+  // in-out / transfer / receiving: start empty — user manually picks which batches to affect
+  // (put-away always arrives with a non-empty modelValue — the batches recorded at
+  // receiving — but falls back to empty here too if that's somehow missing.)
+  if (props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away') {
     rows.value = []
     return
   }
@@ -144,9 +146,19 @@ const warehouseStock = computed(() => {
 const productImg = computed(() => product.value?.img ?? '')
 const productName = computed(() => warehouseStock.value?.name ?? product.value?.name ?? props.sku)
 
-const isInOut = computed(() => props.kind === 'in-out' || props.kind === 'transfer')
+const isInOut = computed(() =>
+  props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away',
+)
 const isTransfer = computed(() => props.kind === 'transfer')
-const qtyLabel = computed(() => props.kind === 'transfer' ? 'Transfer qty' : 'Stock in/out qty')
+const isReceiving = computed(() => props.kind === 'receiving')
+const isPutAway = computed(() => props.kind === 'put-away')
+// receiving/put-away have no meaningful on-hand/new-on-hand concept — hide those stats/columns.
+const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
+const qtyLabel = computed(() => {
+  if (props.kind === 'transfer') return 'Transfer qty'
+  if (props.kind === 'receiving' || props.kind === 'put-away') return 'Received qty'
+  return 'Stock in/out qty'
+})
 const onHandLabel = computed(() => isTransfer.value ? 'Available qty' : 'On hand qty')
 const afterLabel = computed(() => isTransfer.value ? 'After transfer qty' : (isInOut.value ? 'New on hand qty' : 'Difference'))
 
@@ -264,6 +276,8 @@ function setExpiryDisplay(row: WorkRow, val: string) {
 const hasOriginLoc = computed(() => (props.originLocationPaths?.length ?? 0) > 0)
 const hasDestLoc = computed(() => (props.destLocationPaths?.length ?? 0) > 0)
 const hasAnyLoc = computed(() => hasOriginLoc.value || hasDestLoc.value)
+// Transfer splits qty across origin+dest bins; put-away splits the received qty across dest bins only.
+const showLocSplit = computed(() => (isTransfer.value || isPutAway.value) && hasAnyLoc.value)
 
 // helper: does this row have any location assignments saved?
 function batchLocIsSet(row: WorkRow): boolean {
@@ -287,9 +301,15 @@ function openBatchLocDrawer(row: WorkRow) {
   batchLocOriginRows.value = row.originLocRows.some(r => r.locationId)
     ? row.originLocRows.map(r => ({ ...r }))
     : [makeLocRow()]
-  batchLocDestRows.value = row.destLocRows.some(r => r.locationId)
-    ? row.destLocRows.map(r => ({ ...r }))
-    : [makeLocRow()]
+  if (row.destLocRows.some(r => r.locationId)) {
+    batchLocDestRows.value = row.destLocRows.map(r => ({ ...r }))
+  } else if (isPutAway.value) {
+    // Put-away: default the first bin's qty to the full received qty — the operator
+    // just picks a bin, or lowers the qty and adds more rows to split it.
+    batchLocDestRows.value = [{ id: locSeq++, locationId: '', qty: row.onHand > 0 ? String(row.onHand) : '' }]
+  } else {
+    batchLocDestRows.value = [makeLocRow()]
+  }
   batchLocError.value = ''
 }
 
@@ -306,6 +326,11 @@ function batchDestLocOpts(lr: LocRow): string[] {
   const q = (locSearches[`d-${lr.id}`] ?? '').toLowerCase()
   return (props.destLocationPaths ?? []).filter(p => !used.has(p) && (!q || p.toLowerCase().includes(q)))
 }
+// First 3 options surface as "Recommended locations"; the rest sit below a divider.
+function recommendedOriginLocOpts(lr: LocRow) { return batchOriginLocOpts(lr).slice(0, 3) }
+function otherOriginLocOpts(lr: LocRow) { return batchOriginLocOpts(lr).slice(3) }
+function recommendedDestLocOpts(lr: LocRow) { return batchDestLocOpts(lr).slice(0, 3) }
+function otherDestLocOpts(lr: LocRow) { return batchDestLocOpts(lr).slice(3) }
 
 function selectBatchOriginLoc(lr: LocRow, locationId: string) {
   lr.locationId = locationId; locActiveKey.value = null; delete locSearches[`o-${lr.id}`]
@@ -328,8 +353,13 @@ function saveBatchLocDrawer() {
     return
   }
   const total = batchLocOriginTotal.value || batchLocDestTotal.value
-  if (total > (batchLocRow.value?.onHand ?? 0)) {
-    batchLocError.value = `Total qty (${total}) exceeds available qty (${batchLocRow.value?.onHand ?? 0})`
+  const onHand = batchLocRow.value?.onHand ?? 0
+  if (isPutAway.value && total !== onHand) {
+    batchLocError.value = `Total qty (${total}) must equal received qty (${onHand})`
+    return
+  }
+  if (total > onHand) {
+    batchLocError.value = `Total qty (${total}) exceeds available qty (${onHand})`
     return
   }
   if (batchLocRow.value) {
@@ -411,7 +441,7 @@ function fmtNum(n: number | null): string {
             </div>
           </div>
           <div class="mbd-info-stats">
-            <div class="mbd-stat">
+            <div v-if="!hideStockStats" class="mbd-stat">
               <span class="mbd-stat-label">On hand qty</span>
               <span class="mbd-stat-value">{{ totalOnHand.toLocaleString('id-ID') }}</span>
             </div>
@@ -437,16 +467,19 @@ function fmtNum(n: number | null): string {
             <template v-else>
               <div
                 class="mbd-stat"
-                :class="isTransfer ? {} : { 'mbd-stat--pos': (totalCounted ?? 0) > 0, 'mbd-stat--neg': (totalCounted ?? 0) < 0 }"
+                :class="(isTransfer || hideStockStats) ? {} : { 'mbd-stat--pos': (totalCounted ?? 0) > 0, 'mbd-stat--neg': (totalCounted ?? 0) < 0 }"
               >
                 <span class="mbd-stat-label">{{ qtyLabel }}</span>
                 <span class="mbd-stat-value">
-                  <template v-if="totalCounted === null">—</template>
-                  <template v-else-if="!isTransfer && totalCounted > 0">+{{ totalCounted.toLocaleString('id-ID') }}</template>
+                  <!-- Put-away's received qty is a known fact from receiving — show the
+                       fixed total (totalOnHand), not counted progress (starts at null). -->
+                  <template v-if="isPutAway">{{ totalOnHand.toLocaleString('id-ID') }}</template>
+                  <template v-else-if="totalCounted === null">—</template>
+                  <template v-else-if="!isTransfer && !hideStockStats && totalCounted > 0">+{{ totalCounted.toLocaleString('id-ID') }}</template>
                   <template v-else>{{ totalCounted.toLocaleString('id-ID') }}</template>
                 </span>
               </div>
-              <div class="mbd-stat">
+              <div v-if="!hideStockStats" class="mbd-stat">
                 <span class="mbd-stat-label">{{ afterLabel }}</span>
                 <span class="mbd-stat-value">{{ totalNewOnHand !== null ? totalNewOnHand.toLocaleString('id-ID') : '—' }}</span>
               </div>
@@ -486,14 +519,14 @@ function fmtNum(n: number | null): string {
 
         <!-- Table -->
         <div class="mbd-table-wrap">
-          <table class="mbd-table" :class="{ 'mbd-table--split': isTransfer && hasAnyLoc }">
+          <table class="mbd-table" :class="{ 'mbd-table--split': showLocSplit }">
             <colgroup>
               <col class="mbd-col-batch" />
               <col class="mbd-col-expiry" />
               <col class="mbd-col-desc" />
-              <col class="mbd-col-num" />
+              <col v-if="!hideStockStats" class="mbd-col-num" />
               <col class="mbd-col-counted" />
-              <col class="mbd-col-after" />
+              <col v-if="!hideStockStats" class="mbd-col-after" />
               <col class="mbd-col-unit" />
               <col class="mbd-col-del" />
             </colgroup>
@@ -502,9 +535,9 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Batch</th>
                 <th class="mbd-th">Expiry date</th>
                 <th class="mbd-th">Description</th>
-                <th class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
+                <th v-if="!hideStockStats" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
                 <th class="mbd-th mbd-th--num">{{ isInOut ? qtyLabel : 'Counted qty' }}</th>
-                <th class="mbd-th mbd-th--num">{{ afterLabel }}</th>
+                <th v-if="!hideStockStats" class="mbd-th mbd-th--num">{{ afterLabel }}</th>
                 <th class="mbd-th">Unit</th>
                 <th class="mbd-th mbd-th--del" />
               </tr>
@@ -550,12 +583,14 @@ function fmtNum(n: number | null): string {
                 <td v-else class="mbd-td mbd-td--muted">{{ row.desc }}</td>
 
                 <!-- ON HAND -->
-                <td class="mbd-td mbd-td--num mbd-td--muted">{{ row.onHand.toLocaleString('id-ID') }}</td>
+                <td v-if="!hideStockStats" class="mbd-td mbd-td--num mbd-td--muted">{{ row.onHand.toLocaleString('id-ID') }}</td>
 
-                <!-- COUNTED: 2-row cell (loc mode) or plain input -->
-                <td v-if="isTransfer && hasAnyLoc" class="mbd-td mbd-td--loc-cell">
+                <!-- COUNTED: 2-row cell (loc mode) or plain input. Put-away's received
+                     qty is a known fact from receiving — show it directly, not "—". -->
+                <td v-if="showLocSplit" class="mbd-td mbd-td--loc-cell">
                   <div class="mbd-cell-row mbd-cell-row--total">
-                    <span v-if="row.counted !== null" class="mbd-cell-val">{{ row.counted.toLocaleString('id-ID') }}</span>
+                    <span v-if="isPutAway" class="mbd-cell-val">{{ row.onHand.toLocaleString('id-ID') }}</span>
+                    <span v-else-if="row.counted !== null" class="mbd-cell-val">{{ row.counted.toLocaleString('id-ID') }}</span>
                     <span v-else class="mbd-cell-empty">—</span>
                   </div>
                   <div class="mbd-cell-row mbd-cell-row--action">
@@ -583,7 +618,7 @@ function fmtNum(n: number | null): string {
                     'mbd-diff--uncounted': diffOf(row) === null,
                   }"
                 >{{ diffLabel(row) }}</td>
-                <td v-else class="mbd-td mbd-td--num">
+                <td v-else-if="!hideStockStats" class="mbd-td mbd-td--num">
                   {{ newOnHandOf(row) !== null ? newOnHandOf(row)!.toLocaleString('id-ID') : '—' }}
                 </td>
 
@@ -600,8 +635,9 @@ function fmtNum(n: number | null): string {
 
               </template>
 
-              <!-- Select batch row — same pattern as "Select product" in warehouse transfer -->
-              <tr class="mbd-tr mbd-tr--select">
+              <!-- Select batch row — same pattern as "Select product" in warehouse transfer.
+                   Hidden for put-away: the batches are a fixed fact from receiving. -->
+              <tr v-if="!isPutAway" class="mbd-tr mbd-tr--select">
                 <td class="mbd-td mbd-td--select-cell">
                   <MpPopover id="mbd-select-batch" is-close-on-select use-portal>
                     <MpPopoverTrigger>
@@ -634,12 +670,12 @@ function fmtNum(n: number | null): string {
                     </MpPopoverContent>
                   </MpPopover>
                 </td>
-                <td colspan="7" class="mbd-td mbd-td--select-empty" />
+                <td :colspan="hideStockStats ? 5 : 7" class="mbd-td mbd-td--select-empty" />
               </tr>
 
               <!-- Pagination info row -->
               <tr class="mbd-tr mbd-tr--info">
-                <td colspan="8" class="mbd-td mbd-td--pagination">
+                <td :colspan="hideStockStats ? 6 : 8" class="mbd-td mbd-td--pagination">
                   Showing {{ displayRows.length }} of {{ rows.length }} batches
                 </td>
               </tr>
@@ -683,7 +719,7 @@ function fmtNum(n: number | null): string {
           </div>
           <div class="mbd-info-stats">
             <div class="mbd-stat">
-              <span class="mbd-stat-label">Available qty</span>
+              <span class="mbd-stat-label">{{ isPutAway ? 'Received qty' : 'Available qty' }}</span>
               <span class="mbd-stat-value">{{ batchLocRow.onHand.toLocaleString('id-ID') }}</span>
             </div>
           </div>
@@ -710,18 +746,29 @@ function fmtNum(n: number | null): string {
                       <div class="mbd-loc-trigger">
                         <input
                           class="mbd-loc-input" type="text" autocomplete="off"
-                          :placeholder="lr.locationId || 'Select bin'"
-                          :value="locActiveKey === `o-${lr.id}` ? (locSearches[`o-${lr.id}`] ?? '') : ''"
+                          placeholder="Select bin"
+                          :value="locActiveKey === `o-${lr.id}` ? (locSearches[`o-${lr.id}`] ?? '') : lr.locationId"
                           @focus="locActiveKey = `o-${lr.id}`"
                           @input="locSearches[`o-${lr.id}`] = ($event.target as HTMLInputElement).value"
                         />
                         <svg class="mbd-loc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
                     </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
-                      <MpPopoverList>
-                        <MpPopoverListItem v-for="p in batchOriginLocOpts(lr)" :key="p" @click="selectBatchOriginLoc(lr, p)">{{ p }}</MpPopoverListItem>
-                        <MpPopoverListItem v-if="!batchOriginLocOpts(lr).length" disabled>No bins found.</MpPopoverListItem>
+                    <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', padding: '0' })">
+                      <template v-if="batchOriginLocOpts(lr).length">
+                        <p class="mbd-loc-section-heading">Recommended locations</p>
+                        <MpPopoverList>
+                          <MpPopoverListItem v-for="p in recommendedOriginLocOpts(lr)" :key="p" @click="selectBatchOriginLoc(lr, p)">{{ p }}</MpPopoverListItem>
+                        </MpPopoverList>
+                        <template v-if="otherOriginLocOpts(lr).length">
+                          <div class="mbd-loc-section-divider" />
+                          <MpPopoverList>
+                            <MpPopoverListItem v-for="p in otherOriginLocOpts(lr)" :key="p" @click="selectBatchOriginLoc(lr, p)">{{ p }}</MpPopoverListItem>
+                          </MpPopoverList>
+                        </template>
+                      </template>
+                      <MpPopoverList v-else>
+                        <MpPopoverListItem disabled>No bins found.</MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -742,7 +789,7 @@ function fmtNum(n: number | null): string {
         <!-- Into (destination) -->
         <div v-if="hasDestLoc" class="mbd-loc2-section">
           <div class="mbd-loc2-section-header">
-            <span class="mbd-loc2-section-title">Into (destination warehouse)</span>
+            <span class="mbd-loc2-section-title">{{ isPutAway ? 'Put away in' : 'Into (destination warehouse)' }}</span>
             <span class="mbd-loc2-total">Total: {{ batchLocDestTotal }}</span>
           </div>
           <div class="mbd-loc-tbl-wrap"><table class="mbd-loc-tbl">
@@ -760,18 +807,29 @@ function fmtNum(n: number | null): string {
                       <div class="mbd-loc-trigger">
                         <input
                           class="mbd-loc-input" type="text" autocomplete="off"
-                          :placeholder="lr.locationId || 'Select bin'"
-                          :value="locActiveKey === `d-${lr.id}` ? (locSearches[`d-${lr.id}`] ?? '') : ''"
+                          placeholder="Select bin"
+                          :value="locActiveKey === `d-${lr.id}` ? (locSearches[`d-${lr.id}`] ?? '') : lr.locationId"
                           @focus="locActiveKey = `d-${lr.id}`"
                           @input="locSearches[`d-${lr.id}`] = ($event.target as HTMLInputElement).value"
                         />
                         <svg class="mbd-loc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
                     </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
-                      <MpPopoverList>
-                        <MpPopoverListItem v-for="p in batchDestLocOpts(lr)" :key="p" @click="selectBatchDestLoc(lr, p)">{{ p }}</MpPopoverListItem>
-                        <MpPopoverListItem v-if="!batchDestLocOpts(lr).length" disabled>No bins found.</MpPopoverListItem>
+                    <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', padding: '0' })">
+                      <template v-if="batchDestLocOpts(lr).length">
+                        <p class="mbd-loc-section-heading">Recommended locations</p>
+                        <MpPopoverList>
+                          <MpPopoverListItem v-for="p in recommendedDestLocOpts(lr)" :key="p" @click="selectBatchDestLoc(lr, p)">{{ p }}</MpPopoverListItem>
+                        </MpPopoverList>
+                        <template v-if="otherDestLocOpts(lr).length">
+                          <div class="mbd-loc-section-divider" />
+                          <MpPopoverList>
+                            <MpPopoverListItem v-for="p in otherDestLocOpts(lr)" :key="p" @click="selectBatchDestLoc(lr, p)">{{ p }}</MpPopoverListItem>
+                          </MpPopoverList>
+                        </template>
+                      </template>
+                      <MpPopoverList v-else>
+                        <MpPopoverListItem disabled>No bins found.</MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -1055,7 +1113,7 @@ function fmtNum(n: number | null): string {
 .mbd-cell-row--action { border-top: 1px solid var(--mp-border-default); justify-content: flex-end; }
 .mbd-loc-link {
   background: none; border: none; cursor: pointer; padding: 0;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link, #3b82f6); text-decoration: none;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link, #3b82f6); text-decoration: none;
 }
 .mbd-loc-link:hover { text-decoration: underline; }
 .mbd-loc-link--set { color: var(--mp-text-success, #18794e); }
@@ -1097,6 +1155,8 @@ function fmtNum(n: number | null): string {
   border-top: 1px solid var(--mp-border-default);
   background: var(--mp-background-stage);
 }
+.mbd-loc-section-heading { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.mbd-loc-section-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
 .mbd-loc-tbl-wrap { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
 .mbd-loc-tbl { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .mbd-loc-col-qty { width: 80px; }
@@ -1119,14 +1179,16 @@ function fmtNum(n: number | null): string {
 .mbd-loc-trigger { display: flex; align-items: center; height: 36px; padding: 0 var(--mp-spacing-2); gap: var(--mp-spacing-1); }
 .mbd-loc-input {
   flex: 1; min-width: 0; height: 100%; border: none; outline: none; background: transparent;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); font-family: inherit;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default); font-family: inherit;
 }
 .mbd-loc-input::placeholder { color: var(--mp-text-placeholder); }
 .mbd-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
 .mbd-loc-qty-input {
   width: 100%; height: 36px; padding: 0 var(--mp-spacing-2); text-align: right;
   border: none; background: transparent; outline: none;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); font-variant-numeric: tabular-nums;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); font-family: inherit;
+  color: var(--mp-text-default); font-variant-numeric: tabular-nums;
 }
 .mbd-loc-del-btn {
   display: flex; align-items: center; justify-content: center;

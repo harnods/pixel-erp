@@ -509,7 +509,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.detail-td--num { text-align: right; padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4); }
+.detail-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-td--secondary { color: var(--mp-text-secondary); }
 .detail-td--number { position: relative; }
 

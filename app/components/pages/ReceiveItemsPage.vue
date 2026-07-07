@@ -9,8 +9,12 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
-import { saveReceivingDraft, endReceiving as endReceivingTask } from '~/data/receivingTasks'
+import { saveReceivingDraft, endReceiving as endReceivingTask, type ReceivingBatchLine } from '~/data/receivingTasks'
+import { productBySku } from '~/data/inventory'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -52,6 +56,73 @@ const filteredItems = computed(() => {
   )
 })
 
+// ── Batch / serial helpers (same heuristic as stock count / stock in-out) ──────
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(po.value?.warehouseId ?? '')
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
+// ── Manage batch drawer — received qty for batch-tracked SKUs comes from here,
+// not a plain input (mirrors Stock in/out's batch-tracked column). ─────────────
+const batchLinesBySku = ref<Record<string, CommittedBatch[]>>({})
+const batchDrawerSku = ref<string | null>(null)
+const batchDrawerOpen = computed({
+  get: () => batchDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) batchDrawerSku.value = null },
+})
+function openBatchDrawer(skuCode: string) { batchDrawerSku.value = skuCode }
+function batchTotal(skuCode: string): number {
+  return (batchLinesBySku.value[skuCode] ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
+}
+function batchHasCounts(skuCode: string): boolean {
+  return (batchLinesBySku.value[skuCode] ?? []).some(b => b.counted !== null)
+}
+function saveBatchLines(batches: CommittedBatch[]) {
+  const sku = batchDrawerSku.value
+  if (!sku) return
+  batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: batches }
+  draftQty.value = { ...draftQty.value, [sku]: batches.reduce((s, b) => s + (b.counted ?? 0), 0) }
+  if (showQtyErrors.value) showQtyErrors.value = false
+}
+
+// ── Manage serial number drawer — qty is still typed in directly; the drawer
+// collects the actual serials, which must match that qty before finishing. ─────
+const serialLinesBySku = ref<Record<string, string[]>>({})
+const serialDrawerSku = ref<string | null>(null)
+const serialDrawerOpen = computed({
+  get: () => serialDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) serialDrawerSku.value = null },
+})
+function openSerialDrawer(skuCode: string) {
+  if (!(draftQty.value[skuCode] ?? 0)) {
+    toast.notify({ variant: 'warning', title: 'Enter received qty first' })
+    return
+  }
+  serialDrawerSku.value = skuCode
+}
+function serialCount(skuCode: string): number {
+  return serialLinesBySku.value[skuCode]?.length ?? 0
+}
+function saveSerialLines(serials: CommittedSerial[]) {
+  const sku = serialDrawerSku.value
+  if (!sku) return
+  serialLinesBySku.value = { ...serialLinesBySku.value, [sku]: serials.map(s => s.serial) }
+}
+
 // ── Progressive pagination ────────────────────────────────────────────────────
 const PAGE_SIZE    = 10
 const shownCount   = ref(PAGE_SIZE)
@@ -92,12 +163,6 @@ watch(search, () => {
   })
 })
 
-function receiveAll() {
-  const map: Record<string, number> = {}
-  for (const it of lineItems.value) map[it.skuCode] = it.expectedQty
-  draftQty.value = map
-}
-
 const showQtyErrors = ref(false)
 
 function onQtyInput(skuCode: string, expected: number, e: Event) {
@@ -119,14 +184,48 @@ function endReceiving() {
     toast.notify({ variant: 'danger', title: 'Enter received qty for at least one item' })
     return
   }
+  for (const item of lineItems.value) {
+    if (!isSerialTrackedSku(item.skuCode)) continue
+    const expected = draftQty.value[item.skuCode] ?? 0
+    const actual = serialCount(item.skuCode)
+    if (expected > 0 && actual !== expected) {
+      toast.notify({
+        variant: 'danger',
+        title: `Enter all serial numbers for ${item.productName} (${actual}/${expected} entered)`,
+      })
+      return
+    }
+  }
   showConfirm.value = true
+}
+
+// Batch/serial identity recorded here would otherwise be thrown away once the qty
+// total is computed — persist it so Put-away knows what to assign bins to later.
+function buildReceivingDetail(): Record<string, { batchLines?: ReceivingBatchLine[]; serialNumbers?: string[] }> {
+  const detail: Record<string, { batchLines?: ReceivingBatchLine[]; serialNumbers?: string[] }> = {}
+  for (const item of lineItems.value) {
+    if (isBatchTrackedSku(item.skuCode)) {
+      const lines = batchLinesBySku.value[item.skuCode]
+      if (lines) {
+        detail[item.skuCode] = {
+          batchLines: lines.map(b => ({
+            batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.counted ?? 0, unit: b.unit,
+          })),
+        }
+      }
+    } else if (isSerialTrackedSku(item.skuCode)) {
+      const serials = serialLinesBySku.value[item.skuCode]
+      if (serials) detail[item.skuCode] = { serialNumbers: serials }
+    }
+  }
+  return detail
 }
 
 function commitReceiving(createPutAway = false) {
   showConfirm.value = false
   const received = { ...draftQty.value }
   const complete = draftReceivedTotal.value >= purchaseTotal.value
-  endReceivingTask(props.orderId, received)
+  endReceivingTask(props.orderId, received, buildReceivingDetail())
   if (createPutAway) {
     router.push({
       path: '/inbound-delivery/put-away/create',
@@ -142,7 +241,7 @@ function commitReceiving(createPutAway = false) {
 }
 
 function saveDraft() {
-  saveReceivingDraft(props.orderId, { ...draftQty.value })
+  saveReceivingDraft(props.orderId, { ...draftQty.value }, buildReceivingDetail())
   toast.notify({ variant: 'success', title: 'Receiving draft saved' })
   router.push(`/receiving/${props.orderId}`)
 }
@@ -235,7 +334,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         <div class="ri-filter-bar">
           <div class="ri-filter-bar-left">
             <span class="ri-editing-hint">Scan or enter the received qty for each item.</span>
-            <button class="ri-link-btn" @click="receiveAll">Receive all</button>
           </div>
           <div class="ri-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -274,7 +372,37 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <td class="ri-td">{{ item.skuCode }}</td>
                   <td class="ri-td ri-td--num">{{ fmt(item.expectedQty) }}</td>
+                  <!-- Received qty: batch/serial-tracked SKUs split into a value row +
+                       a "Manage batch"/"Manage serial number" row (mirrors Stock in/out). -->
+                  <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--batch-cell">
+                    <div class="ri-batch-cell ri-batch-cell--total">
+                      <span v-if="batchHasCounts(item.skuCode)" class="ri-batch-val">{{ fmt(batchTotal(item.skuCode)) }}</span>
+                      <span v-else class="ri-batch-empty">No batches</span>
+                    </div>
+                    <div class="ri-batch-cell ri-batch-cell--action">
+                      <button class="ri-batch-link" type="button" @click="openBatchDrawer(item.skuCode)">Manage batch</button>
+                    </div>
+                  </td>
                   <td
+                    v-else-if="isSerialTrackedSku(item.skuCode)"
+                    class="ri-td ri-td--batch-cell ri-td--serial-cell"
+                    :class="{ 'ri-td--input--error': showQtyErrors && !(draftQty[item.skuCode] ?? 0) }"
+                  >
+                    <div class="ri-batch-cell ri-batch-cell--total ri-batch-cell--bare">
+                      <input
+                        class="ri-qty-input"
+                        type="number" min="0" :max="item.expectedQty"
+                        :value="draftQty[item.skuCode] ?? 0"
+                        :aria-label="`Received qty for ${item.productName}`"
+                        @input="onQtyInput(item.skuCode, item.expectedQty, $event)"
+                      />
+                    </div>
+                    <div class="ri-batch-cell ri-batch-cell--action">
+                      <button class="ri-batch-link" type="button" @click="openSerialDrawer(item.skuCode)">Manage serial number</button>
+                    </div>
+                  </td>
+                  <td
+                    v-else
                     class="ri-td ri-td--input"
                     :class="{ 'ri-td--input--error': showQtyErrors && !(draftQty[item.skuCode] ?? 0) }"
                   >
@@ -361,6 +489,30 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <ManageBatchDrawer
+    v-if="batchDrawerSku"
+    :open="batchDrawerOpen"
+    :sku="batchDrawerSku"
+    :warehouse-id="po?.warehouseId ?? ''"
+    kind="receiving"
+    :model-value="batchLinesBySku[batchDrawerSku] ?? []"
+    @update:open="batchDrawerOpen = $event"
+    @save="saveBatchLines"
+  />
+  <ManageSerialDrawer
+    v-if="serialDrawerSku"
+    :open="true"
+    :sku="serialDrawerSku"
+    :warehouse-id="po?.warehouseId ?? ''"
+    kind="receiving"
+    :delta="draftQty[serialDrawerSku] ?? 0"
+    :target-count="draftQty[serialDrawerSku] ?? 0"
+    :location-on-hand="0"
+    :model-value="(serialLinesBySku[serialDrawerSku] ?? []).map(s => ({ serial: s }))"
+    @update:open="serialDrawerOpen = $event"
+    @save="saveSerialLines"
+  />
 </template>
 
 <style scoped>
@@ -433,12 +585,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-normal);
   color: var(--mp-text-default);
 }
-.ri-link-btn {
-  background: none; border: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium);
-  color: var(--mp-text-link); line-height: var(--mp-line-heights-sm);
-}
-.ri-link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .ri-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
@@ -469,20 +615,25 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default);
   white-space: nowrap;
 }
 .ri-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+/* Received qty splits into 2 rows for batch/serial-tracked SKUs, so — for grid
+   consistency — every column gets a right border; the last column drops it so
+   there's no outer edge border (mirrors Stock in/out's location table). */
 .ri-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   background: var(--mp-background-neutral-hovered);
   border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
   vertical-align: top;
 }
+.ri-td:last-child { border-right: none; }
 .ri-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .ri-td--input { padding: 0; }
 
@@ -511,6 +662,18 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   text-align: right; font-variant-numeric: tabular-nums;
   line-height: var(--mp-line-heights-md);
 }
+
+/* Batch/serial-tracked received qty — value row + Manage batch/SN action row */
+.ri-td--batch-cell { padding: 0; height: auto; background: var(--mp-background-neutral-subtle); display: flex; flex-direction: column; vertical-align: top; }
+.ri-td--serial-cell { background: var(--mp-background-neutral, #fff); }
+.ri-td--serial-cell:focus-within .ri-batch-cell--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.ri-batch-cell { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
+.ri-batch-cell--total { border-bottom: 1px solid var(--mp-border-default); }
+.ri-batch-cell--bare { padding: 0; border-bottom: 1px solid var(--mp-border-default); }
+.ri-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.ri-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.ri-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
+.ri-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* Qty colors */
 .ri-qty--full   { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }

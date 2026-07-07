@@ -15,6 +15,22 @@ import { loadSnapshot, saveSnapshot } from "./persist";
  * tasks "completed". Operator Start/End put-away is out of scope for now, so a
  * created put-away stays "open". See docs/scenarios/inbound-complete-scenario.md.
  */
+/** One batch's destination bin split, as assigned via Manage batch during put-away. */
+export interface PutAwayBatchAssignment {
+  batchNo: string;
+  expiryDate: string;
+  desc: string;
+  qty: number;
+  unit: string;
+  destLocations?: Array<{ locationId: string; qty: number }>;
+}
+
+/** One serial's destination bin, as assigned via Manage serial number during put-away. */
+export interface PutAwaySerialAssignment {
+  serial: string;
+  destLocationId?: string;
+}
+
 export interface PutAwayTask {
   id: string;
   taskNo: string;
@@ -29,6 +45,10 @@ export interface PutAwayTask {
   startDate?: string;
   endDate?: string;
   completedItems?: Array<{ skuCode: string; qty: number; binLocation: string }>;
+  /** Per-SKU batch destination assignments (batch-tracked SKUs), draft or final. */
+  batchAssignments?: Record<string, PutAwayBatchAssignment[]>;
+  /** Per-SKU serial destination assignments (serial-tracked SKUs), draft or final. */
+  serialAssignments?: Record<string, PutAwaySerialAssignment[]>;
 }
 
 const ZONES = ["A", "B", "C", "D"];
@@ -160,25 +180,36 @@ export function startPutAway(taskId: string): void {
   persistPutAways();
 }
 
+export interface PutAwayAssignments {
+  batchAssignments?: Record<string, PutAwayBatchAssignment[]>;
+  serialAssignments?: Record<string, PutAwaySerialAssignment[]>;
+}
+
 export function savePutAwayDraft(
   taskId: string,
   items: Array<{ skuCode: string; qty: number; binLocation: string }>,
+  assignments?: PutAwayAssignments,
 ): void {
   const t = getPutAwayTask(taskId);
   if (!t) return;
   if (t.status === 'open') { t.status = 'in progress'; t.startDate = nowIso(); }
   t.completedItems = items.filter((it) => it.qty > 0);
+  if (assignments?.batchAssignments) t.batchAssignments = assignments.batchAssignments;
+  if (assignments?.serialAssignments) t.serialAssignments = assignments.serialAssignments;
   persistPutAways();
 }
 
 export function endPutAway(
   taskId: string,
   items: Array<{ skuCode: string; qty: number; binLocation: string }>,
+  assignments?: PutAwayAssignments,
 ): void {
   const t = getPutAwayTask(taskId);
   if (!t) return;
   t.status = 'completed';
   t.endDate = nowIso();
   t.completedItems = items.filter((it) => it.qty > 0);
+  if (assignments?.batchAssignments) t.batchAssignments = assignments.batchAssignments;
+  if (assignments?.serialAssignments) t.serialAssignments = assignments.serialAssignments;
   persistPutAways();
 }

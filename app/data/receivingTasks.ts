@@ -13,6 +13,15 @@ import { TODAY } from "./master";
  * (see {@link recomputeReceiptStatus}). See docs/scenarios/inbound-complete-scenario.md.
  */
 
+/** One physical batch recorded against a received SKU (batch-tracked SKUs only). */
+export interface ReceivingBatchLine {
+  batchNo: string;
+  expiryDate: string;
+  desc: string;
+  qty: number;
+  unit: string;
+}
+
 /** One SKU line within a receiving task. */
 export interface ReceivingItem {
   sku: string;
@@ -22,6 +31,16 @@ export interface ReceivingItem {
   expectedQty: number;
   /** units the operator has recorded as received */
   receivedQty: number;
+  /** Per-batch breakdown of receivedQty, recorded via Manage batch (batch-tracked SKUs only). */
+  batchLines?: ReceivingBatchLine[];
+  /** Individual serials recorded via Manage serial number (serial-tracked SKUs only). */
+  serialNumbers?: string[];
+}
+
+/** Per-SKU batch/serial detail captured alongside a plain qty save. */
+export interface ReceivingItemDetail {
+  batchLines?: ReceivingBatchLine[];
+  serialNumbers?: string[];
 }
 
 export interface ReceivingTask {
@@ -373,22 +392,42 @@ export function startReceiving(taskId: string): void {
   persistTasks();
 }
 
+function applyReceivingDetail(
+  t: ReceivingTask,
+  received: Record<string, number>,
+  detail?: Record<string, ReceivingItemDetail>,
+): void {
+  for (const it of t.items) {
+    if (received[it.sku] != null) it.receivedQty = Math.max(0, received[it.sku]!);
+    const d = detail?.[it.sku];
+    if (d?.batchLines) it.batchLines = d.batchLines;
+    if (d?.serialNumbers) it.serialNumbers = d.serialNumbers;
+  }
+}
+
 /** Save received qty per SKU (manual save or autosave) — stays In progress. */
-export function saveReceivingDraft(taskId: string, received: Record<string, number>): void {
+export function saveReceivingDraft(
+  taskId: string,
+  received: Record<string, number>,
+  detail?: Record<string, ReceivingItemDetail>,
+): void {
   const t = getReceivingTask(taskId);
   if (!t) return;
-  for (const it of t.items)
-    if (received[it.sku] != null) it.receivedQty = Math.max(0, received[it.sku]!);
+  applyReceivingDetail(t, received, detail);
   const lines = lineItemsForReceipt(receipts.find((x) => x.id === t.receiptId)!);
   syncTaskTotals(t, lines.length);
   persistTasks();
 }
 
 /** Operator ends receiving → Pending put-away + end timestamp; re-derive PO status. */
-export function endReceiving(taskId: string, received?: Record<string, number>): void {
+export function endReceiving(
+  taskId: string,
+  received?: Record<string, number>,
+  detail?: Record<string, ReceivingItemDetail>,
+): void {
   const t = getReceivingTask(taskId);
   if (!t) return;
-  if (received) for (const it of t.items) if (received[it.sku] != null) it.receivedQty = Math.max(0, received[it.sku]!);
+  if (received) applyReceivingDetail(t, received, detail);
   const lines = lineItemsForReceipt(receipts.find((x) => x.id === t.receiptId)!);
   syncTaskTotals(t, lines.length);
   t.status = "pending put-away";

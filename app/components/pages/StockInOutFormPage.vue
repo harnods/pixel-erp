@@ -14,8 +14,11 @@ import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { addAdjustment, accountOptions, IN_OUT_CATEGORIES } from '~/data/stockAdjustments'
+import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
 
 const router = useRouter()
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
 
 function toDisplayDate(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}` }
 function toISODate(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
@@ -253,7 +256,7 @@ function onFileChange(ev: Event) {
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
 
 // ── Save ──────────────────────────────────────────────────────────────────────────
-function goBack() { router.push('/stock-adjustments') }
+function goBack() { router.push(isWms.value ? '/stock-inout' : '/stock-adjustments') }
 const formError = ref('')
 function handleSave() {
   formError.value = ''
@@ -283,8 +286,8 @@ function handleSave() {
       return sum + parseDelta(loc.delta)
     }, 0),
   }))
-  addAdjustment({
-    kind: 'in-out',
+  const input = {
+    kind: 'in-out' as const,
     date: toISODate(transactionDate.value),
     warehouseId: warehouseId.value,
     warehouseName: warehouseName(warehouseId.value),
@@ -292,9 +295,10 @@ function handleSave() {
     tags: tagStrings(),
     memo: memo.value.trim() || undefined,
     lines,
-  })
+  }
+  isWms.value ? addWmsAdjustment(input) : addAdjustment(input)
   toast.notify({ variant: 'success', title: 'Stock in/out created' })
-  router.push('/stock-adjustments')
+  router.push(isWms.value ? '/stock-inout' : '/stock-adjustments')
 }
 
 // ── Sticky footer ─────────────────────────────────────────────────────────────────
@@ -353,7 +357,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpFormErrorMessage>Please select a category</MpFormErrorMessage>
           </MpFormControl>
 
-          <MpFormControl id="scf-account" class="scf-f-account">
+          <MpFormControl v-if="!isWms" id="scf-account" class="scf-f-account">
             <MpFormLabel>Account</MpFormLabel>
             <MpAutocomplete id="scf-account-ac" v-model="accountId" :data="acctOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width />
           </MpFormControl>

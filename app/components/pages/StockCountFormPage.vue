@@ -15,9 +15,12 @@ import { warehouses } from '~/data/warehouses'
 import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
 import { addAdjustment, accountOptions } from '~/data/stockAdjustments'
+import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
 import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
 
 const router = useRouter()
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
 
 function toDisplayDate(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}` }
 function toISODate(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
@@ -27,6 +30,7 @@ const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 const warehouseOptions = computed(() => warehouses.filter(w => w.status === 'active').map(w => ({ id: w.id, name: w.name })))
 const realWarehouses = warehouses.filter(w => w.status === 'active' && !w.isDefault)
 function warehouseName(id: string) { return warehouseOptions.value.find(w => w.id === id)?.name ?? '' }
+const assigneeOptions = ['Budi Santoso', 'Siti Rahayu', 'Andi Wijaya', 'Dewi Kusuma', 'Reza Pratama', 'Lina Handayani'].map(n => ({ id: n, name: n }))
 const acctOptions = accountOptions()
 
 // ── Form state ───────────────────────────────────────────────────────────────────
@@ -37,6 +41,7 @@ const warehouseError = ref(false)
 const accountId = ref(acctOptions.find(a => a.id === 'Inventory adjustment')?.id ?? acctOptions[0]?.id ?? '')
 const tags = ref<DataInterface[]>([])
 const memo = ref('')
+const assignee = ref('')
 
 // ── Warehouse stock (system on-hand, coherent with the warehouse detail page) ──────
 const stock = computed(() => (warehouseId.value ? getWarehouseDetail(warehouseId.value)?.stock ?? [] : []))
@@ -271,18 +276,20 @@ function handleSave() {
     }))
   }
 
-  const adj = addAdjustment({
-    kind: 'count',
+  const input = {
+    kind: 'count' as const,
     date: toISODate(transactionDate.value),
     warehouseId: warehouseId.value,
     warehouseName: warehouseName(warehouseId.value),
-    category: 'Stock count',
+    category: 'Stock count' as const,
     tags: tagStrings(),
     memo: memo.value.trim() || undefined,
     lines,
-  })
+    ...(isWms.value ? { assignee: assignee.value || undefined } : {}),
+  }
+  isWms.value ? addWmsAdjustment(input) : addAdjustment(input)
   toast.notify({ variant: 'success', title: 'Stock count created' })
-  router.push('/stock-adjustments')
+  router.push(isWms.value ? '/stock-count' : '/stock-adjustments')
 }
 
 // ── Storage-location mode ────────────────────────────────────────────────────────
@@ -296,7 +303,62 @@ interface LocEntry {
 const hasStorageLocs = computed(() => getStorageTree(warehouseId.value).length > 0)
 const locationDrawerOpen = ref(false)
 const selectedLocations = ref<LocEntry[]>([])
-watch(warehouseId, () => { selectedLocations.value = [] })
+watch(warehouseId, () => { selectedLocations.value = []; bySkuSelected.value = []; pendingCountBy.value = null })
+
+const countBy = ref<'location' | 'sku'>('location')
+const pendingCountBy = ref<'location' | 'sku' | null>(null)
+
+const bySkuSelected = ref<string[]>([])
+const bySkuDrawerOpen = ref(false)
+
+function hasCountData(): boolean {
+  return selectedLocations.value.some(l => l.rows.length > 0) || bySkuSelected.value.length > 0
+}
+function requestSwitchCountBy(to: 'location' | 'sku') {
+  if (to === countBy.value) return
+  if (hasCountData()) { pendingCountBy.value = to; return }
+  applyCountBySwitch(to)
+}
+function applyCountBySwitch(to: 'location' | 'sku') {
+  countBy.value = to
+  selectedLocations.value = []
+  bySkuSelected.value = []
+  pendingCountBy.value = null
+}
+function confirmCountBySwitch() { if (pendingCountBy.value) applyCountBySwitch(pendingCountBy.value) }
+function cancelCountBySwitch() { pendingCountBy.value = null }
+
+function rebuildLocsBySkus(skus: string[]) {
+  if (!skus.length) { selectedLocations.value = []; return }
+  const wh = getWarehouseDetail(warehouseId.value)
+  if (!wh) { selectedLocations.value = []; return }
+  const allFlat = flatStorageNodes()
+  const locMap = new Map<string, LocEntry>()
+  for (const sku of skus) {
+    const stockIdx = wh.stock.findIndex(s => s.sku === sku)
+    const matchingNodes = stockIdx >= 0
+      ? allFlat.filter(n => stockIdx >= n.skuStart && stockIdx < n.skuStart + n.skuQty)
+      : []
+    for (const node of matchingNodes) {
+      if (!locMap.has(node.id)) {
+        const fullPath = findLocation(warehouseId.value, node.id)?.path.map(n => n.name).join(' / ') ?? node.name
+        locMap.set(node.id, { locId: node.id, fullPath, skuStart: node.skuStart, skuQty: node.skuQty, rows: [], productDrawerOpen: false })
+      }
+      const entry = locMap.get(node.id)!
+      if (!entry.rows.some(r => r.sku === sku)) {
+        const onHand = getLocationStock(warehouseId.value, node.skuStart, node.skuQty).find(s => s.sku === sku)?.onHand ?? 0
+        entry.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false })
+      }
+    }
+  }
+  selectedLocations.value = [...locMap.values()]
+}
+
+function applySkuPicker(skus: string[]) {
+  bySkuSelected.value = skus
+  rebuildLocsBySkus(skus)
+  bySkuDrawerOpen.value = false
+}
 
 interface FlatLoc { id: string; name: string; level: string; depth: number; skuStart: number; skuQty: number }
 function flatStorageNodes(): FlatLoc[] {
@@ -454,9 +516,19 @@ function removeLocRow(loc: LocEntry, sku: string) { loc.rows = loc.rows.filter(r
 function addProductsToLoc(loc: LocEntry, skus: string[]) {
   const existingSkus = new Set(loc.rows.map(r => r.sku))
   for (const sku of skus) {
-    if (!existingSkus.has(sku)) loc.rows.push({ sku, onHand: 0, counted: '', countedError: false, isAuto: false })
+    if (!existingSkus.has(sku)) {
+      const onHand = getLocationStock(warehouseId.value, loc.skuStart, loc.skuQty).find(s => s.sku === sku)?.onHand ?? 0
+      loc.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false })
+    }
   }
   loc.productDrawerOpen = false
+}
+
+function productsForLoc(loc: LocEntry): PickerProduct[] {
+  return getLocationStock(warehouseId.value, loc.skuStart, loc.skuQty).map(s => {
+    const p = productBySku(s.sku)
+    return { sku: s.sku, name: p?.name ?? s.sku, img: p?.img, desc: p?.desc }
+  })
 }
 
 // ── Sticky footer divider ────────────────────────────────────────────────────────
@@ -515,15 +587,21 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpFormErrorMessage>Please select a warehouse</MpFormErrorMessage>
           </MpFormControl>
 
-          <MpFormControl id="scf-account" class="scf-f-account">
+          <MpFormControl v-if="!isWms" id="scf-account" class="scf-f-account">
             <MpFormLabel>Account</MpFormLabel>
             <MpAutocomplete id="scf-account-ac" v-model="accountId" :data="acctOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width />
           </MpFormControl>
+
+          <MpFormControl v-if="isWms" id="scf-assignee" class="scf-f-assignee">
+            <MpFormLabel>Assignee</MpFormLabel>
+            <MpAutocomplete id="scf-assignee-ac" v-model="assignee" :data="assigneeOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width placeholder="Select assignee" />
+          </MpFormControl>
+
         </div>
 
         <!-- Product table toolbar -->
         <div class="scf-table-toolbar">
-          <MpPopover id="scf-progress" is-close-on-select>
+          <MpPopover v-if="!isWms" id="scf-progress" is-close-on-select>
             <MpPopoverTrigger>
               <button class="scf-progress-btn" :class="{ 'scf-progress-btn--placeholder': progress === '' }" type="button">
                 {{ progressLabel }}
@@ -548,15 +626,47 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
         <!-- Storage location mode -->
         <template v-if="hasStorageLocs">
-          <div class="scf-loc-banner">
-            This warehouse uses storage locations. Select a location before making adjustments.
+          <div class="scf-countby">
+            <span class="scf-countby-label">Count by</span>
+            <div class="scf-countby-wrap">
+              <div v-if="pendingCountBy" class="scf-countby-popover">
+                <p class="scf-countby-popover-text">Switching will clear all current entries.</p>
+                <div class="scf-countby-popover-btns">
+                  <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="cancelCountBySwitch">Cancel</button>
+                  <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmCountBySwitch">Switch</button>
+                </div>
+                <span class="scf-countby-popover-arrow" />
+              </div>
+              <div class="scf-countby-toggle">
+                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'location' }" type="button" @click="requestSwitchCountBy('location')">Location</button>
+                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'sku' }" type="button" @click="requestSwitchCountBy('sku')">SKU</button>
+              </div>
+            </div>
           </div>
-          <div class="scf-loc-actions">
-            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="locationDrawerOpen = true">
-              <MpIcon name="add" size="sm" />
-              Select locations
-            </button>
-          </div>
+
+          <template v-if="countBy === 'location'">
+            <div class="scf-loc-banner">
+              This warehouse uses storage locations. Select a location before making adjustments.
+            </div>
+            <div class="scf-loc-actions">
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="locationDrawerOpen = true">
+                <MpIcon name="add" size="sm" />
+                Select locations
+              </button>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="scf-loc-banner">
+              Select products to count. They'll be grouped by their storage location.
+            </div>
+            <div class="scf-loc-actions">
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="bySkuDrawerOpen = true">
+                <MpIcon name="add" size="sm" />
+                Select products
+              </button>
+            </div>
+          </template>
 
           <MpAccordion is-allow-multiple is-allow-toggle class="scf-loc-accordions">
             <MpAccordionItem
@@ -582,9 +692,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       <col class="scf-col-prod" />
                       <col class="scf-col-sku" />
                       <col class="scf-col-num" />
-                      <col class="scf-col-counted" />
-                      <col class="scf-col-num" />
                       <col class="scf-col-unit" />
+                      <col class="scf-col-spacer" />
                       <col class="scf-col-del" />
                     </colgroup>
                     <thead>
@@ -592,9 +701,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         <th class="scf-th">Product</th>
                         <th class="scf-th">SKU</th>
                         <th class="scf-th scf-th--num">On hand qty</th>
-                        <th class="scf-th scf-th--num">Counted qty</th>
-                        <th class="scf-th scf-th--num">Difference</th>
                         <th class="scf-th">Unit</th>
+                        <th class="scf-th" />
                         <th class="scf-th scf-th--del" />
                       </tr>
                     </thead>
@@ -612,30 +720,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         </td>
                         <td class="scf-td scf-td--muted">{{ row.sku }}</td>
                         <td class="scf-td scf-td--num">{{ row.onHand.toLocaleString('id-ID') }}</td>
-                        <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--batch-counted">
-                          <div class="scf-batch-row scf-batch-row--total">
-                            <span v-if="locBatchHasCounts(row)" class="scf-batch-total">{{ locBatchTotalFor(row).toLocaleString('id-ID') }}</span>
-                            <span v-else class="scf-batch-uncounted">Uncounted</span>
-                          </div>
-                          <div class="scf-batch-row scf-batch-row--action">
-                            <button class="scf-batch-link" type="button" @click="openLocBatchDrawer(row)">Manage batch</button>
-                          </div>
-                        </td>
-                        <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--batch-counted scf-td--serial">
-                          <div class="scf-batch-row scf-batch-row--total scf-batch-row--bare">
-                            <input :id="`scf-loc-${loc.locId}-${row.sku}`" class="scf-qty-input" type="text" inputmode="numeric" :value="row.counted" placeholder="0" @input="onLocCountedInput(row, $event)" />
-                          </div>
-                          <div class="scf-batch-row scf-batch-row--action">
-                            <button class="scf-batch-link" type="button" @click="openLocSerialDrawer(row)">Manage serial number</button>
-                          </div>
-                        </td>
-                        <td v-else class="scf-td scf-td--input">
-                          <input :id="`scf-loc-${loc.locId}-${row.sku}`" class="scf-qty-input" type="text" inputmode="numeric" :value="row.counted" placeholder="0" @input="onLocCountedInput(row, $event)" />
-                        </td>
-                        <td class="scf-td scf-td--num" :class="{ 'scf-diff--pos': (locDiff(row) ?? 0) > 0, 'scf-diff--neg': (locDiff(row) ?? 0) < 0, 'scf-diff--uncounted': locDiff(row) === null }">
-                          {{ locDiffLabel(row) }}
-                        </td>
                         <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
+                        <td class="scf-td" />
                         <td class="scf-td scf-td--del">
                           <button class="scf-del-btn" type="button" @click="removeLocRow(loc, row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
                         </td>
@@ -650,7 +736,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <!-- Product drawer per location -->
                 <SelectProductDrawer
                   v-model:open="loc.productDrawerOpen"
-                  :products="pickerProducts"
+                  :products="productsForLoc(loc)"
                   :model-value="loc.rows.map(r => r.sku)"
                   @save="skus => addProductsToLoc(loc, skus)"
                 />
@@ -793,11 +879,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">Cancel</button>
-      <button class="btn-enterprise btn-enterprise--secondary" @click="printStockCard">Print stock card</button>
       <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">Save</button>
     </footer>
 
     <SelectProductDrawer v-model:open="drawerOpen" :products="pickerProducts" :model-value="selectedSkus" @save="applyPicker" />
+    <SelectProductDrawer v-model:open="bySkuDrawerOpen" :products="pickerProducts" :model-value="bySkuSelected" @save="applySkuPicker" />
 
     <!-- Select locations drawer -->
     <Transition name="spd">
@@ -867,27 +953,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
       @update:open="serialDrawerOpen = false"
       @save="saveSerialLines"
     />
-    <ManageBatchDrawer
-      v-if="locBatchDrawerRow"
-      :open="locBatchDrawerOpen"
-      :sku="locBatchDrawerRow.sku"
-      :warehouse-id="warehouseId"
-      :model-value="locBatchDrawerRow.batchLines ?? []"
-      :location-on-hand="locBatchDrawerRow.onHand"
-      @update:open="locBatchDrawerOpen = $event"
-      @save="saveLocBatchLines"
-    />
-    <ManageSerialDrawer
-      v-if="locSerialDrawerRow"
-      :open="true"
-      :sku="locSerialDrawerRow.sku"
-      :warehouse-id="warehouseId"
-      :target-count="parseCounted(locSerialDrawerRow.counted)"
-      :model-value="(locSerialDrawerRow.serialLines ?? []).map(s => ({ serial: s }))"
-      :location-on-hand="locSerialDrawerRow.onHand"
-      @update:open="locSerialDrawerOpen = false"
-      @save="saveLocSerialLines"
-    />
   </div>
 </template>
 
@@ -910,16 +975,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-f-tags { grid-column: 3; grid-row: 1; }
 .scf-f-warehouse { grid-column: 1; grid-row: 2; }
 .scf-f-account { grid-column: 2; grid-row: 2; }
+.scf-f-assignee { grid-column: 2; grid-row: 2; }
+.scf-f-startdate { grid-column: 1; grid-row: 3; }
+.scf-f-enddate { grid-column: 2; grid-row: 3; }
 .scf-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .scf-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 .scf-datepicker { width: 100%; }
 .scf-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
-.scf-table-toolbar { margin-top: 32px; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
+.scf-table-toolbar { margin-top: 32px; display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%; }
 .scf-progress-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer; }
 .scf-progress-btn svg { color: var(--mp-icon-default); }
 .scf-progress-btn--placeholder { color: var(--mp-text-placeholder); }
-.scf-toolbar-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.scf-toolbar-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
 .scf-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 280px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
 .scf-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .scf-search-input::placeholder { color: var(--mp-text-placeholder); }
@@ -936,7 +1004,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-col-counted { width: 168px; }
 .scf-col-unit  { width: 72px; }
 .scf-col-del   { width: 44px; }
-.scf-col-prod { width: 26%; } .scf-col-sku { width: 12%; } .scf-col-num { width: 12%; } .scf-col-unit { width: 8%; } .scf-col-del { width: 44px; }
+.scf-col-prod { width: 26%; } .scf-col-sku { width: 12%; } .scf-col-num { width: 12%; } .scf-col-unit { width: 8%; } .scf-col-spacer { /* fills remaining width */ } .scf-col-del { width: 44px; }
+.scf-table--loc .scf-th { background: var(--mp-background-neutral-subtle); }
+.scf-table--loc .scf-td { background: var(--mp-background-neutral, #fff); }
 .scf-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
 .scf-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .scf-th--del { padding: 0; }
@@ -1006,8 +1076,37 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
 .scf-file-remove:hover { color: var(--mp-text-default); }
 
+/* Count by toggle */
+.scf-countby { margin-top: var(--mp-spacing-5); display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.scf-countby-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.scf-countby-toggle { display: flex; align-items: center; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; gap: 2px; }
+.scf-countby-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.scf-countby-btn:hover { color: var(--mp-text-default); }
+.scf-countby-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.scf-countby-wrap { position: relative; }
+.scf-countby-popover {
+  position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 200;
+  min-width: 260px;
+  background: var(--mp-background-stage, #fff);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-3);
+}
+.scf-countby-popover-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.scf-countby-popover-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
+.scf-countby-popover-arrow {
+  position: absolute; bottom: -5px; left: 18px;
+  width: 8px; height: 8px;
+  background: var(--mp-background-stage, #fff);
+  border-right: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default);
+  transform: rotate(45deg);
+}
+
 /* Storage location banner + actions */
-.scf-loc-banner { margin-top: var(--mp-spacing-5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+.scf-loc-banner { margin-top: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
 .scf-loc-actions { margin-top: 12px; }
 .scf-loc-accordions { margin-top: 20px; }
 

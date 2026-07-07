@@ -149,8 +149,11 @@ function saveSerialLines(serials: CommittedSerial[]) {
 }
 
 // ── Storage location drawer ────────────────────────────────────────────────────────
-const originLocationPaths = computed(() => stockLocationPaths(originId.value))
-const destLocationPaths = computed(() => stockLocationPaths(destId.value))
+// stockLocationPaths() is a sparse array with one entry per storage-capacity slot
+// (a bin repeats once per unit of its capacity) — dedupe before using it as a
+// dropdown's option list, or bins with capacity > 1 show up more than once.
+const originLocationPaths = computed(() => [...new Set(stockLocationPaths(originId.value).filter(Boolean))])
+const destLocationPaths = computed(() => [...new Set(stockLocationPaths(destId.value).filter(Boolean))])
 const originHasLocations = computed(() => originLocationPaths.value.length > 0)
 const destHasLocations = computed(() => destLocationPaths.value.length > 0)
 // bins in origin where the drawer's SKU actually has stock

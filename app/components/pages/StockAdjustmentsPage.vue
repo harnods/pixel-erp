@@ -15,11 +15,25 @@ import {
   adjustmentApprovalLog, deleteAdjustments, approveAdjustment, ADJUSTMENT_CATEGORIES,
   type StockAdjustment, type ApprovalLog,
 } from '~/data/stockAdjustments'
+import {
+  wmsStockAdjustments, wmsAdjustmentWarehouseOptions, deleteWmsAdjustments,
+} from '~/data/wmsStockAdjustments'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
 const route = useRoute()
 const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
+
+const { currentPageKey } = useNavigation()
+// WMS sub-pages use their own data store; ERP uses the shared stock adjustments store.
+const kindFilter = computed<'count' | 'in-out' | null>(() => {
+  if (currentPageKey.value === 'Stock count') return 'count'
+  if (currentPageKey.value === 'Stock inout') return 'in-out'
+  return null
+})
+const activeList    = computed(() => kindFilter.value ? wmsStockAdjustments : stockAdjustments)
+const activeWhOpts  = computed(() => kindFilter.value ? wmsAdjustmentWarehouseOptions() : adjustmentWarehouseOptions())
+function activeDelete(ids: string[]) { kindFilter.value ? deleteWmsAdjustments(ids) : deleteAdjustments(ids) }
 
 // ─── Approval view — demo toggle: "As user" (no Approve) vs "As manager" ──────
 const { viewAs, setViewAs } = useApprovalViewAs()
@@ -45,10 +59,16 @@ const columns: TableColumn[] = [
 // surfaces the memo under the adjustment number.
 const colVis = reactive<Record<string, boolean>>({
   ...Object.fromEntries(columns.map(c => [c.key, true])),
-  lastUpdated: false,
+  lastUpdated: kindFilter.value === 'in-out',
   memo: false,
 })
-const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
+const visibleColumns = computed(() =>
+  columns.filter(c =>
+    colVis[c.key]
+    && !(kindFilter.value && c.key === 'account')
+    && !(kindFilter.value === 'count' && c.key === 'category')
+  )
+)
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
 const columnItems = [
   { key: 'number', label: 'Number', disabled: true },
@@ -82,15 +102,16 @@ function setDemoState(s: DemoState) {
 // ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
 const warehouseFilter = ref('')
 const categoryFilter = ref('')
-const whOptions = computed(() => adjustmentWarehouseOptions())
+const whOptions = computed(() => activeWhOpts.value)
 const warehouseLabel = computed(() => whOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
 
 // ─── Rows (demo state → tab → warehouse/category filter; search handled below) ────
 const baseRows = computed<StockAdjustment[]>(() => {
   if (demoState.value === 'empty') return []
-  let list = [...stockAdjustments]
+  let list = [...activeList.value]
   if (isAwaiting.value) list = list.filter(a => a.status === 'draft')
   else list = list.filter(a => a.status !== 'draft')
+  if (kindFilter.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value) list = list.filter(a => a.warehouseId === warehouseFilter.value)
   if (categoryFilter.value) list = list.filter(a => a.category === categoryFilter.value)
   return list
@@ -105,7 +126,7 @@ const {
     || row.number.toLowerCase().includes(s)
     || row.warehouseName.toLowerCase().includes(s)
     || row.category.toLowerCase().includes(s)
-    || row.account.toLowerCase().includes(s),
+    || (!kindFilter.value && row.account.toLowerCase().includes(s)),
 })
 
 const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!categoryFilter.value)
@@ -171,7 +192,7 @@ function confirmDelete() {
     deleteError.value = 'Enter a reason for deleting'
     return
   }
-  deleteAdjustments(deleteIds.value)
+  activeDelete(deleteIds.value)
   _bulkDeselect?.()
   deleteOpen.value = false
 }
@@ -192,7 +213,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :has-active-filter="hasActiveFilter"
     :actions-width="actionsWidth"
     :has-checkbox="showCheckbox"
-    bulk-label="stock adjustment"
+    :bulk-label="kindFilter === 'count' ? 'stock count' : kindFilter === 'in-out' ? 'stock in/out' : 'stock adjustment'"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -412,24 +433,38 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No stock adjustments</p>
-        <p class="empty-full-desc">Correct on-hand stock from counts or manual in/out. Create your first stock adjustment to get started.</p>
-        <MpPopover id="sa-empty-new" is-close-on-select use-portal placement="bottom">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after empty-full-cta">
-              New stock adjustment
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="newAdjustment('count')">Stock count</MpPopoverListItem>
-              <MpPopoverListItem @click="newAdjustment('in-out')">Stock in/out</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <p class="empty-full-title">
+          {{ kindFilter === 'count' ? 'No stock counts' : kindFilter === 'in-out' ? 'No stock in/out' : 'No stock adjustments' }}
+        </p>
+        <p class="empty-full-desc">
+          {{ kindFilter === 'count' ? 'Record on-hand stock counts for your warehouse. Create your first stock count to get started.'
+           : kindFilter === 'in-out' ? 'Record manual stock movements in or out of your warehouse. Create your first entry to get started.'
+           : 'Correct on-hand stock from counts or manual in/out. Create your first stock adjustment to get started.' }}
+        </p>
+        <template v-if="kindFilter === 'count'">
+          <button class="btn-enterprise btn-enterprise--secondary empty-full-cta" @click="newAdjustment('count')">New stock count</button>
+        </template>
+        <template v-else-if="kindFilter === 'in-out'">
+          <button class="btn-enterprise btn-enterprise--secondary empty-full-cta" @click="newAdjustment('in-out')">New stock in/out</button>
+        </template>
+        <template v-else>
+          <MpPopover id="sa-empty-new" is-close-on-select use-portal placement="bottom">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after empty-full-cta">
+                New stock adjustment
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="newAdjustment('count')">Stock count</MpPopoverListItem>
+                <MpPopoverListItem @click="newAdjustment('in-out')">Stock in/out</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </template>
       </div>
     </template>
   </ErpTablePage>

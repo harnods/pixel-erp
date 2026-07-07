@@ -96,6 +96,10 @@ export interface StockAdjustment {
   /** Filled when the adjustment is approved (to populate approval log stage 2). */
   approvedAt?: string
   approvedBy?: string
+  /** WMS Stock count only */
+  assignee?: string
+  startDate?: string
+  endDate?: string
 }
 
 // Adjustments apply to real (non-default, active) warehouses — the default warehouse
@@ -197,6 +201,9 @@ export interface AdjustmentLine {
   difference: number
   unit: string
   averageCost: number
+  storageLocation: string
+  batchNumber?: string
+  batchExpiry?: string
 }
 
 /**
@@ -205,12 +212,17 @@ export interface AdjustmentLine {
  * 3–12 lines so some adjustments exercise the table's progressive pagination.
  */
 export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
-  // An adjustment created via the form carries its own lines. For a stock COUNT,
-  // l.qty is the counted qty → difference vs the warehouse's real on-hand. For stock
-  // IN/OUT, l.qty is the manual +/- movement (the difference).
+  const whDetail = getWarehouseDetail(a.warehouseId)
+  const locBySku = new Map<string, string>(
+    (whDetail?.stock ?? []).flatMap(s => s.locations.map(loc => [s.sku, loc] as [string, string]))
+  )
+  function locFor(sku: string): string {
+    return locBySku.get(sku) ?? '—'
+  }
+
   if (a.lines?.length) {
     const onHandBySku = a.kind === 'count'
-      ? new Map((getWarehouseDetail(a.warehouseId)?.stock ?? []).map(s => [s.sku, s.onHand]))
+      ? new Map((whDetail?.stock ?? []).map(s => [s.sku, s.onHand]))
       : null
     return a.lines
       .map((l) => {
@@ -222,6 +234,7 @@ export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
           return {
             key: l.sku, sku: l.sku, product,
             prevOnHand, counted, difference: counted - prevOnHand, unit: product.unit, averageCost: product.averageCost,
+            storageLocation: locFor(l.sku),
           }
         }
         const prevOnHand = 50 + (hash100(seedNum(a.id) + l.sku.length) % 150)
@@ -229,6 +242,7 @@ export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
         return {
           key: l.sku, sku: l.sku, product,
           prevOnHand, counted, difference: l.qty, unit: product.unit, averageCost: product.averageCost,
+          storageLocation: locFor(l.sku),
         }
       })
       .filter(Boolean) as AdjustmentLine[]
@@ -249,6 +263,7 @@ export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
     out.push({
       key: product.sku, sku: product.sku, product,
       prevOnHand, counted, difference: counted - prevOnHand, unit: product.unit, averageCost: product.averageCost,
+      storageLocation: locFor(product.sku),
     })
   }
   return out
@@ -368,6 +383,10 @@ export interface AdjustmentInput {
   tags: string[]
   memo?: string
   lines: { sku: string; qty: number }[]
+  /** WMS Stock count only */
+  assignee?: string
+  startDate?: string
+  endDate?: string
 }
 
 /** Create a new (awaiting-approval) adjustment from the create form. */

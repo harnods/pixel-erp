@@ -11,6 +11,7 @@ const props = defineProps<{
   countedTotal: number
   productName: string
   productImg: string
+  storageLocation?: string
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean] }>()
@@ -22,32 +23,64 @@ const warehouseStock = computed(() => {
 
 interface SerialRow { serial: string; location: string; counted: boolean }
 
-// Mark the first `countedTotal` serials as counted, the rest as not counted.
-const allRows = computed<SerialRow[]>(() => {
-  const serials = warehouseStock.value?.serials
-  if (!serials) return []
-  const all = [
-    ...serials.available.map(u => ({ serial: u.serial, location: u.location })),
-    ...serials.reserved.map(u => ({ serial: u.serial, location: u.location })),
-  ]
-  return all.map((u, i) => ({ ...u, counted: i < props.countedTotal }))
+const totalOnHand = computed(() => {
+  const s = warehouseStock.value?.serials
+  return s ? s.available.length + s.reserved.length : 0
 })
-
-const totalOnHand = computed(() => allRows.value.length)
 const difference = computed(() => props.countedTotal - totalOnHand.value)
 
+// Rows = all on-hand serials (first countedTotal marked counted, rest not counted)
+// + any extra serials found during count (counted > onHand → generate extras).
+const allRows = computed<SerialRow[]>(() => {
+  const serials = warehouseStock.value?.serials
+  const existing = serials ? [
+    ...serials.available.map(u => ({ serial: u.serial, location: u.location })),
+    ...serials.reserved.map(u => ({ serial: u.serial, location: u.location })),
+  ] : []
+
+  const counted = props.countedTotal
+  const loc = props.storageLocation
+  const rows: SerialRow[] = existing.map((u, i) => ({ serial: u.serial, location: loc ?? u.location, counted: i < counted }))
+
+  if (counted > existing.length) {
+    const prefix = (props.sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN')
+    const fallbackLoc = loc ?? existing[0]?.location ?? '—'
+    for (let i = existing.length; i < counted; i++) {
+      rows.push({
+        serial: `${prefix}${String(90000 + i).padStart(5, '0')}`,
+        location: fallbackLoc,
+        counted: true,
+      })
+    }
+  }
+
+  return rows
+})
+
+// ── Search ────────────────────────────────────────────────────────────────────
+const serialSearch = ref('')
+
+const filteredRows = computed<SerialRow[]>(() => {
+  const q = serialSearch.value.trim().toLowerCase()
+  if (!q) return allRows.value
+  return allRows.value.filter(r =>
+    r.serial.toLowerCase().includes(q) ||
+    r.location.toLowerCase().includes(q),
+  )
+})
+
 // ── Progressive pagination ────────────────────────────────────────────────────
-const PAGE_SIZE = 50
+const PAGE_SIZE = 20
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
-const visibleRows = computed(() => allRows.value.slice(0, shownCount.value))
-const hasMore = computed(() => shownCount.value < allRows.value.length)
+const visibleRows = computed(() => filteredRows.value.slice(0, shownCount.value))
+const hasMore = computed(() => shownCount.value < filteredRows.value.length)
 
 function loadMore() {
   if (loadingMore.value || !hasMore.value) return
   loadingMore.value = true
   setTimeout(() => {
-    shownCount.value = Math.min(shownCount.value + PAGE_SIZE, allRows.value.length)
+    shownCount.value = Math.min(shownCount.value + PAGE_SIZE, filteredRows.value.length)
     loadingMore.value = false
   }, 300)
 }
@@ -61,13 +94,18 @@ function setupObserver() {
   if (!contentEl.value || !sentinelEl.value) return
   observer = new IntersectionObserver(
     (entries) => { if (entries[0]!.isIntersecting) loadMore() },
-    { root: contentEl.value, rootMargin: '0px 0px 100px 0px' },
+    { root: contentEl.value, rootMargin: '0px 0px 80px 0px' },
   )
   observer.observe(sentinelEl.value)
 }
 
 watch(() => props.open, (isOpen) => {
-  if (!isOpen) return
+  if (!isOpen) { serialSearch.value = ''; return }
+  shownCount.value = PAGE_SIZE
+  nextTick(setupObserver)
+})
+
+watch(serialSearch, () => {
   shownCount.value = PAGE_SIZE
   nextTick(setupObserver)
 })
@@ -91,7 +129,7 @@ function close() { emit('update:open', false) }
         </button>
       </header>
 
-      <div ref="contentEl" class="vsd-content">
+      <div class="vsd-content">
 
         <!-- Product info bar -->
         <div class="vsd-info-bar">
@@ -105,7 +143,7 @@ function close() { emit('update:open', false) }
           </div>
           <div class="vsd-info-stats">
             <div class="vsd-stat">
-              <span class="vsd-stat-label">On hand qty</span>
+              <span class="vsd-stat-label">Prev. on hand qty</span>
               <span class="vsd-stat-value">{{ fmt(totalOnHand) }}</span>
             </div>
             <div class="vsd-stat">
@@ -122,8 +160,19 @@ function close() { emit('update:open', false) }
           </div>
         </div>
 
+        <!-- Filter bar -->
+        <div class="vsd-filter-bar">
+          <div class="vsd-filter-search-wrap">
+            <svg class="vsd-filter-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input v-model="serialSearch" class="vsd-filter-search" type="text" placeholder="Search..." />
+          </div>
+        </div>
+
         <!-- Table -->
-        <div class="vsd-table-wrap">
+        <div ref="contentEl" class="vsd-table-wrap">
           <table class="vsd-table">
             <colgroup>
               <col class="vsd-col-sn" />
@@ -146,18 +195,19 @@ function close() { emit('update:open', false) }
                   <MpBadge v-else variant="danger">Not counted</MpBadge>
                 </td>
               </tr>
-              <tr v-if="!allRows.length" class="vsd-tr">
-                <td colspan="3" class="vsd-td vsd-td--empty">No serial number data available.</td>
+              <tr v-if="!filteredRows.length" class="vsd-tr">
+                <td colspan="3" class="vsd-td vsd-td--empty">{{ serialSearch ? 'No serial numbers match your search.' : 'No serial number data available.' }}</td>
+              </tr>
+              <tr ref="sentinelEl" aria-hidden="true" class="vsd-sentinel-row"><td colspan="3" /></tr>
+              <tr v-if="loadingMore" class="vsd-tr">
+                <td colspan="3" class="vsd-td">
+                  <div class="vsd-loading-inner"><MpSpinner size="sm" /> Loading…</div>
+                </td>
               </tr>
             </tbody>
           </table>
-          <div ref="sentinelEl" class="vsd-sentinel" aria-hidden="true" />
-          <div v-if="loadingMore" class="vsd-loading">
-            <MpSpinner size="sm" /> Loading…
-          </div>
+          <p class="vsd-count">Showing {{ visibleRows.length }} of {{ filteredRows.length }} serial numbers<template v-if="serialSearch"> (filtered from {{ allRows.length }})</template></p>
         </div>
-
-        <p class="vsd-count">Showing {{ visibleRows.length }} of {{ allRows.length }} serial numbers</p>
 
       </div>
 
@@ -206,7 +256,7 @@ function close() { emit('update:open', false) }
 .vsd-close:hover { background: var(--mp-background-neutral-hovered); }
 
 .vsd-content {
-  flex: 1; min-height: 0; overflow-y: auto;
+  flex: 1; min-height: 0; overflow: hidden;
   padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 20px;
 }
 .vsd-content > * { flex-shrink: 0; }
@@ -236,10 +286,29 @@ function close() { emit('update:open', false) }
 .vsd-stat--pos .vsd-stat-value { color: var(--mp-text-success, #18794e); }
 .vsd-stat--neg .vsd-stat-value { color: var(--mp-text-danger, #a8352d); }
 
+.vsd-filter-bar { display: flex; justify-content: flex-end; }
+.vsd-filter-search-wrap {
+  position: relative; display: flex; align-items: center;
+  width: 220px;
+}
+.vsd-filter-search-icon {
+  position: absolute; left: var(--mp-spacing-3); color: var(--mp-icon-subtle); pointer-events: none; flex-shrink: 0;
+}
+.vsd-filter-search {
+  width: 100%; box-sizing: border-box;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-2) calc(var(--mp-spacing-3) + 16px + var(--mp-spacing-2));
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  background: var(--mp-background-neutral, #fff); outline: none;
+}
+.vsd-filter-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.vsd-filter-search::placeholder { color: var(--mp-text-placeholder); }
+
 .vsd-table-wrap {
+  flex: 1; min-height: 0;
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
-  overflow: hidden;
+  overflow-y: auto;
 }
 .vsd-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
 .vsd-col-sn     { width: 220px; }
@@ -264,21 +333,27 @@ function close() { emit('update:open', false) }
   background: var(--mp-background-neutral, #fff);
 }
 .vsd-td--muted { color: var(--mp-text-secondary); }
-.vsd-td--mono { font-family: monospace; font-size: var(--mp-font-sizes-md); }
+.vsd-td--mono { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); }
 .vsd-td--strike { text-decoration: line-through; }
 .vsd-td--status { padding: 8px var(--mp-spacing-2); }
-.vsd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
+.vsd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-8) 0; }
 
 /* Not-counted rows get danger-subtle background */
 .vsd-tr--removed .vsd-td { background: var(--mp-background-danger-subtle, #fff0ee); }
 
-.vsd-sentinel { height: 1px; }
-.vsd-loading {
+.vsd-sentinel-row { height: 0; }
+.vsd-sentinel-row td { padding: 0; border: none; height: 0; }
+.vsd-loading-inner {
   display: flex; align-items: center; justify-content: center;
-  gap: var(--mp-spacing-2); padding: var(--mp-spacing-3);
+  gap: var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-  background: var(--mp-background-neutral, #fff);
 }
-.vsd-count { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.vsd-count {
+  margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+  position: sticky; bottom: 0;
+  padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  background: var(--mp-background-neutral, #fff);
+  border-top: 1px solid var(--mp-border-default);
+}
 
 </style>

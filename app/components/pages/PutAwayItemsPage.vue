@@ -8,16 +8,29 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask } from '~/data/putAwayTasks'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
+import {
+  getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask,
+  type PutAwayBatchAssignment, type PutAwaySerialAssignment,
+} from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
+import { productBySku } from '~/data/inventory'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
 const task            = computed(() => getPutAwayTask(props.orderId))
 const lineItems       = computed(() => task.value ? getPutAwayLineItems(props.orderId) : [])
-const locationOptions = computed(() => task.value ? stockLocationPaths(task.value.warehouseId) : [])
+// stockLocationPaths() is a sparse array with one entry per storage-capacity slot
+// (a bin repeats once per unit of its capacity) — dedupe before using it as a
+// dropdown's option list, or bins with capacity > 1 show up more than once.
+const locationOptions = computed(() => {
+  if (!task.value) return []
+  return [...new Set(stockLocationPaths(task.value.warehouseId).filter(Boolean))]
+})
 
 // ── Draft rows — one per displayed table line (can be split into multiple) ────
 interface DraftRow {
@@ -54,11 +67,120 @@ const totalQtyBySkuCode = computed(() => {
   return map
 })
 
+// ── Batch / serial helpers (same heuristic as receiving / stock count / stock in-out) ──
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
+// ── Manage batch / Manage serial number — destination bin(s) per batch or serial,
+// seeded from what was recorded at receiving (or a previously-saved draft). Storage
+// location for these SKUs is decided entirely inside the drawers, never in the main
+// table — the table only shows a read-only summary of the bins actually used. ─────
+const batchLinesBySku  = ref<Record<string, CommittedBatch[]>>({})
+const serialLinesBySku = ref<Record<string, CommittedSerial[]>>({})
+
+watch(lineItems, (items) => {
+  const nextBatch: Record<string, CommittedBatch[]> = {}
+  const nextSerial: Record<string, CommittedSerial[]> = {}
+  const seen = new Set<string>()
+  for (const it of items) {
+    if (seen.has(it.skuCode)) continue
+    seen.add(it.skuCode)
+    if (it.batchLines?.length) {
+      nextBatch[it.skuCode] = it.batchLines.map(b => ({
+        key: b.batchNo,
+        batchNo: b.batchNo,
+        expiryDate: b.expiryDate,
+        desc: b.desc,
+        onHand: b.qty,
+        counted: b.destLocations?.length ? b.destLocations.reduce((s, d) => s + d.qty, 0) : null,
+        unit: b.unit,
+        destLocations: b.destLocations,
+      }))
+    }
+    if (it.serialAssignments?.length) {
+      nextSerial[it.skuCode] = it.serialAssignments.map(s => ({ serial: s.serial, destLocationId: s.destLocationId }))
+    }
+  }
+  batchLinesBySku.value = nextBatch
+  serialLinesBySku.value = nextSerial
+}, { immediate: true })
+
+const batchDrawerSku = ref<string | null>(null)
+const batchDrawerOpen = computed({
+  get: () => batchDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) batchDrawerSku.value = null },
+})
+function openBatchDrawer(skuCode: string) { batchDrawerSku.value = skuCode }
+function batchAssignedQty(skuCode: string): number {
+  return (batchLinesBySku.value[skuCode] ?? []).reduce(
+    (s, b) => s + (b.destLocations?.reduce((ss, d) => ss + d.qty, 0) ?? 0), 0,
+  )
+}
+function batchBins(skuCode: string): string[] {
+  const bins = new Set<string>()
+  for (const b of batchLinesBySku.value[skuCode] ?? []) {
+    for (const d of b.destLocations ?? []) if (d.qty > 0) bins.add(d.locationId)
+  }
+  return [...bins]
+}
+function saveBatchLines(batches: CommittedBatch[]) {
+  const sku = batchDrawerSku.value
+  if (!sku) return
+  batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: batches }
+}
+
+const serialDrawerSku = ref<string | null>(null)
+const serialDrawerOpen = computed({
+  get: () => serialDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) serialDrawerSku.value = null },
+})
+function openSerialDrawer(skuCode: string) { serialDrawerSku.value = skuCode }
+function serialAssignedQty(skuCode: string): number {
+  return (serialLinesBySku.value[skuCode] ?? []).filter(s => s.destLocationId).length
+}
+function serialBins(skuCode: string): string[] {
+  const bins = new Set<string>()
+  for (const s of serialLinesBySku.value[skuCode] ?? []) if (s.destLocationId) bins.add(s.destLocationId)
+  return [...bins]
+}
+function saveSerialLines(serials: CommittedSerial[]) {
+  const sku = serialDrawerSku.value
+  if (!sku) return
+  serialLinesBySku.value = { ...serialLinesBySku.value, [sku]: serials }
+}
+
+/** Read-only bin list shown in the main table for batch/serial-tracked SKUs —
+ * listed one per line rather than comma-joined, since a SKU can span several bins. */
+function binsList(skuCode: string): string[] {
+  return isBatchTrackedSku(skuCode) ? batchBins(skuCode) : serialBins(skuCode)
+}
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 const skuQty           = computed(() => new Set(lineItems.value.map(it => it.skuCode)).size)
 const receivedQty      = computed(() => lineItems.value.reduce((s, it) => s + it.qty, 0))
-const draftHandled     = computed(() => draftRows.value.reduce((s, r) => s + (r.qty || 0), 0))
-const draftOutstanding = computed(() => Math.max(0, receivedQty.value - draftHandled.value))
+// Batch/serial-tracked SKUs get their qty from bin assignments, not row.qty (each
+// such SKU has exactly one draftRow — "Split storage location" is hidden for them).
+const draftHandled = computed(() => draftRows.value.reduce((s, r) => {
+  if (isBatchTrackedSku(r.skuCode)) return s + batchAssignedQty(r.skuCode)
+  if (isSerialTrackedSku(r.skuCode)) return s + serialAssignedQty(r.skuCode)
+  return s + (r.qty || 0)
+}, 0))
 
 // ── Filter ────────────────────────────────────────────────────────────────────
 const filteredRows = computed(() => {
@@ -132,7 +254,21 @@ watch(search, () => {
 })
 
 // ── Qty to handle input ───────────────────────────────────────────────────────
-function onQtyInput(rowId: string, max: number, e: Event) {
+// Cap per row at what's left of the SKU's total once every OTHER split row for
+// that SKU is subtracted — a fixed max of the full total let two split rows each
+// take the full amount (e.g. 19 + 1 on a 19-unit SKU) without ever erroring.
+function remainingQtyFor(row: DraftRow): number {
+  const total = totalQtyBySkuCode.value.get(row.skuCode) ?? 0
+  const others = draftRows.value
+    .filter(r => r.skuCode === row.skuCode && r.id !== row.id)
+    .reduce((s, r) => s + (r.qty || 0), 0)
+  return Math.max(0, total - others)
+}
+
+function onQtyInput(rowId: string, e: Event) {
+  const row = draftRows.value.find(r => r.id === rowId)
+  if (!row) return
+  const max = remainingQtyFor(row)
   let n = Math.floor(Number((e.target as HTMLInputElement).value))
   if (!Number.isFinite(n) || n < 0) n = 0
   if (n > max) n = max
@@ -166,6 +302,9 @@ function locOptionsFiltered(rowId: string) {
   if (!q) return locationOptions.value
   return locationOptions.value.filter(loc => loc.toLowerCase().includes(q))
 }
+// First 3 options surface as "Recommended locations"; the rest sit below a divider.
+function recommendedLocOptions(rowId: string) { return locOptionsFiltered(rowId).slice(0, 3) }
+function otherLocOptions(rowId: string) { return locOptionsFiltered(rowId).slice(3) }
 
 function updateLocation(rowId: string, loc: string) {
   draftRows.value = draftRows.value.map(r => r.id === rowId ? { ...r, binLocation: loc } : r)
@@ -173,28 +312,96 @@ function updateLocation(rowId: string, loc: string) {
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
+// Plain SKUs contribute their draftRows as-is; batch/serial-tracked SKUs get
+// flattened from their per-bin drawer assignments into the same {skuCode, qty,
+// binLocation} shape, and their full assignment detail is kept for persistence
+// (so reopening a draft restores exactly which batch/serial went where).
+function buildItemsAndAssignments() {
+  const items: Array<{ skuCode: string; qty: number; binLocation: string }> = []
+  const batchAssignments: Record<string, PutAwayBatchAssignment[]> = {}
+  const serialAssignments: Record<string, PutAwaySerialAssignment[]> = {}
+  const seenTracked = new Set<string>()
+
+  for (const r of draftRows.value) {
+    if (isBatchTrackedSku(r.skuCode)) {
+      if (seenTracked.has(r.skuCode)) continue
+      seenTracked.add(r.skuCode)
+      const lines = batchLinesBySku.value[r.skuCode] ?? []
+      batchAssignments[r.skuCode] = lines.map(b => ({
+        batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.onHand, unit: b.unit,
+        destLocations: b.destLocations,
+      }))
+      const byBin = new Map<string, number>()
+      for (const b of lines) for (const d of b.destLocations ?? []) {
+        if (d.qty > 0) byBin.set(d.locationId, (byBin.get(d.locationId) ?? 0) + d.qty)
+      }
+      for (const [binLocation, qty] of byBin) items.push({ skuCode: r.skuCode, qty, binLocation })
+    } else if (isSerialTrackedSku(r.skuCode)) {
+      if (seenTracked.has(r.skuCode)) continue
+      seenTracked.add(r.skuCode)
+      const serials = serialLinesBySku.value[r.skuCode] ?? []
+      serialAssignments[r.skuCode] = serials.map(s => ({ serial: s.serial, destLocationId: s.destLocationId }))
+      const byBin = new Map<string, number>()
+      for (const s of serials) if (s.destLocationId) byBin.set(s.destLocationId, (byBin.get(s.destLocationId) ?? 0) + 1)
+      for (const [binLocation, qty] of byBin) items.push({ skuCode: r.skuCode, qty, binLocation })
+    } else {
+      items.push({ skuCode: r.skuCode, qty: r.qty, binLocation: r.binLocation })
+    }
+  }
+  return { items, assignments: { batchAssignments, serialAssignments } }
+}
+
+// Per-SKU check — an aggregate qty total can hit zero even when one SKU is
+// over-assigned and another under-assigned, or when a plain SKU's qty was entered
+// but never given a location. Every SKU must land on EXACTLY its received qty,
+// fully backed by a real storage location, for batch/serial/plain alike.
+function findIncompleteSku(): { name: string; reason: 'missing' | 'over' } | null {
+  const skus = new Set(draftRows.value.map(r => r.skuCode))
+  for (const sku of skus) {
+    const expected = totalQtyBySkuCode.value.get(sku) ?? 0
+    let assigned: number
+    let missingLocation: boolean
+
+    if (isBatchTrackedSku(sku)) {
+      assigned = batchAssignedQty(sku)
+      missingLocation = assigned < expected
+    } else if (isSerialTrackedSku(sku)) {
+      assigned = serialAssignedQty(sku)
+      missingLocation = assigned < expected
+    } else {
+      const rows = draftRows.value.filter(r => r.skuCode === sku)
+      assigned = rows.reduce((s, r) => s + (r.qty || 0), 0)
+      missingLocation = rows.some(r => (r.qty || 0) > 0 && !r.binLocation)
+    }
+
+    if (missingLocation || assigned !== expected) {
+      const name = itemBySkuCode.value.get(sku)?.productName ?? sku
+      return { name, reason: assigned > expected ? 'over' : 'missing' }
+    }
+  }
+  return null
+}
+
 function postPutAway() {
-  if (draftOutstanding.value > 0) {
-    toast.notify({ variant: 'danger', title: `${fmt(draftOutstanding.value)} units still need to be put away` })
+  const incomplete = findIncompleteSku()
+  if (incomplete) {
+    toast.notify({
+      variant: 'danger',
+      title: incomplete.reason === 'over'
+        ? `${incomplete.name}: put away qty exceeds received qty`
+        : `${incomplete.name}: select a storage location for the full received qty`,
+    })
     return
   }
-  const items = draftRows.value.map(r => ({
-    skuCode: r.skuCode,
-    qty: r.qty,
-    binLocation: r.binLocation,
-  }))
-  endPutAwayTask(props.orderId, items)
+  const { items, assignments } = buildItemsAndAssignments()
+  endPutAwayTask(props.orderId, items, assignments)
   toast.notify({ variant: 'success', title: 'Put-away finished' })
   router.push(`/put-away/${props.orderId}`)
 }
 
 function saveDraft() {
-  const items = draftRows.value.map(r => ({
-    skuCode: r.skuCode,
-    qty: r.qty,
-    binLocation: r.binLocation,
-  }))
-  savePutAwayDraft(props.orderId, items)
+  const { items, assignments } = buildItemsAndAssignments()
+  savePutAwayDraft(props.orderId, items, assignments)
   toast.notify({ variant: 'success', title: 'Put-away draft saved' })
   router.push(`/put-away/${props.orderId}`)
 }
@@ -325,20 +532,51 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ row.skuCode }}</td>
                   <!-- Received qty — merged, summed across all receiving tasks -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(totalQtyBySkuCode.get(row.skuCode) ?? 0) }}</td>
-                  <!-- Put away qty (editable — per split row) -->
-                  <td class="pi-td pi-td--input">
+                  <!-- Put away qty: batch/serial-tracked SKUs split into a value row +
+                       a "Manage batch"/"Manage serial number" row — storage location for
+                       them is decided entirely inside that drawer, never here. -->
+                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--batch-cell">
+                    <div class="pi-batch-cell-wrap">
+                      <div class="pi-batch-cell pi-batch-cell--total">
+                        <span class="pi-batch-val">{{ fmt(batchAssignedQty(row.skuCode)) }}</span>
+                      </div>
+                      <div class="pi-batch-cell pi-batch-cell--action">
+                        <button class="pi-batch-link" type="button" @click="openBatchDrawer(row.skuCode)">Manage batch</button>
+                      </div>
+                    </div>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--batch-cell">
+                    <div class="pi-batch-cell-wrap">
+                      <div class="pi-batch-cell pi-batch-cell--total">
+                        <span class="pi-batch-val">{{ fmt(serialAssignedQty(row.skuCode)) }}</span>
+                      </div>
+                      <div class="pi-batch-cell pi-batch-cell--action">
+                        <button class="pi-batch-link" type="button" @click="openSerialDrawer(row.skuCode)">Manage serial number</button>
+                      </div>
+                    </div>
+                  </td>
+                  <td v-else class="pi-td pi-td--input">
                     <input
                       class="pi-qty-input"
-                      type="number" min="0" :max="totalQtyBySkuCode.get(row.skuCode) ?? 0"
+                      type="number" min="0" :max="remainingQtyFor(row)"
                       :value="row.qty"
                       :aria-label="`Put away qty for ${itemBySkuCode.get(row.skuCode)?.productName}`"
-                      @input="onQtyInput(row.id, totalQtyBySkuCode.get(row.skuCode) ?? 0, $event)"
+                      @input="onQtyInput(row.id, $event)"
                     />
                   </td>
                   <!-- Unit — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.unit }}</td>
-                  <!-- Storage location (popover picker, per split row) -->
-                  <td class="pi-td pi-td--location">
+                  <!-- Storage location: read-only bin summary for batch/serial-tracked SKUs
+                       (no picker — that lives in the drawer); plain SKUs keep the picker. -->
+                  <td v-if="isBatchTrackedSku(row.skuCode) || isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--location-summary">
+                    <div class="pi-location-summary-wrap">
+                      <template v-if="binsList(row.skuCode).length">
+                        <span v-for="loc in binsList(row.skuCode)" :key="loc" class="pi-location-summary-item">{{ loc }}</span>
+                      </template>
+                      <span v-else class="pi-location-summary-item">—</span>
+                    </div>
+                  </td>
+                  <td v-else class="pi-td pi-td--location">
                     <MpPopover :id="`pi-loc-${row.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(row.id)">
                       <MpPopoverTrigger>
                         <div class="pi-loc-trigger">
@@ -347,7 +585,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                             type="text"
                             autocomplete="off"
                             :value="activeLocRowId === row.id ? locSearch : row.binLocation"
-                            placeholder="Select location"
+                            placeholder="Select storage location"
                             @focus="openLocPicker(row.id)"
                             @input="activeLocRowId = row.id; locSearch = ($event.target as HTMLInputElement).value"
                           />
@@ -357,16 +595,28 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                         </div>
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
-                        <MpPopoverList>
-                          <MpPopoverListItem v-for="loc in locOptionsFiltered(row.id)" :key="loc" :is-active="loc === row.binLocation" @click="updateLocation(row.id, loc)">{{ loc }}</MpPopoverListItem>
-                          <p v-if="!locOptionsFiltered(row.id).length" class="pi-loc-none">No locations found.</p>
-                        </MpPopoverList>
+                        <template v-if="locOptionsFiltered(row.id).length">
+                          <p class="pi-loc-section-heading">Recommended locations</p>
+                          <MpPopoverList>
+                            <MpPopoverListItem v-for="loc in recommendedLocOptions(row.id)" :key="loc" :is-active="loc === row.binLocation" @click="updateLocation(row.id, loc)">{{ loc }}</MpPopoverListItem>
+                          </MpPopoverList>
+                          <template v-if="otherLocOptions(row.id).length">
+                            <div class="pi-loc-divider" />
+                            <MpPopoverList>
+                              <MpPopoverListItem v-for="loc in otherLocOptions(row.id)" :key="loc" :is-active="loc === row.binLocation" @click="updateLocation(row.id, loc)">{{ loc }}</MpPopoverListItem>
+                            </MpPopoverList>
+                          </template>
+                        </template>
+                        <p v-else class="pi-loc-none">No locations found.</p>
                       </MpPopoverContent>
                     </MpPopover>
                   </td>
-                  <!-- Actions -->
+                  <!-- Actions — "Split storage location" only applies to plain SKUs -->
                   <td class="pi-td pi-td--action">
-                    <MpPopover :id="`pi-row-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                    <MpPopover
+                      v-if="!isBatchTrackedSku(row.skuCode) && !isSerialTrackedSku(row.skuCode)"
+                      :id="`pi-row-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
+                    >
                       <MpPopoverTrigger>
                         <button class="pi-row-kebab" aria-label="More actions">
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -413,7 +663,29 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <button class="detail-breadcrumb" @click="goPutAway">Back to Put-away</button>
   </div>
 
-
+  <ManageBatchDrawer
+    v-if="batchDrawerSku"
+    :open="batchDrawerOpen"
+    :sku="batchDrawerSku"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="put-away"
+    :dest-location-paths="locationOptions"
+    :model-value="batchLinesBySku[batchDrawerSku] ?? []"
+    @update:open="batchDrawerOpen = $event"
+    @save="saveBatchLines"
+  />
+  <ManageSerialDrawer
+    v-if="serialDrawerSku"
+    :open="true"
+    :sku="serialDrawerSku"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="put-away"
+    :target-count="(serialLinesBySku[serialDrawerSku] ?? []).length"
+    :dest-location-paths="locationOptions"
+    :model-value="serialLinesBySku[serialDrawerSku] ?? []"
+    @update:open="serialDrawerOpen = $event"
+    @save="saveSerialLines"
+  />
 </template>
 
 <style scoped>
@@ -548,6 +820,32 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-loc-input::placeholder { color: var(--mp-text-placeholder); }
 .pi-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
 .pi-loc-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
+.pi-loc-section-heading { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pi-loc-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
+
+/* Storage location — read-only bin summary for batch/serial-tracked SKUs.
+   The flex layout lives on an inner wrapper div, not the <td> itself — display:flex
+   directly on a <td> breaks the browser's native table-row height stretch, so the
+   <td> stays a normal table cell and the wrapper's height:100% fills whatever
+   height the row ends up being (matching the "Unit" column exactly). */
+.pi-td--location-summary {
+  padding: 0; color: var(--mp-text-default);
+  background: var(--mp-background-neutral-subtle);
+  vertical-align: top;
+}
+.pi-location-summary-wrap { display: flex; flex-direction: column; height: 100%; }
+.pi-location-summary-item { display: flex; align-items: center; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
+.pi-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
+
+/* Batch/serial-tracked put away qty — value row + Manage batch/SN action row.
+   Same wrapper-div pattern as .pi-td--location-summary above. */
+.pi-td--batch-cell { padding: 0; background: var(--mp-background-neutral-subtle); vertical-align: top; }
+.pi-batch-cell-wrap { display: flex; flex-direction: column; height: 100%; }
+.pi-batch-cell { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
+.pi-batch-cell--total { border-bottom: 1px solid var(--mp-border-default); }
+.pi-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pi-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
+.pi-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── Row actions (kebab) ─────────────────────────────────────────────────────── */
 .pi-row-kebab {

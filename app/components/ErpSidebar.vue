@@ -449,7 +449,16 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Outbound delivery', icon: 'sales' },
     { name: 'Inbound delivery', icon: 'cart' },
   ],
-  stockCountNav,
+  [
+    {
+      name: 'Stock adjustments', icon: 'table-view-list',
+      panelSubmenu: [[
+        { label: 'Stock count' },
+        { label: 'Cycle count' },
+        { label: 'Stock in/out' },
+      ]],
+    },
+  ],
   [
     { name: 'Settings', icon: 'settings', panelSubmenu: wmsSettingsPanelSubmenu },
   ],

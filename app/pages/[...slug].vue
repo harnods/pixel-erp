@@ -42,6 +42,8 @@ const pageRegistry: Record<string, Component> = {
   'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Stock adjustments': defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock count':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
@@ -347,6 +349,8 @@ function newStockAdjustment(kind: 'count' | 'in-out') {
   stockActionsOpen.value = false
   router.push({ path: '/stock-adjustments/new', query: { type: kind } })
 }
+function newStockCount()  { router.push({ path: '/stock-adjustments/new', query: { type: 'count' } }) }
+function newStockInOut()  { router.push({ path: '/stock-adjustments/new', query: { type: 'in-out' } }) }
 
 // ── Chat sessions + history ───────────────────────────────────────────────
 interface ChatMessage {
@@ -820,6 +824,18 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newWarehouseTransfer">
             <MpIcon name="add" size="md" color="icon.inverse" />
             New warehouse transfer
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Stock count'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockCount">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            New stock count
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Stock inout'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockInOut">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            New stock in/out
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock adjustments'" class="page-title-actions">

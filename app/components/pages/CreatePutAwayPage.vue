@@ -137,7 +137,9 @@ const skuRows = computed<SkuRow[]>(() => {
     if (!po) continue
     const task = po.tasks.find(tk => tk.id === t.id)
     if (!task) continue
-    const items = getTaskLineItems(task, t.purchaseNo)
+    // Partial reception: some SKUs on the task may have 0 received qty — nothing
+    // to put away for those, so exclude them from the scope.
+    const items = getTaskLineItems(task, t.purchaseNo).filter(item => item.receivedQty > 0)
     items.forEach((item, i) => {
       rows.push({
         ...item,

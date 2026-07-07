@@ -23,8 +23,8 @@ const props = defineProps<{
   warehouseId: string
   targetCount: number
   modelValue: CommittedSerial[]
-  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer */
-  kind?: 'count' | 'in-out' | 'transfer'
+  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer; 'receiving' = PO receiving; 'put-away' = assign received serials to bins */
+  kind?: 'count' | 'in-out' | 'transfer' | 'receiving' | 'put-away'
   /** Signed delta for in-out mode (e.g. +2 stock in, -5 stock out). */
   delta?: number
   /**
@@ -89,6 +89,14 @@ watch(() => props.open, (isOpen) => {
         destLocId: '',
       })),
     ]
+  } else if (props.kind === 'put-away') {
+    // Fixed set of serials received for this SKU — none addable/removable here,
+    // the operator just assigns each one a destination bin.
+    rows.value = props.modelValue.map(cs => ({
+      serial: cs.serial,
+      counted: true,
+      destLocId: cs.destLocationId ?? '',
+    }))
   } else if (props.modelValue.length > 0) {
     const countedSet = new Set(props.modelValue.map(cs => cs.serial))
     const seen = new Set<string>()
@@ -129,14 +137,23 @@ const onHandCount = computed(() =>
 const countedCount = computed(() => rows.value.filter(r => r.counted).length)
 // Info bar stats are driven by targetCount (what user entered in the form), not table state
 const difference = computed(() => props.targetCount - onHandCount.value)
-const isInOut = computed(() => props.kind === 'in-out' || props.kind === 'transfer')
+const isInOut = computed(() =>
+  props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away',
+)
 const isTransfer = computed(() => props.kind === 'transfer')
-const qtyLabel = computed(() => props.kind === 'transfer' ? 'Transfer qty' : 'Stock in/out qty')
+const isReceiving = computed(() => props.kind === 'receiving')
+const isPutAway = computed(() => props.kind === 'put-away')
+const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
+const qtyLabel = computed(() => {
+  if (props.kind === 'transfer') return 'Transfer qty'
+  if (props.kind === 'receiving' || props.kind === 'put-away') return 'Received qty'
+  return 'Stock in/out qty'
+})
 const signedDelta = computed(() => props.delta ?? 0)
 const newOnHand = computed(() => onHandCount.value + signedDelta.value)
-// for in-out, target = new on-hand (e.g. 20 ± delta); validation counts checked rows
+// for in-out/receiving, target = new on-hand (e.g. 20 ± delta); validation counts checked rows
 const effectiveTargetCount = computed(() =>
-  props.kind === 'in-out' ? newOnHand.value : props.targetCount
+  (props.kind === 'in-out' || props.kind === 'receiving') ? newOnHand.value : props.targetCount
 )
 const afterTransferCount = computed(() => onHandCount.value - countedCount.value)
 
@@ -186,11 +203,16 @@ function locOptions(search: string): string[] {
   const q = search.trim().toLowerCase()
   return (props.destLocationPaths ?? []).filter(p => !q || p.toLowerCase().includes(q))
 }
+// First 3 options surface as "Recommended locations"; the rest sit below a divider.
+function recommendedLocOptions(search: string) { return locOptions(search).slice(0, 3) }
+function otherLocOptions(search: string) { return locOptions(search).slice(3) }
 function setDestLoc(row: SerialRow, locId: string) {
   row.destLocId = locId
   locActiveKey.value = null
 }
-const colspanCount = computed(() => 3 + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0))
+const colspanCount = computed(() =>
+  (isPutAway.value ? 2 : 3) + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0),
+)
 
 function handleCancel() {
   emit('update:open', false)
@@ -241,12 +263,19 @@ function handleSave() {
             </div>
           </div>
           <div class="msn-info-stats">
-            <div class="msn-stat">
+            <div v-if="!hideStockStats" class="msn-stat">
               <span class="msn-stat-label">{{ isTransfer ? 'Available qty' : 'On hand qty' }}</span>
               <span class="msn-stat-value">{{ fmtSerial(onHandCount) }}</span>
             </div>
+            <!-- receiving / put-away stats -->
+            <template v-if="hideStockStats">
+              <div class="msn-stat">
+                <span class="msn-stat-label">{{ qtyLabel }}</span>
+                <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
+              </div>
+            </template>
             <!-- stock count stats -->
-            <template v-if="!isInOut">
+            <template v-else-if="!isInOut">
               <div class="msn-stat">
                 <span class="msn-stat-label">Counted qty</span>
                 <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
@@ -282,15 +311,18 @@ function handleSave() {
         </div>
 
         <div v-if="!isTransfer" class="msn-form-section">
-          <label class="msn-form-label">Serial number</label>
-          <textarea
-            v-model="inputText"
-            class="msn-textarea"
-            placeholder="Paste or type serial numbers here. Supports comma-separated or one per line."
-          />
-          <div class="msn-form-action">
-            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addToList">Add to list</button>
-          </div>
+          <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins. -->
+          <template v-if="!isPutAway">
+            <label class="msn-form-label">Serial number</label>
+            <textarea
+              v-model="inputText"
+              class="msn-textarea"
+              placeholder="Paste or type serial numbers here. Supports comma-separated or one per line."
+            />
+            <div class="msn-form-action">
+              <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addToList">Add to list</button>
+            </div>
+          </template>
           <p v-if="saveError" class="msn-save-error">{{ saveError }}</p>
         </div>
 
@@ -310,7 +342,7 @@ function handleSave() {
               <col v-if="hasOriginLoc" class="msn-col-from-bin" />
               <col v-if="hasDestLoc" class="msn-col-to-bin" />
               <col class="msn-col-status" />
-              <col class="msn-col-toggle" />
+              <col v-if="!isPutAway" class="msn-col-toggle" />
             </colgroup>
             <thead>
               <tr>
@@ -318,7 +350,7 @@ function handleSave() {
                 <th v-if="hasOriginLoc" class="msn-th">ORIGIN LOCATION</th>
                 <th v-if="hasDestLoc" class="msn-th">INTO LOCATION</th>
                 <th class="msn-th">STATUS</th>
-                <th class="msn-th msn-th--del" />
+                <th v-if="!isPutAway" class="msn-th msn-th--del" />
               </tr>
             </thead>
             <tbody>
@@ -351,16 +383,30 @@ function handleSave() {
                           <svg class="msn-bin-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </div>
                       </MpPopoverTrigger>
-                      <MpPopoverContent>
-                        <MpPopoverList>
-                          <MpPopoverListItem
-                            v-for="opt in locOptions(locSearches[row.serial] ?? '')"
-                            :key="opt"
-                            :is-active="opt === row.destLocId"
-                            @click="setDestLoc(row, opt)"
-                          >{{ opt }}</MpPopoverListItem>
-                          <p v-if="!locOptions(locSearches[row.serial] ?? '').length" class="msn-loc-none">No locations found.</p>
-                        </MpPopoverList>
+                      <MpPopoverContent :class="css({ width: '280px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
+                        <template v-if="locOptions(locSearches[row.serial] ?? '').length">
+                          <p class="msn-loc-section-heading">Recommended locations</p>
+                          <MpPopoverList>
+                            <MpPopoverListItem
+                              v-for="opt in recommendedLocOptions(locSearches[row.serial] ?? '')"
+                              :key="opt"
+                              :is-active="opt === row.destLocId"
+                              @click="setDestLoc(row, opt)"
+                            >{{ opt }}</MpPopoverListItem>
+                          </MpPopoverList>
+                          <template v-if="otherLocOptions(locSearches[row.serial] ?? '').length">
+                            <div class="msn-loc-divider" />
+                            <MpPopoverList>
+                              <MpPopoverListItem
+                                v-for="opt in otherLocOptions(locSearches[row.serial] ?? '')"
+                                :key="opt"
+                                :is-active="opt === row.destLocId"
+                                @click="setDestLoc(row, opt)"
+                              >{{ opt }}</MpPopoverListItem>
+                            </MpPopoverList>
+                          </template>
+                        </template>
+                        <p v-else class="msn-loc-none">No locations found.</p>
                       </MpPopoverContent>
                     </MpPopover>
                   </template>
@@ -370,12 +416,16 @@ function handleSave() {
                     <MpBadge v-if="row.reserved" type="warning">Reserved</MpBadge>
                     <MpBadge v-else-if="row.counted" type="success">Selected</MpBadge>
                   </template>
+                  <template v-else-if="isPutAway">
+                    <MpBadge v-if="row.destLocId" type="success">Assigned</MpBadge>
+                    <MpBadge v-else type="warning">Unassigned</MpBadge>
+                  </template>
                   <template v-else>
                     <MpBadge v-if="row.counted" type="success">Counted</MpBadge>
                     <MpBadge v-else type="danger">Not counted</MpBadge>
                   </template>
                 </td>
-                <td class="msn-td msn-td--del">
+                <td v-if="!isPutAway" class="msn-td msn-td--del">
                   <button
                     class="msn-toggle-btn"
                     :class="[
@@ -592,6 +642,8 @@ function handleSave() {
 .msn-bin-input::placeholder { color: var(--mp-text-placeholder); }
 .msn-bin-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
 .msn-loc-none { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.msn-loc-section-heading { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.msn-loc-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
 
 .msn-toggle-btn {
   display: flex; align-items: center; justify-content: center;

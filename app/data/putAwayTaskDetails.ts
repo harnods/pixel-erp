@@ -1,4 +1,7 @@
-import { putAwayTasks, type PutAwayTask } from './putAwayTasks'
+import {
+  putAwayTasks, type PutAwayTask,
+  type PutAwayBatchAssignment, type PutAwaySerialAssignment,
+} from './putAwayTasks'
 import { getReceivingTask } from './receivingTasks'
 import { CATALOG } from './catalog'
 import { binForSku } from './warehouseDetails'
@@ -13,6 +16,10 @@ export interface PutAwayLineItem {
   binLocation: string
   unit: string
   receivingTaskNo: string
+  /** Batch-tracked SKUs only — undefined if the SKU isn't batch-tracked. */
+  batchLines?: PutAwayBatchAssignment[]
+  /** Serial-tracked SKUs only — undefined if the SKU isn't serial-tracked. */
+  serialAssignments?: PutAwaySerialAssignment[]
 }
 
 function strSeed(s: string): number {
@@ -20,6 +27,32 @@ function strSeed(s: string): number {
 }
 
 const CATALOG_BY_SKU = new Map(CATALOG.map((p) => [p.sku, p]))
+
+/** The source ReceivingItem for a SKU, across this put-away's bundled receiving tasks. */
+function sourceReceivingItem(task: PutAwayTask, skuCode: string) {
+  for (const rtId of task.receivingTaskIds) {
+    const rt = getReceivingTask(rtId)
+    const it = rt?.items.find((x) => x.sku === skuCode)
+    if (it) return it
+  }
+  return undefined
+}
+
+/** Batch destination assignments for a SKU — saved progress wins, else fresh from receiving. */
+function batchLinesFor(task: PutAwayTask, skuCode: string): PutAwayBatchAssignment[] | undefined {
+  const saved = task.batchAssignments?.[skuCode]
+  if (saved) return saved
+  const src = sourceReceivingItem(task, skuCode)?.batchLines
+  return src?.length ? src.map((b) => ({ ...b })) : undefined
+}
+
+/** Serial destination assignments for a SKU — saved progress wins, else fresh from receiving. */
+function serialAssignmentsFor(task: PutAwayTask, skuCode: string): PutAwaySerialAssignment[] | undefined {
+  const saved = task.serialAssignments?.[skuCode]
+  if (saved) return saved
+  const src = sourceReceivingItem(task, skuCode)?.serialNumbers
+  return src?.length ? src.map((serial) => ({ serial })) : undefined
+}
 
 /**
  * Put-away line items = the SKUs received by the bundled receiving task(s), with
@@ -65,6 +98,8 @@ export function getPutAwayLineItems(taskId: string): PutAwayLineItem[] {
         binLocation: ci.binLocation,
         unit: m?.unit ?? 'Unit',
         receivingTaskNo: m?.receivingTaskNo ?? '',
+        batchLines: batchLinesFor(task, ci.skuCode),
+        serialAssignments: serialAssignmentsFor(task, ci.skuCode),
       }
     })
   }
@@ -96,6 +131,8 @@ export function getPutAwayLineItems(taskId: string): PutAwayLineItem[] {
         binLocation: binForSku(task.warehouseId, it.sku),
         unit: it.unit || p?.unit || 'Unit',
         receivingTaskNo: rt.taskNo,
+        batchLines: batchLinesFor(task, it.sku),
+        serialAssignments: serialAssignmentsFor(task, it.sku),
       })
       i++
     }
