@@ -10,10 +10,12 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
 import { receiptsForStage, closeReceipt, type Receipt } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
+import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { receivedSummaryForReceipt, canCreateReceivingTask } from '~/data/receivingTasks'
 
 const props = defineProps<{ orderId: string }>()
@@ -134,6 +136,9 @@ const linkedReceivings = computed(() => getPurchaseReceivingsForReceipt(props.or
 
 // ── Linked put-away tasks ──────────────────────────────────────────────────────
 const linkedPutAways = computed(() => getPutAwayForReceipt(props.orderId))
+function paSkuQty(taskId: string) { return getPutAwayLineItems(taskId).length }
+function paReceivedQty(taskId: string) { return getPutAwayLineItems(taskId).reduce((s, i) => s + i.qty, 0) }
+function paPutAwayQty(taskId: string) { return getPutAwayLineItems(taskId).reduce((s, i) => s + i.stored, 0) }
 
 // ── Create purchase receiving (full page) ───────────────────────────────────────
 function openPurchaseReceiving() { router.push(`/inbound-delivery/${props.orderId}/receive`) }
@@ -364,10 +369,10 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                     <td class="detail-td detail-td--num">{{ formatNum(pr.purchaseQty) }}</td>
                     <td class="detail-td detail-td--num">{{ formatNum(pr.receivedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pr.status" /></td>
-                    <td class="detail-td">{{ pr.startDate ? formatDateNumeric(pr.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ pr.startDate ? formatDateTime(pr.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        <span v-if="pr.endDate">{{ formatDateNumeric(pr.endDate) }}</span>
+                        <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
                       </span>
@@ -389,12 +394,18 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                   <col />
                   <col />
                   <col />
+                  <col />
+                  <col />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Assignee</th>
                     <th class="detail-th">Status</th>
+                    <th class="detail-th detail-th--num">SKU qty</th>
+                    <th class="detail-th detail-th--num">Received qty</th>
+                    <th class="detail-th detail-th--num">Put-away qty</th>
                     <th class="detail-th">Start date</th>
                     <th class="detail-th">End date</th>
                   </tr>
@@ -415,10 +426,13 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                     </td>
                     <td class="detail-td">{{ pa.assignee }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
-                    <td class="detail-td">{{ pa.startDate ? formatDateNumeric(pa.startDate) : '—' }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(paSkuQty(pa.id)) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(paReceivedQty(pa.id)) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(paPutAwayQty(pa.id)) }}</td>
+                    <td class="detail-td">{{ pa.startDate ? formatDateTime(pa.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        <span v-if="pa.endDate">{{ formatDateNumeric(pa.endDate) }}</span>
+                        <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
                       </span>
@@ -469,12 +483,12 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem @click="openCloseModal">Close</MpPopoverListItem>
+              <MpPopoverListItem @click="openCloseModal">Close receipt</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
       </div>
-      <button v-else class="detail-btn detail-btn--secondary" @click="openCloseModal">Close</button>
+      <button v-else class="detail-btn detail-btn--secondary" @click="openCloseModal">Close receipt</button>
     </div>
 
 

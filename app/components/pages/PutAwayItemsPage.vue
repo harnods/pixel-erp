@@ -8,6 +8,7 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import {
@@ -310,6 +311,123 @@ function updateLocation(rowId: string, loc: string) {
   draftRows.value = draftRows.value.map(r => r.id === rowId ? { ...r, binLocation: loc } : r)
 }
 
+// ── Scan bar ──────────────────────────────────────────────────────────────────
+const activeBin  = ref<string | null>(null)
+const flashRowId = ref<string | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | null = null
+
+function handleScan(rawValue: string) {
+  const v = rawValue.trim()
+  if (!v) return
+
+  // Bin scan
+  if (locationOptions.value.includes(v)) {
+    activeBin.value = v
+    return
+  }
+
+  // SKU scan — only for plain (non-batch, non-serial) rows
+  const bin = activeBin.value
+  const skuRows = draftRows.value.filter(r =>
+    r.skuCode === v && !isBatchTrackedSku(r.skuCode) && !isSerialTrackedSku(r.skuCode),
+  )
+  if (skuRows.length) {
+    const binRow = bin ? skuRows.find(r => r.binLocation === bin) : null
+
+    if (bin && !binRow) {
+      // Active bin differs from every existing row → auto-split a new row for this bin
+      const totalQty    = totalQtyBySkuCode.value.get(v) ?? 0
+      const assignedQty = skuRows.reduce((s, r) => s + (r.qty || 0), 0)
+      if (assignedQty >= totalQty) {
+        toast.notify({ variant: 'error', title: `${v}: received qty already fully assigned`, maxWidth: 'max-content' })
+        return
+      }
+      const newRow: DraftRow = { id: newRowId(), skuCode: v, qty: 1, binLocation: bin }
+      const lastSkuIdx = draftRows.value.reduce((acc, r, i) => r.skuCode === v ? i : acc, -1)
+      const next = [...draftRows.value]
+      next.splice(lastSkuIdx + 1, 0, newRow)
+      draftRows.value = next
+      flashRowId.value = newRow.id
+      if (flashTimer) clearTimeout(flashTimer)
+      flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+      return
+    }
+
+    // Update existing row — prefer matching-bin row > unassigned row > first row
+    const target = binRow ?? skuRows.find(r => !r.binLocation) ?? skuRows[0]!
+    const cap = remainingQtyFor(target)
+    if (cap === 0) {
+      toast.notify({ variant: 'error', title: `${v}: received qty already fully assigned`, maxWidth: 'max-content' })
+      return
+    }
+    const nextBin = target.binLocation || bin || ''
+    draftRows.value = draftRows.value.map(r =>
+      r.id === target.id ? { ...r, qty: Math.min((r.qty || 0) + 1, cap), binLocation: nextBin } : r,
+    )
+    flashRowId.value = target.id
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+    return
+  }
+
+  // Batch number scan — find the batch across all batch-tracked SKUs
+  for (const [skuCode, batches] of Object.entries(batchLinesBySku.value)) {
+    const bIdx = batches.findIndex(b => b.batchNo === v)
+    if (bIdx !== -1) {
+      if (!bin) {
+        toast.notify({ variant: 'error', title: 'Scan a bin first before scanning batch numbers', maxWidth: 'max-content' })
+        return
+      }
+      const batch = batches[bIdx]!
+      const totalAssigned = (batch.destLocations ?? []).reduce((s, d) => s + d.qty, 0)
+      if (totalAssigned >= batch.onHand) {
+        toast.notify({ variant: 'error', title: `${v}: batch qty fully assigned`, maxWidth: 'max-content' })
+        return
+      }
+      const newDest = [...(batch.destLocations ?? [])]
+      const dIdx = newDest.findIndex(d => d.locationId === bin)
+      if (dIdx !== -1) {
+        newDest[dIdx] = { locationId: bin, qty: newDest[dIdx]!.qty + 1 }
+      } else {
+        newDest.push({ locationId: bin, qty: 1 })
+      }
+      batchLinesBySku.value = {
+        ...batchLinesBySku.value,
+        [skuCode]: batches.map((b, i) => i === bIdx ? { ...b, destLocations: newDest } : b),
+      }
+      const row = draftRows.value.find(r => r.skuCode === skuCode)
+      if (row) {
+        flashRowId.value = row.id
+        if (flashTimer) clearTimeout(flashTimer)
+        flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+      }
+      return
+    }
+  }
+
+  // Serial number scan — find the serial across all serial-tracked SKUs
+  for (const [skuCode, serials] of Object.entries(serialLinesBySku.value)) {
+    const idx = serials.findIndex(s => s.serial === v)
+    if (idx !== -1) {
+      if (!bin) {
+        toast.notify({ variant: 'error', title: 'Scan a bin first before scanning serial numbers', maxWidth: 'max-content' })
+        return
+      }
+      const updated = serials.map((s, i) => i === idx ? { ...s, destLocationId: bin } : s)
+      serialLinesBySku.value = { ...serialLinesBySku.value, [skuCode]: updated }
+      const row = draftRows.value.find(r => r.skuCode === skuCode)
+      if (row) {
+        flashRowId.value = row.id
+        if (flashTimer) clearTimeout(flashTimer)
+        flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+      }
+      return
+    }
+  }
+
+  toast.notify({ variant: 'error', title: `Barcode not found: "${v}"`, maxWidth: 'max-content' })
+}
+
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 // Plain SKUs contribute their draftRows as-is; batch/serial-tracked SKUs get
@@ -386,10 +504,11 @@ function postPutAway() {
   const incomplete = findIncompleteSku()
   if (incomplete) {
     toast.notify({
-      variant: 'danger',
+      variant: 'error',
       title: incomplete.reason === 'over'
         ? `${incomplete.name}: put away qty exceeds received qty`
         : `${incomplete.name}: select a storage location for the full received qty`,
+      maxWidth: 'max-content',
     })
     return
   }
@@ -438,6 +557,7 @@ onUnmounted(() => {
   stageObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
   itemsObserver?.disconnect()
+  if (flashTimer) clearTimeout(flashTimer)
 })
 watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 </script>
@@ -491,9 +611,24 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pi-search" type="text" placeholder="Search product, SKU, or location…" />
+            <input v-model="search" class="pi-search" type="text" placeholder="Search..." />
           </div>
         </div>
+
+        <!-- ── Scan bar ── -->
+        <ScanBar placeholder="Scan bin or item..." @scan="handleScan">
+          <div v-if="activeBin" class="pi-active-bin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>{{ activeBin }}</span>
+            <button class="pi-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+        </ScanBar>
 
         <section class="pi-items-section" :class="{ 'pi-items-section--bordered': isProgressive }">
           <div ref="itemsScrollEl" class="pi-items-scroll">
@@ -511,15 +646,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <tr>
                   <th class="pi-th">Product</th>
                   <th class="pi-th">SKU</th>
+                  <th class="pi-th">Storage location</th>
                   <th class="pi-th pi-th--num">Received qty</th>
                   <th class="pi-th pi-th--num">Put away qty</th>
                   <th class="pi-th">Unit</th>
-                  <th class="pi-th">Storage location</th>
                   <th class="pi-th pi-th--action" aria-hidden="true" />
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in rowsWithMeta" :key="row.id" class="pi-row">
+                <tr v-for="row in rowsWithMeta" :key="row.id" class="pi-row" :class="{ 'pi-row--flash': flashRowId === row.id }">
                   <!-- Product — merged across split rows -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">
                     <ProductCell
@@ -530,51 +665,12 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <!-- SKU — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ row.skuCode }}</td>
-                  <!-- Received qty — merged, summed across all receiving tasks -->
-                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(totalQtyBySkuCode.get(row.skuCode) ?? 0) }}</td>
-                  <!-- Put away qty: batch/serial-tracked SKUs split into a value row +
-                       a "Manage batch"/"Manage serial number" row — storage location for
-                       them is decided entirely inside that drawer, never here. -->
-                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--batch-cell">
-                    <div class="pi-batch-cell-wrap">
-                      <div class="pi-batch-cell pi-batch-cell--total">
-                        <span class="pi-batch-val">{{ fmt(batchAssignedQty(row.skuCode)) }}</span>
-                      </div>
-                      <div class="pi-batch-cell pi-batch-cell--action">
-                        <button class="pi-batch-link" type="button" @click="openBatchDrawer(row.skuCode)">Manage batch</button>
-                      </div>
-                    </div>
+                  <!-- Storage location: batch/serial = manage link; plain SKUs keep the picker. -->
+                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--location-manage">
+                    <button class="pi-manage-btn" type="button" @click="openBatchDrawer(row.skuCode)">Manage storage location</button>
                   </td>
-                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--batch-cell">
-                    <div class="pi-batch-cell-wrap">
-                      <div class="pi-batch-cell pi-batch-cell--total">
-                        <span class="pi-batch-val">{{ fmt(serialAssignedQty(row.skuCode)) }}</span>
-                      </div>
-                      <div class="pi-batch-cell pi-batch-cell--action">
-                        <button class="pi-batch-link" type="button" @click="openSerialDrawer(row.skuCode)">Manage serial number</button>
-                      </div>
-                    </div>
-                  </td>
-                  <td v-else class="pi-td pi-td--input">
-                    <input
-                      class="pi-qty-input"
-                      type="number" min="0" :max="remainingQtyFor(row)"
-                      :value="row.qty"
-                      :aria-label="`Put away qty for ${itemBySkuCode.get(row.skuCode)?.productName}`"
-                      @input="onQtyInput(row.id, $event)"
-                    />
-                  </td>
-                  <!-- Unit — merged -->
-                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.unit }}</td>
-                  <!-- Storage location: read-only bin summary for batch/serial-tracked SKUs
-                       (no picker — that lives in the drawer); plain SKUs keep the picker. -->
-                  <td v-if="isBatchTrackedSku(row.skuCode) || isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--location-summary">
-                    <div class="pi-location-summary-wrap">
-                      <template v-if="binsList(row.skuCode).length">
-                        <span v-for="loc in binsList(row.skuCode)" :key="loc" class="pi-location-summary-item">{{ loc }}</span>
-                      </template>
-                      <span v-else class="pi-location-summary-item">—</span>
-                    </div>
+                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--location-manage">
+                    <button class="pi-manage-btn" type="button" @click="openSerialDrawer(row.skuCode)">Manage storage location</button>
                   </td>
                   <td v-else class="pi-td pi-td--location">
                     <MpPopover :id="`pi-loc-${row.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(row.id)">
@@ -611,6 +707,26 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       </MpPopoverContent>
                     </MpPopover>
                   </td>
+                  <!-- Received qty — merged, summed across all receiving tasks -->
+                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(totalQtyBySkuCode.get(row.skuCode) ?? 0) }}</td>
+                  <!-- Put away qty: batch/serial-tracked SKUs show the value directly -->
+                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--num">
+                    <span class="pi-batch-val">{{ fmt(batchAssignedQty(row.skuCode)) }}</span>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--num">
+                    <span class="pi-batch-val">{{ fmt(serialAssignedQty(row.skuCode)) }}</span>
+                  </td>
+                  <td v-else class="pi-td pi-td--input">
+                    <input
+                      class="pi-qty-input"
+                      type="number" min="0" :max="remainingQtyFor(row)"
+                      :value="row.qty"
+                      :aria-label="`Put away qty for ${itemBySkuCode.get(row.skuCode)?.productName}`"
+                      @input="onQtyInput(row.id, $event)"
+                    />
+                  </td>
+                  <!-- Unit — merged -->
+                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.unit }}</td>
                   <!-- Actions — "Split storage location" only applies to plain SKUs -->
                   <td class="pi-td pi-td--action">
                     <MpPopover
@@ -837,15 +953,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-location-summary-item { display: flex; align-items: center; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
 .pi-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
 
-/* Batch/serial-tracked put away qty — value row + Manage batch/SN action row.
-   Same wrapper-div pattern as .pi-td--location-summary above. */
-.pi-td--batch-cell { padding: 0; background: var(--mp-background-neutral-subtle); vertical-align: top; }
-.pi-batch-cell-wrap { display: flex; flex-direction: column; height: 100%; }
-.pi-batch-cell { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
-.pi-batch-cell--total { border-bottom: 1px solid var(--mp-border-default); }
 .pi-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.pi-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
-.pi-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.pi-td--location-manage { padding: 10px var(--mp-spacing-4); vertical-align: top; }
+.pi-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); white-space: nowrap; }
+.pi-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── Row actions (kebab) ─────────────────────────────────────────────────────── */
 .pi-row-kebab {
@@ -883,6 +994,29 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .pi-btn--primary   { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .pi-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+
+.pi-active-bin {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
+  background: #e6f7ef; border: 1px solid #029861;
+  border-radius: var(--mp-radii-full); white-space: nowrap;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: #027a4e; flex-shrink: 0;
+}
+.pi-active-bin-clear {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
+}
+.pi-active-bin-clear:hover { opacity: 1; }
+
+/* ── Row flash on SKU scan ───────────────────────────────────────────────────── */
+@keyframes pi-row-flash {
+  0%   { background: rgba(2, 152, 97, 0.12); }
+  100% { background: var(--mp-background-neutral-hovered); }
+}
+.pi-row--flash .pi-td { animation: pi-row-flash 0.7s ease-out forwards; }
+.pi-row--flash .pi-td--input,
+.pi-row--flash .pi-td--location { animation: pi-row-flash 0.7s ease-out forwards; }
 
 /* ── Not found ───────────────────────────────────────────────────────────────── */
 .pi-not-found {

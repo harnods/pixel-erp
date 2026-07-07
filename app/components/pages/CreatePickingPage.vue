@@ -571,7 +571,18 @@ function handleCreate() {
 
         <section class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pk-items-scroll">
-            <table class="pk-items" :class="{ 'pk-items--split': hasTrackedRows }">
+            <table class="pk-items">
+              <colgroup>
+                <col /><!-- Checkbox -->
+                <col /><!-- Product -->
+                <col /><!-- SKU -->
+                <col /><!-- Storage location -->
+                <col /><!-- Order qty -->
+                <col v-if="hasPriorPicks" /><!-- Picked qty -->
+                <col /><!-- Qty to pick -->
+                <col /><!-- Action -->
+                <col /><!-- Unit -->
+              </colgroup>
               <thead>
                 <tr>
                   <th class="pk-th pk-th--check">
@@ -591,6 +602,7 @@ function handleCreate() {
                   <th class="pk-th pk-th--num">Order qty</th>
                   <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
                   <th class="pk-th pk-th--num">Qty to pick</th>
+                  <th class="pk-th"></th>
                   <th class="pk-th">Unit</th>
                 </tr>
               </thead>
@@ -632,35 +644,20 @@ function handleCreate() {
                   <td class="pk-td pk-td--num">{{ formatNum(row.orderQty) }}</td>
                   <td v-if="hasPriorPicks" class="pk-td pk-td--num">{{ formatNum(row.pickedQty) }}</td>
 
-                  <!-- Qty to pick: batch/serial-tracked SKUs split into a value row +
-                       a "Manage batch"/"Manage serial number" row — the qty comes from
-                       whichever batches/serials are chosen there, up to the stock cap. -->
-                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--batch-cell">
-                    <div class="pk-batch-cell-wrap">
-                      <div class="pk-batch-cell pk-batch-cell--total">
-                        <span class="pk-batch-val">{{ formatNum(batchPickedQty(row.sku)) }}</span>
-                      </div>
-                      <div class="pk-batch-cell pk-batch-cell--action">
-                        <button class="pk-batch-link" type="button" @click.stop="openBatchDrawer(row.sku)">Manage batch</button>
-                      </div>
-                    </div>
+                  <!-- Qty to pick: plain value for batch-tracked SKUs (total from drawer),
+                       input for serial-tracked SKUs, input for plain SKUs. -->
+                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--num">
+                    <span class="pk-batch-val">{{ formatNum(batchPickedQty(row.sku)) }}</span>
                   </td>
-                  <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--batch-cell pk-td--serial-cell">
-                    <div class="pk-batch-cell-wrap">
-                      <div class="pk-batch-cell pk-batch-cell--total pk-batch-cell--bare">
-                        <input
-                          type="number" min="0" :max="stockOf(row.key).cap" class="pk-batch-qty-input"
-                          :value="qtyOverrides[row.sku] ?? 0"
-                          :disabled="!isSelected(row.key) || isLocked(row.key)"
-                          :aria-label="`Qty to pick for ${row.product}`"
-                          @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
-                          @click.stop
-                        />
-                      </div>
-                      <div class="pk-batch-cell pk-batch-cell--action">
-                        <button class="pk-batch-link" type="button" @click.stop="openSerialDrawer(row.sku)">Manage serial number</button>
-                      </div>
-                    </div>
+                  <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--input">
+                    <input
+                      type="number" min="0" :max="stockOf(row.key).cap" class="pk-batch-qty-input"
+                      :value="qtyOverrides[row.sku] ?? 0"
+                      :disabled="!isSelected(row.key) || isLocked(row.key)"
+                      :aria-label="`Qty to pick for ${row.product}`"
+                      @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
+                      @click.stop
+                    />
                   </td>
                   <td v-else class="pk-td pk-td--input">
                     <input
@@ -671,6 +668,16 @@ function handleCreate() {
                       @click.stop
                     />
                   </td>
+
+                  <!-- Action column: Manage batch / Manage serial numbers link -->
+                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
+                    <button class="pk-manage-btn" type="button" @click.stop="openBatchDrawer(row.sku)">Manage batch</button>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--action">
+                    <button class="pk-manage-btn" type="button" @click.stop="openSerialDrawer(row.sku)">Manage serial numbers</button>
+                  </td>
+                  <td v-else class="pk-td pk-td--action"></td>
+
                   <td class="pk-td">{{ row.unit }}</td>
                 </tr>
               </tbody>
@@ -892,21 +899,7 @@ function handleCreate() {
 .pk-location-summary-item { display: flex; align-items: center; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
 .pk-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
 
-/* Batch/serial-tracked qty to pick — value row + Manage batch/SN action row. Same
-   wrapper-div pattern as .pk-td--location-summary above. */
-.pk-td--batch-cell { padding: 0; background: var(--mp-background-neutral-subtle); vertical-align: top; }
-.pk-batch-cell-wrap { display: flex; flex-direction: column; height: 100%; }
-.pk-batch-cell { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
-.pk-batch-cell--total { border-bottom: 1px solid var(--mp-border-default); }
 .pk-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.pk-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
-.pk-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-
-/* Serial-tracked qty to pick — the value row is a typed qty (must be entered before
-   Manage serial number can open), so it goes white/editable like a form cell. */
-.pk-td--serial-cell { background: var(--mp-background-neutral, #fff); }
-.pk-td--serial-cell:focus-within .pk-batch-cell--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
-.pk-batch-cell--bare { padding: 0; }
 .pk-batch-qty-input {
   display: block; width: 100%; height: 100%; box-sizing: border-box;
   padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;

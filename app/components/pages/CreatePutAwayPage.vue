@@ -569,7 +569,7 @@ function handleCreate() {
   height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 
 .pa-task-row { cursor: pointer; transition: background 80ms; }

@@ -48,6 +48,7 @@ const PAGE_SIZE = 20
 
 const rows = ref<SerialRow[]>([])
 const inputText = ref('')
+const addError = ref('')
 const search = ref('')
 const page = ref(1)
 const saveError = ref('')
@@ -137,6 +138,7 @@ const onHandCount = computed(() =>
 )
 // countedCount = rows currently marked as counted (for table X/Y indicator + validation)
 const countedCount = computed(() => rows.value.filter(r => r.counted).length)
+const putAwayCount = computed(() => rows.value.filter(r => r.destLocId).length)
 // Info bar stats are driven by targetCount (what user entered in the form), not table state
 const difference = computed(() => props.targetCount - onHandCount.value)
 const isInOut = computed(() =>
@@ -150,7 +152,8 @@ const isPicking = computed(() => props.kind === 'picking')
 const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
 const qtyLabel = computed(() => {
   if (props.kind === 'transfer') return 'Transfer qty'
-  if (props.kind === 'receiving' || props.kind === 'put-away') return 'Received qty'
+  if (props.kind === 'receiving') return 'Purchase qty'
+  if (props.kind === 'put-away') return 'Received qty'
   if (props.kind === 'picking') return 'Picked qty'
   return 'Stock in/out qty'
 })
@@ -192,13 +195,21 @@ function addToList() {
     if (toAdd.length) rows.value.push(...toAdd)
   } else {
     const existing = new Set(rows.value.map(r => r.serial))
+    const dupes = parsed.filter(s => existing.has(s))
     const newOnes = parsed.filter(s => !existing.has(s))
+    if (dupes.length) {
+      addError.value = `Already in list: ${dupes.join(', ')}`
+    } else {
+      addError.value = ''
+    }
     if (!newOnes.length) return
     rows.value.push(...newOnes.map(s => ({ serial: s, counted: true })))
   }
   inputText.value = ''
   saveError.value = ''
 }
+
+watch(inputText, () => { addError.value = '' })
 
 function toggleRow(row: SerialRow) {
   if (row.reserved) return
@@ -245,7 +256,7 @@ function handleSave() {
       saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers selected — that's more than the qty to pick.`
       return
     }
-  } else if (countedCount.value !== effectiveTargetCount.value) {
+  } else if (!isReceiving.value && countedCount.value !== effectiveTargetCount.value) {
     saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers specified. Add or remove serial numbers to match the counted quantity.`
     return
   }
@@ -299,6 +310,18 @@ function handleSave() {
                 <span class="msn-stat-label">{{ qtyLabel }}</span>
                 <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
               </div>
+              <div v-if="isReceiving" class="msn-stat">
+                <span class="msn-stat-label">Received qty</span>
+                <span class="msn-stat-value">{{ fmtSerial(countedCount) }}</span>
+              </div>
+              <div v-if="isReceiving" class="msn-stat">
+                <span class="msn-stat-label">Outstanding qty</span>
+                <span class="msn-stat-value">{{ fmtSerial(Math.max(0, targetCount - countedCount)) }}</span>
+              </div>
+              <div v-if="isPutAway" class="msn-stat">
+                <span class="msn-stat-label">Put away qty</span>
+                <span class="msn-stat-value">{{ fmtSerial(putAwayCount) }}</span>
+              </div>
             </template>
             <!-- stock count stats -->
             <template v-else-if="!isInOut">
@@ -348,6 +371,7 @@ function handleSave() {
               class="msn-textarea"
               placeholder="Paste or type serial numbers here. Supports comma-separated or one per line."
             />
+            <p v-if="addError" class="msn-add-error">{{ addError }}</p>
             <div class="msn-form-action">
               <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addToList">Add to list</button>
             </div>
@@ -355,6 +379,15 @@ function handleSave() {
           <p v-if="saveError" class="msn-save-error">{{ saveError }}</p>
         </div>
 
+        <template v-if="rows.length === 0">
+          <div class="msn-empty">
+            <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
+            <p class="msn-empty-title">No serial numbers yet</p>
+            <p class="msn-empty-desc">Add serial numbers using the input above.</p>
+          </div>
+        </template>
+
+        <template v-else>
         <div class="msn-filter-bar">
           <div class="msn-search">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -377,12 +410,20 @@ function handleSave() {
               <tr>
                 <th class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ effectiveTargetCount }})</th>
                 <th v-if="hasOriginLoc" class="msn-th">ORIGIN LOCATION</th>
-                <th v-if="hasDestLoc" class="msn-th">INTO LOCATION</th>
+                <th v-if="hasDestLoc" class="msn-th">STORAGE LOCATION</th>
                 <th class="msn-th">STATUS</th>
                 <th v-if="!isPutAway" class="msn-th msn-th--del" />
               </tr>
             </thead>
             <tbody>
+              <tr v-if="displayRows.length === 0" class="msn-tr msn-tr--empty">
+                <td :colspan="colspanCount" class="msn-td msn-td--empty">
+                  <div class="msn-empty">
+                    <p class="msn-empty-title">No serial numbers found</p>
+                    <p class="msn-empty-desc">Try adjusting your search.</p>
+                  </div>
+                </td>
+              </tr>
               <tr
                 v-for="row in displayRows" :key="row.serial" class="msn-tr"
                 :class="(isTransfer || isPicking)
@@ -406,7 +447,7 @@ function handleSave() {
                           <input
                             class="msn-bin-input"
                             type="text"
-                            :placeholder="row.destLocId ? '' : 'Select location…'"
+                            :placeholder="row.destLocId ? '' : 'Select storage location'"
                             :value="locActiveKey === row.serial ? (locSearches[row.serial] ?? '') : (row.destLocId ?? '')"
                             @focus="locActiveKey = row.serial; locSearches[row.serial] = ''"
                             @input="locSearches[row.serial] = ($event.target as HTMLInputElement).value; locActiveKey = row.serial"
@@ -474,17 +515,17 @@ function handleSave() {
                 </td>
               </tr>
 
-              <tr class="msn-tr msn-tr--info">
-                <td :colspan="colspanCount" class="msn-td msn-td--pagination">
-                  <span>Showing {{ displayRows.length }} of {{ filtered.length }} serial numbers</span>
-                  <button v-if="hasMore" class="msn-load-more" type="button" @click="loadMore">Load more</button>
-                </td>
-              </tr>
             </tbody>
           </table>
+          <div class="msn-pagination">
+            <span>Showing {{ displayRows.length }} of {{ filtered.length }} serial numbers</span>
+            <button v-if="hasMore" class="msn-load-more" type="button" @click="loadMore">Load more</button>
+          </div>
         </div>
 
         <p v-if="(isTransfer || isPicking) && saveError" class="msn-save-error msn-save-error--transfer">{{ saveError }}</p>
+
+        </template>
 
       </div>
 
@@ -540,7 +581,7 @@ function handleSave() {
 .msn-close:hover { background: var(--mp-background-neutral-hovered); }
 
 .msn-content {
-  flex: 1; min-height: 0; overflow-y: auto;
+  flex: 1; min-height: 0; overflow: hidden;
   padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 20px;
 }
 .msn-content > * { flex-shrink: 0; }
@@ -564,7 +605,7 @@ function handleSave() {
 .msn-info-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msn-info-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .msn-info-stats { display: flex; gap: var(--mp-spacing-6); flex-shrink: 0; }
-.msn-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+.msn-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
 .msn-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .msn-stat-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; font-weight: var(--mp-font-weights-medium); }
 .msn-stat--pos .msn-stat-value { color: var(--mp-text-success, #18794e); }
@@ -584,6 +625,7 @@ function handleSave() {
 .msn-textarea::placeholder { color: var(--mp-text-placeholder); }
 .msn-textarea:focus { border-color: var(--mp-border-bold); }
 .msn-form-action { display: flex; justify-content: flex-end; }
+.msn-add-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 .msn-save-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 .msn-save-error--transfer { margin-top: -12px; }
 
@@ -598,10 +640,10 @@ function handleSave() {
 .msn-search-input::placeholder { color: var(--mp-text-placeholder); }
 
 .msn-table-wrap {
+  flex: 0 1 auto; min-height: 0;
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
-  overflow: hidden;
-  overflow-x: auto;
+  overflow: auto;
 }
 .msn-table {
   width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0;
@@ -635,11 +677,11 @@ function handleSave() {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
   vertical-align: top;
   background: var(--mp-background-neutral, #fff);
 }
-.msn-table--locs .msn-td { border-right: 1px solid var(--mp-border-default); }
-.msn-table--locs .msn-td:last-child { border-right: none; }
+.msn-td:last-child { border-right: none; }
 .msn-td--strike { text-decoration: line-through; color: var(--mp-text-secondary); }
 .msn-tr--removed .msn-td { background: var(--mp-background-danger-subtle, #fff5f5); }
 .msn-tr--selected .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
@@ -698,19 +740,31 @@ function handleSave() {
 .msn-toggle-btn--disabled { opacity: 0.3; cursor: not-allowed; }
 .msn-toggle-btn--disabled:hover { color: var(--mp-text-secondary); }
 
-.msn-tr--info .msn-td { background: var(--mp-background-neutral, #fff); }
-.msn-td--pagination {
+.msn-pagination {
+  position: sticky; bottom: 0;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-  text-align: left;
-  border-bottom: none;
   display: flex; align-items: center; gap: var(--mp-spacing-3);
+  background: var(--mp-background-default, #fff);
 }
 .msn-load-more {
   background: none; border: none; padding: 0; cursor: pointer;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
 }
 .msn-load-more:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+.msn-td--empty { border-bottom: none; }
+.msn-empty {
+  display: flex; flex-direction: column; align-items: center;
+  padding: var(--mp-spacing-10, 40px) var(--mp-spacing-4);
+  gap: var(--mp-spacing-2);
+  flex: 1;
+}
+.msn-empty-title {
+  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); text-align: center;
+}
+.msn-empty-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 
 .msn-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);

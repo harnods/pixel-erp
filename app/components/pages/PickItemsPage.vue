@@ -181,9 +181,6 @@ const toPickTotal = computed(() => lineItems.value.reduce((s, it) => s + it.expe
 const draftPickedTotal = computed(() => lineItems.value.reduce((s, it) => s + effectivePickedQty(it), 0))
 const draftOutstanding = computed(() => Math.max(0, toPickTotal.value - draftPickedTotal.value))
 const shortItemsCount = computed(() => lineItems.value.filter(it => effectivePickedQty(it) < it.expectedQty).length)
-// Any batch/serial-tracked line splits its Picked qty cell into 2 rows — once that
-// happens, every column gets left/right borders so the split reads as part of the grid.
-const hasTrackedLines = computed(() => lineItems.value.some(it => isBatchTrackedSku(it.skuCode) || isSerialTrackedSku(it.skuCode)))
 
 const filteredItems = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -393,7 +390,17 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
         <section class="pik-items-section" :class="{ 'pik-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pik-items-scroll">
-            <table class="pik-items" :class="{ 'pik-items--split': hasTrackedLines }">
+            <table class="pik-items">
+              <colgroup>
+                <col /><!-- Product -->
+                <col /><!-- SKU -->
+                <col /><!-- Storage location -->
+                <col /><!-- To pick qty -->
+                <col /><!-- Picked qty -->
+                <col /><!-- Outstanding qty -->
+                <col /><!-- Action -->
+                <col /><!-- Unit -->
+              </colgroup>
               <thead>
                 <tr>
                   <th class="pik-th">Product</th>
@@ -402,6 +409,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <th class="pik-th pik-th--num">To pick qty</th>
                   <th class="pik-th pik-th--num">Picked qty</th>
                   <th class="pik-th pik-th--num">Outstanding qty</th>
+                  <th class="pik-th"></th>
                   <th class="pik-th">Unit</th>
                 </tr>
               </thead>
@@ -425,38 +433,23 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
                   <td class="pik-td pik-td--num">{{ fmt(item.expectedQty) }}</td>
 
-                  <!-- Picked qty: batch/serial-tracked SKUs split into a value row +
-                       a "Manage batch"/"Manage serial number" row — storage location for
-                       them is decided entirely inside that drawer, never here. -->
-                  <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--batch-cell">
-                    <div class="pik-batch-cell-wrap">
-                      <div class="pik-batch-cell pik-batch-cell--total">
-                        <span class="pik-batch-val">{{ fmt(batchPickedQty(item.key)) }}</span>
-                      </div>
-                      <div class="pik-batch-cell pik-batch-cell--action">
-                        <button class="pik-batch-link" type="button" @click="openBatchDrawer(item.key)">Manage batch</button>
-                      </div>
-                    </div>
+                  <!-- Picked qty: plain value for batch-tracked SKUs (total from drawer),
+                       input for serial-tracked SKUs, input for plain SKUs. -->
+                  <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--num">
+                    <span class="pik-batch-val">{{ fmt(batchPickedQty(item.key)) }}</span>
                   </td>
                   <td
                     v-else-if="isSerialTrackedSku(item.skuCode)"
-                    class="pik-td pik-td--batch-cell pik-td--serial-cell"
+                    class="pik-td pik-td--input"
                     :class="{ 'pik-td--input--error': showQtyErrors && !(draftQty[item.key] ?? 0) }"
                   >
-                    <div class="pik-batch-cell-wrap">
-                      <div class="pik-batch-cell pik-batch-cell--total pik-batch-cell--bare">
-                        <input
-                          class="pik-batch-qty-input"
-                          type="number" min="0" :max="item.expectedQty"
-                          :value="draftQty[item.key] ?? 0"
-                          :aria-label="`Picked qty for ${item.productName}`"
-                          @input="onQtyInput(item.key, item.expectedQty, $event)"
-                        />
-                      </div>
-                      <div class="pik-batch-cell pik-batch-cell--action">
-                        <button class="pik-batch-link" type="button" @click="openSerialDrawer(item.key)">Manage serial number</button>
-                      </div>
-                    </div>
+                    <input
+                      class="pik-batch-qty-input"
+                      type="number" min="0" :max="item.expectedQty"
+                      :value="draftQty[item.key] ?? 0"
+                      :aria-label="`Picked qty for ${item.productName}`"
+                      @input="onQtyInput(item.key, item.expectedQty, $event)"
+                    />
                   </td>
                   <td
                     v-else
@@ -477,10 +470,20 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                     </span>
                     <span v-else class="pik-qty--full">—</span>
                   </td>
+
+                  <!-- Action column: Manage batch / Manage serial numbers link -->
+                  <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--action">
+                    <button class="pik-manage-btn" type="button" @click="openBatchDrawer(item.key)">Manage batch</button>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(item.skuCode)" class="pik-td pik-td--action">
+                    <button class="pik-manage-btn" type="button" @click="openSerialDrawer(item.key)">Manage serial numbers</button>
+                  </td>
+                  <td v-else class="pik-td pik-td--action"></td>
+
                   <td class="pik-td">{{ item.unit }}</td>
                 </tr>
                 <tr v-if="!filteredItems.length">
-                  <td class="pik-td pik-empty" colspan="7">No products match your search.</td>
+                  <td class="pik-td pik-empty" colspan="8">No products match your search.</td>
                 </tr>
               </tbody>
             </table>
@@ -640,18 +643,15 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 }
 .pik-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 
-/* Once any line splits its Picked qty cell (batch/serial-tracked SKU present), every
-   column gets left/right borders — no double border, no outer border on the ends. */
-.pik-items--split .pik-th { border-right: 1px solid var(--mp-border-default); }
-.pik-items--split .pik-th:last-child { border-right: none; }
-.pik-items--split .pik-td { border-right: 1px solid var(--mp-border-default); }
-.pik-items--split .pik-td:last-child { border-right: none; }
+.pik-th { border-right: 1px solid var(--mp-border-default); }
+.pik-th:last-child { border-right: none; }
 .pik-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   background: var(--mp-background-neutral-hovered);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
+  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: top;
 }
+.pik-td:last-child { border-right: none; }
 .pik-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pik-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .pik-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
@@ -675,27 +675,16 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-location-summary-item { display: flex; align-items: center; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
 .pik-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
 
-/* Batch/serial-tracked picked qty — value row + Manage batch/SN action row. Same
-   wrapper-div pattern as .pik-td--location-summary above. */
-.pik-td--batch-cell { padding: 0; background: var(--mp-background-neutral-hovered); vertical-align: top; }
-.pik-batch-cell-wrap { display: flex; flex-direction: column; height: 100%; }
-.pik-batch-cell { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
-.pik-batch-cell--total { border-bottom: 1px solid var(--mp-border-default); }
 .pik-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.pik-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
-.pik-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-
-/* Serial-tracked picked qty — the value row is a typed qty (must be entered before
-   Manage serial number can open), so it goes white/editable like a form cell. */
-.pik-td--serial-cell { background: var(--mp-background-neutral, #fff); }
-.pik-td--serial-cell:focus-within .pik-batch-cell--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
-.pik-batch-cell--bare { padding: 0; }
 .pik-batch-qty-input {
   display: block; width: 100%; height: 100%; box-sizing: border-box;
-  padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;
+  padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); border: none; outline: none; background: transparent;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  text-align: right; font-variant-numeric: tabular-nums;
+  text-align: right; font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md);
 }
+.pik-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+.pik-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
+.pik-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .pik-sentinel { height: 1px; }
 .pik-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }

@@ -490,6 +490,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <col class="wtf-col-num" />
                 <col class="wtf-col-num" />
                 <col class="wtf-col-num" />
+                <col class="wtf-col-action" />
                 <col class="wtf-col-unit" />
                 <col class="wtf-col-del" />
               </colgroup>
@@ -499,6 +500,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <th class="wtf-th" rowspan="2">SKU</th>
                   <th class="wtf-th wtf-th--group" colspan="2">Origin</th>
                   <th class="wtf-th wtf-th--group" colspan="2">Destination</th>
+                  <th class="wtf-th" rowspan="2" />
                   <th class="wtf-th" rowspan="2">Unit</th>
                   <th class="wtf-th wtf-th--del" rowspan="2" />
                 </tr>
@@ -561,37 +563,22 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       </span>
                     </td>
                     <!-- Transfer qty: batch -->
-                    <td v-if="isBatchTrackedSku(row.sku)" class="wtf-td wtf-td--batch-cell">
-                      <div class="wtf-batch-row wtf-batch-row--total">
-                        <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
-                        <span v-else class="wtf-batch-empty">No batches</span>
-                      </div>
-                      <div class="wtf-batch-row wtf-batch-row--action">
-                        <button class="wtf-batch-link" type="button" @click="openBatchDrawer(row)">Manage batch</button>
-                      </div>
+                    <td v-if="isBatchTrackedSku(row.sku)" class="wtf-td wtf-td--num">
+                      <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
+                      <span v-else class="wtf-batch-empty">—</span>
                     </td>
                     <!-- Transfer qty: serial -->
-                    <td v-else-if="isSerialTrackedSku(row.sku)" class="wtf-td wtf-td--batch-cell wtf-td--serial-cell">
-                      <div class="wtf-batch-row wtf-batch-row--total wtf-batch-row--bare">
-                        <input
-                          :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
-                          :value="row.qty"
-                          @input="setQty(row, ($event.target as HTMLInputElement).value)"
-                        />
-                      </div>
-                      <div class="wtf-batch-row wtf-batch-row--action">
-                        <button class="wtf-batch-link" type="button" @click="openSerialDrawer(row)">Manage serial number</button>
-                      </div>
+                    <td v-else-if="isSerialTrackedSku(row.sku)" class="wtf-td wtf-td--input">
+                      <input
+                        :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
+                        :value="row.qty"
+                        @input="setQty(row, ($event.target as HTMLInputElement).value)"
+                      />
                     </td>
                     <!-- Transfer qty: regular with storage location -->
-                    <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--batch-cell">
-                      <div class="wtf-batch-row wtf-batch-row--total">
-                        <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
-                        <span v-else class="wtf-batch-empty">—</span>
-                      </div>
-                      <div class="wtf-batch-row wtf-batch-row--action">
-                        <button class="wtf-batch-link" :class="{ 'wtf-batch-link--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">Manage storage location</button>
-                      </div>
+                    <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--num">
+                      <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
+                      <span v-else class="wtf-batch-empty">—</span>
                     </td>
                     <!-- Transfer qty: regular plain -->
                     <td v-else class="wtf-td wtf-td--input">
@@ -605,6 +592,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       {{ onHandFor(row.sku) === undefined ? '—' : onHandFor(row.sku)!.toLocaleString('id-ID') }}
                     </td>
                     <td class="wtf-td wtf-td--num">{{ afterTransfer(row).toLocaleString('id-ID') }}</td>
+                    <!-- Action column -->
+                    <td v-if="isBatchTrackedSku(row.sku)" class="wtf-td wtf-td--action">
+                      <button class="wtf-manage-btn" type="button" @click="openBatchDrawer(row)">Manage batch</button>
+                    </td>
+                    <td v-else-if="isSerialTrackedSku(row.sku)" class="wtf-td wtf-td--action">
+                      <button class="wtf-manage-btn" type="button" @click="openSerialDrawer(row)">Manage serial numbers</button>
+                    </td>
+                    <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--action">
+                      <button class="wtf-manage-btn" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">Manage storage location</button>
+                    </td>
+                    <td v-else class="wtf-td wtf-td--action" />
                     <td class="wtf-td wtf-td--muted">{{ row.unit }}</td>
                     <td class="wtf-td wtf-td--del">
                       <button class="wtf-del-btn" type="button" @click="removeRow(row.id)">
@@ -612,7 +610,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       </button>
                     </td>
                   </template>
-                  <td v-else class="wtf-td wtf-td--empty" colspan="7" />
+                  <td v-else class="wtf-td wtf-td--empty" colspan="8" />
                 </tr>
               </tbody>
             </table>
@@ -886,11 +884,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-table { width: 100%; table-layout: auto; border-collapse: collapse; border-spacing: 0; min-width: 860px; }
 /* Proportional column widths; the remove column hugs its icon button (width:1px →
    shrinks to min-content in auto layout) and sits at the right edge. */
-.wtf-col-prod { width: 24%; }
-.wtf-col-sku  { width: 12%; }
-.wtf-col-num  { width: 14%; }
-.wtf-col-unit { width: 8%; }
-.wtf-col-del  { width: 52px; }
+.wtf-col-prod   { width: 22%; }
+.wtf-col-sku    { width: 10%; }
+.wtf-col-num    { width: 12%; }
+.wtf-col-action { width: auto; }
+.wtf-col-unit   { width: 7%; }
+.wtf-col-del    { width: 52px; }
 /* Form-row table: header + editable cells are white; read-only cells are grey
    (matches the picking / packing creation form-table look). */
 .wtf-th {
@@ -967,17 +966,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-count { padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .wtf-form-error { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
-/* ── Batch / SN transfer qty cell ────────────────────────────────────────── */
-.wtf-td--batch-cell { padding: 0; height: auto; background: var(--mp-background-neutral-subtle); display: flex; flex-direction: column; vertical-align: top; }
-.wtf-td--serial-cell { background: var(--mp-background-neutral, #fff); }
-.wtf-td--serial-cell:focus-within .wtf-batch-row--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
-.wtf-batch-row { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
-.wtf-batch-row--total { border-bottom: 1px solid var(--mp-border-default); }
-.wtf-batch-row--bare { padding: 0; border-bottom: 1px solid var(--mp-border-default); }
-.wtf-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
-.wtf-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* ── Batch / serial value spans ──────────────────────────────────────────── */
 .wtf-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .wtf-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── Action column ────────────────────────────────────────────────────────── */
+.wtf-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+.wtf-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
+.wtf-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+.wtf-manage-btn--set { color: var(--mp-text-success, #18794e); }
 
 /* ── Memo + Attachment ───────────────────────────────────────────────────── */
 .wtf-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); max-width: 440px; padding: var(--mp-spacing-6) 0; }
@@ -994,9 +991,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wtf-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
 .wtf-file-remove:hover { color: var(--mp-text-default); }
-
-/* ── Location button set indicator ──────────────────────────────────────── */
-.wtf-batch-link--set { color: var(--mp-text-success, #18794e); }
 
 /* ── Storage location drawer ─────────────────────────────────────────────── */
 .wtf-loc-enter-active,

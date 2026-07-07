@@ -9,6 +9,7 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
@@ -108,10 +109,6 @@ const serialDrawerOpen = computed({
   set: (v: boolean) => { if (!v) serialDrawerSku.value = null },
 })
 function openSerialDrawer(skuCode: string) {
-  if (!(draftQty.value[skuCode] ?? 0)) {
-    toast.notify({ variant: 'warning', title: 'Enter received qty first' })
-    return
-  }
   serialDrawerSku.value = skuCode
 }
 function serialCount(skuCode: string): number {
@@ -121,6 +118,8 @@ function saveSerialLines(serials: CommittedSerial[]) {
   const sku = serialDrawerSku.value
   if (!sku) return
   serialLinesBySku.value = { ...serialLinesBySku.value, [sku]: serials.map(s => s.serial) }
+  draftQty.value = { ...draftQty.value, [sku]: serials.length }
+  if (showQtyErrors.value) showQtyErrors.value = false
 }
 
 // ── Progressive pagination ────────────────────────────────────────────────────
@@ -163,6 +162,56 @@ watch(search, () => {
   })
 })
 
+// ── Scan bar ──────────────────────────────────────────────────────────────────
+const flashRowId = ref<string | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | null = null
+
+function handleScan(rawValue: string) {
+  const v = rawValue.trim()
+  if (!v) return
+
+  // Batch number scan — find across all already-saved batch lines
+  for (const [skuCode, batches] of Object.entries(batchLinesBySku.value)) {
+    const bIdx = batches.findIndex(b => b.batchNo === v)
+    if (bIdx !== -1) {
+      const newCounted = (batches[bIdx]!.counted ?? 0) + 1
+      const updated = batches.map((b, i) => i === bIdx ? { ...b, counted: newCounted } : b)
+      batchLinesBySku.value = { ...batchLinesBySku.value, [skuCode]: updated }
+      draftQty.value = { ...draftQty.value, [skuCode]: updated.reduce((s, b) => s + (b.counted ?? 0), 0) }
+      if (showQtyErrors.value) showQtyErrors.value = false
+      flashRowId.value = skuCode
+      if (flashTimer) clearTimeout(flashTimer)
+      flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+      return
+    }
+  }
+
+  // SKU scan
+  const item = lineItems.value.find(it => it.skuCode === v)
+  if (!item) {
+    toast.notify({ variant: 'error', title: `Barcode not found: "${v}"`, maxWidth: 'max-content' })
+    return
+  }
+  if (isBatchTrackedSku(v)) {
+    openBatchDrawer(v)
+    return
+  }
+  if (isSerialTrackedSku(v)) {
+    toast.notify({ variant: 'error', title: `${v}: use Manage serial numbers to add serials`, maxWidth: 'max-content' })
+    return
+  }
+  const current = draftQty.value[v] ?? 0
+  if (current >= item.expectedQty) {
+    toast.notify({ variant: 'error', title: `${v}: purchase qty already fully received`, maxWidth: 'max-content' })
+    return
+  }
+  draftQty.value = { ...draftQty.value, [v]: current + 1 }
+  if (showQtyErrors.value) showQtyErrors.value = false
+  flashRowId.value = v
+  if (flashTimer) clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+}
+
 const showQtyErrors = ref(false)
 
 function onQtyInput(skuCode: string, expected: number, e: Event) {
@@ -181,20 +230,8 @@ const showConfirm = ref(false)
 function endReceiving() {
   if (draftReceivedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'danger', title: 'Enter received qty for at least one item' })
+    toast.notify({ variant: 'error', title: 'Enter received qty for at least one item', maxWidth: 'max-content' })
     return
-  }
-  for (const item of lineItems.value) {
-    if (!isSerialTrackedSku(item.skuCode)) continue
-    const expected = draftQty.value[item.skuCode] ?? 0
-    const actual = serialCount(item.skuCode)
-    if (expected > 0 && actual !== expected) {
-      toast.notify({
-        variant: 'danger',
-        title: `Enter all serial numbers for ${item.productName} (${actual}/${expected} entered)`,
-      })
-      return
-    }
   }
   showConfirm.value = true
 }
@@ -233,8 +270,9 @@ function commitReceiving(createPutAway = false) {
     })
   } else {
     toast.notify({
-      variant: complete ? 'success' : 'warning',
+      variant: 'success',
       title: complete ? 'Receiving finished, awaiting put-away' : 'Receiving finished (items short)',
+      maxWidth: 'max-content',
     })
     router.push(`/receiving/${props.orderId}`)
   }
@@ -275,6 +313,7 @@ onUnmounted(() => {
   stageObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
   itemsObserver?.disconnect()
+  if (flashTimer) clearTimeout(flashTimer)
 })
 watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 </script>
@@ -322,7 +361,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <span class="ri-stat-val">{{ fmt(draftReceivedTotal) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-label">Difference qty</span>
+          <span class="ri-stat-label">Outstanding qty</span>
           <span class="ri-stat-val">{{ fmt(draftOutstanding) }}</span>
         </div>
       </div>
@@ -333,7 +372,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         <!-- Filter bar -->
         <div class="ri-filter-bar">
           <div class="ri-filter-bar-left">
-            <span class="ri-editing-hint">Scan or enter the received qty for each item.</span>
+            <span class="ri-editing-hint">Enter the received qty for each item. For serial-tracked SKUs, use Manage serial number.</span>
           </div>
           <div class="ri-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -343,11 +382,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           </div>
         </div>
 
+        <!-- Scan bar -->
+        <ScanBar placeholder="Scan item..." @scan="handleScan" />
+
         <!-- SKU table -->
         <section class="ri-items-section" :class="{ 'ri-items-section--bordered': isProgressive }">
           <div ref="itemsScrollEl" class="ri-items-scroll">
             <table class="ri-items">
               <colgroup>
+                <col />
                 <col />
                 <col />
                 <col />
@@ -361,45 +404,30 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <th class="ri-th">SKU</th>
                   <th class="ri-th ri-th--num">Purchase qty</th>
                   <th class="ri-th ri-th--num">Received qty</th>
-                  <th class="ri-th ri-th--num">Difference qty</th>
+                  <th class="ri-th"></th>
+                  <th class="ri-th ri-th--num">Outstanding qty</th>
                   <th class="ri-th">Unit</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in pagedItems" :key="item.skuCode" class="ri-row">
+                <tr v-for="item in pagedItems" :key="item.skuCode" class="ri-row" :class="{ 'ri-row--flash': flashRowId === item.skuCode }">
                   <td class="ri-td">
                     <ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" />
                   </td>
                   <td class="ri-td">{{ item.skuCode }}</td>
                   <td class="ri-td ri-td--num">{{ fmt(item.expectedQty) }}</td>
-                  <!-- Received qty: batch/serial-tracked SKUs split into a value row +
-                       a "Manage batch"/"Manage serial number" row (mirrors Stock in/out). -->
-                  <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--batch-cell">
-                    <div class="ri-batch-cell ri-batch-cell--total">
-                      <span v-if="batchHasCounts(item.skuCode)" class="ri-batch-val">{{ fmt(batchTotal(item.skuCode)) }}</span>
-                      <span v-else class="ri-batch-empty">No batches</span>
-                    </div>
-                    <div class="ri-batch-cell ri-batch-cell--action">
-                      <button class="ri-batch-link" type="button" @click="openBatchDrawer(item.skuCode)">Manage batch</button>
-                    </div>
+                  <!-- Received qty -->
+                  <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--num">
+                    <span v-if="batchHasCounts(item.skuCode)" class="ri-batch-val">{{ fmt(batchTotal(item.skuCode)) }}</span>
+                    <span v-else class="ri-batch-empty">—</span>
                   </td>
                   <td
                     v-else-if="isSerialTrackedSku(item.skuCode)"
-                    class="ri-td ri-td--batch-cell ri-td--serial-cell"
-                    :class="{ 'ri-td--input--error': showQtyErrors && !(draftQty[item.skuCode] ?? 0) }"
+                    class="ri-td ri-td--num"
+                    :class="{ 'ri-td--input--error': showQtyErrors && !serialCount(item.skuCode) }"
                   >
-                    <div class="ri-batch-cell ri-batch-cell--total ri-batch-cell--bare">
-                      <input
-                        class="ri-qty-input"
-                        type="number" min="0" :max="item.expectedQty"
-                        :value="draftQty[item.skuCode] ?? 0"
-                        :aria-label="`Received qty for ${item.productName}`"
-                        @input="onQtyInput(item.skuCode, item.expectedQty, $event)"
-                      />
-                    </div>
-                    <div class="ri-batch-cell ri-batch-cell--action">
-                      <button class="ri-batch-link" type="button" @click="openSerialDrawer(item.skuCode)">Manage serial number</button>
-                    </div>
+                    <span v-if="serialCount(item.skuCode)" class="ri-batch-val">{{ fmt(serialCount(item.skuCode)) }}</span>
+                    <span v-else class="ri-batch-empty">—</span>
                   </td>
                   <td
                     v-else
@@ -414,6 +442,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       @input="onQtyInput(item.skuCode, item.expectedQty, $event)"
                     />
                   </td>
+                  <!-- Manage action column — only for batch/serial SKUs -->
+                  <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--action">
+                    <button class="ri-manage-btn" type="button" @click="openBatchDrawer(item.skuCode)">Manage batch</button>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(item.skuCode)" class="ri-td ri-td--action">
+                    <button class="ri-manage-btn" type="button" @click="openSerialDrawer(item.skuCode)">Manage serial numbers</button>
+                  </td>
+                  <td v-else class="ri-td ri-td--action"></td>
                   <td class="ri-td ri-td--num">
                     <span v-if="item.expectedQty - (draftQty[item.skuCode] ?? 0) > 0" class="ri-outstanding">
                       {{ fmt(item.expectedQty - (draftQty[item.skuCode] ?? 0)) }}
@@ -423,7 +459,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <td class="ri-td">{{ item.unit }}</td>
                 </tr>
                 <tr v-if="!filteredItems.length">
-                  <td class="ri-td ri-empty" colspan="6">No products match your search.</td>
+                  <td class="ri-td ri-empty" colspan="7">No products match your search.</td>
                 </tr>
               </tbody>
             </table>
@@ -459,7 +495,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   <MpModal
     id="ri-confirm"
     :is-open="showConfirm"
-    size="md"
+    :size="draftOutstanding > 0 ? 'lg' : 'md'"
     is-close-on-esc
     :is-keep-alive="false"
     @close="showConfirm = false"
@@ -471,9 +507,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       </MpModalHeader>
       <MpModalBody>
         <template v-if="draftOutstanding > 0">
-          {{ fmt(draftOutstanding) }} of {{ fmt(purchaseTotal) }} units are still outstanding
-          across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'item' : 'items' }}.
-          This receiving will be saved as incomplete.
+          {{ fmt(draftOutstanding) }} of {{ fmt(purchaseTotal) }} purchase qty still outstanding
+          across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'SKU' : 'SKUs' }}.
         </template>
         <template v-else>
           All {{ fmt(purchaseTotal) }} units have been received.
@@ -481,8 +516,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       </MpModalBody>
       <MpModalFooter>
         <div class="ri-modal-footer">
-          <button class="ri-btn ri-btn--ghost" @click="showConfirm = false">Cancel</button>
-          <button class="ri-btn ri-btn--secondary" @click="commitReceiving(false)">Save</button>
+          <button class="ri-btn ri-btn--ghost" @click="showConfirm = false">{{ draftOutstanding > 0 ? 'Continue receiving' : 'Cancel' }}</button>
+          <button class="ri-btn ri-btn--secondary" @click="commitReceiving(false)">{{ draftOutstanding > 0 ? 'Finish as incomplete' : 'Save' }}</button>
           <button class="ri-btn ri-btn--primary" @click="commitReceiving(true)">Save &amp; create put-away</button>
         </div>
       </MpModalFooter>
@@ -496,6 +531,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :sku="batchDrawerSku"
     :warehouse-id="po?.warehouseId ?? ''"
     kind="receiving"
+    :target-count="lineItems.find(i => i.skuCode === batchDrawerSku)?.expectedQty ?? 0"
     :model-value="batchLinesBySku[batchDrawerSku] ?? []"
     @update:open="batchDrawerOpen = $event"
     @save="saveBatchLines"
@@ -506,8 +542,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :sku="serialDrawerSku"
     :warehouse-id="po?.warehouseId ?? ''"
     kind="receiving"
-    :delta="draftQty[serialDrawerSku] ?? 0"
-    :target-count="draftQty[serialDrawerSku] ?? 0"
+    :delta="lineItems.find(i => i.skuCode === serialDrawerSku)?.expectedQty ?? 0"
+    :target-count="lineItems.find(i => i.skuCode === serialDrawerSku)?.expectedQty ?? 0"
     :location-on-hand="0"
     :model-value="(serialLinesBySku[serialDrawerSku] ?? []).map(s => ({ serial: s }))"
     @update:open="serialDrawerOpen = $event"
@@ -622,9 +658,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   white-space: nowrap;
 }
 .ri-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-/* Received qty splits into 2 rows for batch/serial-tracked SKUs, so — for grid
-   consistency — every column gets a right border; the last column drops it so
-   there's no outer edge border (mirrors Stock in/out's location table). */
 .ri-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
@@ -663,17 +696,17 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   line-height: var(--mp-line-heights-md);
 }
 
-/* Batch/serial-tracked received qty — value row + Manage batch/SN action row */
-.ri-td--batch-cell { padding: 0; height: auto; background: var(--mp-background-neutral-subtle); display: flex; flex-direction: column; vertical-align: top; }
-.ri-td--serial-cell { background: var(--mp-background-neutral, #fff); }
-.ri-td--serial-cell:focus-within .ri-batch-cell--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
-.ri-batch-cell { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
-.ri-batch-cell--total { border-bottom: 1px solid var(--mp-border-default); }
-.ri-batch-cell--bare { padding: 0; border-bottom: 1px solid var(--mp-border-default); }
+/* Batch/serial value display */
 .ri-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .ri-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.ri-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
-.ri-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Manage action column */
+.ri-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+.ri-manage-btn {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link);
+}
+.ri-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* Qty colors */
 .ri-qty--full   { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
@@ -716,6 +749,13 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 /* Modal footer */
 .ri-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+
+/* ── Row flash on scan ───────────────────────────────────────────────────────── */
+@keyframes ri-flash {
+  0%   { background-color: var(--mp-background-success-subtle, #dcfce7); }
+  100% { background-color: transparent; }
+}
+.ri-row--flash td { animation: ri-flash 0.7s ease-out forwards; }
 
 /* Not found */
 .ri-not-found {

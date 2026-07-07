@@ -156,6 +156,13 @@ const activityEntries = computed(() => {
   }]
 })
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+function agingDays(startDate?: string, endDate?: string): number {
+  if (!startDate) return 0
+  const REF = new Date().toISOString()
+  const start = new Date(startDate).getTime()
+  const end = new Date(endDate ?? REF).getTime()
+  return Math.max(0, Math.round((end - start) / 86_400_000)) + 1
+}
 
 // ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
 const jumpSearch = ref('')
@@ -334,7 +341,13 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                     <td class="detail-td detail-td--num">{{ fmt(t.pickedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
                     <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
-                    <td class="detail-td">{{ t.endDate ? formatDateTime(t.endDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(t.startDate, t.endDate) > 1" class="linked-aging">{{ agingDays(t.startDate, t.endDate) }} days</span>
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -364,7 +377,13 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                     <td class="detail-td detail-td--num">{{ fmt(t.packedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
                     <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
-                    <td class="detail-td">{{ t.endDate ? formatDateTime(t.endDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(t.startDate, t.endDate) > 1" class="linked-aging">{{ agingDays(t.startDate, t.endDate) }} days</span>
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -521,6 +540,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 }
 .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
 .ood-linked .detail-item-row:hover .row-hover-btn { display: flex; }
+.linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.linked-end__muted { color: var(--mp-text-secondary); }
+.linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }

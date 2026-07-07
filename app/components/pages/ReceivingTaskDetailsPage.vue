@@ -322,7 +322,7 @@ function goBack() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="rcvgd-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="itemSearch" class="rcvgd-search" type="text" placeholder="Search..." />
           </div>
         </div>
         <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
@@ -332,8 +332,8 @@ function goBack() {
               <col />
               <col />
               <col />
-              <col v-if="showReceivedCols" />
-              <col v-if="showReceivedCols" />
+              <col />
+              <col />
               <col />
             </colgroup>
             <thead>
@@ -341,8 +341,8 @@ function goBack() {
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
                 <th class="detail-th detail-th--num">Purchase qty</th>
-                <th v-if="showReceivedCols" class="detail-th detail-th--num">Received qty</th>
-                <th v-if="showReceivedCols" class="detail-th detail-th--num">Outstanding qty</th>
+                <th class="detail-th detail-th--num">Received qty</th>
+                <th class="detail-th detail-th--num">Outstanding qty</th>
                 <th class="detail-th">Unit</th>
               </tr>
             </thead>
@@ -353,16 +353,14 @@ function goBack() {
                 </td>
                 <td class="detail-td">{{ item.skuCode }}</td>
                 <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
-                <td v-if="showReceivedCols" class="detail-td detail-td--num">
-                  <!-- While in progress the count is still changing — keep it neutral;
-                       only colour the final received qty once the task is done. -->
+                <td class="detail-td detail-td--num">
                   <span
                     :class="isInProgress ? '' : (rowReceived(item.skuCode, item.receivedQty) === item.expectedQty ? 'rcvgd-qty--full' : rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-qty--partial' : 'rcvgd-qty--zero')"
                   >
                     {{ fmt(rowReceived(item.skuCode, item.receivedQty)) }}
                   </span>
                 </td>
-                <td v-if="showReceivedCols" class="detail-td detail-td--num">
+                <td class="detail-td detail-td--num">
                   <span v-if="item.expectedQty - rowReceived(item.skuCode, item.receivedQty) > 0" class="rcvgd-outstanding">
                     {{ fmt(item.expectedQty - rowReceived(item.skuCode, item.receivedQty)) }}
                   </span>
@@ -488,9 +486,10 @@ function goBack() {
                     <td class="detail-td">{{ fmt(paStoredQty(pa)) }}</td>
                     <td class="detail-td">{{ pa.startDate ? formatDateTime(pa.startDate) : '—' }}</td>
                     <td class="detail-td">
-                      <span class="rcvgd-end-cell">
-                        <span>{{ pa.endDate ? formatDateTime(pa.endDate) : '—' }}</span>
-                        <span v-if="paAging(pa) > 1" class="rcvgd-aging">{{ paAging(pa) }} days</span>
+                      <span class="linked-end">
+                        <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="paAging(pa) > 1" class="linked-aging">{{ paAging(pa) }} days</span>
                       </span>
                     </td>
                   </tr>
@@ -738,6 +737,9 @@ function goBack() {
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
 .rcvgd-linked .detail-item-row:hover .row-hover-btn { display: flex; }
+.linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.linked-end__muted { color: var(--mp-text-secondary); }
+.linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
 /* Product cell — photo + name, same pattern as the other detail pages */
 .rcvgd-product { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }

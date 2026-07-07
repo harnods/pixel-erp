@@ -435,7 +435,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <div class="sio-loc-table-wrap">
                 <table class="sio-loc-table">
                   <colgroup>
-                    <col class="sio-col-loc" /><col class="sio-col-num" /><col class="sio-col-num" /><col class="sio-col-num" /><col class="sio-col-unit" /><col class="sio-col-del" />
+                    <col class="sio-col-loc" /><col class="sio-col-num" /><col class="sio-col-num" /><col class="sio-col-num" /><col class="sio-col-action" /><col class="sio-col-unit" /><col class="sio-col-del" />
                   </colgroup>
                   <thead>
                     <tr>
@@ -443,6 +443,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       <th class="sio-th sio-th--num">On hand qty</th>
                       <th class="sio-th sio-th--num">Stock in/out qty</th>
                       <th class="sio-th sio-th--num">New on hand qty</th>
+                      <th class="sio-th" />
                       <th class="sio-th">Unit</th>
                       <th class="sio-th sio-th--del" />
                     </tr>
@@ -476,29 +477,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       </td>
                       <td class="sio-td sio-td--num">{{ onHandForLocation(row.sku, locRow.locationId).toLocaleString('id-ID') }}</td>
                       <!-- Stock in/out column: conditional on product type -->
-                      <td v-if="isBatchTrackedSku(row.sku)" class="sio-td sio-td--batch-cell">
-                        <div class="sio-batch-in-cell sio-batch-in-cell--total">
-                          <span v-if="locBatchHasCounts(locRow)" class="sio-batch-val">{{ locBatchTotal(locRow).toLocaleString('id-ID') }}</span>
-                          <span v-else class="sio-batch-empty">No batches</span>
-                        </div>
-                        <div class="sio-batch-in-cell sio-batch-in-cell--action">
-                          <button class="sio-batch-link" type="button" @click="openBatchDrawer(row, locRow)">Manage batch</button>
-                        </div>
+                      <td v-if="isBatchTrackedSku(row.sku)" class="sio-td sio-td--num">
+                        <span v-if="locBatchHasCounts(locRow)" class="sio-batch-val">{{ locBatchTotal(locRow).toLocaleString('id-ID') }}</span>
+                        <span v-else class="sio-batch-empty">—</span>
                       </td>
-                      <td v-else-if="isSerialTrackedSku(row.sku)" class="sio-td sio-td--batch-cell sio-td--serial-cell">
-                        <div class="sio-batch-in-cell sio-batch-in-cell--total sio-batch-in-cell--bare">
-                          <input
-                            class="sio-qty-input"
-                            type="text"
-                            inputmode="numeric"
-                            :value="locRow.delta"
-                            placeholder="0"
-                            @input="onDeltaInput(locRow, $event)"
-                          />
-                        </div>
-                        <div class="sio-batch-in-cell sio-batch-in-cell--action">
-                          <button class="sio-batch-link" type="button" @click="openSerialDrawer(row, locRow)">Manage serial number</button>
-                        </div>
+                      <td v-else-if="isSerialTrackedSku(row.sku)" class="sio-td sio-td--input">
+                        <input
+                          class="sio-qty-input"
+                          type="text"
+                          inputmode="numeric"
+                          :value="locRow.delta"
+                          placeholder="0"
+                          @input="onDeltaInput(locRow, $event)"
+                        />
                       </td>
                       <td v-else class="sio-td sio-td--input">
                         <input
@@ -510,6 +501,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           @input="onDeltaInput(locRow, $event)"
                         />
                       </td>
+                      <!-- Action column -->
+                      <td v-if="isBatchTrackedSku(row.sku)" class="sio-td sio-td--action">
+                        <button class="sio-manage-btn" type="button" @click="openBatchDrawer(row, locRow)">Manage batch</button>
+                      </td>
+                      <td v-else-if="isSerialTrackedSku(row.sku)" class="sio-td sio-td--action">
+                        <button class="sio-manage-btn" type="button" @click="openSerialDrawer(row, locRow)">Manage serial numbers</button>
+                      </td>
+                      <td v-else class="sio-td sio-td--action" />
                       <td
                         class="sio-td sio-td--num"
                         :class="{
@@ -554,7 +553,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           </MpPopoverContent>
                         </MpPopover>
                       </td>
-                      <td class="sio-td sio-td--add-loc-spacer" colspan="5" />
+                      <td class="sio-td sio-td--add-loc-spacer" colspan="6" />
                     </tr>
                   </tbody>
                 </table>
@@ -703,10 +702,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* ── Location sub-table ─────────────────────────────────────────────────────────── */
 .sio-loc-table-wrap { overflow-x: auto; }
 .sio-loc-table { width: 100%; table-layout: auto; border-collapse: collapse; min-width: 640px; }
-.sio-col-loc  { width: 52%; }
-.sio-col-num  { width: 13%; }
-.sio-col-unit { width: 7%; }
-.sio-col-del  { width: 52px; }
+.sio-col-loc    { width: 46%; }
+.sio-col-num    { width: 12%; }
+.sio-col-action { width: auto; }
+.sio-col-unit   { width: 7%; }
+.sio-col-del    { width: 52px; }
 .sio-th { height: 28px; text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-3); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; letter-spacing: 0.04em; }
 .sio-th--num { text-align: right; }
 .sio-td { padding: 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; height: var(--mp-sizes-10, 40px); border-right: 1px solid var(--mp-border-default); background: var(--mp-background-neutral, #fff); }
@@ -734,15 +734,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 .sio-td--add-loc-spacer { background: var(--mp-background-neutral, #fff); border-right: none; }
 
-/* ── Batch / SN cell inside location table (mirrors scf-td--batch-counted) ────── */
-.sio-td--batch-cell { padding: 0; height: auto; background: var(--mp-background-neutral-subtle); display: flex; flex-direction: column; vertical-align: top; }
-.sio-td--serial-cell { background: var(--mp-background-neutral, #fff); }
-.sio-td--serial-cell:focus-within .sio-batch-in-cell--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
-.sio-batch-in-cell { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
-.sio-batch-in-cell--total { border-bottom: 1px solid var(--mp-border-default); }
-.sio-batch-in-cell--bare { padding: 0; border-bottom: 1px solid var(--mp-border-default); }
-.sio-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
-.sio-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* ── Action column ───────────────────────────────────────────────────────────────── */
+.sio-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+.sio-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
+.sio-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .sio-product-count { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .scf-form-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }

@@ -34,6 +34,13 @@ const linkedPacking = computed(() => task.value ? getPackingTask(task.value.pack
 const linkedPicking = computed(() => linkedPacking.value ? getPickingTask(linkedPacking.value.pickingTaskId) : undefined)
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+function agingDays(startDate?: string, endDate?: string): number {
+  if (!startDate) return 0
+  const REF = new Date().toISOString()
+  const start = new Date(startDate).getTime()
+  const end = new Date(endDate ?? REF).getTime()
+  return Math.max(0, Math.round((end - start) / 86_400_000)) + 1
+}
 // Marketplace (Desty) orders carry a due time → show date+time, and flag those due
 // within 24h with an "Expire in N hours" caption. ERP orders are date-only.
 function isMarketplaceDue(o: { dueDate: string }) { return typeof o.dueDate === 'string' && o.dueDate.includes('T') }
@@ -356,7 +363,13 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
                     <td class="detail-td detail-td--num">{{ fmt(linkedPicking.pickedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="linkedPicking.status" /></td>
                     <td class="detail-td">{{ linkedPicking.startDate ? formatDateTime(linkedPicking.startDate) : '—' }}</td>
-                    <td class="detail-td">{{ linkedPicking.endDate ? formatDateTime(linkedPicking.endDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="linkedPicking.endDate">{{ formatDateTime(linkedPicking.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(linkedPicking.startDate, linkedPicking.endDate) > 1" class="linked-aging">{{ agingDays(linkedPicking.startDate, linkedPicking.endDate) }} days</span>
+                      </span>
+                    </td>
                   </tr>
                   <tr v-else><td class="detail-td del-empty" colspan="7">—</td></tr>
                 </tbody>
@@ -396,7 +409,13 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
                     <td class="detail-td detail-td--num">{{ fmt(linkedPacking.packedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="linkedPacking.status" /></td>
                     <td class="detail-td">{{ linkedPacking.startDate ? formatDateTime(linkedPacking.startDate) : '—' }}</td>
-                    <td class="detail-td">{{ linkedPacking.endDate ? formatDateTime(linkedPacking.endDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="linkedPacking.endDate">{{ formatDateTime(linkedPacking.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(linkedPacking.startDate, linkedPacking.endDate) > 1" class="linked-aging">{{ agingDays(linkedPacking.startDate, linkedPacking.endDate) }} days</span>
+                      </span>
+                    </td>
                   </tr>
                   <tr v-else><td class="detail-td del-empty" colspan="7">—</td></tr>
                 </tbody>
@@ -576,6 +595,9 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
 }
 .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
 .del-linked .detail-item-row:hover .row-hover-btn { display: flex; }
+.linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.linked-end__muted { color: var(--mp-text-secondary); }
+.linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }

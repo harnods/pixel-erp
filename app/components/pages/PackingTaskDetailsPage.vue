@@ -184,6 +184,13 @@ function agingLabel(): string {
   const d = packingTaskAgingDays({ ...task.value, endDate: localEndDate.value ?? undefined, status: localStatus.value } as PackingTask)
   return d > 1 ? `${d} days` : ''
 }
+function agingDays(startDate?: string, endDate?: string): number {
+  if (!startDate) return 0
+  const REF = new Date().toISOString()
+  const start = new Date(startDate).getTime()
+  const end = new Date(endDate ?? REF).getTime()
+  return Math.max(0, Math.round((end - start) / 86_400_000)) + 1
+}
 
 // search + pagination
 const itemSearch = ref('')
@@ -451,7 +458,13 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                     <td class="detail-td detail-td--num">{{ fmt(lp.pickedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="lp.status" /></td>
                     <td class="detail-td">{{ lp.startDate ? formatDateTime(lp.startDate) : '—' }}</td>
-                    <td class="detail-td">{{ lp.endDate ? formatDateTime(lp.endDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="lp.endDate">{{ formatDateTime(lp.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(lp.startDate, lp.endDate) > 1" class="linked-aging">{{ agingDays(lp.startDate, lp.endDate) }} days</span>
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -711,6 +724,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .row-hover-btn { position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none; align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary); }
 .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
 .detail-item-row:hover .row-hover-btn { display: flex; }
+.linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.linked-end__muted { color: var(--mp-text-secondary); }
+.linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }

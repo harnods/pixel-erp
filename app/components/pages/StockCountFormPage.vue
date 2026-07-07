@@ -757,7 +757,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="scf-table-scroll">
             <table class="scf-table">
               <colgroup>
-                <col class="scf-col-prod" /><col class="scf-col-sku" /><col class="scf-col-num" /><col class="scf-col-num" /><col class="scf-col-num" /><col class="scf-col-unit" /><col class="scf-col-num" /><col class="scf-col-del" />
+                <col class="scf-col-prod" /><col class="scf-col-sku" /><col class="scf-col-num" /><col class="scf-col-num" /><col class="scf-col-action" /><col class="scf-col-num" /><col class="scf-col-unit" /><col class="scf-col-num" /><col class="scf-col-del" />
               </colgroup>
               <thead>
                 <tr>
@@ -765,6 +765,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <th class="scf-th">SKU</th>
                   <th class="scf-th scf-th--num">On hand qty</th>
                   <th class="scf-th scf-th--num">Counted qty</th>
+                  <th class="scf-th" />
                   <th class="scf-th scf-th--num">Difference</th>
                   <th class="scf-th">Unit</th>
                   <th class="scf-th scf-th--num">Average cost</th>
@@ -786,35 +787,33 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="scf-td scf-td--muted">{{ row.sku }}</td>
                   <td class="scf-td scf-td--num">{{ onHandFor(row.sku).toLocaleString('id-ID') }}</td>
                   <!-- batch-tracked SKU -->
-                  <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--batch-counted">
-                    <div class="scf-batch-row scf-batch-row--total">
-                      <span v-if="batchHasCounts(row)" class="scf-batch-total">{{ batchTotalFor(row).toLocaleString('id-ID') }}</span>
-                      <span v-else class="scf-batch-uncounted">Uncounted</span>
-                    </div>
-                    <div class="scf-batch-row scf-batch-row--action">
-                      <button class="scf-batch-link" type="button" @click="openBatchDrawer(row)">Manage batch</button>
-                    </div>
+                  <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--num">
+                    <span v-if="batchHasCounts(row)" class="scf-batch-total">{{ batchTotalFor(row).toLocaleString('id-ID') }}</span>
+                    <span v-else class="scf-batch-empty">—</span>
                   </td>
-                  <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--batch-counted scf-td--serial">
-                    <div class="scf-batch-row scf-batch-row--total scf-batch-row--bare">
-                      <input
-                        :id="`scf-counted-${row.sku}`"
-                        class="scf-qty-input"
-                        type="text"
-                        inputmode="numeric"
-                        :value="row.counted"
-                        placeholder="0"
-                        @input="onCountedInput(row, $event)"
-                      />
-                    </div>
-                    <div class="scf-batch-row scf-batch-row--action">
-                      <button class="scf-batch-link" type="button" @click="openSerialDrawer(row)">Manage serial number</button>
-                    </div>
+                  <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--input">
+                    <input
+                      :id="`scf-counted-${row.sku}`"
+                      class="scf-qty-input"
+                      type="text"
+                      inputmode="numeric"
+                      :value="row.counted"
+                      placeholder="0"
+                      @input="onCountedInput(row, $event)"
+                    />
                   </td>
                   <!-- regular SKU (existing behavior unchanged) -->
                   <td v-else class="scf-td scf-td--input">
                     <input :id="`scf-counted-${row.sku}`" class="scf-qty-input" type="text" inputmode="numeric" :value="row.counted" placeholder="0" @input="onCountedInput(row, $event)" />
                   </td>
+                  <!-- action column: manage batch / manage serial numbers link -->
+                  <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--action">
+                    <button class="scf-manage-btn" type="button" @click="openBatchDrawer(row)">Manage batch</button>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--action">
+                    <button class="scf-manage-btn" type="button" @click="openSerialDrawer(row)">Manage serial numbers</button>
+                  </td>
+                  <td v-else class="scf-td scf-td--action" />
                   <td class="scf-td scf-td--num" :class="{ 'scf-diff--pos': (differenceOf(row) ?? 0) > 0, 'scf-diff--neg': (differenceOf(row) ?? 0) < 0, 'scf-diff--uncounted': differenceOf(row) === null }">{{ diffLabel(row) }}</td>
                   <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
                   <td class="scf-td scf-td--num scf-td--avg" :class="{ 'scf-td--input': row.avgMode === 'custom' }">
@@ -1006,6 +1005,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-col-sku   { width: 120px; }
 .scf-col-num   { width: 116px; }
 .scf-col-counted { width: 168px; }
+.scf-col-action { width: 160px; }
 .scf-col-unit  { width: 72px; }
 .scf-col-del   { width: 44px; }
 .scf-col-prod { width: 26%; } .scf-col-sku { width: 12%; } .scf-col-num { width: 12%; } .scf-col-unit { width: 8%; } .scf-col-spacer { /* fills remaining width */ } .scf-col-del { width: 44px; }
@@ -1042,20 +1042,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .scf-prod-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scf-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .scf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
-.scf-td--batch-counted { padding: 0; background: var(--mp-background-neutral-subtle); display: flex; flex-direction: column; vertical-align: top; border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
-.scf-batch-row {
-  height: var(--mp-sizes-10, 40px); flex-shrink: 0;
-  display: flex; align-items: center; justify-content: flex-end;
-  padding: 0 var(--mp-spacing-2);
-}
-.scf-batch-row--total { border-bottom: 1px solid var(--mp-border-default); }
-.scf-batch-row--bare { padding: 0; border-bottom: 1px solid var(--mp-border-default); }
-.scf-td--serial { background: var(--mp-background-neutral, #fff); }
-.scf-td--serial:focus-within .scf-batch-row--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 .scf-batch-total { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.scf-batch-uncounted { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.scf-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
-.scf-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.scf-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.scf-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+.scf-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
+.scf-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .scf-qty-input { width: 100%; text-align: right; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
 .scf-qty-input::placeholder { color: var(--mp-text-placeholder); }
 .scf-td--del { padding: 0; text-align: center; }

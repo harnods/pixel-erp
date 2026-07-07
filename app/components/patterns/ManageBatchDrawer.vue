@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, reactive } from 'vue'
+import ScanBar from '~/components/patterns/ScanBar.vue'
 import {
   MpIcon,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -178,6 +179,10 @@ const totalCounted = computed(() => {
   if (!counted.length) return null
   return counted.reduce((s, r) => s + (r.counted ?? 0), 0)
 })
+const totalPutAwayQty = computed(() =>
+  rows.value.reduce((s, r) =>
+    s + r.destLocRows.reduce((rs, d) => rs + (d.locationId ? (Number(d.qty) || 0) : 0), 0), 0)
+)
 const totalDifference = computed(() => {
   if (totalCounted.value === null) return null
   return totalCounted.value - totalOnHand.value
@@ -269,6 +274,32 @@ function addNewBatch() {
   })
 }
 
+function handleDrawerScan(rawValue: string) {
+  const v = rawValue.trim()
+  if (!v) return
+  const existing = rows.value.find(r => r.batchNo === v)
+  if (existing) {
+    existing.counted = (existing.counted ?? 0) + 1
+    if (saveError.value) saveError.value = ''
+    return
+  }
+  newCounter++
+  const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
+  rows.value.push({
+    key: `__new__${newCounter}`,
+    batchNo: v,
+    expiryDate: '',
+    expiryDisplay: '',
+    desc: '',
+    onHand: 0,
+    counted: 1,
+    unit,
+    isNew: true,
+    originLocRows: [makeLocRow()],
+    destLocRows: [makeLocRow()],
+  })
+}
+
 function removeRow(key: string) {
   rows.value = rows.value.filter(r => r.key !== key)
 }
@@ -286,12 +317,33 @@ function setExpiryDisplay(row: WorkRow, val: string) {
   row.expiryDate = displayToIso(val)
 }
 
-// ── Per-batch storage location (2nd drawer) ───────────────────────────────────────
+// ── Per-batch storage location ────────────────────────────────────────────────────
 const hasOriginLoc = computed(() => (props.originLocationPaths?.length ?? 0) > 0)
 const hasDestLoc = computed(() => (props.destLocationPaths?.length ?? 0) > 0)
 const hasAnyLoc = computed(() => hasOriginLoc.value || hasDestLoc.value)
-// Transfer splits qty across origin+dest bins; put-away splits the received qty across dest bins only.
-const showLocSplit = computed(() => (isTransfer.value || isPutAway.value) && hasAnyLoc.value)
+// Transfer uses the 2nd drawer; put-away uses inline split rows in the main table.
+const showLocSplit = computed(() => isTransfer.value && hasAnyLoc.value)
+
+// ── Inline put-away location rows ─────────────────────────────────────────────────
+function paLocOpts(row: WorkRow, lr: LocRow): string[] {
+  const used = new Set(row.destLocRows.filter(r => r.id !== lr.id && r.locationId).map(r => r.locationId))
+  const q = (locSearches[`pa-${lr.id}`] ?? '').toLowerCase()
+  return (props.destLocationPaths ?? []).filter(p => !used.has(p) && (!q || p.toLowerCase().includes(q)))
+}
+function paRecommendedLocOpts(row: WorkRow, lr: LocRow) { return paLocOpts(row, lr).slice(0, 3) }
+function paOtherLocOpts(row: WorkRow, lr: LocRow) { return paLocOpts(row, lr).slice(3) }
+
+function paSelectLoc(row: WorkRow, lr: LocRow, locId: string) {
+  lr.locationId = locId
+  locActiveKey.value = null
+  delete locSearches[`pa-${lr.id}`]
+  if (row.destLocRows[row.destLocRows.length - 1]?.id === lr.id) row.destLocRows.push(makeLocRow())
+}
+
+function paRemoveLocRow(row: WorkRow, lr: LocRow) {
+  row.destLocRows = row.destLocRows.filter(r => r.id !== lr.id)
+  if (!row.destLocRows.length) row.destLocRows = [makeLocRow()]
+}
 
 // helper: does this row have any location assignments saved?
 function batchLocIsSet(row: WorkRow): boolean {
@@ -494,6 +546,10 @@ function fmtNum(n: number | null): string {
             </template>
             <!-- stock in/out stats -->
             <template v-else>
+              <div v-if="isReceiving" class="mbd-stat">
+                <span class="mbd-stat-label">Purchase qty</span>
+                <span class="mbd-stat-value">{{ (props.targetCount ?? 0).toLocaleString('id-ID') }}</span>
+              </div>
               <div
                 class="mbd-stat"
                 :class="(isTransfer || isPicking || hideStockStats) ? {} : { 'mbd-stat--pos': (totalCounted ?? 0) > 0, 'mbd-stat--neg': (totalCounted ?? 0) < 0 }"
@@ -508,6 +564,14 @@ function fmtNum(n: number | null): string {
                   <template v-else>{{ totalCounted.toLocaleString('id-ID') }}</template>
                 </span>
               </div>
+              <div v-if="isReceiving" class="mbd-stat">
+                <span class="mbd-stat-label">Outstanding qty</span>
+                <span class="mbd-stat-value">{{ Math.max(0, (props.targetCount ?? 0) - (totalCounted ?? 0)).toLocaleString('id-ID') }}</span>
+              </div>
+              <div v-if="isPutAway" class="mbd-stat">
+                <span class="mbd-stat-label">Put away qty</span>
+                <span class="mbd-stat-value">{{ totalPutAwayQty.toLocaleString('id-ID') }}</span>
+              </div>
               <div v-if="showAfterStats" class="mbd-stat">
                 <span class="mbd-stat-label">{{ afterLabel }}</span>
                 <span class="mbd-stat-value">{{ totalNewOnHand !== null ? totalNewOnHand.toLocaleString('id-ID') : '—' }}</span>
@@ -516,6 +580,15 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
+        <template v-if="rows.length === 0 && !isInOut">
+          <div class="mbd-empty">
+            <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
+            <p class="mbd-empty-title">No batches yet</p>
+            <p class="mbd-empty-desc">Add a batch using the button above.</p>
+          </div>
+        </template>
+
+        <template v-else>
         <!-- Filter bar -->
         <div class="mbd-filter-bar">
           <div class="mbd-filter-left">
@@ -546,8 +619,111 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
+        <!-- Scan bar — receiving mode only -->
+        <ScanBar v-if="isReceiving" placeholder="Scan batch number..." @scan="handleDrawerScan" />
+
         <!-- Table -->
         <div class="mbd-table-wrap">
+
+          <!-- ── Put-away: inline split rows per batch ── -->
+          <template v-if="isPutAway">
+          <table class="mbd-table mbd-table--putaway">
+            <colgroup>
+              <col class="mbd-col-batch" />
+              <col class="mbd-col-expiry" />
+              <col class="mbd-col-desc" />
+              <col class="mbd-col-pa-loc" />
+              <col class="mbd-col-counted" />
+              <col class="mbd-col-unit" />
+              <col class="mbd-col-del" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="mbd-th">Batch</th>
+                <th class="mbd-th">Expiry date</th>
+                <th class="mbd-th">Description</th>
+                <th class="mbd-th">Storage location</th>
+                <th class="mbd-th mbd-th--num">Received qty</th>
+                <th class="mbd-th">Unit</th>
+                <th class="mbd-th mbd-th--del" />
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="row in displayRows" :key="row.key">
+                <tr v-for="(lr, lrIdx) in row.destLocRows" :key="lr.id" class="mbd-tr">
+                  <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.batchNo }}</td>
+                  <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ isoToDisplay(row.expiryDate) }}</td>
+                  <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc }}</td>
+                  <!-- Storage location picker -->
+                  <td class="mbd-td mbd-td--input mbd-td--pa-loc">
+                    <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select>
+                      <MpPopoverTrigger>
+                        <div class="mbd-pa-loc-trigger">
+                          <input
+                            class="mbd-pa-loc-input"
+                            type="text"
+                            autocomplete="off"
+                            :value="locActiveKey === `pa-${lr.id}` ? (locSearches[`pa-${lr.id}`] ?? '') : lr.locationId"
+                            placeholder="Select storage location"
+                            @focus="locActiveKey = `pa-${lr.id}`; locSearches[`pa-${lr.id}`] = ''"
+                            @input="locActiveKey = `pa-${lr.id}`; locSearches[`pa-${lr.id}`] = ($event.target as HTMLInputElement).value"
+                          />
+                          <svg class="mbd-pa-loc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </div>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ width: '320px', maxHeight: '260px', overflowY: 'auto', padding: '0' })">
+                        <template v-if="paLocOpts(row, lr).length">
+                          <p class="mbd-pa-loc-heading">Recommended locations</p>
+                          <MpPopoverList>
+                            <MpPopoverListItem v-for="loc in paRecommendedLocOpts(row, lr)" :key="loc" :is-active="loc === lr.locationId" @click="paSelectLoc(row, lr, loc)">{{ loc }}</MpPopoverListItem>
+                          </MpPopoverList>
+                          <template v-if="paOtherLocOpts(row, lr).length">
+                            <div class="mbd-pa-loc-divider" />
+                            <MpPopoverList>
+                              <MpPopoverListItem v-for="loc in paOtherLocOpts(row, lr)" :key="loc" :is-active="loc === lr.locationId" @click="paSelectLoc(row, lr, loc)">{{ loc }}</MpPopoverListItem>
+                            </MpPopoverList>
+                          </template>
+                        </template>
+                        <p v-else class="mbd-pa-loc-none">No locations found.</p>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </td>
+                  <!-- Qty input -->
+                  <td class="mbd-td mbd-td--input mbd-td--pa-qty">
+                    <input
+                      class="mbd-qty-input"
+                      type="number"
+                      min="0"
+                      :value="lr.qty"
+                      placeholder="0"
+                      @input="lr.qty = ($event.target as HTMLInputElement).value"
+                    />
+                  </td>
+                  <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.unit }}</td>
+                  <td class="mbd-td mbd-td--del">
+                    <button
+                      v-if="lr.locationId || row.destLocRows.length > 1"
+                      class="mbd-del-btn"
+                      type="button"
+                      aria-label="Remove location"
+                      @click="paRemoveLocRow(row, lr)"
+                    >
+                      <MpIcon name="minus-circular" size="sm" />
+                    </button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+          <div class="mbd-pagination">
+            Showing {{ displayRows.length }} of {{ rows.length }} batches
+          </div>
+          </template>
+
+          <!-- ── Other modes: existing table ── -->
+          <template v-else>
           <table class="mbd-table" :class="{ 'mbd-table--split': showLocSplit }">
             <colgroup>
               <col class="mbd-col-batch" />
@@ -707,17 +883,17 @@ function fmtNum(n: number | null): string {
                 <td :colspan="trailingColspan" class="mbd-td mbd-td--select-empty" />
               </tr>
 
-              <!-- Pagination info row -->
-              <tr class="mbd-tr mbd-tr--info">
-                <td :colspan="trailingColspan + 1" class="mbd-td mbd-td--pagination">
-                  Showing {{ displayRows.length }} of {{ rows.length }} batches
-                </td>
-              </tr>
             </tbody>
           </table>
+          <div class="mbd-pagination">
+            Showing {{ displayRows.length }} of {{ rows.length }} batches
+          </div>
+          </template>
         </div>
 
         <p v-if="saveError" class="mbd-save-error">{{ saveError }}</p>
+
+        </template>
 
       </div>
 
@@ -947,9 +1123,10 @@ function fmtNum(n: number | null): string {
 
 /* ── Content area ────────────────────────────────────────────────────────────── */
 .mbd-content {
-  flex: 1; min-height: 0; overflow-y: auto;
+  flex: 1; min-height: 0; overflow: hidden;
   padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 20px;
 }
+.mbd-content > * { flex-shrink: 0; }
 
 /* ── Product info bar ────────────────────────────────────────────────────────── */
 .mbd-info-bar {
@@ -971,7 +1148,7 @@ function fmtNum(n: number | null): string {
 .mbd-info-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mbd-info-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .mbd-info-stats { display: flex; gap: var(--mp-spacing-6); flex-shrink: 0; }
-.mbd-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+.mbd-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
 .mbd-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .mbd-stat-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; font-weight: var(--mp-font-weights-medium); }
 .mbd-stat--pos .mbd-stat-value { color: var(--mp-text-success, #18794e); }
@@ -1006,24 +1183,50 @@ function fmtNum(n: number | null): string {
 
 /* ── Table ───────────────────────────────────────────────────────────────────── */
 .mbd-table-wrap {
+  flex: 0 1 auto; min-height: 0;
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
-  overflow: clip;
-  overflow-x: auto;
+  overflow: auto;
 }
 .mbd-table {
   width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0;
   min-width: 1000px;
 }
-.mbd-col-batch   { width: 170px; }
+.mbd-col-batch   { width: 240px; }
 .mbd-col-expiry  { width: 172px; }
-.mbd-col-desc    { /* no width — flexibly absorbs remaining space after fixed cols */ }
+.mbd-col-desc    { width: 120px; }
 .mbd-col-location { width: 160px; }
 .mbd-col-num     { width: 150px; }
 .mbd-col-after   { width: 175px; }
 .mbd-col-counted { width: 160px; }
 .mbd-col-unit    { width: 78px; }
 .mbd-col-del     { width: 44px; }
+.mbd-col-pa-loc  { width: 300px; }
+
+/* ── Put-away inline split-row table ──────────────────────────────────────────── */
+.mbd-table--putaway .mbd-th { border-right: 1px solid var(--mp-border-default); }
+.mbd-table--putaway .mbd-th:last-child { border-right: none; }
+.mbd-table--putaway .mbd-td { border-right: 1px solid var(--mp-border-default); }
+.mbd-table--putaway .mbd-td:last-child { border-right: none; }
+.mbd-td--merged { border-left: none; }
+.mbd-td--pa-loc  { padding: 0; background: var(--mp-background-neutral, #fff); }
+.mbd-td--pa-loc:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.mbd-td--pa-qty  { padding: 0; background: var(--mp-background-neutral, #fff); }
+.mbd-td--pa-qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.mbd-pa-loc-trigger {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); cursor: text;
+}
+.mbd-pa-loc-input {
+  flex: 1; min-width: 0; border: none; outline: none; background: none; padding: 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mbd-pa-loc-input::placeholder { color: var(--mp-text-placeholder); }
+.mbd-pa-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+.mbd-pa-loc-heading { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.mbd-pa-loc-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
+.mbd-pa-loc-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 .mbd-th {
   height: var(--mp-sizes-7, 28px);
   text-align: left;
@@ -1041,9 +1244,11 @@ function fmtNum(n: number | null): string {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
   vertical-align: top;
   background: var(--mp-background-neutral-subtle);
 }
+.mbd-td:last-child { border-right: none; }
 .mbd-td--muted { color: var(--mp-text-secondary); }
 .mbd-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 
@@ -1113,12 +1318,22 @@ function fmtNum(n: number | null): string {
 .mbd-table--split .mbd-td:last-child { border-right: none; }
 
 /* Pagination row — white bg, no gray */
-.mbd-tr--info .mbd-td { background: var(--mp-background-neutral, #fff); }
-.mbd-td--pagination {
+.mbd-pagination {
+  position: sticky; bottom: 0;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-  text-align: left; border-bottom: none;
+  background: var(--mp-background-default, #fff);
 }
+.mbd-empty {
+  display: flex; flex-direction: column; align-items: center;
+  padding: var(--mp-spacing-10, 40px) var(--mp-spacing-4);
+  gap: var(--mp-spacing-2); flex: 1;
+}
+.mbd-empty-title {
+  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); text-align: center;
+}
+.mbd-empty-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 
 /* Select batch row — same pattern as "Select product" in warehouse transfer */
 .mbd-td--select-cell { padding: 0; background: var(--mp-background-neutral, #fff); position: relative; }

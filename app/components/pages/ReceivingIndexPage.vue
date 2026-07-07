@@ -186,6 +186,16 @@ const taskToDelete = ref<ReceivingTask | null>(null)
 function openDeleteModal(t: ReceivingTask) { taskToDelete.value = t; deleteModalOpen.value = true }
 function closeDeleteModal() { deleteModalOpen.value = false; taskToDelete.value = null }
 
+function assigneeRowspan(po: ReceivingPO, tIdx: number): number {
+  if (tIdx > 0 && po.tasks[tIdx].assignee === po.tasks[tIdx - 1].assignee) return 0
+  let span = 1
+  for (let i = tIdx + 1; i < po.tasks.length; i++) {
+    if (po.tasks[i].assignee === po.tasks[tIdx].assignee) span++
+    else break
+  }
+  return span
+}
+
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
@@ -365,7 +375,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   </button>
                 </div>
               </td>
-              <td v-if="!isScoped" class="rcvg-td">{{ t.assignee }}</td>
+              <td
+                v-if="!isScoped && assigneeRowspan(po, tIdx) > 0"
+                :rowspan="assigneeRowspan(po, tIdx)"
+                class="rcvg-td rcvg-td--assignee"
+              >{{ t.assignee }}</td>
               <td class="rcvg-td">{{ t.skuCount }}</td>
               <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
               <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
@@ -576,8 +590,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* Merged PO + Warehouse cells */
-.rcvg-td--po { vertical-align: middle; position: relative; }
-.rcvg-td--warehouse { vertical-align: middle; position: relative; }
+.rcvg-td--po { vertical-align: top; position: relative; }
+.rcvg-td--warehouse { vertical-align: top; position: relative; }
+.rcvg-td--assignee { vertical-align: top; }
 .rcvg-po-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rcvg-wh-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rcvg-po-no { color: var(--mp-text-default); }
@@ -590,7 +605,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* Task number — View details chip on row hover */
 .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: var(--mp-spacing-2); top: 10px; display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);

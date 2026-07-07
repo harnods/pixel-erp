@@ -159,3 +159,14 @@
   box-shadow: none;
   background: transparent;
 }
+
+/* ── Toast centering fix: when --width is max-content the toaster container
+   collapses to 0px (absolute children have no flow size), so individual toasts
+   must self-center. Also prevent text wrapping so width truly hugs content. ─── */
+[data-sonner-toaster][data-x-position="center"] [data-sonner-toast] {
+  left: 50%;
+  transform: translateX(-50%) var(--y);
+}
+[data-sonner-toast][data-styled="true"] {
+  white-space: nowrap;
+}

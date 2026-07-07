@@ -11,7 +11,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { putAwayTasks, startPutAway as startPutAwayTask } from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
-import { formatDate, formatDateTimeLong } from '~/utils/date'
+import { formatDate, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -56,9 +56,11 @@ const linkedReceivingTasks = computed(() => {
       id,
       taskNo: task.value!.receivingTaskNos[i],
       purchaseOrderNo: entry?.po.purchaseNo ?? '—',
+      receiptId: entry?.po.receiptId ?? null,
       status: 'completed' as const,
       startDate,
       endDate,
+      warehouseId: task.value!.warehouseId,
       warehouseName: task.value!.warehouseName,
     }
   })
@@ -228,7 +230,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="pad-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="itemSearch" class="pad-search" type="text" placeholder="Search..." />
           </div>
         </div>
 
@@ -298,10 +300,10 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Purchase order no.</th>
+                    <th class="detail-th">Warehouse</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Start date</th>
                     <th class="detail-th">End date</th>
-                    <th class="detail-th">Warehouse</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -318,16 +320,35 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                         </button>
                       </div>
                     </td>
-                    <td class="detail-td detail-td--secondary">{{ rt.purchaseOrderNo }}</td>
+                    <td class="detail-td detail-td--po">
+                      <span class="pad-po-no">{{ rt.purchaseOrderNo }}</span>
+                      <button v-if="rt.receiptId" class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${rt.receiptId}`)">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span class="row-hover-btn__label">VIEW DETAILS</span>
+                      </button>
+                    </td>
+                    <td class="detail-td detail-td--wh">
+                      <span class="pad-wh-name">{{ rt.warehouseName }}</span>
+                      <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${rt.warehouseId}`)">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span class="row-hover-btn__label">VIEW DETAILS</span>
+                      </button>
+                    </td>
                     <td class="detail-td"><ErpStatusBadge :status="rt.status" /></td>
-                    <td class="detail-td">{{ rt.startDate ? formatDate(rt.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ rt.startDate ? formatDateTime(rt.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        {{ formatDate(rt.endDate!) }}
+                        <span v-if="rt.endDate">{{ formatDateTime(rt.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(rt.startDate, rt.endDate) > 1" class="linked-aging">{{ agingDays(rt.startDate, rt.endDate) }} days</span>
                       </span>
                     </td>
-                    <td class="detail-td">{{ rt.warehouseName }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -542,6 +563,12 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 .cell-with-action { position: relative; display: flex; align-items: center; }
 .pad-linked-num { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-td--po { position: relative; }
+.pad-po-no { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-item-row:hover .detail-td--po .row-hover-btn { display: flex; }
+.detail-td--wh { position: relative; }
+.pad-wh-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-item-row:hover .detail-td--wh .row-hover-btn { display: flex; }
 .row-hover-btn {
   position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);

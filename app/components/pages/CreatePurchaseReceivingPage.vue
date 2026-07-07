@@ -166,14 +166,14 @@ function handleCreate() {
   if (receipt.value) {
     // Create an Open receiving task covering the kept (included) SKUs. The operator
     // does the actual receiving; PO status stays Open until a task is ended.
-    createReceivingTask({
+    const task = createReceivingTask({
       receiptId: receipt.value.id,
       assignee: assigneeLabel.value,
       skus: keptItems.value.map((i) => i.sku),
     })
+    toast.notify({ variant: 'success', title: 'Receiving task created successfully' })
+    router.push(task ? `/receiving/${task.id}` : `/inbound-delivery/${props.orderId}`)
   }
-  toast.notify({ variant: 'success', title: 'Receiving task created successfully' })
-  router.push(`/inbound-delivery/${props.orderId}`)
 }
 </script>
 
