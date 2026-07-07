@@ -44,7 +44,7 @@ const canApprove = computed(() => viewAs.value === 'manager' && transfer.value?.
 function approve() {
   if (!transfer.value) return
   approveTransfer(transfer.value.id)
-  toast.notify({ variant: 'success', title: `${transfer.value.number} approved` })
+  toast.notify({ variant: 'success', title: `${transfer.value.number} approved` , maxWidth: 'max-content'})
 }
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }

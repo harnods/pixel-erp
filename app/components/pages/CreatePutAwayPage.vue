@@ -263,7 +263,7 @@ function handleCreate() {
 
   const totalQty = skuRows.value.reduce((s, r) => s + r.receivedQty, 0)
 
-  addPutAwayTask({
+  const task = addPutAwayTask({
     receivingTaskIds: selectedTasks.value.map(t => t.id),
     receivingTaskNos: selectedTasks.value.map(t => t.taskNo),
     warehouseId:   warehouseId.value,
@@ -272,7 +272,7 @@ function handleCreate() {
     itemQty: totalQty,
   })
 
-  router.push({ path: '/inbound-delivery', query: { tab: 'Put-away', saved: '1' } })
+  router.push(`/put-away/${task.id}`)
 }
 </script>
 

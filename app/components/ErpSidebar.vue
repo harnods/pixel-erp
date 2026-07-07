@@ -142,7 +142,19 @@ interface ActivePanel {
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
-const isExpanded = ref(false)
+// Rail expand/collapse is a user preference — persist it so a refresh doesn't
+// silently collapse a rail the user explicitly expanded.
+const SIDEBAR_EXPANDED_KEY = 'erp-sidebar-expanded'
+function loadSidebarExpanded(): boolean {
+  if (!import.meta.client) return false
+  try { return localStorage.getItem(SIDEBAR_EXPANDED_KEY) === '1' } catch { return false }
+}
+function saveSidebarExpanded(v: boolean): void {
+  if (!import.meta.client) return
+  try { localStorage.setItem(SIDEBAR_EXPANDED_KEY, v ? '1' : '0') } catch { /* ignore */ }
+}
+
+const isExpanded = ref(loadSidebarExpanded())
 const isPanelVisible = ref(true)
 const activeItem = ref('Home')
 const activePanel = ref<ActivePanel | null>(null)
@@ -623,6 +635,7 @@ function handleToggle() {
     isPanelVisible.value = !isPanelVisible.value
   } else {
     isExpanded.value = !isExpanded.value
+    saveSidebarExpanded(isExpanded.value)
   }
 }
 

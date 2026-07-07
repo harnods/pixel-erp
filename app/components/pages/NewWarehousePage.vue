@@ -102,11 +102,11 @@ function save() {
 
   if (isEdit.value) {
     updateWarehouse(props.orderId!, payload)
-    toast.notify({ variant: 'success', title: 'Warehouse updated' })
+    toast.notify({ variant: 'success', title: 'Warehouse updated' , maxWidth: 'max-content'})
     router.push(`/warehouses/${props.orderId}`)
   } else {
     addWarehouse(payload)
-    toast.notify({ variant: 'success', title: 'Warehouse saved' })
+    toast.notify({ variant: 'success', title: 'Warehouse saved' , maxWidth: 'max-content'})
     router.push('/warehouses')
   }
 }

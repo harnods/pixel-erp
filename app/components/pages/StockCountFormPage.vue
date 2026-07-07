@@ -108,7 +108,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(row: CountRow) {
   if (row.counted.trim() === '') {
-    toast.notify({ variant: 'warning', title: 'Enter counted qty first' })
+    toast.notify({ variant: 'warning', title: 'Enter counted qty first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerRow.value = row
@@ -291,7 +291,7 @@ function handleSave() {
     ...(isWms.value ? { assignee: assignee.value || undefined } : {}),
   }
   isWms.value ? addWmsAdjustment(input) : addAdjustment(input)
-  toast.notify({ variant: 'success', title: 'Stock count created' })
+  toast.notify({ variant: 'success', title: 'Stock count created' , maxWidth: 'max-content'})
   router.push(isWms.value ? '/stock-count' : '/stock-adjustments')
 }
 
@@ -485,7 +485,7 @@ const locSerialDrawerOpen = computed({
 })
 function openLocSerialDrawer(row: LocRow) {
   if (row.counted.trim() === '') {
-    toast.notify({ variant: 'warning', title: 'Enter counted qty first' })
+    toast.notify({ variant: 'warning', title: 'Enter counted qty first' , maxWidth: 'max-content'})
     return
   }
   locSerialDrawerRow.value = row

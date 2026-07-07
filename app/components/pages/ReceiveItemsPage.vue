@@ -13,7 +13,7 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
-import { saveReceivingDraft, endReceiving as endReceivingTask, type ReceivingBatchLine } from '~/data/receivingTasks'
+import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 
@@ -42,11 +42,31 @@ const purchaseTotal      = computed(() => task.value?.purchaseQty ?? 0)
 const draftReceivedTotal = computed(() =>
   Object.values(draftQty.value).reduce((a, b) => a + (b || 0), 0),
 )
+
+// Qty already received in prior ended tasks for the same receipt, per SKU
+const priorReceivedPerSku = computed<Record<string, number>>(() => {
+  const receiptId = task.value?.receiptId
+  if (!receiptId) return {}
+  const map: Record<string, number> = {}
+  for (const t of receivingTasksForReceipt(receiptId)) {
+    if (t.id === props.orderId) continue
+    if (t.status !== 'pending put-away' && t.status !== 'completed') continue
+    for (const it of t.items) map[it.sku] = (map[it.sku] ?? 0) + it.receivedQty
+  }
+  return map
+})
 const draftOutstanding = computed(() =>
-  Math.max(0, purchaseTotal.value - draftReceivedTotal.value),
+  lineItems.value.reduce((sum, it) => {
+    const prior = priorReceivedPerSku.value[it.skuCode] ?? 0
+    const draft = draftQty.value[it.skuCode] ?? 0
+    return sum + Math.max(0, it.expectedQty - prior - draft)
+  }, 0),
 )
 const shortItemsCount = computed(
-  () => lineItems.value.filter(it => (draftQty.value[it.skuCode] ?? 0) < it.expectedQty).length,
+  () => lineItems.value.filter(it => {
+    const prior = priorReceivedPerSku.value[it.skuCode] ?? 0
+    return (draftQty.value[it.skuCode] ?? 0) + prior < it.expectedQty
+  }).length,
 )
 
 const filteredItems = computed(() => {
@@ -121,6 +141,23 @@ function saveSerialLines(serials: CommittedSerial[]) {
   draftQty.value = { ...draftQty.value, [sku]: serials.length }
   if (showQtyErrors.value) showQtyErrors.value = false
 }
+
+// SNs already received in prior tasks for the same receipt (block duplicates in drawer)
+const priorReceivedSerialsBySku = computed<Record<string, string[]>>(() => {
+  const receiptId = task.value?.receiptId
+  if (!receiptId) return {}
+  const map: Record<string, string[]> = {}
+  for (const t of receivingTasksForReceipt(receiptId)) {
+    if (t.id === props.orderId) continue
+    if (t.status !== 'pending put-away' && t.status !== 'completed') continue
+    for (const it of t.items) {
+      if (it.serialNumbers?.length) {
+        map[it.sku] = [...(map[it.sku] ?? []), ...it.serialNumbers]
+      }
+    }
+  }
+  return map
+})
 
 // ── Progressive pagination ────────────────────────────────────────────────────
 const PAGE_SIZE    = 10
@@ -280,7 +317,7 @@ function commitReceiving(createPutAway = false) {
 
 function saveDraft() {
   saveReceivingDraft(props.orderId, { ...draftQty.value }, buildReceivingDetail())
-  toast.notify({ variant: 'success', title: 'Receiving draft saved' })
+  toast.notify({ variant: 'success', title: 'Receiving draft saved' , maxWidth: 'max-content'})
   router.push(`/receiving/${props.orderId}`)
 }
 
@@ -436,10 +473,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   >
                     <input
                       class="ri-qty-input"
-                      type="number" min="0" :max="item.expectedQty"
+                      type="number" min="0"
+                      :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
                       :value="draftQty[item.skuCode] ?? 0"
                       :aria-label="`Received qty for ${item.productName}`"
-                      @input="onQtyInput(item.skuCode, item.expectedQty, $event)"
+                      @input="onQtyInput(item.skuCode, item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0), $event)"
                     />
                   </td>
                   <!-- Manage action column — only for batch/serial SKUs -->
@@ -451,8 +489,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <td v-else class="ri-td ri-td--action"></td>
                   <td class="ri-td ri-td--num">
-                    <span v-if="item.expectedQty - (draftQty[item.skuCode] ?? 0) > 0" class="ri-outstanding">
-                      {{ fmt(item.expectedQty - (draftQty[item.skuCode] ?? 0)) }}
+                    <span v-if="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0) > 0" class="ri-outstanding">
+                      {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0)) }}
                     </span>
                     <span v-else class="ri-qty--full">—</span>
                   </td>
@@ -546,6 +584,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :target-count="lineItems.find(i => i.skuCode === serialDrawerSku)?.expectedQty ?? 0"
     :location-on-hand="0"
     :model-value="(serialLinesBySku[serialDrawerSku] ?? []).map(s => ({ serial: s }))"
+    :blocked-serials="priorReceivedSerialsBySku[serialDrawerSku] ?? []"
     @update:open="serialDrawerOpen = $event"
     @save="saveSerialLines"
   />

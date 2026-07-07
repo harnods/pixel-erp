@@ -202,7 +202,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(row: ProductRow, locRow: LocationRow) {
   if (locRow.delta.trim() === '' || locRow.delta.trim() === '-') {
-    toast.notify({ variant: 'warning', title: 'Enter stock in/out qty first' })
+    toast.notify({ variant: 'warning', title: 'Enter stock in/out qty first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerSku.value = row.sku
@@ -298,7 +298,7 @@ function handleSave() {
     lines,
   }
   isWms.value ? addWmsAdjustment(input) : addAdjustment(input)
-  toast.notify({ variant: 'success', title: 'Stock in/out created' })
+  toast.notify({ variant: 'success', title: 'Stock in/out created' , maxWidth: 'max-content'})
   router.push(isWms.value ? '/stock-inout' : '/stock-adjustments')
 }
 

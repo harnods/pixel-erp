@@ -11,7 +11,7 @@ import { formatDateLong } from '~/utils/date'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { receipts, type Receipt } from '~/data/receipts'
 import { lineItemsForReceipt, type ReceiptLineItem } from '~/data/receiptLineItems'
-import { createReceivingTask, uncoveredLineItems } from '~/data/receivingTasks'
+import { createReceivingTask, uncoveredLineItems, receivingTasksForReceipt } from '~/data/receivingTasks'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -63,6 +63,18 @@ const visibleItems = computed<ReceiptLineItem[]>(() => {
   )
 })
 const hasRemoved = computed(() => removed.value.size > 0)
+
+// ─── Partial reception context ────────────────────────────────────────────────
+const isPartialReceipt = computed(() => receipt.value?.status === 'partial reception')
+
+const receivedPerSku = computed<Record<string, number>>(() => {
+  const map: Record<string, number> = {}
+  for (const t of receivingTasksForReceipt(props.orderId)) {
+    if (t.status !== 'pending put-away' && t.status !== 'completed') continue
+    for (const it of t.items) map[it.sku] = (map[it.sku] ?? 0) + it.receivedQty
+  }
+  return map
+})
 
 // ─── Progressive pagination — auto lazy-load on scroll ────────────────────────
 const PAGE_SIZE   = 10
@@ -171,7 +183,7 @@ function handleCreate() {
       assignee: assigneeLabel.value,
       skus: keptItems.value.map((i) => i.sku),
     })
-    toast.notify({ variant: 'success', title: 'Receiving task created successfully' })
+    toast.notify({ variant: 'success', title: 'Receiving task created successfully' , maxWidth: 'max-content'})
     router.push(task ? `/receiving/${task.id}` : `/inbound-delivery/${props.orderId}`)
   }
 }
@@ -267,7 +279,9 @@ function handleCreate() {
               <colgroup>
                 <col />
                 <col />
-                <col />
+                <col class="pr-col--num" />
+                <col v-if="isPartialReceipt" class="pr-col--num" />
+                <col v-if="isPartialReceipt" class="pr-col--num" />
                 <col />
                 <col />
               </colgroup>
@@ -276,6 +290,8 @@ function handleCreate() {
                   <th class="pr-th">Product</th>
                   <th class="pr-th">SKU</th>
                   <th class="pr-th pr-th--num">Purchase qty</th>
+                  <th v-if="isPartialReceipt" class="pr-th pr-th--num">Received qty</th>
+                  <th v-if="isPartialReceipt" class="pr-th pr-th--num">Outstanding qty</th>
                   <th class="pr-th">Unit</th>
                   <th class="pr-th pr-th--action" aria-hidden="true" />
                 </tr>
@@ -287,6 +303,8 @@ function handleCreate() {
                   </td>
                   <td class="pr-td"><span class="pr-sku-text">{{ it.sku }}</span></td>
                   <td class="pr-td pr-td--num">{{ formatNum(it.purchaseQty) }}</td>
+                  <td v-if="isPartialReceipt" class="pr-td pr-td--num">{{ formatNum(receivedPerSku[it.sku] ?? 0) }}</td>
+                  <td v-if="isPartialReceipt" class="pr-td pr-td--num pr-td--outstanding">{{ formatNum(it.purchaseQty - (receivedPerSku[it.sku] ?? 0)) }}</td>
                   <td class="pr-td">{{ it.unit }}</td>
                   <td class="pr-td pr-td--action">
                     <template v-if="removed.has(it.productId)">
@@ -466,10 +484,12 @@ function handleCreate() {
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
 }
+.pr-col--num { width: 110px; }
 .pr-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
 }
+.pr-td--outstanding { color: var(--mp-text-warning, #b45309); font-weight: var(--mp-font-weights-semi-bold); }
 .pr-td--action { text-align: right; padding-right: var(--mp-spacing-2); }
 .pr-item-row--removed .pr-td { background: var(--mp-background-neutral-subtle); color: var(--mp-text-disabled); }
 .pr-item-row--removed :deep(.pc-name),

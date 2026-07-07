@@ -123,14 +123,14 @@ function closeArchiveModal() {
 function confirmArchive() {
   if (!warehouseToArchive.value) return
   archiveWarehouses([warehouseToArchive.value.id])
-  toast.notify({ variant: 'success', title: `${warehouseToArchive.value.name} archived` })
+  toast.notify({ variant: 'success', title: `${warehouseToArchive.value.name} archived` , maxWidth: 'max-content'})
   closeArchiveModal()
 }
 
 /** Unarchive is a low-friction, reversible action — no confirmation needed. */
 function unarchive(row: Warehouse) {
   unarchiveWarehouses([row.id])
-  toast.notify({ variant: 'success', title: `${row.name} unarchived` })
+  toast.notify({ variant: 'success', title: `${row.name} unarchived` , maxWidth: 'max-content'})
 }
 
 // ─── Bulk delete confirmation ─────────────────────────────────────────────────
@@ -167,7 +167,7 @@ function closeBulkArchiveModal() {
 function confirmBulkArchive() {
   const count = bulkArchiveCount.value
   archiveWarehouses(bulkArchiveIds.value)
-  toast.notify({ variant: 'success', title: `${count} warehouse${count !== 1 ? 's' : ''} archived` })
+  toast.notify({ variant: 'success', title: `${count} warehouse${count !== 1 ? 's' : ''} archived` , maxWidth: 'max-content'})
   bulkArchiveDeselect?.()
   closeBulkArchiveModal()
 }

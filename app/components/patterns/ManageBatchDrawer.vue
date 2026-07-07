@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, reactive } from 'vue'
+import { ref, computed, watch, reactive, nextTick } from 'vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import {
   MpIcon,
@@ -274,6 +274,18 @@ function addNewBatch() {
   })
 }
 
+const lastScannedKey = ref<string | null>(null)
+let scannedTimer: ReturnType<typeof setTimeout> | null = null
+async function flashScanned(key: string) {
+  if (scannedTimer) clearTimeout(scannedTimer)
+  if (lastScannedKey.value === key) {
+    lastScannedKey.value = null
+    await nextTick()
+  }
+  lastScannedKey.value = key
+  scannedTimer = setTimeout(() => { lastScannedKey.value = null }, 1000)
+}
+
 function handleDrawerScan(rawValue: string) {
   const v = rawValue.trim()
   if (!v) return
@@ -281,12 +293,14 @@ function handleDrawerScan(rawValue: string) {
   if (existing) {
     existing.counted = (existing.counted ?? 0) + 1
     if (saveError.value) saveError.value = ''
+    flashScanned(existing.key)
     return
   }
   newCounter++
+  const key = `__new__${newCounter}`
   const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
   rows.value.push({
-    key: `__new__${newCounter}`,
+    key,
     batchNo: v,
     expiryDate: '',
     expiryDisplay: '',
@@ -298,6 +312,7 @@ function handleDrawerScan(rawValue: string) {
     originLocRows: [makeLocRow()],
     destLocRows: [makeLocRow()],
   })
+  flashScanned(key)
 }
 
 function removeRow(key: string) {
@@ -751,7 +766,7 @@ function fmtNum(n: number | null): string {
             </thead>
             <tbody>
               <template v-for="row in displayRows" :key="row.key">
-              <tr class="mbd-tr">
+              <tr class="mbd-tr" :class="{ 'mbd-tr--scanned': lastScannedKey === row.key }">
                 <!-- BATCH -->
                 <td v-if="row.isNew" class="mbd-td mbd-td--input">
                   <input
@@ -1250,6 +1265,12 @@ function fmtNum(n: number | null): string {
 }
 .mbd-td:last-child { border-right: none; }
 .mbd-td--muted { color: var(--mp-text-secondary); }
+@keyframes mbd-scan-flash {
+  0%   { background: var(--mp-background-success-subtle, #f0fdf4); }
+  20%  { background: var(--mp-background-success-subtle, #f0fdf4); }
+  100% { background: var(--mp-background-neutral-subtle); }
+}
+.mbd-tr--scanned .mbd-td { animation: mbd-scan-flash 1s ease-out forwards; }
 .mbd-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 
 /* White editable cells — focus ring via ::after (box-shadow: inset is painted

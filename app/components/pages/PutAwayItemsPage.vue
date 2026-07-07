@@ -514,14 +514,14 @@ function postPutAway() {
   }
   const { items, assignments } = buildItemsAndAssignments()
   endPutAwayTask(props.orderId, items, assignments)
-  toast.notify({ variant: 'success', title: 'Put-away finished' })
+  toast.notify({ variant: 'success', title: 'Put-away finished' , maxWidth: 'max-content'})
   router.push(`/put-away/${props.orderId}`)
 }
 
 function saveDraft() {
   const { items, assignments } = buildItemsAndAssignments()
   savePutAwayDraft(props.orderId, items, assignments)
-  toast.notify({ variant: 'success', title: 'Put-away draft saved' })
+  toast.notify({ variant: 'success', title: 'Put-away draft saved' , maxWidth: 'max-content'})
   router.push(`/put-away/${props.orderId}`)
 }
 

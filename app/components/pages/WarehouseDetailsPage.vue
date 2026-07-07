@@ -126,17 +126,17 @@ function confirmArchive() {
   if (!warehouse.value) return
   archiveWarehouses([warehouse.value.id])
   archiveModalOpen.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse archived' })
+  toast.notify({ variant: 'success', title: 'Warehouse archived' , maxWidth: 'max-content'})
 }
 /** Unarchive is a low-friction, reversible action — no confirmation modal (matches the index). */
 function unarchive() {
   if (!warehouse.value) return
   unarchiveWarehouses([warehouse.value.id])
-  toast.notify({ variant: 'success', title: 'Warehouse unarchived' })
+  toast.notify({ variant: 'success', title: 'Warehouse unarchived' , maxWidth: 'max-content'})
 }
 function confirmDelete() {
   deleteModalOpen.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse deleted' })
+  toast.notify({ variant: 'success', title: 'Warehouse deleted' , maxWidth: 'max-content'})
   router.push('/warehouses')
 }
 

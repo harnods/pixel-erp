@@ -306,7 +306,7 @@ function editAdjustment() { router.push(`/stock-adjustments/${props.orderId}/edi
 function approve() {
   if (!adjustment.value) return
   approveAdjustment(adjustment.value.id)
-  toast.notify({ variant: 'success', title: `${adjustment.value.number} approved` })
+  toast.notify({ variant: 'success', title: `${adjustment.value.number} approved` , maxWidth: 'max-content'})
 }
 
 // ── Delete (single) — same alert as the index ──────────────────────────────────

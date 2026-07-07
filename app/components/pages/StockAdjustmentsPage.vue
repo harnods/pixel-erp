@@ -154,7 +154,7 @@ function newAdjustment(kind: 'count' | 'in-out') {
 }
 function approve(row: StockAdjustment) {
   approveAdjustment(row.id)
-  toast.notify({ variant: 'success', title: `${row.number} approved` })
+  toast.notify({ variant: 'success', title: `${row.number} approved` , maxWidth: 'max-content'})
 }
 
 // ─── Approval log modal ──────────────────────────────────────────────────────
@@ -175,7 +175,7 @@ function bulkApprove(sel: Set<number>, deselectAll: () => void) {
   const rows = selectedAdjustmentsOf(sel)
   for (const row of rows) approveAdjustment(row.id)
   deselectAll()
-  toast.notify({ variant: 'success', title: `${rows.length} adjustment${rows.length > 1 ? 's' : ''} approved` })
+  toast.notify({ variant: 'success', title: `${rows.length} adjustment${rows.length > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
 }
 
 // ─── Delete (row kebab + bulk) → confirmation modal ────────────────────────────────

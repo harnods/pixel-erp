@@ -139,7 +139,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(row: LineRow) {
   if (!row.qty || Number(row.qty) < 1) {
-    toast.notify({ variant: 'warning', title: 'Enter transfer qty first' })
+    toast.notify({ variant: 'warning', title: 'Enter transfer qty first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerRow.value = row
@@ -380,11 +380,11 @@ function handleSave() {
 
   if (isEdit.value) {
     updateTransfer(props.orderId, input)
-    toast.notify({ variant: 'success', title: 'Warehouse transfer updated' })
+    toast.notify({ variant: 'success', title: 'Warehouse transfer updated' , maxWidth: 'max-content'})
     router.push(`/warehouse-transfers/${props.orderId}`)
   } else {
     const t = addTransfer(input)
-    toast.notify({ variant: 'success', title: 'Warehouse transfer created' })
+    toast.notify({ variant: 'success', title: 'Warehouse transfer created' , maxWidth: 'max-content'})
     router.push('/warehouse-transfers')
   }
 }

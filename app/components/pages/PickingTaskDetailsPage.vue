@@ -94,6 +94,7 @@ function createPacking() {
         description: anyPickComplete
           ? 'These orders already have a packing task.'
           : 'Marketplace orders must be fully picked (across their picking lists) before packing.',
+        maxWidth: 'max-content',
       })
       return
     }

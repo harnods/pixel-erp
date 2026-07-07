@@ -115,12 +115,12 @@ function commit() {
   showConfirm.value = false
   if (!task.value) return
   endPacking(props.orderId, { ...draftQty.value })
-  toast.notify({ variant: 'success', title: 'Packing finished, ready to ship' })
+  toast.notify({ variant: 'success', title: 'Packing finished, ready to ship' , maxWidth: 'max-content'})
   router.push(`/packing/${props.orderId}`)
 }
 function saveDraft() {
   savePackingDraft(props.orderId, { ...draftQty.value })
-  toast.notify({ variant: 'success', title: 'Packing draft saved' })
+  toast.notify({ variant: 'success', title: 'Packing draft saved' , maxWidth: 'max-content'})
   router.push(`/packing/${props.orderId}`)
 }
 function goBack() { router.push(`/packing/${props.orderId}`) }

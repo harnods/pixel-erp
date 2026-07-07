@@ -153,7 +153,7 @@ function handleCreate() {
       endDate: dateStr,
     })
   }
-  toast.notify({ variant: 'success', title: 'Purchase receiving saved' })
+  toast.notify({ variant: 'success', title: 'Purchase receiving saved' , maxWidth: 'max-content'})
   emit('created')
   emit('close')
 }

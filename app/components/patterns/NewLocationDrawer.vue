@@ -104,14 +104,14 @@ watch(level, (lvl) => {
 function close() { emit('update:isOpen', false) }
 function save() {
   const nm = name.value.trim()
-  if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a location name' }); return }
+  if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a location name' , maxWidth: 'max-content'}); return }
   if (!isEdit.value && props.parentId) {
     const parent = findLocation(props.warehouseId, props.parentId)?.node
     if (parent) {
       const parentIdx = STORAGE_LEVELS.indexOf(parent.level)
       const chosenIdx = STORAGE_LEVELS.indexOf(level.value)
       if (chosenIdx <= parentIdx) {
-        toast.notify({ variant: 'danger', title: 'Level must be deeper than its parent' })
+        toast.notify({ variant: 'danger', title: 'Level must be deeper than its parent' , maxWidth: 'max-content'})
         return
       }
     }

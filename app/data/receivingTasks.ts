@@ -4,6 +4,22 @@ import { loadSnapshot, saveSnapshot } from "./persist";
 import { receipts, persistReceipts, type Receipt } from "./receipts";
 import { lineItemsForReceipt } from "./receiptLineItems";
 import { TODAY } from "./master";
+import { CATALOG } from "./catalog";
+
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment']);
+const SKU_CATEGORY = new Map(CATALOG.map((p) => [p.sku, p.category]));
+
+function isSerialSku(sku: string): boolean {
+  return SERIAL_CATS.has(SKU_CATEGORY.get(sku) ?? '');
+}
+
+/** Generate deterministic serial numbers for seed receiving data. */
+function seedSerials(sku: string, count: number, base: number): string[] {
+  const prefix = sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN';
+  return Array.from({ length: count }, (_, k) =>
+    `${prefix}${String(80000 + base + k).padStart(5, '0')}`,
+  );
+}
 
 /**
  * Inbound receiving — the connected per-SKU graph.
@@ -138,24 +154,28 @@ function buildItems(
   lines: { sku: string; productName: string; unit: string; purchaseQty: number }[],
   mode: ReceiveMode,
   seed: number,
+  taskSeq: number = 0,
 ): ReceivingItem[] {
   return lines.map((l, i) => {
     let received = 0;
     if (mode === "full") received = l.purchaseQty;
     else if (mode === "zero") received = 0;
     else if (mode === "short")
-      // most SKUs full, ~1/3 short, so the PO ends Partial reception
       received = (seed + i) % 3 === 0 ? Math.max(0, Math.round(l.purchaseQty * 0.6)) : l.purchaseQty;
     else if (mode === "partial")
-      // operator midway: some full, some partial, some untouched
       received = (seed + i) % 3 === 0 ? 0 : Math.round(l.purchaseQty * (0.4 + ((seed + i) % 3) * 0.2));
-    return {
+    const receivedQty = Math.min(l.purchaseQty, received);
+    const item: ReceivingItem = {
       sku: l.sku,
       productName: l.productName,
       unit: l.unit,
       expectedQty: l.purchaseQty,
-      receivedQty: Math.min(l.purchaseQty, received),
+      receivedQty,
     };
+    if (receivedQty > 0 && isSerialSku(l.sku)) {
+      item.serialNumbers = seedSerials(l.sku, receivedQty, seed * 100 + taskSeq * 50 + i * 10);
+    }
+    return item;
   });
 }
 
@@ -183,7 +203,7 @@ function seedTasks(): ReceivingTask[] {
       warehouseId: r.warehouseId,
       warehouseName: r.warehouseName,
       assignee: picForWarehouse(r.warehouseId, pos),
-      items: buildItems(lines, mode, h),
+      items: buildItems(lines, mode, h, pos),
       skuScope: "",
       skuCount: 0,
       purchaseQty: 0,
@@ -229,7 +249,35 @@ function seedTasks(): ReceivingTask[] {
 }
 
 // ── Store (flat tasks) + derived PO grouping ─────────────────────────────────────
-const snapshot = loadSnapshot<ReceivingTask>("receiving");
+// Seed task IDs are in the rtask-1XXXX range; user-created start at rtask-30000+.
+const SEED_ID_RE = /^rtask-1\d{4}$/;
+
+/**
+ * Migration: patch a loaded snapshot so that seed tasks (rtask-1XXXX) that are
+ * ended and have serial-tracked items with receivedQty > 0 but no serialNumbers
+ * get deterministic SNs added. User-created tasks are never touched.
+ */
+function patchSnapshotSerials(snap: ReceivingTask[]): ReceivingTask[] {
+  return snap.map((t) => {
+    if (!SEED_ID_RE.test(t.id)) return t; // user-created — never modify
+    if (t.status !== "pending put-away" && t.status !== "completed") return t;
+    const needsPatch = t.items.some(
+      (it) => isSerialSku(it.sku) && it.receivedQty > 0 && !it.serialNumbers?.length,
+    );
+    if (!needsPatch) return t;
+    const h = hash(t.id);
+    return {
+      ...t,
+      items: t.items.map((it, i) => {
+        if (!isSerialSku(it.sku) || it.receivedQty === 0 || it.serialNumbers?.length) return it;
+        return { ...it, serialNumbers: seedSerials(it.sku, it.receivedQty, h * 3 + i * 10) };
+      }),
+    };
+  });
+}
+
+const _snap = loadSnapshot<ReceivingTask>("receiving");
+const snapshot = _snap ? patchSnapshotSerials(_snap) : null;
 export const receivingTasks = reactive<ReceivingTask[]>(snapshot ?? seedTasks());
 
 /** PO grouping used by the Receiving index — derived from the flat task store. */
@@ -267,11 +315,13 @@ function persistTasks(): void {
 // receipt's status reflects its seed tasks, then persist both snapshots.
 function initInbound(): void {
   rebuildPOs();
-  if (!snapshot) {
+  if (!_snap) {
+    // Fresh seed — derive receipt statuses from tasks
     const ids = new Set(receivingTasks.map((t) => t.receiptId));
     ids.forEach((id) => recomputeReceiptStatus(id));
-    saveSnapshot("receiving", receivingTasks);
   }
+  // Always persist: captures fresh seed OR patched snapshot with added SNs
+  saveSnapshot("receiving", receivingTasks);
 }
 
 // ── PO status derivation ─────────────────────────────────────────────────────────
@@ -308,21 +358,56 @@ export function coverageForReceipt(receiptId: string): Set<string> {
   return covered;
 }
 
-/** PO line items not yet covered by any receiving task. */
+/** PO line items that still need receiving: never covered, OR covered but received < purchased
+ *  and not currently held by an open/in-progress task. */
 export function uncoveredLineItems(
   receiptId: string,
 ): { sku: string; productName: string; unit: string; purchaseQty: number }[] {
   const r = receipts.find((x) => x.id === receiptId);
   if (!r) return [];
-  const covered = coverageForReceipt(receiptId);
-  return lineItemsForReceipt(r).filter((l) => !covered.has(l.sku));
+
+  const activelyCovered = new Set<string>();
+  const received: Record<string, number> = {};
+  for (const t of receivingTasks) {
+    if (t.receiptId !== receiptId) continue;
+    if (t.status === "open" || t.status === "in progress")
+      for (const it of t.items) activelyCovered.add(it.sku);
+    if (t.status === "pending put-away" || t.status === "completed")
+      for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
+  }
+
+  return lineItemsForReceipt(r).filter(
+    (l) => !activelyCovered.has(l.sku) && (received[l.sku] ?? 0) < l.purchaseQty,
+  );
 }
 
-/** A receiving task can be created while uncovered SKUs remain (and PO isn't canceled). */
+/** A receiving task can be created while uncovered SKUs remain (and PO isn't canceled).
+ *  Also returns true for partial reception POs where received < purchased and no active
+ *  task currently covers the outstanding SKUs. */
 export function canCreateReceivingTask(receiptId: string): boolean {
   const r = receipts.find((x) => x.id === receiptId);
-  if (!r || r.status === "canceled") return false;
-  return uncoveredLineItems(receiptId).length > 0;
+  if (!r || r.status === "canceled" || r.status === "completed") return false;
+
+  // SKUs already held by an open/in-progress task — don't create a duplicate
+  const activelyCovered = new Set<string>();
+  for (const t of receivingTasks) {
+    if (t.receiptId !== receiptId) continue;
+    if (t.status === "open" || t.status === "in progress")
+      for (const it of t.items) activelyCovered.add(it.sku);
+  }
+
+  // Total received per SKU (across all ended tasks)
+  const received: Record<string, number> = {};
+  for (const t of receivingTasks) {
+    if (t.receiptId !== receiptId) continue;
+    if (t.status !== "pending put-away" && t.status !== "completed") continue;
+    for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
+  }
+
+  const lines = lineItemsForReceipt(r);
+  return lines.some(
+    (l) => !activelyCovered.has(l.sku) && (received[l.sku] ?? 0) < l.purchaseQty,
+  );
 }
 
 // ── Mutations (state machine) ────────────────────────────────────────────────────
@@ -350,6 +435,15 @@ export function createReceivingTask(opts: {
   const lines = lineItemsForReceipt(r);
   const chosen = lines.filter((l) => opts.skus.includes(l.sku));
   if (!chosen.length) return null;
+
+  // Outstanding qty per SKU = purchaseQty minus what ended tasks already received
+  const priorReceived: Record<string, number> = {};
+  for (const t of receivingTasks) {
+    if (t.receiptId !== r.id) continue;
+    if (t.status !== "pending put-away" && t.status !== "completed") continue;
+    for (const it of t.items) priorReceived[it.sku] = (priorReceived[it.sku] ?? 0) + it.receivedQty;
+  }
+
   const n = freshSeq();
   const task: ReceivingTask = {
     id: `rtask-${n}`,

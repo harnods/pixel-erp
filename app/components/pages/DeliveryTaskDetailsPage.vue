@@ -108,7 +108,7 @@ function onProofUpload(e: Event) {
 }
 function clearProof() { evidenceFiles.value = null; proofFile.value = '' }
 function printDeliveryNote() {
-  toast.notify({ variant: 'success', title: 'Delivery note sent to printer' })
+  toast.notify({ variant: 'success', title: 'Delivery note sent to printer' , maxWidth: 'max-content'})
 }
 function confirmShip() {
   if (!packageVerified.value) { scanError.value = true; return } // must scan a matching label first
@@ -119,7 +119,7 @@ function confirmShip() {
     proofFile: proofFile.value || undefined,
   })
   showShip.value = false
-  toast.notify({ variant: 'success', title: 'Handed over to courier' })
+  toast.notify({ variant: 'success', title: 'Handed over to courier' , maxWidth: 'max-content'})
 }
 
 // ── jump switcher ─────────────────────────────────────────────────────────────

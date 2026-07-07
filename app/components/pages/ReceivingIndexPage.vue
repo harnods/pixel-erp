@@ -155,7 +155,7 @@ const bulkDeleteOpen = ref(false)
 function confirmBulkDelete() {
   const n = selectedTasks.value.size
   bulkDeleteOpen.value = false
-  toast.notify({ variant: 'success', title: `${n} ${n === 1 ? 'task' : 'tasks'} deleted` })
+  toast.notify({ variant: 'success', title: `${n} ${n === 1 ? 'task' : 'tasks'} deleted` , maxWidth: 'max-content'})
   deselectAll()
 }
 function onEsc(e: KeyboardEvent) { if (e.key === 'Escape' && selectedTasks.value.size) deselectAll() }

@@ -127,7 +127,7 @@ function duplicate(row: WarehouseTransfer) {
 }
 function approve(row: WarehouseTransfer) {
   approveTransfer(row.id)
-  toast.notify({ variant: 'success', title: `${row.number} approved` })
+  toast.notify({ variant: 'success', title: `${row.number} approved` , maxWidth: 'max-content'})
 }
 
 // ─── Approval log (single shared modal, keyed to whichever row's icon was clicked) ──
@@ -148,7 +148,7 @@ function bulkApprove(sel: Set<number>, deselectAll: () => void) {
   const rows = selectedTransfersOf(sel)
   for (const row of rows) approveTransfer(row.id)
   deselectAll()
-  toast.notify({ variant: 'success', title: `${rows.length} transfer${rows.length > 1 ? 's' : ''} approved` })
+  toast.notify({ variant: 'success', title: `${rows.length} transfer${rows.length > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
 }
 
 // ─── Bulk delete ─────────────────────────────────────────────────────────────────

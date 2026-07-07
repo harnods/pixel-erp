@@ -117,7 +117,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(key: string) {
   if (!(draftQty.value[key] ?? 0)) {
-    toast.notify({ variant: 'warning', title: 'Enter qty to pick first' })
+    toast.notify({ variant: 'warning', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerKey.value = key
@@ -284,18 +284,20 @@ function commitPicking(createPacking = false) {
       variant: 'warning',
       title: 'Saved as partially picked',
       description: 'Marketplace orders must be fully picked before a packing task can be created.',
+      maxWidth: 'max-content',
     })
   } else {
     toast.notify({
       variant: complete ? 'success' : 'warning',
       title: complete ? 'Picking finished, ready to pack' : 'Picking finished (partially picked)',
+      maxWidth: 'max-content',
     })
   }
   router.push(`/picking/${props.orderId}`)
 }
 function saveDraft() {
   savePickingDraft(props.orderId, buildPickedMap(), buildAssignments())
-  toast.notify({ variant: 'success', title: 'Picking draft saved' })
+  toast.notify({ variant: 'success', title: 'Picking draft saved' , maxWidth: 'max-content'})
   router.push(`/picking/${props.orderId}`)
 }
 function goBack() { router.push(`/picking/${props.orderId}`) }

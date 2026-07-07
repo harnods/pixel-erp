@@ -78,6 +78,8 @@ interface LineRow {
   id: number
   productId: string
   productName: string
+  productSku: string
+  productImg: string
   description: string
   qty: string
   unit: string
@@ -86,18 +88,20 @@ interface LineRow {
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', description: '', qty: '1', unit: '', qtyError: false }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false }
 }
 
 const rows = ref<LineRow[]>([makeRow()])
 const hasAnyProduct = computed(() => rows.value.some((r) => r.productId))
 
-const productOptions = CATALOG.map((p) => ({ id: p.id, name: p.name, desc: p.desc, unit: p.unit }))
+const productOptions = CATALOG.map((p) => ({ id: p.id, name: p.name, desc: p.desc, unit: p.unit, img: p.img, sku: p.sku }))
 
 function onProductSelect(row: LineRow, id: string) {
   const p = CATALOG.find((c) => c.id === id)
-  if (!p) { row.productName = ''; row.description = ''; row.unit = ''; return }
+  if (!p) { row.productName = ''; row.productSku = ''; row.productImg = ''; row.description = ''; row.unit = ''; return }
   row.productName = p.name
+  row.productSku = p.sku
+  row.productImg = p.img
   if (!row.description) row.description = p.desc
   if (!row.unit) row.unit = p.unit
   // Auto-append a new empty row when the last row gets a product
@@ -200,7 +204,7 @@ function handleSave() {
     memo: memo.value.trim() || undefined,
   })
 
-  toast.notify({ variant: 'success', title: 'Receipt created successfully' })
+  toast.notify({ variant: 'success', title: 'Receipt saved', maxWidth: 'max-content' })
   goReceipts()
 }
 
@@ -397,6 +401,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <colgroup>
                 <col class="cr-col-drag" />
                 <col class="cr-col-prod" />
+                <col v-if="hasAnyProduct" class="cr-col-sku" />
                 <col v-if="!hasAnyProduct" />
                 <col v-if="hasAnyProduct" />
                 <col v-if="hasAnyProduct" class="cr-col-qty" />
@@ -407,6 +412,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <tr>
                   <th class="cr-th cr-th--drag" />
                   <th class="cr-th">Product</th>
+                  <th v-if="hasAnyProduct" class="cr-th">SKU</th>
                   <th v-if="!hasAnyProduct" class="cr-th" />
                   <th v-if="hasAnyProduct" class="cr-th">Description</th>
                   <th v-if="hasAnyProduct" class="cr-th">Qty</th>
@@ -444,53 +450,58 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       value-prop="id"
                       is-searchable is-clearable use-portal is-full-width
                       @update:model-value="(v: string) => onProductSelect(row, v)"
-                    />
+                    >
+                      <template #leftAddon>
+                        <img v-if="row.productImg" class="cr-prod-thumb" :src="row.productImg" :alt="row.productName" loading="lazy" />
+                        <span v-else-if="row.productId" class="cr-prod-thumb cr-prod-thumb--empty" />
+                      </template>
+                      <template #default="{ item }">
+                        <span class="cr-prod-option">
+                          <img v-if="item.img" class="cr-prod-thumb" :src="item.img" :alt="item.name" loading="lazy" />
+                          <span v-else class="cr-prod-thumb cr-prod-thumb--empty" />
+                          <span class="cr-prod-info">
+                            <span class="cr-prod-name">{{ item.name }}</span>
+                            <span class="cr-prod-sku">{{ item.sku }}</span>
+                          </span>
+                        </span>
+                      </template>
+                    </MpAutocomplete>
                   </td>
 
-                  <!-- Spacer (fills remaining width when no other columns) -->
-                  <td v-if="!hasAnyProduct" class="cr-td" />
+                  <!-- Row has product: show SKU + all input cols -->
+                  <template v-if="row.productId">
+                    <td class="cr-td cr-td--sku">{{ row.productSku }}</td>
+                    <td class="cr-td cr-td--input">
+                      <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
+                    </td>
+                    <td class="cr-td cr-td--input">
+                      <MpInput
+                        :id="`cr-qty-${row.id}`"
+                        v-model="row.qty"
+                        type="number"
+                        is-full-width
+                        :is-invalid="row.qtyError"
+                        @update:model-value="row.qtyError = false"
+                      />
+                    </td>
+                    <td class="cr-td cr-td--input">
+                      <MpAutocomplete
+                        :id="`cr-unit-${row.id}`"
+                        v-model="row.unit"
+                        :data="UNIT_OPTIONS"
+                        label-prop="name"
+                        value-prop="id"
+                        is-searchable use-portal is-full-width
+                      />
+                    </td>
+                  </template>
 
-                  <!-- Description -->
-                  <td v-if="hasAnyProduct" class="cr-td cr-td--input">
-                    <MpInput
-                      :id="`cr-desc-${row.id}`"
-                      v-model="row.description"
-                      is-full-width
-                    />
-                  </td>
-
-                  <!-- Qty -->
-                  <td v-if="hasAnyProduct" class="cr-td cr-td--input">
-                    <MpInput
-                      :id="`cr-qty-${row.id}`"
-                      v-model="row.qty"
-                      type="number"
-                      is-full-width
-                      :is-invalid="row.qtyError"
-                      @update:model-value="row.qtyError = false"
-                    />
-                  </td>
-
-                  <!-- Unit -->
-                  <td v-if="hasAnyProduct" class="cr-td cr-td--input">
-                    <MpAutocomplete
-                      :id="`cr-unit-${row.id}`"
-                      v-model="row.unit"
-                      :data="UNIT_OPTIONS"
-                      label-prop="name"
-                      value-prop="id"
-                      is-searchable use-portal is-full-width
-                    />
-                  </td>
+                  <!-- Row has no product: one empty cell spanning remaining cols -->
+                  <td v-else :colspan="hasAnyProduct ? 4 : 1" class="cr-td" />
 
                   <!-- Delete -->
                   <td class="cr-td cr-td--del">
-                    <button
-                      v-if="!(rows.length === 1 && !row.productId)"
-                      class="cr-del-btn"
-                      type="button"
-                      @click="removeRow(row.id)"
-                    >
+                    <button class="cr-del-btn" type="button" @click="removeRow(row.id)">
                       <MpIcon name="minus-circular" size="sm" />
                     </button>
                   </td>
@@ -645,8 +656,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 /* ── Table ───────────────────────────────────────────────────────────────── */
 .cr-table-section { overflow-x: auto; }
-/* Bottom border flush with last row — no gap */
+/* Bottom border flush with last row — suppress last tr's border-bottom */
 .cr-table-section--bordered { border-bottom: 1px solid var(--mp-border-default); }
+.cr-table tbody tr:last-child .cr-td { border-bottom: none; }
 .cr-table-scroll { overflow-x: auto; }
 .cr-table {
   width: 100%; table-layout: fixed;
@@ -679,8 +691,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
+  border-right: 1px solid var(--mp-border-default);
   vertical-align: middle;
 }
+.cr-td:last-child { border-right: none; }
 
 /* Drag row states */
 .cr-tr--dragging { opacity: 0.4; }
@@ -726,6 +740,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
   color: var(--mp-text-danger, #dc2626);
 }
 .cr-del-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ── Product autocomplete custom option ──────────────────────────────────── */
+.cr-prod-option { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; }
+.cr-col-sku { width: 100px; }
+.cr-td--sku { color: var(--mp-text-secondary); white-space: nowrap; background: var(--mp-background-neutral-hovered); }
+.cr-prod-thumb {
+  width: 28px; height: 28px; border-radius: var(--mp-radii-md); flex-shrink: 0;
+  object-fit: cover; border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral);
+}
+.cr-prod-thumb--empty { background: var(--mp-background-neutral-subtle); }
+.cr-prod-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cr-prod-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-prod-sku  { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Memo + Attachment sections ──────────────────────────────────────────── */
 .cr-section {

@@ -15,6 +15,7 @@ interface SerialRow {
   reserved?: boolean
   originLocation?: string
   destLocId?: string
+  fromPriorTask?: boolean
 }
 
 const props = defineProps<{
@@ -37,6 +38,8 @@ const props = defineProps<{
   originLocationPaths?: string[]
   /** All bins available in destination warehouse — for "To bin" picker */
   destLocationPaths?: string[]
+  /** SNs already received in prior tasks for the same PO — cannot be added again. */
+  blockedSerials?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -119,6 +122,15 @@ watch(() => props.open, (isOpen) => {
     rows.value = warehouseSerials.map(s => ({ serial: s, counted: true }))
   }
 
+  // For receiving: prepend prior-task SNs as read-only Counted rows
+  if (props.kind === 'receiving' && props.blockedSerials?.length) {
+    const existingSerials = new Set(rows.value.map(r => r.serial))
+    const priorRows: SerialRow[] = props.blockedSerials
+      .filter(sn => !existingSerials.has(sn))
+      .map(sn => ({ serial: sn, counted: true, fromPriorTask: true }))
+    rows.value = [...priorRows, ...rows.value]
+  }
+
   inputText.value = ''
   search.value = ''
   page.value = 1
@@ -137,7 +149,7 @@ const onHandCount = computed(() =>
   props.locationOnHand ?? (isTransfer.value ? warehouseStock.value?.available : warehouseStock.value?.onHand) ?? 0
 )
 // countedCount = rows currently marked as counted (for table X/Y indicator + validation)
-const countedCount = computed(() => rows.value.filter(r => r.counted).length)
+const countedCount = computed(() => rows.value.filter(r => r.counted && !r.fromPriorTask).length)
 const putAwayCount = computed(() => rows.value.filter(r => r.destLocId).length)
 // Info bar stats are driven by targetCount (what user entered in the form), not table state
 const difference = computed(() => props.targetCount - onHandCount.value)
@@ -195,9 +207,13 @@ function addToList() {
     if (toAdd.length) rows.value.push(...toAdd)
   } else {
     const existing = new Set(rows.value.map(r => r.serial))
+    const blocked = new Set(props.blockedSerials ?? [])
     const dupes = parsed.filter(s => existing.has(s))
-    const newOnes = parsed.filter(s => !existing.has(s))
-    if (dupes.length) {
+    const alreadyReceived = parsed.filter(s => !existing.has(s) && blocked.has(s))
+    const newOnes = parsed.filter(s => !existing.has(s) && !blocked.has(s))
+    if (alreadyReceived.length) {
+      addError.value = `Already received in a prior task: ${alreadyReceived.join(', ')}`
+    } else if (dupes.length) {
       addError.value = `Already in list: ${dupes.join(', ')}`
     } else {
       addError.value = ''
@@ -214,6 +230,11 @@ watch(inputText, () => { addError.value = '' })
 function toggleRow(row: SerialRow) {
   if (row.reserved) return
   if ((isTransfer.value || isPicking.value) && !row.counted && countedCount.value >= props.targetCount) return
+  if (isReceiving.value && row.counted) {
+    rows.value = rows.value.filter(r => r.serial !== row.serial)
+    saveError.value = ''
+    return
+  }
   row.counted = !row.counted
   saveError.value = ''
 }
@@ -268,7 +289,7 @@ function handleSave() {
     }
   }
   saveError.value = ''
-  emit('save', rows.value.filter(r => r.counted).map(r => ({
+  emit('save', rows.value.filter(r => r.counted && !r.fromPriorTask).map(r => ({
     serial: r.serial,
     destLocationId: r.destLocId || undefined,
   })))
@@ -499,6 +520,7 @@ function handleSave() {
                 </td>
                 <td v-if="!isPutAway" class="msn-td msn-td--del">
                   <button
+                    v-if="!row.fromPriorTask"
                     class="msn-toggle-btn"
                     :class="[
                       row.counted ? 'msn-toggle-btn--remove' : 'msn-toggle-btn--restore',
@@ -627,6 +649,7 @@ function handleSave() {
 .msn-form-action { display: flex; justify-content: flex-end; }
 .msn-add-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 .msn-save-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+
 .msn-save-error--transfer { margin-top: -12px; }
 
 .msn-filter-bar { display: flex; justify-content: flex-end; }

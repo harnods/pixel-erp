@@ -62,13 +62,13 @@ function doImport() {
   uploadError.value = 'none'
 
   if (importScenario.value === 'success') {
-    toast.notify({ variant: 'success', title: 'Warehouse data imported' })
+    toast.notify({ variant: 'success', title: 'Warehouse data imported' , maxWidth: 'max-content'})
     router.push('/warehouses')
   } else if (importScenario.value === 'partial') {
-    toast.notify({ variant: 'error', title: '3 rows failed to import. Download the error file to fix.' })
+    toast.notify({ variant: 'error', title: '3 rows failed to import. Download the error file to fix.' , maxWidth: 'max-content'})
     router.push('/warehouses')
   } else {
-    toast.notify({ variant: 'error', title: 'Import failed, please try again' })
+    toast.notify({ variant: 'error', title: 'Import failed, please try again' , maxWidth: 'max-content'})
   }
 }
 

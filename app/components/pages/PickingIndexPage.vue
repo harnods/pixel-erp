@@ -28,7 +28,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Picking task saved' })
+    toast.notify({ variant: 'success', title: 'Picking task saved' , maxWidth: 'max-content'})
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })

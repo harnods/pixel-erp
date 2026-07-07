@@ -99,7 +99,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(key: string) {
   if (!(draftCounted.value[key] ?? 0)) {
-    toast.notify({ variant: 'warning', title: 'Enter counted qty first' })
+    toast.notify({ variant: 'warning', title: 'Enter counted qty first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerKey.value = key
@@ -181,7 +181,7 @@ function buildLines(): { sku: string; qty: number }[] {
 // ── Footer: Save draft ────────────────────────────────────────────────────────
 function saveDraft() {
   saveWmsCountDraft(props.orderId, buildLines())
-  toast.notify({ variant: 'success', title: 'Draft saved' })
+  toast.notify({ variant: 'success', title: 'Draft saved' , maxWidth: 'max-content'})
   router.push(`/stock-adjustments/${props.orderId}`)
 }
 
@@ -192,7 +192,7 @@ const showQtyErrors = ref(false)
 function clickFinish() {
   if (countedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'danger', title: 'Enter counted qty for at least one item' })
+    toast.notify({ variant: 'danger', title: 'Enter counted qty for at least one item' , maxWidth: 'max-content'})
     return
   }
   // Validate serial counts match qty
@@ -204,6 +204,7 @@ function clickFinish() {
       toast.notify({
         variant: 'danger',
         title: `Enter all serial numbers for ${item.product.name} (${actual}/${expected})`,
+        maxWidth: 'max-content',
       })
       return
     }
@@ -214,7 +215,7 @@ function clickFinish() {
 function commitFinish() {
   showConfirm.value = false
   finishWmsCount(props.orderId, buildLines())
-  toast.notify({ variant: 'success', title: 'Stock count completed' })
+  toast.notify({ variant: 'success', title: 'Stock count completed' , maxWidth: 'max-content'})
   router.push(`/stock-adjustments/${props.orderId}`)
 }
 

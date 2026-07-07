@@ -268,7 +268,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(sku: string) {
   if (!(qtyOverrides.value[sku] ?? 0)) {
-    toast.notify({ variant: 'warning', title: 'Enter qty to pick first' })
+    toast.notify({ variant: 'warning', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerSku.value = sku

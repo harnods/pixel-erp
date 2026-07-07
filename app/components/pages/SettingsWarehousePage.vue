@@ -98,7 +98,7 @@ async function saveEdit(section: 'storage' | 'outbound') {
   persistSettings({ ...committed })
   if (section === 'storage')  { isSavingStorage.value  = false; isEditingStorage.value  = false }
   if (section === 'outbound') { isSavingOutbound.value = false; isEditingOutbound.value = false }
-  toast.notify({ variant: 'success', title: 'Warehouse settings saved.' })
+  toast.notify({ variant: 'success', title: 'Warehouse settings saved.' , maxWidth: 'max-content'})
 }
 </script>
 

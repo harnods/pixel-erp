@@ -153,7 +153,7 @@ function confirmShipping() {
   if (!t) return
   if (orderHasDelivery(t.salesOrderId)) {
     shipModalOpen.value = false
-    toast.notify({ variant: 'error', title: 'Delivery already exists', description: `${t.salesNo} already has a delivery task.` })
+    toast.notify({ variant: 'error', title: 'Delivery already exists', description: `${t.salesNo} already has a delivery task.` , maxWidth: 'max-content'})
     return
   }
   if (!shipAssigneeId.value) { shipAssigneeError.value = true; return }

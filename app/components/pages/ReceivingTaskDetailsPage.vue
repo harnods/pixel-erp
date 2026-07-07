@@ -9,7 +9,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask } from '~/data/receivingTaskDetails'
-import { taskAgingDays, startReceiving, type ReceivingTask } from '~/data/receivingTasks'
+import { taskAgingDays, startReceiving, receivingTasksForReceipt, type ReceivingTask } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
@@ -66,7 +66,26 @@ const poStatus = computed<string>(() => {
 
 const purchaseTotal      = computed(() => task.value?.purchaseQty ?? 0)
 const savedReceivedTotal = computed(() => Object.values(localReceived.value).reduce((a, b) => a + (b || 0), 0))
-const outstandingTotal   = computed(() => Math.max(0, purchaseTotal.value - savedReceivedTotal.value))
+
+// Qty received in other ended tasks for the same receipt, per SKU
+const priorReceivedPerSku = computed<Record<string, number>>(() => {
+  const receiptId = task.value?.receiptId
+  if (!receiptId) return {}
+  const map: Record<string, number> = {}
+  for (const t of receivingTasksForReceipt(receiptId)) {
+    if (t.id === props.orderId) continue
+    if (t.status !== 'pending put-away' && t.status !== 'completed') continue
+    for (const it of t.items) map[it.sku] = (map[it.sku] ?? 0) + it.receivedQty
+  }
+  return map
+})
+const outstandingTotal = computed(() =>
+  lineItems.value.reduce((sum, it) => {
+    const prior = priorReceivedPerSku.value[it.skuCode] ?? 0
+    const saved = localReceived.value[it.skuCode] ?? 0
+    return sum + Math.max(0, it.expectedQty - prior - saved)
+  }, 0),
+)
 
 /** Saved received qty for a page-table row. */
 function rowReceived(skuCode: string, fallback: number): number {
@@ -361,8 +380,8 @@ function goBack() {
                   </span>
                 </td>
                 <td class="detail-td detail-td--num">
-                  <span v-if="item.expectedQty - rowReceived(item.skuCode, item.receivedQty) > 0" class="rcvgd-outstanding">
-                    {{ fmt(item.expectedQty - rowReceived(item.skuCode, item.receivedQty)) }}
+                  <span v-if="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - rowReceived(item.skuCode, item.receivedQty) > 0" class="rcvgd-outstanding">
+                    {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - rowReceived(item.skuCode, item.receivedQty)) }}
                   </span>
                   <span v-else class="rcvgd-qty--full">—</span>
                 </td>

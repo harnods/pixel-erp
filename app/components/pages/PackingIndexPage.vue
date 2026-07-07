@@ -33,7 +33,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Packing task saved' })
+    toast.notify({ variant: 'success', title: 'Packing task saved' , maxWidth: 'max-content'})
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })
@@ -204,7 +204,7 @@ function bulkCreateShipping(selectedRows: Set<number>, deselectAll: () => void) 
   if (eligible.length) {
     openShipModal(eligible)
   } else {
-    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' })
+    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' , maxWidth: 'max-content'})
   }
 }
 function confirmShipping() {
@@ -227,7 +227,7 @@ function confirmShipping() {
   }
   shipModalOpen.value = false
   if (!created) {
-    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' })
+    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' , maxWidth: 'max-content'})
     return
   }
   router.push({ path: '/outbound-delivery', query: { tab: 'Delivery', saved: '1' } })

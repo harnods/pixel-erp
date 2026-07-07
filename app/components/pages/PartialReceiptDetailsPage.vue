@@ -12,16 +12,21 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage, closeReceipt, type Receipt } from '~/data/receipts'
+import { receiptsForStage, closeReceipt, isManualReceipt, receipts, type Receipt } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
-import { receivedSummaryForReceipt, canCreateReceivingTask } from '~/data/receivingTasks'
+import { receivedSummaryForReceipt, canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
+const currentReceipt = computed(() => receipts.find(r => r.id === props.orderId))
+const isManual = computed(() => !!currentReceipt.value && isManualReceipt(currentReceipt.value))
+const hasActiveReceivingTasks = computed(() =>
+  receivingTasksForReceipt(props.orderId).some(t => t.status === 'open' || t.status === 'in progress')
+)
 const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const d = detail.value
@@ -483,12 +488,12 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem @click="openCloseModal">Close receipt</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isManual && !hasActiveReceivingTasks" @click="openCloseModal">Close receipt</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
       </div>
-      <button v-else class="detail-btn detail-btn--secondary" @click="openCloseModal">Close receipt</button>
+      <button v-else-if="!isManual && !hasActiveReceivingTasks" class="detail-btn detail-btn--secondary" @click="openCloseModal">Close receipt</button>
     </div>
 
 
