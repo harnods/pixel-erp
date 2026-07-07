@@ -1,7 +1,11 @@
 import { reactive } from "vue";
 import { picForWarehouse } from "./warehouses";
 import { outgoingOrders } from "./outgoing";
-import { pickingTasks, pickingLinesOf, getPickingTask, pickedQtyForOrderSku, type PickingTask } from "./pickingTasks";
+import {
+  pickingTasks, pickingLinesOf, getPickingTask, pickedQtyForOrderSku,
+  batchPicksForOrderSku, serialPicksForOrderSku,
+  type PickingTask, type PickingBatchPick, type PickingSerialPick,
+} from "./pickingTasks";
 import { orderSkuLines } from "./inventory";
 import { binForSku } from "./warehouseDetails";
 import { TODAY } from "./master";
@@ -51,6 +55,10 @@ export interface PackedSourceLine {
   unit: string;
   bin: string;
   picked: number; // available to pack (what picking delivered for this order)
+  /** Batch-tracked SKUs only — which batch(es) the picked units came from. */
+  batchPicks?: PickingBatchPick[];
+  /** Serial-tracked SKUs only — which serial(s) were picked. */
+  serialPicks?: PickingSerialPick[];
 }
 
 /** The picked lines belonging to a packing task's sales order. */
@@ -63,10 +71,14 @@ export function pickedLinesForPacking(task: PackingTask): PackedSourceLine[] {
   for (const l of orderSkuLines(order)) {
     const picked = pickedQtyForOrderSku(task.salesOrderId, l.sku);
     if (picked <= 0) continue; // only what was actually picked can be packed
+    const batchPicks = batchPicksForOrderSku(task.salesOrderId, l.sku);
+    const serialPicks = serialPicksForOrderSku(task.salesOrderId, l.sku);
     lines.push({
       key: `${task.salesOrderId}::${l.sku}`,
       sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
       unit: l.product.unit, bin: binForSku(order.warehouseId, l.sku), picked,
+      ...(batchPicks.length ? { batchPicks } : {}),
+      ...(serialPicks.length ? { serialPicks } : {}),
     });
   }
   return lines;

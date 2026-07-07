@@ -9,14 +9,18 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import {
-  getPackingLineItems, allPackingTasksFlat, getDeliveryForPackingTask,
+  getPackingLineItems, allPackingTasksFlat, getDeliveryForPackingTask, type PackLineItem,
 } from '~/data/packingTaskDetails'
 import { getPackingTask, startPacking, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { addDeliveryTask, orderHasDelivery } from '~/data/deliveryTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { productBySku } from '~/data/inventory'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
 
 type TaskStatus = 'open' | 'in progress' | 'completed' | 'canceled'
 
@@ -44,6 +48,33 @@ const pickedTotal = computed(() => lineItems.value.reduce((s, it) => s + it.pick
 const packedTotal = computed(() => Object.values(localPacked.value).reduce((a, b) => a + (b || 0), 0))
 const outstandingTotal = computed(() => Math.max(0, pickedTotal.value - packedTotal.value))
 function rowPacked(key: string, fallback: number): number { return localPacked.value[key] ?? fallback }
+
+// ── Batch / serial helpers (same heuristic as receiving / put-away / picking) ───
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
+// ── View batch / View serial number — read-only, what was actually picked for this
+// line. No storage location: packing only cares about what/how much, not where. ──
+const viewBatchItem = ref<PackLineItem | null>(null)
+const viewSerialItem = ref<PackLineItem | null>(null)
+function openViewBatch(item: PackLineItem) { viewBatchItem.value = item }
+function openViewSerial(item: PackLineItem) { viewSerialItem.value = item }
 
 const linkedOrder = computed(() => outgoingOrders.find(o => o.id === task.value?.salesOrderId))
 const linkedDelivery = computed(() => task.value ? getDeliveryForPackingTask(task.value.id) : [])
@@ -309,7 +340,24 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                   <td class="detail-td"><ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" /></td>
                   <td class="detail-td">{{ item.skuCode }}</td>
                   <td class="detail-td">{{ item.binLocation }}</td>
-                  <td class="detail-td detail-td--num">{{ fmt(item.pickedQty) }}</td>
+
+                  <!-- Picked qty: batch/serial-tracked SKUs split into a value row +
+                       a "View batch"/"View serial number" row (read-only — what was
+                       actually picked, no storage location). -->
+                  <td v-if="isBatchTrackedSku(item.skuCode)" class="detail-td detail-td--picked-batch">
+                    <div class="pck-picked-qty">{{ fmt(item.pickedQty) }}</div>
+                    <div class="pck-picked-action">
+                      <button class="pck-view-link" type="button" @click="openViewBatch(item)">View batch</button>
+                    </div>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(item.skuCode)" class="detail-td detail-td--picked-batch">
+                    <div class="pck-picked-qty">{{ fmt(item.pickedQty) }}</div>
+                    <div class="pck-picked-action">
+                      <button class="pck-view-link" type="button" @click="openViewSerial(item)">View serial number</button>
+                    </div>
+                  </td>
+                  <td v-else class="detail-td detail-td--num">{{ fmt(item.pickedQty) }}</td>
+
                   <td class="detail-td detail-td--num">
                     <span :class="isInProgress ? '' : (rowPacked(item.key, item.packedQty) === item.pickedQty ? 'pck-qty--full' : rowPacked(item.key, item.packedQty) > 0 ? 'pck-qty--partial' : 'pck-qty--zero')">
                       {{ fmt(rowPacked(item.key, item.packedQty)) }}
@@ -535,6 +583,30 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <ViewBatchDrawer
+    v-if="viewBatchItem"
+    :open="true"
+    :sku="viewBatchItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    :picked-batches="viewBatchItem.batchPicks ?? []"
+    :product-name="viewBatchItem.productName"
+    :product-img="viewBatchItem.image"
+    @update:open="viewBatchItem = null"
+  />
+  <ViewSerialDrawer
+    v-if="viewSerialItem"
+    :open="true"
+    :sku="viewSerialItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    :counted-total="(viewSerialItem.serialPicks ?? []).length"
+    :picked-serials="(viewSerialItem.serialPicks ?? []).map(s => s.serial)"
+    :product-name="viewSerialItem.productName"
+    :product-img="viewSerialItem.image"
+    @update:open="viewSerialItem = null"
+  />
 </template>
 
 <style scoped>
@@ -607,6 +679,22 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .pck-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
 .pck-qty--zero { color: var(--mp-text-placeholder); }
 .pck-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
+
+/* Batch/serial-tracked Picked qty — value row + View batch/SN action row. Plain
+   block divs (not flex on the <td> itself) so the row still stretches naturally. */
+.detail-td--picked-batch { padding: 0; vertical-align: top; }
+.pck-picked-qty {
+  height: var(--mp-sizes-10, 40px); display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+}
+.pck-picked-action {
+  height: var(--mp-sizes-10, 40px); display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-4);
+}
+.pck-view-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); white-space: nowrap; }
+.pck-view-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .pck-tabs { flex-shrink: 0; }
 .pck-tabs :deep(.mp-tab--isSelected_true), .pck-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }

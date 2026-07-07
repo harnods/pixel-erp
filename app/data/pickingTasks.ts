@@ -346,6 +346,31 @@ export function pickedQtyForOrderSku(orderId: string, sku: string): number {
   return sum;
 }
 
+/** Batch(es) picked for one order+SKU across every (non-canceled) picking task —
+ *  for packing to show which batch(es) the picked units actually came from. */
+export function batchPicksForOrderSku(orderId: string, sku: string): PickingBatchPick[] {
+  const key = `${orderId}::${sku}`;
+  const result: PickingBatchPick[] = [];
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    const picks = t.batchPicks?.[key];
+    if (picks) result.push(...picks);
+  }
+  return result;
+}
+
+/** Serial(s) picked for one order+SKU across every (non-canceled) picking task. */
+export function serialPicksForOrderSku(orderId: string, sku: string): PickingSerialPick[] {
+  const key = `${orderId}::${sku}`;
+  const result: PickingSerialPick[] = [];
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    const picks = t.serialPicks?.[key];
+    if (picks) result.push(...picks);
+  }
+  return result;
+}
+
 /** The pick lines of a task (stored, or generated for seed tasks without them). */
 export function pickingLinesOf(task: PickingTask): PickingLine[] {
   return task.lines?.length ? task.lines : buildPickingLines(task.salesOrderIds, task.salesNos);

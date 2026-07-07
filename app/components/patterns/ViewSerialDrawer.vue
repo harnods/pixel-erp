@@ -8,13 +8,20 @@ const props = defineProps<{
   open: boolean
   sku: string
   warehouseId: string
+  /** 'count' (default) = stock count. 'packing' = read-only list of serials picked
+   *  for this line (no on-hand/location/status — just the serials, as-is). */
+  kind?: 'count' | 'packing'
   countedTotal: number
   productName: string
   productImg: string
   storageLocation?: string
+  /** Packing mode: the exact serials picked for this line — shown as-is. */
+  pickedSerials?: string[]
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean] }>()
+
+const isPacking = computed(() => props.kind === 'packing')
 
 const warehouseStock = computed(() => {
   const wh = getWarehouseDetail(props.warehouseId)
@@ -32,6 +39,12 @@ const difference = computed(() => props.countedTotal - totalOnHand.value)
 // Rows = all on-hand serials (first countedTotal marked counted, rest not counted)
 // + any extra serials found during count (counted > onHand → generate extras).
 const allRows = computed<SerialRow[]>(() => {
+  // Packing: show the exact serials picked for this line, as-is — no derivation
+  // from live warehouse stock, no location/status concept.
+  if (isPacking.value) {
+    return (props.pickedSerials ?? []).map(serial => ({ serial, location: '', counted: true }))
+  }
+
   const serials = warehouseStock.value?.serials
   const existing = serials ? [
     ...serials.available.map(u => ({ serial: u.serial, location: u.location })),
@@ -142,21 +155,29 @@ function close() { emit('update:open', false) }
             </div>
           </div>
           <div class="vsd-info-stats">
-            <div class="vsd-stat">
-              <span class="vsd-stat-label">Prev. on hand qty</span>
-              <span class="vsd-stat-value">{{ fmt(totalOnHand) }}</span>
-            </div>
-            <div class="vsd-stat">
-              <span class="vsd-stat-label">Counted qty</span>
-              <span class="vsd-stat-value">{{ fmt(countedTotal) }}</span>
-            </div>
-            <div
-              class="vsd-stat"
-              :class="{ 'vsd-stat--pos': difference > 0, 'vsd-stat--neg': difference < 0 }"
-            >
-              <span class="vsd-stat-label">Difference</span>
-              <span class="vsd-stat-value">{{ fmtDiff(difference) }}</span>
-            </div>
+            <template v-if="isPacking">
+              <div class="vsd-stat">
+                <span class="vsd-stat-label">Picked qty</span>
+                <span class="vsd-stat-value">{{ fmt(allRows.length) }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <div class="vsd-stat">
+                <span class="vsd-stat-label">Prev. on hand qty</span>
+                <span class="vsd-stat-value">{{ fmt(totalOnHand) }}</span>
+              </div>
+              <div class="vsd-stat">
+                <span class="vsd-stat-label">Counted qty</span>
+                <span class="vsd-stat-value">{{ fmt(countedTotal) }}</span>
+              </div>
+              <div
+                class="vsd-stat"
+                :class="{ 'vsd-stat--pos': difference > 0, 'vsd-stat--neg': difference < 0 }"
+              >
+                <span class="vsd-stat-label">Difference</span>
+                <span class="vsd-stat-value">{{ fmtDiff(difference) }}</span>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -176,31 +197,31 @@ function close() { emit('update:open', false) }
           <table class="vsd-table">
             <colgroup>
               <col class="vsd-col-sn" />
-              <col class="vsd-col-loc" />
-              <col class="vsd-col-status" />
+              <col v-if="!isPacking" class="vsd-col-loc" />
+              <col v-if="!isPacking" class="vsd-col-status" />
             </colgroup>
             <thead>
               <tr>
                 <th class="vsd-th">Serial number</th>
-                <th class="vsd-th">Location</th>
-                <th class="vsd-th">Status</th>
+                <th v-if="!isPacking" class="vsd-th">Location</th>
+                <th v-if="!isPacking" class="vsd-th">Status</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in visibleRows" :key="row.serial" class="vsd-tr" :class="{ 'vsd-tr--removed': !row.counted }">
                 <td class="vsd-td vsd-td--mono" :class="{ 'vsd-td--strike': !row.counted }">{{ row.serial }}</td>
-                <td class="vsd-td vsd-td--muted" :class="{ 'vsd-td--strike': !row.counted }">{{ row.location }}</td>
-                <td class="vsd-td vsd-td--status">
+                <td v-if="!isPacking" class="vsd-td vsd-td--muted" :class="{ 'vsd-td--strike': !row.counted }">{{ row.location }}</td>
+                <td v-if="!isPacking" class="vsd-td vsd-td--status">
                   <MpBadge v-if="row.counted" variant="success">Counted</MpBadge>
                   <MpBadge v-else variant="danger">Not counted</MpBadge>
                 </td>
               </tr>
               <tr v-if="!filteredRows.length" class="vsd-tr">
-                <td colspan="3" class="vsd-td vsd-td--empty">{{ serialSearch ? 'No serial numbers match your search.' : 'No serial number data available.' }}</td>
+                <td :colspan="isPacking ? 1 : 3" class="vsd-td vsd-td--empty">{{ serialSearch ? 'No serial numbers match your search.' : 'No serial number data available.' }}</td>
               </tr>
-              <tr ref="sentinelEl" aria-hidden="true" class="vsd-sentinel-row"><td colspan="3" /></tr>
+              <tr ref="sentinelEl" aria-hidden="true" class="vsd-sentinel-row"><td :colspan="isPacking ? 1 : 3" /></tr>
               <tr v-if="loadingMore" class="vsd-tr">
-                <td colspan="3" class="vsd-td">
+                <td :colspan="isPacking ? 1 : 3" class="vsd-td">
                   <div class="vsd-loading-inner"><MpSpinner size="sm" /> Loading…</div>
                 </td>
               </tr>

@@ -11,16 +11,21 @@ const DEMO_DESCS = [
   'Single origin, certified organic, lot #B12',
 ]
 
+export interface PickedBatchRow { batchNo: string; expiryDate: string; desc: string; qty: number; unit: string }
+
 const props = defineProps<{
   open: boolean
   sku: string
   warehouseId: string
-  /** 'count' = stock count (show Counted qty). 'in-out' = stock in/out (show delta + new on-hand). */
-  kind?: 'count' | 'in-out'
+  /** 'count' = stock count (show Counted qty). 'in-out' = stock in/out (show delta + new on-hand).
+   *  'packing' = read-only list of batches picked for this line (no on-hand/location). */
+  kind?: 'count' | 'in-out' | 'packing'
   /** Stock count mode: the total counted qty for this SKU. */
   countedTotal?: number
   /** Stock in/out mode: the total delta (positive = in, negative = out). */
   deltaTotal?: number
+  /** Packing mode: the exact batches picked for this line — shown as-is, no derivation. */
+  pickedBatches?: PickedBatchRow[]
   productName: string
   productImg: string
 }>()
@@ -28,6 +33,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 
 const isInOut = computed(() => props.kind === 'in-out')
+const isPacking = computed(() => props.kind === 'packing')
 
 const warehouseStock = computed(() => {
   const wh = getWarehouseDetail(props.warehouseId)
@@ -45,6 +51,15 @@ interface BatchRow {
 }
 
 const rows = computed<BatchRow[]>(() => {
+  // Packing: show the exact batches picked for this line, as-is — no derivation
+  // from live warehouse stock, no on-hand/new-on-hand concept.
+  if (isPacking.value) {
+    return (props.pickedBatches ?? []).map(b => ({
+      batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc,
+      onHand: 0, value: b.qty, newOnHand: 0, unit: b.unit,
+    }))
+  }
+
   const batches = warehouseStock.value?.batches ?? []
   const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
   const totalOnHand = batches.reduce((s, b) => s + b.onHand, 0)
@@ -79,6 +94,7 @@ const rows = computed<BatchRow[]>(() => {
 })
 
 const totalOnHand = computed(() => rows.value.reduce((s, r) => s + r.onHand, 0))
+const totalPicked = computed(() => rows.value.reduce((s, r) => s + r.value, 0))
 const totalDelta = computed(() => props.deltaTotal ?? 0)
 const totalCounted = computed(() => props.countedTotal ?? 0)
 const totalNewOnHand = computed(() => totalOnHand.value + totalDelta.value)
@@ -120,31 +136,40 @@ function close() { emit('update:open', false) }
             </div>
           </div>
           <div class="vbd-info-stats">
-            <div class="vbd-stat">
-              <span class="vbd-stat-label">On hand qty</span>
-              <span class="vbd-stat-value">{{ fmt(totalOnHand) }}</span>
-            </div>
-            <!-- count mode stats -->
-            <template v-if="!isInOut">
+            <!-- packing mode stats -->
+            <template v-if="isPacking">
               <div class="vbd-stat">
-                <span class="vbd-stat-label">Counted qty</span>
-                <span class="vbd-stat-value">{{ fmt(totalCounted) }}</span>
-              </div>
-              <div class="vbd-stat" :class="{ 'vbd-stat--pos': difference > 0, 'vbd-stat--neg': difference < 0 }">
-                <span class="vbd-stat-label">Difference</span>
-                <span class="vbd-stat-value">{{ fmtDiff(difference) }}</span>
+                <span class="vbd-stat-label">Picked qty</span>
+                <span class="vbd-stat-value">{{ fmt(totalPicked) }}</span>
               </div>
             </template>
-            <!-- in-out mode stats -->
             <template v-else>
-              <div class="vbd-stat" :class="{ 'vbd-stat--pos': totalDelta > 0, 'vbd-stat--neg': totalDelta < 0 }">
-                <span class="vbd-stat-label">Stock in/out qty</span>
-                <span class="vbd-stat-value">{{ fmtDelta(totalDelta) }}</span>
-              </div>
               <div class="vbd-stat">
-                <span class="vbd-stat-label">New on hand qty</span>
-                <span class="vbd-stat-value">{{ fmt(totalNewOnHand) }}</span>
+                <span class="vbd-stat-label">On hand qty</span>
+                <span class="vbd-stat-value">{{ fmt(totalOnHand) }}</span>
               </div>
+              <!-- count mode stats -->
+              <template v-if="!isInOut">
+                <div class="vbd-stat">
+                  <span class="vbd-stat-label">Counted qty</span>
+                  <span class="vbd-stat-value">{{ fmt(totalCounted) }}</span>
+                </div>
+                <div class="vbd-stat" :class="{ 'vbd-stat--pos': difference > 0, 'vbd-stat--neg': difference < 0 }">
+                  <span class="vbd-stat-label">Difference</span>
+                  <span class="vbd-stat-value">{{ fmtDiff(difference) }}</span>
+                </div>
+              </template>
+              <!-- in-out mode stats -->
+              <template v-else>
+                <div class="vbd-stat" :class="{ 'vbd-stat--pos': totalDelta > 0, 'vbd-stat--neg': totalDelta < 0 }">
+                  <span class="vbd-stat-label">Stock in/out qty</span>
+                  <span class="vbd-stat-value">{{ fmtDelta(totalDelta) }}</span>
+                </div>
+                <div class="vbd-stat">
+                  <span class="vbd-stat-label">New on hand qty</span>
+                  <span class="vbd-stat-value">{{ fmt(totalNewOnHand) }}</span>
+                </div>
+              </template>
             </template>
           </div>
         </div>
@@ -156,7 +181,7 @@ function close() { emit('update:open', false) }
               <col class="vbd-col-batch" />
               <col class="vbd-col-expiry" />
               <col class="vbd-col-desc" />
-              <col class="vbd-col-num" />
+              <col v-if="!isPacking" class="vbd-col-num" />
               <col class="vbd-col-num" />
               <template v-if="isInOut"><col class="vbd-col-num" /></template>
               <col class="vbd-col-unit" />
@@ -166,8 +191,9 @@ function close() { emit('update:open', false) }
                 <th class="vbd-th">Batch</th>
                 <th class="vbd-th">Expiry date</th>
                 <th class="vbd-th">Description</th>
-                <th class="vbd-th vbd-th--num">On hand qty</th>
-                <th v-if="!isInOut" class="vbd-th vbd-th--num">Counted qty</th>
+                <th v-if="!isPacking" class="vbd-th vbd-th--num">On hand qty</th>
+                <th v-if="isPacking" class="vbd-th vbd-th--num">Picked qty</th>
+                <th v-else-if="!isInOut" class="vbd-th vbd-th--num">Counted qty</th>
                 <template v-else>
                   <th class="vbd-th vbd-th--num">Stock in/out qty</th>
                   <th class="vbd-th vbd-th--num">New on hand qty</th>
@@ -180,8 +206,8 @@ function close() { emit('update:open', false) }
                 <td class="vbd-td vbd-td--muted">{{ row.batchNo }}</td>
                 <td class="vbd-td vbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
                 <td class="vbd-td vbd-td--muted">{{ row.desc }}</td>
-                <td class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
-                <td v-if="!isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
+                <td v-if="!isPacking" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
+                <td v-if="isPacking || !isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
                 <template v-else>
                   <td class="vbd-td vbd-td--num" :class="{ 'vbd-diff--pos': row.value > 0, 'vbd-diff--neg': row.value < 0 }">
                     {{ fmtDelta(row.value) }}
@@ -191,7 +217,7 @@ function close() { emit('update:open', false) }
                 <td class="vbd-td vbd-td--muted">{{ row.unit }}</td>
               </tr>
               <tr v-if="!rows.length" class="vbd-tr">
-                <td :colspan="isInOut ? 7 : 6" class="vbd-td vbd-td--empty">No batch data available.</td>
+                <td :colspan="isPacking ? 5 : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">No batch data available.</td>
               </tr>
             </tbody>
           </table>
