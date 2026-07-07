@@ -1,4 +1,7 @@
-import { getPickingTask, pickingLinesOf, pickingTasks, type PickingTask } from "./pickingTasks";
+import {
+  getPickingTask, pickingLinesOf, pickingTasks, type PickingTask,
+  type PickingBatchPick, type PickingSerialPick,
+} from "./pickingTasks";
 import { packingTasks, type PackingTask } from "./packingTasks";
 import { binForSku } from "./warehouseDetails";
 
@@ -15,6 +18,10 @@ export interface PickLineItem {
   expectedQty: number; // to-pick (planned)
   pickedQty: number;   // picked so far
   unit: string;
+  /** Batch-tracked SKUs only — undefined if the SKU isn't batch-tracked. */
+  batchPicks?: PickingBatchPick[];
+  /** Serial-tracked SKUs only — undefined if the SKU isn't serial-tracked. */
+  serialPicks?: PickingSerialPick[];
 }
 
 export function getPickingLineItems(task: PickingTask): PickLineItem[] {
@@ -30,6 +37,8 @@ export function getPickingLineItems(task: PickingTask): PickLineItem[] {
     expectedQty: l.qty,
     pickedQty: task.pickedByKey?.[l.key] ?? 0,
     unit: l.unit,
+    batchPicks: task.batchPicks?.[l.key],
+    serialPicks: task.serialPicks?.[l.key],
   }));
 }
 

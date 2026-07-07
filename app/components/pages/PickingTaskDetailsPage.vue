@@ -49,6 +49,18 @@ function rowPicked(key: string, fallback: number): number {
   return localPicked.value[key] ?? fallback
 }
 
+// Batch/serial-tracked lines show the bin(s) actually picked from instead of the
+// static binLocation — a line can span more than one bin (split across batches/SNs).
+function isTrackedItem(item: { batchPicks?: unknown[]; serialPicks?: unknown[] }): boolean {
+  return !!(item.batchPicks?.length || item.serialPicks?.length)
+}
+function pickedLocations(item: { batchPicks?: { location: string }[]; serialPicks?: { location: string }[] }): string[] {
+  const bins = new Set<string>()
+  for (const b of item.batchPicks ?? []) if (b.location) bins.add(b.location)
+  for (const s of item.serialPicks ?? []) if (s.location) bins.add(s.location)
+  return [...bins]
+}
+
 // Linked sales orders + packing tasks
 const linkedOrders = computed(() =>
   (task.value?.salesOrderIds ?? []).map(id => outgoingOrders.find(o => o.id === id)).filter(Boolean) as typeof outgoingOrders,
@@ -305,7 +317,15 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                     <ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" />
                   </td>
                   <td class="detail-td">{{ item.skuCode }}</td>
-                  <td class="detail-td">{{ item.binLocation }}</td>
+                  <td class="detail-td">
+                    <template v-if="isTrackedItem(item)">
+                      <template v-if="pickedLocations(item).length">
+                        <span v-for="loc in pickedLocations(item)" :key="loc" class="pkd-location-item">{{ loc }}</span>
+                      </template>
+                      <span v-else>—</span>
+                    </template>
+                    <template v-else>{{ item.binLocation }}</template>
+                  </td>
                   <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
                   <td v-if="showPickedCols" class="detail-td detail-td--num">
                     <span :class="isInProgress ? '' : (rowPicked(item.key, item.pickedQty) === item.expectedQty ? 'pkd-qty--full' : rowPicked(item.key, item.pickedQty) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
@@ -585,6 +605,8 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+.pkd-location-item { display: block; }
+.pkd-location-item:not(:last-child) { margin-bottom: 2px; }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .pkd-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }

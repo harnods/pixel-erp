@@ -22,7 +22,7 @@ import {
   adjustmentApprovalLog,
   type AdjustmentLine,
 } from '~/data/stockAdjustments'
-import { wmsStockAdjustments, getWmsAdjustment, deleteWmsAdjustments } from '~/data/wmsStockAdjustments'
+import { wmsStockAdjustments, getWmsAdjustment, deleteWmsAdjustments, startWmsCount } from '~/data/wmsStockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -34,6 +34,7 @@ const isWmsRecord = computed(() => props.orderId.startsWith('wsa-'))
 const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.orderId) : getAdjustment(props.orderId))
 const isCount = computed(() => adjustment.value?.kind === 'count')
 const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
+const isNotStarted = computed(() => isWmsCount.value && adjustment.value?.status === 'not_started')
 const lineItems = computed(() => adjustment.value ? adjustmentLineItems(adjustment.value) : [])
 const memo = computed(() => adjustment.value ? adjustmentMemo(adjustment.value) : '')
 const attachments = computed(() => adjustment.value ? adjustmentAttachments(adjustment.value) : [])
@@ -296,6 +297,11 @@ function backPath() {
 function goBack() { router.push(backPath()) }
 function preview() { /* opens the printable preview — not built in this prototype */ }
 function printPdf() { /* generates the adjustment PDF — not built in this prototype */ }
+function startCounting() {
+  if (!adjustment.value) return
+  if (adjustment.value.status === 'not_started') startWmsCount(adjustment.value.id)
+  router.push(`/stock-adjustments/${props.orderId}/count`)
+}
 function editAdjustment() { router.push(`/stock-adjustments/${props.orderId}/edit`) }
 function approve() {
   if (!adjustment.value) return
@@ -506,13 +512,13 @@ onUnmounted(() => {
                       <td class="detail-td">{{ item.batchNumber ?? '—' }}</td>
                       <td class="detail-td detail-td--num">{{ fmt(item.prevOnHand) }}</td>
                       <td v-if="isSerialTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
-                        <div class="detail-counted-qty">{{ fmt(item.counted) }}</div>
-                        <div class="detail-counted-action">
+                        <div class="detail-counted-qty">{{ isNotStarted ? '—' : fmt(item.counted) }}</div>
+                        <div v-if="!isNotStarted" class="detail-counted-action">
                           <button class="detail-view-link" type="button" @click="openViewSerial(item)">View serial numbers</button>
                         </div>
                       </td>
-                      <td v-else class="detail-td detail-td--num">{{ fmt(item.counted) }}</td>
-                      <td class="detail-td detail-td--num">{{ diffLabel(item.difference) }}</td>
+                      <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(item.counted) }}</td>
+                      <td class="detail-td detail-td--num">{{ isNotStarted ? '—' : diffLabel(item.difference) }}</td>
                       <td class="detail-td">{{ item.unit }}</td>
                     </tr>
                   </tbody>
@@ -555,13 +561,13 @@ onUnmounted(() => {
                 <td class="detail-td">{{ row.sku }}</td>
                 <td class="detail-td detail-td--num">{{ fmt(row.prevOnHand) }}</td>
                 <td v-if="isSerialTrackedSku(row.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
-                  <div class="detail-counted-qty">{{ fmt(row.counted) }}</div>
-                  <div class="detail-counted-action">
+                  <div class="detail-counted-qty">{{ isNotStarted ? '—' : fmt(row.counted) }}</div>
+                  <div v-if="!isNotStarted" class="detail-counted-action">
                     <button class="detail-view-link" type="button" @click="openViewSerialForSku(row)">View serial numbers</button>
                   </div>
                 </td>
-                <td v-else class="detail-td detail-td--num">{{ fmt(row.counted) }}</td>
-                <td class="detail-td detail-td--num">{{ diffLabel(row.difference) }}</td>
+                <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(row.counted) }}</td>
+                <td class="detail-td detail-td--num">{{ isNotStarted ? '—' : diffLabel(row.difference) }}</td>
                 <td class="detail-td">{{ row.unit }}</td>
                 <td class="detail-td">
                   <div class="detail-loc-tags">
@@ -673,25 +679,77 @@ onUnmounted(() => {
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="detail-btn detail-btn--secondary" @click="printPdf">Print PDF</button>
-      <MpPopover id="sad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
-            Actions
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem @click="preview">Preview</MpPopoverListItem>
-            <div class="sad-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
-            <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
-            <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+
+      <!-- WMS stock count footer -->
+      <template v-if="isWmsCount">
+        <button class="detail-btn detail-btn--secondary" @click="printPdf">Print stock card</button>
+        <!-- Completed: no counting button, just Edit/Delete -->
+        <template v-if="adjustment.status === 'completed'">
+          <MpPopover id="sad-wms-actions-done" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary">
+                Actions
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
+                <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </template>
+        <!-- Not started / In progress: split button -->
+        <template v-else>
+          <div class="detail-split-btn">
+            <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startCounting">
+              {{ adjustment.status === 'in_progress' ? 'Continue counting' : 'Start counting' }}
+            </button>
+            <MpPopover id="sad-wms-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+              <MpPopoverTrigger>
+                <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                <MpPopoverList>
+                  <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
+                  <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </div>
+        </template>
+      </template>
+
+      <!-- ERP + WMS stock in/out footer -->
+      <template v-else>
+        <button class="detail-btn detail-btn--secondary" @click="printPdf">Print PDF</button>
+        <MpPopover id="sad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+          <MpPopoverTrigger>
+            <button class="detail-btn detail-btn--primary">
+              Actions
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="preview">Preview</MpPopoverListItem>
+              <div role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
+              <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
+              <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+      </template>
+
     </footer>
 
     <ActivityLogModal
@@ -929,10 +987,14 @@ onUnmounted(() => {
 .detail-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 .detail-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; }
-.detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-text-default); color: var(--mp-text-default); }
+.detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
 
 .sad-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 

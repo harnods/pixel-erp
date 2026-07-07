@@ -42,6 +42,7 @@ const accountId = ref(acctOptions.find(a => a.id === 'Inventory adjustment')?.id
 const tags = ref<DataInterface[]>([])
 const memo = ref('')
 const assignee = ref('')
+const assigneeError = ref(false)
 
 // ── Warehouse stock (system on-hand, coherent with the warehouse detail page) ──────
 const stock = computed(() => (warehouseId.value ? getWarehouseDetail(warehouseId.value)?.stock ?? [] : []))
@@ -217,13 +218,14 @@ function onFileChange(ev: Event) {
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
 
 // ── Navigation + save ──────────────────────────────────────────────────────────────
-function goBack() { router.push('/stock-adjustments') }
+function goBack() { router.push(isWms.value ? '/stock-count' : '/stock-adjustments') }
 const formError = ref('')
 function handleSave() {
   formError.value = ''
   let valid = true
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
+  if (isWms.value && !assignee.value) { assigneeError.value = true; valid = false }
   if (hasStorageLocs.value) {
     if (!selectedLocations.value.length || !selectedLocations.value.some(l => l.rows.length)) {
       formError.value = 'Select at least one location with products to count.'
@@ -548,7 +550,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">All stock adjustments</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ isWms ? 'Stock counts' : 'All stock adjustments' }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New stock count</h1>
         </div>
@@ -592,9 +594,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpAutocomplete id="scf-account-ac" v-model="accountId" :data="acctOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width />
           </MpFormControl>
 
-          <MpFormControl v-if="isWms" id="scf-assignee" class="scf-f-assignee">
+          <MpFormControl v-if="isWms" id="scf-assignee" class="scf-f-assignee" is-required :is-invalid="assigneeError">
             <MpFormLabel>Assignee</MpFormLabel>
-            <MpAutocomplete id="scf-assignee-ac" v-model="assignee" :data="assigneeOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width placeholder="Select assignee" />
+            <MpAutocomplete id="scf-assignee-ac" v-model="assignee" :data="assigneeOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width placeholder="Select assignee" :is-invalid="assigneeError" @update:model-value="assigneeError = false" />
+            <MpFormErrorMessage>Please select an assignee</MpFormErrorMessage>
           </MpFormControl>
 
         </div>

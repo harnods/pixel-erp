@@ -20,6 +20,27 @@ export interface PickingLine {
   qty: number;        // planned to-pick qty
 }
 
+/** One batch picked from to fulfil a line — a batch lives in exactly one bin. */
+export interface PickingBatchPick {
+  batchNo: string;
+  expiryDate: string;
+  desc: string;
+  qty: number;
+  unit: string;
+  location: string;
+}
+
+/** One serial picked to fulfil a line — a serial lives in exactly one bin. */
+export interface PickingSerialPick {
+  serial: string;
+  location: string;
+}
+
+export interface PickingAssignments {
+  batchPicks?: Record<string, PickingBatchPick[]>;
+  serialPicks?: Record<string, PickingSerialPick[]>;
+}
+
 /**
  * A picking task — once an outbound order is confirmed, a warehouse operator must
  * collect (pick) its goods from storage bins. One task can bundle one or more sales
@@ -50,6 +71,10 @@ export interface PickingTask {
   lines?: PickingLine[];
   /** picked qty per line key (set as the operator picks) */
   pickedByKey?: Record<string, number>;
+  /** Per-line batch picks (batch-tracked SKUs), keyed by PickingLine.key. */
+  batchPicks?: Record<string, PickingBatchPick[]>;
+  /** Per-line serial picks (serial-tracked SKUs), keyed by PickingLine.key. */
+  serialPicks?: Record<string, PickingSerialPick[]>;
 }
 
 const PICKING_WAREHOUSES = warehouses.filter(
@@ -219,6 +244,8 @@ export function addPickingTask(opts: {
   lines?: PickingLine[];
   skuQty?: number;
   toPickQty?: number;
+  /** Batch/serial picked at creation time — the plan the operator will follow. */
+  assignments?: PickingAssignments;
 }): PickingTask {
   const seq = freshSeq();
   const lines = opts.lines ?? buildPickingLines(opts.salesOrderIds, opts.salesNos);
@@ -235,6 +262,8 @@ export function addPickingTask(opts: {
     pickedQty: 0, // newly created → nothing picked yet
     status: "open",
     lines,
+    ...(opts.assignments?.batchPicks ? { batchPicks: opts.assignments.batchPicks } : {}),
+    ...(opts.assignments?.serialPicks ? { serialPicks: opts.assignments.serialPicks } : {}),
   };
   pickingTasks.unshift(task);
   persistPicking();
@@ -353,12 +382,18 @@ export function startPicking(taskId: string): void {
 }
 
 /** Save picked qty per line (autosave / Save draft) — stays in progress. */
-export function savePickingDraft(taskId: string, picked: Record<string, number>): void {
+export function savePickingDraft(
+  taskId: string,
+  picked: Record<string, number>,
+  assignments?: PickingAssignments,
+): void {
   const t = getPickingTask(taskId);
   if (!t) return;
   if (t.status === "open") { t.status = "in progress"; t.startDate = nowIso(); }
   t.pickedByKey = { ...picked };
   t.pickedQty = sumPicked(t.pickedByKey);
+  if (assignments?.batchPicks) t.batchPicks = assignments.batchPicks;
+  if (assignments?.serialPicks) t.serialPicks = assignments.serialPicks;
   persistPicking();
 }
 
@@ -367,13 +402,19 @@ export function savePickingDraft(taskId: string, picked: Record<string, number>)
  * anything less ⇒ "partially picked" (allowed for ANY order, marketplace or not — the
  * marketplace-completeness rule is enforced only when creating the packing task).
  */
-export function endPicking(taskId: string, picked: Record<string, number>): void {
+export function endPicking(
+  taskId: string,
+  picked: Record<string, number>,
+  assignments?: PickingAssignments,
+): void {
   const t = getPickingTask(taskId);
   if (!t) return;
   t.pickedByKey = { ...picked };
   t.pickedQty = sumPicked(t.pickedByKey);
   t.status = t.pickedQty >= t.toPickQty ? "completed" : "partially picked";
   t.endDate = nowIso();
+  if (assignments?.batchPicks) t.batchPicks = assignments.batchPicks;
+  if (assignments?.serialPicks) t.serialPicks = assignments.serialPicks;
   persistPicking();
 }
 

@@ -90,6 +90,7 @@ const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/p
 const StockAdjustmentsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue'))
 const StockAdjustmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
 const StockCountFormPage = defineAsyncComponent(() => import('~/components/pages/StockCountFormPage.vue'))
+const StockCountingPage = defineAsyncComponent(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = defineAsyncComponent(() => import('~/components/pages/StockInOutFormPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
@@ -110,6 +111,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
         ? { component: StockInOutFormPage, id: 'new' }
         : { component: StockCountFormPage, id: 'new' }
     }
+    if (segs.length >= 3 && segs[2] === 'count') return { component: StockCountingPage, id: segs[1]! }
     if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
     return { component: StockAdjustmentDetailsPage, id: segs[1]! }
   }

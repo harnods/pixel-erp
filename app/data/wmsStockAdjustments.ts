@@ -57,6 +57,13 @@ function kindFor(i: number): AdjustmentKind {
   return hash100(i * 3 + 1) < 40 ? 'count' : 'in-out'
 }
 
+function countStatusFor(i: number): AdjustmentStatus {
+  const v = hash100(i * 41 + 11)
+  if (v < 25) return 'not_started'
+  if (v < 55) return 'in_progress'
+  return 'completed'
+}
+
 function categoryFor(i: number, kind: AdjustmentKind): AdjustmentCategory {
   if (kind === 'count') return 'Stock count'
   return IN_OUT_CATEGORIES[hash100(i * 11 + 5) % IN_OUT_CATEGORIES.length]!
@@ -77,6 +84,7 @@ function generate(count = 24): StockAdjustment[] {
     const seq = kind === 'count' ? countSeq++ : inoutSeq++
     const startDaysAgo = (hash100(i * 17) % 40) + 1
     const durationDays = (hash100(i * 7 + 3) % 5) + 1
+    const status = kind === 'count' ? countStatusFor(i) : 'completed'
     const record: StockAdjustment = {
       id: `wsa-${String(i + 1).padStart(3, '0')}`,
       kind,
@@ -86,7 +94,7 @@ function generate(count = 24): StockAdjustment[] {
       warehouseName: wh.name,
       category,
       account: accountForCategory(category),
-      status: 'completed',
+      status,
       tags: tagsFor(i),
     }
     if (kind === 'count') {
@@ -95,15 +103,19 @@ function generate(count = 24): StockAdjustment[] {
       const startMin = (hash100(i * 29 + 2) % 4) * 15
       const endHour = 14 + (hash100(i * 31 + 3) % 5)
       const endMin = (hash100(i * 37 + 4) % 4) * 15
-      record.startDate = isoOffsetTs(-startDaysAgo, startHour, startMin)
-      record.endDate = isoOffsetTs(-startDaysAgo + durationDays, endHour, endMin)
+      if (status === 'in_progress' || status === 'completed') {
+        record.startDate = isoOffsetTs(-startDaysAgo, startHour, startMin)
+      }
+      if (status === 'completed') {
+        record.endDate = isoOffsetTs(-startDaysAgo + durationDays, endHour, endMin)
+      }
     }
     out.push(record)
   }
   return out
 }
 
-const KEY = 'wms-stock-adjustments-v4'
+const KEY = 'wms-stock-adjustments-v5'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const wmsStockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 
@@ -151,7 +163,7 @@ export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
     warehouseName: input.warehouseName,
     category: input.category,
     account: accountForCategory(input.category),
-    status: 'completed',
+    status: input.kind === 'count' ? 'not_started' : 'completed',
     tags: input.tags,
     memo: input.memo,
     lines: input.lines,
@@ -159,15 +171,41 @@ export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
     startDate: input.startDate,
     endDate: input.endDate,
   }
-  // Apply stock changes immediately (no approval needed in WMS).
-  if (input.kind === 'count') {
-    applyStockCount(input.warehouseId, input.lines)
-  } else {
+  // Count tasks: stock applied when counting is completed, not on creation.
+  if (input.kind === 'in-out') {
     applyStockInOut(input.warehouseId, input.lines)
   }
   wmsStockAdjustments.unshift(adj)
   persist()
   return adj
+}
+
+export function startWmsCount(id: string): StockAdjustment | undefined {
+  const a = wmsStockAdjustments.find(x => x.id === id)
+  if (!a || a.kind !== 'count' || a.status !== 'not_started') return a
+  a.status = 'in_progress'
+  a.startDate = new Date().toISOString()
+  persist()
+  return a
+}
+
+export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number }[]): StockAdjustment | undefined {
+  const a = wmsStockAdjustments.find(x => x.id === id)
+  if (!a || a.kind !== 'count') return a
+  a.lines = lines
+  persist()
+  return a
+}
+
+export function finishWmsCount(id: string, lines: { sku: string; qty: number }[]): StockAdjustment | undefined {
+  const a = wmsStockAdjustments.find(x => x.id === id)
+  if (!a || a.kind !== 'count') return a
+  a.status = 'completed'
+  a.endDate = new Date().toISOString()
+  a.lines = lines
+  applyStockCount(a.warehouseId, lines)
+  persist()
+  return a
 }
 
 export function updateWmsAdjustment(id: string, input: AdjustmentInput): StockAdjustment | undefined {

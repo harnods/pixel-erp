@@ -23,8 +23,8 @@ const props = defineProps<{
   warehouseId: string
   targetCount: number
   modelValue: CommittedSerial[]
-  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer; 'receiving' = PO receiving; 'put-away' = assign received serials to bins */
-  kind?: 'count' | 'in-out' | 'transfer' | 'receiving' | 'put-away'
+  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer; 'receiving' = PO receiving; 'put-away' = assign received serials to bins; 'picking' = pick serials for an outbound order */
+  kind?: 'count' | 'in-out' | 'transfer' | 'receiving' | 'put-away' | 'picking'
   /** Signed delta for in-out mode (e.g. +2 stock in, -5 stock out). */
   delta?: number
   /**
@@ -70,7 +70,7 @@ watch(() => props.open, (isOpen) => {
     ...reservedUnits.map(u => u.serial),
   ]
 
-  if (props.kind === 'transfer') {
+  if (props.kind === 'transfer' || props.kind === 'picking') {
     const selectedSet = new Set(props.modelValue.map(cs => cs.serial))
     const selectedDestLoc = new Map(props.modelValue.map(cs => [cs.serial, cs.destLocationId ?? '']))
     rows.value = [
@@ -108,11 +108,13 @@ watch(() => props.open, (isOpen) => {
       if (!seen.has(cs.serial)) result.push({ serial: cs.serial, counted: true })
     }
     rows.value = result
+  } else if (!props.kind || props.kind === 'count') {
+    // Stock count: pre-populate all warehouse SNs as not-counted; user scans to confirm each
+    rows.value = warehouseSerials.map(s => ({ serial: s, counted: false }))
   } else if (props.locationOnHand === 0) {
     rows.value = []
   } else {
-    // stock in/out and stock count: pre-populate all existing SNs as counted=true
-    // user adds new SNs or removes existing ones; target = newOnHand (= onHand ± delta)
+    // stock in/out: pre-populate all existing SNs as counted=true
     rows.value = warehouseSerials.map(s => ({ serial: s, counted: true }))
   }
 
@@ -138,15 +140,18 @@ const countedCount = computed(() => rows.value.filter(r => r.counted).length)
 // Info bar stats are driven by targetCount (what user entered in the form), not table state
 const difference = computed(() => props.targetCount - onHandCount.value)
 const isInOut = computed(() =>
-  props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away',
+  props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'picking',
 )
+const isCountMode = computed(() => !props.kind || props.kind === 'count')
 const isTransfer = computed(() => props.kind === 'transfer')
 const isReceiving = computed(() => props.kind === 'receiving')
 const isPutAway = computed(() => props.kind === 'put-away')
+const isPicking = computed(() => props.kind === 'picking')
 const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
 const qtyLabel = computed(() => {
   if (props.kind === 'transfer') return 'Transfer qty'
   if (props.kind === 'receiving' || props.kind === 'put-away') return 'Received qty'
+  if (props.kind === 'picking') return 'Picked qty'
   return 'Stock in/out qty'
 })
 const signedDelta = computed(() => props.delta ?? 0)
@@ -171,17 +176,33 @@ function parseInput(): string[] {
 
 function addToList() {
   const parsed = parseInput()
-  const existing = new Set(rows.value.map(r => r.serial))
-  const newOnes = parsed.filter(s => !existing.has(s))
-  if (!newOnes.length) return
-  rows.value.push(...newOnes.map(s => ({ serial: s, counted: true })))
+  if (!parsed.length) return
+  if (!props.kind || props.kind === 'count') {
+    // Count mode: scan each SN — mark existing rows as counted, add unknown SNs as counted
+    const idxMap = new Map(rows.value.map((r, i) => [r.serial, i]))
+    const toAdd: SerialRow[] = []
+    for (const sn of parsed) {
+      const idx = idxMap.get(sn)
+      if (idx !== undefined) {
+        rows.value[idx]!.counted = true
+      } else {
+        toAdd.push({ serial: sn, counted: true })
+      }
+    }
+    if (toAdd.length) rows.value.push(...toAdd)
+  } else {
+    const existing = new Set(rows.value.map(r => r.serial))
+    const newOnes = parsed.filter(s => !existing.has(s))
+    if (!newOnes.length) return
+    rows.value.push(...newOnes.map(s => ({ serial: s, counted: true })))
+  }
   inputText.value = ''
   saveError.value = ''
 }
 
 function toggleRow(row: SerialRow) {
   if (row.reserved) return
-  if (isTransfer.value && !row.counted && countedCount.value >= props.targetCount) return
+  if ((isTransfer.value || isPicking.value) && !row.counted && countedCount.value >= props.targetCount) return
   row.counted = !row.counted
   saveError.value = ''
 }
@@ -219,7 +240,12 @@ function handleCancel() {
 }
 
 function handleSave() {
-  if (countedCount.value !== effectiveTargetCount.value) {
+  if (isPicking.value) {
+    if (countedCount.value > effectiveTargetCount.value) {
+      saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers selected — that's more than the qty to pick.`
+      return
+    }
+  } else if (countedCount.value !== effectiveTargetCount.value) {
     saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers specified. Add or remove serial numbers to match the counted quantity.`
     return
   }
@@ -263,8 +289,8 @@ function handleSave() {
             </div>
           </div>
           <div class="msn-info-stats">
-            <div v-if="!hideStockStats" class="msn-stat">
-              <span class="msn-stat-label">{{ isTransfer ? 'Available qty' : 'On hand qty' }}</span>
+            <div v-if="!hideStockStats && isInOut" class="msn-stat">
+              <span class="msn-stat-label">{{ (isTransfer || isPicking) ? 'Available qty' : 'On hand qty' }}</span>
               <span class="msn-stat-value">{{ fmtSerial(onHandCount) }}</span>
             </div>
             <!-- receiving / put-away stats -->
@@ -280,10 +306,6 @@ function handleSave() {
                 <span class="msn-stat-label">Counted qty</span>
                 <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
               </div>
-              <div class="msn-stat" :class="{ 'msn-stat--pos': difference > 0, 'msn-stat--neg': difference < 0 }">
-                <span class="msn-stat-label">Difference</span>
-                <span class="msn-stat-value">{{ fmtDiff(difference) }}</span>
-              </div>
             </template>
             <!-- transfer stats -->
             <template v-else-if="isTransfer">
@@ -294,6 +316,13 @@ function handleSave() {
               <div class="msn-stat">
                 <span class="msn-stat-label">After transfer qty</span>
                 <span class="msn-stat-value">{{ fmtSerial(afterTransferCount) }}</span>
+              </div>
+            </template>
+            <!-- picking stats -->
+            <template v-else-if="isPicking">
+              <div class="msn-stat">
+                <span class="msn-stat-label">Picked qty</span>
+                <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
               </div>
             </template>
             <!-- stock in/out stats -->
@@ -310,7 +339,7 @@ function handleSave() {
           </div>
         </div>
 
-        <div v-if="!isTransfer" class="msn-form-section">
+        <div v-if="!isTransfer && !isPicking" class="msn-form-section">
           <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins. -->
           <template v-if="!isPutAway">
             <label class="msn-form-label">Serial number</label>
@@ -336,7 +365,7 @@ function handleSave() {
         </div>
 
         <div class="msn-table-wrap">
-          <table class="msn-table" :class="{ 'msn-table--locs': hasOriginLoc || hasDestLoc }">
+          <table class="msn-table" :class="{ 'msn-table--locs': hasOriginLoc || hasDestLoc, 'msn-table--form': hasDestLoc }">
             <colgroup>
               <col class="msn-col-serial" />
               <col v-if="hasOriginLoc" class="msn-col-from-bin" />
@@ -356,11 +385,13 @@ function handleSave() {
             <tbody>
               <tr
                 v-for="row in displayRows" :key="row.serial" class="msn-tr"
-                :class="isTransfer
+                :class="(isTransfer || isPicking)
                   ? { 'msn-tr--selected': row.counted, 'msn-tr--reserved': row.reserved }
-                  : { 'msn-tr--removed': !row.counted }"
+                  : isCountMode
+                    ? { 'msn-tr--selected': row.counted }
+                    : { 'msn-tr--removed': !row.counted }"
               >
-                <td class="msn-td" :class="{ 'msn-td--strike': !isTransfer && !row.counted }">{{ row.serial }}</td>
+                <td class="msn-td" :class="{ 'msn-td--strike': !isCountMode && !(isTransfer || isPicking) && !row.counted }">{{ row.serial }}</td>
                 <td v-if="hasOriginLoc" class="msn-td msn-td--from-bin">
                   <span class="msn-bin-text" :title="row.originLocation">{{ row.originLocation ?? '—' }}</span>
                 </td>
@@ -412,7 +443,7 @@ function handleSave() {
                   </template>
                 </td>
                 <td class="msn-td msn-td--status">
-                  <template v-if="isTransfer">
+                  <template v-if="isTransfer || isPicking">
                     <MpBadge v-if="row.reserved" type="warning">Reserved</MpBadge>
                     <MpBadge v-else-if="row.counted" type="success">Selected</MpBadge>
                   </template>
@@ -430,10 +461,12 @@ function handleSave() {
                     class="msn-toggle-btn"
                     :class="[
                       row.counted ? 'msn-toggle-btn--remove' : 'msn-toggle-btn--restore',
-                      (row.reserved || (isTransfer && !row.counted && countedCount >= targetCount)) ? 'msn-toggle-btn--disabled' : ''
+                      (row.reserved || ((isTransfer || isPicking) && !row.counted && countedCount >= targetCount)) ? 'msn-toggle-btn--disabled' : ''
                     ]"
                     type="button"
-                    :aria-label="row.counted ? (isTransfer ? 'Remove from transfer' : 'Mark as not counted') : (isTransfer ? 'Select for transfer' : 'Mark as counted')"
+                    :aria-label="row.counted
+                      ? (isPicking ? 'Remove from pick' : isTransfer ? 'Remove from transfer' : 'Mark as not counted')
+                      : (isPicking ? 'Select for picking' : isTransfer ? 'Select for transfer' : 'Mark as counted')"
                     @click="toggleRow(row)"
                   >
                     <MpIcon :name="row.counted ? 'minus-circular' : 'add'" size="sm" />
@@ -451,7 +484,7 @@ function handleSave() {
           </table>
         </div>
 
-        <p v-if="isTransfer && saveError" class="msn-save-error msn-save-error--transfer">{{ saveError }}</p>
+        <p v-if="(isTransfer || isPicking) && saveError" class="msn-save-error msn-save-error--transfer">{{ saveError }}</p>
 
       </div>
 
@@ -573,15 +606,14 @@ function handleSave() {
 .msn-table {
   width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0;
 }
-.msn-table--locs { table-layout: auto; }
+/* Serial/origin/dest columns have no explicit width — under table-layout:fixed they
+   split whatever space is left after the fixed-width Status/toggle columns equally,
+   so the toggle ("Add") column always lands flush against the table's right edge. */
 .msn-col-serial { /* fills remaining */ }
-.msn-table--locs .msn-col-serial,
-.msn-table--locs .msn-col-from-bin,
-.msn-table--locs .msn-col-to-bin { width: 33%; }
 .msn-col-status { width: 120px; }
 .msn-col-toggle { width: 44px; }
-.msn-col-from-bin { width: 220px; }
-.msn-col-to-bin { width: 220px; }
+.msn-col-from-bin { /* fills remaining, alongside serial */ }
+.msn-col-to-bin { /* fills remaining, alongside serial */ }
 .msn-th {
   height: var(--mp-sizes-7, 28px);
   text-align: left;
@@ -594,8 +626,9 @@ function handleSave() {
 }
 .msn-th--del { padding: 0; }
 
-/* Form-table rules — applied when Into location column is present */
-.msn-table--locs .msn-th { background: var(--mp-background-neutral, #fff); border-right: 1px solid var(--mp-border-default); }
+/* Column borders — added whenever a location column is present, regardless of
+   whether it's an editable picker (form) or a plain read-only display. */
+.msn-table--locs .msn-th { border-right: 1px solid var(--mp-border-default); }
 .msn-table--locs .msn-th:last-child { border-right: none; }
 
 .msn-td {
@@ -605,16 +638,21 @@ function handleSave() {
   vertical-align: top;
   background: var(--mp-background-neutral, #fff);
 }
-/* Non-form columns get gray bg; all columns get left/right borders */
-.msn-table--locs .msn-td { background: var(--mp-background-neutral-subtle); border-right: 1px solid var(--mp-border-default); }
+.msn-table--locs .msn-td { border-right: 1px solid var(--mp-border-default); }
 .msn-table--locs .msn-td:last-child { border-right: none; }
-.msn-table--locs .msn-td--to-bin { background: var(--mp-background-neutral, #fff); }
 .msn-td--strike { text-decoration: line-through; color: var(--mp-text-secondary); }
 .msn-tr--removed .msn-td { background: var(--mp-background-danger-subtle, #fff5f5); }
 .msn-tr--selected .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
 .msn-tr--reserved .msn-td { background: var(--mp-background-warning-subtle, #fffbeb); color: var(--mp-text-secondary); }
-.msn-table--locs .msn-tr--selected .msn-td--to-bin,
-.msn-table--locs .msn-tr--removed .msn-td--to-bin { background: var(--mp-background-neutral, #fff); }
+
+/* Form-table rules — only when INTO LOCATION is a real editable picker (transfer/
+   put-away's destination bin). Read-only location display (picking) stays plain:
+   white rows, gray header, like any other non-form table. */
+.msn-table--form .msn-th { background: var(--mp-background-neutral, #fff); }
+.msn-table--form .msn-td { background: var(--mp-background-neutral-subtle); }
+.msn-table--form .msn-td--to-bin { background: var(--mp-background-neutral, #fff); }
+.msn-table--form .msn-tr--selected .msn-td--to-bin,
+.msn-table--form .msn-tr--removed .msn-td--to-bin { background: var(--mp-background-neutral, #fff); }
 
 .msn-td--status { padding: 8px var(--mp-spacing-2); vertical-align: middle; }
 .msn-td--del {
@@ -624,7 +662,8 @@ function handleSave() {
 .msn-td--to-bin { padding: 0; vertical-align: middle; }
 .msn-td--to-bin:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 .msn-bin-text {
-  display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+  display: block; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default);
   white-space: normal; word-break: break-word;
 }
 .msn-bin-empty { padding: 10px var(--mp-spacing-2); display: block; font-size: var(--mp-font-sizes-md); color: var(--mp-text-placeholder); }

@@ -19,6 +19,8 @@ export interface CommittedBatch {
   onHand: number
   counted: number | null  // null = uncounted
   unit: string
+  /** Fixed bin this batch currently sits in — used for picking's read-only Location column. */
+  location?: string
   originLocations?: BatchLocEntry[]
   destLocations?: BatchLocEntry[]
 }
@@ -28,8 +30,8 @@ const props = defineProps<{
   sku: string
   warehouseId: string
   modelValue: CommittedBatch[]
-  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer; 'receiving' = PO receiving; 'put-away' = assign received batches to bins */
-  kind?: 'count' | 'in-out' | 'transfer' | 'receiving' | 'put-away'
+  /** 'count' (default) = stock count; 'in-out' = stock in/out; 'transfer' = warehouse transfer; 'receiving' = PO receiving; 'put-away' = assign received batches to bins; 'picking' = pick from existing batches for an outbound order */
+  kind?: 'count' | 'in-out' | 'transfer' | 'receiving' | 'put-away' | 'picking'
   /**
    * When counting inside a storage location, pass the bin-level on-hand.
    * 0 means the SKU has no stock at this bin → start empty instead of
@@ -40,6 +42,8 @@ const props = defineProps<{
   originLocationPaths?: string[]
   /** All bins available in the destination warehouse */
   destLocationPaths?: string[]
+  /** Picking only: the line's to-pick qty — total picked across batches must not exceed this. */
+  targetCount?: number
 }>()
 
 const emit = defineEmits<{
@@ -102,10 +106,10 @@ watch(() => props.open, (isOpen) => {
     return
   }
 
-  // in-out / transfer / receiving: start empty — user manually picks which batches to affect
-  // (put-away always arrives with a non-empty modelValue — the batches recorded at
-  // receiving — but falls back to empty here too if that's somehow missing.)
-  if (props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away') {
+  // in-out / transfer / receiving / picking: start empty — user manually picks which
+  // batches to affect (put-away always arrives with a non-empty modelValue — the
+  // batches recorded at receiving — but falls back to empty here too if missing.)
+  if (props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'picking') {
     rows.value = []
     return
   }
@@ -131,6 +135,7 @@ watch(() => props.open, (isOpen) => {
     onHand: b.onHand,
     counted: null,
     unit,
+    location: b.location,
     isNew: false,
     originLocRows: [makeLocRow()],
     destLocRows: [makeLocRow()],
@@ -147,19 +152,24 @@ const productImg = computed(() => product.value?.img ?? '')
 const productName = computed(() => warehouseStock.value?.name ?? product.value?.name ?? props.sku)
 
 const isInOut = computed(() =>
-  props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away',
+  props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'picking',
 )
 const isTransfer = computed(() => props.kind === 'transfer')
 const isReceiving = computed(() => props.kind === 'receiving')
 const isPutAway = computed(() => props.kind === 'put-away')
+const isPicking = computed(() => props.kind === 'picking')
 // receiving/put-away have no meaningful on-hand/new-on-hand concept — hide those stats/columns.
 const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
+// Picking shows Available qty (like transfer) but has no "new on hand" concept —
+// stock only actually leaves once the pick is fulfilled, not at drawer-save time.
+const showAfterStats = computed(() => !hideStockStats.value && !isPicking.value)
 const qtyLabel = computed(() => {
   if (props.kind === 'transfer') return 'Transfer qty'
   if (props.kind === 'receiving' || props.kind === 'put-away') return 'Received qty'
+  if (props.kind === 'picking') return 'Picked qty'
   return 'Stock in/out qty'
 })
-const onHandLabel = computed(() => isTransfer.value ? 'Available qty' : 'On hand qty')
+const onHandLabel = computed(() => (isTransfer.value || isPicking.value) ? 'Available qty' : 'On hand qty')
 const afterLabel = computed(() => isTransfer.value ? 'After transfer qty' : (isInOut.value ? 'New on hand qty' : 'Difference'))
 
 const totalOnHand = computed(() => rows.value.reduce((s, r) => s + r.onHand, 0))
@@ -233,6 +243,7 @@ function addWarehouseBatch(batchNo: string) {
     onHand: b.onHand,
     counted: null,
     unit,
+    location: b.location,
     isNew: false,
     originLocRows: [makeLocRow()],
     destLocRows: [makeLocRow()],
@@ -263,8 +274,11 @@ function removeRow(key: string) {
 }
 
 function setCounted(row: WorkRow, val: string) {
-  const n = val === '' ? null : Math.max(0, Math.floor(Number(val) || 0))
+  let n = val === '' ? null : Math.max(0, Math.floor(Number(val) || 0))
+  // Picking can't pull more units from a batch than it actually holds.
+  if (n !== null && isPicking.value && n > row.onHand) n = row.onHand
   row.counted = n
+  if (saveError.value) saveError.value = ''
 }
 
 function setExpiryDisplay(row: WorkRow, val: string) {
@@ -382,12 +396,26 @@ function diffLabel(row: WorkRow): string {
   return d > 0 ? `+${d.toLocaleString('id-ID')}` : d.toLocaleString('id-ID')
 }
 
+// Trailing-row colspan = every data column except the leading "select batch" cell:
+// expiry, desc, (location if picking), (on hand + after if stats shown), counted, unit.
+const trailingColspan = computed(() => 5 + (isPicking.value ? 1 : 0) + (hideStockStats.value ? 0 : 1) + (showAfterStats.value ? 1 : 0))
+
 // ── Footer actions ────────────────────────────────────────────────────────────────
+const saveError = ref('')
+
 function handleCancel() {
   emit('update:open', false)
 }
 
 function handleSave() {
+  if (isPicking.value && props.targetCount !== undefined) {
+    const total = rows.value.reduce((s, r) => s + (r.counted ?? 0), 0)
+    if (total > props.targetCount) {
+      saveError.value = `Picked qty (${total}) exceeds the qty to pick (${props.targetCount})`
+      return
+    }
+  }
+  saveError.value = ''
   const committed: CommittedBatch[] = rows.value.map(r => {
     const filledOrigin = r.originLocRows.filter(l => l.locationId && Number(l.qty) > 0)
     const filledDest = r.destLocRows.filter(l => l.locationId && Number(l.qty) > 0)
@@ -399,6 +427,7 @@ function handleSave() {
       onHand: r.onHand,
       counted: r.counted,
       unit: r.unit,
+      ...(r.location !== undefined ? { location: r.location } : {}),
       ...(filledOrigin.length ? { originLocations: filledOrigin.map(l => ({ locationId: l.locationId, qty: Number(l.qty) })) } : {}),
       ...(filledDest.length ? { destLocations: filledDest.map(l => ({ locationId: l.locationId, qty: Number(l.qty) })) } : {}),
     }
@@ -442,7 +471,7 @@ function fmtNum(n: number | null): string {
           </div>
           <div class="mbd-info-stats">
             <div v-if="!hideStockStats" class="mbd-stat">
-              <span class="mbd-stat-label">On hand qty</span>
+              <span class="mbd-stat-label">{{ onHandLabel }}</span>
               <span class="mbd-stat-value">{{ totalOnHand.toLocaleString('id-ID') }}</span>
             </div>
             <!-- stock count stats -->
@@ -467,7 +496,7 @@ function fmtNum(n: number | null): string {
             <template v-else>
               <div
                 class="mbd-stat"
-                :class="(isTransfer || hideStockStats) ? {} : { 'mbd-stat--pos': (totalCounted ?? 0) > 0, 'mbd-stat--neg': (totalCounted ?? 0) < 0 }"
+                :class="(isTransfer || isPicking || hideStockStats) ? {} : { 'mbd-stat--pos': (totalCounted ?? 0) > 0, 'mbd-stat--neg': (totalCounted ?? 0) < 0 }"
               >
                 <span class="mbd-stat-label">{{ qtyLabel }}</span>
                 <span class="mbd-stat-value">
@@ -475,11 +504,11 @@ function fmtNum(n: number | null): string {
                        fixed total (totalOnHand), not counted progress (starts at null). -->
                   <template v-if="isPutAway">{{ totalOnHand.toLocaleString('id-ID') }}</template>
                   <template v-else-if="totalCounted === null">—</template>
-                  <template v-else-if="!isTransfer && !hideStockStats && totalCounted > 0">+{{ totalCounted.toLocaleString('id-ID') }}</template>
+                  <template v-else-if="!isTransfer && !isPicking && !hideStockStats && totalCounted > 0">+{{ totalCounted.toLocaleString('id-ID') }}</template>
                   <template v-else>{{ totalCounted.toLocaleString('id-ID') }}</template>
                 </span>
               </div>
-              <div v-if="!hideStockStats" class="mbd-stat">
+              <div v-if="showAfterStats" class="mbd-stat">
                 <span class="mbd-stat-label">{{ afterLabel }}</span>
                 <span class="mbd-stat-value">{{ totalNewOnHand !== null ? totalNewOnHand.toLocaleString('id-ID') : '—' }}</span>
               </div>
@@ -524,9 +553,10 @@ function fmtNum(n: number | null): string {
               <col class="mbd-col-batch" />
               <col class="mbd-col-expiry" />
               <col class="mbd-col-desc" />
+              <col v-if="isPicking" class="mbd-col-location" />
               <col v-if="!hideStockStats" class="mbd-col-num" />
               <col class="mbd-col-counted" />
-              <col v-if="!hideStockStats" class="mbd-col-after" />
+              <col v-if="showAfterStats" class="mbd-col-after" />
               <col class="mbd-col-unit" />
               <col class="mbd-col-del" />
             </colgroup>
@@ -535,9 +565,10 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Batch</th>
                 <th class="mbd-th">Expiry date</th>
                 <th class="mbd-th">Description</th>
+                <th v-if="isPicking" class="mbd-th">Location</th>
                 <th v-if="!hideStockStats" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
                 <th class="mbd-th mbd-th--num">{{ isInOut ? qtyLabel : 'Counted qty' }}</th>
-                <th v-if="!hideStockStats" class="mbd-th mbd-th--num">{{ afterLabel }}</th>
+                <th v-if="showAfterStats" class="mbd-th mbd-th--num">{{ afterLabel }}</th>
                 <th class="mbd-th">Unit</th>
                 <th class="mbd-th mbd-th--del" />
               </tr>
@@ -582,6 +613,9 @@ function fmtNum(n: number | null): string {
                 </td>
                 <td v-else class="mbd-td mbd-td--muted">{{ row.desc }}</td>
 
+                <!-- LOCATION (picking only) — read-only, the batch's fixed bin -->
+                <td v-if="isPicking" class="mbd-td mbd-td--muted">{{ row.location || '—' }}</td>
+
                 <!-- ON HAND -->
                 <td v-if="!hideStockStats" class="mbd-td mbd-td--num mbd-td--muted">{{ row.onHand.toLocaleString('id-ID') }}</td>
 
@@ -618,7 +652,7 @@ function fmtNum(n: number | null): string {
                     'mbd-diff--uncounted': diffOf(row) === null,
                   }"
                 >{{ diffLabel(row) }}</td>
-                <td v-else-if="!hideStockStats" class="mbd-td mbd-td--num">
+                <td v-else-if="showAfterStats" class="mbd-td mbd-td--num">
                   {{ newOnHandOf(row) !== null ? newOnHandOf(row)!.toLocaleString('id-ID') : '—' }}
                 </td>
 
@@ -660,7 +694,7 @@ function fmtNum(n: number | null): string {
                         <MpPopoverListItem v-if="!availableBatches.length" disabled>
                           All batches added
                         </MpPopoverListItem>
-                        <template v-if="props.kind !== 'transfer'">
+                        <template v-if="props.kind !== 'transfer' && !isPicking">
                           <div class="mbd-popover-divider" />
                           <MpPopoverListItem @click="addNewBatch">
                             <span class="mbd-popover-add-row"><MpIcon name="add" size="sm" />Add new batch</span>
@@ -670,18 +704,20 @@ function fmtNum(n: number | null): string {
                     </MpPopoverContent>
                   </MpPopover>
                 </td>
-                <td :colspan="hideStockStats ? 5 : 7" class="mbd-td mbd-td--select-empty" />
+                <td :colspan="trailingColspan" class="mbd-td mbd-td--select-empty" />
               </tr>
 
               <!-- Pagination info row -->
               <tr class="mbd-tr mbd-tr--info">
-                <td :colspan="hideStockStats ? 6 : 8" class="mbd-td mbd-td--pagination">
+                <td :colspan="trailingColspan + 1" class="mbd-td mbd-td--pagination">
                   Showing {{ displayRows.length }} of {{ rows.length }} batches
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
+
+        <p v-if="saveError" class="mbd-save-error">{{ saveError }}</p>
 
       </div>
 
@@ -982,6 +1018,7 @@ function fmtNum(n: number | null): string {
 .mbd-col-batch   { width: 170px; }
 .mbd-col-expiry  { width: 172px; }
 .mbd-col-desc    { /* no width — flexibly absorbs remaining space after fixed cols */ }
+.mbd-col-location { width: 160px; }
 .mbd-col-num     { width: 150px; }
 .mbd-col-after   { width: 175px; }
 .mbd-col-counted { width: 160px; }
@@ -1149,6 +1186,7 @@ function fmtNum(n: number | null): string {
 .mbd-loc2-section-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .mbd-loc2-total { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .mbd-loc2-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+.mbd-save-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 .mbd-loc2-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);

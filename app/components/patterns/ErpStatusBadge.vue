@@ -77,6 +77,7 @@ const statusConfig: Record<string, StatusConfig> = {
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },
+  not_started:{ type: 'warning',      label: 'Open'        },
   'to do':    { type: 'announcement', label: 'To do'      },
   direct:     { type: 'announcement', label: 'Direct'     },
 
@@ -87,7 +88,8 @@ const statusConfig: Record<string, StatusConfig> = {
   'partially picked': { type: 'information', label: 'Partially picked' },
   'partially packed': { type: 'information', label: 'Partially packed' },
   'partially shipped': { type: 'information', label: 'Partially shipped' },
-  'in progress':{ type: 'information',  label: 'In process' },
+  'in progress':{ type: 'information',  label: 'In progress' },
+  in_progress:{ type: 'information',  label: 'In progress' },
   new:        { type: 'information',  label: 'New'        },
   beta:       { type: 'information',  label: 'Beta'       },
   vip:        { type: 'information',  label: 'VIP'        },

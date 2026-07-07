@@ -2,13 +2,19 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpButton, MpCheckbox, MpAutocomplete, MpSpinner,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, css,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, css, toast,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { pickableOrders, type OutgoingOrder } from '~/data/outgoing'
-import { addPickingTask, pickedQtyForOrderSku, type PickingLine } from '~/data/pickingTasks'
-import { orderSkuLines } from '~/data/inventory'
-import { binForSku } from '~/data/warehouseDetails'
+import {
+  addPickingTask, pickedQtyForOrderSku, type PickingLine,
+  type PickingBatchPick, type PickingSerialPick,
+} from '~/data/pickingTasks'
+import { orderSkuLines, productBySku } from '~/data/inventory'
+import { binForSku, getWarehouseDetail } from '~/data/warehouseDetails'
+import { stockLocationPaths } from '~/data/storageLocations'
 
 const router = useRouter()
 const route  = useRoute()
@@ -55,6 +61,33 @@ const warehouseName = computed(() =>
   availableWarehouses.value.find(w => w.id === warehouseId.value)?.name ?? '',
 )
 const isWarehouseLocked = computed(() => !!route.query.warehouseId)
+
+// stockLocationPaths() repeats a bin once per unit of capacity — dedupe before use as
+// a dropdown's option list (same fix as PutAwayItemsPage.vue / PickItemsPage.vue).
+const locationOptions = computed(() => {
+  if (!warehouseId.value) return []
+  return [...new Set(stockLocationPaths(warehouseId.value).filter(Boolean))]
+})
+
+// ─── Batch / serial helpers (same heuristic as receiving / put-away / picking) ───
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(warehouseId.value)
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
 
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
@@ -171,6 +204,9 @@ const pickRows = computed<MergedRow[]>(() => {
 })
 // True once any SKU has been partially picked on a previous list → show Picked qty column.
 const hasPriorPicks = computed(() => pickRows.value.some(g => g.pickedQty > 0))
+// Any batch/serial-tracked row splits its Qty to pick cell into 2 rows — once that
+// happens, every column gets left/right borders so the split reads as part of the grid.
+const hasTrackedRows = computed(() => pickRows.value.some(g => isBatchTrackedSku(g.sku) || isSerialTrackedSku(g.sku)))
 
 // ─── Stock per merged SKU — one pool (On hand − Reserved); cap = min(demand, avail) ─
 interface RowStock { onHand: number; reserved: number; available: number; cap: number; toPick: number }
@@ -195,6 +231,85 @@ function stockOf(key: string): RowStock {
   return rowStock.value.get(key) ?? { onHand: 0, reserved: 0, available: 0, cap: 0, toPick: 0 }
 }
 
+// ─── Manage batch / Manage serial number — decide up front, at creation, which
+// batch(es)/serial(s) to pick and from where, so the operator already has a plan to
+// follow when they walk the warehouse floor. Keyed by SKU (rows here are merged
+// across orders — the per-order split happens later, in handleCreate). ────────────
+const batchLinesBySku  = ref<Record<string, CommittedBatch[]>>({})
+const serialLinesBySku = ref<Record<string, PickingSerialPick[]>>({})
+
+function locationForSerial(sku: string, serial: string): string {
+  const sr = stockMap.value.get(sku)?.serials
+  return sr?.available.find(u => u.serial === serial)?.location
+    ?? sr?.reserved.find(u => u.serial === serial)?.location
+    ?? ''
+}
+
+const batchDrawerSku = ref<string | null>(null)
+const batchDrawerOpen = computed({
+  get: () => batchDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) batchDrawerSku.value = null },
+})
+function openBatchDrawer(sku: string) { batchDrawerSku.value = sku }
+function batchPickedQty(sku: string): number {
+  return (batchLinesBySku.value[sku] ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
+}
+function saveBatchLines(batches: CommittedBatch[]) {
+  const sku = batchDrawerSku.value
+  if (!sku) return
+  batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: batches }
+}
+
+const serialDrawerSku = ref<string | null>(null)
+const serialDrawerOpen = computed({
+  get: () => serialDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) serialDrawerSku.value = null },
+})
+function openSerialDrawer(sku: string) {
+  if (!(qtyOverrides.value[sku] ?? 0)) {
+    toast.notify({ variant: 'warning', title: 'Enter qty to pick first' })
+    return
+  }
+  serialDrawerSku.value = sku
+}
+function serialPickedQty(sku: string): number {
+  return (serialLinesBySku.value[sku] ?? []).length
+}
+function saveSerialLines(serials: CommittedSerial[]) {
+  const sku = serialDrawerSku.value
+  if (!sku) return
+  serialLinesBySku.value = {
+    ...serialLinesBySku.value,
+    [sku]: serials.map(s => ({ serial: s.serial, location: locationForSerial(sku, s.serial) })),
+  }
+}
+
+/** Read-only bin list for the Storage location column, batch/serial-tracked SKUs only. */
+function pickedLocations(sku: string): string[] {
+  const bins = new Set<string>()
+  if (isBatchTrackedSku(sku)) {
+    for (const b of batchLinesBySku.value[sku] ?? []) if ((b.counted ?? 0) > 0 && b.location) bins.add(b.location)
+  } else if (isSerialTrackedSku(sku)) {
+    for (const s of serialLinesBySku.value[sku] ?? []) if (s.location) bins.add(s.location)
+  }
+  return [...bins]
+}
+
+/** Qty to pick for a row — batch/serial-tracked SKUs source it from their drawer
+ *  selections, plain SKUs from the manual qty input. */
+function qtyToPick(row: { key: string; sku: string }): number {
+  if (!isSelected(row.key)) return 0
+  if (isBatchTrackedSku(row.sku)) return batchPickedQty(row.sku)
+  if (isSerialTrackedSku(row.sku)) return serialPickedQty(row.sku)
+  return stockOf(row.key).toPick
+}
+
+/** Max qty pickable for a SKU (stock cap) — used as the drawer's targetCount ceiling. */
+function capForSku(sku: string): number {
+  const row = pickRows.value.find(r => r.sku === sku)
+  return row ? stockOf(row.key).cap : 0
+}
+
 // Select-all across the merged rows
 const allLinesSelected = computed(() => pickRows.value.length > 0 && pickRows.value.every(g => isSelected(g.key)))
 const someLinesSelected = computed(() => {
@@ -213,7 +328,7 @@ function toggleAllLines() {
 
 const selectedRows = computed(() => pickRows.value.filter(g => isSelected(g.key)))
 const totalSkus   = computed(() => selectedRows.value.length)
-const totalToPick = computed(() => selectedRows.value.reduce((a, g) => a + stockOf(g.key).toPick, 0))
+const totalToPick = computed(() => selectedRows.value.reduce((a, g) => a + qtyToPick(g), 0))
 
 // ─── Progressive loading — 10 rows, lazy-load past that; border only when > 10 ────
 const PAGE_SIZE = 10
@@ -304,20 +419,55 @@ function handleCreate() {
   // Build the planned pick lines from the merged SKU rows. The picking list is shown
   // merged, but downstream packing sorts back per sales order — so each SKU's To-pick
   // qty is split across its member orders (filled order-by-order up to each demand).
+  // Batch/serial-tracked SKUs also carry their chosen batch(es)/serial(s) along for
+  // the ride, consumed from the same pool in the same order the qty is allocated.
   const lines: PickingLine[] = []
+  const batchPicks: Record<string, PickingBatchPick[]> = {}
+  const serialPicks: Record<string, PickingSerialPick[]> = {}
   for (const g of pickRows.value) {
     if (!isSelected(g.key)) continue
-    let remaining = stockOf(g.key).toPick
+    let remaining = qtyToPick(g)
     if (remaining <= 0) continue
+
+    const batchChunks = (batchLinesBySku.value[g.sku] ?? [])
+      .filter(b => (b.counted ?? 0) > 0)
+      .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, unit: b.unit, location: b.location ?? '', qty: b.counted ?? 0 }))
+    let batchIdx = 0
+    const serialQueue = serialLinesBySku.value[g.sku] ?? []
+    let serialIdx = 0
+
     for (const m of g.members) {
       const alloc = Math.min(m.qty, remaining)
       if (alloc <= 0) continue
       remaining -= alloc
+      const lineKey = `${m.orderId}::${g.sku}`
       lines.push({
-        key: `${m.orderId}::${g.sku}`, orderId: m.orderId, salesNo: m.salesNo,
+        key: lineKey, orderId: m.orderId, salesNo: m.salesNo,
         sku: g.sku, product: g.product, desc: g.desc, img: g.img,
         unit: g.unit, bin: g.bin, qty: alloc,
       })
+
+      if (batchChunks.length) {
+        let need = alloc
+        const picks: PickingBatchPick[] = []
+        while (need > 0 && batchIdx < batchChunks.length) {
+          const chunk = batchChunks[batchIdx]!
+          const take = Math.min(need, chunk.qty)
+          if (take > 0) {
+            picks.push({ batchNo: chunk.batchNo, expiryDate: chunk.expiryDate, desc: chunk.desc, unit: chunk.unit, location: chunk.location, qty: take })
+            chunk.qty -= take
+            need -= take
+          }
+          if (chunk.qty <= 0) batchIdx++
+        }
+        if (picks.length) batchPicks[lineKey] = picks
+      }
+
+      if (serialQueue.length) {
+        const take = serialQueue.slice(serialIdx, serialIdx + alloc)
+        serialIdx += take.length
+        if (take.length) serialPicks[lineKey] = take
+      }
     }
   }
 
@@ -328,6 +478,7 @@ function handleCreate() {
     warehouseName: warehouseName.value,
     assignee:      assigneeLabel.value,
     lines,
+    assignments: { batchPicks, serialPicks },
   })
 
   router.push({ path: '/outbound-delivery', query: { tab: 'Picking', saved: '1' } })
@@ -419,7 +570,7 @@ function handleCreate() {
 
         <section class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pk-items-scroll">
-            <table class="pk-items">
+            <table class="pk-items" :class="{ 'pk-items--split': hasTrackedRows }">
               <thead>
                 <tr>
                   <th class="pk-th pk-th--check">
@@ -463,10 +614,54 @@ function handleCreate() {
                     <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
                   </td>
                   <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
-                  <td class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
+
+                  <!-- Storage location: read-only bin list for batch/serial-tracked SKUs
+                       (location is wherever the chosen batch/serial already sits — decided
+                       inside the drawer, not shown as a static bin here). -->
+                  <td v-if="isBatchTrackedSku(row.sku) || isSerialTrackedSku(row.sku)" class="pk-td pk-td--location-summary">
+                    <div class="pk-location-summary-wrap">
+                      <template v-if="pickedLocations(row.sku).length">
+                        <span v-for="loc in pickedLocations(row.sku)" :key="loc" class="pk-location-summary-item">{{ loc }}</span>
+                      </template>
+                      <span v-else class="pk-location-summary-item">—</span>
+                    </div>
+                  </td>
+                  <td v-else class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
+
                   <td class="pk-td pk-td--num">{{ formatNum(row.orderQty) }}</td>
                   <td v-if="hasPriorPicks" class="pk-td pk-td--num">{{ formatNum(row.pickedQty) }}</td>
-                  <td class="pk-td pk-td--input">
+
+                  <!-- Qty to pick: batch/serial-tracked SKUs split into a value row +
+                       a "Manage batch"/"Manage serial number" row — the qty comes from
+                       whichever batches/serials are chosen there, up to the stock cap. -->
+                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--batch-cell">
+                    <div class="pk-batch-cell-wrap">
+                      <div class="pk-batch-cell pk-batch-cell--total">
+                        <span class="pk-batch-val">{{ formatNum(batchPickedQty(row.sku)) }}</span>
+                      </div>
+                      <div class="pk-batch-cell pk-batch-cell--action">
+                        <button class="pk-batch-link" type="button" @click.stop="openBatchDrawer(row.sku)">Manage batch</button>
+                      </div>
+                    </div>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--batch-cell pk-td--serial-cell">
+                    <div class="pk-batch-cell-wrap">
+                      <div class="pk-batch-cell pk-batch-cell--total pk-batch-cell--bare">
+                        <input
+                          type="number" min="0" :max="stockOf(row.key).cap" class="pk-batch-qty-input"
+                          :value="qtyOverrides[row.sku] ?? 0"
+                          :disabled="!isSelected(row.key) || isLocked(row.key)"
+                          :aria-label="`Qty to pick for ${row.product}`"
+                          @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
+                          @click.stop
+                        />
+                      </div>
+                      <div class="pk-batch-cell pk-batch-cell--action">
+                        <button class="pk-batch-link" type="button" @click.stop="openSerialDrawer(row.sku)">Manage serial number</button>
+                      </div>
+                    </div>
+                  </td>
+                  <td v-else class="pk-td pk-td--input">
                     <input
                       type="number" min="0" :max="stockOf(row.key).cap" class="pk-qty-input"
                       :value="stockOf(row.key).toPick"
@@ -498,6 +693,31 @@ function handleCreate() {
       <MpButton variant="primary" is-rounded @click="handleCreate">Save</MpButton>
     </footer>
   </div>
+
+  <ManageBatchDrawer
+    v-if="batchDrawerSku"
+    :open="batchDrawerOpen"
+    :sku="batchDrawerSku"
+    :warehouse-id="warehouseId"
+    kind="picking"
+    :origin-location-paths="locationOptions"
+    :target-count="capForSku(batchDrawerSku)"
+    :model-value="batchLinesBySku[batchDrawerSku] ?? []"
+    @update:open="batchDrawerOpen = $event"
+    @save="saveBatchLines"
+  />
+  <ManageSerialDrawer
+    v-if="serialDrawerSku"
+    :open="true"
+    :sku="serialDrawerSku"
+    :warehouse-id="warehouseId"
+    kind="picking"
+    :target-count="qtyOverrides[serialDrawerSku] ?? 0"
+    :origin-location-paths="locationOptions"
+    :model-value="(serialLinesBySku[serialDrawerSku] ?? []).map(s => ({ serial: s.serial }))"
+    @update:open="serialDrawerOpen = $event"
+    @save="saveSerialLines"
+  />
 </template>
 
 <style scoped>
@@ -593,7 +813,7 @@ function handleCreate() {
   height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .pk-task-row { cursor: pointer; transition: background 80ms; }
 .pk-task-row:hover .pk-td { background: var(--mp-background-neutral-subtle); }
@@ -641,6 +861,13 @@ function handleCreate() {
 .pk-th--check { width: var(--mp-sizes-12, 48px); }
 .pk-item-row--off { opacity: 0.45; }
 
+/* Once any row splits its Qty to pick cell (batch/serial-tracked SKU present), every
+   column gets left/right borders — no double border, no outer border on the ends. */
+.pk-items--split .pk-th { border-right: 1px solid var(--mp-border-default); }
+.pk-items--split .pk-th:last-child { border-right: none; }
+.pk-items--split .pk-td { border-right: 1px solid var(--mp-border-default); }
+.pk-items--split .pk-td:last-child { border-right: none; }
+
 /* Form-table look: grey read-only cells, white editable cell */
 .pk-items .pk-td {
   background: var(--mp-background-neutral-subtle);
@@ -655,6 +882,37 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none;
 }
 .pk-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
+
+/* Storage location — read-only bin list for batch/serial-tracked SKUs. The flex
+   layout lives on an inner wrapper div, not the <td> itself — display:flex directly
+   on a <td> breaks the browser's native table-row height stretch. */
+.pk-td--location-summary { padding: 0; color: var(--mp-text-default); background: var(--mp-background-neutral-subtle); vertical-align: top; }
+.pk-location-summary-wrap { display: flex; flex-direction: column; height: 100%; }
+.pk-location-summary-item { display: flex; align-items: center; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
+.pk-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
+
+/* Batch/serial-tracked qty to pick — value row + Manage batch/SN action row. Same
+   wrapper-div pattern as .pk-td--location-summary above. */
+.pk-td--batch-cell { padding: 0; background: var(--mp-background-neutral-subtle); vertical-align: top; }
+.pk-batch-cell-wrap { display: flex; flex-direction: column; height: 100%; }
+.pk-batch-cell { height: var(--mp-sizes-10, 40px); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); }
+.pk-batch-cell--total { border-bottom: 1px solid var(--mp-border-default); }
+.pk-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pk-batch-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); text-align: right; white-space: nowrap; }
+.pk-batch-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Serial-tracked qty to pick — the value row is a typed qty (must be entered before
+   Manage serial number can open), so it goes white/editable like a form cell. */
+.pk-td--serial-cell { background: var(--mp-background-neutral, #fff); }
+.pk-td--serial-cell:focus-within .pk-batch-cell--bare { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.pk-batch-cell--bare { padding: 0; }
+.pk-batch-qty-input {
+  display: block; width: 100%; height: 100%; box-sizing: border-box;
+  padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+.pk-batch-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; }
 
 /* ── Empty state ─────────────────────────────────────────────────────────────── */
 .pk-empty {

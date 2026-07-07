@@ -15,10 +15,10 @@
   border: 1px solid transparent;
 }
 
-/* Secondary (ERP) — black border, black text on a neutral fill. */
+/* Secondary (ERP) — #8c9596 border, black text on a neutral fill. */
 .btn-enterprise--secondary {
   background: var(--mp-background-neutral);
-  border-color: var(--mp-text-default);
+  border-color: var(--mp-border-bold);
   color: var(--mp-text-default);
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }

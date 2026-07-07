@@ -6,6 +6,7 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
@@ -51,6 +52,8 @@ const columns: TableColumn[] = [
   { key: 'account',       label: 'Account',      width: '190px', sortType: 'text' },
   { key: 'tags',          label: 'Tags',         width: '200px' },
   { key: 'lastUpdated',   label: 'Last updated', width: '220px' },
+  { key: 'assignee',      label: 'Assignee',     width: '160px', sortType: 'text' },
+  { key: 'status',        label: 'Status',       width: '130px', sortType: 'text' },
 ]
 
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
@@ -67,6 +70,7 @@ const visibleColumns = computed(() =>
     colVis[c.key]
     && !(kindFilter.value && c.key === 'account')
     && !(kindFilter.value === 'count' && c.key === 'category')
+    && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status'))
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
@@ -102,6 +106,12 @@ function setDemoState(s: DemoState) {
 // ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
 const warehouseFilter = ref('')
 const categoryFilter = ref('')
+const statusFilter = ref('')
+const STATUS_OPTIONS = [
+  { value: 'not_started', label: 'Open' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'completed',   label: 'Completed'   },
+]
 const whOptions = computed(() => activeWhOpts.value)
 const warehouseLabel = computed(() => whOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
 
@@ -114,6 +124,7 @@ const baseRows = computed<StockAdjustment[]>(() => {
   if (kindFilter.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value) list = list.filter(a => a.warehouseId === warehouseFilter.value)
   if (categoryFilter.value) list = list.filter(a => a.category === categoryFilter.value)
+  if (statusFilter.value) list = list.filter(a => a.status === statusFilter.value)
   return list
 })
 
@@ -126,12 +137,13 @@ const {
     || row.number.toLowerCase().includes(s)
     || row.warehouseName.toLowerCase().includes(s)
     || row.category.toLowerCase().includes(s)
-    || (!kindFilter.value && row.account.toLowerCase().includes(s)),
+    || (!kindFilter.value && row.account.toLowerCase().includes(s))
+    || (kindFilter.value === 'count' && (row.assignee ?? '').toLowerCase().includes(s)),
 })
 
-const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!categoryFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = ''; categoryFilter.value = '' }
-watch([warehouseFilter, categoryFilter, isAwaiting], () => setPage(1))
+const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!categoryFilter.value || !!statusFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = ''; categoryFilter.value = ''; statusFilter.value = '' }
+watch([warehouseFilter, categoryFilter, statusFilter, isAwaiting], () => setPage(1))
 
 // ─── Row actions ─────────────────────────────────────────────────────────────────
 function viewDetails(row: StockAdjustment) { router.push(`/stock-adjustments/${row.id}`) }
@@ -244,8 +256,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Category -->
-        <MpPopover id="sa-category-filter" is-close-on-select>
+        <!-- Category (hidden for WMS stock count) -->
+        <MpPopover v-if="kindFilter !== 'count'" id="sa-category-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
               id="sa-category-select" placeholder="Category" :model-value="categoryFilter" is-clearable
@@ -260,6 +272,26 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 v-for="opt in ADJUSTMENT_CATEGORIES" :key="opt"
                 :is-active="opt === categoryFilter" @click="categoryFilter = opt"
               >{{ opt }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+
+        <!-- Status (WMS stock count only) -->
+        <MpPopover v-if="kindFilter === 'count'" id="sa-status-filter" is-close-on-select>
+          <MpPopoverTrigger>
+            <MpSelect
+              id="sa-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
+              :class="css({ width: '150px' })" @mousedown.prevent @clear="statusFilter = ''"
+            >
+              <option v-if="statusFilter" :value="statusFilter">{{ STATUS_OPTIONS.find(o => o.value === statusFilter)?.label }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
+            <MpPopoverList>
+              <MpPopoverListItem
+                v-for="opt in STATUS_OPTIONS" :key="opt.value"
+                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value"
+              >{{ opt.label }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -348,6 +380,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <template #cell-tags="{ value }"><ErpTagList :tags="(value as string[])" /></template>
+
+    <template #cell-assignee="{ value }">{{ value ?? '—' }}</template>
+
+    <template #cell-status="{ value }">
+      <ErpStatusBadge :status="value as string" />
+    </template>
 
     <!-- ── Last updated — timestamp + who (opt-in column) ── -->
     <template #cell-lastUpdated="{ row }">
