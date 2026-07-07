@@ -15,6 +15,7 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { addAdjustment, accountOptions, IN_OUT_CATEGORIES } from '~/data/stockAdjustments'
 import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
+import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const { activeScenario } = useScenario()
@@ -277,7 +278,7 @@ function handleSave() {
       }
     }
   }
-  if (!valid) return
+  if (!valid) { scrollToFirstError(); return }
 
   const lines = rows.value.map(r => ({
     sku: r.sku,

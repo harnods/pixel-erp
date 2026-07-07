@@ -9,6 +9,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { receivingPOs } from '~/data/receivingTasks'
 import { getTaskLineItems, type TaskLineItem } from '~/data/receivingTaskDetails'
 import { addPutAwayTask } from '~/data/putAwayTasks'
+import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
@@ -258,7 +259,7 @@ function handleCreate() {
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
   if (!assigneeId.value)  { assigneeError.value  = true; valid = false }
   if (!selectedTasks.value.length) { taskSelectionError.value = true; valid = false }
-  if (!valid) return
+  if (!valid) { scrollToFirstError(); return }
 
   const totalQty = skuRows.value.reduce((s, r) => s + r.receivedQty, 0)
 

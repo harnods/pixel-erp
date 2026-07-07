@@ -10,6 +10,7 @@ import { warehouses } from '~/data/warehouses'
 import { addReceipt } from '~/data/receipts'
 import { VENDORS } from '~/data/master'
 import { CATALOG } from '~/data/catalog'
+import { scrollToFirstError } from '~/utils/form'
 
 function toDisplayDate(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -179,7 +180,7 @@ function handleSave() {
     if (!row.qty || Number(row.qty) < 1) { row.qtyError = true; valid = false }
     else row.qtyError = false
   }
-  if (!valid) return
+  if (!valid) { scrollToFirstError(); return }
 
   const wh = warehouseOptions.value.find((w) => w.id === warehouseId.value)
   const skuQty = filledRows.length || 1

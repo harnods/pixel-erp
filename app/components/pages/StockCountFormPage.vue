@@ -17,6 +17,7 @@ import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
 import { addAdjustment, accountOptions } from '~/data/stockAdjustments'
 import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
 import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
+import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const { activeScenario } = useScenario()
@@ -254,7 +255,7 @@ function handleSave() {
       }
     }
   }
-  if (!valid) return
+  if (!valid) { scrollToFirstError(); return }
 
   let lines: { sku: string; qty: number }[]
 

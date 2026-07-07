@@ -9,6 +9,7 @@ import { getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQt
 import { addPackingTask, getPackingForOrder } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { orderSkuLines } from '~/data/inventory'
+import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
@@ -225,7 +226,7 @@ function handleCreate() {
   let valid = true
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
   if (selectedTotals.value.orders === 0) { orderError.value = true; valid = false }
-  if (!valid) return
+  if (!valid) { scrollToFirstError(); return }
 
   // One packing task per selected PACKABLE sales order — packs everything picked for it
   // across ALL its picking lists, and records every contributing picking list.

@@ -6,6 +6,7 @@ import {
   toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import { scrollToFirstError } from '~/utils/form'
 import { formatDateLong } from '~/utils/date'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { receipts, type Receipt } from '~/data/receipts'
@@ -160,7 +161,7 @@ function goReceipts() {
 
 function handleCreate() {
   // Button is always active — validate on submit and surface the error inline.
-  if (!assigneeId.value) { assigneeError.value = true; return }
+  if (!assigneeId.value) { assigneeError.value = true; scrollToFirstError(); return }
   if (!keptItems.value.length) return
   if (receipt.value) {
     // Create an Open receiving task covering the kept (included) SKUs. The operator

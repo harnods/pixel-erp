@@ -15,6 +15,7 @@ import {
 import { orderSkuLines, productBySku } from '~/data/inventory'
 import { binForSku, getWarehouseDetail } from '~/data/warehouseDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
+import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
@@ -414,7 +415,7 @@ function handleCreate() {
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
   if (!assigneeId.value)  { assigneeError.value  = true; valid = false }
   if (!selectedOrders.value.length) valid = false
-  if (!valid) return
+  if (!valid) { scrollToFirstError(); return }
 
   // Build the planned pick lines from the merged SKU rows. The picking list is shown
   // merged, but downstream packing sorts back per sales order — so each SKU's To-pick

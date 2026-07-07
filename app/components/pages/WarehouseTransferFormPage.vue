@@ -16,6 +16,7 @@ import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo } from '~/data/warehouseTransfers'
 import { stockLocationPaths } from '~/data/storageLocations'
+import { scrollToFirstError } from '~/utils/form'
 
 // The catch-all route binds the id via the generic `orderId` prop. 'new' → create mode.
 const props = defineProps<{ orderId: string }>()
@@ -360,7 +361,7 @@ function handleSave() {
       }
     }
   }
-  if (!valid) return
+  if (!valid) { scrollToFirstError(); return }
 
   const input = {
     date: toISODate(transactionDate.value),
