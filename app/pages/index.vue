@@ -1,13 +1,56 @@
 <script setup lang="ts">
 import { defineAsyncComponent, type Component, ref, computed, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { MpBadge } from '@mekari/pixel3'
+import { purchaseOrders } from '~/data'
 
 const { pageTitle, currentPageKey } = useNavigation()
 
 const pageRegistry: Record<string, Component> = {
-  'Home':            defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
-  'Sales invoices':  defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
-  'Company profile': defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
+  'Home':             defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Sales invoices':   defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
+  'Purchase orders':  defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
+  'Company profile':  defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
 }
+
+// ── Purchase Orders tabs ──────────────────────────────────────────────────────
+const purchaseOrdersTab = ref<'all' | 'awaiting' | 'rejected'>('all')
+provide('purchaseOrdersTab', purchaseOrdersTab)
+
+const poAwaitingCount = computed(() => purchaseOrders.filter(o => o.status === 'draft').length)
+const poRejectedCount = computed(() => purchaseOrders.filter(o => o.status === 'rejected').length)
+
+// ── Purchase Orders detail ────────────────────────────────────────────────────
+const PurchaseOrderDetailPage = defineAsyncComponent(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
+const PurchaseOrderFormPage = defineAsyncComponent(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
+const detailOrderId = ref<string | null>(null)
+const formOpen = ref(false)
+const formDuplicateId = ref<string | null>(null)
+const formRejectionBanner = ref<{ user: string; date: string; reason?: string } | null>(null)
+const showPurchaseOrderDetail = computed(() => currentPageKey.value === 'Purchase orders' && !!detailOrderId.value && !formOpen.value)
+const showPurchaseOrderForm   = computed(() => currentPageKey.value === 'Purchase orders' && formOpen.value)
+provide('openPurchaseOrder',  (id: string) => { detailOrderId.value = id })
+provide('closePurchaseOrder', ()           => { detailOrderId.value = null })
+provide('approvePurchaseOrder', (id: string) => {
+  const o = purchaseOrders.find(x => x.id === id)
+  if (o) o.status = 'approved'
+  detailOrderId.value = null
+})
+provide('rejectPurchaseOrder', (id: string) => {
+  const o = purchaseOrders.find(x => x.id === id)
+  if (o) o.status = 'rejected'
+})
+function openNewPurchaseOrderForm() {
+  formOpen.value = true
+  formDuplicateId.value = null
+  formRejectionBanner.value = null
+}
+provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: string; reason?: string } | null) => {
+  formOpen.value = true
+  formDuplicateId.value = id
+  formRejectionBanner.value = banner ?? null
+})
+provide('closePurchaseOrderForm', () => { formOpen.value = false; formDuplicateId.value = null; formRejectionBanner.value = null })
+watch(currentPageKey, () => { detailOrderId.value = null; formOpen.value = false; formDuplicateId.value = null; formRejectionBanner.value = null })
 
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
 
@@ -329,8 +372,22 @@ function startResize(e: MouseEvent) {
 
     <!-- ── Left column: title bar + stage ── -->
     <div class="page-col">
-      <div class="page-title-bar">
+      <div v-if="!showPurchaseOrderDetail && !showPurchaseOrderForm" class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
+        <div v-if="currentPageKey === 'Purchase orders' && !showPurchaseOrderDetail && !showPurchaseOrderForm" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="openNewPurchaseOrderForm">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New purchase order
+          </button>
+        </div>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
             Import
@@ -347,7 +404,36 @@ function startResize(e: MouseEvent) {
         </div>
       </div>
 
-      <div class="stage">
+      <!-- ── Purchase Orders tab bar ── -->
+      <div v-if="currentPageKey === 'Purchase orders' && !showPurchaseOrderDetail && !showPurchaseOrderForm" class="page-tabs-bar">
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'all' }"
+          @click="purchaseOrdersTab = 'all'"
+        >
+          All purchase orders
+        </button>
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'awaiting' }"
+          @click="purchaseOrdersTab = 'awaiting'"
+        >
+          Awaiting approval
+          <MpBadge for="additionalInformation" size="sm" type="warning">{{ poAwaitingCount }}</MpBadge>
+        </button>
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'rejected' }"
+          @click="purchaseOrdersTab = 'rejected'"
+        >
+          Rejected
+          <MpBadge for="additionalInformation" size="sm" type="critical">{{ poRejectedCount }}</MpBadge>
+        </button>
+      </div>
+
+      <component :is="PurchaseOrderFormPage" v-if="showPurchaseOrderForm" :duplicate-order-id="formDuplicateId ?? undefined" :rejection-banner="formRejectionBanner" />
+      <component :is="PurchaseOrderDetailPage" v-else-if="showPurchaseOrderDetail" :order-id="detailOrderId!" />
+      <div v-else class="stage">
         <component :is="currentComponent" />
       </div>
     </div>
@@ -656,6 +742,41 @@ function startResize(e: MouseEvent) {
 .btn-enterprise--primary:hover {
   background: var(--mp-colors-emerald-800, #186f4a);
   border-color: var(--mp-colors-emerald-800, #186f4a);
+}
+
+/* ── Page tabs bar ───────────────────────────────────────────────────────── */
+
+.page-tabs-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 0 24px;
+  background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0;
+}
+
+.page-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--mp-text-secondary, #536062);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.page-tab:hover { color: var(--mp-text-default); }
+
+.page-tab--active {
+  color: var(--mp-text-selected, #080d0e);
+  border-bottom-color: #029861;
+  font-weight: 600;
 }
 
 /* ── Stage ────────────────────────────────────────────────────────────────── */

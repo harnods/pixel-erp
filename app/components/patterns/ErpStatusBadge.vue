@@ -18,7 +18,14 @@
 
 import { MpBadge } from '@mekari/pixel3'
 
-const props = defineProps<{ status: string }>()
+const props = withDefaults(
+  defineProps<{
+    status: string
+    size?: 'sm' | 'md'
+    badgeFor?: string
+  }>(),
+  { size: undefined, badgeFor: 'tableStatus' },
+)
 
 interface StatusConfig { type: string; label: string }
 
@@ -34,9 +41,11 @@ const statusConfig: Record<string, StatusConfig> = {
   // ── Warning (yellow) ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
   pending:    { type: 'warning',      label: 'Pending'    },
-  draft:      { type: 'warning',      label: 'Draft'      },
+  'partially-processed': { type: 'warning', label: 'Partially processed' },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
+  'in progress':{ type: 'warning',    label: 'In progress'},
+  'awaiting approval':{ type: 'warning', label: 'Awaiting approval' },
 
   // ── Critical (red) ────────────────────────────────
   overdue:    { type: 'critical',     label: 'Overdue'    },
@@ -57,6 +66,8 @@ const statusConfig: Record<string, StatusConfig> = {
   beta:       { type: 'announcement', label: 'Beta'       },
   vip:        { type: 'announcement', label: 'VIP'        },
   featured:   { type: 'announcement', label: 'Featured'   },
+  draft:      { type: 'announcement', label: 'Draft'      },
+  closed:     { type: 'announcement', label: 'Closed'     },
 }
 
 const config = computed<StatusConfig>(() => {
@@ -66,7 +77,7 @@ const config = computed<StatusConfig>(() => {
 </script>
 
 <template>
-  <MpBadge for="tableStatus" :type="config.type">
+  <MpBadge :for="props.badgeFor" :size="props.size" :type="config.type">
     {{ config.label }}
   </MpBadge>
 </template>

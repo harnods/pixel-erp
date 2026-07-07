@@ -63,3 +63,23 @@ export interface PurchaseInvoice {
   status: InvoiceStatus
   itemCount: number
 }
+
+export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'closed' | 'draft' | 'rejected' | 'approved'
+
+export interface PurchaseOrder {
+  id: string
+  number: string
+  vendor: Pick<Vendor, 'id' | 'name'>
+  date: string
+  dueDate: string
+  total: number
+  balance: number
+  status: PurchaseOrderStatus
+  itemCount: number
+  hasAttachment?: boolean
+  tags?: string[]
+  /** Set when this order was created via "Duplicate" — id of the source order. */
+  duplicatedFromId?: string
+  /** Set via the form's "Send to fulfillment" action. */
+  sentToFulfillment?: boolean
+}
