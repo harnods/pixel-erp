@@ -124,7 +124,7 @@ export function skuLineQty(seed: number, i: number): number {
 }
 
 // Desty omnichannel marketplaces + the seller's store name shown as the source.
-const MARKETPLACES = ['Shopee', 'Tokopedia', 'Lazada', 'TikTok Shop', 'Blibli']
+const MARKETPLACES = ['Shopee', 'Shopee', 'Lazada', 'TikTok Shop', 'Blibli']
 const STORE_NAME = 'Central Perk'
 
 /**

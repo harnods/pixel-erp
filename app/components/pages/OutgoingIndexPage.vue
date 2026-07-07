@@ -9,6 +9,7 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
 import { outgoingForStages, outgoingStage, OUTGOING_TODAY, type OutgoingOrder } from '~/data/outgoing'
@@ -425,7 +426,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Source (ERP Sales Order / Manual / Desty marketplace) ── -->
     <template #cell-source="{ value }">
-      <span class="out-source">{{ value }}</span>
+      <span class="out-source"><SourceLabel :source="value as string" /></span>
     </template>
 
     <!-- ── Warehouse — wrap to 2 lines instead of bleeding ── -->

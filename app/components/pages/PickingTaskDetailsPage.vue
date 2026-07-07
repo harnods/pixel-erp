@@ -6,6 +6,7 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import {
   getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask,
@@ -391,7 +392,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                       </div>
                     </td>
                     <td class="detail-td">{{ o.customer ?? '—' }}</td>
-                    <td class="detail-td">{{ o.source }}</td>
+                    <td class="detail-td"><SourceLabel :source="o.source" /></td>
                     <td class="detail-td detail-td--num">{{ fmt(o.skuQty) }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(o.orderQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="outgoingStage(o)" /></td>

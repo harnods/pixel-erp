@@ -8,6 +8,7 @@ import {
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getDeliveryLineItems, allDeliveryTasksFlat } from '~/data/deliveryTaskDetails'
 import { getDeliveryTask, handoverToCourier, marketplaceShipping } from '~/data/deliveryTasks'
@@ -314,7 +315,7 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
                       </div>
                     </td>
                     <td class="detail-td">{{ linkedOrder.customer ?? '—' }}</td>
-                    <td class="detail-td">{{ linkedOrder.source }}</td>
+                    <td class="detail-td"><SourceLabel :source="linkedOrder.source" /></td>
                     <td class="detail-td detail-td--num">{{ fmt(linkedOrder.skuQty) }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(linkedOrder.orderQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="outgoingStage(linkedOrder)" /></td>
@@ -462,7 +463,7 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
       <MpModalHeader>Handover to courier<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         <dl v-if="task" class="del-ship-context">
-          <div><dt>Sales order</dt><dd>{{ task.salesNo }}<span v-if="linkedOrder?.source && linkedOrder.source !== 'Sales Order'" class="del-ship-src">{{ linkedOrder.source }}</span></dd></div>
+          <div><dt>Sales order</dt><dd>{{ task.salesNo }}<span v-if="linkedOrder?.source && linkedOrder.source !== 'Sales Order'" class="del-ship-src"><SourceLabel :source="linkedOrder.source" /></span></dd></div>
           <div><dt>Delivery</dt><dd>{{ task.taskNo }}</dd></div>
           <div><dt>Warehouse</dt><dd>{{ task.warehouseName }}</dd></div>
         </dl>

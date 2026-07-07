@@ -5,6 +5,7 @@ import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -237,7 +238,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           <ContentList label="Transaction date" :value="formatDateLong(transactionDate)" />
           <ContentList label="Transaction no." :value="order.salesNo" />
           <ContentList label="Customer" :value="order.customer ?? '—'" />
-          <ContentList label="Source" :value="order.source" />
+          <ContentList label="Source"><SourceLabel :source="order.source" /></ContentList>
         </div>
         <div class="content-list-col">
           <ContentList label="Due date" :value="dueDateDisplay" />

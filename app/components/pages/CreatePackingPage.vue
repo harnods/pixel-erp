@@ -5,6 +5,7 @@ import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQtyInTask, type PickingTask } from '~/data/pickingTasks'
 import { addPackingTask, getPackingForOrder } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
@@ -352,7 +353,7 @@ function handleCreate() {
               <span class="pk-order-no">{{ t.salesNo }}</span>
               <span v-if="t.customer" class="pk-order-cust">{{ t.customer }}</span>
               <span v-if="t.source" class="pk-order-source">
-                {{ t.source }}
+                <SourceLabel :source="t.source" />
                 <MpTooltip
                   v-if="t.isMarketplace"
                   :id="`pc-mkt-${t.orderId}`"

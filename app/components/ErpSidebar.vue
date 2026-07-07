@@ -813,7 +813,7 @@ function cancelClose() {
 
 .nav-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 .nav-item:hover img { filter: brightness(0) saturate(100%) invert(26%) sepia(60%) saturate(600%) hue-rotate(185deg) brightness(85%) contrast(95%); }
-.nav-item:hover .nav-label { color: var(--mp-text-selected); }
+.nav-item:hover .nav-label { color: var(--mp-text-link, #165082); }
 
 .nav-item.active { background-color: var(--mp-background-neutral-pressed); }
 .nav-item.active .nav-icon-line { display: none; }
@@ -822,7 +822,7 @@ function cancelClose() {
   display: block;
   filter: brightness(0) saturate(100%) invert(35%) sepia(55%) saturate(700%) hue-rotate(120deg) brightness(90%) contrast(100%);
 }
-.nav-item.active .nav-label { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-selected); }
+.nav-item.active .nav-label { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
 
 .nav-item img {
   width: var(--mp-sizes-5);

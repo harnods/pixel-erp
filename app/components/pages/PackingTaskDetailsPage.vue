@@ -11,6 +11,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import {
   getPackingLineItems, allPackingTasksFlat, getDeliveryForPackingTask, type PackLineItem,
 } from '~/data/packingTaskDetails'
@@ -416,7 +417,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                       </div>
                     </td>
                     <td class="detail-td">{{ linkedOrder.customer ?? '—' }}</td>
-                    <td class="detail-td">{{ linkedOrder.source }}</td>
+                    <td class="detail-td"><SourceLabel :source="linkedOrder.source" /></td>
                     <td class="detail-td detail-td--num">{{ fmt(linkedOrder.skuQty) }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(linkedOrder.orderQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="outgoingStage(linkedOrder)" /></td>
@@ -547,7 +548,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
       <MpModalBody>
         <!-- Context -->
         <dl v-if="task" class="pck-ship-context">
-          <div><dt>Sales order</dt><dd>{{ task.salesNo }}<span v-if="shipOrder?.source && shipOrder.source !== 'Sales Order'" class="pck-ship-src">{{ shipOrder.source }}</span></dd></div>
+          <div><dt>Sales order</dt><dd>{{ task.salesNo }}<span v-if="shipOrder?.source && shipOrder.source !== 'Sales Order'" class="pck-ship-src"><SourceLabel :source="shipOrder.source" /></span></dd></div>
           <div><dt>Warehouse</dt><dd>{{ task.warehouseName }}</dd></div>
           <div><dt>SKU qty</dt><dd>{{ fmt(task.skuQty) }}</dd></div>
           <div><dt>Packed qty</dt><dd>{{ fmt(task.packedQty) }}</dd></div>

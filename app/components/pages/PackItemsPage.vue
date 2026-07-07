@@ -8,6 +8,7 @@ import {
   toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getPackingLineItems } from '~/data/packingTaskDetails'
 import { getPackingTask, savePackingDraft, endPacking } from '~/data/packingTasks'
@@ -169,7 +170,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
       <div class="pak-header">
         <ContentList label="Sales order" :value="task.salesNo" />
-        <ContentList label="Source" :value="order?.source || '—'" />
+        <ContentList label="Source"><SourceLabel :source="order?.source" /></ContentList>
         <ContentList label="Due date" :value="dueDateLabel" />
         <ContentList label="Warehouse" :value="task.warehouseName" />
         <ContentList label="Assignee" :value="task.assignee" />
