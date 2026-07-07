@@ -458,7 +458,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col style="width:260px" /><col style="width:150px" /><col style="width:180px" />
+                <col /><col style="width:150px" /><col style="width:180px" />
                 <col style="width:110px" /><col style="width:110px" /><col style="width:150px" />
                 <col style="width:150px" /><col style="width:44px" />
               </colgroup>
@@ -511,7 +511,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col style="width:240px" /><col style="width:200px" /><col style="width:180px" />
+                <col /><col style="width:200px" /><col style="width:180px" />
                 <col style="width:140px" /><col style="width:180px" /><col style="width:44px" />
               </colgroup>
               <thead>
@@ -611,7 +611,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col style="width:260px" /><col style="width:140px" /><col style="width:140px" />
+                <col /><col style="width:140px" /><col style="width:140px" />
                 <col style="width:110px" /><col style="width:140px" /><col style="width:160px" /><col style="width:44px" />
               </colgroup>
               <thead>
@@ -650,7 +650,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col style="width:260px" /><col style="width:140px" /><col style="width:140px" />
+                <col /><col style="width:140px" /><col style="width:140px" />
                 <col style="width:110px" /><col style="width:140px" /><col style="width:160px" /><col style="width:44px" />
               </colgroup>
               <thead>
@@ -694,7 +694,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col style="width:280px" /><col style="width:200px" /><col style="width:160px" />
+                <col /><col style="width:200px" /><col style="width:160px" />
                 <col style="width:180px" /><col style="width:44px" />
               </colgroup>
               <thead>
