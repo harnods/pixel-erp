@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpPopoverList, MpPopoverListItem, MpIcon, css, toast,
 } from '@mekari/pixel3'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import ColumnSettingsMenu, { type ColumnSettingItem } from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -27,6 +27,15 @@ const demoStates: { value: DemoState; label: string }[] = [
   { value: 'data', label: 'With data' },
   { value: 'empty', label: 'Empty state' },
 ]
+
+// ─── Table loading state (skeleton on page/tab load) ────────────────────────────
+const loading = ref(true)
+let loadTimer: ReturnType<typeof setTimeout> | null = null
+onMounted(() => {
+  loading.value = true
+  loadTimer = setTimeout(() => { loading.value = false }, 900)
+})
+onUnmounted(() => { if (loadTimer) clearTimeout(loadTimer) })
 
 // ─── Columns ─────────────────────────────────────────────────────────────────
 // Accordion layout (per Figma): column 1 = Product/Request — the product on the
@@ -270,14 +279,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="filter-left">
         <!-- Due date filter — Pending tab only. Placeholder "Due date"; opens a
              popover of date ranges (Today / Tomorrow / Next 7 days / …). -->
-        <MpPopover v-if="tab === 'pending'" id="pr-due-filter" is-close-on-select>
+        <MpPopover v-if="tab === 'pending'" id="pr-due-filter" is-close-on-select use-portal>
           <MpPopoverTrigger>
-            <MpSelect
-              id="pr-due-select" placeholder="Due date" :model-value="dueFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="dueFilter = ''"
-            >
-              <option v-if="dueFilter" :value="dueFilter">{{ dueFilterLabel }}</option>
-            </MpSelect>
+            <button class="pr-filter-select" :class="{ 'pr-filter-select--placeholder': !dueFilter }" type="button">
+              <span>{{ dueFilter ? dueFilterLabel : 'Due date' }}</span>
+              <svg
+                v-if="dueFilter" class="pr-filter-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                aria-label="Clear" @click.stop="dueFilter = ''"
+              >
+                <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
             <MpPopoverList>
@@ -292,24 +307,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <MpTooltip id="tt-pr-airene" label="Ask Airene" placement="bottom" use-portal>
+          <span class="pr-tt" data-tooltip="Ask Airene">
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
               </svg>
             </button>
-          </MpTooltip>
+          </span>
           <ColumnSettingsMenu
             id="pr-column-settings"
             :items="columnSettingItems"
             :visibility="columnVisibility"
           />
-          <MpTooltip id="tt-pr-export" label="Export" placement="bottom" use-portal>
+          <span class="pr-tt" data-tooltip="Export">
             <button class="filter-icon-btn" aria-label="Export" @click="notifySoon('Export')">
               <MpIcon name="upload" size="md" />
             </button>
-          </MpTooltip>
+          </span>
         </div>
         <div class="filter-search">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -321,7 +336,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </div>
 
     <!-- ── Table + pagination ── -->
-    <div v-if="pagedProducts.length" class="pr-table-section">
+    <div v-if="loading || pagedProducts.length" class="pr-table-section">
       <div
         ref="tableWrapEl"
         class="pr-table-wrap"
@@ -349,7 +364,30 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </tr>
           </thead>
           <tbody>
-            <template v-for="p in pagedProducts" :key="p.id">
+            <!-- ── Loading skeleton rows ── -->
+            <template v-if="loading">
+              <tr v-for="n in 6" :key="`sk-${n}`" class="pr-parent pr-parent--skeleton">
+                <td class="pr-td pr-parent-cell" colspan="2">
+                  <div class="pr-product">
+                    <span class="pr-skel pr-skel--thumb" />
+                    <div class="pr-product-body">
+                      <span class="pr-skel pr-skel--name" />
+                      <span class="pr-skel pr-skel--sku" />
+                    </div>
+                  </div>
+                </td>
+                <td v-if="salesOrderVisible" class="pr-td"><span class="pr-skel" /></td>
+                <td
+                  v-for="col in visibleValueColumns"
+                  :key="col.key"
+                  class="pr-td"
+                  :class="{ 'pr-td--right': col.align === 'right' }"
+                ><span class="pr-skel" :class="{ 'pr-skel--sm': col.align === 'right' }" /></td>
+                <td v-if="hasActions" class="pr-td pr-td--actions" />
+              </tr>
+            </template>
+
+            <template v-for="p in pagedProducts" v-else :key="p.id">
               <!-- ── Parent (product) row ── -->
               <tr class="pr-parent" :class="{ 'pr-parent--open': isOpen(p.id) }">
                 <td
@@ -434,13 +472,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                       :rowspan="src.requests.length"
                     >
                       <span class="pr-source-no">{{ src.sourceNo }}</span>
-                      <MpTooltip :id="`pr-attach-${r.requestNo}`" label="View attachment" placement="top" use-portal>
+                      <span class="pr-tt pr-tt--top" data-tooltip="View attachment">
                         <button class="pr-source-attach" aria-label="View attachment" @click.stop="openAttachment">
                           <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
                             <path d="M14.5 5.5L7.8 12.2a1.9 1.9 0 002.7 2.7l6.7-6.7a3.8 3.8 0 00-5.4-5.4L5.1 9.2a5.7 5.7 0 008 8l6.2-6.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
                           </svg>
                         </button>
-                      </MpTooltip>
+                      </span>
                     </td>
                     <td
                       v-for="col in visibleValueColumns"
@@ -484,6 +522,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
 
       <ErpPagination
+        v-if="!loading"
         :current-page="currentPage"
         :per-page="perPage"
         :total="total"
@@ -553,6 +592,47 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+
+/* Due date filter — custom trigger (Pixel MpSelect ships no structural CSS here) */
+.pr-filter-select {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
+  min-width: 160px; height: var(--mp-sizes-9, 36px);
+  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); cursor: pointer;
+}
+.pr-filter-select:hover { border-color: var(--mp-border-bold); }
+.pr-filter-select svg { color: var(--mp-icon-default, var(--mp-text-secondary)); flex-shrink: 0; }
+.pr-filter-select--placeholder { color: var(--mp-text-placeholder); }
+.pr-filter-clear { cursor: pointer; border-radius: var(--mp-radii-sm); }
+.pr-filter-clear:hover { color: var(--mp-text-default); }
+
+/* Custom tooltip (Pixel MpTooltip ships no structural CSS in this build) */
+.pr-tt { position: relative; display: inline-flex; }
+.pr-tt::after {
+  content: attr(data-tooltip);
+  position: absolute; left: 50%; top: 100%; transform: translateX(-50%) translateY(6px);
+  padding: 5px var(--mp-spacing-2); border-radius: var(--mp-radii-sm);
+  background: var(--mp-background-inverse, #080d0e); color: var(--mp-text-inverse, #fff);
+  font-size: var(--mp-font-sizes-xs, 11px); font-weight: var(--mp-font-weights-medium, 500); line-height: 1;
+  white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.12s ease; z-index: 9999;
+}
+.pr-tt:hover::after { opacity: 1; }
+.pr-tt--top::after { top: auto; bottom: 100%; transform: translateX(-50%) translateY(-6px); }
+
+/* Loading skeleton */
+.pr-parent--skeleton .pr-td { background: var(--mp-background-neutral); }
+.pr-skel {
+  display: inline-block; height: 12px; width: 72px; border-radius: var(--mp-radii-sm, 4px);
+  background: linear-gradient(90deg, var(--mp-border-default) 25%, var(--mp-background-neutral-subtle) 37%, var(--mp-border-default) 63%);
+  background-size: 400% 100%; animation: pr-skel-shimmer 1.4s ease infinite;
+}
+.pr-skel--sm { width: 48px; }
+.pr-skel--thumb { width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px); border-radius: var(--mp-radii-md); flex-shrink: 0; }
+.pr-skel--name { width: 160px; height: 14px; }
+.pr-skel--sku { width: 90px; height: 12px; margin-top: var(--mp-spacing-1); }
+@keyframes pr-skel-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
 /* Table */
 .pr-table-section { display: flex; flex-direction: column; }

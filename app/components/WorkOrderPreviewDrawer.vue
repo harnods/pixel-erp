@@ -43,20 +43,18 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 <template>
   <Teleport to="body">
     <Transition name="wod-fade">
-      <div v-if="open" class="wod-scrim" @click="emit('close')" />
-    </Transition>
-    <Transition name="wod-slide">
-      <aside v-if="open && ctx" class="wod-panel" role="dialog" aria-label="Work order preview">
-        <header class="wod-header">
-          <span class="wod-header-title">Work order preview</span>
-          <button class="wod-close" aria-label="Close" @click="emit('close')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-          </button>
-        </header>
+      <div v-if="open && ctx" class="wod-overlay" @click.self="emit('close')">
+        <aside class="wod-panel" role="dialog" aria-label="Work order preview">
+          <header class="wod-header">
+            <h2 class="wod-header-title">Work order preview</h2>
+            <button class="wod-close" type="button" aria-label="Close" @click="emit('close')">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </header>
 
-        <div class="wod-body">
+          <div class="wod-body">
           <h2 class="wod-product">{{ ctx.productName }}</h2>
           <p class="wod-sku">SKU: {{ ctx.sku }}</p>
 
@@ -116,42 +114,47 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
             @page-change="currentPage = $event"
             @per-page-change="perPage = $event"
           />
-        </div>
-      </aside>
+          </div>
+        </aside>
+      </div>
     </Transition>
   </Teleport>
 </template>
 
 <style scoped>
-.wod-scrim {
+/* Floating drawer (ERP pattern — matches ManageBatchDrawer / Drawer.md): 12px
+   margin from the edges, 12px rounded corners, panel aligned to the right. */
+.wod-overlay {
   position: fixed; inset: 0; z-index: 1300;
-  background: rgba(20, 23, 28, 0.45);
+  background: rgba(8, 13, 14, 0.45);
+  display: flex; justify-content: flex-end;
 }
 .wod-panel {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 1301;
-  width: min(920px, 92vw);
+  margin: var(--mp-spacing-3);
+  width: min(1400px, calc(100% - 24px));
+  height: calc(100% - 24px);
   display: flex; flex-direction: column;
-  background: var(--mp-background-neutral, #fff);
-  box-shadow: -8px 0 24px -6px rgba(0, 0, 0, 0.2);
+  background: var(--mp-background-stage, #fff);
+  border-radius: var(--mp-radii-lg, 12px);
+  overflow: hidden;
 }
 
 .wod-header {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 56px; flex-shrink: 0;
-  padding: 0 var(--mp-spacing-6);
-  border-bottom: 1px solid var(--mp-border-default);
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
   background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default);
 }
-.wod-header-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.wod-header-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
 .wod-close {
   display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
+  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
   border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-text-secondary);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .wod-close:hover { background: var(--mp-background-neutral-hovered); }
 
-.wod-body { flex: 1; overflow-y: auto; padding: var(--mp-spacing-6); }
+.wod-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-6); }
 .wod-product { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default); }
 .wod-sku { margin: var(--mp-spacing-0\.5) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
@@ -183,9 +186,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 .wod-td--right { text-align: right; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .wod-tr:hover .wod-td { background: var(--mp-background-neutral-hovered); }
 
-/* Transitions */
+/* Transition */
 .wod-fade-enter-active, .wod-fade-leave-active { transition: opacity 200ms ease; }
 .wod-fade-enter-from, .wod-fade-leave-to { opacity: 0; }
-.wod-slide-enter-active, .wod-slide-leave-active { transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1); }
-.wod-slide-enter-from, .wod-slide-leave-to { transform: translateX(100%); }
 </style>
