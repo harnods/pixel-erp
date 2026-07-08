@@ -739,10 +739,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .sa-approval-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
 .sa-approval-actions .row-kebab { margin-left: 0; }
 .row-icon-ghost {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  display: flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);
   border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
 .row-icon-ghost:hover { background: var(--mp-background-neutral-hovered); }
 
