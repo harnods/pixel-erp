@@ -5,6 +5,7 @@
  * build ships no MpDrawer structural CSS — see the pixel-overlay memory).
  */
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { MpText, MpButton } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { formatDate } from '~/utils/date'
@@ -46,12 +47,8 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
       <div v-if="open && ctx" class="wod-overlay" @click.self="emit('close')">
         <aside class="wod-panel" role="dialog" aria-label="Work order preview">
           <header class="wod-header">
-            <h2 class="wod-header-title">Work order preview</h2>
-            <button class="wod-close" type="button" aria-label="Close" @click="emit('close')">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
-            </button>
+            <MpText weight="semiBold">Work order preview</MpText>
+            <MpButton left-icon="close" variant="ghost" size="sm" aria-label="Close" @click="emit('close')" />
           </header>
 
           <div class="wod-body">
@@ -131,28 +128,24 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 }
 .wod-panel {
   margin: var(--mp-spacing-3);
-  width: min(1400px, calc(100% - 24px));
+  /* xl drawer size */
+  width: min(1040px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
   border-radius: var(--mp-radii-lg, 12px);
   overflow: hidden;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
+/* Header follows the library drawer pattern (Drawer.md / NewLocationDrawer):
+   white (no fill), semibold title, ghost close, 8/8/8/16 padding + bottom rule. */
 .wod-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
+  gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.wod-header-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
-.wod-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
-}
-.wod-close:hover { background: var(--mp-background-neutral-hovered); }
 
 .wod-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-6); }
 .wod-product { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-xl, 32px); color: var(--mp-text-default); }
