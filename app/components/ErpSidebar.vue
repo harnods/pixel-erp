@@ -463,11 +463,10 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   ],
   [
     {
-      name: 'Cycle counts', icon: 'table-view-list',
+      name: 'Stock adjustments', icon: 'table-view-list',
       panelSubmenu: [[
-        { label: 'Stock count' },
-        { label: 'Cycle count' },
-        { label: 'Stock in/out' },
+        { label: 'Cycle counts' },
+        { label: 'Stock counts' },
       ]],
     },
   ],
@@ -582,6 +581,9 @@ function resolveActive(pageKey: string): {
 // detail pages (e.g. receiving task detail in ERP scenario) don't snap the
 // sidebar away from the relevant section.
 const SECTION_PARENT: Record<string, string> = {
+  Picking: 'Outbound delivery',
+  Packing: 'Outbound delivery',
+  Delivery: 'Outbound delivery',
   Receiving: 'Inbound delivery',
   'Put away': 'Inbound delivery',
 }

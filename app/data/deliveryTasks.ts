@@ -47,6 +47,9 @@ export interface DeliveryTask {
   trackingNo?: string;
   /** proof-of-pickup file name (uploaded at handover) */
   proofFile?: string;
+  /** the shipment batch this delivery went out under (bulk "Handover to courier"
+   *  can cover several deliveries from the same warehouse at once). */
+  shipmentNo?: string;
 }
 
 const COURIERS = ["JNE", "SiCepat", "J&T Express", "AnterAja", "Internal fleet"];
@@ -77,23 +80,23 @@ const SEED_STATUSES: DeliveryTask["status"][] = [
   "ready to ship", "shipped", "ready to ship", "shipped", "canceled", "ready to ship",
 ];
 
-// ── Seed: a delivery for SOME completed packing tasks (one per sales order). The
-// rest are left without a delivery so "Create shipping" is demonstrable on seed. ──
+// ── Seed: a delivery for every completed packing task (one per sales order) —
+// finishing packing always creates its delivery, so seed data mirrors that. ──
 function seedTasks(): DeliveryTask[] {
   const out: DeliveryTask[] = [];
   let seq = 50090;
   let idx = 0;
   for (const pack of packingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pack-sh-"))) {
-    // ~1/3 of completed packing tasks stay un-shipped (no delivery yet).
-    if (idx++ % 3 === 0) continue;
+    idx++;
     const order = outgoingOrders.find((o) => o.id === pack.salesOrderId);
     const status = SEED_STATUSES[idx % SEED_STATUSES.length]!;
     const toShipQty = pack.toPackQty;
     // marketplace ⇒ always online shipping; others alternate self / online
     const method: "self" | "online" = isMarketplaceOrder(order) ? "online" : (idx % 2 === 0 ? "self" : "online");
+    const thisSeq = seq++;
     out.push({
-      id: `del-${seq}`,
-      taskNo: `Delivery #${seq++}`,
+      id: `del-${thisSeq}`,
+      taskNo: `Delivery #${thisSeq}`,
       salesOrderId: pack.salesOrderId,
       salesNo: pack.salesNo,
       packingTaskId: pack.id,
@@ -110,8 +113,11 @@ function seedTasks(): DeliveryTask[] {
       shippedDate: status === "shipped" ? new Date().toISOString() : undefined,
       // online shipping → courier + tracking; self delivery → optional (often blank)
       courier: status !== "canceled" && method === "online" ? COURIERS[idx % 4] : undefined,
-      trackingNo: status !== "canceled" && method === "online" ? `SD${String(9000 + seq).padStart(7, "0")}` : undefined,
+      trackingNo: status !== "canceled" && method === "online" ? `SD${String(9000 + thisSeq).padStart(7, "0")}` : undefined,
       proofFile: status === "shipped" ? "pickup-proof.jpg" : undefined,
+      // seed shipped deliveries as their own single-delivery shipment batch, so the
+      // Shipped tab (grouped by shipment) has demo content out of the box.
+      shipmentNo: status === "shipped" ? `Shipment #${60000 + thisSeq}` : undefined,
     });
     void order;
   }
@@ -128,9 +134,10 @@ function seedShippedDeliveries(startSeq: number): DeliveryTask[] {
   shippedPacks.forEach((pack, k) => {
     const order = outgoingOrders.find((o) => o.id === pack.salesOrderId);
     const toShipQty = pack.toPackQty;
+    const thisSeq = seq++;
     out.push({
       id: `del-sh-${String(k + 1).padStart(3, "0")}`,
-      taskNo: `Delivery #${seq++}`,
+      taskNo: `Delivery #${thisSeq}`,
       salesOrderId: pack.salesOrderId,
       salesNo: pack.salesNo,
       packingTaskId: pack.id,
@@ -145,8 +152,9 @@ function seedShippedDeliveries(startSeq: number): DeliveryTask[] {
       status: "shipped",
       shippedDate: new Date().toISOString(),
       courier: COURIERS[k % COURIERS.length],
-      trackingNo: `SD${String(9500 + seq).padStart(7, "0")}`,
+      trackingNo: `SD${String(9500 + thisSeq).padStart(7, "0")}`,
       proofFile: "pickup-proof.jpg",
+      shipmentNo: `Shipment #${60000 + thisSeq}`,
     });
   });
   return out;
@@ -291,23 +299,99 @@ export function getDeliveryTask(taskId: string): DeliveryTask | undefined {
   return deliveryTasks.find((t) => t.id === taskId);
 }
 
-/** Hand the package over to the courier → shipped, records courier/tracking/proof + timestamp. */
-export function handoverToCourier(taskId: string, opts?: { courier?: string; trackingNo?: string; proofFile?: string }): void {
-  const t = getDeliveryTask(taskId);
-  if (!t || t.status !== "ready to ship") return;
-  t.status = "shipped";
-  t.shippedQty = t.toShipQty;
-  t.shippedDate = nowIso();
-  if (opts?.courier) t.courier = opts.courier;
-  if (opts?.trackingNo) t.trackingNo = opts.trackingNo;
-  if (opts?.proofFile) t.proofFile = opts.proofFile;
-  persistDelivery();
+let nextShipmentSeq = 70000;
+function freshShipmentSeq(): number {
+  const used = deliveryTasks
+    .map((t) => Number((t.shipmentNo ?? "").replace(/\D/g, "")))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  nextShipmentSeq = Math.max(nextShipmentSeq, ...used, 69999) + 1;
+  return nextShipmentSeq;
 }
 
-function nowIso(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+/**
+ * Hand several ready-to-ship deliveries (same warehouse) over to the courier in one
+ * batch — each keeps/gets its own courier + tracking no. (marketplace orders arrive
+ * with theirs fixed; non-marketplace ones take whatever the admin entered on the
+ * handover page), and all share one shipment doc number, date, and assignee.
+ */
+export function handoverToCourierBulk(
+  taskIds: string[],
+  opts: {
+    assignee: string;
+    transactionDate: string;
+    courierByTaskId?: Record<string, string>;
+    trackingNoByTaskId?: Record<string, string>;
+  },
+): { shipmentNo: string; shipmentSeq: string; shippedCount: number } {
+  const seq = freshShipmentSeq();
+  const shipmentNo = `Shipment #${seq}`;
+  let shippedCount = 0;
+  for (const id of taskIds) {
+    const t = getDeliveryTask(id);
+    if (!t || t.status !== "ready to ship") continue;
+    t.status = "shipped";
+    t.shippedQty = t.toShipQty;
+    t.shippedDate = opts.transactionDate;
+    t.assignee = opts.assignee;
+    t.shipmentNo = shipmentNo;
+    const courier = opts.courierByTaskId?.[id];
+    const trackingNo = opts.trackingNoByTaskId?.[id];
+    if (courier) t.courier = courier;
+    if (trackingNo) t.trackingNo = trackingNo;
+    shippedCount++;
+  }
+  persistDelivery();
+  return { shipmentNo, shipmentSeq: String(seq), shippedCount };
+}
+
+/** Every delivery shipped together under one shipment batch, oldest call wins the
+ *  summary fields (assignee/date/warehouse are the same across the batch). */
+export interface ShipmentSummary {
+  shipmentSeq: string;
+  shipmentNo: string;
+  assignee: string;
+  transactionDate: string;
+  warehouseId: string;
+  warehouseName: string;
+  deliveries: DeliveryTask[];
+}
+export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
+  const deliveries = deliveryTasks.filter((t) => t.shipmentNo?.replace(/\D/g, "") === shipmentSeq);
+  const first = deliveries[0];
+  if (!first) return undefined;
+  return {
+    shipmentSeq,
+    shipmentNo: first.shipmentNo!,
+    assignee: first.assignee,
+    transactionDate: first.shippedDate ?? "",
+    warehouseId: first.warehouseId,
+    warehouseName: first.warehouseName,
+    deliveries,
+  };
+}
+
+/** Every shipment batch (one row per shipment no.), scoped to warehouses when
+ *  given — for the "Shipped" tab, which lists shipments rather than deliveries. */
+export function listShipments(warehouseIds?: string[]): ShipmentSummary[] {
+  const byNo = new Map<string, DeliveryTask[]>();
+  for (const t of deliveryTasks) {
+    if (!t.shipmentNo) continue;
+    if (warehouseIds?.length && !warehouseIds.includes(t.warehouseId)) continue;
+    if (!byNo.has(t.shipmentNo)) byNo.set(t.shipmentNo, []);
+    byNo.get(t.shipmentNo)!.push(t);
+  }
+  return [...byNo.entries()].map(([shipmentNo, deliveries]) => {
+    const first = deliveries[0]!;
+    return {
+      shipmentSeq: shipmentNo.replace(/\D/g, ""),
+      shipmentNo,
+      assignee: first.assignee,
+      transactionDate: first.shippedDate ?? "",
+      warehouseId: first.warehouseId,
+      warehouseName: first.warehouseName,
+      deliveries,
+    };
+  });
 }
 
 /** Available couriers for the ship form. */

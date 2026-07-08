@@ -121,6 +121,22 @@ function isoOffset(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+function isoOffsetDT(days: number, hour: number, minute: number): string {
+  const d = new Date(TODAY)
+  d.setDate(d.getDate() + days)
+  d.setHours(hour, minute, 0, 0)
+  return d.toISOString()
+}
+
+const ASSIGNEE_POOL = ['Andi Wijaya', 'Dewi Kusuma', 'Lina Handayani', 'Siti Rahayu']
+
+function countStatusFor(i: number): AdjustmentStatus {
+  const v = hash100(i * 7 + 3)
+  if (v < 30) return 'not_started'
+  if (v < 60) return 'in_progress'
+  return 'completed'
+}
+
 const TAG_POOL = ['Recount', 'Audit', 'Damaged', 'Expired', 'Promo', 'Year-end', 'Production', 'Correction']
 
 function tagsFor(i: number): string[] {
@@ -157,17 +173,30 @@ function generate(count = 26): StockAdjustment[] {
     const category = categoryFor(i, kind)
     const wh = ADJ_WAREHOUSES[hash100(i * 9 + 2) % whCount]!
     const seq = kind === 'count' ? countSeq++ : inoutSeq++
+    const countStatus = kind === 'count' ? countStatusFor(i) : statusFor(i)
+    const startDaysAgo = (hash100(i * 17) % 40) + 1
+    const startHour = 7 + (hash100(i * 41) % 11)
+    const startMin = (hash100(i * 53) % 4) * 15
+    const durationHours = 2 + (hash100(i * 29) % 6)
+    const endHour = startHour + durationHours
     out.push({
       id: `sa-${String(i + 1).padStart(3, '0')}`,
       kind,
       number: `${kind === 'count' ? 'Stock Count' : 'Stock In/Out'} #${seq}`,
-      date: isoOffset(-((hash100(i * 17) % 40) + 1)), // 1–40 days ago
+      date: isoOffset(-startDaysAgo),
       warehouseId: wh.id,
       warehouseName: wh.name,
       category,
       account: accountForCategory(category),
-      status: statusFor(i),
+      status: countStatus,
       tags: tagsFor(i),
+      ...(kind === 'count' && {
+        assignee: ASSIGNEE_POOL[hash100(i * 19) % ASSIGNEE_POOL.length],
+        startDate: isoOffsetDT(-startDaysAgo, startHour, startMin),
+        endDate: countStatus === 'completed'
+          ? isoOffsetDT(-startDaysAgo, endHour, startMin)
+          : undefined,
+      }),
     })
   }
   return out

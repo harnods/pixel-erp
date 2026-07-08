@@ -3,15 +3,14 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpFormControl, MpFormLabel, MpAutocomplete, MpInput, MpUpload, MpUploadList, css, toast,
+  css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getDeliveryLineItems, allDeliveryTasksFlat } from '~/data/deliveryTaskDetails'
-import { getDeliveryTask, handoverToCourier, marketplaceShipping, packingTaskIdsForDelivery } from '~/data/deliveryTasks'
+import { getDeliveryTask, packingTaskIdsForDelivery } from '~/data/deliveryTasks'
 import { getPackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
@@ -19,7 +18,6 @@ import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
-const route = useRoute()
 
 const task = computed(() => getDeliveryTask(props.orderId))
 const lineItems = computed(() => task.value ? getDeliveryLineItems(task.value) : [])
@@ -61,75 +59,13 @@ function expireHours(o: { dueDate: string }): number | null {
   return h > 0 && h < 24 ? Math.max(1, Math.ceil(h)) : null
 }
 
-// ── Handover-to-courier modal ────────────────────────────────────────────────
-const showShip = ref(false)
-const courierId = ref('')
-const trackingNo = ref('')
-const packageScan = ref('')
-const packageVerified = ref(false)
-const proofFile = ref('')
-const shipError = ref(false)
-const scanError = ref(false)
-
-// The scanned package / AWB / shipping label must belong to THIS delivery — match it
-// against the delivery's own identifiers (Delivery no., AWB/tracking, packing no.).
-const expectedScanCodes = computed(() =>
-  [task.value?.taskNo, task.value?.trackingNo, task.value?.packingTaskNo]
-    .filter(Boolean).map(c => String(c).trim().toLowerCase()),
-)
-
-function openShip() {
-  courierId.value = task.value?.courier ?? ''
-  trackingNo.value = task.value?.trackingNo ?? ''
-  packageScan.value = ''
-  packageVerified.value = false
-  proofFile.value = ''
-  shipError.value = false
-  scanError.value = false
-  showShip.value = true
-}
-function onScanInput() { if (scanError.value) scanError.value = false }
-// Scan the physical package label → must match this delivery before handover.
-// (Demo: clicking Scan with an empty field simulates scanning the correct label.)
-// For a marketplace order a valid scan also pulls the channel's courier + tracking no.
-function verifyPackage() {
-  const scanned = packageScan.value.trim()
-  // empty → simulate scanning the correct label for this delivery
-  if (!scanned) packageScan.value = task.value?.trackingNo || task.value?.taskNo || 'Package'
-  const val = packageScan.value.trim().toLowerCase()
-  if (expectedScanCodes.value.length && !expectedScanCodes.value.includes(val)) {
-    packageVerified.value = false
-    scanError.value = true
-    return
-  }
-  scanError.value = false
-  const mp = marketplaceShipping(linkedOrder.value)
-  if (mp) {
-    if (!courierId.value.trim())  courierId.value  = mp.courier
-    if (!trackingNo.value.trim()) trackingNo.value = mp.trackingNo
-  }
-  packageVerified.value = true
-}
-const evidenceFiles = ref<FileList | null>(null)
-function onProofUpload(e: Event) {
-  const fl = (e.target as HTMLInputElement).files
-  evidenceFiles.value = fl
-  proofFile.value = fl?.[0]?.name ?? ''
-}
-function clearProof() { evidenceFiles.value = null; proofFile.value = '' }
 function printDeliveryNote() {
   toast.notify({ variant: 'success', title: 'Delivery note sent to printer' , maxWidth: 'max-content'})
 }
-function confirmShip() {
-  if (!packageVerified.value) { scanError.value = true; return } // must scan a matching label first
-  if (!courierId.value.trim() || !trackingNo.value.trim()) { shipError.value = true; return }
-  handoverToCourier(props.orderId, {
-    courier: courierId.value.trim(),
-    trackingNo: trackingNo.value.trim(),
-    proofFile: proofFile.value || undefined,
-  })
-  showShip.value = false
-  toast.notify({ variant: 'success', title: 'Handed over to courier' , maxWidth: 'max-content'})
+// Handover to courier is now a full-page bulk flow (see HandoverToCourierPage.vue) —
+// this just seeds it with this one delivery.
+function goHandover() {
+  router.push({ path: '/outbound-delivery/handover/create', query: { deliveryIds: props.orderId } })
 }
 
 // ── jump switcher ─────────────────────────────────────────────────────────────
@@ -174,8 +110,6 @@ const stageOverflowing = ref(false)
 function checkStageOverflow() { const el = stageEl.value; if (el) stageOverflowing.value = el.scrollHeight > el.clientHeight + 1 }
 let stageObserver: ResizeObserver | null = null
 onMounted(() => {
-  // Opened via the index "Handover" action → pop the handover modal straight away.
-  if (route.query.handover === '1' && isPending.value) openShip()
   nextTick(() => {
     setupItemsObserver(); checkStageOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
@@ -185,7 +119,7 @@ onMounted(() => {
 onUnmounted(() => { itemsObserver?.disconnect(); stageObserver?.disconnect(); stageEl.value?.removeEventListener('scroll', checkStageOverflow) })
 watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
-function goBack() { router.push('/outbound-delivery?tab=Delivery') }
+function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Ready to ship' } }) }
 </script>
 
 <template>
@@ -193,7 +127,7 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Delivery</button>
+        <button class="detail-breadcrumb" @click="goBack">Ready to ship</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
@@ -454,7 +388,7 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="isPending" class="detail-btn detail-btn--primary" @click="openShip">
+      <button v-if="isPending" class="detail-btn detail-btn--primary" @click="goHandover">
         Handover to courier
       </button>
     </footer>
@@ -463,76 +397,8 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
 
   <div v-else class="del-not-found">
     <p>Delivery not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Delivery</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to Ready to ship</button>
   </div>
-
-  <!-- ── Handover-to-courier modal ── -->
-  <MpModal id="del-ship" :is-open="showShip" size="lg" is-close-on-esc :is-keep-alive="false" @close="showShip = false">
-    <MpModalContent>
-      <MpModalHeader>Handover to courier<MpModalCloseButton /></MpModalHeader>
-      <MpModalBody>
-        <dl v-if="task" class="del-ship-context">
-          <div><dt>Sales order</dt><dd>{{ task.salesNo }}<span v-if="linkedOrder?.source && linkedOrder.source !== 'Sales Order'" class="del-ship-src"><SourceLabel :source="linkedOrder.source" /></span></dd></div>
-          <div><dt>Delivery</dt><dd>{{ task.taskNo }}</dd></div>
-          <div><dt>Warehouse</dt><dd>{{ task.warehouseName }}</dd></div>
-        </dl>
-
-        <div class="del-ship-grid">
-          <MpFormControl id="del-courier" is-required :is-invalid="shipError && !courierId.trim()">
-            <MpFormLabel>Courier</MpFormLabel>
-            <MpInput id="del-courier-input" v-model="courierId" placeholder="e.g. JNE, SiCepat, internal fleet" is-full-width :is-disabled="!!task?.courier" />
-          </MpFormControl>
-          <MpFormControl id="del-tracking" is-required :is-invalid="shipError && !trackingNo.trim()">
-            <MpFormLabel>Tracking no.</MpFormLabel>
-            <MpInput id="del-tracking-input" v-model="trackingNo" placeholder="e.g. SD0009583" is-full-width :is-disabled="!!task?.trackingNo" />
-          </MpFormControl>
-        </div>
-        <p v-if="shipError" class="del-ship-error">Courier and tracking no. are required.</p>
-
-        <MpFormControl id="del-pkg-scan" :class="css({ marginTop: '16px' })">
-          <MpFormLabel>Scan package / AWB / shipping label</MpFormLabel>
-          <div class="del-scan-field">
-            <MpInput id="del-pkg-scan-input" v-model="packageScan" placeholder="Scan the package/shipping label…" is-full-width @input="onScanInput" @keyup.enter="verifyPackage" />
-            <button class="detail-btn detail-btn--secondary" @click="verifyPackage">Scan</button>
-          </div>
-          <span v-if="packageVerified" class="del-verified">✓ Matches {{ task?.taskNo }}</span>
-          <span v-else-if="scanError" class="del-ship-error">This label doesn't match delivery {{ task?.taskNo }}. Scan the package for this delivery.</span>
-        </MpFormControl>
-
-        <MpFormControl id="del-evidence" :class="css({ marginTop: '16px' })">
-          <MpFormLabel>Upload evidence</MpFormLabel>
-          <MpUpload
-            id="del-evidence-upload"
-            accept=".jpg, .jpeg, .png, .pdf"
-            :file-list="evidenceFiles"
-            :is-reset-on-change="false"
-            @change="onProofUpload"
-            @clear="clearProof"
-          />
-          <MpUploadList
-            v-if="proofFile"
-            id="del-evidence-file"
-            :title="proofFile"
-            status="success"
-            subtitle="Uploaded"
-            is-show-remove-button
-            :class="css({ marginTop: '8px' })"
-            @remove="clearProof"
-          />
-        </MpFormControl>
-      </MpModalBody>
-      <MpModalFooter>
-        <div class="del-handover-footer">
-          <button class="detail-btn detail-btn--secondary" @click="printDeliveryNote">Print delivery note</button>
-          <div class="del-footer-right">
-            <button class="detail-btn detail-btn--ghost" @click="showShip = false">Cancel</button>
-            <button class="detail-btn detail-btn--primary" @click="confirmShip">Handover to courier</button>
-          </div>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
 </template>
 
 <style scoped>
@@ -617,31 +483,6 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
 .del-shipped-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-
-.del-ship-hint { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.del-ship-context { margin: 0 0 var(--mp-spacing-5); display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--mp-spacing-4); padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtlest, #f5f6f7); border-radius: var(--mp-radii-md); }
-.del-ship-context dt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.del-ship-context dd { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.del-ship-src { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.del-scan-field { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.del-scan-field > :first-child { flex: 1; min-width: 0; }
-.del-ship-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
-.del-ship-error { margin: var(--mp-spacing-3) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c0392b); }
-.del-verified { display: inline-block; margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
-.del-upload-field {
-  position: relative; display: flex; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3); cursor: pointer;
-  border: 1px dashed var(--mp-border-bold); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary);
-}
-.del-upload-field:hover { background: var(--mp-background-neutral-hovered); }
-.del-upload-icon { display: inline-flex; color: var(--mp-text-secondary); flex-shrink: 0; }
-.del-upload-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.del-file-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.del-handover-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); width: 100%; }
-.del-footer-right { display: flex; gap: var(--mp-spacing-2); }
-.detail-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-secondary); }
-.detail-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 
 .del-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

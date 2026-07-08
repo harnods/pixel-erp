@@ -14,15 +14,32 @@ export interface WarehouseConfig {
    *  skip put-away entirely — finishing receiving is the end of inbound. */
   putAwayEnabled: boolean
   allowPartialPicking: boolean
-  qcModule: boolean
+  requireSourceLabel: boolean
+  preventDuplicateLabel: boolean
+  autoSelectLocation: boolean
+  scanThreshold: boolean
+  scanThresholdValue: number
+  cycleCountRec: boolean
+  cycleCountAutoTask: boolean
+  cycleCountRuleNeg: boolean
+  cycleCountRuleVar: boolean
+  cycleCountRuleMin: boolean
 }
 
-// Everything runs normally by default, except QC module (opt-in per warehouse).
 const DEFAULTS: WarehouseConfig = {
   pickingEnabled: true,
   putAwayEnabled: true,
   allowPartialPicking: true,
-  qcModule: false,
+  requireSourceLabel: true,
+  preventDuplicateLabel: false,
+  autoSelectLocation: true,
+  scanThreshold: true,
+  scanThresholdValue: 50,
+  cycleCountRec: false,
+  cycleCountAutoTask: false,
+  cycleCountRuleNeg: true,
+  cycleCountRuleVar: true,
+  cycleCountRuleMin: true,
 }
 
 function loadAll(): Record<string, WarehouseConfig> {

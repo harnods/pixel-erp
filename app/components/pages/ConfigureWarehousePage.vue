@@ -25,15 +25,28 @@ function goBack() {
 const committed = reactive<WarehouseConfig>(getWarehouseConfig(props.orderId))
 const draft     = reactive<WarehouseConfig>({ ...committed })
 
-const isEditing = ref(false)
-const isSaving  = ref(false)
+const isEditing   = ref(false)
+const isSaving    = ref(false)
 const discardOpen = ref(false)
 
 const hasChanges = computed(() =>
-  draft.pickingEnabled       !== committed.pickingEnabled ||
-  draft.putAwayEnabled       !== committed.putAwayEnabled ||
-  draft.allowPartialPicking  !== committed.allowPartialPicking ||
-  draft.qcModule             !== committed.qcModule
+  draft.pickingEnabled         !== committed.pickingEnabled         ||
+  draft.putAwayEnabled         !== committed.putAwayEnabled         ||
+  draft.allowPartialPicking    !== committed.allowPartialPicking    ||
+  draft.requireSourceLabel      !== committed.requireSourceLabel      ||
+  draft.preventDuplicateLabel  !== committed.preventDuplicateLabel  ||
+  draft.autoSelectLocation      !== committed.autoSelectLocation      ||
+  draft.scanThreshold          !== committed.scanThreshold          ||
+  draft.scanThresholdValue     !== committed.scanThresholdValue     ||
+  draft.cycleCountRec          !== committed.cycleCountRec          ||
+  draft.cycleCountAutoTask     !== committed.cycleCountAutoTask     ||
+  draft.cycleCountRuleNeg      !== committed.cycleCountRuleNeg      ||
+  draft.cycleCountRuleVar      !== committed.cycleCountRuleVar      ||
+  draft.cycleCountRuleMin      !== committed.cycleCountRuleMin
+)
+
+const cycleCountActiveRules = computed(() =>
+  [draft.cycleCountRuleNeg, draft.cycleCountRuleVar, draft.cycleCountRuleMin].filter(Boolean).length
 )
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -53,8 +66,6 @@ function exitEdit() {
 async function saveEdit() {
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
-  // Cascade only fires for OFF transitions actually committed by this save —
-  // toggling off then back on before saving has no side effects.
   if (committed.pickingEnabled && !draft.pickingEnabled) disablePickingForWarehouse(props.orderId)
   if (committed.putAwayEnabled && !draft.putAwayEnabled) disablePutAwayForWarehouse(props.orderId)
   Object.assign(committed, draft)
@@ -148,7 +159,7 @@ const toggleConfirmBody = computed(() => {
       <section class="cw-section">
         <div class="cw-section-header">
           <div class="cw-section-meta">
-            <h2 class="cw-section-title">Workflow</h2>
+            <h2 class="cw-section-title">Settings</h2>
             <p class="cw-section-desc">Configure how inbound and outbound tasks run in this warehouse.</p>
           </div>
           <button
@@ -163,7 +174,7 @@ const toggleConfirmBody = computed(() => {
 
         <div class="cw-toggle-list">
 
-          <h3 class="cw-subsection-title">Outbound delivery settings</h3>
+          <h3 class="cw-subsection-title">Outbound delivery</h3>
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
@@ -192,7 +203,43 @@ const toggleConfirmBody = computed(() => {
             />
           </div>
 
-          <h3 class="cw-subsection-title cw-subsection-title--spaced">Inbound delivery settings</h3>
+          <div class="cw-toggle-row">
+            <div class="cw-toggle-info">
+              <span class="cw-toggle-title">Require source shipping label</span>
+              <span class="cw-toggle-desc">Packing cannot begin until the shipping label from the order source (e.g. marketplace) has been received.</span>
+            </div>
+            <MpToggle
+              v-model:is-checked="draft.requireSourceLabel"
+              :is-disabled="!isEditing"
+              aria-label="Require source shipping label"
+            />
+          </div>
+
+          <div class="cw-toggle-row">
+            <div class="cw-toggle-info">
+              <span class="cw-toggle-title">Prevent duplicate packing label printing</span>
+              <span class="cw-toggle-desc">Once a packing label has been printed for an outbound order, it cannot be printed again. Prevents duplicate labels from being issued.</span>
+            </div>
+            <MpToggle
+              v-model:is-checked="draft.preventDuplicateLabel"
+              :is-disabled="!isEditing"
+              aria-label="Prevent duplicate packing label printing"
+            />
+          </div>
+
+          <div class="cw-toggle-row">
+            <div class="cw-toggle-info">
+              <span class="cw-toggle-title">Auto-select storage location</span>
+              <span class="cw-toggle-desc">Automatically assign the storage location when picking items for outbound orders in this warehouse.</span>
+            </div>
+            <MpToggle
+              v-model:is-checked="draft.autoSelectLocation"
+              :is-disabled="!isEditing"
+              aria-label="Auto-select storage location"
+            />
+          </div>
+
+          <h3 class="cw-subsection-title cw-subsection-title--spaced">Inbound delivery</h3>
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
@@ -207,13 +254,97 @@ const toggleConfirmBody = computed(() => {
             />
           </div>
 
+          <h3 class="cw-subsection-title cw-subsection-title--spaced">General settings</h3>
+
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
-              <span class="cw-toggle-title">QC module</span>
-              <span class="cw-toggle-desc">Require a quality-control check before goods can move on to the next stage in this warehouse.</span>
+              <span class="cw-toggle-title">Barcode scan threshold</span>
+              <span class="cw-toggle-desc">Items at or below this quantity must be scanned one by one. Above the limit, operators can enter the quantity manually.</span>
             </div>
-            <MpToggle v-model:is-checked="draft.qcModule" :is-disabled="!isEditing" aria-label="QC module" />
+            <MpToggle v-model:is-checked="draft.scanThreshold" :is-disabled="!isEditing" aria-label="Barcode scan threshold" />
           </div>
+
+          <div v-if="draft.scanThreshold" class="cw-sub-row">
+            <span class="cw-sub-label">Threshold qty</span>
+            <template v-if="isEditing">
+              <input
+                class="cw-sub-input"
+                type="number"
+                min="1"
+                max="9999"
+                :value="draft.scanThresholdValue"
+                @input="draft.scanThresholdValue = Math.max(1, parseInt(($event.target as HTMLInputElement).value) || 1)"
+              />
+              <span class="cw-sub-unit">pcs</span>
+            </template>
+            <span v-else class="cw-sub-value">{{ draft.scanThresholdValue }} pcs</span>
+          </div>
+
+          <h3 class="cw-subsection-title cw-subsection-title--spaced">Cycle counts</h3>
+
+          <!-- Cycle count recommendation master toggle -->
+          <div class="cw-toggle-row">
+            <div class="cw-toggle-info">
+              <span class="cw-toggle-title">Cycle count recommendation</span>
+              <span class="cw-toggle-desc">Show a recommendation board that surfaces which SKUs to prioritize for counting, based on negative stock, count variance, and minimum stock signals.</span>
+            </div>
+            <MpToggle v-model:is-checked="draft.cycleCountRec" :is-disabled="!isEditing" aria-label="Cycle count recommendation" />
+          </div>
+
+          <!-- Sub-settings: only visible when master toggle is ON -->
+          <template v-if="draft.cycleCountRec">
+
+            <!-- Recommendation rules -->
+            <div class="cw-rec-group">
+              <span class="cw-rec-group-label">Recommendation rules</span>
+
+              <div class="cw-rec-rule-row">
+                <div class="cw-toggle-info">
+                  <span class="cw-toggle-title">Negative stock</span>
+                  <span class="cw-toggle-desc">Flag SKUs that went negative within the lookback window — a confirmed system-vs-physical mismatch.</span>
+                </div>
+                <MpToggle
+                  v-model:is-checked="draft.cycleCountRuleNeg"
+                  :is-disabled="!isEditing || (draft.cycleCountRuleNeg && cycleCountActiveRules === 1)"
+                  aria-label="Negative stock rule"
+                />
+              </div>
+
+              <div class="cw-rec-rule-row">
+                <div class="cw-toggle-info">
+                  <span class="cw-toggle-title">Variance signal</span>
+                  <span class="cw-toggle-desc">Flag SKUs whose last count exceeded the variance tolerance — likely to drift again.</span>
+                </div>
+                <MpToggle
+                  v-model:is-checked="draft.cycleCountRuleVar"
+                  :is-disabled="!isEditing || (draft.cycleCountRuleVar && cycleCountActiveRules === 1)"
+                  aria-label="Variance signal rule"
+                />
+              </div>
+
+              <div class="cw-rec-rule-row">
+                <div class="cw-toggle-info">
+                  <span class="cw-toggle-title">Min stock (watch list)</span>
+                  <span class="cw-toggle-desc">Flag watch-listed SKUs at or below their minimum stock level — a predictive signal for high-priority products.</span>
+                </div>
+                <MpToggle
+                  v-model:is-checked="draft.cycleCountRuleMin"
+                  :is-disabled="!isEditing || (draft.cycleCountRuleMin && cycleCountActiveRules === 1)"
+                  aria-label="Min stock rule"
+                />
+              </div>
+            </div>
+
+            <!-- Auto-create nested toggle -->
+            <div class="cw-toggle-row">
+              <div class="cw-toggle-info">
+                <span class="cw-toggle-title">Auto-create cycle count tasks</span>
+                <span class="cw-toggle-desc">Automatically create pending cycle count tasks for all recommended SKUs. When off, the recommendation board is advisory only — no tasks are created.</span>
+              </div>
+              <MpToggle v-model:is-checked="draft.cycleCountAutoTask" :is-disabled="!isEditing" aria-label="Auto-create cycle count tasks" />
+            </div>
+
+          </template>
 
         </div>
 
@@ -323,4 +454,38 @@ const toggleConfirmBody = computed(() => {
 .cw-action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .cw-dialog-body { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+
+.cw-section--spaced { margin-top: var(--mp-spacing-6); padding-top: var(--mp-spacing-6); border-top: 1px solid var(--mp-border-default); }
+
+.cw-sub-row {
+  display: flex; align-items: center;
+  gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; padding-left: var(--mp-spacing-4);
+}
+.cw-sub-label { width: 160px; flex-shrink: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cw-sub-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cw-sub-input {
+  width: 80px; padding: 6px var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral); outline: none; text-align: right;
+}
+.cw-sub-input:focus { border-color: var(--mp-border-focused, #2563eb); }
+.cw-sub-unit { font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+
+.cw-rec-group {
+  display: flex; flex-direction: column;
+  margin: var(--mp-spacing-1) 0;
+  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-1);
+  border-left: 2px solid var(--mp-border-default);
+  margin-left: var(--mp-spacing-2);
+}
+.cw-rec-group-label {
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-subtle); text-transform: uppercase; letter-spacing: 0.4px;
+  margin-bottom: var(--mp-spacing-1);
+}
+.cw-rec-rule-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0;
+}
 </style>

@@ -45,7 +45,7 @@ const pageRegistry: Record<string, Component> = {
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Stock adjustments': defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Stock count':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
@@ -68,6 +68,7 @@ const OutgoingIndexPage = defineAsyncComponent(() => import('~/components/pages/
 const PickingIndexPage = defineAsyncComponent(() => import('~/components/pages/PickingIndexPage.vue'))
 const PackingIndexPage = defineAsyncComponent(() => import('~/components/pages/PackingIndexPage.vue'))
 const DeliveryIndexPage = defineAsyncComponent(() => import('~/components/pages/DeliveryIndexPage.vue'))
+const ShippedIndexPage = defineAsyncComponent(() => import('~/components/pages/ShippedIndexPage.vue'))
 const CreatePickingPage = defineAsyncComponent(() => import('~/components/pages/CreatePickingPage.vue'))
 const CreatePackingPage = defineAsyncComponent(() => import('~/components/pages/CreatePackingPage.vue'))
 const PickingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PickingTaskDetailsPage.vue'))
@@ -75,6 +76,8 @@ const PickItemsPage = defineAsyncComponent(() => import('~/components/pages/Pick
 const PackingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PackingTaskDetailsPage.vue'))
 const PackItemsPage = defineAsyncComponent(() => import('~/components/pages/PackItemsPage.vue'))
 const DeliveryTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
+const HandoverToCourierPage = defineAsyncComponent(() => import('~/components/pages/HandoverToCourierPage.vue'))
+const ShipmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/ShipmentDetailsPage.vue'))
 const OutgoingOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
 const WarehouseTransferDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
 const WarehouseTransferFormPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
@@ -127,8 +130,16 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'packing' && segs[2] === 'create') {
     return { component: CreatePackingPage, id: 'create' }
   }
-  // /outbound-delivery/:id → outgoing sales order detail (not the picking/packing sub-routes)
-  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing') {
+  // /outbound-delivery/handover/create → bulk handover several ready-to-ship deliveries
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'handover' && segs[2] === 'create') {
+    return { component: HandoverToCourierPage, id: 'create' }
+  }
+  // /outbound-delivery/shipment/:seq → a saved shipment batch's details (Print PDF lives here)
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment') {
+    return { component: ShipmentDetailsPage, id: segs[2]! }
+  }
+  // /outbound-delivery/:id → outgoing sales order detail (not the picking/packing/handover/shipment sub-routes)
+  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing' && segs[1] !== 'handover' && segs[1] !== 'shipment') {
     return { component: OutgoingOrderDetailsPage, id: segs[1] }
   }
   // /picking/:taskId/pick → operator picks items from bins
@@ -222,11 +233,10 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Delivery'],
+  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipped'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
-  'Cycle counts':      ['All cycle counts', 'Awaiting approval'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -249,20 +259,20 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     // Outgoing badges the actionable orders: everything not yet Completed/Canceled.
     const outgoing = outgoingOpenCount() // ERP = all warehouses
     if (outgoing) out['Requests'] = outgoing
-    // Picking / Packing / Delivery are task-based (a different dataset than the orders)
+    // Picking / Packing / Ready to ship are task-based (a different dataset than the orders)
     const picking = pickingOpenCount()
     if (picking) out['Picking'] = picking
     const packing = packingOpenCount()
     if (packing) out['Packing'] = packing
     const delivery = deliveryOpenCount()
-    if (delivery) out['Delivery'] = delivery
+    if (delivery) out['Ready to ship'] = delivery
     return out
   }
   if (currentPageKey.value === 'Warehouse transfers') {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
-  if (currentPageKey.value === 'Stock adjustments' || currentPageKey.value === 'Cycle counts') {
+  if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
@@ -314,7 +324,8 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Requests': OutgoingIndexPage,
     'Picking': PickingIndexPage,
     'Packing': PackingIndexPage,
-    'Delivery': DeliveryIndexPage,
+    'Ready to ship': DeliveryIndexPage,
+    'Shipped': ShippedIndexPage,
   },
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,
@@ -322,10 +333,6 @@ const tabComponents: Record<string, Record<string, Component>> = {
   },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
-    'Awaiting approval': StockAdjustmentsPage,
-  },
-  'Cycle counts': {
-    'All cycle counts': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
   },
 }
@@ -855,7 +862,7 @@ function startResize(e: MouseEvent) {
             New warehouse transfer
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Stock count'" class="page-title-actions">
+        <div v-else-if="currentPageKey === 'Cycle counts'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockCount">
             <MpIcon name="add" size="md" color="icon.inverse" />
             New stock count
@@ -865,12 +872,6 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockInOut">
             <MpIcon name="add" size="md" color="icon.inverse" />
             New stock in/out
-          </button>
-        </div>
-        <div v-else-if="currentPageKey === 'Cycle counts'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockCount">
-            <MpIcon name="add" size="md" color="icon.inverse" />
-            New cycle count
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock adjustments'" class="page-title-actions">

@@ -12,6 +12,7 @@ import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getPackingLineItems } from '~/data/packingTaskDetails'
 import { getPackingTask, savePackingDraft, endPacking } from '~/data/packingTasks'
+import { addDeliveryTaskFromPackingTasks, marketplaceShipping } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 
 const props = defineProps<{ orderId: string }>()
@@ -117,9 +118,20 @@ function endPackingClick() {
 }
 function commit() {
   showConfirm.value = false
-  if (!task.value) return
+  const t = task.value
+  if (!t) return
   endPacking(props.orderId, { ...draftQty.value })
-  toast.notify({ variant: 'success', title: 'Packing finished, ready to ship' , maxWidth: 'max-content'})
+  // Finishing packing hands the order straight to delivery — no separate "Create
+  // delivery" step. Marketplace orders already carry a fixed courier + tracking no.;
+  // everyone else fills those in later, in bulk, on the Handover to courier page.
+  const info = marketplaceShipping(order.value)
+  addDeliveryTaskFromPackingTasks([t], {
+    assignee: t.assignee,
+    deliveryMethod: info ? 'online' : undefined,
+    courier: info?.courier,
+    trackingNo: info?.trackingNo,
+  })
+  toast.notify({ variant: 'success', title: 'Packing finished, delivery ready to ship' , maxWidth: 'max-content'})
   router.push(`/packing/${props.orderId}`)
 }
 function saveDraft() {

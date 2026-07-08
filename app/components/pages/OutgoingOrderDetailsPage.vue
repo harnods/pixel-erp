@@ -15,7 +15,7 @@ import { outgoingOrders, outgoingStage, isMarketplaceOrder } from '~/data/outgoi
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
 import { getPackingForOrder, addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
-import { deliveryTasks, marketplaceShipping } from '~/data/deliveryTasks'
+import { deliveryTasks, marketplaceShipping, getShipment, type ShipmentSummary } from '~/data/deliveryTasks'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
@@ -32,7 +32,15 @@ const skippedPicking = computed(() => !order.value || !getWarehouseConfig(order.
 const linkedPicking = computed(() => getPickingForOrder(props.orderId))
 const linkedPacking = computed(() => getPackingForOrder(props.orderId))
 const linkedDelivery = computed(() => deliveryTasks.filter(d => d.salesOrderId === props.orderId))
-const hasLinked = computed(() => linkedPicking.value.length > 0 || linkedPacking.value.length > 0 || linkedDelivery.value.length > 0)
+// Delivery is just an in-between state (packed, waiting to leave) — not a document
+// worth linking to on its own. Once shipped, the shipment batch is what matters.
+const linkedShipments = computed<ShipmentSummary[]>(() => {
+  const seqs = new Set(
+    linkedDelivery.value.filter(d => d.shipmentNo).map(d => d.shipmentNo!.replace(/\D/g, '')),
+  )
+  return [...seqs].map(seq => getShipment(seq)).filter((h): h is ShipmentSummary => !!h)
+})
+const hasLinked = computed(() => linkedPicking.value.length > 0 || linkedPacking.value.length > 0 || linkedShipments.value.length > 0)
 
 // Per-SKU progress across this order's tasks (picked → packed → shipped).
 const shippedPackingIds = computed(() => new Set(linkedDelivery.value.filter(d => d.status === 'shipped').map(d => d.packingTaskId)))
@@ -368,7 +376,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         <MpTabList>
           <MpTab v-if="linkedPicking.length" id="ood-tab-pick" :value="0">Picking ({{ linkedPicking.length }})</MpTab>
           <MpTab v-if="linkedPacking.length" id="ood-tab-pack" :value="1">Packing ({{ linkedPacking.length }})</MpTab>
-          <MpTab v-if="linkedDelivery.length" id="ood-tab-del" :value="2">Delivery ({{ linkedDelivery.length }})</MpTab>
+          <MpTab v-if="linkedShipments.length" id="ood-tab-ship" :value="2">Shipment ({{ linkedShipments.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel v-if="linkedPicking.length" :value="0">
@@ -443,17 +451,17 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
               </table>
             </div>
           </MpTabPanel>
-          <MpTabPanel v-if="linkedDelivery.length" :value="2">
-            <h3 class="linked-section-title">Delivery tasks</h3>
+          <MpTabPanel v-if="linkedShipments.length" :value="2">
+            <h3 class="linked-section-title">Shipments</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Shipped qty</th><th class="detail-th">Status</th></tr></thead>
+                <thead><tr><th class="detail-th">Shipment no.</th><th class="detail-th">Assignee</th><th class="detail-th">Warehouse</th><th class="detail-th">Transaction date</th></tr></thead>
                 <tbody>
-                  <tr v-for="d in linkedDelivery" :key="d.id" class="detail-item-row">
+                  <tr v-for="h in linkedShipments" :key="h.shipmentSeq" class="detail-item-row">
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
-                        <span class="ood-link-num">{{ d.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/delivery/${d.id}`)">
+                        <span class="ood-link-num">{{ h.shipmentNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/shipment/${h.shipmentSeq}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -462,10 +470,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                         </button>
                       </div>
                     </td>
-                    <td class="detail-td">{{ d.assignee }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(d.skuQty) }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(d.shippedQty) }}</td>
-                    <td class="detail-td"><ErpStatusBadge :status="d.status" /></td>
+                    <td class="detail-td">{{ h.assignee }}</td>
+                    <td class="detail-td">{{ h.warehouseName }}</td>
+                    <td class="detail-td">{{ h.transactionDate ? formatDateTime(h.transactionDate) : '—' }}</td>
                   </tr>
                 </tbody>
               </table>

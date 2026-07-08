@@ -7,10 +7,16 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { useTableState } from '~/composables/useTableState'
 import { deliveryTasksFor, type DeliveryTask } from '~/data/deliveryTasks'
+import { outgoingOrders } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
+
+// A delivery's order source (Sales Order / Manual / marketplace channel) — looked
+// up from the order since DeliveryTask itself doesn't carry it.
+type DeliveryRow = DeliveryTask & { source: string }
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -44,21 +50,27 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Columns ───────────────────────────────────────────────────────────────────
 // Delivery is per sales order — one delivery = one order.
 const columns: TableColumn[] = [
-  { key: 'taskNo',        label: 'Number',      width: '180px', sortType: 'text' },
-  { key: 'salesNo',       label: 'Sales order', width: '200px', sortType: 'text' },
-  { key: 'warehouseName', label: 'Warehouse',   width: '180px', sortType: 'text' },
+  { key: 'salesNo',       label: 'Sales order no.', width: '200px', sortType: 'text' },
+  { key: 'taskNo',        label: 'Delivery no.',    width: '180px', sortType: 'text' },
+  { key: 'source',        label: 'Source',          width: '180px', sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse',       width: '180px', sortType: 'text' },
   { key: 'assignee',      label: 'Assignee',    width: '160px', sortType: 'text' },
+  { key: 'courier',       label: 'Courier',     width: '140px', sortType: 'text' },
+  { key: 'trackingNo',    label: 'Tracking no.', width: '150px', sortType: 'text' },
   { key: 'skuQty',        label: 'SKU qty',     width: '90px',  align: 'right', sortType: 'number' },
   { key: 'orderQty',      label: 'Order qty',   width: '90px',  align: 'right', sortType: 'number' },
   { key: 'toShipQty',     label: 'To ship',     width: '90px',  align: 'right', sortType: 'number' },
   { key: 'status',        label: 'Status',      width: '130px', sortType: 'text' },
-  { key: 'courier',       label: 'Courier',     width: '140px', sortType: 'text' },
-  { key: 'trackingNo',    label: 'Tracking no.', width: '150px', sortType: 'text' },
   { key: 'shippedDate',   label: 'Ship date',   width: '170px', sortType: 'date' },
 ]
-// Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
-// the ColumnSettings menu turns them back on.
-const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+// Column show/hide — Delivery no. and Assignee are hidden by default (not
+// important here — assignee means the packer pre-handover but the handover person
+// post-handover, and that's already shown properly on Packing / the Shipped tab).
+// The sort menu's "Hide column" flips others off, the ColumnSettings menu turns
+// them back on.
+const colVis = reactive<Record<string, boolean>>(
+  Object.fromEntries(columns.map(c => [c.key, c.key !== 'taskNo' && c.key !== 'assignee'])),
+)
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
 const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 function hideColumn(key: string) { colVis[key] = false }
@@ -67,9 +79,10 @@ function hideColumn(key: string) { colVis[key] = false }
 const warehouseFilter = ref('')
 const statusFilter = ref('')
 
-const baseTasks = computed<DeliveryTask[]>(() =>
+const baseTasks = computed<DeliveryRow[]>(() =>
   demoState.value === 'data'
     ? deliveryTasksFor(isScoped.value ? scopedWarehouseIds.value : undefined)
+        .map(t => ({ ...t, source: outgoingOrders.find(o => o.id === t.salesOrderId)?.source ?? '' }))
     : [],
 )
 
@@ -90,13 +103,14 @@ const statusLabel    = computed(() => statusOptions.find(o => o.value === status
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
-} = useTableState<DeliveryTask>(baseTasks, {
+} = useTableState<DeliveryRow>(baseTasks, {
   perPage: 25,
   filterFn: (row, s) => {
     const matchesSearch = !s
       || row.taskNo.toLowerCase().includes(s)
       || row.salesNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
+      || row.source.toLowerCase().includes(s)
     const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
     const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
     return matchesSearch && matchesWarehouse && matchesStatus
@@ -113,7 +127,28 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 // ─── Row actions ──────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(row: DeliveryTask) { router.push(`/delivery/${row.id}`) }
-function shipRow(row: DeliveryTask) { router.push({ path: `/delivery/${row.id}`, query: { handover: '1' } }) }
+function handoverRow(row: DeliveryTask) {
+  router.push({ path: '/outbound-delivery/handover/create', query: { deliveryIds: row.id } })
+}
+
+// ─── Bulk → hand several ready-to-ship deliveries over to the courier at once ────
+function selectedDeliveriesOf(sel: Set<number>): DeliveryTask[] {
+  return [...sel].map(i => paginated.value[i]).filter(Boolean) as DeliveryTask[]
+}
+// A handover batch is single-warehouse — show the bulk action only when every
+// selected delivery is ready to ship AND from the same warehouse.
+function bulkHandoverable(sel: Set<number>): boolean {
+  const rows = selectedDeliveriesOf(sel)
+  if (!rows.length) return false
+  const wh = rows[0]!.warehouseId
+  return rows.every(t => t.warehouseId === wh && t.status === 'ready to ship')
+}
+function bulkCreateHandover(sel: Set<number>, deselectAll: () => void) {
+  const rows = selectedDeliveriesOf(sel)
+  if (!rows.length) return
+  router.push({ path: '/outbound-delivery/handover/create', query: { deliveryIds: rows.map(t => t.id).join(',') } })
+  deselectAll()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -137,6 +172,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
+    <!-- ── Bulk bar → handover the selected ready-to-ship deliveries at once ── -->
+    <template #bulk-actions="{ deselectAll, selectedRows }">
+      <button
+        v-if="bulkHandoverable(selectedRows as Set<number>)"
+        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+        @click="bulkCreateHandover(selectedRows as Set<number>, deselectAll)"
+      >
+        Create handover to courier
+      </button>
+    </template>
+
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
@@ -203,10 +249,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Number — View details chip on hover ── -->
-    <template #cell-taskNo="{ value, row }">
+    <!-- ── Sales order no. — View details chip on hover ── -->
+    <template #cell-salesNo="{ value, row }">
       <div class="cell-with-action">
-        <span class="cell-text del-no">{{ value }}</span>
+        <span class="cell-text del-so">{{ value }}</span>
         <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as DeliveryTask)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -217,15 +263,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Sales order (single) ── -->
-    <template #cell-salesNo="{ value }">
-      <span class="del-so">{{ value }}</span>
+    <!-- ── Delivery no. ── -->
+    <template #cell-taskNo="{ value }">
+      <span class="del-no">{{ value }}</span>
+    </template>
+
+    <!-- ── Source — wrap to 2 lines instead of bleeding ── -->
+    <template #cell-source="{ value }">
+      <span class="del-source"><SourceLabel :source="value as string" /></span>
     </template>
 
     <!-- ── Warehouse ── -->
     <template #cell-warehouseName="{ value }">
       <span class="del-warehouse">{{ value }}</span>
     </template>
+
+    <!-- ── Assignee ── -->
+    <template #cell-assignee="{ value }">{{ value || '—' }}</template>
 
     <!-- ── Numeric cells ── -->
     <template #cell-skuQty="{ value }">{{ formatNum(value as number) }}</template>
@@ -256,7 +310,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem @click="viewDetails(row as unknown as DeliveryTask)">View details</MpPopoverListItem>
             <MpPopoverListItem
               v-if="(row as unknown as DeliveryTask).status === 'ready to ship'"
-              @click="shipRow(row as unknown as DeliveryTask)"
+              @click="handoverRow(row as unknown as DeliveryTask)"
             >Handover to courier</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -334,6 +388,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 .del-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.del-source {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; white-space: normal; color: var(--mp-text-default);
 }
 
 .row-kebab {

@@ -12,18 +12,12 @@ const STORAGE_KEY = 'erp-db:warehouse-settings'
 
 interface Settings {
   multiLocationStorage: boolean
-  scanThreshold: boolean
-  scanThresholdValue: number
-  packUsingSourceLabel: boolean
-  doublePrintGuard: boolean
+  batchAutoSelect:      boolean
 }
 
 const DEFAULTS: Settings = {
   multiLocationStorage: true,
-  scanThreshold:        true,
-  scanThresholdValue:   50,
-  packUsingSourceLabel: true,
-  doublePrintGuard:     false,
+  batchAutoSelect:      true,
 }
 
 function loadSettings(): Settings {
@@ -33,10 +27,7 @@ function loadSettings(): Settings {
     const parsed = raw ? JSON.parse(raw) : {}
     return {
       multiLocationStorage: parsed.multiLocationStorage ?? DEFAULTS.multiLocationStorage,
-      scanThreshold:        parsed.scanThreshold        ?? DEFAULTS.scanThreshold,
-      scanThresholdValue:   parsed.scanThresholdValue   ?? DEFAULTS.scanThresholdValue,
-      packUsingSourceLabel: parsed.packUsingSourceLabel ?? DEFAULTS.packUsingSourceLabel,
-      doublePrintGuard:     parsed.doublePrintGuard     ?? DEFAULTS.doublePrintGuard,
+      batchAutoSelect:      parsed.batchAutoSelect      ?? DEFAULTS.batchAutoSelect,
     }
   } catch { return { ...DEFAULTS } }
 }
@@ -51,71 +42,57 @@ function persistSettings(v: Settings) {
 const committed = reactive(loadSettings())
 const draft     = reactive({ ...committed })
 
-const isEditingStorage  = ref(false)
-const isEditingOutbound = ref(false)
-const isSavingStorage   = ref(false)
-const isSavingOutbound  = ref(false)
-const discardOpen       = ref(false)
-const discardSection    = ref<'storage' | 'outbound'>('storage')
+const isEditing   = ref(false)
+const isSaving    = ref(false)
+const discardOpen = ref(false)
 
-const hasChangesStorage = computed(() =>
+const hasChanges = computed(() =>
   draft.multiLocationStorage !== committed.multiLocationStorage ||
-  draft.scanThreshold        !== committed.scanThreshold ||
-  draft.scanThresholdValue   !== committed.scanThresholdValue
-)
-
-const hasChangesOutbound = computed(() =>
-  draft.packUsingSourceLabel !== committed.packUsingSourceLabel ||
-  draft.doublePrintGuard     !== committed.doublePrintGuard
+  draft.batchAutoSelect      !== committed.batchAutoSelect
 )
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
-function startEdit(section: 'storage' | 'outbound') {
+function startEdit() {
   Object.assign(draft, committed)
-  if (section === 'storage')  isEditingStorage.value  = true
-  if (section === 'outbound') isEditingOutbound.value = true
+  isEditing.value = true
 }
 
-function requestCancel(section: 'storage' | 'outbound') {
-  const hasChanges = section === 'storage' ? hasChangesStorage.value : hasChangesOutbound.value
-  if (hasChanges) { discardSection.value = section; discardOpen.value = true }
-  else exitEdit(section)
+function requestCancel() {
+  if (hasChanges.value) discardOpen.value = true
+  else exitEdit()
 }
 
-function exitEdit(section: 'storage' | 'outbound') {
+function exitEdit() {
   Object.assign(draft, committed)
-  if (section === 'storage')  isEditingStorage.value  = false
-  if (section === 'outbound') isEditingOutbound.value = false
+  isEditing.value = false
   discardOpen.value = false
 }
 
-async function saveEdit(section: 'storage' | 'outbound') {
-  if (section === 'storage')  isSavingStorage.value  = true
-  if (section === 'outbound') isSavingOutbound.value = true
+async function saveEdit() {
+  isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   Object.assign(committed, draft)
   persistSettings({ ...committed })
-  if (section === 'storage')  { isSavingStorage.value  = false; isEditingStorage.value  = false }
-  if (section === 'outbound') { isSavingOutbound.value = false; isEditingOutbound.value = false }
-  toast.notify({ variant: 'success', title: 'Warehouse settings saved.' , maxWidth: 'max-content'})
+  isSaving.value = false
+  isEditing.value = false
+  toast.notify({ variant: 'success', title: 'Warehouse settings saved.', maxWidth: 'max-content' })
 }
 </script>
 
 <template>
   <div class="ws-page">
 
-    <!-- ── Storage section ───────────────────────────────────────────────── -->
     <section class="ws-section">
       <div class="ws-section-header">
         <div class="ws-section-meta">
-          <h2 class="ws-section-title">Storage</h2>
-          <p class="ws-section-desc">Configure how products are stored and tracked across warehouse locations.</p>
+          <h2 class="ws-section-title">Settings</h2>
+          <p class="ws-section-desc">Configure global warehouse rules for storage and outbound fulfillment.</p>
         </div>
         <button
-          v-if="!isEditingStorage"
+          v-if="!isEditing"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
-          @click="startEdit('storage')"
+          @click="startEdit"
         >
           <MpIcon name="edit" size="sm" />
           Edit
@@ -124,7 +101,8 @@ async function saveEdit(section: 'storage' | 'outbound') {
 
       <div class="ws-toggle-list">
 
-        <!-- Multi-location storage -->
+        <h3 class="ws-subsection-title">Storage</h3>
+
         <div class="ws-toggle-row">
           <div class="ws-toggle-info">
             <span class="ws-toggle-title">Multi-location storage</span>
@@ -132,91 +110,31 @@ async function saveEdit(section: 'storage' | 'outbound') {
           </div>
           <MpToggle
             v-model:is-checked="draft.multiLocationStorage"
-            :is-disabled="!isEditingStorage"
+            :is-disabled="!isEditing"
             aria-label="Multi-location storage"
           />
         </div>
 
-        <!-- Barcode scan threshold -->
+        <h3 class="ws-subsection-title ws-subsection-title--spaced">Outbound delivery</h3>
+
         <div class="ws-toggle-row">
           <div class="ws-toggle-info">
-            <span class="ws-toggle-title">Barcode scan threshold</span>
-            <span class="ws-toggle-desc">Items at or below this quantity must be scanned one by one. Above the limit, operators can enter the quantity manually.</span>
+            <span class="ws-toggle-title">Auto-select batch and serial numbers</span>
+            <span class="ws-toggle-desc">Automatically assign batch numbers (FEFO) and serial numbers (FIFO) when picking items for outbound orders.</span>
           </div>
           <MpToggle
-            v-model:is-checked="draft.scanThreshold"
-            :is-disabled="!isEditingStorage"
-            aria-label="Barcode scan threshold"
-          />
-        </div>
-
-        <!-- Threshold qty sub-row -->
-        <div v-if="draft.scanThreshold" class="ws-sub-row">
-          <span class="ws-sub-label">Threshold qty</span>
-          <span class="ws-sub-value">{{ draft.scanThresholdValue }} pcs</span>
-        </div>
-
-      </div>
-
-      <div v-if="isEditingStorage" class="ws-action-bar">
-        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSavingStorage" @click="requestCancel('storage')">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSavingStorage" @click="saveEdit('storage')">
-          {{ isSavingStorage ? 'Saving…' : 'Save changes' }}
-        </button>
-      </div>
-    </section>
-
-    <!-- ── Outbound section ───────────────────────────────────────────────── -->
-    <section class="ws-section">
-      <div class="ws-section-header">
-        <div class="ws-section-meta">
-          <h2 class="ws-section-title">Outbound delivery</h2>
-          <p class="ws-section-desc">Set rules for outbound order fulfillment, including shipping label handling and print restrictions.</p>
-        </div>
-        <button
-          v-if="!isEditingOutbound"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
-          @click="startEdit('outbound')"
-        >
-          <MpIcon name="edit" size="sm" />
-          Edit
-        </button>
-      </div>
-
-      <div class="ws-toggle-list">
-
-        <!-- Require source shipping label -->
-        <div class="ws-toggle-row">
-          <div class="ws-toggle-info">
-            <span class="ws-toggle-title">Require source shipping label</span>
-            <span class="ws-toggle-desc">Packing cannot begin until the shipping label from the order source (e.g. marketplace) has been received.</span>
-          </div>
-          <MpToggle
-            v-model:is-checked="draft.packUsingSourceLabel"
-            :is-disabled="!isEditingOutbound"
-            aria-label="Require source shipping label"
-          />
-        </div>
-
-        <!-- Prevent label reprinting -->
-        <div class="ws-toggle-row">
-          <div class="ws-toggle-info">
-            <span class="ws-toggle-title">Prevent label reprinting</span>
-            <span class="ws-toggle-desc">Once an outbound shipping label has been printed, it cannot be printed again. Applies to labels from the order source.</span>
-          </div>
-          <MpToggle
-            v-model:is-checked="draft.doublePrintGuard"
-            :is-disabled="!isEditingOutbound"
-            aria-label="Prevent label reprinting"
+            v-model:is-checked="draft.batchAutoSelect"
+            :is-disabled="!isEditing"
+            aria-label="Auto-select batch and serial numbers"
           />
         </div>
 
       </div>
 
-      <div v-if="isEditingOutbound" class="ws-action-bar">
-        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSavingOutbound" @click="requestCancel('outbound')">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSavingOutbound" @click="saveEdit('outbound')">
-          {{ isSavingOutbound ? 'Saving…' : 'Save changes' }}
+      <div v-if="isEditing" class="ws-action-bar">
+        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel">Cancel</button>
+        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">
+          {{ isSaving ? 'Saving…' : 'Save changes' }}
         </button>
       </div>
     </section>
@@ -240,7 +158,7 @@ async function saveEdit(section: 'storage' | 'outbound') {
         </MpModalBody>
         <MpModalFooter>
           <button class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">Keep editing</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit(discardSection)">Discard</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit">Discard</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -250,8 +168,6 @@ async function saveEdit(section: 'storage' | 'outbound') {
 </template>
 
 <style scoped>
-/* ─── Page root ───────────────────────────────────────────────────────────── */
-
 .ws-page {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
@@ -261,8 +177,6 @@ async function saveEdit(section: 'storage' | 'outbound') {
   height: 100%;
 }
 
-/* ─── Section ─────────────────────────────────────────────────────────────── */
-
 .ws-section {
   grid-column: 1 / -1;
   display: grid;
@@ -270,8 +184,6 @@ async function saveEdit(section: 'storage' | 'outbound') {
   align-content: start;
   row-gap: 0;
 }
-
-/* ─── Section header ──────────────────────────────────────────────────────── */
 
 .ws-section-header {
   grid-column: 1 / -1;
@@ -305,12 +217,22 @@ async function saveEdit(section: 'storage' | 'outbound') {
   justify-self: start;
 }
 
-/* ─── Toggle list ─────────────────────────────────────────────────────────── */
-
 .ws-toggle-list {
   grid-column: 1 / 7;
   display: flex;
   flex-direction: column;
+}
+
+.ws-subsection-title {
+  margin: 0;
+  padding: var(--mp-spacing-2) 0;
+  font-size: var(--mp-font-sizes-lg, 16px);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+
+.ws-subsection-title--spaced {
+  margin-top: var(--mp-spacing-3);
 }
 
 .ws-toggle-row {
@@ -337,32 +259,6 @@ async function saveEdit(section: 'storage' | 'outbound') {
   color: var(--mp-text-subtle);
 }
 
-/* ─── Threshold qty sub-row ──────────────────────────────────────────────── */
-
-.ws-sub-row {
-  display: flex;
-  align-items: center;
-  gap: var(--mp-spacing-6);
-  padding: var(--mp-spacing-2) 0;
-  padding-left: var(--mp-spacing-4);
-}
-
-.ws-sub-label {
-  width: 160px;
-  flex-shrink: 0;
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-regular);
-  color: var(--mp-text-default);
-}
-
-.ws-sub-value {
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-regular);
-  color: var(--mp-text-default);
-}
-
-/* ─── Action bar ──────────────────────────────────────────────────────────── */
-
 .ws-action-bar {
   grid-column: 1 / 7;
   display: flex;
@@ -375,8 +271,6 @@ async function saveEdit(section: 'storage' | 'outbound') {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
-/* ─── Dialog body ─────────────────────────────────────────────────────────── */
 
 .ws-dialog-body {
   margin: 0;

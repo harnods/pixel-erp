@@ -11,6 +11,19 @@ import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
+
+function formatAging(startIso?: string, endIso?: string): string {
+  if (!startIso) return '—'
+  const start = new Date(startIso).getTime()
+  const end = endIso ? new Date(endIso).getTime() : Date.now()
+  const totalMin = Math.max(0, Math.floor((end - start) / 60000))
+  const days = Math.floor(totalMin / 1440)
+  const hrs  = Math.floor((totalMin % 1440) / 60)
+  const min  = totalMin % 60
+  if (days > 0) return hrs > 0 ? `${days}d ${hrs}h` : `${days}d`
+  if (hrs > 0)  return min > 0 ? `${hrs}h ${min}m` : `${hrs}h`
+  return `${min}m`
+}
 import {
   stockAdjustments, adjustmentWarehouseOptions, adjustmentMemo, adjustmentUpdatedBy, adjustmentUpdatedAt,
   adjustmentApprovalLog, deleteAdjustments, approveAdjustment, ADJUSTMENT_CATEGORIES,
@@ -28,7 +41,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 const { currentPageKey } = useNavigation()
 // WMS sub-pages use their own data store; ERP uses the shared stock adjustments store.
 const kindFilter = computed<'count' | 'in-out' | null>(() => {
-  if (currentPageKey.value === 'Stock count') return 'count'
+  if (currentPageKey.value === 'Cycle counts') return 'count'
   if (currentPageKey.value === 'Stock inout') return 'in-out'
   return null
 })
@@ -52,6 +65,9 @@ const columns: TableColumn[] = [
   { key: 'account',       label: 'Account',      width: '190px', sortType: 'text' },
   { key: 'tags',          label: 'Tags',         width: '200px' },
   { key: 'lastUpdated',   label: 'Last updated', width: '220px' },
+  { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
+  { key: 'endDate',       label: 'End date',     width: '170px', sortType: 'date' },
+  { key: 'aging',         label: 'Aging',        width: '100px' },
   { key: 'assignee',      label: 'Assignee',     width: '160px', sortType: 'text' },
   { key: 'status',        label: 'Status',       width: '130px', sortType: 'text' },
 ]
@@ -70,7 +86,8 @@ const visibleColumns = computed(() =>
     colVis[c.key]
     && !(kindFilter.value && c.key === 'account')
     && !(kindFilter.value === 'count' && c.key === 'category')
-    && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status'))
+    && !(kindFilter.value === 'count' && (c.key === 'date' || c.key === 'tags'))
+    && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate' || c.key === 'aging'))
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
@@ -380,6 +397,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <template #cell-tags="{ value }"><ErpTagList :tags="(value as string[])" /></template>
+
+    <template #cell-startDate="{ value }">{{ formatDateTime(value as string) }}</template>
+    <template #cell-endDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
+    <template #cell-aging="{ row }">{{ formatAging((row as unknown as StockAdjustment).startDate, (row as unknown as StockAdjustment).endDate) }}</template>
 
     <template #cell-assignee="{ value }">{{ value ?? '—' }}</template>
 
