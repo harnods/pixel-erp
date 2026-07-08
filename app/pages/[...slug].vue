@@ -891,8 +891,8 @@ function startResize(e: MouseEvent) {
             </button>
             <div v-if="stockActionsOpen" class="import-dropdown" @click.stop>
               <div class="import-group">
-                <button class="import-item" @click="newStockCount(); stockActionsOpen = false">Stock count</button>
-                <button class="import-item" @click="newStockInOut(); stockActionsOpen = false">Stock in/out</button>
+                <button class="import-item" @click="router.push({ path: '/stock-adjustments/new', query: { type: 'count', from: 'stock-counts' } }); stockActionsOpen = false">Stock count</button>
+                <button class="import-item" @click="router.push({ path: '/stock-adjustments/new', query: { type: 'in-out', from: 'stock-counts' } }); stockActionsOpen = false">Stock in/out</button>
               </div>
             </div>
           </div>

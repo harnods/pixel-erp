@@ -18,6 +18,7 @@ import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
 import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
+const route = useRoute()
 const { activeScenario } = useScenario()
 const isWms = computed(() => activeScenario.value.startsWith('WMS'))
 
@@ -257,7 +258,11 @@ function onFileChange(ev: Event) {
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
 
 // ── Save ──────────────────────────────────────────────────────────────────────────
-function goBack() { router.push(isWms.value ? '/stock-inout' : '/stock-adjustments') }
+const fromStockCounts = computed(() => route.query.from === 'stock-counts')
+function goBack() {
+  if (isWms.value) { router.push('/stock-inout'); return }
+  router.push(fromStockCounts.value ? '/stock-counts' : '/stock-adjustments')
+}
 const formError = ref('')
 function handleSave() {
   formError.value = ''
@@ -319,7 +324,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">All stock adjustments</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ fromStockCounts ? 'All stock counts' : 'All stock adjustments' }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New stock in/out</h1>
         </div>

@@ -225,7 +225,11 @@ function onFileChange(ev: Event) {
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
 
 // ── Navigation + save ──────────────────────────────────────────────────────────────
-function goBack() { router.push(isWms.value ? '/cycle-counts' : '/stock-adjustments') }
+const fromStockCounts = computed(() => route.query.from === 'stock-counts')
+function goBack() {
+  if (isWms.value) { router.push('/cycle-counts'); return }
+  router.push(fromStockCounts.value ? '/stock-counts' : '/stock-adjustments')
+}
 const formError = ref('')
 function handleSave() {
   formError.value = ''
@@ -588,7 +592,7 @@ onMounted(() => {
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ isWms ? 'Cycle counts' : 'All stock adjustments' }}</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ isWms ? 'Cycle counts' : fromStockCounts ? 'All stock counts' : 'All stock adjustments' }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New stock count</h1>
         </div>
