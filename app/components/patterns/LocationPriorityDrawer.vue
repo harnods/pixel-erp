@@ -182,7 +182,7 @@ function save() { emit('saved', rows.value.map((r) => r.id)); close() }
   display: flex; flex-direction: column; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-4);
 }
-.lp-desc { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+.lp-desc { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
 .lp-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
 
 /* ── Priority list ── */
