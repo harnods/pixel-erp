@@ -90,6 +90,7 @@ const visibleColumns = computed(() =>
     && !(kindFilter.value === 'count' && c.key === 'category')
     && !(kindFilter.value === 'count' && (c.key === 'date' || c.key === 'tags'))
     && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
+    && !(isAwaiting.value && kindFilter.value === 'count' && (c.key === 'startDate' || c.key === 'endDate' || c.key === 'assignee'))
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
