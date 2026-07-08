@@ -35,7 +35,7 @@ const children = computed<LocNode[]>(() => {
 const expanded = ref<Set<string>>(new Set())
 const search = ref('')
 function nameMatch(n: LocNode, q: string): boolean {
-  return n.name.toLowerCase().includes(q) || n.code.toLowerCase().includes(q) || n.children.some(c => nameMatch(c, q))
+  return n.name.toLowerCase().includes(q) || n.children.some(c => nameMatch(c, q))
 }
 const flat = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -253,7 +253,6 @@ function onSaved(pid: string | null) {
 .wh-loc-type-icon { flex-shrink: 0; display: inline-flex; }
 .wh-loc-type-icon--org { color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-type-icon--storage { color: var(--mp-icon-brand, var(--mp-colors-emerald-600, #0f9d58)); }
-.wh-loc-code { text-transform: uppercase; flex-shrink: 0; }
 .wh-loc-chevron { flex-shrink: 0; transition: transform 0.15s ease; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-chevron--open { transform: rotate(90deg); }
 .wh-loc-chevron-spacer { display: inline-block; width: 16px; flex-shrink: 0; }

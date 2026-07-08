@@ -2,7 +2,7 @@
 /**
  * New / sub-location drawer — shared by the warehouse detail "Storage locations" tab
  * and the storage-location detail page. Pick a level (master label), a warehouse-specific
- * name + code, and a type (Organizational / Storage). `parentId` null = root location;
+ * name, and a type (Organizational / Storage). `parentId` null = root location;
  * otherwise a sub-location (breadcrumb shows the parent path). Persists via the storage
  * location store and emits `saved` with the parent id so callers can expand it.
  */
@@ -12,7 +12,7 @@ import {
   MpButton, MpText, toast,
 } from '@mekari/pixel3'
 import {
-  addRootLocation, addSubLocation, updateLocation, suggestCode, defaultTypeForLevel, findLocation,
+  addRootLocation, addSubLocation, updateLocation, defaultTypeForLevel, findLocation,
   STORAGE_LEVELS, type LocType,
 } from '~/data/storageLocations'
 import { levelOptions, levelLabel } from '~/data/storageLevels'
@@ -41,7 +41,6 @@ const levelPickerOptions = computed(() => {
 })
 const level = ref<string>(STORAGE_LEVELS[0]!)
 const name = ref('')
-const code = ref('')
 const type = ref<LocType>('Organizational')
 const description = ref('')
 
@@ -77,27 +76,23 @@ function defaultLevelFor(): string {
 }
 function reset() {
   if (isEdit.value) {
-    // prefill from the location being edited (keep its code)
     const node = findLocation(props.warehouseId, props.editId!)?.node
     level.value = node?.level ?? STORAGE_LEVELS[0]!
     name.value = node?.name ?? ''
     type.value = node?.type ?? 'Organizational'
-    code.value = node?.code ?? ''
     description.value = node?.description ?? ''
     return
   }
   level.value = defaultLevelFor()
   name.value = ''
   type.value = defaultTypeForLevel(level.value)
-  code.value = suggestCode(props.warehouseId, props.parentId, level.value)
   description.value = ''
 }
 // Reset each time the drawer opens.
 watch(() => props.isOpen, (open) => { if (open) reset() })
-// Level drives sensible defaults for code + type (only while adding).
+// Level drives sensible default type (only while adding).
 watch(level, (lvl) => {
   if (!props.isOpen || isEdit.value) return
-  code.value = suggestCode(props.warehouseId, props.parentId, lvl)
   type.value = defaultTypeForLevel(lvl)
 })
 
@@ -122,7 +117,7 @@ function save() {
     close()
     return
   }
-  const data = { level: level.value, name: nm, code: code.value.trim() || level.value.slice(0, 1).toUpperCase(), type: type.value }
+  const data = { level: level.value, name: nm, type: type.value }
   if (props.parentId) addSubLocation(props.warehouseId, props.parentId, data)
   else addRootLocation(props.warehouseId, data)
   emit('saved', props.parentId)

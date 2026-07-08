@@ -1660,8 +1660,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-loc-type-icon { flex-shrink: 0; display: inline-flex; }
 .wh-loc-type-icon--org { color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-type-icon--storage { color: var(--mp-icon-brand, var(--mp-colors-emerald-600, #0f9d58)); }
-.wh-loc-code { text-transform: uppercase; flex-shrink: 0; }
-/* "View details" chip sits inline right after the name/code. Kept in layout with
+/* "View details" chip sits inline right after the location name. Kept in layout with
    visibility (not display) + a fixed height so revealing it on hover never shifts
    the row height. */
 .wh-loc-view {

@@ -111,12 +111,11 @@ const partialPickingLocked = computed(() => !draft.pickingEnabled)
 const locationPriorityDrawerOpen = ref(false)
 const storageLeaves = computed(() => getStorageLeaves(props.orderId).filter((l) => l.type === 'Storage'))
 const locationPriorityPreview = computed(() => rankStorageLeaves(storageLeaves.value, draft.locationPriority))
+const locationPriorityIsCustom = computed(() => draft.locationPriority.length > 0)
 const locationPrioritySummary = computed(() => {
   if (!storageLeaves.value.length) return 'No storage locations yet'
-  if (!draft.locationPriority.length) return 'Default order (ascending location code)'
-  const top = locationPriorityPreview.value.slice(0, 3).map((l) => l.code)
-  const extra = locationPriorityPreview.value.length - top.length
-  return top.join(' → ') + (extra > 0 ? ` → +${extra} more` : '')
+  if (!locationPriorityIsCustom.value) return 'Default order (ascending name)'
+  return 'Custom order'
 })
 function onLocationPrioritySaved(order: string[]) {
   draft.locationPriority = order
@@ -248,12 +247,12 @@ const toggleConfirmBody = computed(() => {
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
               <span class="cw-toggle-title">Storage location priority</span>
-              <span class="cw-toggle-desc">WMS reserves from the highest-priority location with available stock when an outbound doesn't already specify one. Default: ascending location code.</span>
+              <span class="cw-toggle-desc">WMS reserves from the highest-priority location with available stock when an outbound doesn't already specify one.</span>
               <span class="cw-rule-summary">{{ locationPrioritySummary }}</span>
             </div>
             <button
+              v-if="isEditing && storageLeaves.length"
               class="btn-enterprise btn-enterprise--secondary"
-              :disabled="!isEditing || !storageLeaves.length"
               @click="locationPriorityDrawerOpen = true"
             >
               Manage priority

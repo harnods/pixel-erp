@@ -21,9 +21,6 @@ const emit = defineEmits<{
 }>()
 
 const leaves = computed(() => getStorageLeaves(props.warehouseId).filter((l) => l.type === 'Storage'))
-function byAscendingCode(a: StorageLeaf, b: StorageLeaf) {
-  return a.code.localeCompare(b.code, undefined, { numeric: true })
-}
 
 const rows = ref<StorageLeaf[]>([])
 function buildRows() { rows.value = rankStorageLeaves(leaves.value, props.modelValue) }
@@ -54,7 +51,7 @@ function onDrop(i: number, e: DragEvent) {
 }
 function onDragEnd() { dragSrc.value = null; dragOver.value = null }
 
-function resetToDefault() { rows.value = [...leaves.value].sort(byAscendingCode) }
+function resetToDefault() { rows.value = [...leaves.value].sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true })) }
 function close() { emit('update:isOpen', false) }
 function save() { emit('saved', rows.value.map((r) => r.id)); close() }
 </script>
@@ -77,7 +74,7 @@ function save() { emit('saved', rows.value.map((r) => r.id)); close() }
           <p class="lp-desc">
             WMS reserves from the highest-priority location with available stock when an
             outbound doesn't already specify one. Drag to reorder — highest priority first.
-            Locations added later fall to the end, ascending by code.
+            Locations added later fall to the end, ascending by name.
           </p>
 
           <div v-if="!rows.length" class="lp-empty">
@@ -111,13 +108,12 @@ function save() { emit('saved', rows.value.map((r) => r.id)); close() }
               <span class="lp-rank">{{ i + 1 }}</span>
               <span class="lp-info">
                 <span class="lp-path">{{ r.path }}</span>
-                <span class="lp-code">{{ r.code }}</span>
               </span>
             </li>
           </ol>
 
           <button v-if="rows.length" type="button" class="lp-reset" @click="resetToDefault">
-            Reset to default order (ascending code)
+            Reset to default order (ascending name)
           </button>
         </div>
 
@@ -219,7 +215,6 @@ function save() { emit('saved', rows.value.map((r) => r.id)); close() }
 /* ── Info ── */
 .lp-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .lp-path { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lp-code { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 
 /* ── Reset link ── */
 .lp-reset {

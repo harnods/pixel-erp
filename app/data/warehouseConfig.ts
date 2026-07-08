@@ -3,7 +3,7 @@ import { getStorageLeaves, type StorageLeaf } from './storageLocations'
 /**
  * Orders a warehouse's Storage-type leaves by an explicit rank (highest priority
  * first); anything not in `ranked` (new locations, or ones never ranked) falls to
- * the end, ascending by code — the documented fallback for "no priority set".
+ * the end, ascending by name path — the documented fallback for "no priority set".
  * Shared by effectiveLocationPriority() and the Configure warehouse page/drawer so
  * the preview always matches what actually gets saved.
  */
@@ -14,7 +14,7 @@ export function rankStorageLeaves(leaves: StorageLeaf[], ranked: string[]): Stor
     const l = byId.get(id)
     if (l) { out.push(l); byId.delete(id) }
   }
-  out.push(...[...byId.values()].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })))
+  out.push(...[...byId.values()].sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true })))
   return out
 }
 
@@ -39,7 +39,7 @@ export interface WarehouseConfig {
   /** Manager-set priority order (Storage-type leaf location ids, highest first) for
    *  auto-reserving stock when an outbound doesn't already specify a location. Not a
    *  toggle: auto-selection always runs when a location is omitted — this is the
-   *  rule it follows. Empty = no priority set, so it falls back to ascending code. */
+   *  rule it follows. Empty = no priority set, so it falls back to ascending name path. */
   locationPriority: string[]
   scanThreshold: boolean
   scanThresholdValue: number
