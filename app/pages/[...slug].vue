@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { defineAsyncComponent, type Component, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { defineAsyncComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { MpIcon } from '@mekari/pixel3'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
+import { productionRequestPendingCount } from '~/data/productionRequests'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { outgoingOpenCount } from '~/data/outgoing'
@@ -87,6 +88,7 @@ const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages
 const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateWorkOrderPage.vue'))
 const WorkOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
+const ProductionRequestIndexPage = defineAsyncComponent(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
 const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 const StockAdjustmentsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue'))
 const StockAdjustmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
@@ -225,6 +227,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
+  'Production request': ['Pending', 'Completed', 'Rejected'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -263,6 +266,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Production request') {
+    const pending = productionRequestPendingCount()
+    return pending ? { 'Pending': pending } : {}
   }
   return {}
 })
@@ -307,6 +314,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
+  },
+  // One shared component drives all three tabs; the tab is passed as a prop.
+  'Production request': {
+    'Pending':   () => h(ProductionRequestIndexPage, { tab: 'pending' }),
+    'Completed': () => h(ProductionRequestIndexPage, { tab: 'completed' }),
+    'Rejected':  () => h(ProductionRequestIndexPage, { tab: 'rejected' }),
   },
 }
 const activeTabComponent = computed<Component | null>(

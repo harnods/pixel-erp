@@ -11,14 +11,28 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpAutocomplete, MpInput, MpDatePicker, MpButton, MpIcon,
+  MpAutocomplete, MpInput, MpInputGroup, MpInputRightAddon, MpDatePicker, MpButton, MpIcon,
   MpCheckbox, MpRadio, toast,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
 import { warehouses } from '~/data/warehouses'
+import { workOrderLinks } from '~/data/workOrderLinks'
+import { formatDate } from '~/utils/date'
 
 const router = useRouter()
+const route = useRoute()
 function goList() { router.push('/work-orders') }
+
+// ── Creation flow (Default vs From production request) ────────────────────────
+// From-PR adds the Linked transactions section; preselected when arriving ?source=pr.
+type Flow = 'default' | 'production-request'
+const flow = ref<Flow>(route.query.source === 'pr' ? 'production-request' : 'default')
+const flowOptions: { value: Flow; label: string }[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'production-request', label: 'From production request' },
+]
+const fromProductionRequest = computed(() => flow.value === 'production-request')
 
 // ── Option lists ────────────────────────────────────────────────────────────
 const CATEGORY_OPTIONS = [
@@ -107,6 +121,18 @@ function onBomSelect(id: string) {
   }
 }
 onUnmounted(() => { if (bomTimer) clearTimeout(bomTimer) })
+
+// Prefill from the "Create bulk work order" modal — the chosen BOM arrives via
+// ?bom=<name>. Add it as a selectable option, preselect it, and load its line items.
+const presetBomName = route.query.bom as string | undefined
+if (presetBomName) {
+  const presetBom = { id: 'bom-preset', name: presetBomName, no: 'Bill of Materials #10006', type: 'Assembly' }
+  if (!BOM_OPTIONS.some(b => b.id === presetBom.id)) BOM_OPTIONS.unshift(presetBom)
+  if (!category.value) category.value = 'Standard'
+  bomId.value = presetBom.id
+  workOrderType.value = presetBom.type
+  onBomSelect(presetBom.id)
+}
 
 // ── Attachment ───────────────────────────────────────────────────────────────
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -276,14 +302,20 @@ function validate() {
   if (!planDates.value) { planDatesError.value = true; ok = false }
   return ok
 }
+// After saving, open the created work order's detail page (prototype: the first
+// "not started" record stands in for the new WO). The from-PR flag is preserved so
+// the detail shows its Linked transactions tab.
+function goDetail() {
+  router.push(`/work-orders/wo-1${fromProductionRequest.value ? '?source=pr' : ''}`)
+}
 function handleSave() {
   if (!validate()) return
   toast.notify({ variant: 'success', title: 'Work order saved' })
-  goList()
+  goDetail()
 }
 function handleSaveDraft() {
   toast.notify({ variant: 'success', title: 'Work order saved as draft' })
-  goList()
+  goDetail()
 }
 
 // ── Sticky footer float ──────────────────────────────────────────────────────
@@ -408,13 +440,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <MpFormErrorMessage>Please set the production plan dates</MpFormErrorMessage>
             </MpFormControl>
 
-            <!-- Produced qty -->
+            <!-- Produced qty — input with an attached "Pcs" suffix addon -->
             <MpFormControl id="wo-qty">
               <MpFormLabel>Produced qty</MpFormLabel>
-              <div class="wo-qty-row">
+              <MpInputGroup id="wo-qty-group" is-full-width>
                 <MpInput id="wo-qty-input" v-model="producedQty" type="number" placeholder="0" is-full-width />
-                <span class="wo-qty-unit">Pcs</span>
-              </div>
+                <MpInputRightAddon>Pcs</MpInputRightAddon>
+              </MpInputGroup>
             </MpFormControl>
           </div>
 
@@ -480,20 +512,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete :id="`raw-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" placeholder="Select product" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRawProduct(row, v)" />
                   </td>
-                  <td class="wo-td wo-td--num">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</td>
+                  <td class="wo-td wo-td--num"><template v-if="row.productId">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</template></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
                   </td>
-                  <td class="wo-td wo-td--input"><MpInput :id="`raw-need-${row.id}`" v-model="row.needed" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`raw-need-${row.id}`" v-model="row.needed" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Unit" is-searchable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <div class="wo-datepicker"><MpDatePicker :id="`raw-date-${row.id}`" v-model="row.requiredDate" format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY" is-clearable use-portal /></div>
+                    <div v-if="row.productId" class="wo-datepicker"><MpDatePicker :id="`raw-date-${row.id}`" v-model="row.requiredDate" format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY" is-clearable use-portal /></div>
                   </td>
-                  <td class="wo-td wo-td--num wo-td--right">{{ formatIDR(rawEstimated(row)) }}</td>
+                  <td class="wo-td wo-td--num wo-td--right"><template v-if="row.productId">{{ formatIDR(rawEstimated(row)) }}</template></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="!(rawRows.length === 1 && !row.productId)" class="wo-del-btn" type="button" @click="removeRow(rawRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <button v-if="row.productId" class="wo-del-btn" type="button" @click="removeRow(rawRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
                 </tr>
               </tbody>
@@ -532,13 +564,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete :id="`cost-acc-${row.id}`" v-model="row.account" :data="COST_ACCOUNT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select cost account" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onCostAccount(row, v)" />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`cost-drv-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.account" :id="`cost-drv-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
                   </td>
-                  <td class="wo-td wo-td--input"><MpInput :id="`cost-unit-${row.id}`" v-model="row.estUnitCost" type="number" placeholder="0" is-full-width /></td>
-                  <td class="wo-td wo-td--input"><MpInput :id="`cost-mult-${row.id}`" v-model="row.multiplier" type="number" placeholder="0" is-full-width /></td>
-                  <td class="wo-td wo-td--num wo-td--right">{{ formatIDR(costAmount(row)) }}</td>
+                  <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-unit-${row.id}`" v-model="row.estUnitCost" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-mult-${row.id}`" v-model="row.multiplier" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td wo-td--num wo-td--right"><template v-if="row.account">{{ formatIDR(costAmount(row)) }}</template></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="!(costRows.length === 1 && !row.account)" class="wo-del-btn" type="button" @click="removeRow(costRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <button v-if="row.account" class="wo-del-btn" type="button" @click="removeRow(costRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
                 </tr>
               </tbody>
@@ -576,13 +608,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete :id="`route-proc-${row.id}`" v-model="row.process" :data="PROCESS_OPTIONS" label-prop="name" value-prop="id" placeholder="Select process" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRouteProcess(row, v)" />
                   </td>
-                  <td class="wo-td wo-td--input"><MpInput :id="`route-desc-${row.id}`" v-model="row.description" placeholder="Description" is-full-width /></td>
+                  <td class="wo-td wo-td--input"><MpInput v-if="row.process" :id="`route-desc-${row.id}`" v-model="row.description" placeholder="Description" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
                   </td>
-                  <td class="wo-td wo-td--input wo-td--num-input"><MpInput :id="`route-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.process" :id="`route-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="!(routeRows.length === 1 && !row.process)" class="wo-del-btn" type="button" @click="removeRow(routeRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <button v-if="row.process" class="wo-del-btn" type="button" @click="removeRow(routeRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
                 </tr>
               </tbody>
@@ -603,7 +635,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         </section>
 
         <!-- ══ Finished goods ═══════════════════════════════════════════════ -->
-        <section v-if="hasBom" class="wo-section wo-section--last">
+        <section v-if="hasBom" class="wo-section" :class="{ 'wo-section--last': !fromProductionRequest }">
           <h2 class="wo-section-title">Finished goods</h2>
 
           <!-- Main output -->
@@ -670,15 +702,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete :id="`other-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" placeholder="Select product" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onOtherProduct(row, v)" />
                   </td>
-                  <td class="wo-td">{{ row.sku || '—' }}</td>
-                  <td class="wo-td wo-td--input"><MpInput :id="`other-qty-${row.id}`" v-model="row.producedQty" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td"><template v-if="row.productId">{{ row.sku || '—' }}</template></td>
+                  <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-qty-${row.id}`" v-model="row.producedQty" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Unit" is-searchable use-portal is-full-width />
                   </td>
-                  <td class="wo-td wo-td--input"><MpInput :id="`other-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
-                  <td class="wo-td wo-td--input wo-td--num-input"><MpInput :id="`other-cost-${row.id}`" v-model="row.estCost" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.productId" :id="`other-cost-${row.id}`" v-model="row.estCost" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="!(otherRows.length === 1 && !row.productId)" class="wo-del-btn" type="button" @click="removeRow(otherRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <button v-if="row.productId" class="wo-del-btn" type="button" @click="removeRow(otherRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
                 </tr>
               </tbody>
@@ -715,12 +747,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete :id="`waste-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onWasteMapping(row, v)" />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
                   </td>
-                  <td class="wo-td wo-td--input"><MpInput :id="`waste-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
-                  <td class="wo-td wo-td--input wo-td--num-input"><MpInput :id="`waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td wo-td--input"><MpInput v-if="row.accountMapping" :id="`waste-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
+                  <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.accountMapping" :id="`waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="!(wasteRows.length === 1 && !row.accountMapping)" class="wo-del-btn" type="button" @click="removeRow(wasteRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <button v-if="row.accountMapping" class="wo-del-btn" type="button" @click="removeRow(wasteRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
                 </tr>
               </tbody>
@@ -740,6 +772,29 @@ onUnmounted(() => { stageObserver?.disconnect() })
           </div>
         </section>
 
+        <!-- ══ Linked transactions — from production request flow only ═══════ -->
+        <section v-if="fromProductionRequest" class="wo-section wo-section--last">
+          <h2 class="wo-section-title">Linked transactions</h2>
+          <div class="wo-table-scroll">
+            <table class="wo-table">
+              <colgroup><col style="width:280px" /><col style="width:160px" /><col style="width:120px" /><col style="width:180px" /></colgroup>
+              <thead>
+                <tr>
+                  <th class="wo-th">Number</th><th class="wo-th wo-th--right">Qty to produce</th><th class="wo-th">Unit</th><th class="wo-th">Due date</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="t in workOrderLinks" :key="t.number" class="wo-tr">
+                  <td class="wo-td">{{ t.number }}</td>
+                  <td class="wo-td wo-td--num wo-td--right">{{ t.qtyToProduce }}</td>
+                  <td class="wo-td">{{ t.unit }}</td>
+                  <td class="wo-td">{{ formatDate(t.dueDate) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
       </div>
     </div>
 
@@ -749,10 +804,35 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <MpButton variant="secondary" is-rounded @click="handleSaveDraft">Save as draft</MpButton>
       <MpButton variant="primary" is-rounded @click="handleSave">Save</MpButton>
     </footer>
+
+    <!-- ── Demo flow scenario switcher ── -->
+    <MpPopover id="wo-flow-fab" is-close-on-select use-portal placement="top-end">
+      <MpPopoverTrigger>
+        <button class="wo-flow-fab" aria-label="Change creation flow"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+      </MpPopoverTrigger>
+      <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
+        <p class="wo-flow-fab-heading">Creation flow</p>
+        <MpPopoverList>
+          <MpPopoverListItem v-for="o in flowOptions" :key="o.value" :is-active="o.value === flow" @click="flow = o.value">{{ o.label }}</MpPopoverListItem>
+        </MpPopoverList>
+      </MpPopoverContent>
+    </MpPopover>
   </div>
 </template>
 
 <style scoped>
+/* ── Demo flow scenario switcher ─────────────────────────────────────────── */
+.wo-flow-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: 84px;
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+}
+.wo-flow-fab:hover { opacity: 0.9; }
+.wo-flow-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
 /* ── Page shell (shared create-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
@@ -824,14 +904,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-radio-group { display: flex; align-items: center; gap: var(--mp-spacing-6); height: var(--mp-sizes-10, 40px); }
 .wo-radio-item { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-.wo-qty-row { display: flex; align-items: stretch; gap: var(--mp-spacing-2); }
-.wo-qty-row > :first-child { flex: 1; min-width: 0; }
-.wo-qty-unit {
-  display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-3);
-  background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); white-space: nowrap;
-}
-
 /* ── Attachment ──────────────────────────────────────────────────────────── */
 .wo-attachment { margin-top: var(--mp-spacing-6); max-width: 640px; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .wo-section-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -879,10 +951,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
   min-width: 44px;
   padding: 0;
   text-align: center;
-  /* inset separator on the sticky column's left edge — same as ErpTablePage's
-     fixed actions column, so the pinned column reads consistently across the app. */
-  box-shadow: inset 2px 0 var(--mp-border-default);
+  /* 1px inset separator on the sticky column's left edge. It must match the 1px
+     cell borders exactly and read the same whether the column is pinned (scrolled)
+     or not — so it's the SINGLE divider here and the neighbouring cell drops its
+     own border-right below (otherwise the two stack into a bolder 2px line). */
+  box-shadow: inset 1px 0 var(--mp-border-default);
 }
+/* Cell immediately left of the sticky action column: no right border, so the
+   sticky column's 1px inset shadow is the only line at that boundary. */
+.wo-th:nth-last-child(2), .wo-td:nth-last-child(2) { border-right: none; }
 .wo-th--del { background: var(--mp-background-neutral-subtle); }
 .wo-td--del { background: var(--mp-background-neutral); }
 .wo-td {
