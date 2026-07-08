@@ -5,6 +5,7 @@ import { TODAY } from './master'
 import type { Warehouse } from './types'
 import { stockLocationPaths, getMultiLocConfig } from './storageLocations'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { getWarehouseSettings } from './warehouseSettings'
 
 // ── Persisted on-hand overlay ─────────────────────────────────────────────────
 // Stores absolute onHand values that override the deterministic generated base.
@@ -21,6 +22,52 @@ type SerialOverlay = Record<string, Record<string, SerialEntry>> // warehouseId 
 const SERIAL_OVERLAY_KEY = 'wh-serial-overlay-v1'
 const serialOverlay = reactive<SerialOverlay>(loadSnapshot<SerialOverlay>(SERIAL_OVERLAY_KEY) ?? {})
 function persistSerialOverlay() { saveSnapshot(SERIAL_OVERLAY_KEY, serialOverlay) }
+
+// ── Stock reservations ────────────────────────────────────────────────────────
+// A batch/serial an outbound task has claimed — written at picking-task creation
+// (reserveStock), removed on cancellation (releaseReservationsForTask). Applied
+// fresh inside getWarehouseDetail() every call, same as the overlays above, since
+// the whole stock array is regenerated from scratch each time.
+export interface StockReservation {
+  id: string
+  taskId: string
+  warehouseId: string
+  sku: string
+  /** Set for a batch-tracked SKU — this many units are held from this specific batch. */
+  batchNo?: string
+  qty: number
+  /** Set for a serial-tracked SKU — these exact serial units are held. */
+  serials?: string[]
+}
+const RESERVATIONS_KEY = 'wh-stock-reservations-v1'
+const stockReservations = reactive<StockReservation[]>(loadSnapshot<StockReservation>(RESERVATIONS_KEY) ?? [])
+function persistReservations() { saveSnapshot(RESERVATIONS_KEY, stockReservations) }
+function freshReservationId(): string {
+  const used = stockReservations.map((r) => Number(r.id.replace(/\D/g, ''))).filter((n) => Number.isFinite(n))
+  return `resv-${Math.max(0, ...used) + 1}`
+}
+
+/** Reserve batch/serial stock for a picking task — called once at task creation. */
+export function reserveStock(
+  taskId: string,
+  warehouseId: string,
+  picks: { sku: string; batchNo?: string; qty: number; serials?: string[] }[],
+): void {
+  for (const p of picks) {
+    if (p.qty <= 0 && !p.serials?.length) continue
+    stockReservations.push({ id: freshReservationId(), taskId, warehouseId, sku: p.sku, batchNo: p.batchNo, qty: p.qty, serials: p.serials })
+  }
+  persistReservations()
+}
+
+/** Release every reservation a task holds — called when the task is canceled. */
+export function releaseReservationsForTask(taskId: string): void {
+  const before = stockReservations.length
+  for (let i = stockReservations.length - 1; i >= 0; i--) {
+    if (stockReservations[i]!.taskId === taskId) stockReservations.splice(i, 1)
+  }
+  if (stockReservations.length !== before) persistReservations()
+}
 
 export function applyStockCount(warehouseId: string, lines: { sku: string; qty: number }[]) {
   if (!stockOverlay[warehouseId]) stockOverlay[warehouseId] = {}
@@ -76,6 +123,8 @@ export interface ProductBatch {
   batchNo: string
   /** ISO date — used to flag near/expired stock */
   expiryDate: string
+  /** ISO date this batch was received/created — used by the "created date" selection rule */
+  createdAt: string
   /** storage bin location */
   location: string
   onHand: number
@@ -86,6 +135,8 @@ export interface ProductBatch {
 /** A single serialized unit — one serial number lives in exactly one bin. */
 export interface SerialUnit {
   serial: string
+  /** ISO date this serial was received/created — used by the "created date" selection rule */
+  createdAt: string
   location: string
 }
 
@@ -164,6 +215,14 @@ const MULTI_CATEGORIES: Record<string, string[]> = {
   '3002': ['Accessory', 'Maintenance', 'Cleaning'],
 }
 
+// Deterministic ISO date `days` before TODAY — used for created-at fields so the
+// "created date" selection rule has real, stable data to sort on.
+function daysAgoIso(days: number): string {
+  const d = new Date(TODAY.getTime())
+  d.setDate(d.getDate() - days)
+  return d.toISOString().slice(0, 10)
+}
+
 // Batches for a consumable — 1–2 lots that sum to the row's on-hand / reserved.
 function makeBatches(onHand: number, reserved: number, seed: number, i: number): ProductBatch[] {
   const n = 1 + ((i + seed) % 2) // 1 or 2 lots
@@ -181,6 +240,7 @@ function makeBatches(onHand: number, reserved: number, seed: number, i: number):
     out.push({
       batchNo: `Batch #${String(i * 7 + b + 1).padStart(5, '0')}`,
       expiryDate: exp.toISOString().slice(0, 10),
+      createdAt: daysAgoIso(5 + ((i * 17 + b * 13 + seed * 7) % 250)),
       location: binLocation(seed, i * 2 + b)[0]!,
       onHand: oh,
       reserved: Math.max(0, rs),
@@ -196,6 +256,7 @@ function makeSerials(sku: string, onHand: number, reserved: number, seed: number
   const mk = (qty: number, base: number) =>
     Array.from({ length: qty }, (_, k) => ({
       serial: `${prefix}${String(base + k).padStart(5, '0')}`,
+      createdAt: daysAgoIso(3 + ((seed * 11 + i * 5 + k * 19 + base) % 250)),
       location: binLocation(seed, i + k)[0]!,
     }))
   const avail = Math.max(0, onHand - reserved)
@@ -225,7 +286,7 @@ function reconcileSerialQty(item: WarehouseStockItem): void {
     let next = (nums.length ? Math.max(...nums) : 0) + 1
     const loc = item.locations[0] ?? '—'
     for (let k = 0; k < delta; k++) {
-      item.serials.available.push({ serial: `${prefix}${String(next++).padStart(5, '0')}`, location: loc })
+      item.serials.available.push({ serial: `${prefix}${String(next++).padStart(5, '0')}`, createdAt: TODAY.toISOString().slice(0, 10), location: loc })
     }
   } else {
     let toRemove = -delta
@@ -371,7 +432,7 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
       const defaultLocation = item.locations[0] ?? ''
       for (const serial of so.added) {
         if (!existingSet.has(serial)) {
-          item.serials.available.push({ serial, location: defaultLocation })
+          item.serials.available.push({ serial, createdAt: TODAY.toISOString().slice(0, 10), location: defaultLocation })
           existingSet.add(serial)
         }
       }
@@ -382,12 +443,104 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   // adjustments on a serial-tracked SKU don't carry explicit serials).
   stock.forEach((item) => reconcileSerialQty(item))
 
+  // Apply outbound-task reservations — moves already-claimed batch qty / serial
+  // units from available into reserved, on top of everything above, so every
+  // caller (picking drawers, Warehouse Details, transfers) sees consistent numbers.
+  for (const r of stockReservations) {
+    if (r.warehouseId !== id) continue
+    const item = stock.find((s) => s.sku === r.sku)
+    if (!item) continue
+    if (r.batchNo && item.batches) {
+      const b = item.batches.find((x) => x.batchNo === r.batchNo)
+      if (b) {
+        const take = Math.min(r.qty, b.available)
+        b.reserved += take
+        b.available -= take
+        item.reserved += take
+        item.available = Math.max(0, item.available - take)
+      }
+    }
+    if (r.serials?.length && item.serials) {
+      for (const sn of r.serials) {
+        const idx = item.serials.available.findIndex((u) => u.serial === sn)
+        if (idx === -1) continue
+        const [u] = item.serials.available.splice(idx, 1)
+        item.serials.reserved.push(u!)
+        item.reserved += 1
+        item.available = Math.max(0, item.available - 1)
+      }
+    }
+  }
+
   return {
     ...wh,
     description: wh.description ?? descriptions[id] ?? '—',
     pic: wh.pics.map((p) => p.name).join(', ') || '—',
     stock,
   }
+}
+
+function naturalCompare(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true })
+}
+
+/**
+ * Auto-select which batch(es) to reserve for a batch-tracked SKU, per the
+ * global Batch selection rule — walks batches in rule order, consuming from
+ * each's live `available` qty (already net of any prior reservation) until
+ * `qty` is met or stock runs out (a short result just means insufficient
+ * stock, same as a manual picker would hit). Read-only — call reserveStock()
+ * to actually commit the result.
+ */
+export function autoSelectBatches(
+  warehouseId: string,
+  sku: string,
+  qty: number,
+): { batchNo: string; expiryDate: string; location: string; onHand: number; take: number }[] {
+  if (qty <= 0) return []
+  const item = getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)
+  const batches = [...(item?.batches ?? [])]
+  const rule = getWarehouseSettings().batchSelectionRule
+  batches.sort((a, b) => {
+    switch (rule) {
+      case 'fefo': return a.expiryDate.localeCompare(b.expiryDate) || naturalCompare(a.createdAt, b.createdAt)
+      case 'batch_number_asc': return naturalCompare(a.batchNo, b.batchNo)
+      case 'batch_number_desc': return naturalCompare(b.batchNo, a.batchNo)
+      case 'batch_created_asc': return naturalCompare(a.createdAt, b.createdAt)
+      default: return 0
+    }
+  })
+  const out: { batchNo: string; expiryDate: string; location: string; onHand: number; take: number }[] = []
+  let remaining = qty
+  for (const b of batches) {
+    if (remaining <= 0) break
+    const take = Math.min(remaining, b.available)
+    if (take <= 0) continue
+    out.push({ batchNo: b.batchNo, expiryDate: b.expiryDate, location: b.location, onHand: b.onHand, take })
+    remaining -= take
+  }
+  return out
+}
+
+/**
+ * Auto-select which serial(s) to reserve for a serial-tracked SKU, per the
+ * global Serial number selection rule — same read-only, consume-from-available
+ * semantics as autoSelectBatches().
+ */
+export function autoSelectSerials(warehouseId: string, sku: string, qty: number): string[] {
+  if (qty <= 0) return []
+  const item = getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)
+  const available = [...(item?.serials?.available ?? [])]
+  const rule = getWarehouseSettings().serialSelectionRule
+  available.sort((a, b) => {
+    switch (rule) {
+      case 'serial_number_asc': return naturalCompare(a.serial, b.serial)
+      case 'serial_number_desc': return naturalCompare(b.serial, a.serial)
+      case 'serial_created_asc': return naturalCompare(a.createdAt, b.createdAt)
+      default: return 0
+    }
+  })
+  return available.slice(0, qty).map((u) => u.serial)
 }
 
 /**

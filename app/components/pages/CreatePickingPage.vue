@@ -13,7 +13,7 @@ import {
   type PickingBatchPick, type PickingSerialPick,
 } from '~/data/pickingTasks'
 import { orderSkuLines, productBySku } from '~/data/inventory'
-import { binForSku, getWarehouseDetail } from '~/data/warehouseDetails'
+import { binForSku, getWarehouseDetail, autoSelectBatches, autoSelectSerials } from '~/data/warehouseDetails'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { stockLocationPaths } from '~/data/storageLocations'
@@ -244,6 +244,10 @@ function stockOf(key: string): RowStock {
 // across orders — the per-order split happens later, in handleCreate). ────────────
 const batchLinesBySku  = ref<Record<string, CommittedBatch[]>>({})
 const serialLinesBySku = ref<Record<string, PickingSerialPick[]>>({})
+// Skus the operator has explicitly reviewed/edited via the drawer — once touched,
+// the auto-select watcher below stops overwriting that sku (manual choice wins).
+const manuallyEditedBatchSkus  = new Set<string>()
+const manuallyEditedSerialSkus = new Set<string>()
 
 function locationForSerial(sku: string, serial: string): string {
   const sr = stockMap.value.get(sku)?.serials
@@ -264,6 +268,7 @@ function batchPickedQty(sku: string): number {
 function saveBatchLines(batches: CommittedBatch[]) {
   const sku = batchDrawerSku.value
   if (!sku) return
+  manuallyEditedBatchSkus.add(sku)
   batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: batches }
 }
 
@@ -290,11 +295,58 @@ function serialPickedQty(sku: string): number {
 function saveSerialLines(serials: CommittedSerial[]) {
   const sku = serialDrawerSku.value
   if (!sku) return
+  manuallyEditedSerialSkus.add(sku)
   serialLinesBySku.value = {
     ...serialLinesBySku.value,
     [sku]: serials.map(s => ({ serial: s.serial, location: locationForSerial(sku, s.serial) })),
   }
 }
+
+// ─── Auto-select batch/serial per the configured global rule ──────────────────
+// Every batch/serial-tracked row arrives pre-selected (FEFO / ascending / etc,
+// per Settings > Warehouse) with zero clicks — opening the drawer just shows (and
+// lets the operator override) that same pre-fill. Re-runs whenever a row's target
+// qty changes; skips any sku the operator has already touched via the drawer.
+const trackedTargetQty = computed(() => {
+  const map = new Map<string, number>()
+  for (const g of pickRows.value) {
+    if (isBatchTrackedSku(g.sku)) map.set(`b:${g.sku}`, capForSku(g.sku))
+    else if (isSerialTrackedSku(g.sku)) map.set(`s:${g.sku}`, targetQtyForSku(g.sku))
+  }
+  return map
+})
+watch(trackedTargetQty, (map) => {
+  for (const [mapKey, qty] of map) {
+    const sku = mapKey.slice(2)
+    if (mapKey.startsWith('b:')) {
+      if (manuallyEditedBatchSkus.has(sku)) continue
+      if (qty <= 0) {
+        if (batchLinesBySku.value[sku]?.length) batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: [] }
+        continue
+      }
+      const picks = autoSelectBatches(warehouseId.value, sku, qty)
+      const unit = stockMap.value.get(sku)?.unit ?? ''
+      batchLinesBySku.value = {
+        ...batchLinesBySku.value,
+        [sku]: picks.map(p => ({
+          key: p.batchNo, batchNo: p.batchNo, expiryDate: p.expiryDate,
+          desc: '', onHand: p.onHand, counted: p.take, unit, location: p.location,
+        })),
+      }
+    } else {
+      if (manuallyEditedSerialSkus.has(sku)) continue
+      if (qty <= 0) {
+        if (serialLinesBySku.value[sku]?.length) serialLinesBySku.value = { ...serialLinesBySku.value, [sku]: [] }
+        continue
+      }
+      const serials = autoSelectSerials(warehouseId.value, sku, qty)
+      serialLinesBySku.value = {
+        ...serialLinesBySku.value,
+        [sku]: serials.map(s => ({ serial: s, location: locationForSerial(sku, s) })),
+      }
+    }
+  }
+}, { immediate: true })
 
 /** Read-only bin list for the Storage location column, batch/serial-tracked SKUs only. */
 function pickedLocations(sku: string): string[] {

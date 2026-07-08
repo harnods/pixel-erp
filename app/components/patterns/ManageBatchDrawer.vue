@@ -229,7 +229,10 @@ const availableBatches = computed(() => {
   const si = wh?.stock.find(s => s.sku === props.sku)
   const all = si?.batches ?? []
   const inTable = new Set(rows.value.filter(r => !r.isNew).map(r => r.batchNo))
-  return all.filter(b => !inTable.has(b.batchNo))
+  // Transfer/picking claim from live availability, not raw on-hand — a batch
+  // already fully reserved (by another outbound task, etc.) can't be offered again.
+  const eligible = (isTransfer.value || isPicking.value) ? all.filter(b => b.available > 0) : all
+  return eligible.filter(b => !inTable.has(b.batchNo))
 })
 
 function addWarehouseBatch(batchNo: string) {
@@ -245,7 +248,7 @@ function addWarehouseBatch(batchNo: string) {
     expiryDate: b.expiryDate,
     expiryDisplay: isoToDisplay(b.expiryDate),
     desc: DEMO_DESCS[idx % DEMO_DESCS.length]!,
-    onHand: b.onHand,
+    onHand: (isTransfer.value || isPicking.value) ? b.available : b.onHand,
     counted: null,
     unit,
     location: b.location,

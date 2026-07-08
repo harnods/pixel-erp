@@ -3,7 +3,7 @@ import { warehouses } from "./warehouses";
 import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, type OutgoingOrder } from "./outgoing";
 import { orderSkuLines } from "./inventory";
-import { binForSku } from "./warehouseDetails";
+import { binForSku, reserveStock, releaseReservationsForTask } from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
@@ -272,7 +272,32 @@ export function addPickingTask(opts: {
   };
   pickingTasks.unshift(task);
   persistPicking();
+  if (task.batchPicks || task.serialPicks) {
+    reserveStock(task.id, task.warehouseId, flattenPicksForReservation(task));
+  }
   return task;
+}
+
+/** Line keys are `${orderId}::${sku}` — split on the FIRST "::" so an sku/orderId
+ *  can't itself confuse the split. Groups batch/serial picks back down to one
+ *  reservation entry per sku (a merged sku can span several order lines). */
+function flattenPicksForReservation(
+  task: PickingTask,
+): { sku: string; batchNo?: string; qty: number; serials?: string[] }[] {
+  const out: { sku: string; batchNo?: string; qty: number; serials?: string[] }[] = [];
+  for (const [lineKey, picks] of Object.entries(task.batchPicks ?? {})) {
+    const sku = lineKey.slice(lineKey.indexOf("::") + 2);
+    for (const p of picks) out.push({ sku, batchNo: p.batchNo, qty: p.qty });
+  }
+  const serialsBySku = new Map<string, string[]>();
+  for (const [lineKey, picks] of Object.entries(task.serialPicks ?? {})) {
+    const sku = lineKey.slice(lineKey.indexOf("::") + 2);
+    serialsBySku.set(sku, [...(serialsBySku.get(sku) ?? []), ...picks.map((p) => p.serial)]);
+  }
+  for (const [sku, serials] of serialsBySku) {
+    if (serials.length) out.push({ sku, qty: serials.length, serials });
+  }
+  return out;
 }
 
 /** Picking tasks scoped to warehouses (all when none given). */
@@ -445,6 +470,13 @@ export function endPicking(
   t.endDate = nowIso();
   if (assignments?.batchPicks) t.batchPicks = assignments.batchPicks;
   if (assignments?.serialPicks) t.serialPicks = assignments.serialPicks;
+  if (assignments) {
+    // Operator may have changed batch/serial at the real pick — re-pin the
+    // reservation to whatever was actually picked (releases the stale claim first
+    // so a swapped-out batch/serial doesn't stay double-reserved).
+    releaseReservationsForTask(taskId);
+    reserveStock(taskId, t.warehouseId, flattenPicksForReservation(t));
+  }
   persistPicking();
 }
 
@@ -454,6 +486,7 @@ export function cancelPickingTask(taskId: string, reason?: string): void {
   t.status = "canceled";
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;
+  releaseReservationsForTask(taskId);
   persistPicking();
 }
 

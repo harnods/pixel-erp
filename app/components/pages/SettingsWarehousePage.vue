@@ -5,58 +5,16 @@ import {
   MpModalOverlay, MpModalCloseButton,
   toast,
 } from '@mekari/pixel3'
+import {
+  getWarehouseSettings, saveWarehouseSettings,
+  BATCH_RULE_OPTIONS, SERIAL_RULE_OPTIONS,
+  type WarehouseSettings,
+} from '~/data/warehouseSettings'
 
 // ─── Persist ─────────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = 'erp-db:warehouse-settings'
-
-// Global (CID-level) rules WMS follows to auto-select a batch/serial at outbound
-// task creation, ONLY when the source doesn't already supply one. Not a toggle —
-// auto-selection always runs on an omitted detail; these choose which rule it uses.
-export type BatchSelectionRule = 'fefo' | 'batch_number_asc' | 'batch_number_desc' | 'batch_created_asc'
-export type SerialSelectionRule = 'serial_number_asc' | 'serial_number_desc' | 'serial_created_asc'
-
-const BATCH_RULE_OPTIONS: { id: BatchSelectionRule; name: string }[] = [
-  { id: 'fefo', name: 'FEFO (earliest expiry first)' },
-  { id: 'batch_number_asc', name: 'Batch number/name (ascending)' },
-  { id: 'batch_number_desc', name: 'Batch number/name (descending)' },
-  { id: 'batch_created_asc', name: 'Batch created date (earliest first)' },
-]
-const SERIAL_RULE_OPTIONS: { id: SerialSelectionRule; name: string }[] = [
-  { id: 'serial_number_asc', name: 'Serial number/name (ascending)' },
-  { id: 'serial_number_desc', name: 'Serial number/name (descending)' },
-  { id: 'serial_created_asc', name: 'Serial created date (earliest first)' },
-]
-
-interface Settings {
-  multiLocationStorage: boolean
-  batchSelectionRule:   BatchSelectionRule
-  serialSelectionRule:  SerialSelectionRule
-}
-
-const DEFAULTS: Settings = {
-  multiLocationStorage: true,
-  batchSelectionRule:   'fefo',
-  serialSelectionRule:  'serial_created_asc',
-}
-
-function loadSettings(): Settings {
-  if (!import.meta.client) return { ...DEFAULTS }
-  try {
-    const raw    = localStorage.getItem(STORAGE_KEY)
-    const parsed = raw ? JSON.parse(raw) : {}
-    return {
-      multiLocationStorage: parsed.multiLocationStorage ?? DEFAULTS.multiLocationStorage,
-      batchSelectionRule:   parsed.batchSelectionRule   ?? DEFAULTS.batchSelectionRule,
-      serialSelectionRule:  parsed.serialSelectionRule  ?? DEFAULTS.serialSelectionRule,
-    }
-  } catch { return { ...DEFAULTS } }
-}
-
-function persistSettings(v: Settings) {
-  if (!import.meta.client) return
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(v)) } catch {}
-}
+function loadSettings(): WarehouseSettings { return getWarehouseSettings() }
+function persistSettings(v: WarehouseSettings): void { saveWarehouseSettings(v) }
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
