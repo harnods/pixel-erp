@@ -452,7 +452,7 @@ onUnmounted(() => {
                         class="sc-row"
                       >
                         <td class="sc-td sc-td--product">
-                          <ProductCell :name="added.productName" :desc="''" :image="PRODUCTS.find(p => p.sku === added.sku)?.img ?? ''" />
+                          <ProductCell :name="added.productName" :desc="PRODUCTS.find(p => p.sku === added.sku)?.desc ?? ''" :image="PRODUCTS.find(p => p.sku === added.sku)?.img ?? ''" />
                         </td>
                         <td class="sc-td">{{ added.sku }}</td>
                         <td class="sc-td sc-td--input">
@@ -752,7 +752,7 @@ onUnmounted(() => {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
   background: none; border: none; padding: var(--mp-spacing-1) var(--mp-spacing-2);
   border-radius: var(--mp-radii-sm); cursor: pointer;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link);
 }
 .sc-add-sku-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 
