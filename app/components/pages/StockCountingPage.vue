@@ -481,8 +481,9 @@ onUnmounted(() => {
                         <td class="sc-td">{{ PRODUCTS.find(p => p.sku === added.sku)?.unit ?? '—' }}</td>
                         <td class="sc-td sc-td--del">
                           <button class="sc-del-row-btn" type="button" aria-label="Remove product" @click="removeAddedRow(group.location, added.id)">
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                              <path d="M2 2L12 12M12 2L2 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                              <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
+                              <path d="M5 8H11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                             </svg>
                           </button>
                         </td>
