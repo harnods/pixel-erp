@@ -88,7 +88,8 @@ const visibleColumns = computed(() =>
     colVis[c.key]
     && !(kindFilter.value && c.key === 'account')
     && !(kindFilter.value === 'count' && c.key === 'category')
-    && !(kindFilter.value === 'count' && (c.key === 'date' || c.key === 'tags'))
+    && !(kindFilter.value === 'count' && c.key === 'tags')
+    && !(kindFilter.value === 'count' && !isAwaiting.value && c.key === 'date')
     && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
     && !(isAwaiting.value && kindFilter.value === 'count' && (c.key === 'startDate' || c.key === 'endDate' || c.key === 'assignee'))
   )
