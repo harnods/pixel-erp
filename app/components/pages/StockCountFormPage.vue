@@ -592,7 +592,7 @@ onMounted(() => {
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ isWms ? 'Cycle counts' : fromStockCounts ? 'All stock counts' : 'All stock adjustments' }}</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ fromStockCounts ? 'All stock counts' : isWms ? 'Cycle counts' : 'All stock adjustments' }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New stock count</h1>
         </div>
