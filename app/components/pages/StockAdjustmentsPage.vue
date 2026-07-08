@@ -46,9 +46,11 @@ const kindFilter = computed<'count' | 'in-out' | null>(() => {
   if (currentPageKey.value === 'Stock inout') return 'in-out'
   return null
 })
-const activeList    = computed(() => kindFilter.value ? wmsStockAdjustments : stockAdjustments)
-const activeWhOpts  = computed(() => kindFilter.value ? wmsAdjustmentWarehouseOptions() : adjustmentWarehouseOptions())
-function activeDelete(ids: string[]) { kindFilter.value ? deleteWmsAdjustments(ids) : deleteAdjustments(ids) }
+// Only Cycle counts and Stock inout pages use the WMS dataset; Stock counts is ERP.
+const isWmsPage  = computed(() => currentPageKey.value === 'Cycle counts' || currentPageKey.value === 'Stock inout')
+const activeList    = computed(() => isWmsPage.value ? wmsStockAdjustments : stockAdjustments)
+const activeWhOpts  = computed(() => isWmsPage.value ? wmsAdjustmentWarehouseOptions() : adjustmentWarehouseOptions())
+function activeDelete(ids: string[]) { isWmsPage.value ? deleteWmsAdjustments(ids) : deleteAdjustments(ids) }
 
 // ─── Approval view — demo toggle: "As user" (no Approve) vs "As manager" ──────
 const { viewAs, setViewAs } = useApprovalViewAs()
