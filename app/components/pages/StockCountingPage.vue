@@ -12,8 +12,9 @@ import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/
 import { getWmsAdjustment, saveWmsCountDraft, finishWmsCount } from '~/data/wmsStockAdjustments'
 import { addAdjustment, adjustmentLineItems, type AdjustmentLine } from '~/data/stockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { productBySku } from '~/data/inventory'
+import { PRODUCTS } from '~/data/inventory'
 import { formatDateTimeLong } from '~/utils/date'
+import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -113,18 +114,36 @@ function saveSerialLines(serials: CommittedSerial[]) {
 }
 
 // ── Operator-added lines per location ─────────────────────────────────────────
-interface AddedLine { id: string; sku: string; batchNumber: string; counted: number | undefined }
+interface AddedLine { id: string; sku: string; productName: string; batchNumber: string; counted: number | undefined }
 let _addedId = 0
 const addedByLoc = ref<Record<string, AddedLine[]>>({})
 
-function addSkuRow(location: string) {
-  const id = `added-${++_addedId}`
-  addedByLoc.value = { ...addedByLoc.value, [location]: [...(addedByLoc.value[location] ?? []), { id, sku: '', batchNumber: '', counted: undefined }] }
+// Product picker — one shared drawer, tracks which location triggered it
+const pickerOpen = ref(false)
+const pickerLocation = ref<string>('')
+const allPickerProducts = computed<PickerProduct[]>(() =>
+  PRODUCTS.map(p => ({ sku: p.sku, name: p.name, img: p.img, desc: p.desc })),
+)
+const pickerCurrentSkus = computed(() => (addedByLoc.value[pickerLocation.value] ?? []).map(r => r.sku))
+
+function openPicker(location: string) {
+  pickerLocation.value = location
+  pickerOpen.value = true
+}
+function applyPicker(skus: string[]) {
+  const loc = pickerLocation.value
+  const existing = new Map((addedByLoc.value[loc] ?? []).map(r => [r.sku, r]))
+  const next: AddedLine[] = skus.map(sku => {
+    if (existing.has(sku)) return existing.get(sku)!
+    const p = PRODUCTS.find(x => x.sku === sku)
+    return { id: `added-${++_addedId}`, sku, productName: p?.name ?? sku, batchNumber: '', counted: undefined }
+  })
+  addedByLoc.value = { ...addedByLoc.value, [loc]: next }
 }
 function removeAddedRow(location: string, id: string) {
   addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).filter(r => r.id !== id) }
 }
-function updateAddedField(location: string, id: string, field: 'sku' | 'batchNumber', value: string) {
+function updateAddedField(location: string, id: string, field: 'batchNumber', value: string) {
   addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).map(r => r.id === id ? { ...r, [field]: value } : r) }
 }
 function updateAddedQty(location: string, id: string, e: Event) {
@@ -426,25 +445,17 @@ onUnmounted(() => {
                         <td class="sc-td sc-td--del-placeholder" />
                       </tr>
 
-                      <!-- Operator-added lines -->
+                      <!-- Operator-added lines (from product picker) -->
                       <tr
                         v-for="added in (addedByLoc[group.location] ?? [])"
                         :key="added.id"
                         class="sc-row sc-row--added"
                       >
                         <td class="sc-td sc-td--add-name">
-                          <span v-if="added.sku && productBySku(added.sku)" class="sc-add-resolved">{{ productBySku(added.sku)!.name }}</span>
-                          <span v-else-if="added.sku" class="sc-add-unknown">Unknown SKU</span>
+                          <span class="sc-add-resolved">{{ added.productName }}</span>
+                          <span class="sc-add-sku-label">{{ added.sku }}</span>
                         </td>
-                        <td class="sc-td sc-td--input">
-                          <input
-                            class="sc-text-input"
-                            type="text"
-                            :value="added.sku"
-                            placeholder="Enter SKU"
-                            @input="updateAddedField(group.location, added.id, 'sku', ($event.target as HTMLInputElement).value)"
-                          />
-                        </td>
+                        <td class="sc-td sc-td--add-sku-val">{{ added.sku }}</td>
                         <td class="sc-td sc-td--input">
                           <input
                             class="sc-text-input"
@@ -459,15 +470,13 @@ onUnmounted(() => {
                             class="sc-qty-input"
                             type="number" min="0"
                             :value="added.counted ?? ''"
-                            :aria-label="`Counted qty for added SKU`"
+                            aria-label="Counted qty for added product"
                             @input="updateAddedQty(group.location, added.id, $event)"
                           />
                         </td>
-                        <td class="sc-td sc-td--add-unit">
-                          {{ added.sku ? (productBySku(added.sku)?.unit ?? '—') : '' }}
-                        </td>
+                        <td class="sc-td sc-td--add-unit">{{ PRODUCTS.find(p => p.sku === added.sku)?.unit ?? '—' }}</td>
                         <td class="sc-td sc-td--del">
-                          <button class="sc-del-row-btn" type="button" :aria-label="`Remove added SKU row`" @click="removeAddedRow(group.location, added.id)">
+                          <button class="sc-del-row-btn" type="button" aria-label="Remove product" @click="removeAddedRow(group.location, added.id)">
                             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                               <path d="M2 2L12 12M12 2L2 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                             </svg>
@@ -475,14 +484,14 @@ onUnmounted(() => {
                         </td>
                       </tr>
 
-                      <!-- Add SKU row -->
+                      <!-- Add product trigger row -->
                       <tr class="sc-row-add-trigger">
                         <td colspan="6" class="sc-td-add-trigger">
-                          <button class="sc-add-sku-btn" type="button" @click="addSkuRow(group.location)">
+                          <button class="sc-add-sku-btn" type="button" @click="openPicker(group.location)">
                             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                               <path d="M7 2V12M2 7H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                             </svg>
-                            Add SKU
+                            Add product
                           </button>
                         </td>
                       </tr>
@@ -536,6 +545,14 @@ onUnmounted(() => {
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <!-- ── Product picker drawer ── -->
+  <SelectProductDrawer
+    v-model:open="pickerOpen"
+    :products="allPickerProducts"
+    :model-value="pickerCurrentSkus"
+    @save="applyPicker"
+  />
 
   <!-- ── Serial drawer ── -->
   <ManageSerialDrawer
@@ -719,11 +736,12 @@ onUnmounted(() => {
 .sc-diff--pos { color: var(--mp-text-success, #1a7a4a); }
 .sc-diff--neg { color: var(--mp-text-danger, #a8352d); }
 
-/* Added rows */
+/* Added rows (product-picker selected) */
 .sc-row--added .sc-td { background: var(--mp-background-neutral, #fff); }
-.sc-td--add-name { padding: var(--mp-spacing-2); vertical-align: middle; }
-.sc-add-resolved { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.sc-add-unknown  { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+.sc-td--add-name { padding: var(--mp-spacing-2); vertical-align: middle; display: flex; flex-direction: column; gap: 2px; }
+.sc-add-resolved { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-add-sku-label { display: none; }
+.sc-td--add-sku-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); vertical-align: middle; padding: var(--mp-spacing-2); }
 .sc-td--add-unit { padding: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); vertical-align: middle; }
 .sc-text-input {
   width: 100%; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
@@ -740,7 +758,7 @@ onUnmounted(() => {
 }
 .sc-del-row-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #a8352d); }
 
-/* Add SKU trigger row */
+/* Add product trigger row */
 .sc-row-add-trigger td { border-bottom: none; }
 .sc-td-add-trigger { padding: var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); }
 .sc-add-sku-btn {
