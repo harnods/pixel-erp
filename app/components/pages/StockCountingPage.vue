@@ -623,7 +623,7 @@ onUnmounted(() => {
         <div class="sc-new-batch-form">
           <div class="sc-new-batch-field">
             <label class="sc-new-batch-label">Batch name <span class="sc-required">*</span></label>
-            <input v-model="newBatchNo" class="sc-new-batch-input" type="text" placeholder="e.g. BT-00001" />
+            <input v-model="newBatchNo" class="sc-new-batch-input" type="text" />
           </div>
           <div class="sc-new-batch-field">
             <label class="sc-new-batch-label">Expiry date</label>
@@ -631,7 +631,7 @@ onUnmounted(() => {
           </div>
           <div class="sc-new-batch-field">
             <label class="sc-new-batch-label">Description</label>
-            <textarea v-model="newBatchDesc" class="sc-new-batch-textarea" rows="2" placeholder="Optional notes" />
+            <textarea v-model="newBatchDesc" class="sc-new-batch-textarea" rows="2" maxlength="256" />
           </div>
         </div>
       </MpModalBody>
