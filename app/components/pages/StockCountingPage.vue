@@ -4,6 +4,7 @@ import {
   MpAccordion, MpAccordionItem, MpAccordionHeader, MpAccordionIcon, MpAccordionPanel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -159,6 +160,35 @@ function updateAddedQty(location: string, id: string, e: Event) {
 const addedCountedTotal = computed(() =>
   Object.values(addedByLoc.value).flat().reduce((s, r) => s + (r.counted ?? 0), 0),
 )
+
+// ── New batch modal (for added rows) ──────────────────────────────────────────
+const newBatchOpen = ref(false)
+const newBatchTarget = ref<{ location: string; id: string } | null>(null)
+const newBatchNo = ref('')
+const newBatchExpiry = ref('')
+const newBatchDesc = ref('')
+
+function openNewBatchModal(location: string, id: string) {
+  newBatchTarget.value = { location, id }
+  newBatchNo.value = ''
+  newBatchExpiry.value = ''
+  newBatchDesc.value = ''
+  newBatchOpen.value = true
+}
+function confirmNewBatch() {
+  const nm = newBatchNo.value.trim()
+  if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a batch name', maxWidth: 'max-content' }); return }
+  const t = newBatchTarget.value
+  if (!t) return
+  addedByLoc.value = {
+    ...addedByLoc.value,
+    [t.location]: (addedByLoc.value[t.location] ?? []).map(r =>
+      r.id === t.id ? { ...r, batchNumber: nm } : r,
+    ),
+  }
+  newBatchOpen.value = false
+  newBatchTarget.value = null
+}
 
 // ── View mode + search ────────────────────────────────────────────────────────
 const viewMode = ref<'location' | 'sku'>('location')
@@ -460,15 +490,38 @@ onUnmounted(() => {
                           <ProductCell :name="added.productName" :desc="PRODUCTS.find(p => p.sku === added.sku)?.desc ?? ''" :image="PRODUCTS.find(p => p.sku === added.sku)?.img ?? ''" />
                         </td>
                         <td class="sc-td">{{ added.sku }}</td>
-                        <td class="sc-td sc-td--input">
-                          <input
-                            class="sc-text-input"
-                            type="text"
-                            :value="added.batchNumber"
-                            placeholder="—"
-                            @input="updateAddedField(group.location, added.id, 'batchNumber', ($event.target as HTMLInputElement).value)"
-                          />
+                        <!-- Batch no.: popover picker for batch-tracked, plain dash otherwise -->
+                        <td v-if="isBatchTrackedSku(added.sku)" class="sc-td sc-td--input">
+                          <MpPopover
+                            :id="`sc-batch-pick-${added.id}`"
+                            is-close-on-select
+                            use-portal
+                            :is-keep-alive="false"
+                            placement="bottom-start"
+                          >
+                            <MpPopoverTrigger>
+                              <button class="sc-batch-trigger" type="button">
+                                {{ added.batchNumber || 'Select batch' }}
+                              </button>
+                            </MpPopoverTrigger>
+                            <MpPopoverContent>
+                              <MpPopoverList>
+                                <MpPopoverListItem
+                                  v-for="b in (warehouseStockMap[added.sku]?.batches ?? [])"
+                                  :key="b.batchNo"
+                                  @click="updateAddedField(group.location, added.id, 'batchNumber', b.batchNo)"
+                                >
+                                  {{ b.batchNo }}
+                                  <span v-if="b.expiryDate" style="color:var(--mp-text-subtle);font-size:var(--mp-font-sizes-sm)"> · exp {{ b.expiryDate }}</span>
+                                </MpPopoverListItem>
+                                <MpPopoverListItem @click="openNewBatchModal(group.location, added.id)">
+                                  + Add new batch
+                                </MpPopoverListItem>
+                              </MpPopoverList>
+                            </MpPopoverContent>
+                          </MpPopover>
                         </td>
+                        <td v-else class="sc-td">—</td>
                         <td class="sc-td sc-td--input">
                           <input
                             class="sc-qty-input"
@@ -545,6 +598,47 @@ onUnmounted(() => {
         <div class="sc-modal-footer">
           <button class="sc-btn sc-btn--ghost" @click="showConfirm = false">Cancel</button>
           <button class="sc-btn sc-btn--primary" @click="commitFinish">Finish counting</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── New batch modal ── -->
+  <MpModal
+    id="sc-new-batch-modal"
+    :is-open="newBatchOpen"
+    size="sm"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="newBatchOpen = false"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        Add new batch
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <div class="sc-new-batch-form">
+          <div class="sc-new-batch-field">
+            <label class="sc-new-batch-label">Batch name <span class="sc-required">*</span></label>
+            <input v-model="newBatchNo" class="sc-new-batch-input" type="text" placeholder="e.g. BT-00001" />
+          </div>
+          <div class="sc-new-batch-field">
+            <label class="sc-new-batch-label">Expiry date</label>
+            <input v-model="newBatchExpiry" class="sc-new-batch-input" type="date" />
+          </div>
+          <div class="sc-new-batch-field">
+            <label class="sc-new-batch-label">Description</label>
+            <textarea v-model="newBatchDesc" class="sc-new-batch-textarea" rows="2" placeholder="Optional notes" />
+          </div>
+        </div>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="sc-modal-footer">
+          <button class="sc-btn sc-btn--ghost" @click="newBatchOpen = false">Cancel</button>
+          <button class="sc-btn sc-btn--primary" @click="confirmNewBatch">Save</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -762,13 +856,32 @@ onUnmounted(() => {
 }
 .sc-add-sku-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* Batch input in added rows — same as sc-td--input */
-.sc-text-input {
+/* Batch picker trigger */
+.sc-batch-trigger {
   width: 100%; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
-  border: none; background: transparent; outline: none;
+  border: none; background: transparent; cursor: pointer; text-align: left;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
-.sc-text-input::placeholder { color: var(--mp-text-placeholder); }
+.sc-batch-trigger:hover { background: var(--mp-background-neutral-hovered); }
+
+/* New batch modal form */
+.sc-new-batch-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.sc-new-batch-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.sc-new-batch-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.sc-required { color: var(--mp-text-danger, #a8352d); }
+.sc-new-batch-input {
+  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); background: var(--mp-background-neutral); outline: none;
+}
+.sc-new-batch-input:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
+.sc-new-batch-textarea {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3); resize: vertical;
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); background: var(--mp-background-neutral);
+  font-family: inherit; line-height: 1.5; outline: none;
+}
+.sc-new-batch-textarea:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
 
 /* By SKU section */
 .sc-sku-section { padding: var(--mp-spacing-4) var(--mp-spacing-6); }
