@@ -5,6 +5,7 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpDatePicker,
   toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -627,7 +628,9 @@ onUnmounted(() => {
           </div>
           <div class="sc-new-batch-field">
             <label class="sc-new-batch-label">Expiry date</label>
-            <input v-model="newBatchExpiry" class="sc-new-batch-input" type="date" />
+            <div class="sc-new-batch-datepicker">
+              <MpDatePicker id="sc-new-batch-expiry" v-model="newBatchExpiry" format="DD/MM/YYYY" value-type="format" use-portal />
+            </div>
           </div>
           <div class="sc-new-batch-field">
             <label class="sc-new-batch-label">Description</label>
@@ -882,6 +885,8 @@ onUnmounted(() => {
   font-family: inherit; line-height: 1.5; outline: none;
 }
 .sc-new-batch-textarea:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
+.sc-new-batch-datepicker { width: 100%; }
+.sc-new-batch-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
 /* By SKU section */
 .sc-sku-section { padding: var(--mp-spacing-4) var(--mp-spacing-6); }
