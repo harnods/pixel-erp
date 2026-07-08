@@ -121,9 +121,14 @@ const addedByLoc = ref<Record<string, AddedLine[]>>({})
 // Product picker — one shared drawer, tracks which location triggered it
 const pickerOpen = ref(false)
 const pickerLocation = ref<string>('')
-const allPickerProducts = computed<PickerProduct[]>(() =>
-  PRODUCTS.map(p => ({ sku: p.sku, name: p.name, img: p.img, desc: p.desc })),
-)
+const pickerAvailableProducts = computed<PickerProduct[]>(() => {
+  const existingSkus = new Set(
+    (groupedByLocation.value.find(g => g.location === pickerLocation.value)?.items ?? []).map(i => i.sku),
+  )
+  return PRODUCTS
+    .filter(p => !existingSkus.has(p.sku))
+    .map(p => ({ sku: p.sku, name: p.name, img: p.img, desc: p.desc }))
+})
 const pickerCurrentSkus = computed(() => (addedByLoc.value[pickerLocation.value] ?? []).map(r => r.sku))
 
 function openPicker(location: string) {
@@ -548,7 +553,7 @@ onUnmounted(() => {
   <!-- ── Product picker drawer ── -->
   <SelectProductDrawer
     v-model:open="pickerOpen"
-    :products="allPickerProducts"
+    :products="pickerAvailableProducts"
     :model-value="pickerCurrentSkus"
     @save="applyPicker"
   />
