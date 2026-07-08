@@ -875,6 +875,28 @@ function startResize(e: MouseEvent) {
             New stock count
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Stock counts'" class="page-title-actions">
+          <div ref="stockActionsWrapEl" class="import-wrap">
+            <button
+              class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-after"
+              @click.stop="stockActionsOpen = !stockActionsOpen"
+            >
+              Actions
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                class="import-chevron" :class="{ 'import-chevron--open': stockActionsOpen }"
+              >
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <div v-if="stockActionsOpen" class="import-dropdown" @click.stop>
+              <div class="import-group">
+                <button class="import-item" @click="newStockCount(); stockActionsOpen = false">Stock count</button>
+                <button class="import-item" @click="newStockInOut(); stockActionsOpen = false">Stock in/out</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <div v-else-if="currentPageKey === 'Stock inout'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockInOut">
             <MpIcon name="add" size="md" color="icon.inverse" />

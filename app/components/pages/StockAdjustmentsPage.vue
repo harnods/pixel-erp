@@ -66,8 +66,7 @@ const columns: TableColumn[] = [
   { key: 'tags',          label: 'Tags',         width: '200px' },
   { key: 'lastUpdated',   label: 'Last updated', width: '220px' },
   { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
-  { key: 'endDate',       label: 'End date',     width: '170px', sortType: 'date' },
-  { key: 'aging',         label: 'Aging',        width: '100px' },
+  { key: 'endDate',       label: 'End date',     width: '200px', sortType: 'date' },
   { key: 'assignee',      label: 'Assignee',     width: '160px', sortType: 'text' },
   { key: 'status',        label: 'Status',       width: '130px', sortType: 'text' },
 ]
@@ -87,7 +86,7 @@ const visibleColumns = computed(() =>
     && !(kindFilter.value && c.key === 'account')
     && !(kindFilter.value === 'count' && c.key === 'category')
     && !(kindFilter.value === 'count' && (c.key === 'date' || c.key === 'tags'))
-    && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate' || c.key === 'aging'))
+    && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
@@ -121,7 +120,7 @@ function setDemoState(s: DemoState) {
 }
 
 // ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
-const warehouseFilter = ref('')
+const warehouseFilter = ref<string[]>([])
 const categoryFilter = ref('')
 const statusFilter = ref('')
 const STATUS_OPTIONS = [
@@ -130,7 +129,17 @@ const STATUS_OPTIONS = [
   { value: 'completed',   label: 'Completed'   },
 ]
 const whOptions = computed(() => activeWhOpts.value)
-const warehouseLabel = computed(() => whOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return whOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
 
 // ─── Rows (demo state → tab → warehouse/category filter; search handled below) ────
 const baseRows = computed<StockAdjustment[]>(() => {
@@ -139,7 +148,7 @@ const baseRows = computed<StockAdjustment[]>(() => {
   if (isAwaiting.value) list = list.filter(a => a.status === 'draft')
   else list = list.filter(a => a.status !== 'draft')
   if (kindFilter.value) list = list.filter(a => a.kind === kindFilter.value)
-  if (warehouseFilter.value) list = list.filter(a => a.warehouseId === warehouseFilter.value)
+  if (warehouseFilter.value.length) list = list.filter(a => warehouseFilter.value.includes(a.warehouseId))
   if (categoryFilter.value) list = list.filter(a => a.category === categoryFilter.value)
   if (statusFilter.value) list = list.filter(a => a.status === statusFilter.value)
   return list
@@ -158,8 +167,8 @@ const {
     || (kindFilter.value === 'count' && (row.assignee ?? '').toLowerCase().includes(s)),
 })
 
-const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!categoryFilter.value || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = ''; categoryFilter.value = ''; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || !!categoryFilter.value || !!statusFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = ''; statusFilter.value = '' }
 watch([warehouseFilter, categoryFilter, statusFilter, isAwaiting], () => setPage(1))
 
 // ─── Row actions ─────────────────────────────────────────────────────────────────
@@ -253,21 +262,22 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <!-- Warehouse -->
-        <MpPopover id="sa-warehouse-filter" is-close-on-select>
+        <!-- Warehouse (multi-select) -->
+        <MpPopover id="sa-warehouse-filter">
           <MpPopoverTrigger>
             <MpSelect
-              id="sa-warehouse-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = ''"
+              id="sa-warehouse-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
-              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="opt in whOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
+                :is-active="warehouseFilter.includes(opt.value)" @click="toggleWarehouse(opt.value)"
               >{{ opt.label }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -398,9 +408,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <template #cell-tags="{ value }"><ErpTagList :tags="(value as string[])" /></template>
 
-    <template #cell-startDate="{ value }">{{ formatDateTime(value as string) }}</template>
-    <template #cell-endDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
-    <template #cell-aging="{ row }">{{ formatAging((row as unknown as StockAdjustment).startDate, (row as unknown as StockAdjustment).endDate) }}</template>
+    <template #cell-startDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
+    <template #cell-endDate="{ row }">
+      <span class="sa-end">
+        <span v-if="(row as unknown as StockAdjustment).endDate">{{ formatDateTime((row as unknown as StockAdjustment).endDate) }}</span>
+        <span v-else class="sa-end__ongoing">—</span>
+        <span v-if="(row as unknown as StockAdjustment).startDate" class="sa-aging">
+          {{ formatAging((row as unknown as StockAdjustment).startDate, (row as unknown as StockAdjustment).endDate) }}
+        </span>
+      </span>
+    </template>
 
     <template #cell-assignee="{ value }">{{ value ?? '—' }}</template>
 
@@ -645,6 +662,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .sa-memo { max-width: 100%; }
 
 /* Last updated cell — timestamp + who */
+.sa-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.sa-end__ongoing { color: var(--mp-text-secondary); }
+.sa-aging {
+  display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5);
+  border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #f1f5f9);
+  color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
+}
+
 .sa-updated { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .sa-updated-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
 .sa-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
