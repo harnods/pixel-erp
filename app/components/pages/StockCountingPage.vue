@@ -442,20 +442,19 @@ onUnmounted(() => {
                         </td>
 
                         <td class="sc-td">{{ item.unit }}</td>
-                        <td class="sc-td sc-td--del-placeholder" />
+                        <td class="sc-td sc-td--del-placeholder" aria-hidden="true" />
                       </tr>
 
                       <!-- Operator-added lines (from product picker) -->
                       <tr
                         v-for="added in (addedByLoc[group.location] ?? [])"
                         :key="added.id"
-                        class="sc-row sc-row--added"
+                        class="sc-row"
                       >
-                        <td class="sc-td sc-td--add-name">
-                          <span class="sc-add-resolved">{{ added.productName }}</span>
-                          <span class="sc-add-sku-label">{{ added.sku }}</span>
+                        <td class="sc-td sc-td--product">
+                          <ProductCell :name="added.productName" :desc="''" :image="PRODUCTS.find(p => p.sku === added.sku)?.img ?? ''" />
                         </td>
-                        <td class="sc-td sc-td--add-sku-val">{{ added.sku }}</td>
+                        <td class="sc-td">{{ added.sku }}</td>
                         <td class="sc-td sc-td--input">
                           <input
                             class="sc-text-input"
@@ -474,7 +473,7 @@ onUnmounted(() => {
                             @input="updateAddedQty(group.location, added.id, $event)"
                           />
                         </td>
-                        <td class="sc-td sc-td--add-unit">{{ PRODUCTS.find(p => p.sku === added.sku)?.unit ?? '—' }}</td>
+                        <td class="sc-td">{{ PRODUCTS.find(p => p.sku === added.sku)?.unit ?? '—' }}</td>
                         <td class="sc-td sc-td--del">
                           <button class="sc-del-row-btn" type="button" aria-label="Remove product" @click="removeAddedRow(group.location, added.id)">
                             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -736,27 +735,15 @@ onUnmounted(() => {
 .sc-diff--pos { color: var(--mp-text-success, #1a7a4a); }
 .sc-diff--neg { color: var(--mp-text-danger, #a8352d); }
 
-/* Added rows (product-picker selected) */
-.sc-row--added .sc-td { background: var(--mp-background-neutral, #fff); }
-.sc-td--add-name { padding: var(--mp-spacing-2); vertical-align: middle; display: flex; flex-direction: column; gap: 2px; }
-.sc-add-resolved { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-add-sku-label { display: none; }
-.sc-td--add-sku-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); vertical-align: middle; padding: var(--mp-spacing-2); }
-.sc-td--add-unit { padding: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); vertical-align: middle; }
-.sc-text-input {
-  width: 100%; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
-  border: none; background: transparent; outline: none;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-}
-.sc-text-input::placeholder { color: var(--mp-text-placeholder); }
-.sc-td--del-placeholder { background: var(--mp-background-neutral-subtle); border-left: none; border-right: none; }
-.sc-td--del { padding: 0; text-align: center; vertical-align: middle; background: var(--mp-background-neutral, #fff); }
+/* Delete button on added rows */
+.sc-td--del-placeholder { background: var(--mp-background-neutral-subtle); }
+.sc-td--del { padding: 0; text-align: center; vertical-align: middle; background: var(--mp-background-neutral-subtle); }
 .sc-del-row-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; border: none; background: none; border-radius: var(--mp-radii-sm);
   cursor: pointer; color: var(--mp-text-secondary);
 }
-.sc-del-row-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #a8352d); }
+.sc-del-row-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-danger, #a8352d); }
 
 /* Add product trigger row */
 .sc-row-add-trigger td { border-bottom: none; }
@@ -767,7 +754,15 @@ onUnmounted(() => {
   border-radius: var(--mp-radii-sm); cursor: pointer;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
 }
-.sc-add-sku-btn:hover { background: var(--mp-background-neutral-subtle); text-decoration: underline; text-underline-offset: 2px; }
+.sc-add-sku-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Batch input in added rows — same as sc-td--input */
+.sc-text-input {
+  width: 100%; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
+  border: none; background: transparent; outline: none;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.sc-text-input::placeholder { color: var(--mp-text-placeholder); }
 
 /* By SKU section */
 .sc-sku-section { padding: var(--mp-spacing-4) var(--mp-spacing-6); }
