@@ -47,6 +47,7 @@ const statusConfig: Record<string, StatusConfig> = {
   invoiced:   { type: 'completed',    label: 'Invoiced'   },
   received:   { type: 'completed',    label: 'Received'   },
   shipped:    { type: 'completed',    label: 'Shipped'    },
+  fulfilled:  { type: 'completed',    label: 'Fulfilled'  },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
@@ -81,6 +82,7 @@ const statusConfig: Record<string, StatusConfig> = {
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },
+  'not allocated':{ type: 'announcement', label: 'Not allocated' },
   'to do':    { type: 'announcement', label: 'To do'      },
   direct:     { type: 'announcement', label: 'Direct'     },
 
@@ -93,6 +95,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'partially picked': { type: 'information', label: 'Partially picked' },
   'partially packed': { type: 'information', label: 'Partially packed' },
   'partially shipped': { type: 'information', label: 'Partially shipped' },
+  'partially fulfilled': { type: 'information', label: 'Partially fulfilled' },
   'in progress':{ type: 'information',  label: 'In process' },
   new:        { type: 'information',  label: 'New'        },
   beta:       { type: 'information',  label: 'Beta'       },

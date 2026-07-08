@@ -155,6 +155,27 @@
  * an always-visible clear (✕). Restore the pieces the ERP relies on here.
  * erp.css is UNLAYERED, so these beat Pixel's @layer rules without !important. */
 
+/* Form control roots must establish a positioning context so their absolutely-
+   positioned addons (select/autocomplete arrow, datepicker calendar, clear button)
+   stay inside the field instead of escaping to a far ancestor — the `position:
+   relative` atomic isn't reliably emitted (esp. after a cold dev restart). */
+.mp-input__root,
+.mp-input-group__root,
+.mp-select__root,
+.mp-autocomplete__root,
+.mp-datepicker__root {
+  position: relative;
+}
+
+/* …and the addon (arrow / datepicker calendar / prefix-suffix) must be vertically
+   centered in the field. The atomic build leaves it at `top:38px; bottom:-32px`
+   (dropped below the field); re-center it here. */
+.mp-input-addon__root {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
 /* MpSelect — strip the native OS dropdown arrow; Pixel renders its own arrow. */
 .mp-select__control {
   -webkit-appearance: none;

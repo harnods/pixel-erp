@@ -179,7 +179,7 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Sales' },
     { label: 'Purchases' },
     { label: 'Inventory' },
-    { label: 'Warehouses', to: 'Warehouse settings' },
+    { label: 'Warehouses' },
     { label: 'Production' },
     { label: 'Default accounts' },
   ],
@@ -314,8 +314,8 @@ const erpNavGroups: NavItem[][] = [
         [
           { label: 'Overview' },
           { label: 'Warehouses' },
-          { label: 'Outbound delivery' },
-          { label: 'Inbound delivery' },
+          { label: 'Barang keluar' },
+          { label: 'Barang masuk' },
           { label: 'Warehouse transfers' },
           { label: 'Stock adjustments' },
         ],
@@ -329,7 +329,7 @@ const erpNavGroups: NavItem[][] = [
     {
       name: 'Production', icon: 'fulfillment',
       submenu: [
-        [{ label: 'Production plans' }, { label: 'Work orders' }, { label: 'Bill of materials' }],
+        [{ label: 'Production plans' }, { label: 'Production request' }, { label: 'Work orders' }, { label: 'Bill of materials' }],
         [{ label: 'Production reports', iconType: 'shortcut' }, { label: 'Production settings', iconType: 'settings' }],
       ],
     },
@@ -400,7 +400,7 @@ const erpNavGroups: NavItem[][] = [
 
 // Shared WMS nav items (reused across WMS scenarios).
 const barangKeluarNav: NavItem = {
-  name: 'Outbound delivery', icon: 'sales',
+  name: 'Barang keluar', icon: 'sales',
   panelSubmenu: [[
     { label: 'Orders', count: 8 },
     { label: 'Picking', count: 6 },
@@ -410,7 +410,7 @@ const barangKeluarNav: NavItem = {
     { label: 'Voided orders' },
   ]],
 }
-// Inbound delivery nav — counts derive live from receipt data (warehouse-scoped),
+// Barang masuk nav — counts derive live from receipt data (warehouse-scoped),
 // so panel badges match what the table shows. Standalone adds Draft; Ops doesn't.
 function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean): NavItem {
   const c = receiptCountsByStage(scopeIds)
@@ -422,7 +422,7 @@ function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean):
   items.push({ label: 'Partial reception', count: c['Partial reception'] })
   items.push({ label: 'Completed', to: 'Inbound completed' })
   items.push({ label: 'Canceled' })
-  return { name: 'Inbound delivery', icon: 'cart', panelSubmenu: [items] }
+  return { name: 'Barang masuk', icon: 'cart', panelSubmenu: [items] }
 }
 const stockCountNav: NavItem[] = [
   { name: 'Stock count', icon: 'table-view-list' },
@@ -446,8 +446,8 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Warehouses', icon: 'warehouse' },
   ],
   [
-    { name: 'Outbound delivery', icon: 'sales' },
-    { name: 'Inbound delivery', icon: 'cart' },
+    { name: 'Barang keluar', icon: 'sales' },
+    { name: 'Barang masuk', icon: 'cart' },
   ],
   stockCountNav,
   [
@@ -457,12 +457,12 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
 
 // WMS Ops — trimmed menu scoped to the user's assigned warehouse(s). The
 // fulfillment group depends on what the active warehouse handles (out / in);
-// Inbound delivery counts are scoped to the assigned warehouses.
+// Barang masuk counts are scoped to the assigned warehouses.
 const wmsOpsNavGroups = computed<NavItem[][]>(() => {
   const flows = activeWarehouse.value?.flows ?? ['out']
   const fulfillment: NavItem[] = []
-  if (flows.includes('out')) fulfillment.push({ name: 'Outbound delivery', icon: 'sales' })
-  if (flows.includes('in')) fulfillment.push({ name: 'Inbound delivery', icon: 'cart' })
+  if (flows.includes('out')) fulfillment.push({ name: 'Barang keluar', icon: 'sales' })
+  if (flows.includes('in')) fulfillment.push({ name: 'Barang masuk', icon: 'cart' })
   return [
     [{ name: 'Home', icon: 'home' }],
     [{ name: 'Warehouses', icon: 'warehouse', path: `/warehouses/${activeWarehouse.value?.id ?? 'wh-001'}` }],
@@ -495,9 +495,6 @@ function resolveActive(pageKey: string): {
   sub: string | null
   panel: ActivePanel | null
 } {
-  // A shortcut entry (iconType 'shortcut') points at a page owned elsewhere — record
-  // it only as a fallback so the real (non-shortcut) owner wins the active highlight.
-  let fallback: { nav: string; sub: string | null; panel: ActivePanel | null } | null = null
   for (const group of navGroups.value) {
     for (const item of group) {
       // slug-based match so names with caps/slashes (e.g. 'Stock in/out') still
@@ -507,20 +504,11 @@ function resolveActive(pageKey: string): {
       }
       for (const subGroup of item.submenu ?? []) {
         for (const sub of subGroup) {
-          if (sub.label === pageKey) {
-            const match = { nav: item.name, sub: sub.label, panel: null }
-            // Settings/shortcut flyout items are secondary pointers — store as
-            // fallback so the canonical Settings panel entry wins when present.
-            if (sub.iconType === 'settings' || sub.iconType === 'shortcut') {
-              fallback ??= match
-            } else {
-              return match
-            }
-          }
+          if (sub.label === pageKey) return { nav: item.name, sub: sub.label, panel: null }
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
               if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
-                const match = {
+                return {
                   nav: item.name,
                   sub: p.label,
                   // level-3 panel opened from a flyout sub-item (e.g. Products)
@@ -530,8 +518,6 @@ function resolveActive(pageKey: string): {
                     parentNavName: item.name,
                   },
                 }
-                if (p.iconType === 'shortcut') { fallback ??= match; continue }
-                return match
               }
             }
           }
@@ -540,20 +526,18 @@ function resolveActive(pageKey: string): {
       for (const pGroup of item.panelSubmenu ?? []) {
         for (const p of pGroup) {
           if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
-            const match = {
+            return {
               nav: item.name,
               sub: p.label,
               // level-2 panel opened directly from the nav item (e.g. Settings, Reports)
               panel: { title: item.name, groups: item.panelSubmenu!, parentNavName: item.name },
             }
-            if (p.iconType === 'shortcut') { fallback ??= match; continue }
-            return match
           }
         }
       }
     }
   }
-  return fallback ?? { nav: 'Home', sub: null, panel: null }
+  return { nav: 'Home', sub: null, panel: null }
 }
 
 // Map URL-first-segment keys that don't appear directly in the nav tree to their
@@ -561,8 +545,8 @@ function resolveActive(pageKey: string): {
 // detail pages (e.g. receiving task detail in ERP scenario) don't snap the
 // sidebar away from the relevant section.
 const SECTION_PARENT: Record<string, string> = {
-  Receiving: 'Inbound delivery',
-  'Put away': 'Inbound delivery',
+  Receiving: 'Barang masuk',
+  'Put away': 'Barang masuk',
 }
 
 watch(currentPageKey, (key) => {
@@ -621,15 +605,20 @@ function handleNavClick(item: NavItem) {
   flyoutItem.value = null
 
   if (item.panelSubmenu) {
-    const firstItem = item.panelSubmenu[0][0]
-    // Re-clicking the same panel nav item always goes back to first item (e.g. Company profile)
-    // instead of toggling the panel closed.
-    openPanel({ title: item.name, groups: item.panelSubmenu, parentNavName: item.name })
-    activePanelSubItem.value = firstItem.label
-    navigate(firstItem.to ?? firstItem.label)
-    activeItem.value = item.name
+    // Nav item that directly opens a panel (e.g. Reports)
+    if (activePanel.value?.parentNavName === item.name) {
+      // Clicking same item again — close panel
+      closePanel()
+      activeItem.value = ''
+    } else {
+      const firstItem = item.panelSubmenu[0][0]
+      openPanel({ title: item.name, groups: item.panelSubmenu, parentNavName: item.name })
+      activePanelSubItem.value = firstItem.label
+      navigate(firstItem.to ?? firstItem.label)
+      activeItem.value = item.name
+    }
   } else if (!item.submenu) {
-    // Simple leaf nav item (e.g. Home, Expenses)
+    // Simple leaf nav item (e.g. Home, Expenses, Settings)
     activeItem.value = item.name
     if (item.path) router.push(item.path)
     else navigate(item.name)
@@ -647,20 +636,7 @@ function handleFlyoutSubItemClick(sub: SubItem) {
   const parentName = flyoutItem.value!.name
   flyoutItem.value = null
 
-  if (sub.iconType === 'settings') {
-    // Settings shortcut — open the Settings panel and navigate to the matching item.
-    // Find the settings panel item whose `to` or `label` matches the flyout item label;
-    // fall back to the first item (Company profile) if no match is found.
-    const settingsNav = navGroups.value.flat().find(n => n.name === 'Settings')
-    if (settingsNav?.panelSubmenu) {
-      const allItems = settingsNav.panelSubmenu.flat()
-      const matched  = allItems.find(i => (i.to ?? i.label) === sub.label) ?? allItems[0]
-      openPanel({ title: 'Settings', groups: settingsNav.panelSubmenu, parentNavName: 'Settings' })
-      activePanelSubItem.value = matched.label
-      navigate(matched.to ?? matched.label)
-      activeItem.value = 'Settings'
-    }
-  } else if (sub.panelSubmenu) {
+  if (sub.panelSubmenu) {
     // Level-2 item that opens a level-3 panel — auto-select first panel item
     const panelTitle = sub.panelTitle ?? parentName
     const firstItem = sub.panelSubmenu[0][0]
