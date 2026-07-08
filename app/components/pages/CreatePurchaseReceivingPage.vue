@@ -457,7 +457,6 @@ function handleCreate() {
   overflow: hidden;
 }
 .pr-items-section--bordered .pr-items-count {
-  border-top: 1px solid var(--mp-border-default);
 }
 .pr-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pr-items { width: 100%; table-layout: auto; border-collapse: collapse; }

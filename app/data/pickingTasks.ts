@@ -67,6 +67,10 @@ export interface PickingTask {
   status: "open" | "in progress" | "partially picked" | "completed" | "canceled";
   startDate?: string;
   endDate?: string;
+  /** ISO timestamp — set when auto-canceled by disabling Picking for the warehouse. */
+  canceledDate?: string;
+  /** Why this task was canceled — shown on the task detail page. */
+  canceledReason?: string;
   /** planned pick lines (per SKU per order) */
   lines?: PickingLine[];
   /** picked qty per line key (set as the operator picks) */
@@ -441,6 +445,39 @@ export function endPicking(
   if (assignments?.batchPicks) t.batchPicks = assignments.batchPicks;
   if (assignments?.serialPicks) t.serialPicks = assignments.serialPicks;
   persistPicking();
+}
+
+export function cancelPickingTask(taskId: string, reason?: string): void {
+  const t = getPickingTask(taskId);
+  if (!t) return;
+  t.status = "canceled";
+  t.canceledDate = nowIso();
+  if (reason) t.canceledReason = reason;
+  persistPicking();
+}
+
+/**
+ * Picking just got disabled for this warehouse (see ConfigureWarehousePage.vue) —
+ * void every open/in-progress picking task there. Already-`completed`/`partially
+ * picked` tasks are untouched (they already fed, or remain eligible for, a packing
+ * task). Returns a count so the caller can summarize the effect before committing.
+ */
+export function disablePickingForWarehouse(warehouseId: string): { canceledPickings: number } {
+  let canceledPickings = 0;
+  for (const t of pickingTasksFor([warehouseId])) {
+    if (t.status !== "open" && t.status !== "in progress") continue;
+    cancelPickingTask(t.id, 'Picking was turned off for this warehouse.');
+    canceledPickings++;
+  }
+  return { canceledPickings };
+}
+
+/** Read-only preview of disablePickingForWarehouse's effect, for the confirmation dialog. */
+export function previewDisablePicking(warehouseId: string): { openPickings: number } {
+  const openPickings = pickingTasksFor([warehouseId]).filter(
+    (t) => t.status === "open" || t.status === "in progress",
+  ).length;
+  return { openPickings };
 }
 
 /** True once picking is finished (fully or partially) — ready for a packing task. */

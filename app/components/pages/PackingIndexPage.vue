@@ -12,7 +12,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
 import { packingTasksFor, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
-import { addDeliveryTask, orderHasDelivery } from '~/data/deliveryTasks'
+import { addDeliveryTaskFromPackingTasks, orderHasDelivery } from '~/data/deliveryTasks'
 import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
 import { warehouses } from '~/data/warehouses'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
@@ -209,17 +209,20 @@ function bulkCreateShipping(selectedRows: Set<number>, deselectAll: () => void) 
 }
 function confirmShipping() {
   if (!shipAssigneeId.value) { shipAssigneeError.value = true; return }
-  let created = 0
+  // Group by sales order first — a delivery is per order, so two partial packing
+  // tasks for the same order must merge into ONE delivery (summed qty), not spawn a
+  // second delivery that the "one delivery per order" guard would just silently drop.
+  const byOrder = new Map<string, PackingTask[]>()
   for (const t of shipQueue.value) {
-    // Skip orders that already have a live delivery — including duplicates within
-    // this same batch (addDeliveryTask updates the store immediately).
-    if (orderHasDelivery(t.salesOrderId)) continue
+    if (!byOrder.has(t.salesOrderId)) byOrder.set(t.salesOrderId, [])
+    byOrder.get(t.salesOrderId)!.push(t)
+  }
+  let created = 0
+  for (const tasks of byOrder.values()) {
+    if (orderHasDelivery(tasks[0]!.salesOrderId)) continue
     created++
-    addDeliveryTask({
-      salesOrderId: t.salesOrderId, salesNo: t.salesNo,
-      packingTaskId: t.id, packingTaskNo: t.taskNo,
-      warehouseId: t.warehouseId, warehouseName: t.warehouseName,
-      assignee: shipAssigneeLabel.value, skuQty: t.skuQty, toShipQty: t.packedQty,
+    addDeliveryTaskFromPackingTasks(tasks, {
+      assignee: shipAssigneeLabel.value,
       deliveryMethod: (shipSingle.value && (shipHasFixedCourier.value || shipCourier.value.trim())) ? 'online' : (shipSingle.value ? 'self' : 'online'),
       courier: shipSingle.value ? (shipCourier.value.trim() || undefined) : undefined,
       trackingNo: shipSingle.value ? (shipTracking.value.trim() || undefined) : undefined,

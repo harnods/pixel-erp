@@ -11,7 +11,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { getDeliveryLineItems, allDeliveryTasksFlat } from '~/data/deliveryTaskDetails'
-import { getDeliveryTask, handoverToCourier, marketplaceShipping } from '~/data/deliveryTasks'
+import { getDeliveryTask, handoverToCourier, marketplaceShipping, packingTaskIdsForDelivery } from '~/data/deliveryTasks'
 import { getPackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
@@ -29,10 +29,19 @@ const isPending = computed(() => status.value === 'ready to ship')
 
 const shipTotal = computed(() => task.value?.toShipQty ?? 0)
 
-// Linked upstream transactions: sales order → packing → picking.
+// Linked upstream transactions: sales order → packing → picking. A delivery can be
+// merged from several packing tasks (bulk "Create delivery" on partial packing
+// tasks for the same order), so both are plural.
 const linkedOrder = computed(() => outgoingOrders.find(o => o.id === task.value?.salesOrderId))
-const linkedPacking = computed(() => task.value ? getPackingTask(task.value.packingTaskId) : undefined)
-const linkedPicking = computed(() => linkedPacking.value ? getPickingTask(linkedPacking.value.pickingTaskId) : undefined)
+const linkedPackings = computed(() => {
+  const t = task.value
+  if (!t) return []
+  return packingTaskIdsForDelivery(t).map(id => getPackingTask(id)).filter(Boolean) as NonNullable<ReturnType<typeof getPackingTask>>[]
+})
+const linkedPickings = computed(() => {
+  const ids = new Set(linkedPackings.value.map(p => p.pickingTaskId).filter(Boolean) as string[])
+  return [...ids].map(id => getPickingTask(id)).filter(Boolean) as NonNullable<ReturnType<typeof getPickingTask>>[]
+})
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 function agingDays(startDate?: string, endDate?: string): number {
@@ -231,9 +240,9 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
       </section>
 
       <section class="del-progress">
-        <div class="del-progress-stat"><span class="del-progress-label">SKUs</span><span class="del-progress-val">{{ task.skuQty }}</span></div>
-        <div class="del-progress-stat"><span class="del-progress-label">To ship</span><span class="del-progress-val">{{ fmt(shipTotal) }}</span></div>
-        <div class="del-progress-stat"><span class="del-progress-label">Shipped</span><span class="del-progress-val">{{ fmt(task.shippedQty) }}</span></div>
+        <div class="del-progress-stat"><span class="del-progress-label">SKU qty</span><span class="del-progress-val">{{ task.skuQty }}</span></div>
+        <div class="del-progress-stat"><span class="del-progress-label">To ship qty</span><span class="del-progress-val">{{ fmt(shipTotal) }}</span></div>
+        <div class="del-progress-stat"><span class="del-progress-label">Shipped qty</span><span class="del-progress-val">{{ fmt(task.shippedQty) }}</span></div>
       </section>
 
       <div class="del-table-wrap">
@@ -282,8 +291,8 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
       <MpTabs id="del-tabs" :default-value="0" variant-color="green" class="del-tabs">
         <MpTabList>
           <MpTab id="del-tab-so" :value="0">Sales order ({{ linkedOrder ? 1 : 0 }})</MpTab>
-          <MpTab id="del-tab-pick" :value="1">Picking ({{ linkedPicking ? 1 : 0 }})</MpTab>
-          <MpTab id="del-tab-pack" :value="2">Packing ({{ linkedPacking ? 1 : 0 }})</MpTab>
+          <MpTab id="del-tab-pick" :value="1">Picking ({{ linkedPickings.length }})</MpTab>
+          <MpTab id="del-tab-pack" :value="2">Packing ({{ linkedPackings.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <!-- Sales order -->
@@ -333,7 +342,7 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
           </MpTabPanel>
           <!-- Picking -->
           <MpTabPanel :value="1">
-            <h3 class="linked-section-title">Picking task</h3>
+            <h3 class="linked-section-title">Picking {{ linkedPickings.length > 1 ? 'tasks' : 'task' }}</h3>
             <div class="del-linked-wrap">
               <table class="del-linked">
                 <thead><tr>
@@ -346,11 +355,11 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
                   <th class="detail-th">End date</th>
                 </tr></thead>
                 <tbody>
-                  <tr v-if="linkedPicking" class="detail-item-row">
+                  <tr v-for="lp in linkedPickings" :key="lp.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
-                        <span class="del-link-num">{{ linkedPicking.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/picking/${linkedPicking.id}`)">
+                        <span class="del-link-num">{{ lp.taskNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/picking/${lp.id}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -359,27 +368,27 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
                         </button>
                       </div>
                     </td>
-                    <td class="detail-td">{{ linkedPicking.assignee }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(linkedPicking.skuQty) }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(linkedPicking.pickedQty) }}</td>
-                    <td class="detail-td"><ErpStatusBadge :status="linkedPicking.status" /></td>
-                    <td class="detail-td">{{ linkedPicking.startDate ? formatDateTime(linkedPicking.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ lp.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(lp.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(lp.pickedQty) }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="lp.status" /></td>
+                    <td class="detail-td">{{ lp.startDate ? formatDateTime(lp.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        <span v-if="linkedPicking.endDate">{{ formatDateTime(linkedPicking.endDate) }}</span>
+                        <span v-if="lp.endDate">{{ formatDateTime(lp.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(linkedPicking.startDate, linkedPicking.endDate) > 1" class="linked-aging">{{ agingDays(linkedPicking.startDate, linkedPicking.endDate) }} days</span>
+                        <span v-if="agingDays(lp.startDate, lp.endDate) > 1" class="linked-aging">{{ agingDays(lp.startDate, lp.endDate) }} days</span>
                       </span>
                     </td>
                   </tr>
-                  <tr v-else><td class="detail-td del-empty" colspan="7">—</td></tr>
+                  <tr v-if="!linkedPickings.length"><td class="detail-td del-empty" colspan="7">—</td></tr>
                 </tbody>
               </table>
             </div>
           </MpTabPanel>
           <!-- Packing -->
           <MpTabPanel :value="2">
-            <h3 class="linked-section-title">Packing task</h3>
+            <h3 class="linked-section-title">Packing {{ linkedPackings.length > 1 ? 'tasks' : 'task' }}</h3>
             <div class="del-linked-wrap">
               <table class="del-linked">
                 <thead><tr>
@@ -392,11 +401,11 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
                   <th class="detail-th">End date</th>
                 </tr></thead>
                 <tbody>
-                  <tr v-if="linkedPacking" class="detail-item-row">
+                  <tr v-for="lp in linkedPackings" :key="lp.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
-                        <span class="del-link-num">{{ linkedPacking.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/packing/${linkedPacking.id}`)">
+                        <span class="del-link-num">{{ lp.taskNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/packing/${lp.id}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -405,20 +414,20 @@ function goBack() { router.push('/outbound-delivery?tab=Delivery') }
                         </button>
                       </div>
                     </td>
-                    <td class="detail-td">{{ linkedPacking.assignee }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(linkedPacking.skuQty) }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(linkedPacking.packedQty) }}</td>
-                    <td class="detail-td"><ErpStatusBadge :status="linkedPacking.status" /></td>
-                    <td class="detail-td">{{ linkedPacking.startDate ? formatDateTime(linkedPacking.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ lp.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(lp.skuQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ fmt(lp.packedQty) }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="lp.status" /></td>
+                    <td class="detail-td">{{ lp.startDate ? formatDateTime(lp.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        <span v-if="linkedPacking.endDate">{{ formatDateTime(linkedPacking.endDate) }}</span>
+                        <span v-if="lp.endDate">{{ formatDateTime(lp.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(linkedPacking.startDate, linkedPacking.endDate) > 1" class="linked-aging">{{ agingDays(linkedPacking.startDate, linkedPacking.endDate) }} days</span>
+                        <span v-if="agingDays(lp.startDate, lp.endDate) > 1" class="linked-aging">{{ agingDays(lp.startDate, lp.endDate) }} days</span>
                       </span>
                     </td>
                   </tr>
-                  <tr v-else><td class="detail-td del-empty" colspan="7">—</td></tr>
+                  <tr v-if="!linkedPackings.length"><td class="detail-td del-empty" colspan="7">—</td></tr>
                 </tbody>
               </table>
             </div>

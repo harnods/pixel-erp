@@ -351,7 +351,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden;
 }
 .detail-items-section--bordered .detail-items-count {
-  border-top: 1px solid var(--mp-border-default); border-bottom: none;
+ border-bottom: none;
 }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }

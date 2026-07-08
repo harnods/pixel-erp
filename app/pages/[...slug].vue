@@ -14,6 +14,8 @@ import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
+import { useWarehouseContext } from '~/composables/useWarehouseContext'
+import { getWarehouseConfig } from '~/data/warehouseConfig'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
@@ -42,6 +44,7 @@ const pageRegistry: Record<string, Component> = {
   'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Stock adjustments': defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock count':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
@@ -53,6 +56,7 @@ const SalesOrderDetailsPage = defineAsyncComponent(() => import('~/components/pa
 const ImportWarehousesPage = defineAsyncComponent(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = defineAsyncComponent(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseDetailsPage.vue'))
+const ConfigureWarehousePage = defineAsyncComponent(() => import('~/components/pages/ConfigureWarehousePage.vue'))
 const StorageLocationDetailsPage = defineAsyncComponent(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
 const ReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue'))
@@ -196,6 +200,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'warehouses' && segs[2] === 'edit') {
     return { component: NewWarehousePage, id: segs[1]! }
   }
+  // /warehouses/:id/configure → per-warehouse configuration (placeholder)
+  if (segs.length >= 3 && segs[0] === 'warehouses' && segs[2] === 'configure') {
+    return { component: ConfigureWarehousePage, id: segs[1]! }
+  }
   // /warehouses/:whId/locations/:locId → storage location detail
   if (segs.length >= 4 && segs[0] === 'warehouses' && segs[2] === 'locations') {
     return { component: StorageLocationDetailsPage, id: `${segs[1]}::${segs[3]}` }
@@ -218,6 +226,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
+  'Cycle counts':      ['All cycle counts', 'Awaiting approval'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -253,14 +262,28 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
-  if (currentPageKey.value === 'Stock adjustments') {
+  if (currentPageKey.value === 'Stock adjustments' || currentPageKey.value === 'Cycle counts') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   return {}
 })
 
-const currentTabs = computed<string[]>(() => pageTabs[currentPageKey.value] ?? [])
+// Single-warehouse-scoped users (WMS Ops / Ops 2) don't see a tab for a stage
+// that's disabled for their active warehouse (see ConfigureWarehousePage.vue).
+// Multi-warehouse views (ERP/WMS Standalone) keep every tab — a disabled
+// warehouse's tasks just never appear in it, no need to hide the tab itself.
+const { hasWarehouseContext, activeWarehouse } = useWarehouseContext()
+const currentTabs = computed<string[]>(() => {
+  const tabs = pageTabs[currentPageKey.value] ?? []
+  if (!hasWarehouseContext.value || !activeWarehouse.value) return tabs
+  const config = getWarehouseConfig(activeWarehouse.value.id)
+  return tabs.filter((tab) => {
+    if (currentPageKey.value === 'Inbound delivery' && tab === 'Put-away') return config.putAwayEnabled
+    if (currentPageKey.value === 'Outbound delivery' && tab === 'Picking') return config.pickingEnabled
+    return true
+  })
+})
 const activeTab = ref('')
 watch([currentPageKey, () => route.query.tab], () => {
   const tabs = currentTabs.value
@@ -299,6 +322,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
   },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
+    'Awaiting approval': StockAdjustmentsPage,
+  },
+  'Cycle counts': {
+    'All cycle counts': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
   },
 }
@@ -838,6 +865,12 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockInOut">
             <MpIcon name="add" size="md" color="icon.inverse" />
             New stock in/out
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cycle counts'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockCount">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            New cycle count
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock adjustments'" class="page-title-actions">

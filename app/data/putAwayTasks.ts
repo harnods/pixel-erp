@@ -5,6 +5,7 @@ import {
   receivingTasksForReceipt,
   getReceivingTask,
   linkPutAway,
+  completeReceivingWithoutPutAway,
 } from "./receivingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
@@ -41,9 +42,13 @@ export interface PutAwayTask {
   assignee: string;
   itemQty: number;
   destination: string;
-  status: "open" | "in progress" | "completed";
+  status: "open" | "in progress" | "completed" | "canceled";
   startDate?: string;
   endDate?: string;
+  /** ISO timestamp — set when auto-canceled by disabling Put-away for the warehouse. */
+  canceledDate?: string;
+  /** Why this task was canceled — shown on the task detail page. */
+  canceledReason?: string;
   completedItems?: Array<{ skuCode: string; qty: number; binLocation: string }>;
   /** Per-SKU batch destination assignments (batch-tracked SKUs), draft or final. */
   batchAssignments?: Record<string, PutAwayBatchAssignment[]>;
@@ -156,7 +161,9 @@ export function putAwayTasksFor(warehouseIds?: string[]): PutAwayTask[] {
 
 /** Badge count for the Put-away stage = unfinished put-away tasks (scoped). */
 export function putAwayOpenCount(warehouseIds?: string[]): number {
-  return putAwayTasksFor(warehouseIds).filter((t) => t.status !== "completed").length;
+  return putAwayTasksFor(warehouseIds).filter(
+    (t) => t.status !== "completed" && t.status !== "canceled",
+  ).length;
 }
 
 /** Put-away task(s) for a receipt — only those consuming THIS receipt's receiving tasks. */
@@ -212,4 +219,62 @@ export function endPutAway(
   if (assignments?.batchAssignments) t.batchAssignments = assignments.batchAssignments;
   if (assignments?.serialAssignments) t.serialAssignments = assignments.serialAssignments;
   persistPutAways();
+}
+
+export function cancelPutAway(taskId: string, reason?: string): void {
+  const t = getPutAwayTask(taskId);
+  if (!t) return;
+  t.status = 'canceled';
+  t.canceledDate = nowIso();
+  if (reason) t.canceledReason = reason;
+  persistPutAways();
+}
+
+/**
+ * Put-away just got disabled for this warehouse (see ConfigureWarehousePage.vue):
+ * - open/in-progress put-away tasks are voided — canceled, and their source
+ *   receiving task(s) are finished directly (the goods were received; there's just
+ *   no put-away step anymore). Already-`completed` put-away tasks are untouched.
+ * - receiving tasks already sitting in "pending put-away" with no put-away task at
+ *   all yet are also finished directly.
+ * Returns counts so the caller can summarize the effect before committing.
+ */
+export function disablePutAwayForWarehouse(warehouseId: string): {
+  canceledPutAways: number;
+  autoCompletedReceiving: number;
+} {
+  let canceledPutAways = 0;
+  let autoCompletedReceiving = 0;
+
+  for (const t of putAwayTasksFor([warehouseId])) {
+    if (t.status !== 'open' && t.status !== 'in progress') continue;
+    cancelPutAway(t.id, 'Put-away was turned off for this warehouse.');
+    canceledPutAways++;
+    for (const id of t.receivingTaskIds) {
+      completeReceivingWithoutPutAway(id);
+      autoCompletedReceiving++;
+    }
+  }
+
+  for (const r of receivingTaskRefsForWarehouse(warehouseId)) {
+    if (r.status !== 'pending put-away') continue;
+    completeReceivingWithoutPutAway(r.id);
+    autoCompletedReceiving++;
+  }
+
+  return { canceledPutAways, autoCompletedReceiving };
+}
+
+/** Read-only preview of disablePutAwayForWarehouse's effect, for the confirmation dialog. */
+export function previewDisablePutAway(warehouseId: string): {
+  openPutAways: number;
+  pendingReceiving: number;
+} {
+  const openPutAways = putAwayTasksFor([warehouseId]).filter(
+    (t) => t.status === 'open' || t.status === 'in progress',
+  ).length;
+  const pendingReceiving = receivingTaskRefsForWarehouse(warehouseId).filter(
+    (r) => r.status === 'pending put-away',
+  ).length;
+  return { openPutAways, pendingReceiving };
 }

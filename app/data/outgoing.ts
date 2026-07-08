@@ -2,6 +2,7 @@ import { reactive } from "vue";
 import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY } from './master'
+import { getWarehouseConfig } from './warehouseConfig'
 
 /** Outbound order status. */
 export type OutgoingStatus =
@@ -405,7 +406,7 @@ const PICKABLE_STATUSES = ["open", "in progress"];
 
 /** Can a new picking list still be created for this order? */
 export function canCreatePicking(o: OutgoingOrder): boolean {
-  return PICKABLE_STATUSES.includes(o.status);
+  return PICKABLE_STATUSES.includes(o.status) && getWarehouseConfig(o.warehouseId).pickingEnabled;
 }
 
 /** Orders eligible to be picked (used to seed picking tasks + the create form). */

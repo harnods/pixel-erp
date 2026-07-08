@@ -46,6 +46,9 @@ watch([() => props.orderId, lineItems], () => {
 const isInProgress = computed(() => localStatus.value === 'in progress')
 
 const pickedTotal = computed(() => lineItems.value.reduce((s, it) => s + it.pickedQty, 0))
+// Picking was skipped for this task's warehouse — there's no separate "picked" step
+// to show; "available to pack" already equals the order's full demand.
+const skippedPicking = computed(() => !task.value?.pickingTaskId)
 const packedTotal = computed(() => Object.values(localPacked.value).reduce((a, b) => a + (b || 0), 0))
 const outstandingTotal = computed(() => Math.max(0, pickedTotal.value - packedTotal.value))
 function rowPacked(key: string, fallback: number): number { return localPacked.value[key] ?? fallback }
@@ -86,7 +89,7 @@ const orderDelivered = computed(() => task.value ? orderHasDelivery(task.value.s
 const linkedPickings = computed(() => {
   const t = task.value
   if (!t) return []
-  const ids = t.pickingTaskIds?.length ? t.pickingTaskIds : [t.pickingTaskId]
+  const ids = t.pickingTaskIds?.length ? t.pickingTaskIds : (t.pickingTaskId ? [t.pickingTaskId] : [])
   return ids.map(id => getPickingTask(id)).filter(Boolean) as NonNullable<ReturnType<typeof getPickingTask>>[]
 })
 
@@ -315,7 +318,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 
       <section class="pck-progress">
         <div class="pck-progress-stat"><span class="pck-progress-label">SKU qty</span><span class="pck-progress-val">{{ task.skuQty }}</span></div>
-        <div class="pck-progress-stat"><span class="pck-progress-label">Picked qty</span><span class="pck-progress-val">{{ fmt(pickedTotal) }}</span></div>
+        <div v-if="!skippedPicking" class="pck-progress-stat"><span class="pck-progress-label">Picked qty</span><span class="pck-progress-val">{{ fmt(pickedTotal) }}</span></div>
         <div class="pck-progress-stat"><span class="pck-progress-label">Packed qty</span><span class="pck-progress-val">{{ fmt(packedTotal) }}</span></div>
         <div class="pck-progress-stat"><span class="pck-progress-label">Outstanding qty</span><span class="pck-progress-val">{{ fmt(outstandingTotal) }}</span></div>
       </section>
@@ -326,7 +329,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="pck-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="itemSearch" class="pck-search" type="text" placeholder="Search..." />
           </div>
         </div>
         <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
@@ -337,7 +340,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                   <th class="detail-th">Product</th>
                   <th class="detail-th">SKU</th>
                   <th class="detail-th">Storage location</th>
-                  <th class="detail-th detail-th--num">Picked qty</th>
+                  <th v-if="!skippedPicking" class="detail-th detail-th--num">Picked qty</th>
                   <th class="detail-th detail-th--num">Packed qty</th>
                   <th class="detail-th detail-th--num">Outstanding qty</th>
                   <th class="detail-th">Unit</th>
@@ -351,20 +354,23 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 
                   <!-- Picked qty: batch/serial-tracked SKUs split into a value row +
                        a "View batch"/"View serial number" row (read-only — what was
-                       actually picked, no storage location). -->
-                  <td v-if="isBatchTrackedSku(item.skuCode)" class="detail-td detail-td--picked-batch">
-                    <div class="pck-picked-qty">{{ fmt(item.pickedQty) }}</div>
-                    <div class="pck-picked-action">
-                      <button class="pck-view-link" type="button" @click="openViewBatch(item)">View batch</button>
-                    </div>
-                  </td>
-                  <td v-else-if="isSerialTrackedSku(item.skuCode)" class="detail-td detail-td--picked-batch">
-                    <div class="pck-picked-qty">{{ fmt(item.pickedQty) }}</div>
-                    <div class="pck-picked-action">
-                      <button class="pck-view-link" type="button" @click="openViewSerial(item)">View serial number</button>
-                    </div>
-                  </td>
-                  <td v-else class="detail-td detail-td--num">{{ fmt(item.pickedQty) }}</td>
+                       actually picked, no storage location). Hidden entirely when
+                       picking was skipped for this task's warehouse. -->
+                  <template v-if="!skippedPicking">
+                    <td v-if="isBatchTrackedSku(item.skuCode)" class="detail-td detail-td--picked-batch">
+                      <div class="pck-picked-qty">{{ fmt(item.pickedQty) }}</div>
+                      <div class="pck-picked-action">
+                        <button class="pck-view-link" type="button" @click="openViewBatch(item)">View batch</button>
+                      </div>
+                    </td>
+                    <td v-else-if="isSerialTrackedSku(item.skuCode)" class="detail-td detail-td--picked-batch">
+                      <div class="pck-picked-qty">{{ fmt(item.pickedQty) }}</div>
+                      <div class="pck-picked-action">
+                        <button class="pck-view-link" type="button" @click="openViewSerial(item)">View serial number</button>
+                      </div>
+                    </td>
+                    <td v-else class="detail-td detail-td--num">{{ fmt(item.pickedQty) }}</td>
+                  </template>
 
                   <td class="detail-td detail-td--num">
                     <span :class="isInProgress ? '' : (rowPacked(item.key, item.packedQty) === item.pickedQty ? 'pck-qty--full' : rowPacked(item.key, item.packedQty) > 0 ? 'pck-qty--partial' : 'pck-qty--zero')">

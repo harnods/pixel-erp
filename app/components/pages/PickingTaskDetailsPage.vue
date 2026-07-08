@@ -260,7 +260,11 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         </div>
         <div class="content-list-col">
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
-          <ContentList label="End date">
+          <template v-if="localStatus === 'canceled'">
+            <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+          </template>
+          <ContentList v-else label="End date">
             <span class="pkd-end-cell">
               <span>{{ localEndDate ? formatDateTimeLong(localEndDate) : '—' }}</span>
               <span v-if="agingLabel()" class="pkd-aging">{{ agingLabel() }}</span>

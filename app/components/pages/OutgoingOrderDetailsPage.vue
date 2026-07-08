@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpAutocomplete, MpFormControl, MpFormLabel, MpFormErrorMessage, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { outgoingOrders, outgoingStage } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, isMarketplaceOrder } from '~/data/outgoing'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
-import { getPackingForOrder } from '~/data/packingTasks'
+import { getPackingForOrder, addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
 import { deliveryTasks, marketplaceShipping } from '~/data/deliveryTasks'
+import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
@@ -23,6 +26,8 @@ syncOutboundOrderStatuses()
 
 const order = computed(() => outgoingOrders.find(o => o.id === props.orderId))
 const lineItems = computed(() => order.value ? buildPickingLines([order.value.id], [order.value.salesNo]) : [])
+// Picking disabled for this order's warehouse — "Picked qty" is never meaningful.
+const skippedPicking = computed(() => !order.value || !getWarehouseConfig(order.value.warehouseId).pickingEnabled)
 
 const linkedPicking = computed(() => getPickingForOrder(props.orderId))
 const linkedPacking = computed(() => getPackingForOrder(props.orderId))
@@ -182,6 +187,54 @@ function createPicking() {
   router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id } })
 }
 
+// ─── Direct-to-packing (Picking disabled for the order's warehouse) ─────────────
+// Marketplace orders are all-or-nothing (nothing to review) → quick assignee-only
+// modal, straight to creation. Non-marketplace orders can be packed partially, so
+// they go through the full "New packing" page instead.
+const ASSIGNEES = [
+  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
+  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
+  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
+  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
+  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
+  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
+  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
+  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
+]
+const directPackModalOpen = ref(false)
+const directPackAssigneeId = ref('')
+const directPackAssigneeError = ref(false)
+watch(directPackAssigneeId, (v) => { if (v) directPackAssigneeError.value = false })
+
+function openDirectPacking() {
+  if (!order.value) return
+  if (!isMarketplaceOrder(order.value)) {
+    router.push({ path: '/outbound-delivery/packing/create', query: { orderId: order.value.id } })
+    return
+  }
+  directPackAssigneeId.value = ''
+  directPackAssigneeError.value = false
+  directPackModalOpen.value = true
+}
+function closeDirectPacking() {
+  directPackModalOpen.value = false
+}
+function confirmDirectPacking() {
+  if (!directPackAssigneeId.value) { directPackAssigneeError.value = true; return }
+  if (!order.value) return
+  const assignee = ASSIGNEES.find(a => a.id === directPackAssigneeId.value)?.name ?? ''
+  const task = addPackingTaskFromOrder({
+    salesOrderId: order.value.id,
+    salesNo: order.value.salesNo,
+    warehouseId: order.value.warehouseId,
+    warehouseName: order.value.warehouseName,
+    assignee,
+  })
+  closeDirectPacking()
+  toast.notify({ variant: 'success', title: 'Packing task created', maxWidth: 'max-content' })
+  router.push(`/packing/${task.id}`)
+}
+
 // footer divider
 const stageEl = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)
@@ -258,7 +311,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                   <th class="detail-th">Product</th>
                   <th class="detail-th">SKU</th>
                   <th class="detail-th detail-th--num">Order qty</th>
-                  <th class="detail-th detail-th--num">Picked qty</th>
+                  <th v-if="!skippedPicking" class="detail-th detail-th--num">Picked qty</th>
                   <th class="detail-th detail-th--num">Packed qty</th>
                   <th class="detail-th detail-th--num">Shipped qty</th>
                   <th class="detail-th">Unit</th>
@@ -269,7 +322,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                   <td class="detail-td"><ProductCell :name="item.product" :desc="item.desc" :image="item.img" /></td>
                   <td class="detail-td">{{ item.sku }}</td>
                   <td class="detail-td detail-td--num">{{ fmt(item.qty) }}</td>
-                  <td class="detail-td detail-td--num">{{ fmt(prog(item.key).picked) }}</td>
+                  <td v-if="!skippedPicking" class="detail-td detail-td--num">{{ fmt(prog(item.key).picked) }}</td>
                   <td class="detail-td detail-td--num">{{ fmt(prog(item.key).packed) }}</td>
                   <td class="detail-td detail-td--num">{{ fmt(prog(item.key).shipped) }}</td>
                   <td class="detail-td">{{ item.unit }}</td>
@@ -443,6 +496,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       <button v-if="canPickOrder(order)" class="detail-btn detail-btn--primary" @click="createPicking">
         Create picking list
       </button>
+      <button v-if="canCreatePackingDirectlyForOrder(order)" class="detail-btn detail-btn--primary" @click="openDirectPacking">
+        Create packing
+      </button>
     </footer>
 
     <ActivityLogModal
@@ -453,6 +509,40 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       :entries="activityEntries"
       @close="activityOpen = false"
     />
+
+    <!-- ── Direct-to-packing modal — marketplace orders only ── -->
+    <MpModal
+      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="sm"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
+    >
+      <MpModalContent>
+        <MpModalHeader>Create packing?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="ood-direct-pack-desc">Order {{ order.number }}'s full quantity will go into a packing task.</p>
+          <MpFormControl id="ood-direct-pack-assignee" is-required :is-invalid="directPackAssigneeError">
+            <MpFormLabel>Assignee</MpFormLabel>
+            <MpAutocomplete
+              id="ood-direct-pack-assignee-ac"
+              v-model="directPackAssigneeId"
+              :data="ASSIGNEES"
+              label-prop="name"
+              value-prop="id"
+              placeholder="Select assignee"
+              is-searchable is-clearable use-portal is-full-width
+              :is-invalid="directPackAssigneeError"
+            />
+            <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+          </MpFormControl>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="ood-modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">Create packing</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
   </div>
 
@@ -554,6 +644,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
 
 .ood-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+.ood-direct-pack-desc { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.ood-modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 /* Notes / attachment / audit (mirrors Sales order & Receipt detail) */
 .detail-notes-left { display: flex; flex-direction: column; }

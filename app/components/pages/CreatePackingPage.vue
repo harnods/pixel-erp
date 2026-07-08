@@ -7,7 +7,7 @@ import {
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQtyInTask, type PickingTask } from '~/data/pickingTasks'
-import { addPackingTask, getPackingForOrder } from '~/data/packingTasks'
+import { addPackingTask, addPackingTaskFromOrder, getPackingForOrder, remainingSkusForOrder } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { orderSkuLines } from '~/data/inventory'
 import { scrollToFirstError } from '~/utils/form'
@@ -38,12 +38,24 @@ const pickingIds = computed<string[]>(() => {
 const picks = computed<PickingTask[]>(() => pickingIds.value.map(id => getPickingTask(id)).filter(Boolean) as PickingTask[])
 // Primary list — drives the warehouse + form context; order packing aggregates all lists.
 const pick = computed(() => picks.value[0])
-const warehouseName = computed(() => pick.value?.warehouseName ?? '')
-// Display-only warehouse autocomplete (locked to the picking task's warehouse)
-const warehouseAc = computed(() =>
-  pick.value ? [{ id: pick.value.warehouseId, name: pick.value.warehouseName }] : [],
-)
-const warehouseId = ref(pick.value?.warehouseId ?? '')
+
+// ─── Direct-from-order mode (?orderId) ───────────────────────────────────────────
+// Picking is disabled for the order's warehouse — non-marketplace orders land here
+// (marketplace orders use the lightweight modal on the Outgoing index instead,
+// since they're all-or-nothing and have nothing to review).
+const directOrderId = computed(() => route.query.orderId as string | undefined)
+const directOrder = computed(() => directOrderId.value ? outgoingOrders.find(o => o.id === directOrderId.value) : undefined)
+const isDirectMode = computed(() => !pickingIds.value.length && !!directOrder.value)
+
+const hasSource = computed(() => !!pick.value || !!directOrder.value)
+const warehouseName = computed(() => pick.value?.warehouseName ?? directOrder.value?.warehouseName ?? '')
+// Display-only warehouse autocomplete (locked to the source's warehouse)
+const warehouseAc = computed(() => {
+  if (pick.value) return [{ id: pick.value.warehouseId, name: pick.value.warehouseName }]
+  if (directOrder.value) return [{ id: directOrder.value.warehouseId, name: directOrder.value.warehouseName }]
+  return []
+})
+const warehouseId = ref(pick.value?.warehouseId ?? directOrder.value?.warehouseId ?? '')
 
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
@@ -56,6 +68,26 @@ interface PackLine { key: string; sku: string; product: string; desc: string; im
 interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; packable: boolean; lines: PackLine[] }
 
 const orderTables = computed<OrderTable[]>(() => {
+  // Direct mode: no picking task at all — only the SKUs not yet covered by an earlier
+  // direct-mode packing task on this order are available to pack (picking was skipped
+  // for this warehouse, and a partial packing leaves the rest for a follow-up).
+  if (isDirectMode.value) {
+    const o = directOrder.value
+    if (!o) return []
+    // `order` = the SKU's full order demand; `picked` here doubles as "available to
+    // pack now" (order qty minus whatever an earlier direct-mode task already packed)
+    // — the cap the Pack qty input can't exceed.
+    const lines: PackLine[] = remainingSkusForOrder(o).map((l) => ({
+      key: `${o.id}::${l.sku}`,
+      sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
+      unit: l.product.unit, order: l.qty, picked: l.qty - l.packed,
+    }))
+    return [{
+      orderId: o.id, salesNo: o.salesNo, customer: o.customer ?? '', source: o.source,
+      isMarketplace: false, fullyPicked: true, alreadyPacked: false, packable: lines.length > 0,
+      lines,
+    }]
+  }
   if (!picks.value.length) return []
   // Union of every selected list's orders, deduped — an order split across lists (or
   // repeated because two selected lists include it) becomes ONE packing task.
@@ -124,6 +156,38 @@ function toggleOrder(orderId: string) {
   const s = new Set(excludedOrderIds.value)
   s.has(orderId) ? s.delete(orderId) : s.add(orderId)
   excludedOrderIds.value = s
+}
+
+// ─── Direct mode: per-SKU exclusion + qty ────────────────────────────────────────
+// Non-marketplace, skip-picking orders can exclude individual SKUs AND set how much
+// of each to pack — same as Create picking list. Excluded SKUs, or the un-packed
+// remainder of a partially-packed one, stay eligible for a follow-up packing task.
+const excludedSkuKeys = ref(new Set<string>())
+function isLineSelected(key: string) { return !excludedSkuKeys.value.has(key) }
+function toggleLineSelection(key: string) {
+  const s = new Set(excludedSkuKeys.value)
+  s.has(key) ? s.delete(key) : s.add(key)
+  excludedSkuKeys.value = s
+}
+const directLines = computed(() => orderTables.value[0]?.lines ?? [])
+
+const packQtyOverrides = ref<Record<string, number>>({})
+/** row.picked is the cap here (order qty minus what's already covered elsewhere). */
+function packQtyFor(row: PackLine): number { return packQtyOverrides.value[row.key] ?? row.picked }
+function setPackQty(key: string, val: string, cap: number) {
+  const n = Math.min(cap, Math.max(0, Math.floor(Number(val) || 0)))
+  packQtyOverrides.value = { ...packQtyOverrides.value, [key]: n }
+}
+
+const selectedDirectLines = computed(() =>
+  directLines.value
+    .filter(l => isLineSelected(l.key))
+    .map(l => ({ ...l, picked: packQtyFor(l) }))
+    .filter(l => l.picked > 0),
+)
+const allDirectLinesSelected = computed(() => directLines.value.length > 0 && directLines.value.every(l => isLineSelected(l.key)))
+function toggleAllDirectLines() {
+  excludedSkuKeys.value = allDirectLinesSelected.value ? new Set(directLines.value.map(l => l.key)) : new Set()
 }
 
 const orderError = ref(false)
@@ -222,13 +286,31 @@ function goPacking() {
 }
 
 function handleCreate() {
-  const p = pick.value
-  if (!p) return
+  if (!hasSource.value) return
   let valid = true
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
-  if (selectedTotals.value.orders === 0) { orderError.value = true; valid = false }
+  if (isDirectMode.value) {
+    if (selectedDirectLines.value.length === 0) { orderError.value = true; valid = false }
+  } else if (selectedTotals.value.orders === 0) { orderError.value = true; valid = false }
   if (!valid) { scrollToFirstError(); return }
 
+  if (isDirectMode.value) {
+    // No picking task at all — pack only the SKUs the operator kept checked; any
+    // excluded ones stay available for a follow-up packing task on this order.
+    const o = directOrder.value!
+    addPackingTaskFromOrder({
+      salesOrderId: o.id,
+      salesNo: o.salesNo,
+      warehouseId: o.warehouseId,
+      warehouseName: o.warehouseName,
+      assignee: assigneeLabel.value,
+      lines: selectedDirectLines.value.map(l => ({ sku: l.sku, qty: l.picked })),
+    })
+    router.push({ path: '/outbound-delivery', query: { tab: 'Packing', saved: '1' } })
+    return
+  }
+
+  const p = pick.value!
   // One packing task per selected PACKABLE sales order — packs everything picked for it
   // across ALL its picking lists, and records every contributing picking list.
   for (const t of packableTables.value) {
@@ -273,7 +355,7 @@ function handleCreate() {
     <div ref="stageEl" class="detail-stage">
 
       <!-- Not found -->
-      <div v-if="!pick" class="pk-empty">
+      <div v-if="!hasSource" class="pk-empty">
         <p class="pk-empty-title">Picking task not found</p>
         <p class="pk-empty-desc">This packing task must be created from a completed picking task.</p>
       </div>
@@ -324,7 +406,7 @@ function handleCreate() {
         <div class="pk-sku-section">
           <h2 class="pk-section-title">Items to pack</h2>
           <div class="pk-section-meta">
-            <div class="pk-picking-ref">
+            <div v-if="!isDirectMode" class="pk-picking-ref">
               <span class="pk-picking-ref-label">{{ sourcePickingNos.length > 1 ? 'Picking lists' : 'Picking list' }}</span>
               <span class="pk-picking-ref-val">{{ sourcePickingNos.join(', ') }}</span>
             </div>
@@ -369,18 +451,28 @@ function handleCreate() {
               <div :ref="el => setScrollRef(t.orderId, el)" class="pk-items-scroll">
                 <table class="pk-items">
                   <colgroup>
-                    <col style="width: 42%" />
-                    <col style="width: 22%" />
-                    <col style="width: 14%" />
-                    <col style="width: 14%" />
+                    <col v-if="isDirectMode" style="width: 6%" />
+                    <col :style="{ width: isDirectMode ? '30%' : '42%' }" />
+                    <col style="width: 18%" />
+                    <col :style="{ width: isDirectMode ? '14%' : '14%' }" />
+                    <col v-if="!isDirectMode" style="width: 14%" />
+                    <col v-if="isDirectMode" style="width: 14%" />
                     <col style="width: 8%" />
                   </colgroup>
                   <thead>
                     <tr>
+                      <th v-if="isDirectMode" class="pk-th pk-th--check" @click.stop>
+                        <MpCheckbox
+                          :id="`pc-all-${t.orderId}`"
+                          :is-checked="allDirectLinesSelected"
+                          @change="toggleAllDirectLines"
+                        />
+                      </th>
                       <th class="pk-th">Product</th>
                       <th class="pk-th">SKU</th>
                       <th class="pk-th pk-th--num">Order qty</th>
-                      <th class="pk-th pk-th--num">Picked qty</th>
+                      <th v-if="!isDirectMode" class="pk-th pk-th--num">Picked qty</th>
+                      <th v-if="isDirectMode" class="pk-th pk-th--num">Pack qty</th>
                       <th class="pk-th">Unit</th>
                     </tr>
                   </thead>
@@ -389,14 +481,31 @@ function handleCreate() {
                       v-for="row in visibleLines(t)"
                       :key="row.key"
                       class="pk-item-row"
-                      :class="{ 'pk-item-row--off': !isOrderSelected(t.orderId) }"
+                      :class="{ 'pk-item-row--off': isDirectMode ? !isLineSelected(row.key) : !isOrderSelected(t.orderId) }"
                     >
+                      <td v-if="isDirectMode" class="pk-td" @click.stop>
+                        <MpCheckbox
+                          :id="`pc-line-${row.key}`"
+                          :is-checked="isLineSelected(row.key)"
+                          @change="toggleLineSelection(row.key)"
+                        />
+                      </td>
                       <td class="pk-td">
                         <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
                       </td>
                       <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
                       <td class="pk-td pk-td--num">{{ formatNum(row.order) }}</td>
-                      <td class="pk-td pk-td--num">{{ formatNum(row.picked) }}</td>
+                      <td v-if="!isDirectMode" class="pk-td pk-td--num">{{ formatNum(row.picked) }}</td>
+                      <td v-if="isDirectMode" class="pk-td pk-td--input">
+                        <input
+                          type="number" min="0" :max="row.picked" class="pk-qty-input"
+                          :value="packQtyFor(row)"
+                          :disabled="!isLineSelected(row.key)"
+                          :aria-label="`Pack qty for ${row.product}`"
+                          @input="setPackQty(row.key, ($event.target as HTMLInputElement).value, row.picked)"
+                          @click.stop
+                        />
+                      </td>
                       <td class="pk-td">{{ row.unit }}</td>
                     </tr>
                   </tbody>
@@ -526,6 +635,17 @@ function handleCreate() {
 .pk-item-row--off { opacity: 0.45; }
 .pk-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+/* Editable Pack qty cell — white, input fills edge-to-edge, focus ring */
+.pk-td--input { padding: 0; background: var(--mp-background-neutral); }
+.pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pk-qty-input {
+  display: block; width: 100%; height: 100%; box-sizing: border-box; text-align: right;
+  padding: 0 var(--mp-spacing-2);
+  border: none; background: transparent; color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none;
+}
+.pk-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
 
 .pk-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; margin-top: var(--mp-spacing-4); }
 .pk-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }

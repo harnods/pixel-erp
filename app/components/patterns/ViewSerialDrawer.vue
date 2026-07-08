@@ -374,7 +374,6 @@ function close() { emit('update:open', false) }
   position: sticky; bottom: 0;
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
   background: var(--mp-background-neutral, #fff);
-  border-top: 1px solid var(--mp-border-default);
 }
 
 </style>

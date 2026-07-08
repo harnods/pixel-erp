@@ -410,9 +410,7 @@ function handleCreate() {
   border-radius: var(--mp-radii-lg);
   overflow: hidden;
 }
-/* count row sits at the bottom of the bordered panel → divider above */
 .pr-items-section--bordered .pr-items-count {
-  border-top: 1px solid var(--mp-border-default);
 }
 /* table scrolls internally at ~10 rows so 25+ SKUs don't grow the modal */
 .pr-items-scroll { max-height: 638px; overflow-y: auto; overflow-x: hidden; }

@@ -1,15 +1,16 @@
 import { reactive } from "vue";
 import { picForWarehouse } from "./warehouses";
-import { outgoingOrders } from "./outgoing";
+import { outgoingOrders, type OutgoingOrder } from "./outgoing";
 import {
   pickingTasks, pickingLinesOf, getPickingTask, pickedQtyForOrderSku,
   batchPicksForOrderSku, serialPicksForOrderSku,
   type PickingTask, type PickingBatchPick, type PickingSerialPick,
 } from "./pickingTasks";
-import { orderSkuLines } from "./inventory";
+import { orderSkuLines, type OrderSkuLine } from "./inventory";
 import { binForSku } from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
+import { getWarehouseConfig } from "./warehouseConfig";
 
 /**
  * A packing task — created once a picking task is COMPLETED. Picking can bundle
@@ -23,9 +24,10 @@ export interface PackingTask {
   /** the single sales order this packing task is for */
   salesOrderId: string;
   salesNo: string;
-  /** the primary picking task this was created from (first contributing list) */
-  pickingTaskId: string;
-  pickingTaskNo: string;
+  /** the primary picking task this was created from (first contributing list) —
+   *  absent when created directly from the order (Picking disabled for the warehouse). */
+  pickingTaskId?: string;
+  pickingTaskNo?: string;
   /** ALL picking lists that picked this order (an order can be split over several) */
   pickingTaskIds?: string[];
   pickingTaskNos?: string[];
@@ -43,6 +45,10 @@ export interface PackingTask {
   endDate?: string;
   /** packed qty per line key (set as the operator matches/sorts) */
   packedByKey?: Record<string, number>;
+  /** Direct-mode only (no pickingTaskId) — the specific SKU+qty this task covers,
+   *  fixed at creation. SKUs excluded here stay eligible for a follow-up packing
+   *  task on the same order (see remainingSkusForOrder / canCreatePackingDirectlyForOrder). */
+  directLines?: Array<{ sku: string; qty: number }>;
 }
 
 /** A SKU line for packing, sourced from what was picked for this order. */
@@ -61,18 +67,35 @@ export interface PackedSourceLine {
   serialPicks?: PickingSerialPick[];
 }
 
-/** The picked lines belonging to a packing task's sales order. */
+/**
+ * The picked lines belonging to a packing task's sales order. When the task has
+ * no picking task at all (Picking disabled for its warehouse — see
+ * addPackingTaskFromOrder), there's nothing "picked" to read — pack this task's
+ * own chosen SKU+qty (directLines) instead, falling back to the order's full SKU
+ * demand for older direct-mode tasks created before directLines existed.
+ */
 export function pickedLinesForPacking(task: PackingTask): PackedSourceLine[] {
-  // Read the ORDER's total picked across ALL its picking lists (a packing task can come
-  // from several lists), not just the primary one — so match-order shows the full qty.
   const order = outgoingOrders.find((o) => o.id === task.salesOrderId);
   if (!order) return [];
+  const skippedPicking = !task.pickingTaskId;
+  const directQtyBySku = skippedPicking && task.directLines
+    ? new Map(task.directLines.map((l) => [l.sku, l.qty]))
+    : null;
   const lines: PackedSourceLine[] = [];
   for (const l of orderSkuLines(order)) {
-    const picked = pickedQtyForOrderSku(task.salesOrderId, l.sku);
-    if (picked <= 0) continue; // only what was actually picked can be packed
-    const batchPicks = batchPicksForOrderSku(task.salesOrderId, l.sku);
-    const serialPicks = serialPicksForOrderSku(task.salesOrderId, l.sku);
+    let picked: number;
+    if (directQtyBySku) {
+      if (!directQtyBySku.has(l.sku)) continue; // excluded from this task — available for a follow-up
+      picked = directQtyBySku.get(l.sku)!;
+    } else {
+      // Read the ORDER's total picked across ALL its picking lists (a packing task
+      // can come from several lists), not just the primary one — so match-order
+      // shows the full qty.
+      picked = skippedPicking ? l.qty : pickedQtyForOrderSku(task.salesOrderId, l.sku);
+    }
+    if (picked <= 0) continue; // only what's actually available to pack
+    const batchPicks = skippedPicking ? [] : batchPicksForOrderSku(task.salesOrderId, l.sku);
+    const serialPicks = skippedPicking ? [] : serialPicksForOrderSku(task.salesOrderId, l.sku);
     lines.push({
       key: `${task.salesOrderId}::${l.sku}`,
       sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
@@ -250,6 +273,85 @@ export function addPackingTask(opts: {
   packingTasks.unshift(task);
   persistPacking();
   return task;
+}
+
+/**
+ * Create a packing task DIRECTLY from an outbound order — used when Picking is
+ * disabled for the order's warehouse, so there's no picking task to pull SKU
+ * lines/qty from. Packs the order's full SKU demand. Newly created → "open".
+ */
+export function addPackingTaskFromOrder(opts: {
+  salesOrderId: string;
+  salesNo: string;
+  warehouseId: string;
+  warehouseName: string;
+  assignee: string;
+  /** Which SKUs to cover (and their qty). Omit to cover the order's full demand
+   *  (e.g. the marketplace all-or-nothing modal). Pass a subset — e.g. from
+   *  remainingSkusForOrder() minus whatever the user excluded — to leave the rest
+   *  eligible for a follow-up packing task. */
+  lines?: Array<{ sku: string; qty: number }>;
+}): PackingTask {
+  const seq = freshSeq();
+  const order = outgoingOrders.find((o) => o.id === opts.salesOrderId);
+  const lines = opts.lines ?? (order ? orderSkuLines(order) : []);
+  const task: PackingTask = {
+    id: `pack-new-${seq}`,
+    taskNo: `Packing #${seq}`,
+    salesOrderId: opts.salesOrderId,
+    salesNo: opts.salesNo,
+    warehouseId: opts.warehouseId,
+    warehouseName: opts.warehouseName,
+    assignee: opts.assignee,
+    skuQty: lines.length || order?.skuQty || 0,
+    toPackQty: lines.reduce((s, l) => s + l.qty, 0) || order?.orderQty || 0,
+    packedQty: 0,
+    status: "open",
+    directLines: lines.map((l) => ({ sku: l.sku, qty: l.qty })),
+  };
+  packingTasks.unshift(task);
+  persistPacking();
+  return task;
+}
+
+export interface RemainingSkuLine {
+  sku: string;
+  product: OrderSkuLine["product"];
+  /** Full order demand for this SKU. */
+  qty: number;
+  /** Already packed for this SKU by an earlier non-canceled direct-mode packing task. */
+  packed: number;
+}
+
+/**
+ * The order's SKU lines not yet fully packed by non-canceled direct-mode (no
+ * pickingTaskId) packing tasks — what's left to pack, and how much of each SKU's
+ * demand is already spoken for (a prior task may have packed only PART of a SKU's
+ * qty, same as partial picking). For orders with no prior direct-mode packing task,
+ * every line comes back with packed = 0.
+ */
+export function remainingSkusForOrder(order: OutgoingOrder): RemainingSkuLine[] {
+  const packedBySku = new Map<string, number>();
+  for (const t of packingTasks) {
+    if (t.salesOrderId !== order.id || t.pickingTaskId || t.status === "canceled") continue;
+    for (const l of t.directLines ?? []) packedBySku.set(l.sku, (packedBySku.get(l.sku) ?? 0) + l.qty);
+  }
+  return orderSkuLines(order)
+    .map((l) => ({ sku: l.sku, product: l.product, qty: l.qty, packed: packedBySku.get(l.sku) ?? 0 }))
+    .filter((l) => l.qty - l.packed > 0);
+}
+
+/**
+ * Can a packing task be created straight from this order, with no picking task at
+ * all? Only relevant when Picking is disabled for the order's warehouse, the order
+ * is still open/in-process, and it still has SKUs not yet covered by an earlier
+ * direct-mode packing task (so a follow-up packing task remains possible after a
+ * partial one).
+ */
+export function canCreatePackingDirectlyForOrder(order: OutgoingOrder): boolean {
+  if (getWarehouseConfig(order.warehouseId).pickingEnabled) return false;
+  if (order.status !== "open" && order.status !== "in progress") return false;
+  return remainingSkusForOrder(order).length > 0;
 }
 
 /** Packing tasks scoped to warehouses (all when none given). */

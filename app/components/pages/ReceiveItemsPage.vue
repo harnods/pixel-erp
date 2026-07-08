@@ -16,6 +16,7 @@ import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
 import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseConfig } from '~/data/warehouseConfig'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -24,6 +25,9 @@ const entry     = computed(() => findTaskWithPO(props.orderId))
 const task      = computed(() => entry.value?.task)
 const po        = computed(() => entry.value?.po)
 const lineItems = computed(() => task.value ? getTaskLineItems(task.value) : [])
+// Put-away disabled for this task's warehouse → receiving finishes on its own,
+// no "create put-away" option to offer.
+const putAwayEnabledForTask = computed(() => getWarehouseConfig(po.value?.warehouseId ?? '').putAwayEnabled)
 
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
@@ -306,11 +310,12 @@ function commitReceiving(createPutAway = false) {
       query: { warehouseId: po.value?.warehouseId, taskId: props.orderId },
     })
   } else {
-    toast.notify({
-      variant: 'success',
-      title: complete ? 'Receiving finished, awaiting put-away' : 'Receiving finished (items short)',
-      maxWidth: 'max-content',
-    })
+    const title = !complete
+      ? 'Receiving finished (items short)'
+      : putAwayEnabledForTask.value
+        ? 'Receiving finished, awaiting put-away'
+        : 'Receiving finished'
+    toast.notify({ variant: 'success', title, maxWidth: 'max-content' })
     router.push(`/receiving/${props.orderId}`)
   }
 }
@@ -555,8 +560,12 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <MpModalFooter>
         <div class="ri-modal-footer">
           <button class="ri-btn ri-btn--ghost" @click="showConfirm = false">{{ draftOutstanding > 0 ? 'Continue receiving' : 'Cancel' }}</button>
-          <button class="ri-btn ri-btn--secondary" @click="commitReceiving(false)">{{ draftOutstanding > 0 ? 'Finish as incomplete' : 'Save' }}</button>
-          <button class="ri-btn ri-btn--primary" @click="commitReceiving(true)">Save &amp; create put-away</button>
+          <button
+            class="ri-btn"
+            :class="putAwayEnabledForTask ? 'ri-btn--secondary' : 'ri-btn--primary'"
+            @click="commitReceiving(false)"
+          >{{ draftOutstanding > 0 ? 'Finish as incomplete' : 'Save' }}</button>
+          <button v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" @click="commitReceiving(true)">Save &amp; create put-away</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

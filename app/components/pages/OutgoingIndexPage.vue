@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpDatePicker, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, css,
+  MpModalOverlay, MpModalCloseButton, MpAutocomplete, MpFormControl, MpFormLabel, MpFormErrorMessage,
+  toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -12,8 +13,9 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { outgoingForStages, outgoingStage, OUTGOING_TODAY, type OutgoingOrder } from '~/data/outgoing'
+import { outgoingForStages, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, type OutgoingOrder } from '~/data/outgoing'
 import { canPickOrder } from '~/data/pickingTasks'
+import { addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { warehouses } from '~/data/warehouses'
 
@@ -213,6 +215,59 @@ function viewDetails(row: OutgoingOrder) { router.push(`/outbound-delivery/${row
 // locked + order preselected). Supervisor can then trim SKUs / qty.
 function createPicking(row: OutgoingOrder) {
   router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: row.warehouseId, orderIds: row.id } })
+}
+
+// ─── Direct-to-packing (Picking disabled for the order's warehouse) ─────────────
+// No picking step to review — just confirm an assignee and create the packing
+// task straight from the order's full SKU demand.
+const ASSIGNEES = [
+  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
+  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
+  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
+  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
+  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
+  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
+  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
+  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
+]
+const directPackOrder = ref<OutgoingOrder | null>(null)
+const directPackModalOpen = ref(false)
+const directPackAssigneeId = ref('')
+const directPackAssigneeError = ref(false)
+watch(directPackAssigneeId, (v) => { if (v) directPackAssigneeError.value = false })
+
+// Marketplace orders are all-or-nothing (nothing to review) → quick assignee-only
+// modal, straight to creation. Non-marketplace orders can be packed partially, so
+// they go through the full "New packing" page instead.
+function openDirectPacking(row: OutgoingOrder) {
+  if (!isMarketplaceOrder(row)) {
+    router.push({ path: '/outbound-delivery/packing/create', query: { orderId: row.id } })
+    return
+  }
+  directPackOrder.value = row
+  directPackAssigneeId.value = ''
+  directPackAssigneeError.value = false
+  directPackModalOpen.value = true
+}
+function closeDirectPacking() {
+  directPackModalOpen.value = false
+  directPackOrder.value = null
+}
+function confirmDirectPacking() {
+  if (!directPackAssigneeId.value) { directPackAssigneeError.value = true; return }
+  const order = directPackOrder.value
+  if (!order) return
+  const assignee = ASSIGNEES.find(a => a.id === directPackAssigneeId.value)?.name ?? ''
+  const task = addPackingTaskFromOrder({
+    salesOrderId: order.id,
+    salesNo: order.salesNo,
+    warehouseId: order.warehouseId,
+    warehouseName: order.warehouseName,
+    assignee,
+  })
+  closeDirectPacking()
+  toast.notify({ variant: 'success', title: 'Packing task created', maxWidth: 'max-content' })
+  router.push(`/packing/${task.id}`)
 }
 
 function selectedOrdersOf(selectedRows: Set<number>): OutgoingOrder[] {
@@ -471,6 +526,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               @click="createPicking(row as unknown as OutgoingOrder)"
             >Create picking list</MpPopoverListItem>
             <MpPopoverListItem
+              v-if="canCreatePackingDirectlyForOrder(row as unknown as OutgoingOrder)"
+              @click="openDirectPacking(row as unknown as OutgoingOrder)"
+            >Create packing</MpPopoverListItem>
+            <MpPopoverListItem
               v-if="canCancelOrder(row as unknown as OutgoingOrder)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as OutgoingOrder)"
@@ -524,6 +583,44 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--secondary" @click="bulkCancelOpen = false">Keep orders</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkCancel">Cancel order{{ bulkCancelCount > 1 ? 's' : '' }}</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Direct-to-packing modal — marketplace orders only (Picking disabled for
+       this order's warehouse; non-marketplace orders go to the full create page
+       instead, since they can be packed partially). ── -->
+  <MpModal
+    id="out-direct-pack-modal" :is-open="directPackModalOpen" size="sm"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
+  >
+    <MpModalContent>
+      <MpModalHeader>Create packing?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <p class="out-direct-pack-desc">
+          Order {{ directPackOrder?.number }}'s full quantity will go into a packing task.
+        </p>
+        <MpFormControl id="out-direct-pack-assignee" is-required :is-invalid="directPackAssigneeError">
+          <MpFormLabel>Assignee</MpFormLabel>
+          <MpAutocomplete
+            id="out-direct-pack-assignee-ac"
+            v-model="directPackAssigneeId"
+            :data="ASSIGNEES"
+            label-prop="name"
+            value-prop="id"
+            placeholder="Select assignee"
+            is-searchable is-clearable use-portal is-full-width
+            :is-invalid="directPackAssigneeError"
+          />
+          <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+        </MpFormControl>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">Create packing</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -661,6 +758,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* Modal footer */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+.out-direct-pack-desc { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 /* Demo scenario FAB */
 .demo-fab {

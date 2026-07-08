@@ -25,6 +25,9 @@ const lineItems = computed(() => task.value ? getPackingLineItems(task.value) : 
 // marketplace order can't be short-picked, so a full flow ends with packed = picked = order.
 const order = computed(() => outgoingOrders.find(o => o.id === task.value?.salesOrderId))
 const isMarketplace = computed(() => isMarketplaceOrder(order.value))
+// Picking was skipped for this task's warehouse — there's no separate "picked" step
+// to show; "available to pack" already equals the order's full demand.
+const skippedPicking = computed(() => !task.value?.pickingTaskId)
 const allPicked = computed(() =>
   lineItems.value.length > 0 &&
   lineItems.value.every(it => (draftQty.value[it.key] ?? 0) === it.pickedQty),
@@ -179,7 +182,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
       <div class="pak-summary">
         <div class="pak-stat"><span class="pak-stat-label">SKU qty</span><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span></div>
-        <div class="pak-stat"><span class="pak-stat-label">Picked qty</span><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span></div>
+        <div v-if="!skippedPicking" class="pak-stat"><span class="pak-stat-label">Picked qty</span><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span></div>
         <div class="pak-stat"><span class="pak-stat-label">Packed qty</span><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span></div>
         <div class="pak-stat"><span class="pak-stat-label">Outstanding qty</span><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
@@ -211,7 +214,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <th class="pak-th">Product</th>
                   <th class="pak-th">SKU</th>
                   <th class="pak-th pak-th--num">Order qty</th>
-                  <th class="pak-th pak-th--num">Picked qty</th>
+                  <th v-if="!skippedPicking" class="pak-th pak-th--num">Picked qty</th>
                   <th class="pak-th pak-th--num">Packed qty</th>
                   <th class="pak-th pak-th--num">Outstanding qty</th>
                   <th class="pak-th">Unit</th>
@@ -222,7 +225,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <td class="pak-td"><ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" /></td>
                   <td class="pak-td">{{ item.skuCode }}</td>
                   <td class="pak-td pak-td--num">{{ fmt(item.orderQty) }}</td>
-                  <td class="pak-td pak-td--num">{{ fmt(item.pickedQty) }}</td>
+                  <td v-if="!skippedPicking" class="pak-td pak-td--num">{{ fmt(item.pickedQty) }}</td>
                   <td class="pak-td pak-td--input" :class="{ 'pak-td--input--error': showQtyErrors && !(draftQty[item.key] ?? 0) }">
                     <input
                       class="pak-qty-input"
@@ -238,7 +241,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   </td>
                   <td class="pak-td">{{ item.unit }}</td>
                 </tr>
-                <tr v-if="!filteredItems.length"><td class="pak-td pak-empty" colspan="7">No products match your search.</td></tr>
+                <tr v-if="!filteredItems.length"><td class="pak-td pak-empty" :colspan="skippedPicking ? 6 : 7">No products match your search.</td></tr>
               </tbody>
             </table>
             <div ref="itemsSentinelEl" class="pak-sentinel" aria-hidden="true" />

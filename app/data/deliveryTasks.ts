@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import { picForWarehouse } from "./warehouses";
 import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from "./outgoing";
-import { packingTasks } from "./packingTasks";
+import { packingTasks, pickedLinesForPacking, type PackingTask } from "./packingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
 /**
@@ -15,9 +15,15 @@ export interface DeliveryTask {
   /** the single sales order this delivery is for (delivery is per sales order) */
   salesOrderId: string;
   salesNo: string;
-  /** the completed packing task this was created from */
+  /** the completed packing task this was created from (primary/first when several) */
   packingTaskId: string;
   packingTaskNo: string;
+  /** every completed packing task this delivery covers — set when a delivery is
+   *  created from more than one packing task for the same order (bulk "Create
+   *  delivery" selecting several partial packing tasks). Absent = just the one
+   *  above. */
+  packingTaskIds?: string[];
+  packingTaskNos?: string[];
   warehouseId: string;
   warehouseName: string;
   assignee: string;
@@ -169,6 +175,8 @@ export function addDeliveryTask(opts: {
   salesNo: string;
   packingTaskId: string;
   packingTaskNo: string;
+  packingTaskIds?: string[];
+  packingTaskNos?: string[];
   warehouseId: string;
   warehouseName: string;
   assignee: string;
@@ -187,6 +195,7 @@ export function addDeliveryTask(opts: {
     salesNo: opts.salesNo,
     packingTaskId: opts.packingTaskId,
     packingTaskNo: opts.packingTaskNo,
+    ...(opts.packingTaskIds && opts.packingTaskIds.length > 1 ? { packingTaskIds: opts.packingTaskIds, packingTaskNos: opts.packingTaskNos } : {}),
     warehouseId: opts.warehouseId,
     warehouseName: opts.warehouseName,
     assignee: opts.assignee,
@@ -202,6 +211,52 @@ export function addDeliveryTask(opts: {
   deliveryTasks.unshift(task);
   persistDelivery();
   return task;
+}
+
+/**
+ * Create ONE delivery from several completed packing tasks that all belong to the
+ * SAME sales order (bulk "Create delivery" selecting more than one partial packing
+ * task) — a delivery is per order, so these must merge into a single task instead
+ * of each spawning its own (which would silently drop every packing task after the
+ * first, since an order can only have one live delivery).
+ */
+export function addDeliveryTaskFromPackingTasks(
+  tasks: PackingTask[],
+  opts: { assignee: string; deliveryMethod?: "self" | "online"; courier?: string; trackingNo?: string },
+): DeliveryTask {
+  const primary = tasks[0]!;
+  // Union of SKU lines across every contributing packing task, summed — a SKU split
+  // across two partial packing tasks (e.g. 1 + 3 of an order qty of 4) counts once,
+  // for its combined qty.
+  const qtyBySku = new Map<string, number>();
+  for (const t of tasks) {
+    for (const l of pickedLinesForPacking(t)) {
+      const qty = t.packedByKey?.[l.key] ?? l.picked;
+      if (qty > 0) qtyBySku.set(l.sku, (qtyBySku.get(l.sku) ?? 0) + qty);
+    }
+  }
+  const toShipQty = [...qtyBySku.values()].reduce((a, q) => a + q, 0);
+  return addDeliveryTask({
+    salesOrderId: primary.salesOrderId,
+    salesNo: primary.salesNo,
+    packingTaskId: primary.id,
+    packingTaskNo: primary.taskNo,
+    packingTaskIds: tasks.map((t) => t.id),
+    packingTaskNos: tasks.map((t) => t.taskNo),
+    warehouseId: primary.warehouseId,
+    warehouseName: primary.warehouseName,
+    assignee: opts.assignee,
+    deliveryMethod: opts.deliveryMethod,
+    courier: opts.courier,
+    trackingNo: opts.trackingNo,
+    skuQty: qtyBySku.size,
+    toShipQty,
+  });
+}
+
+/** Every packing task feeding a delivery (plural when merged from a bulk create). */
+export function packingTaskIdsForDelivery(task: DeliveryTask): string[] {
+  return task.packingTaskIds?.length ? task.packingTaskIds : [task.packingTaskId];
 }
 
 /** Deliveries scoped to warehouses (all when none given). */

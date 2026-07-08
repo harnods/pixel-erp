@@ -701,9 +701,7 @@ function goBack() { router.push('/sales-orders') }
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
-/* in the bordered panel the count sits at the bottom → divider above, not below */
 .detail-items-section--bordered .detail-items-count {
-  border-top: 1px solid var(--mp-border-default);
   border-bottom: none;
 }
 /* table scrolls internally past ~10 rows so the page doesn't grow unbounded */

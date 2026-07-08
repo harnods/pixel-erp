@@ -203,7 +203,11 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </div>
         <div class="content-list-col">
           <ContentList label="Start date" :value="formatDateTimeLong(task.startDate)" />
-          <ContentList label="End date" :value="formatDateTimeLong(task.endDate)" />
+          <template v-if="task.status === 'canceled'">
+            <ContentList label="Canceled date" :value="formatDateTimeLong(task.canceledDate)" />
+            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+          </template>
+          <ContentList v-else label="End date" :value="formatDateTimeLong(task.endDate)" />
         </div>
       </section>
 
@@ -378,7 +382,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </MpPopoverContent>
       </MpPopover>
 
-      <template v-if="task.status === 'completed'">
+      <template v-if="task.status === 'completed' || task.status === 'canceled'">
         <MpPopover id="pad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
             <button class="detail-btn detail-btn--primary">

@@ -76,6 +76,7 @@ const statusOptions = [
   { label: 'Open',        value: 'open' },
   { label: 'In process', value: 'in progress' },
   { label: 'Completed',   value: 'completed' },
+  { label: 'Canceled',    value: 'canceled' },
 ]
 const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
 const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')

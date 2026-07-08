@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  MpButton, MpCheckbox, MpAutocomplete, MpSpinner,
+  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css, toast,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -14,6 +14,7 @@ import {
 } from '~/data/pickingTasks'
 import { orderSkuLines, productBySku } from '~/data/inventory'
 import { binForSku, getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { scrollToFirstError } from '~/utils/form'
 
@@ -159,7 +160,15 @@ const orderTables = computed<OrderTable[]>(() =>
 // packing-task creation, not here.
 const excludedKeys = ref(new Set<string>())
 const qtyOverrides = ref<Record<string, number>>({})
-const lockedKeys = computed(() => new Set<string>()) // nothing is locked
+// When the warehouse doesn't allow partial picking, every SKU must be picked in
+// full — nothing can be excluded and qty can't be lowered below the order qty.
+const partialPickingAllowed = computed(() =>
+  warehouseId.value ? getWarehouseConfig(warehouseId.value).allowPartialPicking : true,
+)
+const lockedKeys = computed(() =>
+  partialPickingAllowed.value ? new Set<string>() : new Set(pickRows.value.map(g => g.key)),
+)
+const partialPickingLockedMsg = "This warehouse doesn't allow partial picking."
 function isLocked(key: string) { return lockedKeys.value.has(key) }
 function isSelected(key: string) { return isLocked(key) || !excludedKeys.value.has(key) }
 function toggleLine(key: string) {
@@ -222,7 +231,9 @@ const rowStock = computed<Map<string, RowStock>>(() => {
     const remaining = Math.max(0, g.orderQty - g.pickedQty)
     const cap = Math.min(remaining, available)
     const selected = isSelected(g.key)
-    const desired = qtyOverrides.value[g.key] ?? cap
+    // Locked rows always pick the full cap — qty overrides never apply to them,
+    // even a stale one left over from a different (partial-allowed) warehouse.
+    const desired = isLocked(g.key) ? cap : (qtyOverrides.value[g.key] ?? cap)
     const toPick = selected ? Math.min(Math.max(0, desired), cap) : 0
     map.set(g.key, { onHand, reserved, available, cap, toPick })
   }
@@ -266,8 +277,13 @@ const serialDrawerOpen = computed({
   get: () => serialDrawerSku.value !== null,
   set: (v: boolean) => { if (!v) serialDrawerSku.value = null },
 })
+/** Target qty for a row's Manage batch/serial drawer — the manual override when
+ *  partial picking is allowed, otherwise always the full cap (nothing to enter). */
+function targetQtyForSku(sku: string): number {
+  return isLocked(sku) ? capForSku(sku) : (qtyOverrides.value[sku] ?? 0)
+}
 function openSerialDrawer(sku: string) {
-  if (!(qtyOverrides.value[sku] ?? 0)) {
+  if (!targetQtyForSku(sku)) {
     toast.notify({ variant: 'warning', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
     return
   }
@@ -586,7 +602,18 @@ function handleCreate() {
               <thead>
                 <tr>
                   <th class="pk-th pk-th--check">
-                    <span @click.stop>
+                    <MpTooltip
+                      v-if="allLinesLocked"
+                      id="pk-lock-all-tt"
+                      :label="partialPickingLockedMsg"
+                      placement="top"
+                      use-portal
+                    >
+                      <span @click.stop>
+                        <MpCheckbox id="pk-all-lines" :is-checked="true" :is-disabled="true" />
+                      </span>
+                    </MpTooltip>
+                    <span v-else @click.stop>
                       <MpCheckbox
                         id="pk-all-lines"
                         :is-checked="allLinesSelected"
@@ -614,7 +641,18 @@ function handleCreate() {
                   :class="{ 'pk-item-row--off': !isSelected(row.key) }"
                 >
                   <td class="pk-td">
-                    <span @click.stop>
+                    <MpTooltip
+                      v-if="isLocked(row.key)"
+                      :id="`pk-lock-${row.key}`"
+                      :label="partialPickingLockedMsg"
+                      placement="top"
+                      use-portal
+                    >
+                      <span @click.stop>
+                        <MpCheckbox :id="`pk-line-${row.key}`" :is-checked="true" :is-disabled="true" />
+                      </span>
+                    </MpTooltip>
+                    <span v-else @click.stop>
                       <MpCheckbox
                         :id="`pk-line-${row.key}`"
                         :is-checked="isSelected(row.key)"
@@ -652,8 +690,9 @@ function handleCreate() {
                   <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--input">
                     <input
                       type="number" min="0" :max="stockOf(row.key).cap" class="pk-batch-qty-input"
-                      :value="qtyOverrides[row.sku] ?? 0"
+                      :value="targetQtyForSku(row.sku)"
                       :disabled="!isSelected(row.key) || isLocked(row.key)"
+                      :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
                       :aria-label="`Qty to pick for ${row.product}`"
                       @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
                       @click.stop
@@ -664,6 +703,7 @@ function handleCreate() {
                       type="number" min="0" :max="stockOf(row.key).cap" class="pk-qty-input"
                       :value="stockOf(row.key).toPick"
                       :disabled="!isSelected(row.key) || isLocked(row.key)"
+                      :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
                       @input="setQty(row.key, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
                       @click.stop
                     />
@@ -720,7 +760,7 @@ function handleCreate() {
     :sku="serialDrawerSku"
     :warehouse-id="warehouseId"
     kind="picking"
-    :target-count="qtyOverrides[serialDrawerSku] ?? 0"
+    :target-count="targetQtyForSku(serialDrawerSku)"
     :origin-location-paths="locationOptions"
     :model-value="(serialLinesBySku[serialDrawerSku] ?? []).map(s => ({ serial: s.serial }))"
     @update:open="serialDrawerOpen = $event"
@@ -860,7 +900,7 @@ function handleCreate() {
   display: flex; align-items: center; margin: 0;
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-  border-top: 1px solid var(--mp-border-default);
+
 }
 .pk-items { width: 100%; table-layout: auto; border-collapse: collapse; }
 .pk-items thead .pk-th { position: sticky; top: 0; z-index: 1; }
@@ -884,8 +924,8 @@ function handleCreate() {
 .pk-items .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
 .pk-items .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .pk-qty-input {
-  width: 100%; text-align: right;
-  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
+  display: block; width: 100%; height: 100%; box-sizing: border-box; text-align: right;
+  padding: 0 var(--mp-spacing-2);
   border: none; background: transparent; color: var(--mp-text-default);
   font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none;
 }

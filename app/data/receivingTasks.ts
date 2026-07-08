@@ -5,6 +5,7 @@ import { receipts, persistReceipts, type Receipt } from "./receipts";
 import { lineItemsForReceipt } from "./receiptLineItems";
 import { TODAY } from "./master";
 import { CATALOG } from "./catalog";
+import { getWarehouseConfig } from "./warehouseConfig";
 
 const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment']);
 const SKU_CATEGORY = new Map(CATALOG.map((p) => [p.sku, p.category]));
@@ -513,7 +514,11 @@ export function saveReceivingDraft(
   persistTasks();
 }
 
-/** Operator ends receiving → Pending put-away + end timestamp; re-derive PO status. */
+/**
+ * Operator ends receiving → end timestamp; re-derive PO status. Goes to
+ * "pending put-away" normally, or straight to "completed" when put-away is
+ * disabled for this task's warehouse (see app/data/warehouseConfig.ts).
+ */
 export function endReceiving(
   taskId: string,
   received?: Record<string, number>,
@@ -524,7 +529,7 @@ export function endReceiving(
   if (received) applyReceivingDetail(t, received, detail);
   const lines = lineItemsForReceipt(receipts.find((x) => x.id === t.receiptId)!);
   syncTaskTotals(t, lines.length);
-  t.status = "pending put-away";
+  t.status = getWarehouseConfig(t.warehouseId).putAwayEnabled ? "pending put-away" : "completed";
   t.endDate = nowIso();
   persistTasks();
   recomputeReceiptStatus(t.receiptId);
@@ -535,6 +540,18 @@ export function linkPutAway(taskId: string, putAwayTaskId: string): void {
   const t = getReceivingTask(taskId);
   if (!t) return;
   t.putAwayTaskId = putAwayTaskId;
+  t.status = "completed";
+  persistTasks();
+}
+
+/**
+ * Put-away was just disabled for this task's warehouse while it sat in
+ * "pending put-away" with no put-away task ever created — finish it directly,
+ * matching the new normal for that warehouse (no putAwayTaskId to link).
+ */
+export function completeReceivingWithoutPutAway(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t) return;
   t.status = "completed";
   persistTasks();
 }

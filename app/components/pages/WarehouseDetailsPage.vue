@@ -119,8 +119,10 @@ const deleteModalOpen = ref(false)
 const archiveModalOpen = ref(false)
 
 function goEdit() {
-  // edit form not in scope for this story — navigate to the (future) edit route
   router.push(`/warehouses/${props.orderId}/edit`)
+}
+function goConfigure() {
+  router.push(`/warehouses/${props.orderId}/configure`)
 }
 function confirmArchive() {
   if (!warehouse.value) return
@@ -631,7 +633,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </div>
       </div>
 
-      <!-- Actions dropdown: Edit · Archive/Unarchive · Delete (if applicable) -->
+      <!-- Actions dropdown: Edit · Archive/Unarchive · Delete (if applicable) · divider · Configure warehouse -->
       <MpPopover id="wh-detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
@@ -654,6 +656,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             >
               Delete
             </MpPopoverListItem>
+            <div class="wh-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
+            <MpPopoverListItem @click="goConfigure">Configure warehouse</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -1576,6 +1580,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: var(--mp-colors-emerald-800, #186f4a);
   border-color: var(--mp-colors-emerald-800, #186f4a);
 }
+.wh-menu-divider { display: block; height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
 
 /* ── Stage ── */
 .detail-stage {
