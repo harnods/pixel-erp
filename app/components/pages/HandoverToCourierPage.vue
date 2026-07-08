@@ -8,20 +8,10 @@ import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { getDeliveryTask, handoverToCourierBulk, type DeliveryTask } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { scrollToFirstError } from '~/utils/form'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 
 const router = useRouter()
 const route = useRoute()
-
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
 
 function toDisplayDate(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -63,10 +53,13 @@ const rows = computed<Row[]>(() => tasks.value.map((t) => {
 }))
 
 // ─── Assignee + transaction date/no. ──────────────────────────────────────────
+// Choices are scoped to this handover's warehouse — only its Operators are valid.
+const ASSIGNEES = computed(() => getWarehouseOperators(warehouseId.value))
 const assigneeId = ref('')
 const assigneeError = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
-const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+watch(warehouseId, () => { assigneeId.value = '' })
+const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 const transactionDate = ref(todayDisplay)
 const transactionDateError = ref(false)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpToggle, MpIcon,
+  MpToggle, MpIcon, MpAutocomplete,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
   toast,
@@ -10,14 +10,34 @@ import {
 
 const STORAGE_KEY = 'erp-db:warehouse-settings'
 
+// Global (CID-level) rules WMS follows to auto-select a batch/serial at outbound
+// task creation, ONLY when the source doesn't already supply one. Not a toggle —
+// auto-selection always runs on an omitted detail; these choose which rule it uses.
+export type BatchSelectionRule = 'fefo' | 'batch_number_asc' | 'batch_number_desc' | 'batch_created_asc'
+export type SerialSelectionRule = 'serial_number_asc' | 'serial_number_desc' | 'serial_created_asc'
+
+const BATCH_RULE_OPTIONS: { id: BatchSelectionRule; name: string }[] = [
+  { id: 'fefo', name: 'FEFO (earliest expiry first)' },
+  { id: 'batch_number_asc', name: 'Batch number/name (ascending)' },
+  { id: 'batch_number_desc', name: 'Batch number/name (descending)' },
+  { id: 'batch_created_asc', name: 'Batch created date (earliest first)' },
+]
+const SERIAL_RULE_OPTIONS: { id: SerialSelectionRule; name: string }[] = [
+  { id: 'serial_number_asc', name: 'Serial number/name (ascending)' },
+  { id: 'serial_number_desc', name: 'Serial number/name (descending)' },
+  { id: 'serial_created_asc', name: 'Serial created date (earliest first)' },
+]
+
 interface Settings {
   multiLocationStorage: boolean
-  batchAutoSelect:      boolean
+  batchSelectionRule:   BatchSelectionRule
+  serialSelectionRule:  SerialSelectionRule
 }
 
 const DEFAULTS: Settings = {
   multiLocationStorage: true,
-  batchAutoSelect:      true,
+  batchSelectionRule:   'fefo',
+  serialSelectionRule:  'serial_created_asc',
 }
 
 function loadSettings(): Settings {
@@ -27,7 +47,8 @@ function loadSettings(): Settings {
     const parsed = raw ? JSON.parse(raw) : {}
     return {
       multiLocationStorage: parsed.multiLocationStorage ?? DEFAULTS.multiLocationStorage,
-      batchAutoSelect:      parsed.batchAutoSelect      ?? DEFAULTS.batchAutoSelect,
+      batchSelectionRule:   parsed.batchSelectionRule   ?? DEFAULTS.batchSelectionRule,
+      serialSelectionRule:  parsed.serialSelectionRule  ?? DEFAULTS.serialSelectionRule,
     }
   } catch { return { ...DEFAULTS } }
 }
@@ -48,8 +69,12 @@ const discardOpen = ref(false)
 
 const hasChanges = computed(() =>
   draft.multiLocationStorage !== committed.multiLocationStorage ||
-  draft.batchAutoSelect      !== committed.batchAutoSelect
+  draft.batchSelectionRule   !== committed.batchSelectionRule   ||
+  draft.serialSelectionRule  !== committed.serialSelectionRule
 )
+
+const batchRuleLabel  = computed(() => BATCH_RULE_OPTIONS.find(o => o.id === draft.batchSelectionRule)?.name ?? '')
+const serialRuleLabel = computed(() => SERIAL_RULE_OPTIONS.find(o => o.id === draft.serialSelectionRule)?.name ?? '')
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
@@ -116,17 +141,45 @@ async function saveEdit() {
         </div>
 
         <h3 class="ws-subsection-title ws-subsection-title--spaced">Outbound delivery</h3>
+        <p class="ws-subsection-desc">
+          WMS auto-selects a batch/serial at outbound task creation using the rule below, only
+          when the source doesn't already supply one. Supplied details are always honored as-is.
+        </p>
 
-        <div class="ws-toggle-row">
+        <div class="ws-toggle-row ws-toggle-row--rule">
           <div class="ws-toggle-info">
-            <span class="ws-toggle-title">Auto-select batch and serial numbers</span>
-            <span class="ws-toggle-desc">Automatically assign batch numbers (FEFO) and serial numbers (FIFO) when picking items for outbound orders.</span>
+            <span class="ws-toggle-title">Batch selection rule</span>
+            <span class="ws-toggle-desc">Falls back to batch created date (earliest first) when FEFO is selected but a batch has no expiry date.</span>
           </div>
-          <MpToggle
-            v-model:is-checked="draft.batchAutoSelect"
-            :is-disabled="!isEditing"
-            aria-label="Auto-select batch and serial numbers"
+          <MpAutocomplete
+            v-if="isEditing"
+            id="ws-batch-rule-ac"
+            v-model="draft.batchSelectionRule"
+            :data="BATCH_RULE_OPTIONS"
+            label-prop="name"
+            value-prop="id"
+            use-portal
+            class="ws-rule-select"
           />
+          <span v-else class="ws-rule-value">{{ batchRuleLabel }}</span>
+        </div>
+
+        <div class="ws-toggle-row ws-toggle-row--rule">
+          <div class="ws-toggle-info">
+            <span class="ws-toggle-title">Serial number selection rule</span>
+            <span class="ws-toggle-desc">Serial numbers have no expiry date, so FEFO doesn't apply — pick an ordering instead.</span>
+          </div>
+          <MpAutocomplete
+            v-if="isEditing"
+            id="ws-serial-rule-ac"
+            v-model="draft.serialSelectionRule"
+            :data="SERIAL_RULE_OPTIONS"
+            label-prop="name"
+            value-prop="id"
+            use-portal
+            class="ws-rule-select"
+          />
+          <span v-else class="ws-rule-value">{{ serialRuleLabel }}</span>
         </div>
 
       </div>
@@ -235,12 +288,36 @@ async function saveEdit() {
   margin-top: var(--mp-spacing-3);
 }
 
+.ws-subsection-desc {
+  margin: 0 0 var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-subtle);
+}
+
+.ws-rule-select {
+  width: 260px;
+  flex-shrink: 0;
+}
+
+.ws-rule-value {
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+  flex-shrink: 0;
+}
+
 .ws-toggle-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-2) 0;
+}
+
+/* Rule rows (Batch/Serial selection): value sits left-aligned right after the
+   label, top-aligned with the title — not centered against the 2-line info block. */
+.ws-toggle-row--rule {
+  justify-content: flex-start;
+  align-items: flex-start;
 }
 
 .ws-toggle-info {

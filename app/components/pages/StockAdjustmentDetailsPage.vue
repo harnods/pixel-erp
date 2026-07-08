@@ -15,7 +15,7 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
-import { formatDateLong, formatDateTimeLong } from '~/utils/date'
+import { formatDateLong, formatDateTimeLong, formatDateTime } from '~/utils/date'
 import {
   stockAdjustments, getAdjustment, adjustmentLineItems, adjustmentMemo, adjustmentAttachments,
   adjustmentUpdatedBy, adjustmentUpdatedAt, accountCodeFor, deleteAdjustments, approveAdjustment,
@@ -41,6 +41,27 @@ const attachments = computed(() => adjustment.value ? adjustmentAttachments(adju
 const lastUpdatedBy = computed(() => adjustment.value ? adjustmentUpdatedBy(adjustment.value) : '')
 const lastUpdatedAt = computed(() => adjustment.value ? adjustmentUpdatedAt(adjustment.value) : new Date().toISOString())
 const accountCode = computed(() => adjustment.value ? accountCodeFor(adjustment.value.account) : '')
+
+// ── Linked cycle count (ERP Stock Count only) ──────────────────────────────────
+const linkedCycleCount = computed(() => {
+  if (isWmsRecord.value || !isCount.value) return null
+  const id = adjustment.value?.linkedCycleCountId
+  if (!id) return null
+  const wmsAdj = getWmsAdjustment(id)
+  return wmsAdj?.kind === 'count' ? wmsAdj : null
+})
+function agingLabel(startIso?: string, endIso?: string): string {
+  if (!startIso) return ''
+  const start = new Date(startIso).getTime()
+  const end = endIso ? new Date(endIso).getTime() : Date.now()
+  const totalMin = Math.max(0, Math.floor((end - start) / 60000))
+  const days = Math.floor(totalMin / 1440)
+  const hrs  = Math.floor((totalMin % 1440) / 60)
+  const min  = totalMin % 60
+  if (days > 0) return hrs > 0 ? `${days}d ${hrs}h` : `${days}d`
+  if (hrs > 0)  return min > 0 ? `${hrs}h ${min}m` : `${hrs}h`
+  return `${min}m`
+}
 
 // ── Batch / serial detection ───────────────────────────────────────────────────
 const warehouseStockMap = computed(() => {
@@ -292,7 +313,7 @@ const canApprove = computed(() => viewAs.value === 'manager' && adjustment.value
 
 function backPath() {
   if (!isWmsRecord.value) return '/stock-adjustments'
-  return adjustment.value?.kind === 'in-out' ? '/stock-inout' : '/stock-count'
+  return adjustment.value?.kind === 'in-out' ? '/stock-inout' : '/cycle-counts'
 }
 function goBack() { router.push(backPath()) }
 function preview() { /* opens the printable preview — not built in this prototype */ }
@@ -352,7 +373,7 @@ onUnmounted(() => {
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ isWmsRecord ? (adjustment?.kind === 'in-out' ? 'Stock in/out' : 'Stock count') : 'All stock adjustments' }}</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ isWmsRecord ? (adjustment?.kind === 'in-out' ? 'Stock in/out' : 'Cycle counts') : 'All stock adjustments' }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ adjustment.number }}</h1>
           <ErpStatusBadge
@@ -487,8 +508,6 @@ onUnmounted(() => {
                     <col class="detail-col-sku" />
                     <col class="detail-col-batch" />
                     <col class="detail-col-num" />
-                    <col class="detail-col-num" />
-                    <col class="detail-col-num" />
                     <col class="detail-col-unit" />
                   </colgroup>
                   <thead>
@@ -496,9 +515,7 @@ onUnmounted(() => {
                       <th class="detail-th">Product</th>
                       <th class="detail-th">SKU</th>
                       <th class="detail-th">Batch no.</th>
-                      <th class="detail-th detail-th--num">Prev. on hand qty</th>
                       <th class="detail-th detail-th--num">Counted qty</th>
-                      <th class="detail-th detail-th--num">Difference qty</th>
                       <th class="detail-th">Unit</th>
                     </tr>
                   </thead>
@@ -510,7 +527,6 @@ onUnmounted(() => {
                       <td class="detail-td detail-td--product"><ProductCell :name="item.product.name" :desc="item.product.desc" :image="item.product.img" /></td>
                       <td class="detail-td">{{ item.sku }}</td>
                       <td class="detail-td">{{ item.batchNumber ?? '—' }}</td>
-                      <td class="detail-td detail-td--num">{{ fmt(item.prevOnHand) }}</td>
                       <td v-if="isSerialTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
                         <div class="detail-counted-qty">{{ isNotStarted ? '—' : fmt(item.counted) }}</div>
                         <div v-if="!isNotStarted" class="detail-counted-action">
@@ -518,7 +534,6 @@ onUnmounted(() => {
                         </div>
                       </td>
                       <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(item.counted) }}</td>
-                      <td class="detail-td detail-td--num">{{ isNotStarted ? '—' : diffLabel(item.difference) }}</td>
                       <td class="detail-td">{{ item.unit }}</td>
                     </tr>
                   </tbody>
@@ -537,16 +552,14 @@ onUnmounted(() => {
               <tr>
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
-                <th class="detail-th detail-th--num">Prev. on hand qty</th>
                 <th class="detail-th detail-th--num">Counted qty</th>
-                <th class="detail-th detail-th--num">Difference qty</th>
                 <th class="detail-th">Unit</th>
                 <th class="detail-th">Storage locations</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!groupedBySku.length">
-                <td colspan="7" class="detail-td detail-td--empty">
+                <td colspan="5" class="detail-td detail-td--empty">
                   <div class="empty-inline">
                     <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
                     <p class="empty-inline-title">No results found</p>
@@ -559,7 +572,6 @@ onUnmounted(() => {
                   :class="{ 'detail-item-row--batch': isSerialTrackedSku(row.sku) }">
                 <td class="detail-td detail-td--product"><ProductCell :name="row.product.name" :desc="row.product.desc" :image="row.product.img" /></td>
                 <td class="detail-td">{{ row.sku }}</td>
-                <td class="detail-td detail-td--num">{{ fmt(row.prevOnHand) }}</td>
                 <td v-if="isSerialTrackedSku(row.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
                   <div class="detail-counted-qty">{{ isNotStarted ? '—' : fmt(row.counted) }}</div>
                   <div v-if="!isNotStarted" class="detail-counted-action">
@@ -567,7 +579,6 @@ onUnmounted(() => {
                   </div>
                 </td>
                 <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(row.counted) }}</td>
-                <td class="detail-td detail-td--num">{{ isNotStarted ? '—' : diffLabel(row.difference) }}</td>
                 <td class="detail-td">{{ row.unit }}</td>
                 <td class="detail-td">
                   <div class="detail-loc-tags">
@@ -652,6 +663,52 @@ onUnmounted(() => {
         </div>
         <div class="detail-items-count">
           <span>Showing {{ visibleItems.length }} of {{ lineItems.length }} products</span>
+        </div>
+      </section>
+
+      <!-- Linked cycle count (ERP Stock Count only) -->
+      <section v-if="linkedCycleCount" class="detail-linked-section">
+        <h3 class="detail-linked-heading">Cycle counts (1)</h3>
+        <div class="detail-linked-wrap">
+          <table class="detail-linked">
+            <thead>
+              <tr>
+                <th class="detail-th">Number</th>
+                <th class="detail-th">Warehouse</th>
+                <th class="detail-th">Assignee</th>
+                <th class="detail-th">Status</th>
+                <th class="detail-th">Start date</th>
+                <th class="detail-th">End date</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="detail-item-row">
+                <td class="detail-td detail-td--number">
+                  <div class="cell-with-action">
+                    <span class="linked-num">{{ linkedCycleCount.number }}</span>
+                    <button class="row-hover-btn" @click.stop="router.push(`/stock-adjustments/${linkedCycleCount.id}`)">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                        <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span class="row-hover-btn__label">VIEW DETAILS</span>
+                    </button>
+                  </div>
+                </td>
+                <td class="detail-td">{{ linkedCycleCount.warehouseName }}</td>
+                <td class="detail-td">{{ linkedCycleCount.assignee || '—' }}</td>
+                <td class="detail-td"><ErpStatusBadge :status="linkedCycleCount.status" /></td>
+                <td class="detail-td">{{ formatDateTime(linkedCycleCount.startDate) }}</td>
+                <td class="detail-td">
+                  <span class="linked-end">
+                    <span v-if="linkedCycleCount.endDate">{{ formatDateTime(linkedCycleCount.endDate) }}</span>
+                    <span v-else class="linked-end__muted">—</span>
+                    <span v-if="linkedCycleCount.startDate" class="linked-aging">{{ agingLabel(linkedCycleCount.startDate, linkedCycleCount.endDate) }}</span>
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -1013,6 +1070,41 @@ onUnmounted(() => {
 .sa-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
 .sa-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
 .sa-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+
+/* Linked cycle counts section */
+.detail-linked-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); flex-shrink: 0; }
+.detail-linked-heading { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.detail-linked-wrap { overflow-x: auto; }
+.detail-linked {
+  width: 100%; min-width: 700px; border-collapse: collapse; table-layout: auto;
+  border-top: 1px solid var(--mp-border-default);
+}
+.detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
+.detail-td--number { position: relative; }
+.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
+.linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.row-hover-btn {
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
+}
+.row-hover-btn__label {
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+}
+.detail-item-row:hover .row-hover-btn { display: flex; }
+.linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.linked-end__muted { color: var(--mp-text-secondary); }
+.linked-aging {
+  display: inline-flex; align-items: center;
+  padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-subtle);
+  color: var(--mp-text-secondary);
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
+}
 
 /* Demo scenario FAB */
 .demo-fab {

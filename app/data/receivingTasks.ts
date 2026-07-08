@@ -1,5 +1,6 @@
 import { reactive } from "vue";
-import { warehouses, picForWarehouse } from "./warehouses";
+import { warehouses } from "./warehouses";
+import { operatorForWarehouse } from "./warehouseTeam";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { receipts, persistReceipts, type Receipt } from "./receipts";
 import { lineItemsForReceipt } from "./receiptLineItems";
@@ -203,7 +204,7 @@ function seedTasks(): ReceivingTask[] {
       purchaseNo: r.purchaseNo,
       warehouseId: r.warehouseId,
       warehouseName: r.warehouseName,
-      assignee: picForWarehouse(r.warehouseId, pos),
+      assignee: operatorForWarehouse(r.warehouseId, pos),
       items: buildItems(lines, mode, h, pos),
       skuScope: "",
       skuCount: 0,
@@ -453,7 +454,7 @@ export function createReceivingTask(opts: {
     purchaseNo: r.purchaseNo,
     warehouseId: r.warehouseId,
     warehouseName: r.warehouseName,
-    assignee: opts.assignee || picForWarehouse(r.warehouseId, 0),
+    assignee: opts.assignee || operatorForWarehouse(r.warehouseId, 0),
     items: chosen.map((l) => ({
       sku: l.sku,
       productName: l.productName,

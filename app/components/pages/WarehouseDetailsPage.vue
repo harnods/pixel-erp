@@ -6,6 +6,7 @@ import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton, MpDatePicker, MpSelect, MpButton, MpBadge, toast, css,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
@@ -19,8 +20,13 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDate } from '~/utils/date'
 import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
-import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses } from '~/data/warehouses'
+import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
+import {
+  getWarehouseTeam, addTeamMember, updateTeamMemberRole, removeTeamMember,
+  getAvailableUsersForWarehouse,
+  type WarehouseTeamMember, type WarehouseRole,
+} from '~/data/warehouseTeam'
 import { TODAY } from '~/data/master'
 import { useUrlModal } from '@ds/proto-review'
 
@@ -33,7 +39,7 @@ const route  = useRoute()
 const TAB_NAMES = computed(() => {
   const t = ['products', 'batches', 'serial']
   if (!isWmsOps.value) t.push('transactions')
-  t.push('locations')
+  t.push('locations', 'team')
   return t
 })
 const activeTabIndex = computed({
@@ -257,6 +263,68 @@ function addSubLoc(node: LocNode) {
 }
 function onLocSaved(parentId: string | null) {
   if (parentId) expandedLoc.value = new Set([...expandedLoc.value, parentId])
+}
+
+// ── Team — this warehouse's Managers + Operators. Task assignees everywhere else
+// in the app are drawn ONLY from a warehouse's Operators (see warehouseTeam.ts). ──
+const teamSearch = ref('')
+const team = computed(() => getWarehouseTeam(props.orderId))
+const filteredTeam = computed(() => {
+  const q = teamSearch.value.trim().toLowerCase()
+  if (!q) return team.value
+  return team.value.filter(m => m.name.toLowerCase().includes(q))
+})
+const TEAM_ROLE_OPTIONS: { id: WarehouseRole; name: string }[] = [
+  { id: 'operator', name: 'Operator' },
+  { id: 'manager', name: 'Manager' },
+]
+// Who's making the change — mirrors ErpUserMenu.vue's "logged in as" logic
+// (the active warehouse's PIC in an Ops scenario, back-office otherwise).
+const { activeWarehouse, hasWarehouseContext } = useWarehouseContext()
+const currentUserName = computed(() =>
+  hasWarehouseContext.value && activeWarehouse.value
+    ? picForWarehouse(activeWarehouse.value.id, 0)
+    : 'Rizal Candra',
+)
+const availableTeamUsers = computed(() => getAvailableUsersForWarehouse(props.orderId))
+const teamModalOpen = ref(false)
+const teamModalEditId = ref<string | null>(null)
+const teamNameDraft = ref('')
+const teamUserIdDraft = ref('')
+const teamRoleDraft = ref<WarehouseRole>('operator')
+const teamUserError = ref(false)
+function openAddTeamMember() {
+  teamModalEditId.value = null
+  teamNameDraft.value = ''
+  teamUserIdDraft.value = ''
+  teamRoleDraft.value = 'operator'
+  teamUserError.value = false
+  teamModalOpen.value = true
+}
+function editTeamMember(member: WarehouseTeamMember) {
+  teamModalEditId.value = member.id
+  teamNameDraft.value = member.name
+  teamRoleDraft.value = member.role
+  teamUserError.value = false
+  teamModalOpen.value = true
+}
+function closeTeamModal() {
+  teamModalOpen.value = false
+}
+function saveTeamMember() {
+  if (teamModalEditId.value) {
+    updateTeamMemberRole(teamModalEditId.value, teamRoleDraft.value)
+    toast.notify({ variant: 'success', title: 'Team member updated', maxWidth: 'max-content' })
+  } else {
+    if (!teamUserIdDraft.value) { teamUserError.value = true; return }
+    addTeamMember(props.orderId, { userId: teamUserIdDraft.value, role: teamRoleDraft.value, addedBy: currentUserName.value })
+    toast.notify({ variant: 'success', title: 'Team member added', maxWidth: 'max-content' })
+  }
+  teamModalOpen.value = false
+}
+function onRemoveTeamMember(member: WarehouseTeamMember) {
+  removeTeamMember(member.id)
+  toast.notify({ variant: 'success', title: `${member.name} removed from the team`, maxWidth: 'max-content' })
 }
 
 const search = ref('')
@@ -694,6 +762,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <MpTab v-if="hasSerialTab" id="wh-tab-serial" value="serial">Serial numbers</MpTab>
           <MpTab v-if="!isWmsOps" id="wh-tab-transactions" value="transactions">Transactions</MpTab>
           <MpTab id="wh-tab-locations" value="locations">Storage locations</MpTab>
+          <MpTab id="wh-tab-team" value="team">Team</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="products">
@@ -1339,6 +1408,84 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             </div>
             </template>
           </MpTabPanel>
+
+          <!-- Team — Managers + Operators for this warehouse. Task assignees
+               elsewhere in the app are drawn only from the Operators here. -->
+          <MpTabPanel value="team">
+            <div v-if="!team.length" class="empty-full">
+              <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+              <p class="empty-full-title">No team members</p>
+              <p class="empty-full-desc">Add managers and operators to this warehouse — task assignees are picked from its operators.</p>
+              <MpButton variant="tertiary" is-rounded left-icon="add" class="wh-loc-empty-cta" @click="openAddTeamMember">Add team member</MpButton>
+            </div>
+
+            <template v-else>
+            <div class="wh-loc-filterbar">
+              <div class="wh-search">
+                <MpIcon name="search" size="md" />
+                <input v-model="teamSearch" class="wh-search-input" type="text" placeholder="Search name..." />
+              </div>
+              <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddTeamMember">Add team member</MpButton>
+            </div>
+
+            <div class="wh-loc-scroll">
+              <table class="wh-loc-table wh-team-table">
+                <colgroup>
+                  <col style="width: 300px" />
+                  <col style="width: 120px" />
+                  <col style="width: 150px" />
+                  <col style="width: 160px" />
+                  <col /><!-- filler: pushes the action button to the far right -->
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="wh-bth">Name</th>
+                    <th class="wh-bth">Role</th>
+                    <th class="wh-bth">Date added</th>
+                    <th class="wh-bth">Added by</th>
+                    <th class="wh-bth" />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="member in filteredTeam" :key="member.id" class="wh-loc-row">
+                    <td class="wh-btd">
+                      <div class="wh-team-name">
+                        <span
+                          class="wh-team-avatar"
+                          :style="{ background: `hsl(${member.hue},50%,88%)`, color: `hsl(${member.hue},55%,35%)` }"
+                        >{{ member.initials }}</span>
+                        <span class="wh-loc-name-text">{{ member.name }}</span>
+                      </div>
+                    </td>
+                    <td class="wh-btd">{{ member.role === 'manager' ? 'Manager' : 'Operator' }}</td>
+                    <td class="wh-btd">{{ formatDate(member.addedAt) }}</td>
+                    <td class="wh-btd">{{ member.addedBy }}</td>
+                    <td class="wh-btd wh-loc-td--action">
+                      <MpPopover :id="`wh-team-actions-${member.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                        <MpPopoverTrigger>
+                          <button class="row-kebab" aria-label="More actions" @click.stop>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                              <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+                            </svg>
+                          </button>
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                          <MpPopoverList>
+                            <MpPopoverListItem @click="editTeamMember(member)">Edit</MpPopoverListItem>
+                            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="onRemoveTeamMember(member)">Remove</MpPopoverListItem>
+                          </MpPopoverList>
+                        </MpPopoverContent>
+                      </MpPopover>
+                    </td>
+                  </tr>
+                  <tr v-if="!filteredTeam.length">
+                    <td class="wh-btd wh-loc-empty" colspan="5">No team members found.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            </template>
+          </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
 
@@ -1410,6 +1557,65 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       <MpModalOverlay />
     </MpModal>
 
+    <!-- ── Add/edit team member modal ── -->
+    <MpModal
+      id="wh-team-modal"
+      :is-open="teamModalOpen"
+      size="sm"
+      is-close-on-esc
+      is-close-on-overlay-click
+      :is-keep-alive="false"
+      @close="closeTeamModal"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          {{ teamModalEditId ? 'Edit team member' : 'Add team member' }}
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <MpFormControl v-if="teamModalEditId" id="wh-team-name">
+            <MpFormLabel>User</MpFormLabel>
+            <div class="wh-team-modal-name">{{ teamNameDraft }}</div>
+          </MpFormControl>
+          <MpFormControl v-else id="wh-team-user" is-required :is-invalid="teamUserError">
+            <MpFormLabel>User</MpFormLabel>
+            <MpAutocomplete
+              id="wh-team-user-ac"
+              v-model="teamUserIdDraft"
+              :data="availableTeamUsers"
+              label-prop="name"
+              value-prop="id"
+              placeholder="Select user"
+              use-portal
+              is-full-width
+              :is-invalid="teamUserError"
+              @update:model-value="teamUserError = false"
+            />
+            <MpFormErrorMessage>Select a user</MpFormErrorMessage>
+          </MpFormControl>
+          <MpFormControl id="wh-team-role" :class="css({ marginTop: '16px' })">
+            <MpFormLabel>Role</MpFormLabel>
+            <MpAutocomplete
+              id="wh-team-role-ac"
+              v-model="teamRoleDraft"
+              :data="TEAM_ROLE_OPTIONS"
+              label-prop="name"
+              value-prop="id"
+              use-portal
+              is-full-width
+            />
+          </MpFormControl>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="closeTeamModal">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="saveTeamMember">{{ teamModalEditId ? 'Save changes' : 'Save' }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
     <ActivityLogModal
       v-if="warehouse"
       :is-open="activityOpen"
@@ -1446,6 +1652,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-loc-table .wh-btd { vertical-align: middle; }
 .wh-loc-row--branch { cursor: pointer; }
 .wh-loc-table tbody tr:hover .wh-btd { background: var(--mp-background-neutral-hovered); }
+/* Team rows have no row-level action (no "view details") — skip the hover fill. */
+.wh-team-table tbody tr:hover .wh-btd { background: transparent; }
 .wh-loc-name { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .wh-loc-name-text { color: var(--mp-text-default); }
 /* type marker: folder = Organizational (grouping), box = Storage (holds stock) */
@@ -1474,6 +1682,21 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-loc-table .wh-loc-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
 .wh-loc-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
 .wh-loc-empty-cta { margin-top: var(--mp-spacing-3); }
+
+.wh-team-name { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.wh-team-avatar {
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
+  border-radius: var(--mp-radii-full); flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--mp-font-sizes-xs); font-weight: var(--mp-font-weights-semi-bold);
+}
+.wh-team-modal-name {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral-subtle);
+  color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md);
+}
 
 .detail-page {
   height: 100%;

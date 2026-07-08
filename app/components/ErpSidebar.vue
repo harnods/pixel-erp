@@ -523,7 +523,13 @@ function resolveActive(pageKey: string): {
       // slug-based match so names with caps/slashes (e.g. 'Stock in/out') still
       // resolve through the URL round-trip
       if (labelToPath(item.name) === labelToPath(pageKey)) {
-        return { nav: item.name, sub: null, panel: null }
+        // If the matched nav item owns a level-2 panel, return it so the panel
+        // stays open on refresh of a detail page (e.g. /stock-adjustments/wsa-001
+        // resolves to 'Stock adjustments', which has a panelSubmenu).
+        const panel = item.panelSubmenu
+          ? { title: item.name, groups: item.panelSubmenu, parentNavName: item.name }
+          : null
+        return { nav: item.name, sub: null, panel }
       }
       for (const subGroup of item.submenu ?? []) {
         for (const sub of subGroup) {
@@ -597,15 +603,36 @@ watch(currentPageKey, (key) => {
     if (parentKey) ({ nav, sub, panel } = resolveActive(parentKey))
   }
   activeItem.value = nav
-  activePanelSubItem.value = sub
-  // Page title always mirrors the active menu name — the deepest active label
-  // (panel sub-item if any, otherwise the nav item).
-  setActiveMenuLabel(sub ?? nav)
+  // On a detail route the first URL segment matches the parent nav item directly
+  // (sub === null). Keep the last active sub-item so the level-2 panel highlight
+  // doesn't disappear while the user is inside a detail page of that section.
+  // On a hard refresh sub is null, so we restore from localStorage (keyed per
+  // nav section). If nothing is stored yet, fall back to the first panel item.
+  const sameSection = activePanel.value?.parentNavName === nav || panel?.parentNavName === nav
+  if (sub !== null) {
+    activePanelSubItem.value = sub
+    setActiveMenuLabel(sub)
+    try { localStorage.setItem(`erp-panel-sub:${nav}`, sub) } catch { /* ignore */ }
+  } else if (sameSection) {
+    let restored: string | null = null
+    try { restored = localStorage.getItem(`erp-panel-sub:${nav}`) } catch { /* ignore */ }
+    const fallback = panel?.groups?.[0]?.[0]?.label ?? null
+    const chosen = restored ?? fallback
+    if (chosen) {
+      activePanelSubItem.value = chosen
+      setActiveMenuLabel(chosen)
+    }
+  } else {
+    activePanelSubItem.value = null
+    setActiveMenuLabel(nav)
+  }
   // Keep the level-2 panel in sync with the URL so it survives a refresh.
   if (panel) {
     activePanel.value = panel
     isPanelVisible.value = true
     isExpanded.value = false
+  } else if (sameSection) {
+    isPanelVisible.value = true
   } else {
     activePanel.value = null
   }

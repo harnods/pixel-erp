@@ -17,6 +17,7 @@ import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pick
 import { getPackingForOrder, addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
 import { deliveryTasks, marketplaceShipping, getShipment, type ShipmentSummary } from '~/data/deliveryTasks'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
@@ -199,16 +200,7 @@ function createPicking() {
 // Marketplace orders are all-or-nothing (nothing to review) → quick assignee-only
 // modal, straight to creation. Non-marketplace orders can be packed partially, so
 // they go through the full "New packing" page instead.
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
+const ASSIGNEES = computed(() => getWarehouseOperators(order.value?.warehouseId ?? ''))
 const directPackModalOpen = ref(false)
 const directPackAssigneeId = ref('')
 const directPackAssigneeError = ref(false)
@@ -230,7 +222,7 @@ function closeDirectPacking() {
 function confirmDirectPacking() {
   if (!directPackAssigneeId.value) { directPackAssigneeError.value = true; return }
   if (!order.value) return
-  const assignee = ASSIGNEES.find(a => a.id === directPackAssigneeId.value)?.name ?? ''
+  const assignee = ASSIGNEES.value.find(a => a.id === directPackAssigneeId.value)?.name ?? ''
   const task = addPackingTaskFromOrder({
     salesOrderId: order.value.id,
     salesNo: order.value.salesNo,

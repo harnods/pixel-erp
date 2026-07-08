@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { warehouses } from './warehouses'
+import { operatorForWarehouse } from './warehouseTeam'
 import { warehouseProducts, PRODUCTS } from './inventory'
 import { applyStockCount, applyStockInOut } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
@@ -41,8 +42,6 @@ function isoOffsetTs(days: number, hour: number, minute: number): string {
   d.setHours(hour, minute, 0, 0)
   return d.toISOString()
 }
-
-const ASSIGNEES = ['Budi Santoso', 'Siti Rahayu', 'Andi Wijaya', 'Dewi Kusuma', 'Reza Pratama', 'Lina Handayani']
 
 const TAG_POOL = ['Recount', 'Audit', 'Damaged', 'Expired', 'Promo', 'Year-end', 'Production', 'Correction']
 
@@ -88,7 +87,7 @@ function generate(count = 24): StockAdjustment[] {
     const record: StockAdjustment = {
       id: `wsa-${String(i + 1).padStart(3, '0')}`,
       kind,
-      number: `${kind === 'count' ? 'Stock Count' : 'Stock In/Out'} #${seq}`,
+      number: `${kind === 'count' ? 'Cycle Count' : 'Stock In/Out'} #${seq}`,
       date: isoOffset(-startDaysAgo),
       warehouseId: wh.id,
       warehouseName: wh.name,
@@ -98,7 +97,7 @@ function generate(count = 24): StockAdjustment[] {
       tags: tagsFor(i),
     }
     if (kind === 'count') {
-      record.assignee = ASSIGNEES[hash100(i * 19 + 7) % ASSIGNEES.length]
+      record.assignee = operatorForWarehouse(wh.id, hash100(i * 19 + 7))
       const startHour = 7 + (hash100(i * 23 + 1) % 4)
       const startMin = (hash100(i * 29 + 2) % 4) * 15
       const endHour = 14 + (hash100(i * 31 + 3) % 5)
@@ -115,7 +114,7 @@ function generate(count = 24): StockAdjustment[] {
   return out
 }
 
-const KEY = 'wms-stock-adjustments-v5'
+const KEY = 'wms-stock-adjustments-v6'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const wmsStockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 
@@ -144,7 +143,7 @@ export function deleteWmsAdjustments(ids: string[]): void {
 let addSeq = wmsStockAdjustments.length
 
 function nextSeqFor(kind: AdjustmentKind): number {
-  const prefix = kind === 'count' ? 'Stock Count' : 'Stock In/Out'
+  const prefix = kind === 'count' ? 'Cycle Count' : 'Stock In/Out'
   const used = wmsStockAdjustments
     .filter((a) => a.number.startsWith(prefix))
     .map((a) => Number(a.number.replace(/\D/g, '')) || 0)
@@ -157,7 +156,7 @@ export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
   const adj: StockAdjustment = {
     id: `wsa-new-${n}`,
     kind: input.kind,
-    number: `${input.kind === 'count' ? 'Stock Count' : 'Stock In/Out'} #${nextSeqFor(input.kind)}`,
+    number: `${input.kind === 'count' ? 'Cycle Count' : 'Stock In/Out'} #${nextSeqFor(input.kind)}`,
     date: input.date,
     warehouseId: input.warehouseId,
     warehouseName: input.warehouseName,

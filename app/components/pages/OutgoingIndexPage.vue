@@ -18,6 +18,7 @@ import { canPickOrder } from '~/data/pickingTasks'
 import { addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { warehouses } from '~/data/warehouses'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 
 // Keep each order's status in sync with its actual picking/packing/delivery tasks.
 syncOutboundOrderStatuses()
@@ -220,16 +221,7 @@ function createPicking(row: OutgoingOrder) {
 // ─── Direct-to-packing (Picking disabled for the order's warehouse) ─────────────
 // No picking step to review — just confirm an assignee and create the packing
 // task straight from the order's full SKU demand.
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
+const ASSIGNEES = computed(() => getWarehouseOperators(directPackOrder.value?.warehouseId ?? ''))
 const directPackOrder = ref<OutgoingOrder | null>(null)
 const directPackModalOpen = ref(false)
 const directPackAssigneeId = ref('')
@@ -257,7 +249,7 @@ function confirmDirectPacking() {
   if (!directPackAssigneeId.value) { directPackAssigneeError.value = true; return }
   const order = directPackOrder.value
   if (!order) return
-  const assignee = ASSIGNEES.find(a => a.id === directPackAssigneeId.value)?.name ?? ''
+  const assignee = ASSIGNEES.value.find(a => a.id === directPackAssigneeId.value)?.name ?? ''
   const task = addPackingTaskFromOrder({
     salesOrderId: order.id,
     salesNo: order.salesNo,

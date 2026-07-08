@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import { picForWarehouse } from "./warehouses";
+import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, type OutgoingOrder } from "./outgoing";
 import {
   pickingTasks, pickingLinesOf, getPickingTask, pickedQtyForOrderSku,
@@ -159,7 +159,7 @@ function seedTasks(): PackingTask[] {
         pickingTaskNo: pick.taskNo,
         warehouseId: pick.warehouseId,
         warehouseName: pick.warehouseName,
-        assignee: picForWarehouse(pick.warehouseId, idx),
+        assignee: operatorForWarehouse(pick.warehouseId, idx),
         skuQty: lines.length,
         toPackQty,
         packedQty,
@@ -201,7 +201,7 @@ function seedShippedPacks(startSeq: number): PackingTask[] {
       pickingTaskNo: pick.taskNo,
       warehouseId: pick.warehouseId,
       warehouseName: pick.warehouseName,
-      assignee: picForWarehouse(pick.warehouseId, k),
+      assignee: operatorForWarehouse(pick.warehouseId, k),
       skuQty: lines.length,
       toPackQty,
       packedQty: toPackQty,

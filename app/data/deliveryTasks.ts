@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import { picForWarehouse } from "./warehouses";
+import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from "./outgoing";
 import { packingTasks, pickedLinesForPacking, type PackingTask } from "./packingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
@@ -103,7 +103,7 @@ function seedTasks(): DeliveryTask[] {
       packingTaskNo: pack.taskNo,
       warehouseId: pack.warehouseId,
       warehouseName: pack.warehouseName,
-      assignee: picForWarehouse(pack.warehouseId, idx),
+      assignee: operatorForWarehouse(pack.warehouseId, idx),
       skuQty: pack.skuQty,
       orderQty: order?.orderQty ?? toShipQty,
       toShipQty,
@@ -144,7 +144,7 @@ function seedShippedDeliveries(startSeq: number): DeliveryTask[] {
       packingTaskNo: pack.taskNo,
       warehouseId: pack.warehouseId,
       warehouseName: pack.warehouseName,
-      assignee: picForWarehouse(pack.warehouseId, k),
+      assignee: operatorForWarehouse(pack.warehouseId, k),
       skuQty: pack.skuQty,
       orderQty: order?.orderQty ?? toShipQty,
       toShipQty,

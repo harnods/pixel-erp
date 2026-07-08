@@ -10,21 +10,11 @@ import { getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQt
 import { addPackingTask, addPackingTaskFromOrder, getPackingForOrder, remainingSkusForOrder } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { orderSkuLines } from '~/data/inventory'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
-
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
 
 // ─── Source picking task(s) ─────────────────────────────────────────────────────
 // Opened from one picking list (?pickingId) or a bulk selection (?pickingIds=a,b,c).
@@ -61,7 +51,9 @@ const warehouseId = ref(pick.value?.warehouseId ?? directOrder.value?.warehouseI
 const assigneeId    = ref('')
 const assigneeError = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
-const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+// Assignee can only be an operator of the (locked) source warehouse.
+const ASSIGNEES = computed(() => getWarehouseOperators(warehouseId.value))
+const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // ─── Picked items per sales order (what's available to pack) ─────────────────────
 interface PackLine { key: string; sku: string; product: string; desc: string; img: string; unit: string; order: number; picked: number }

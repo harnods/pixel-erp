@@ -205,6 +205,35 @@ function makeSerials(sku: string, onHand: number, reserved: number, seed: number
   }
 }
 
+// Keep a serial-tracked item's SN count matching its on-hand qty. Called once
+// after both overlays (on-hand + exact serial moves from transfers) have been
+// applied, so it only tops up/trims whatever gap is LEFT — a transfer that moves
+// N specific serials alongside an N-unit onHand delta closes its own gap and
+// this is a no-op; a plain stock count/in-out (no serial overlay) leaves the
+// full delta as the gap, which gets synthesized here. Deterministic given the
+// same starting serials + gap, so repeated calls to getWarehouseDetail never
+// drift or duplicate.
+function reconcileSerialQty(item: WarehouseStockItem): void {
+  if (!item.serials) return
+  const delta = item.onHand - (item.serials.available.length + item.serials.reserved.length)
+  if (delta === 0) return
+  if (delta > 0) {
+    const prefix = item.sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN'
+    const nums = [...item.serials.available, ...item.serials.reserved]
+      .map((u) => parseInt(u.serial.replace(/\D/g, ''), 10))
+      .filter((n) => Number.isFinite(n))
+    let next = (nums.length ? Math.max(...nums) : 0) + 1
+    const loc = item.locations[0] ?? '—'
+    for (let k = 0; k < delta; k++) {
+      item.serials.available.push({ serial: `${prefix}${String(next++).padStart(5, '0')}`, location: loc })
+    }
+  } else {
+    let toRemove = -delta
+    while (toRemove > 0 && item.serials.available.length) { item.serials.available.pop(); toRemove-- }
+    while (toRemove > 0 && item.serials.reserved.length) { item.serials.reserved.pop(); toRemove-- }
+  }
+}
+
 /**
  * Deterministically build `count` stock items for a warehouse (stable per id) from the
  * product DB {@link PRODUCTS} — so a warehouse's Products tab shows the SAME products
@@ -220,15 +249,16 @@ function generateStock(products: Product[], seed: number): WarehouseStockItem[] 
   for (let i = 0; i < n; i++) {
     const c = products[i]!
     const cycle = 1
-    // Serialized hardware (machines, grinders): realistic warehouse qty — 3 to 22 units,
-    // reserved 0–3. Batch/consumable products can have hundreds of units.
+    // Serialized hardware (machines, grinders): each unit is individually tracked, so
+    // realistic warehouse qty stays small — 1 to 9 units. Every other SKU (consumables,
+    // accessories) is capped at 25 — no warehouse stocks hundreds/thousands of one SKU.
     const isSerial = isSerialized(c.category)
     const onHand = isSerial
-      ? ((i * 7 + seed * 3 + 2) % 20) + 3
-      : ((i * 53 + seed * 7 + 17) % 1500) + 5
+      ? ((i * 7 + seed * 3 + 2) % 9) + 1
+      : ((i * 53 + seed * 7 + 17) % 21) + 5
     const reservedRaw = isSerial
       ? (((i * 5 + seed * 2) % 4 === 0) ? 0 : (i + seed) % 4)
-      : (onHand > 40 ? (i * 13 + seed) % 40 : 0)
+      : (onHand > 8 ? (i * 13 + seed) % Math.max(1, Math.floor(onHand / 3)) : 0)
     const reserved = isSerial ? Math.min(reservedRaw, onHand - 1) : reservedRaw
     const onTheWay = (i * 7) % 60
     const minStock = Math.round((((i * 11) % 200) + 10) / 10) * 10
@@ -347,6 +377,10 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
       }
     })
   }
+
+  // Close any remaining onHand ↔ serial-count gap (stock counts / plain in-out
+  // adjustments on a serial-tracked SKU don't carry explicit serials).
+  stock.forEach((item) => reconcileSerialQty(item))
 
   return {
     ...wh,

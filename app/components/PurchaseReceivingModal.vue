@@ -11,24 +11,16 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import type { Receipt } from '~/data/receipts'
 import { lineItemsForReceipt, BINS, type ReceiptLineItem } from '~/data/receiptLineItems'
 import { addPurchaseReceiving } from '~/data/purchaseReceivings'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 
 const props = defineProps<{ receipt: Receipt | null; open: boolean }>()
 const emit = defineEmits<{ close: []; created: [] }>()
 
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
-
 // ─── Form state ────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
-const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+// Assignee can only be an operator of the receipt's warehouse.
+const ASSIGNEES = computed(() => getWarehouseOperators(props.receipt?.warehouseId ?? ''))
+const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // SKU scope = whatever stays in the table. Removing a row narrows the scope.
 const removed = ref(new Set<string>())

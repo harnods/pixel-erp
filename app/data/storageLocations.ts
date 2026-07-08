@@ -277,6 +277,26 @@ export function stockLocationPaths(warehouseId: string): string[] {
   return paths
 }
 
+export interface StorageLeaf { id: string; code: string; path: string; type: LocType }
+
+/**
+ * Every LEAF location in a warehouse's tree (root → name path included) — the
+ * candidate set for reservation priority (auto-selection only ranks Storage-type
+ * leaves; Organizational nodes like Floor/Zone never hold stock directly).
+ */
+export function getStorageLeaves(warehouseId: string): StorageLeaf[] {
+  const out: StorageLeaf[] = []
+  const walk = (nodes: LocNode[], trail: string[]) => {
+    for (const n of nodes) {
+      const here = [...trail, n.name]
+      if (n.children.length) walk(n.children, here)
+      else out.push({ id: n.id, code: n.code, path: here.join(' / '), type: n.type })
+    }
+  }
+  walk(getStorageTree(warehouseId), [])
+  return out
+}
+
 /** A location node + its ancestor path (root → node), for the detail page. */
 export function findLocation(warehouseId: string, locId: string): { node: LocNode; path: LocNode[] } | undefined {
   const walk = (nodes: LocNode[], trail: LocNode[]): { node: LocNode; path: LocNode[] } | undefined => {

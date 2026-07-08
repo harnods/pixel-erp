@@ -1,5 +1,6 @@
 import { reactive } from "vue";
-import { warehouses, picForWarehouse } from "./warehouses";
+import { warehouses } from "./warehouses";
+import { operatorForWarehouse } from "./warehouseTeam";
 import {
   receivingTaskRefsForWarehouse,
   receivingTasksForReceipt,
@@ -91,7 +92,7 @@ function seedTasks(): PutAwayTask[] {
       receivingTaskNos: rtasks.map((r) => r.no),
       warehouseId: wh.id,
       warehouseName: wh.name,
-      assignee: picForWarehouse(wh.id, p),
+      assignee: operatorForWarehouse(wh.id, p),
       itemQty: receivedUnits(rtasks.map((r) => r.id)),
       destination: `${zone}-${String((p % 9) + 1).padStart(2, "0")}-${String((p % 5) + 1).padStart(2, "0")}`,
       status: "open",

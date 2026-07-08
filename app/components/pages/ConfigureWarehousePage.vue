@@ -8,9 +8,11 @@ import {
   toast,
 } from '@mekari/pixel3'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { getWarehouseConfig, saveWarehouseConfig, type WarehouseConfig } from '~/data/warehouseConfig'
+import { getWarehouseConfig, saveWarehouseConfig, rankStorageLeaves, type WarehouseConfig } from '~/data/warehouseConfig'
+import { getStorageLeaves } from '~/data/storageLocations'
 import { previewDisablePutAway, disablePutAwayForWarehouse } from '~/data/putAwayTasks'
 import { previewDisablePicking, disablePickingForWarehouse } from '~/data/pickingTasks'
+import LocationPriorityDrawer from '~/components/patterns/LocationPriorityDrawer.vue'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -35,7 +37,7 @@ const hasChanges = computed(() =>
   draft.allowPartialPicking    !== committed.allowPartialPicking    ||
   draft.requireSourceLabel      !== committed.requireSourceLabel      ||
   draft.preventDuplicateLabel  !== committed.preventDuplicateLabel  ||
-  draft.autoSelectLocation      !== committed.autoSelectLocation      ||
+  draft.locationPriority.join(',') !== committed.locationPriority.join(',') ||
   draft.scanThreshold          !== committed.scanThreshold          ||
   draft.scanThresholdValue     !== committed.scanThresholdValue     ||
   draft.cycleCountRec          !== committed.cycleCountRec          ||
@@ -103,6 +105,22 @@ function confirmToggle() {
 }
 
 const partialPickingLocked = computed(() => !draft.pickingEnabled)
+
+// ─── Storage location priority (rule, not a toggle — auto-selection always runs
+// when an outbound omits a location; this is the order it follows). ───────────
+const locationPriorityDrawerOpen = ref(false)
+const storageLeaves = computed(() => getStorageLeaves(props.orderId).filter((l) => l.type === 'Storage'))
+const locationPriorityPreview = computed(() => rankStorageLeaves(storageLeaves.value, draft.locationPriority))
+const locationPrioritySummary = computed(() => {
+  if (!storageLeaves.value.length) return 'No storage locations yet'
+  if (!draft.locationPriority.length) return 'Default order (ascending location code)'
+  const top = locationPriorityPreview.value.slice(0, 3).map((l) => l.code)
+  const extra = locationPriorityPreview.value.length - top.length
+  return top.join(' → ') + (extra > 0 ? ` → +${extra} more` : '')
+})
+function onLocationPrioritySaved(order: string[]) {
+  draft.locationPriority = order
+}
 
 const toggleConfirmTitle = computed(() => {
   const field = toggleConfirmField.value
@@ -229,14 +247,17 @@ const toggleConfirmBody = computed(() => {
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
-              <span class="cw-toggle-title">Auto-select storage location</span>
-              <span class="cw-toggle-desc">Automatically assign the storage location when picking items for outbound orders in this warehouse.</span>
+              <span class="cw-toggle-title">Storage location priority</span>
+              <span class="cw-toggle-desc">WMS reserves from the highest-priority location with available stock when an outbound doesn't already specify one. Default: ascending location code.</span>
+              <span class="cw-rule-summary">{{ locationPrioritySummary }}</span>
             </div>
-            <MpToggle
-              v-model:is-checked="draft.autoSelectLocation"
-              :is-disabled="!isEditing"
-              aria-label="Auto-select storage location"
-            />
+            <button
+              class="btn-enterprise btn-enterprise--secondary"
+              :disabled="!isEditing || !storageLeaves.length"
+              @click="locationPriorityDrawerOpen = true"
+            >
+              Manage priority
+            </button>
           </div>
 
           <h3 class="cw-subsection-title cw-subsection-title--spaced">Inbound delivery</h3>
@@ -407,6 +428,13 @@ const toggleConfirmBody = computed(() => {
       <MpModalOverlay />
     </MpModal>
 
+    <LocationPriorityDrawer
+      v-model:is-open="locationPriorityDrawerOpen"
+      :warehouse-id="props.orderId"
+      :model-value="draft.locationPriority"
+      @saved="onLocationPrioritySaved"
+    />
+
   </div>
 </template>
 
@@ -449,6 +477,7 @@ const toggleConfirmBody = computed(() => {
 .cw-toggle-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
 .cw-toggle-title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cw-toggle-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+.cw-rule-summary { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 
 .cw-action-bar { grid-column: 1 / 7; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); }
 .cw-action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -1,5 +1,6 @@
 import { reactive } from "vue";
-import { warehouses, picForWarehouse } from "./warehouses";
+import { warehouses } from "./warehouses";
+import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, type OutgoingOrder } from "./outgoing";
 import { orderSkuLines } from "./inventory";
 import { binForSku } from "./warehouseDetails";
@@ -163,7 +164,7 @@ function seedTasks(): PickingTask[] {
         salesNos: [o.salesNo],
         warehouseId: o.warehouseId,
         warehouseName: o.warehouseName,
-        assignee: picForWarehouse(o.warehouseId, t),
+        assignee: operatorForWarehouse(o.warehouseId, t),
         skuQty: lines.length,
         toPickQty,
         pickedQty,
@@ -203,7 +204,7 @@ function seedShippedPicks(startSeq: number): PickingTask[] {
       salesNos: [o.salesNo],
       warehouseId: o.warehouseId,
       warehouseName: o.warehouseName,
-      assignee: picForWarehouse(o.warehouseId, k),
+      assignee: operatorForWarehouse(o.warehouseId, k),
       skuQty: lines.length,
       toPickQty: lines.reduce((sum, l) => sum + l.qty, 0),
       pickedQty,

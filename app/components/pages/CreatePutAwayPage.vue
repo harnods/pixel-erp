@@ -9,21 +9,11 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import { receivingPOs } from '~/data/receivingTasks'
 import { getTaskLineItems, type TaskLineItem } from '~/data/receivingTaskDetails'
 import { addPutAwayTask } from '~/data/putAwayTasks'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
-
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
 
 // ─── All pending put-away tasks (flat) ────────────────────────────────────────
 interface FlatTask {
@@ -72,6 +62,7 @@ let _prefillSuppressClear = false
 watch(warehouseId, (v) => {
   if (v) warehouseError.value = false
   if (!_prefillSuppressClear) selectedIds.value = new Set()
+  assigneeId.value = ''
 })
 const warehouseName = computed(() =>
   availableWarehouses.value.find(w => w.id === warehouseId.value)?.name ?? '',
@@ -82,7 +73,9 @@ const isWarehouseLocked = computed(() => !!route.query.warehouseId)
 const assigneeId    = ref('')
 const assigneeError = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
-const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+// Assignee can only be an operator of the selected warehouse.
+const ASSIGNEES = computed(() => getWarehouseOperators(warehouseId.value))
+const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // ─── Receiving tasks filtered by selected warehouse ────────────────────────────
 const pendingTasks = computed<FlatTask[]>(() =>
