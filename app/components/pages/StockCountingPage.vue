@@ -608,7 +608,7 @@ onUnmounted(() => {
   <MpModal
     id="sc-new-batch-modal"
     :is-open="newBatchOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
