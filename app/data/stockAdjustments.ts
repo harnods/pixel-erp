@@ -92,7 +92,7 @@ export interface StockAdjustment {
   /** User-entered memo (create form). Absent → a deterministic demo memo is shown. */
   memo?: string
   /** User-entered product lines (create form). Absent → demo lines are derived. */
-  lines?: { sku: string; qty: number }[]
+  lines?: { sku: string; qty: number; prevQty?: number }[]
   /** Filled when the adjustment is approved (to populate approval log stage 2). */
   approvedAt?: string
   approvedBy?: string
@@ -100,6 +100,8 @@ export interface StockAdjustment {
   assignee?: string
   startDate?: string
   endDate?: string
+  /** ERP Stock Count only — ID of the originating WMS Cycle Count task */
+  linkedCycleCountId?: string
 }
 
 // Adjustments apply to real (non-default, active) warehouses — the default warehouse
@@ -196,13 +198,14 @@ function generate(count = 26): StockAdjustment[] {
         endDate: countStatus === 'completed'
           ? isoOffsetDT(-startDaysAgo, endHour, startMin)
           : undefined,
+        linkedCycleCountId: `wsa-${String((hash100(i * 31 + 11) % 14) + 1).padStart(3, '0')}`,
       }),
     })
   }
   return out
 }
 
-const KEY = 'stock-adjustments-v2'
+const KEY = 'stock-adjustments-v3'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const stockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 
@@ -258,7 +261,9 @@ export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
         const product = productBySku(l.sku)
         if (!product) return null
         if (a.kind === 'count') {
-          const prevOnHand = onHandBySku?.get(l.sku) ?? (50 + (hash100(seedNum(a.id) + l.sku.length) % 150))
+          const prevOnHand = l.prevQty !== undefined
+            ? l.prevQty
+            : (onHandBySku?.get(l.sku) ?? (50 + (hash100(seedNum(a.id) + l.sku.length) % 150)))
           const counted = l.qty
           return {
             key: l.sku, sku: l.sku, product,
@@ -411,11 +416,13 @@ export interface AdjustmentInput {
   category: AdjustmentCategory
   tags: string[]
   memo?: string
-  lines: { sku: string; qty: number }[]
+  lines: { sku: string; qty: number; prevQty?: number }[]
   /** WMS Stock count only */
   assignee?: string
   startDate?: string
   endDate?: string
+  /** Set when posting from a WMS Cycle Count task */
+  linkedCycleCountId?: string
 }
 
 /** Create a new (awaiting-approval) adjustment from the create form. */
@@ -434,6 +441,7 @@ export function addAdjustment(input: AdjustmentInput): StockAdjustment {
     tags: input.tags,
     memo: input.memo,
     lines: input.lines,
+    linkedCycleCountId: input.linkedCycleCountId,
   }
   stockAdjustments.unshift(adj)
   persistAdjustments()

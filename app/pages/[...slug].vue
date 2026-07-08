@@ -99,6 +99,7 @@ const StockAdjustmentDetailsPage = defineAsyncComponent(() => import('~/componen
 const StockCountFormPage = defineAsyncComponent(() => import('~/components/pages/StockCountFormPage.vue'))
 const StockCountingPage = defineAsyncComponent(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = defineAsyncComponent(() => import('~/components/pages/StockInOutFormPage.vue'))
+const CycleCountRecommendationPage = defineAsyncComponent(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -237,6 +238,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
+  'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -272,7 +274,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
-  if (currentPageKey.value === 'Stock adjustments') {
+  if (currentPageKey.value === 'Stock adjustments' || currentPageKey.value === 'Stock counts') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
@@ -334,6 +336,11 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
+  },
+  'Stock counts': {
+    'All stock counts': StockAdjustmentsPage,
+    'Awaiting approval': StockAdjustmentsPage,
+    'Recommendations': CycleCountRecommendationPage,
   },
 }
 const activeTabComponent = computed<Component | null>(

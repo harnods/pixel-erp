@@ -17,9 +17,11 @@ import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
 import { addAdjustment, accountOptions } from '~/data/stockAdjustments'
 import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
 import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
+const route = useRoute()
 const { activeScenario } = useScenario()
 const isWms = computed(() => activeScenario.value.startsWith('WMS'))
 
@@ -28,10 +30,13 @@ function toISODate(display: string) { const [d, m, y] = display.split('/'); retu
 const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 
 // ── Warehouse + account options ─────────────────────────────────────────────────
-const warehouseOptions = computed(() => warehouses.filter(w => w.status === 'active').map(w => ({ id: w.id, name: w.name })))
+// Default warehouse carries no real team/operations (excluded everywhere else too —
+// receipts, orders, picking) so it's not a selectable stock-count target.
+const warehouseOptions = computed(() => warehouses.filter(w => w.status === 'active' && !w.isDefault).map(w => ({ id: w.id, name: w.name })))
 const realWarehouses = warehouses.filter(w => w.status === 'active' && !w.isDefault)
 function warehouseName(id: string) { return warehouseOptions.value.find(w => w.id === id)?.name ?? '' }
-const assigneeOptions = ['Budi Santoso', 'Siti Rahayu', 'Andi Wijaya', 'Dewi Kusuma', 'Reza Pratama', 'Lina Handayani'].map(n => ({ id: n, name: n }))
+// Assignee choices are scoped to the selected warehouse — only its Operators are valid.
+const assigneeOptions = computed(() => getWarehouseOperators(warehouseId.value))
 const acctOptions = accountOptions()
 
 // ── Form state ───────────────────────────────────────────────────────────────────
@@ -42,8 +47,9 @@ const warehouseError = ref(false)
 const accountId = ref(acctOptions.find(a => a.id === 'Inventory adjustment')?.id ?? acctOptions[0]?.id ?? '')
 const tags = ref<DataInterface[]>([])
 const memo = ref('')
-const assignee = ref('')
+const assigneeId = ref('')
 const assigneeError = ref(false)
+const assigneeLabel = computed(() => assigneeOptions.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // ── Warehouse stock (system on-hand, coherent with the warehouse detail page) ──────
 const stock = computed(() => (warehouseId.value ? getWarehouseDetail(warehouseId.value)?.stock ?? [] : []))
@@ -219,14 +225,14 @@ function onFileChange(ev: Event) {
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
 
 // ── Navigation + save ──────────────────────────────────────────────────────────────
-function goBack() { router.push(isWms.value ? '/stock-count' : '/stock-adjustments') }
+function goBack() { router.push(isWms.value ? '/cycle-counts' : '/stock-adjustments') }
 const formError = ref('')
 function handleSave() {
   formError.value = ''
   let valid = true
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
-  if (isWms.value && !assignee.value) { assigneeError.value = true; valid = false }
+  if (isWms.value && !assigneeId.value) { assigneeError.value = true; valid = false }
   if (hasStorageLocs.value) {
     if (!selectedLocations.value.length || !selectedLocations.value.some(l => l.rows.length)) {
       formError.value = 'Select at least one location with products to count.'
@@ -263,19 +269,25 @@ function handleSave() {
     lines = []
     for (const loc of selectedLocations.value) {
       for (const r of loc.rows) {
-        const qty = isBatchTrackedSku(r.sku)
-          ? (locBatchHasCounts(r) ? locBatchTotalFor(r) : r.onHand)
-          : (r.counted.trim() ? parseCounted(r.counted) : r.onHand)
+        // WMS cycle count task: store 0 — actual counting happens on the counting page.
+        const qty = isWms.value
+          ? 0
+          : (isBatchTrackedSku(r.sku)
+            ? (locBatchHasCounts(r) ? locBatchTotalFor(r) : r.onHand)
+            : (r.counted.trim() ? parseCounted(r.counted) : r.onHand))
         lines.push({ sku: r.sku, qty })
       }
     }
   } else {
     // Store each line's counted qty (uncounted rows default to on-hand = no change).
+    // WMS cycle count task: store 0 — actual counting happens on the counting page.
     lines = rows.value.map(r => ({
       sku: r.sku,
-      qty: isBatchTrackedSku(r.sku)
-        ? (batchHasCounts(r) ? batchTotalFor(r) : onHandFor(r.sku))
-        : (isCounted(r) ? parseCounted(r.counted) : onHandFor(r.sku))
+      qty: isWms.value
+        ? 0
+        : (isBatchTrackedSku(r.sku)
+          ? (batchHasCounts(r) ? batchTotalFor(r) : onHandFor(r.sku))
+          : (isCounted(r) ? parseCounted(r.counted) : onHandFor(r.sku)))
     }))
   }
 
@@ -288,11 +300,17 @@ function handleSave() {
     tags: tagStrings(),
     memo: memo.value.trim() || undefined,
     lines,
-    ...(isWms.value ? { assignee: assignee.value || undefined } : {}),
+    ...(isWms.value ? { assignee: assigneeLabel.value || undefined } : {}),
   }
-  isWms.value ? addWmsAdjustment(input) : addAdjustment(input)
-  toast.notify({ variant: 'success', title: 'Stock count created' , maxWidth: 'max-content'})
-  router.push(isWms.value ? '/stock-count' : '/stock-adjustments')
+  if (isWms.value) {
+    const adj = addWmsAdjustment(input)
+    toast.notify({ variant: 'success', title: 'Cycle count created', maxWidth: 'max-content' })
+    router.push(`/stock-adjustments/${adj.id}`)
+  } else {
+    const adj = addAdjustment(input)
+    toast.notify({ variant: 'success', title: 'Stock count created', maxWidth: 'max-content' })
+    router.push(`/stock-adjustments/${adj.id}`)
+  }
 }
 
 // ── Storage-location mode ────────────────────────────────────────────────────────
@@ -306,7 +324,7 @@ interface LocEntry {
 const hasStorageLocs = computed(() => getStorageTree(warehouseId.value).length > 0)
 const locationDrawerOpen = ref(false)
 const selectedLocations = ref<LocEntry[]>([])
-watch(warehouseId, () => { selectedLocations.value = []; bySkuSelected.value = []; pendingCountBy.value = null })
+watch(warehouseId, () => { selectedLocations.value = []; bySkuSelected.value = []; pendingCountBy.value = null; assigneeId.value = '' })
 
 const countBy = ref<'location' | 'sku'>('location')
 const pendingCountBy = ref<'location' | 'sku' | null>(null)
@@ -545,13 +563,32 @@ onMounted(() => nextTick(() => {
   if (stageEl.value) { stageObserver.observe(stageEl.value); stageEl.value.addEventListener('scroll', checkStageOverflow, { passive: true }) }
 }))
 onUnmounted(() => { stageObserver?.disconnect() })
+
+// Pre-fill from Cycle count recommendations (query: warehouse, preselect)
+onMounted(() => {
+  const warehouseParam = route.query.warehouse as string | undefined
+  if (warehouseParam && warehouseOptions.value.find(w => w.id === warehouseParam)) {
+    warehouseId.value = warehouseParam
+  }
+  const preselectParam = route.query.preselect as string | undefined
+  if (preselectParam) {
+    const skus = preselectParam.split(',').filter(Boolean)
+    nextTick(() => {
+      if (hasStorageLocs.value) {
+        applySkuPicker(skus)
+      } else {
+        applyPicker(skus)
+      }
+    })
+  }
+})
 </script>
 
 <template>
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ isWms ? 'Stock counts' : 'All stock adjustments' }}</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ isWms ? 'Cycle counts' : 'All stock adjustments' }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New stock count</h1>
         </div>
@@ -597,7 +634,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <MpFormControl v-if="isWms" id="scf-assignee" class="scf-f-assignee" is-required :is-invalid="assigneeError">
             <MpFormLabel>Assignee</MpFormLabel>
-            <MpAutocomplete id="scf-assignee-ac" v-model="assignee" :data="assigneeOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width placeholder="Select assignee" :is-invalid="assigneeError" @update:model-value="assigneeError = false" />
+            <MpAutocomplete id="scf-assignee-ac" v-model="assigneeId" :data="assigneeOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width placeholder="Select assignee" :is-invalid="assigneeError" @update:model-value="assigneeError = false" />
             <MpFormErrorMessage>Please select an assignee</MpFormErrorMessage>
           </MpFormControl>
 

@@ -10,7 +10,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { getWmsAdjustment, saveWmsCountDraft, finishWmsCount } from '~/data/wmsStockAdjustments'
-import { adjustmentLineItems, type AdjustmentLine } from '~/data/stockAdjustments'
+import { addAdjustment, adjustmentLineItems, type AdjustmentLine } from '~/data/stockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { formatDateTimeLong } from '~/utils/date'
 
@@ -77,7 +77,7 @@ watch(wmsCountLines, (lines) => {
   const map: Record<string, number | undefined> = {}
   for (const item of lines) {
     const saved = adjustment.value?.lines?.find(l => l.sku === item.sku)
-    if (saved) {
+    if (saved && saved.qty > 0) {
       map[item.key] = Math.round(saved.qty * item.prevOnHand / (lines.filter(l => l.sku === item.sku).reduce((s, l) => s + l.prevOnHand, 0) || 1))
     }
   }
@@ -214,14 +214,34 @@ function clickFinish() {
 
 function commitFinish() {
   showConfirm.value = false
-  finishWmsCount(props.orderId, buildLines())
-  toast.notify({ variant: 'success', title: 'Stock count completed' , maxWidth: 'max-content'})
-  router.push(`/stock-adjustments/${props.orderId}`)
+  const lines = buildLines()
+
+  // Snapshot prevOnHand per SKU BEFORE finishWmsCount updates warehouse stock
+  const prevBySkuMap = new Map<string, number>()
+  for (const item of wmsCountLines.value) {
+    prevBySkuMap.set(item.sku, (prevBySkuMap.get(item.sku) ?? 0) + item.prevOnHand)
+  }
+
+  const wmsAdj = finishWmsCount(props.orderId, lines)
+  if (wmsAdj) {
+    addAdjustment({
+      kind: 'count',
+      date: new Date().toISOString().slice(0, 10),
+      warehouseId: wmsAdj.warehouseId,
+      warehouseName: wmsAdj.warehouseName,
+      category: 'Stock count',
+      tags: [],
+      lines: lines.map(l => ({ ...l, prevQty: prevBySkuMap.get(l.sku) ?? 0 })),
+      linkedCycleCountId: wmsAdj.id,
+    })
+  }
+  toast.notify({ variant: 'success', title: 'Cycle count completed', maxWidth: 'max-content' })
+  router.push('/cycle-counts')
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function goBack() { router.push(`/stock-adjustments/${props.orderId}`) }
-function goList() { router.push('/stock-count') }
+function goList() { router.push('/cycle-counts') }
 
 // ── Footer overflow ───────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)
@@ -253,7 +273,7 @@ onUnmounted(() => {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goList">Stock counts</button>
+          <button class="detail-breadcrumb" @click="goList">Cycle counts</button>
           <span class="detail-breadcrumb-sep">/</span>
           <button class="detail-breadcrumb" @click="goBack">{{ adjustment.number }}</button>
         </nav>
@@ -312,8 +332,6 @@ onUnmounted(() => {
                       <col class="sc-col-sku" />
                       <col class="sc-col-batch" />
                       <col class="sc-col-num" />
-                      <col class="sc-col-num" />
-                      <col class="sc-col-num" />
                       <col class="sc-col-unit" />
                     </colgroup>
                     <thead>
@@ -321,9 +339,7 @@ onUnmounted(() => {
                         <th class="sc-th">Product</th>
                         <th class="sc-th">SKU</th>
                         <th class="sc-th">Batch no.</th>
-                        <th class="sc-th sc-th--num">On hand qty</th>
                         <th class="sc-th sc-th--num">Counted qty</th>
-                        <th class="sc-th sc-th--num">Difference</th>
                         <th class="sc-th">Unit</th>
                       </tr>
                     </thead>
@@ -337,7 +353,6 @@ onUnmounted(() => {
                         <td class="sc-td sc-td--product"><ProductCell :name="item.product.name" :desc="item.product.desc" :image="item.product.img" /></td>
                         <td class="sc-td">{{ item.sku }}</td>
                         <td class="sc-td">{{ item.batchNumber ?? '—' }}</td>
-                        <td class="sc-td sc-td--num">{{ fmt(item.prevOnHand) }}</td>
 
                         <!-- Counted qty: serial-tracked → split cell (input + drawer link) -->
                         <td v-if="isSerialTrackedSku(item.sku)" class="sc-td sc-td--split" :class="{ 'sc-td--error': showQtyErrors && !(draftCounted[item.key] ?? 0) }">
@@ -373,9 +388,6 @@ onUnmounted(() => {
                           />
                         </td>
 
-                        <td class="sc-td sc-td--num" :class="{ 'sc-diff--pos': (draftCounted[item.key] ?? 0) - item.prevOnHand > 0, 'sc-diff--neg': (draftCounted[item.key] ?? 0) - item.prevOnHand < 0 }">
-                          {{ (draftCounted[item.key] ?? 0) === 0 && item.prevOnHand > 0 ? '—' : diffLabel((draftCounted[item.key] ?? 0) - item.prevOnHand) }}
-                        </td>
                         <td class="sc-td">{{ item.unit }}</td>
                       </tr>
                     </tbody>
@@ -400,7 +412,7 @@ onUnmounted(() => {
   <!-- Not found -->
   <div v-else class="sc-not-found">
     <p>Stock count not found.</p>
-    <button class="detail-breadcrumb" @click="goList">Back to Stock counts</button>
+    <button class="detail-breadcrumb" @click="goList">Back to Cycle counts</button>
   </div>
 
   <!-- ── Finish counting confirmation ── -->
@@ -416,14 +428,7 @@ onUnmounted(() => {
       <MpModalHeader>Finish counting?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         <p class="sc-confirm-text">
-          Counted <strong>{{ fmt(countedTotal) }}</strong> units across <strong>{{ fmt(skuCount) }}</strong> SKUs.
-          <template v-if="differenceTotal !== 0">
-            Stock on hand will be adjusted by
-            <strong :class="differenceTotal > 0 ? 'sc-diff--pos' : 'sc-diff--neg'">{{ diffLabel(differenceTotal) }}</strong> units.
-          </template>
-          <template v-else>
-            No difference found — on-hand stock matches counted qty.
-          </template>
+          Counted <strong>{{ fmt(countedTotal) }}</strong> units across <strong>{{ fmt(skuCount) }}</strong> SKUs. This will post the count and update stock on hand.
         </p>
       </MpModalBody>
       <MpModalFooter>
