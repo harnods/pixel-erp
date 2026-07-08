@@ -108,6 +108,24 @@ function openSerialDrawer(key: string) {
   }
   serialDrawerKey.value = key
 }
+function openSerialDrawerForAdded(id: string, counted: number | undefined) {
+  if (!(counted ?? 0)) {
+    toast.notify({ variant: 'warning', title: 'Enter counted qty first', maxWidth: 'max-content' })
+    return
+  }
+  serialDrawerKey.value = id
+}
+const activeSerialSku = computed(() => {
+  if (!serialDrawerKey.value) return ''
+  return wmsCountLines.value.find(i => i.key === serialDrawerKey.value)?.sku
+    ?? Object.values(addedByLoc.value).flat().find(r => r.id === serialDrawerKey.value)?.sku
+    ?? ''
+})
+const activeSerialDelta = computed(() => {
+  if (!serialDrawerKey.value) return 0
+  if (draftCounted.value[serialDrawerKey.value] !== undefined) return draftCounted.value[serialDrawerKey.value] ?? 0
+  return Object.values(addedByLoc.value).flat().find(r => r.id === serialDrawerKey.value)?.counted ?? 0
+})
 function serialCount(key: string): number { return serialLinesByKey.value[key]?.length ?? 0 }
 function saveSerialLines(serials: CommittedSerial[]) {
   const key = serialDrawerKey.value
@@ -526,7 +544,24 @@ onUnmounted(() => {
                           </MpPopover>
                         </td>
                         <td v-else class="sc-td">—</td>
-                        <td class="sc-td sc-td--input">
+                        <td v-if="isSerialTrackedSku(added.sku)" class="sc-td sc-td--split">
+                          <div class="sc-split-row sc-split-row--top">
+                            <input
+                              class="sc-qty-input"
+                              type="number" min="0"
+                              :value="added.counted ?? ''"
+                              aria-label="Counted qty for added product"
+                              @input="updateAddedQty(group.location, added.id, $event)"
+                            />
+                          </div>
+                          <div class="sc-split-row sc-split-row--action">
+                            <button class="sc-link" type="button" @click="openSerialDrawerForAdded(added.id, added.counted)">
+                              Enter serial numbers
+                              <span v-if="serialCount(added.id)" class="sc-serial-count">({{ serialCount(added.id) }})</span>
+                            </button>
+                          </div>
+                        </td>
+                        <td v-else class="sc-td sc-td--input">
                           <input
                             class="sc-qty-input"
                             type="number" min="0"
@@ -663,11 +698,11 @@ onUnmounted(() => {
   <ManageSerialDrawer
     v-if="serialDrawerKey && adjustment"
     :open="serialDrawerOpen"
-    :sku="wmsCountLines.find(i => i.key === serialDrawerKey)?.sku ?? ''"
+    :sku="activeSerialSku"
     :warehouse-id="adjustment.warehouseId"
     kind="count"
-    :delta="draftCounted[serialDrawerKey] ?? 0"
-    :target-count="draftCounted[serialDrawerKey] ?? 0"
+    :delta="activeSerialDelta"
+    :target-count="activeSerialDelta"
     :location-on-hand="0"
     :model-value="(serialLinesByKey[serialDrawerKey] ?? []).map(s => ({ serial: s }))"
     @update:open="serialDrawerOpen = $event"
