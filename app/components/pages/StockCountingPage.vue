@@ -12,6 +12,7 @@ import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/
 import { getWmsAdjustment, saveWmsCountDraft, finishWmsCount } from '~/data/wmsStockAdjustments'
 import { addAdjustment, adjustmentLineItems, type AdjustmentLine } from '~/data/stockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { productBySku } from '~/data/inventory'
 import { formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
@@ -111,6 +112,30 @@ function saveSerialLines(serials: CommittedSerial[]) {
   serialLinesByKey.value = { ...serialLinesByKey.value, [key]: serials.map(s => s.serial) }
 }
 
+// ── Operator-added lines per location ─────────────────────────────────────────
+interface AddedLine { id: string; sku: string; batchNumber: string; counted: number | undefined }
+let _addedId = 0
+const addedByLoc = ref<Record<string, AddedLine[]>>({})
+
+function addSkuRow(location: string) {
+  const id = `added-${++_addedId}`
+  addedByLoc.value = { ...addedByLoc.value, [location]: [...(addedByLoc.value[location] ?? []), { id, sku: '', batchNumber: '', counted: undefined }] }
+}
+function removeAddedRow(location: string, id: string) {
+  addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).filter(r => r.id !== id) }
+}
+function updateAddedField(location: string, id: string, field: 'sku' | 'batchNumber', value: string) {
+  addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).map(r => r.id === id ? { ...r, [field]: value } : r) }
+}
+function updateAddedQty(location: string, id: string, e: Event) {
+  let n = Math.floor(Number((e.target as HTMLInputElement).value))
+  if (!Number.isFinite(n) || n < 0) n = 0
+  addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).map(r => r.id === id ? { ...r, counted: n } : r) }
+}
+const addedCountedTotal = computed(() =>
+  Object.values(addedByLoc.value).flat().reduce((s, r) => s + (r.counted ?? 0), 0),
+)
+
 // ── View mode + search ────────────────────────────────────────────────────────
 const viewMode = ref<'location' | 'sku'>('location')
 const search = ref('')
@@ -161,7 +186,7 @@ const groupedBySku = computed(() => {
 // ── Summary stats ──────────────────────────────────────────────────────────────
 const skuCount = computed(() => new Set(wmsCountLines.value.map(i => i.sku)).size)
 const onHandTotal = computed(() => wmsCountLines.value.reduce((s, i) => s + i.prevOnHand, 0))
-const countedTotal = computed(() => Object.values(draftCounted.value).reduce((s, v) => s + (v ?? 0), 0))
+const countedTotal = computed(() => Object.values(draftCounted.value).reduce((s, v) => s + (v ?? 0), 0) + addedCountedTotal.value)
 const differenceTotal = computed(() => countedTotal.value - onHandTotal.value)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -174,6 +199,12 @@ function buildLines(): { sku: string; qty: number }[] {
   for (const item of wmsCountLines.value) {
     const qty = draftCounted.value[item.key] ?? 0
     map.set(item.sku, (map.get(item.sku) ?? 0) + qty)
+  }
+  for (const rows of Object.values(addedByLoc.value)) {
+    for (const r of rows) {
+      if (!r.sku.trim() || !r.counted) continue
+      map.set(r.sku, (map.get(r.sku) ?? 0) + r.counted)
+    }
   }
   return [...map.entries()].map(([sku, qty]) => ({ sku, qty }))
 }
@@ -333,6 +364,7 @@ onUnmounted(() => {
                       <col class="sc-col-batch" />
                       <col class="sc-col-num" />
                       <col class="sc-col-unit" />
+                      <col class="sc-col-del" />
                     </colgroup>
                     <thead>
                       <tr>
@@ -341,9 +373,11 @@ onUnmounted(() => {
                         <th class="sc-th">Batch no.</th>
                         <th class="sc-th sc-th--num">Counted qty</th>
                         <th class="sc-th">Unit</th>
+                        <th class="sc-th" />
                       </tr>
                     </thead>
                     <tbody>
+                      <!-- System lines from count plan -->
                       <tr
                         v-for="item in group.items"
                         :key="item.key"
@@ -389,6 +423,68 @@ onUnmounted(() => {
                         </td>
 
                         <td class="sc-td">{{ item.unit }}</td>
+                        <td class="sc-td sc-td--del-placeholder" />
+                      </tr>
+
+                      <!-- Operator-added lines -->
+                      <tr
+                        v-for="added in (addedByLoc[group.location] ?? [])"
+                        :key="added.id"
+                        class="sc-row sc-row--added"
+                      >
+                        <td class="sc-td sc-td--add-name">
+                          <span v-if="added.sku && productBySku(added.sku)" class="sc-add-resolved">{{ productBySku(added.sku)!.name }}</span>
+                          <span v-else-if="added.sku" class="sc-add-unknown">Unknown SKU</span>
+                        </td>
+                        <td class="sc-td sc-td--input">
+                          <input
+                            class="sc-text-input"
+                            type="text"
+                            :value="added.sku"
+                            placeholder="Enter SKU"
+                            @input="updateAddedField(group.location, added.id, 'sku', ($event.target as HTMLInputElement).value)"
+                          />
+                        </td>
+                        <td class="sc-td sc-td--input">
+                          <input
+                            class="sc-text-input"
+                            type="text"
+                            :value="added.batchNumber"
+                            placeholder="—"
+                            @input="updateAddedField(group.location, added.id, 'batchNumber', ($event.target as HTMLInputElement).value)"
+                          />
+                        </td>
+                        <td class="sc-td sc-td--input">
+                          <input
+                            class="sc-qty-input"
+                            type="number" min="0"
+                            :value="added.counted ?? ''"
+                            :aria-label="`Counted qty for added SKU`"
+                            @input="updateAddedQty(group.location, added.id, $event)"
+                          />
+                        </td>
+                        <td class="sc-td sc-td--add-unit">
+                          {{ added.sku ? (productBySku(added.sku)?.unit ?? '—') : '' }}
+                        </td>
+                        <td class="sc-td sc-td--del">
+                          <button class="sc-del-row-btn" type="button" :aria-label="`Remove added SKU row`" @click="removeAddedRow(group.location, added.id)">
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                              <path d="M2 2L12 12M12 2L2 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+
+                      <!-- Add SKU row -->
+                      <tr class="sc-row-add-trigger">
+                        <td colspan="6" class="sc-td-add-trigger">
+                          <button class="sc-add-sku-btn" type="button" @click="addSkuRow(group.location)">
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                              <path d="M7 2V12M2 7H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                            </svg>
+                            Add SKU
+                          </button>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -560,6 +656,7 @@ onUnmounted(() => {
 .sc-col-batch   { width: 120px; }
 .sc-col-num     { width: 110px; }
 .sc-col-unit    { width: 90px; }
+.sc-col-del     { width: 40px; }
 
 .sc-th {
   height: var(--mp-sizes-7, 28px);
@@ -621,6 +718,38 @@ onUnmounted(() => {
 
 .sc-diff--pos { color: var(--mp-text-success, #1a7a4a); }
 .sc-diff--neg { color: var(--mp-text-danger, #a8352d); }
+
+/* Added rows */
+.sc-row--added .sc-td { background: var(--mp-background-neutral, #fff); }
+.sc-td--add-name { padding: var(--mp-spacing-2); vertical-align: middle; }
+.sc-add-resolved { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.sc-add-unknown  { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+.sc-td--add-unit { padding: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); vertical-align: middle; }
+.sc-text-input {
+  width: 100%; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
+  border: none; background: transparent; outline: none;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.sc-text-input::placeholder { color: var(--mp-text-placeholder); }
+.sc-td--del-placeholder { background: var(--mp-background-neutral-subtle); border-left: none; border-right: none; }
+.sc-td--del { padding: 0; text-align: center; vertical-align: middle; background: var(--mp-background-neutral, #fff); }
+.sc-del-row-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border: none; background: none; border-radius: var(--mp-radii-sm);
+  cursor: pointer; color: var(--mp-text-secondary);
+}
+.sc-del-row-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #a8352d); }
+
+/* Add SKU trigger row */
+.sc-row-add-trigger td { border-bottom: none; }
+.sc-td-add-trigger { padding: var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); }
+.sc-add-sku-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
+  background: none; border: none; padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  border-radius: var(--mp-radii-sm); cursor: pointer;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
+}
+.sc-add-sku-btn:hover { background: var(--mp-background-neutral-subtle); text-decoration: underline; text-underline-offset: 2px; }
 
 /* By SKU section */
 .sc-sku-section { padding: var(--mp-spacing-4) var(--mp-spacing-6); }
