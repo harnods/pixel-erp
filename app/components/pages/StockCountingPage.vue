@@ -746,10 +746,10 @@ onUnmounted(() => {
 .sc-td--del { padding: 0; text-align: center; vertical-align: middle; background: var(--mp-background-neutral-subtle); }
 .sc-del-row-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border: none; background: none; border-radius: var(--mp-radii-sm);
+  width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-sm);
   cursor: pointer; color: var(--mp-text-secondary);
 }
-.sc-del-row-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-danger, #a8352d); }
+.sc-del-row-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Add product trigger row */
 .sc-row-add-trigger td { border-bottom: none; }
