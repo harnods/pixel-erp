@@ -502,7 +502,10 @@ onUnmounted(() => {
                           >
                             <MpPopoverTrigger>
                               <button class="sc-batch-trigger" type="button">
-                                {{ added.batchNumber || 'Select batch' }}
+                                <span class="sc-batch-trigger-label">{{ added.batchNumber || 'Select batch' }}</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="sc-batch-trigger-chevron">
+                                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
                               </button>
                             </MpPopoverTrigger>
                             <MpPopoverContent>
@@ -862,10 +865,13 @@ onUnmounted(() => {
 /* Batch picker trigger */
 .sc-batch-trigger {
   width: 100%; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
-  border: none; background: transparent; cursor: pointer; text-align: left;
+  border: none; background: transparent; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .sc-batch-trigger:hover { background: var(--mp-background-neutral-hovered); }
+.sc-batch-trigger-label { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-batch-trigger-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
 
 /* New batch modal form */
 .sc-new-batch-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
