@@ -929,7 +929,7 @@ const emptyDesc = computed(() =>
 }
 
 .archive-modal-body__note {
-  color: var(--mp-text-secondary);
+  color: var(--mp-text-default);
 }
 
 /* Export modal body */

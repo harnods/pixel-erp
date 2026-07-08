@@ -481,7 +481,7 @@ const toggleConfirmBody = computed(() => {
 .cw-action-bar { grid-column: 1 / 7; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); }
 .cw-action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.cw-dialog-body { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+.cw-dialog-body { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 .cw-section--spaced { margin-top: var(--mp-spacing-6); padding-top: var(--mp-spacing-6); border-top: 1px solid var(--mp-border-default); }
 

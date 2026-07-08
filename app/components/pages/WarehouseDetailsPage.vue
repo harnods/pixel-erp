@@ -2233,5 +2233,5 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .archive-modal-body p { margin: 0; }
 .archive-modal-body ul { margin: 0; padding-left: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .archive-modal-body li { list-style: disc; }
-.archive-modal-body__note { color: var(--mp-text-secondary); }
+.archive-modal-body__note { color: var(--mp-text-default); }
 </style>

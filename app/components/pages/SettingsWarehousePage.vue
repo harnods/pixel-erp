@@ -315,6 +315,6 @@ async function saveEdit() {
 .ws-dialog-body {
   margin: 0;
   font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-subtle);
+  color: var(--mp-text-default);
 }
 </style>
