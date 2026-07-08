@@ -474,8 +474,8 @@ const toggleConfirmBody = computed(() => {
 .cw-subsection-title--spaced { margin-top: var(--mp-spacing-3); }
 .cw-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; }
 .cw-toggle-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.cw-toggle-title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.cw-toggle-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+.cw-toggle-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cw-toggle-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cw-rule-summary { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 
 .cw-action-bar { grid-column: 1 / 7; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); }

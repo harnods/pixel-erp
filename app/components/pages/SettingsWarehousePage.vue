@@ -313,10 +313,14 @@ async function saveEdit() {
   padding: var(--mp-spacing-2) 0;
 }
 
-/* Rule rows (Batch/Serial selection): value sits left-aligned right after the
-   label, top-aligned with the title — not centered against the 2-line info block. */
+/* Rule rows (Batch/Serial selection): fixed-width label column so both rows'
+   labels line up, then the value in its own column 24px away — top-aligned
+   with the title, not centered against the 2-line info block. */
 .ws-toggle-row--rule {
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: 320px auto;
+  justify-content: start;
+  column-gap: var(--mp-spacing-6);
   align-items: flex-start;
 }
 
@@ -328,12 +332,13 @@ async function saveEdit() {
 
 .ws-toggle-title {
   font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
 
 .ws-toggle-desc {
   font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-subtle);
+  color: var(--mp-text-default);
 }
 
 .ws-action-bar {

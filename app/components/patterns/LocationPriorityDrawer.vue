@@ -187,7 +187,7 @@ function save() { emit('saved', rows.value.map((r) => r.id)); close() }
 .lp-row {
   display: flex; align-items: center; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-2) var(--mp-spacing-2);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   background: var(--mp-background-neutral);
   cursor: grab; user-select: none;
   transition: opacity 150ms, box-shadow 150ms, border-color 150ms;
