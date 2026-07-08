@@ -267,19 +267,23 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 function diffLabel(n: number) { return n > 0 ? `+${fmt(n)}` : n < 0 ? fmt(n) : '—' }
 
 // ── Build save lines ──────────────────────────────────────────────────────────
-function buildLines(): { sku: string; qty: number }[] {
-  const map = new Map<string, number>()
+function buildLines(): { sku: string; qty: number; location?: string }[] {
+  const map = new Map<string, { qty: number; location?: string }>()
   for (const item of wmsCountLines.value) {
     const qty = draftCounted.value[item.key] ?? 0
-    map.set(item.sku, (map.get(item.sku) ?? 0) + qty)
+    const e = map.get(item.sku)
+    if (e) { e.qty += qty }
+    else { map.set(item.sku, { qty, location: item.storageLocation }) }
   }
-  for (const rows of Object.values(addedByLoc.value)) {
+  for (const [loc, rows] of Object.entries(addedByLoc.value)) {
     for (const r of rows) {
       if (!r.sku.trim() || !r.counted) continue
-      map.set(r.sku, (map.get(r.sku) ?? 0) + r.counted)
+      const e = map.get(r.sku)
+      if (e) { e.qty += r.counted }
+      else { map.set(r.sku, { qty: r.counted, location: loc }) }
     }
   }
-  return [...map.entries()].map(([sku, qty]) => ({ sku, qty }))
+  return [...map.entries()].map(([sku, { qty, location }]) => ({ sku, qty, location }))
 }
 
 // ── Footer: Save draft ────────────────────────────────────────────────────────
@@ -324,6 +328,15 @@ function commitFinish() {
   const prevBySkuMap = new Map<string, number>()
   for (const item of wmsCountLines.value) {
     prevBySkuMap.set(item.sku, (prevBySkuMap.get(item.sku) ?? 0) + item.prevOnHand)
+  }
+  // Added SKUs not in wmsCountLines: look up their actual warehouse on-hand
+  for (const rows of Object.values(addedByLoc.value)) {
+    for (const r of rows) {
+      if (r.sku && !prevBySkuMap.has(r.sku)) {
+        const stock = warehouseStockMap.value[r.sku]
+        if (stock) prevBySkuMap.set(r.sku, stock.onHand)
+      }
+    }
   }
 
   const wmsAdj = finishWmsCount(props.orderId, lines)

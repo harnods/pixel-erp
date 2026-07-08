@@ -188,7 +188,7 @@ export function startWmsCount(id: string): StockAdjustment | undefined {
   return a
 }
 
-export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number }[]): StockAdjustment | undefined {
+export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number; location?: string }[]): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count') return a
   a.lines = lines
@@ -196,7 +196,7 @@ export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number 
   return a
 }
 
-export function finishWmsCount(id: string, lines: { sku: string; qty: number }[]): StockAdjustment | undefined {
+export function finishWmsCount(id: string, lines: { sku: string; qty: number; location?: string }[]): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count') return a
   a.status = 'completed'

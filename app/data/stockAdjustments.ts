@@ -92,7 +92,7 @@ export interface StockAdjustment {
   /** User-entered memo (create form). Absent → a deterministic demo memo is shown. */
   memo?: string
   /** User-entered product lines (create form). Absent → demo lines are derived. */
-  lines?: { sku: string; qty: number; prevQty?: number }[]
+  lines?: { sku: string; qty: number; prevQty?: number; location?: string }[]
   /** Filled when the adjustment is approved (to populate approval log stage 2). */
   approvedAt?: string
   approvedBy?: string
@@ -268,7 +268,7 @@ export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
           return {
             key: l.sku, sku: l.sku, product,
             prevOnHand, counted, difference: counted - prevOnHand, unit: product.unit, averageCost: product.averageCost,
-            storageLocation: locFor(l.sku),
+            storageLocation: l.location ?? locFor(l.sku),
           }
         }
         const prevOnHand = 50 + (hash100(seedNum(a.id) + l.sku.length) % 150)
@@ -276,7 +276,7 @@ export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
         return {
           key: l.sku, sku: l.sku, product,
           prevOnHand, counted, difference: l.qty, unit: product.unit, averageCost: product.averageCost,
-          storageLocation: locFor(l.sku),
+          storageLocation: l.location ?? locFor(l.sku),
         }
       })
       .filter(Boolean) as AdjustmentLine[]
