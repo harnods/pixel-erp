@@ -274,8 +274,12 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
-  if (currentPageKey.value === 'Stock adjustments' || currentPageKey.value === 'Stock counts') {
+  if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
+    return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Stock counts') {
+    const awaiting = awaitingAdjustmentCount('count')
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   return {}

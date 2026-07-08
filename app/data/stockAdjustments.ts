@@ -385,8 +385,8 @@ export function adjustmentWarehouseOptions(): { value: string; label: string }[]
 }
 
 /** Count still awaiting approval — badge for the "Awaiting approval" tab. */
-export function awaitingAdjustmentCount(): number {
-  return stockAdjustments.filter((a) => a.status === 'draft').length
+export function awaitingAdjustmentCount(kind?: AdjustmentKind): number {
+  return stockAdjustments.filter((a) => a.status === 'draft' && (!kind || a.kind === kind)).length
 }
 
 /** Delete adjustments by id (row kebab + bulk delete). */
