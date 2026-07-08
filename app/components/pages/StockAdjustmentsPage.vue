@@ -42,6 +42,7 @@ const { currentPageKey } = useNavigation()
 // WMS sub-pages use their own data store; ERP uses the shared stock adjustments store.
 const kindFilter = computed<'count' | 'in-out' | null>(() => {
   if (currentPageKey.value === 'Cycle counts') return 'count'
+  if (currentPageKey.value === 'Stock counts') return 'count'
   if (currentPageKey.value === 'Stock inout') return 'in-out'
   return null
 })

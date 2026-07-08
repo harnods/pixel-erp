@@ -227,8 +227,8 @@ function removeFile(name: string) { attachedFiles.value = attachedFiles.value.fi
 // ── Navigation + save ──────────────────────────────────────────────────────────────
 const fromStockCounts = computed(() => route.query.from === 'stock-counts')
 function goBack() {
-  if (isWms.value) { router.push('/cycle-counts'); return }
-  router.push(fromStockCounts.value ? '/stock-counts' : '/stock-adjustments')
+  if (fromStockCounts.value) { router.push('/stock-counts'); return }
+  router.push(isWms.value ? '/cycle-counts' : '/stock-adjustments')
 }
 const formError = ref('')
 function handleSave() {
