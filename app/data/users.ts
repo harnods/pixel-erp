@@ -5,11 +5,17 @@
  * assignees to real user accounts. This is data only — there's no master-data
  * management UI (create/edit/deactivate users) in this prototype.
  */
+/** System-wide role — determined by the user account, not per-warehouse. */
+export type UserRole = 'manager' | 'operator';
+
 export interface ErpUser {
   id: string;
   name: string;
   initials: string;
   hue: number;
+  /** Inherent role from the user's account. Managers are warehouse PICs/admins;
+   *  operators do hands-on floor work and are valid task assignees. */
+  role: UserRole;
 }
 
 function initialsOf(name: string): string {
@@ -26,21 +32,45 @@ function hueOf(name: string): number {
 // Every name already in use across the mock DB: warehouse PICs (warehouses.ts),
 // the shared operator pool (warehouseTeam.ts), and the back-office default user
 // (ErpUserMenu.vue's fallback "currentUser").
-const USER_NAMES = [
-  "Rizal Candra",
-  "Budi Santoso", "Dewi Rahayu", "Rizki Pratama", "Sari Indah", "Hendra Wijaya",
-  "Andi Kusuma", "Ratna Sari", "Farhan Nugroho", "Lestari Putri", "Agus Firmansyah",
-  "Ni Made Ayu", "Yusuf Hakim", "Bayu Pradana",
-  "Rina Wulandari", "Fajar Setiawan", "Putri Anggraini", "Doni Saputra",
-  "Maya Puspita", "Eko Prasetyo", "Wulan Sari", "Taufik Hidayat",
-  "Indra Gunawan", "Nadia Permata", "Dimas Aditya", "Ayu Lestari",
+//
+// Role split: the first 14 (Rizal Candra + all warehouse PICs) are managers;
+// the remaining 12 (the OPERATOR_POOL in warehouseTeam.ts) are operators.
+// This must stay in sync with both warehouses.ts PIC names and the OPERATOR_POOL.
+const USER_RECORDS: { name: string; role: UserRole }[] = [
+  { name: "Rizal Candra",     role: "manager"  }, // back-office admin
+  { name: "Budi Santoso",     role: "manager"  }, // PIC: Gudang Jakarta Pusat
+  { name: "Dewi Rahayu",      role: "manager"  }, // PIC: Gudang Surabaya Timur
+  { name: "Rizki Pratama",    role: "manager"  }, // PIC: Gudang Surabaya Timur
+  { name: "Sari Indah",       role: "manager"  }, // PIC: Gudang Bandung Selatan
+  { name: "Hendra Wijaya",    role: "manager"  }, // PIC: Gudang Bandung Selatan
+  { name: "Andi Kusuma",      role: "manager"  }, // PIC: Gudang Bandung Selatan
+  { name: "Ratna Sari",       role: "manager"  }, // PIC: Gudang Medan Baru
+  { name: "Farhan Nugroho",   role: "manager"  }, // PIC: Gudang Semarang Industrial
+  { name: "Lestari Putri",    role: "manager"  }, // PIC: Gudang Semarang Industrial
+  { name: "Agus Firmansyah",  role: "manager"  }, // PIC: Gudang Makassar Selatan / Utara
+  { name: "Ni Made Ayu",      role: "manager"  }, // PIC: Gudang Bali Kuta
+  { name: "Yusuf Hakim",      role: "manager"  }, // PIC: Gudang Palembang
+  { name: "Bayu Pradana",     role: "manager"  }, // PIC: Gudang Jakarta Timur
+  { name: "Rina Wulandari",   role: "operator" },
+  { name: "Fajar Setiawan",   role: "operator" },
+  { name: "Putri Anggraini",  role: "operator" },
+  { name: "Doni Saputra",     role: "operator" },
+  { name: "Maya Puspita",     role: "operator" },
+  { name: "Eko Prasetyo",     role: "operator" },
+  { name: "Wulan Sari",       role: "operator" },
+  { name: "Taufik Hidayat",   role: "operator" },
+  { name: "Indra Gunawan",    role: "operator" },
+  { name: "Nadia Permata",    role: "operator" },
+  { name: "Dimas Aditya",     role: "operator" },
+  { name: "Ayu Lestari",      role: "operator" },
 ];
 
-export const users: ErpUser[] = USER_NAMES.map((name, i) => ({
+export const users: ErpUser[] = USER_RECORDS.map(({ name, role }, i) => ({
   id: `user-${i + 1}`,
   name,
   initials: initialsOf(name),
   hue: hueOf(name),
+  role,
 }));
 
 export function getUserById(id: string): ErpUser | undefined {

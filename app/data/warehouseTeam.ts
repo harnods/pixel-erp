@@ -1,7 +1,7 @@
 import { reactive, watch } from "vue";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { warehouses } from "./warehouses";
-import { users, getUserById, findUserByName, type ErpUser } from "./users";
+import { users, getUserById, findUserByName, type ErpUser, type UserRole } from "./users";
 
 /**
  * Per-warehouse roster: who's a Manager (oversees the warehouse) vs an Operator
@@ -11,9 +11,10 @@ import { users, getUserById, findUserByName, type ErpUser } from "./users";
  *
  * Members are always real users from the master directory (users.ts) — a
  * warehouse's team is a scoped view over that directory, not a place to type
- * in arbitrary names.
+ * in arbitrary names. Roles are inherent to the user account (users.ts) and
+ * are never overridden per-warehouse.
  */
-export type WarehouseRole = "manager" | "operator";
+export type WarehouseRole = UserRole; // alias — role lives on the user account
 
 export interface WarehouseTeamMember {
   id: string;
@@ -59,13 +60,13 @@ function operatorUsersFor(warehouseId: string): ErpUser[] {
   return out;
 }
 
-function teamMemberOf(seq: number, warehouseId: string, user: ErpUser, role: WarehouseRole, addedAt: string): WarehouseTeamMember {
+function teamMemberOf(seq: number, warehouseId: string, user: ErpUser, addedAt: string): WarehouseTeamMember {
   return {
     id: `team-${seq}`,
     warehouseId,
     userId: user.id,
     name: user.name,
-    role,
+    role: user.role,
     initials: user.initials,
     hue: user.hue,
     addedAt,
@@ -84,18 +85,24 @@ function seedTeam(): WarehouseTeamMember[] {
     for (const pic of wh.pics) {
       const user = findUserByName(pic.name);
       if (!user) continue;
-      out.push(teamMemberOf(seq++, wh.id, user, "manager", wh.updatedAt));
+      out.push(teamMemberOf(seq++, wh.id, user, wh.updatedAt));
     }
     for (const user of operatorUsersFor(wh.id)) {
-      out.push(teamMemberOf(seq++, wh.id, user, "operator", wh.updatedAt));
+      out.push(teamMemberOf(seq++, wh.id, user, wh.updatedAt));
     }
   }
   return out;
 }
 
 const TEAM_KEY = "warehouse-team-v1";
-const snapshot = loadSnapshot<WarehouseTeamMember>(TEAM_KEY);
-export const warehouseTeam = reactive<WarehouseTeamMember[]>(snapshot ?? seedTeam());
+const rawTeam = loadSnapshot<WarehouseTeamMember>(TEAM_KEY) ?? seedTeam();
+// Reconcile: roles now live on the user account — update any stale snapshot entries
+// so saved data never drifts from what users.ts says.
+for (const m of rawTeam) {
+  const u = getUserById(m.userId);
+  if (u) m.role = u.role;
+}
+export const warehouseTeam = reactive<WarehouseTeamMember[]>(rawTeam);
 
 function persistTeam(): void {
   saveSnapshot(TEAM_KEY, warehouseTeam);
@@ -127,7 +134,7 @@ export function getAvailableUsersForWarehouse(warehouseId: string): ErpUser[] {
 
 export function addTeamMember(
   warehouseId: string,
-  data: { userId: string; role: WarehouseRole; addedBy?: string },
+  data: { userId: string; addedBy?: string },
 ): WarehouseTeamMember {
   const user = getUserById(data.userId);
   if (!user) throw new Error(`Unknown user: ${data.userId}`);
@@ -136,7 +143,7 @@ export function addTeamMember(
     warehouseId,
     userId: user.id,
     name: user.name,
-    role: data.role,
+    role: user.role, // always derived from the user account — never passed in
     initials: user.initials,
     hue: user.hue,
     addedAt: new Date().toISOString(),
@@ -158,9 +165,9 @@ watch(warehouses, () => {
     if (wh.isDefault || getWarehouseTeam(wh.id).length > 0) continue;
     for (const pic of wh.pics) {
       const user = findUserByName(pic.name);
-      if (user) addTeamMember(wh.id, { userId: user.id, role: "manager" });
+      if (user) addTeamMember(wh.id, { userId: user.id });
     }
-    for (const user of operatorUsersFor(wh.id)) addTeamMember(wh.id, { userId: user.id, role: "operator" });
+    for (const user of operatorUsersFor(wh.id)) addTeamMember(wh.id, { userId: user.id });
   }
 });
 

@@ -23,9 +23,9 @@ import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTra
 import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
 import {
-  getWarehouseTeam, addTeamMember, updateTeamMemberRole, removeTeamMember,
+  getWarehouseTeam, addTeamMember, removeTeamMember,
   getAvailableUsersForWarehouse,
-  type WarehouseTeamMember, type WarehouseRole,
+  type WarehouseTeamMember,
 } from '~/data/warehouseTeam'
 import { TODAY } from '~/data/master'
 import { useUrlModal } from '@ds/proto-review'
@@ -274,10 +274,6 @@ const filteredTeam = computed(() => {
   if (!q) return team.value
   return team.value.filter(m => m.name.toLowerCase().includes(q))
 })
-const TEAM_ROLE_OPTIONS: { id: WarehouseRole; name: string }[] = [
-  { id: 'operator', name: 'Operator' },
-  { id: 'manager', name: 'Manager' },
-]
 // Who's making the change — mirrors ErpUserMenu.vue's "logged in as" logic
 // (the active warehouse's PIC in an Ops scenario, back-office otherwise).
 const { activeWarehouse, hasWarehouseContext } = useWarehouseContext()
@@ -288,24 +284,14 @@ const currentUserName = computed(() =>
 )
 const availableTeamUsers = computed(() => getAvailableUsersForWarehouse(props.orderId))
 const teamModalOpen = ref(false)
-const teamModalEditId = ref<string | null>(null)
-const teamNameDraft = ref('')
 const teamUserIdDraft = ref('')
-const teamRoleDraft = ref<WarehouseRole>('operator')
 const teamUserError = ref(false)
 const isSaving = ref(false)
+
+const selectedTeamUser = computed(() => availableTeamUsers.value.find(u => u.id === teamUserIdDraft.value) ?? null)
+
 function openAddTeamMember() {
-  teamModalEditId.value = null
-  teamNameDraft.value = ''
   teamUserIdDraft.value = ''
-  teamRoleDraft.value = 'operator'
-  teamUserError.value = false
-  teamModalOpen.value = true
-}
-function editTeamMember(member: WarehouseTeamMember) {
-  teamModalEditId.value = member.id
-  teamNameDraft.value = member.name
-  teamRoleDraft.value = member.role
   teamUserError.value = false
   teamModalOpen.value = true
 }
@@ -313,18 +299,11 @@ function closeTeamModal() {
   teamModalOpen.value = false
 }
 async function saveTeamMember() {
-  if (!teamModalEditId.value) {
-    if (!teamUserIdDraft.value) { teamUserError.value = true; return }
-  }
+  if (!teamUserIdDraft.value) { teamUserError.value = true; return }
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
-  if (teamModalEditId.value) {
-    updateTeamMemberRole(teamModalEditId.value, teamRoleDraft.value)
-    toast.notify({ variant: 'success', title: 'Team member updated', maxWidth: 'max-content' })
-  } else {
-    addTeamMember(props.orderId, { userId: teamUserIdDraft.value, role: teamRoleDraft.value, addedBy: currentUserName.value })
-    toast.notify({ variant: 'success', title: 'Team member added', maxWidth: 'max-content' })
-  }
+  addTeamMember(props.orderId, { userId: teamUserIdDraft.value, addedBy: currentUserName.value })
+  toast.notify({ variant: 'success', title: 'Team member added', maxWidth: 'max-content' })
   isSaving.value = false
   teamModalOpen.value = false
 }
@@ -1467,7 +1446,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
-                            <MpPopoverListItem @click="editTeamMember(member)">Edit</MpPopoverListItem>
                             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="onRemoveTeamMember(member)">Remove</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>
@@ -1565,15 +1543,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     >
       <MpModalContent>
         <MpModalHeader>
-          {{ teamModalEditId ? 'Edit team member' : 'Add team member' }}
+          Add team member
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
-          <MpFormControl v-if="teamModalEditId" id="wh-team-name">
-            <MpFormLabel>User</MpFormLabel>
-            <div class="wh-team-modal-name">{{ teamNameDraft }}</div>
-          </MpFormControl>
-          <MpFormControl v-else id="wh-team-user" is-required :is-invalid="teamUserError">
+          <MpFormControl id="wh-team-user" is-required :is-invalid="teamUserError">
             <MpFormLabel>User</MpFormLabel>
             <MpAutocomplete
               id="wh-team-user-ac"
@@ -1589,23 +1563,15 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             />
             <MpFormErrorMessage>Select a user</MpFormErrorMessage>
           </MpFormControl>
-          <MpFormControl id="wh-team-role" :class="css({ marginTop: '16px' })">
+          <MpFormControl v-if="selectedTeamUser" id="wh-team-role-display" :class="css({ marginTop: '16px' })">
             <MpFormLabel>Role</MpFormLabel>
-            <MpAutocomplete
-              id="wh-team-role-ac"
-              v-model="teamRoleDraft"
-              :data="TEAM_ROLE_OPTIONS"
-              label-prop="name"
-              value-prop="id"
-              use-portal
-              is-full-width
-            />
+            <div class="wh-team-modal-role">{{ selectedTeamUser.role === 'manager' ? 'Manager' : 'Operator' }}</div>
           </MpFormControl>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--ghost" @click="closeTeamModal">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTeamMember">{{ isSaving ? 'Saving…' : (teamModalEditId ? 'Save changes' : 'Save') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTeamMember">{{ isSaving ? 'Saving…' : 'Save' }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1685,7 +1651,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   display: inline-flex; align-items: center; justify-content: center;
   font-size: var(--mp-font-sizes-xs); font-weight: var(--mp-font-weights-semi-bold);
 }
-.wh-team-modal-name {
+.wh-team-modal-name,
+.wh-team-modal-role {
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: var(--mp-radii-md);
   background: var(--mp-background-neutral-subtle);
