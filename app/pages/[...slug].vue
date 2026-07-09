@@ -77,6 +77,7 @@ const PackingTaskDetailsPage = defineAsyncComponent(() => import('~/components/p
 const PackItemsPage = defineAsyncComponent(() => import('~/components/pages/PackItemsPage.vue'))
 const DeliveryTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
 const HandoverToCourierPage = defineAsyncComponent(() => import('~/components/pages/HandoverToCourierPage.vue'))
+const NewShipmentPage = defineAsyncComponent(() => import('~/components/pages/NewShipmentPage.vue'))
 const ShipmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/ShipmentDetailsPage.vue'))
 const OutgoingOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
 const WarehouseTransferDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
@@ -135,12 +136,16 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'handover' && segs[2] === 'create') {
     return { component: HandoverToCourierPage, id: 'create' }
   }
+  // /outbound-delivery/new-shipment/create → build a shipment by scanning packing nos.
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'new-shipment' && segs[2] === 'create') {
+    return { component: NewShipmentPage, id: 'create' }
+  }
   // /outbound-delivery/shipment/:seq → a saved shipment batch's details (Print PDF lives here)
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment') {
     return { component: ShipmentDetailsPage, id: segs[2]! }
   }
   // /outbound-delivery/:id → outgoing sales order detail (not the picking/packing/handover/shipment sub-routes)
-  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing' && segs[1] !== 'handover' && segs[1] !== 'shipment') {
+  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing' && segs[1] !== 'handover' && segs[1] !== 'new-shipment' && segs[1] !== 'shipment') {
     return { component: OutgoingOrderDetailsPage, id: segs[1] }
   }
   // /picking/:taskId/pick → operator picks items from bins
@@ -279,7 +284,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   if (currentPageKey.value === 'Stock counts') {
-    const awaiting = awaitingAdjustmentCount('count')
+    const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   return {}
@@ -796,6 +801,14 @@ function startResize(e: MouseEvent) {
               New receipt
             </button>
           </template>
+        </div>
+        <div v-else-if="currentPageKey === 'Outbound delivery' && activeTab === 'Ready to ship'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/outbound-delivery/new-shipment/create')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New shipment
+          </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">
           <!-- Import button + dropdown -->

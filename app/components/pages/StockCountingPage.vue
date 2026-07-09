@@ -186,6 +186,7 @@ const newBatchTarget = ref<{ location: string; id: string } | null>(null)
 const newBatchNo = ref('')
 const newBatchExpiry = ref('')
 const newBatchDesc = ref('')
+const isSaving = ref(false)
 
 function openNewBatchModal(location: string, id: string) {
   newBatchTarget.value = { location, id }
@@ -194,17 +195,20 @@ function openNewBatchModal(location: string, id: string) {
   newBatchDesc.value = ''
   newBatchOpen.value = true
 }
-function confirmNewBatch() {
+async function confirmNewBatch() {
   const nm = newBatchNo.value.trim()
   if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a batch name', maxWidth: 'max-content' }); return }
   const t = newBatchTarget.value
   if (!t) return
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   addedByLoc.value = {
     ...addedByLoc.value,
     [t.location]: (addedByLoc.value[t.location] ?? []).map(r =>
       r.id === t.id ? { ...r, batchNumber: nm } : r,
     ),
   }
+  isSaving.value = false
   newBatchOpen.value = false
   newBatchTarget.value = null
 }
@@ -692,7 +696,7 @@ onUnmounted(() => {
       <MpModalFooter>
         <div class="sc-modal-footer">
           <button class="sc-btn sc-btn--ghost" @click="newBatchOpen = false">Cancel</button>
-          <button class="sc-btn sc-btn--primary" @click="confirmNewBatch">Save</button>
+          <button class="sc-btn sc-btn--primary" :disabled="isSaving" @click="confirmNewBatch">{{ isSaving ? 'Saving…' : 'Save' }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

@@ -938,9 +938,9 @@ function cancelClose() {
 .panel-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 
 .panel-item.active {
-  background-color: var(--mp-background-nav-stack-hovered);
+  background-color: #E2E8F0;
   font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-selected);
+  color: var(--mp-text-link, #165082);
 }
 
 .panel-item-icon {

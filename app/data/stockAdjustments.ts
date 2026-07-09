@@ -245,8 +245,11 @@ export interface AdjustmentLine {
  */
 export function adjustmentLineItems(a: StockAdjustment): AdjustmentLine[] {
   const whDetail = getWarehouseDetail(a.warehouseId)
+  // Primary bin only (index 0) — matches the convention every other reader uses
+  // (binForSku, etc.); a plain flatMap+Map here would silently keep the LAST
+  // location of a multi-loc item instead.
   const locBySku = new Map<string, string>(
-    (whDetail?.stock ?? []).flatMap(s => s.locations.map(loc => [s.sku, loc] as [string, string]))
+    (whDetail?.stock ?? []).map(s => [s.sku, s.locations[0] ?? '—'] as [string, string])
   )
   function locFor(sku: string): string {
     return locBySku.get(sku) ?? '—'

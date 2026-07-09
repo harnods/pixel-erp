@@ -222,6 +222,7 @@ function selectionSpansWarehouses(selectedRows: Set<number>): boolean {
 interface TrackingGroup { receipt: Receipt; nos: string[] }
 const trackingModalOpen = ref(false)
 const trackingGroups = ref<TrackingGroup[]>([])
+const isSaving = ref(false)
 
 function openTrackingModal(rowOrRows: Receipt | Receipt[]) {
   const rows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
@@ -235,10 +236,13 @@ function openTrackingModal(rowOrRows: Receipt | Receipt[]) {
 function closeTrackingModal() { trackingModalOpen.value = false; trackingGroups.value = [] }
 function addTracking(gi: number) { trackingGroups.value[gi].nos.push('') }
 function removeTracking(gi: number, i: number) { trackingGroups.value[gi].nos.splice(i, 1) }
-function saveTracking() {
+async function saveTracking() {
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   for (const g of trackingGroups.value) {
     g.receipt.trackingNos = g.nos.map(t => t.trim()).filter(Boolean)
   }
+  isSaving.value = false
   closeTrackingModal()
 }
 
@@ -613,7 +617,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <MpModalFooter>
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--ghost" @click="closeTrackingModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="saveTracking">Save changes</button>
+          <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTracking">{{ isSaving ? 'Saving…' : 'Save changes' }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

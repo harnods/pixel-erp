@@ -947,12 +947,13 @@ const bulkCountLabel = computed(() => {
   right: var(--mp-sizes-7);
 }
 
-/* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width. */
+/* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width.
+   Vertical padding is 2px so md-size buttons (36px) fit inside a 40px row. */
 .erp-td--actions {
   width: var(--erp-actions-width, var(--mp-sizes-11));
   min-width: var(--erp-actions-width, var(--mp-sizes-11));
   text-align: right;
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2);
+  padding: 2px var(--mp-spacing-2);
 }
 
 /* AI chat cell */

@@ -55,6 +55,7 @@ const addError = ref('')
 const search = ref('')
 const page = ref(1)
 const saveError = ref('')
+const isSaving = ref(false)
 
 const locActiveKey = ref<string | null>(null)
 const locSearches = reactive<Record<string, string>>({})
@@ -271,7 +272,7 @@ function handleCancel() {
   emit('update:open', false)
 }
 
-function handleSave() {
+async function handleSave() {
   if (isPicking.value) {
     if (countedCount.value > effectiveTargetCount.value) {
       saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers selected — that's more than the qty to pick.`
@@ -289,6 +290,8 @@ function handleSave() {
     }
   }
   saveError.value = ''
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   emit('save', rows.value.filter(r => r.counted && !r.fromPriorTask).map(r => ({
     serial: r.serial,
     destLocationId: r.destLocId || undefined,
@@ -365,8 +368,12 @@ function handleSave() {
             <!-- picking stats -->
             <template v-else-if="isPicking">
               <div class="msn-stat">
-                <span class="msn-stat-label">Picked qty</span>
+                <span class="msn-stat-label">To pick qty</span>
                 <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
+              </div>
+              <div class="msn-stat">
+                <span class="msn-stat-label">Picked qty</span>
+                <span class="msn-stat-value">{{ fmtSerial(countedCount) }}</span>
               </div>
             </template>
             <!-- stock in/out stats -->
@@ -553,7 +560,7 @@ function handleSave() {
 
       <footer class="msn-footer">
         <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="handleCancel">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="handleSave">Save</button>
+        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</button>
       </footer>
 
     </div>

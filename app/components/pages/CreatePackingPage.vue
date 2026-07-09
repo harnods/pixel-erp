@@ -50,6 +50,7 @@ const warehouseId = ref(pick.value?.warehouseId ?? directOrder.value?.warehouseI
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
 const assigneeError = ref(false)
+const isSaving      = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
 // Assignee can only be an operator of the (locked) source warehouse.
 const ASSIGNEES = computed(() => getWarehouseOperators(warehouseId.value))
@@ -277,7 +278,7 @@ function goPacking() {
   router.push({ path: '/outbound-delivery', query: { tab: 'Packing' } })
 }
 
-function handleCreate() {
+async function handleCreate() {
   if (!hasSource.value) return
   let valid = true
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
@@ -285,6 +286,8 @@ function handleCreate() {
     if (selectedDirectLines.value.length === 0) { orderError.value = true; valid = false }
   } else if (selectedTotals.value.orders === 0) { orderError.value = true; valid = false }
   if (!valid) { scrollToFirstError(); return }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
   if (isDirectMode.value) {
     // No picking task at all — pack only the SKUs the operator kept checked; any
@@ -431,7 +434,7 @@ function handleCreate() {
                 <MpTooltip
                   v-if="t.isMarketplace"
                   :id="`pc-mkt-${t.orderId}`"
-                  label="Marketplace orders must be packed in full — their items can't be removed."
+                  label="Marketplace orders must be packed in full. Items can't be removed."
                   placement="top"
                   use-portal
                 >
@@ -520,7 +523,7 @@ function handleCreate() {
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goPacking">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleCreate">Save</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
 </template>

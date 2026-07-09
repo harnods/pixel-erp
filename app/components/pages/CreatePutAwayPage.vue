@@ -72,6 +72,7 @@ const isWarehouseLocked = computed(() => !!route.query.warehouseId)
 // ─── Assignee ─────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
 const assigneeError = ref(false)
+const isSaving      = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
 // Assignee can only be an operator of the selected warehouse.
 const ASSIGNEES = computed(() => getWarehouseOperators(warehouseId.value))
@@ -247,12 +248,14 @@ function goPutAway() {
   router.push({ path: '/inbound-delivery', query: { tab: 'Put-away' } })
 }
 
-function handleCreate() {
+async function handleCreate() {
   let valid = true
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
   if (!assigneeId.value)  { assigneeError.value  = true; valid = false }
   if (!selectedTasks.value.length) { taskSelectionError.value = true; valid = false }
   if (!valid) { scrollToFirstError(); return }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
   const totalQty = skuRows.value.reduce((s, r) => s + r.receivedQty, 0)
 
@@ -462,7 +465,7 @@ function handleCreate() {
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goPutAway">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleCreate">Save</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
 </template>

@@ -229,7 +229,7 @@ function selectLocDest(row: LocQtyRow, locationId: string) {
   row.locationId = locationId; locActiveKey.value = null; locPickerSearch.value = ''
   if (locDestRows.value[locDestRows.value.length - 1]?.id === row.id) locDestRows.value.push(makeLocRow())
 }
-function saveLocDrawer() {
+async function saveLocDrawer() {
   if (!locDrawerRow.value) return
   const filledOrigin = locOriginRows.value.filter(r => r.locationId && Number(r.qty) > 0).map(({ locationId, qty }) => ({ locationId, qty }))
   const filledDest = locDestRows.value.filter(r => r.locationId && Number(r.qty) > 0).map(({ locationId, qty }) => ({ locationId, qty }))
@@ -245,10 +245,13 @@ function saveLocDrawer() {
     locSaveError.value = `Total qty (${total}) exceeds available qty (${cap})`
     return
   }
+  isSavingLoc.value = true
+  await new Promise(r => setTimeout(r, 600))
   locDrawerRow.value.originLocations = filledOrigin.length ? filledOrigin : undefined
   locDrawerRow.value.destLocations = filledDest.length ? filledDest : undefined
   // qty is now derived from location totals
   locDrawerRow.value.qty = total > 0 ? String(total) : '0'
+  isSavingLoc.value = false
   locDrawerRow.value = null
 }
 
@@ -328,7 +331,9 @@ function goBack() {
   else router.push('/warehouse-transfers')
 }
 const formError = ref('')
-function handleSave() {
+const isSaving = ref(false)
+const isSavingLoc = ref(false)
+async function handleSave() {
   let valid = true
   formError.value = ''
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
@@ -362,6 +367,8 @@ function handleSave() {
     }
   }
   if (!valid) { scrollToFirstError(); return }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
   const input = {
     date: toISODate(transactionDate.value),
@@ -824,7 +831,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
         <footer class="wtf-loc-footer">
           <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeLocDrawer">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="saveLocDrawer">Save</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSavingLoc" @click="saveLocDrawer">{{ isSavingLoc ? 'Saving…' : 'Save' }}</button>
         </footer>
       </div>
     </div>
@@ -833,7 +840,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goBack">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleSave">{{ isEdit ? 'Save changes' : 'Save' }}</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
     </footer>
   </div>
 </template>

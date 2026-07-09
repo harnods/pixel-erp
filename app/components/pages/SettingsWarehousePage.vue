@@ -21,14 +21,22 @@ function persistSettings(v: WarehouseSettings): void { saveWarehouseSettings(v) 
 const committed = reactive(loadSettings())
 const draft     = reactive({ ...committed })
 
-const isEditing   = ref(false)
-const isSaving    = ref(false)
-const discardOpen = ref(false)
+const isEditing     = ref(false)
+const isSaving      = ref(false)
+const discardOpen   = ref(false)
+const ruleConfirmOpen = ref(false)
 
 const hasChanges = computed(() =>
   draft.multiLocationStorage !== committed.multiLocationStorage ||
   draft.batchSelectionRule   !== committed.batchSelectionRule   ||
   draft.serialSelectionRule  !== committed.serialSelectionRule
+)
+// The batch/serial rule only decides what a NEW order reserves — orders already
+// reserved (at their own creation time) never get recomputed, so changing this
+// needs an explicit heads-up before it's saved.
+const hasRuleChange = computed(() =>
+  draft.batchSelectionRule  !== committed.batchSelectionRule ||
+  draft.serialSelectionRule !== committed.serialSelectionRule
 )
 
 const batchRuleLabel  = computed(() => BATCH_RULE_OPTIONS.find(o => o.id === draft.batchSelectionRule)?.name ?? '')
@@ -50,6 +58,16 @@ function exitEdit() {
   Object.assign(draft, committed)
   isEditing.value = false
   discardOpen.value = false
+}
+
+function requestSave() {
+  if (hasRuleChange.value) ruleConfirmOpen.value = true
+  else void saveEdit()
+}
+
+async function confirmRuleChange() {
+  ruleConfirmOpen.value = false
+  await saveEdit()
 }
 
 async function saveEdit() {
@@ -125,7 +143,7 @@ async function saveEdit() {
         <div class="ws-toggle-row ws-toggle-row--rule">
           <div class="ws-toggle-info">
             <span class="ws-toggle-title">Serial number selection rule</span>
-            <span class="ws-toggle-desc">Serial numbers have no expiry date, so FEFO doesn't apply — pick an ordering instead.</span>
+            <span class="ws-toggle-desc">Serial numbers have no expiry date, so FEFO doesn't apply. Pick a picking order instead.</span>
           </div>
           <MpAutocomplete
             v-if="isEditing"
@@ -144,7 +162,7 @@ async function saveEdit() {
 
       <div v-if="isEditing" class="ws-action-bar">
         <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">
+        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="requestSave">
           {{ isSaving ? 'Saving…' : 'Save changes' }}
         </button>
       </div>
@@ -170,6 +188,34 @@ async function saveEdit() {
         <MpModalFooter>
           <button class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">Keep editing</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit">Discard</button>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Non-retroactive rule change confirmation ──────────────────────────── -->
+    <MpModal
+      id="ws-rule-confirm-dialog"
+      :is-open="ruleConfirmOpen"
+      size="sm"
+      is-close-on-esc
+      is-close-on-overlay-click
+      @close="ruleConfirmOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          Apply new selection rule?
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <p class="ws-dialog-body">
+            This only applies to orders created from now on. Orders that already reserved a
+            batch/serial keep their original pick — they won't be recalculated.
+          </p>
+        </MpModalBody>
+        <MpModalFooter>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">Keep editing</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">Save changes</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />

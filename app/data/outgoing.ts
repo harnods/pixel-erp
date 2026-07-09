@@ -3,6 +3,16 @@ import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY } from './master'
 import { getWarehouseConfig } from './warehouseConfig'
+import { orderSkuLines } from './inventory'
+import {
+  getWarehouseDetail,
+  autoSelectLocationBins,
+  autoSelectBatches,
+  autoSelectSerials,
+  reserveStock,
+  releaseReservationsForTask,
+  hasReservationsForTask,
+} from './warehouseDetails'
 
 /** Outbound order status. */
 export type OutgoingStatus =
@@ -298,6 +308,35 @@ function generateCanceled(count = 7): OutgoingOrder[] {
   return out;
 }
 
+/**
+ * Reserve this order's batch/serial-tracked SKU lines against the warehouse's
+ * *current* selection rules (batch/serial/location, from Settings) — called once,
+ * the moment an order becomes reservable (bootstrap below for already-open seed
+ * orders, or addOutgoing() for a live-created one). Non-retroactive by construction:
+ * whatever rule is live right now is what gets locked in for this order, and this
+ * never runs again for it. Plain (non-batch/non-serial) SKUs are left unreserved —
+ * same pre-existing boundary as picking-time reservation had.
+ */
+function reserveOrder(order: OutgoingOrder): void {
+  const wh = getWarehouseDetail(order.warehouseId);
+  if (!wh) return;
+  const picks: { sku: string; batchNo?: string; qty: number; serials?: string[] }[] = [];
+  for (const line of orderSkuLines(order)) {
+    const item = wh.stock.find((s) => s.sku === line.sku);
+    if (!item) continue;
+    const preferredLocations = autoSelectLocationBins(order.warehouseId, line.sku, line.qty).map((b) => b.location);
+    if (item.batches?.length) {
+      for (const b of autoSelectBatches(order.warehouseId, line.sku, line.qty, preferredLocations)) {
+        picks.push({ sku: line.sku, batchNo: b.batchNo, qty: b.take });
+      }
+    } else if (item.serials) {
+      const serials = autoSelectSerials(order.warehouseId, line.sku, line.qty, preferredLocations);
+      if (serials.length) picks.push({ sku: line.sku, qty: serials.length, serials });
+    }
+  }
+  if (picks.length) reserveStock(order.id, order.warehouseId, picks);
+}
+
 // The outbound graph (orders + picking + packing + delivery) is persisted as a
 // full snapshot so seed records mutated by the flow (status derivation, shipped
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
@@ -306,6 +345,21 @@ const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
   outgoingSnapshot ?? [...generateOrders(), ...generateShipped(3), ...generateCanceled()],
 );
+
+// Only open / in-process orders are pickable. (An in-process order can still spawn
+// additional pick lists for SKUs not yet on any list — the per-SKU check lives in
+// pickingTasks.canPickOrder.)
+const PICKABLE_STATUSES = ["open", "in progress"];
+
+// Bootstrap-reserve every currently pickable (open / in-process) order once — stands
+// in for "reserve when the SO enters Requests" since there's no live SO-creation flow
+// yet (addOutgoing() below covers that path). An "in progress" seed order is one that
+// already had picking activity start on some of its SKUs before the app "boots" — it
+// still needs its own reservation, same as if it were still "open". Guarded by
+// hasReservationsForTask so a page reload never double-reserves an already-covered order.
+for (const o of outgoingOrders) {
+  if (PICKABLE_STATUSES.includes(o.status) && !hasReservationsForTask(o.id)) reserveOrder(o);
+}
 
 /** Orders with a pre-wired shipped chain — consumed by the task seeds. `partial`
  *  short-picks the last SKU so the order lands on "partially shipped". */
@@ -332,8 +386,21 @@ export function addOutgoing(
     number: `OUT-2026-${String(5000 + n).padStart(4, "0")}`,
   };
   outgoingOrders.unshift(order);
+  if (PICKABLE_STATUSES.includes(order.status)) reserveOrder(order);
   persistOutgoing();
   return order;
+}
+
+/** Cancel an order — releases whatever it had reserved, per canCancelOrder's gating. */
+export function cancelOutgoingOrder(orderId: string, reason?: string, canceledBy = "Rizal Candra"): void {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  order.status = "canceled";
+  order.canceledDate = isoOffset(0);
+  if (reason) order.canceledReason = reason;
+  order.canceledBy = canceledBy;
+  releaseReservationsForTask(orderId);
+  persistOutgoing();
 }
 
 // status → stage label (used by tabs / sidebar panel)
@@ -398,11 +465,6 @@ export function outgoingOpenCount(warehouseIds?: string[]): number {
     .filter(([stage]) => !TERMINAL_STAGES.includes(stage))
     .reduce((sum, [, n]) => sum + n, 0);
 }
-
-// Only open / in-process orders are pickable. (An in-process order can still spawn
-// additional pick lists for SKUs not yet on any list — the per-SKU check lives in
-// pickingTasks.canPickOrder.)
-const PICKABLE_STATUSES = ["open", "in progress"];
 
 /** Can a new picking list still be created for this order? */
 export function canCreatePicking(o: OutgoingOrder): boolean {

@@ -58,6 +58,7 @@ onMounted(() => {
 const nameError = ref('')
 const codeError = ref('')
 const picError = ref(false)
+const isSaving = ref(false)
 
 function handlePicChange(data: DataInterface[]) {
   picData.value = data
@@ -69,7 +70,7 @@ function goBack() {
 }
 
 // Save is never disabled — validation fires here on click
-function save() {
+async function save() {
   nameError.value = ''
   codeError.value = ''
   picError.value = picData.value.length === 0
@@ -91,6 +92,8 @@ function save() {
   }
 
   if (nameError.value || codeError.value || picError.value) return
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
   const payload = {
     name: name.value.trim(),
@@ -195,7 +198,7 @@ function save() {
         <div class="nw-action-group">
           <div class="nw-action-right">
             <button class="nw-btn-cancel" @click="goBack">Cancel</button>
-            <button class="nw-btn-save" @click="save">{{ isEdit ? 'Save changes' : 'Save' }}</button>
+            <button class="nw-btn-save" :disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</button>
           </div>
         </div>
 

@@ -6,6 +6,7 @@ import type { Warehouse } from './types'
 import { stockLocationPaths, getMultiLocConfig } from './storageLocations'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { getWarehouseSettings } from './warehouseSettings'
+import { effectiveLocationPriority } from './warehouseConfig'
 
 // ── Persisted on-hand overlay ─────────────────────────────────────────────────
 // Stores absolute onHand values that override the deterministic generated base.
@@ -65,6 +66,28 @@ export function releaseReservationsForTask(taskId: string): void {
   const before = stockReservations.length
   for (let i = stockReservations.length - 1; i >= 0; i--) {
     if (stockReservations[i]!.taskId === taskId) stockReservations.splice(i, 1)
+  }
+  if (stockReservations.length !== before) persistReservations()
+}
+
+/** Whether an owner (order id, or picking task id) already holds any reservation. */
+export function hasReservationsForTask(taskId: string): boolean {
+  return stockReservations.some((r) => r.taskId === taskId)
+}
+
+/** Every reservation an owner (order id) holds for a given SKU. */
+export function getReservationsForOrder(orderId: string, sku: string): StockReservation[] {
+  return stockReservations.filter((r) => r.taskId === orderId && r.sku === sku)
+}
+
+/** Release only one (order, sku) pair's reservations — used when a pick-time
+ *  override re-pins just the SKU(s) that changed, leaving the order's other
+ *  reserved SKUs untouched. */
+export function releaseReservationsForOrderSku(orderId: string, sku: string): void {
+  const before = stockReservations.length
+  for (let i = stockReservations.length - 1; i >= 0; i--) {
+    const r = stockReservations[i]!
+    if (r.taskId === orderId && r.sku === sku) stockReservations.splice(i, 1)
   }
   if (stockReservations.length !== before) persistReservations()
 }
@@ -146,6 +169,16 @@ export interface ProductSerials {
   reserved: SerialUnit[]
 }
 
+/** A product's real, allocatable slice of stock at one bin — always present (a
+ *  single-location item just has one entry mirroring its aggregate qty); a
+ *  multi-location item has 2-3, each independently reservable. */
+export interface StockLocationBin {
+  location: string
+  onHand: number
+  reserved: number
+  available: number
+}
+
 /** A single product's stock row within a warehouse (Products tab). */
 export interface WarehouseStockItem {
   id: string
@@ -165,8 +198,11 @@ export interface WarehouseStockItem {
   onTheWay: number
   minStock: number
   unit: string
-  /** one or more bin locations */
+  /** one or more bin locations (index 0 = primary) */
   locations: string[]
+  /** real per-bin qty split — sums to onHand/reserved/available; 1 entry for a
+   *  single-location item, 2-3 for a multi-location one */
+  bins: StockLocationBin[]
   defaultSalesPrice: number
   averageCost: number
   lastPurchaseCost: number
@@ -221,6 +257,16 @@ function daysAgoIso(days: number): string {
   const d = new Date(TODAY.getTime())
   d.setDate(d.getDate() - days)
   return d.toISOString().slice(0, 10)
+}
+
+// Split a total qty across `count` bins — 60/40 for 2, 50/30/20 for 3. The single
+// weight-split convention shared by every real per-bin allocation in this file.
+function splitByWeight(total: number, count: number): number[] {
+  if (count <= 1) return [total]
+  const weights = count === 2 ? [0.6, 0.4] : [0.5, 0.3, 0.2]
+  const parts = weights.slice(0, count - 1).map((w) => Math.round(total * w))
+  parts.push(Math.max(0, total - parts.reduce((a, b) => a + b, 0)))
+  return parts
 }
 
 // Batches for a consumable — 1–2 lots that sum to the row's on-hand / reserved.
@@ -339,6 +385,7 @@ function generateStock(products: Product[], seed: number): WarehouseStockItem[] 
       minStock,
       unit: c.unit,
       locations: binLocation(seed, i),
+      bins: [], // real split assigned in getWarehouseDetail(), once the real storage tree is known
       defaultSalesPrice: c.sellPrice,
       averageCost: c.averageCost,
       lastPurchaseCost: c.lastPurchaseCost,
@@ -384,22 +431,43 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   stock.forEach((item, i) => {
     const loc = paths[i % L] ?? '—'
     const mlCfg = multiLoc.find((m) => m.idx === i)
+    let locs: string[]
     if (mlCfg && L > 1) {
       // Pick `count` distinct paths spread across the tree using an even step
       const step = Math.max(1, Math.floor(L / mlCfg.count))
-      const locs: string[] = [loc]
+      locs = [loc]
       for (let k = 1; k < mlCfg.count; k++) {
         const candidate = paths[(i + step * k) % L]
         if (candidate && !locs.includes(candidate)) locs.push(candidate)
       }
-      item.locations = locs.length >= 2 ? locs : [loc]
+      if (locs.length < 2) locs = [loc]
     } else {
-      item.locations = [loc]
+      locs = [loc]
     }
-    item.batches?.forEach((b) => { b.location = loc })
+    item.locations = locs
+
+    // Real per-bin qty split — same weights the Products-tab display always used,
+    // now persisted so it's genuinely allocatable (reservations draw from it) instead
+    // of recomputed at render time. A single-loc item just mirrors its aggregate.
+    if (locs.length > 1) {
+      const ohParts = splitByWeight(item.onHand, locs.length)
+      const rvParts = splitByWeight(item.reserved, locs.length)
+      item.bins = locs.map((l, bi) => {
+        const oh = ohParts[bi] ?? 0
+        const rv = Math.min(rvParts[bi] ?? 0, oh)
+        return { location: l, onHand: oh, reserved: rv, available: oh - rv }
+      })
+    } else {
+      item.bins = [{ location: loc, onHand: item.onHand, reserved: item.reserved, available: item.available }]
+    }
+
+    // Distribute batches/serial units across the item's real bins (round-robin) —
+    // every batch/serial now lands in a bin that's actually one of this item's own,
+    // instead of all being forced into the single primary one.
+    item.batches?.forEach((b, bi) => { b.location = item.bins[bi % item.bins.length]!.location })
     if (item.serials) {
-      item.serials.available.forEach((u) => { u.location = loc })
-      item.serials.reserved.forEach((u) => { u.location = loc })
+      item.serials.available.forEach((u, ui) => { u.location = item.bins[ui % item.bins.length]!.location })
+      item.serials.reserved.forEach((u, ui) => { u.location = item.bins[ui % item.bins.length]!.location })
     }
   })
   // Apply any persisted on-hand overrides from stock counts / in-out / transfers
@@ -458,6 +526,9 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
         b.available -= take
         item.reserved += take
         item.available = Math.max(0, item.available - take)
+        // Mirror onto whichever real bin this batch actually sits in.
+        const bin = item.bins.find((x) => x.location === b.location)
+        if (bin) { bin.reserved += take; bin.available = Math.max(0, bin.available - take) }
       }
     }
     if (r.serials?.length && item.serials) {
@@ -468,6 +539,9 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
         item.serials.reserved.push(u!)
         item.reserved += 1
         item.available = Math.max(0, item.available - 1)
+        // Mirror onto whichever real bin this serial actually sits in.
+        const bin = item.bins.find((x) => x.location === u!.location)
+        if (bin) { bin.reserved += 1; bin.available = Math.max(0, bin.available - 1) }
       }
     }
   }
@@ -485,23 +559,71 @@ function naturalCompare(a: string, b: string): number {
 }
 
 /**
+ * Auto-select which real bin(s) to reserve from for a SKU, per the warehouse's
+ * Storage location priority — ranks the SKU's own bins by that order, consuming
+ * from each's live `available` until `qty` is met or the SKU's bins run out.
+ * A single-bin SKU (the overwhelming majority) trivially returns its one bin —
+ * there's nothing to actually choose between. Read-only, same pattern as
+ * autoSelectBatches()/autoSelectSerials(); its result is meant to be fed into
+ * them as `preferredLocations` so location/batch/serial compose as independent
+ * rule axes instead of one silently overriding the other.
+ */
+export function autoSelectLocationBins(
+  warehouseId: string,
+  sku: string,
+  qty: number,
+): { location: string; take: number }[] {
+  if (qty <= 0) return []
+  const item = getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)
+  const bins = item?.bins ?? []
+  if (!bins.length) return []
+  if (bins.length === 1) {
+    const take = Math.min(qty, bins[0]!.available)
+    return take > 0 ? [{ location: bins[0]!.location, take }] : []
+  }
+  const priority = effectiveLocationPriority(warehouseId)
+  const byLoc = new Map(bins.map((b) => [b.location, b]))
+  const ordered: StockLocationBin[] = []
+  for (const p of priority) {
+    const b = byLoc.get(p.path)
+    if (b) { ordered.push(b); byLoc.delete(p.path) }
+  }
+  ordered.push(...byLoc.values())
+  const out: { location: string; take: number }[] = []
+  let remaining = qty
+  for (const b of ordered) {
+    if (remaining <= 0) break
+    const take = Math.min(remaining, b.available)
+    if (take <= 0) continue
+    out.push({ location: b.location, take })
+    remaining -= take
+  }
+  return out
+}
+
+/**
  * Auto-select which batch(es) to reserve for a batch-tracked SKU, per the
  * global Batch selection rule — walks batches in rule order, consuming from
  * each's live `available` qty (already net of any prior reservation) until
  * `qty` is met or stock runs out (a short result just means insufficient
  * stock, same as a manual picker would hit). Read-only — call reserveStock()
  * to actually commit the result.
+ *
+ * `preferredLocations` (from autoSelectLocationBins) makes location its own
+ * independent axis: batches inside those bins are tried first, in rule order;
+ * only once they're exhausted does the rule fall back to the rest.
  */
 export function autoSelectBatches(
   warehouseId: string,
   sku: string,
   qty: number,
+  preferredLocations?: string[],
 ): { batchNo: string; expiryDate: string; location: string; onHand: number; take: number }[] {
   if (qty <= 0) return []
   const item = getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)
   const batches = [...(item?.batches ?? [])]
   const rule = getWarehouseSettings().batchSelectionRule
-  batches.sort((a, b) => {
+  const ruleCompare = (a: ProductBatch, b: ProductBatch): number => {
     switch (rule) {
       case 'fefo': return a.expiryDate.localeCompare(b.expiryDate) || naturalCompare(a.createdAt, b.createdAt)
       case 'batch_number_asc': return naturalCompare(a.batchNo, b.batchNo)
@@ -509,6 +631,15 @@ export function autoSelectBatches(
       case 'batch_created_asc': return naturalCompare(a.createdAt, b.createdAt)
       default: return 0
     }
+  }
+  const prefSet = new Set(preferredLocations ?? [])
+  batches.sort((a, b) => {
+    if (prefSet.size) {
+      const pa = prefSet.has(a.location) ? 0 : 1
+      const pb = prefSet.has(b.location) ? 0 : 1
+      if (pa !== pb) return pa - pb
+    }
+    return ruleCompare(a, b)
   })
   const out: { batchNo: string; expiryDate: string; location: string; onHand: number; take: number }[] = []
   let remaining = qty
@@ -525,20 +656,34 @@ export function autoSelectBatches(
 /**
  * Auto-select which serial(s) to reserve for a serial-tracked SKU, per the
  * global Serial number selection rule — same read-only, consume-from-available
- * semantics as autoSelectBatches().
+ * semantics as autoSelectBatches(), with the same `preferredLocations` composition.
  */
-export function autoSelectSerials(warehouseId: string, sku: string, qty: number): string[] {
+export function autoSelectSerials(
+  warehouseId: string,
+  sku: string,
+  qty: number,
+  preferredLocations?: string[],
+): string[] {
   if (qty <= 0) return []
   const item = getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)
   const available = [...(item?.serials?.available ?? [])]
   const rule = getWarehouseSettings().serialSelectionRule
-  available.sort((a, b) => {
+  const ruleCompare = (a: SerialUnit, b: SerialUnit): number => {
     switch (rule) {
       case 'serial_number_asc': return naturalCompare(a.serial, b.serial)
       case 'serial_number_desc': return naturalCompare(b.serial, a.serial)
       case 'serial_created_asc': return naturalCompare(a.createdAt, b.createdAt)
       default: return 0
     }
+  }
+  const prefSet = new Set(preferredLocations ?? [])
+  available.sort((a, b) => {
+    if (prefSet.size) {
+      const pa = prefSet.has(a.location) ? 0 : 1
+      const pb = prefSet.has(b.location) ? 0 : 1
+      if (pa !== pb) return pa - pb
+    }
+    return ruleCompare(a, b)
   })
   return available.slice(0, qty).map((u) => u.serial)
 }

@@ -170,3 +170,17 @@
 [data-sonner-toast][data-styled="true"] {
   white-space: nowrap;
 }
+
+/* ── Number inputs — hide the native up/down spinner everywhere in the app.
+   Keeping type="number" (not switching to text) preserves numeric-only input,
+   :min/:max clamping, and the numeric keyboard on mobile — just without the
+   spinner arrows cluttering table cells. ─────────────────────────────────── */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

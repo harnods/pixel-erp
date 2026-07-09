@@ -231,7 +231,8 @@ function goBack() {
   router.push(isWms.value ? '/cycle-counts' : '/stock-adjustments')
 }
 const formError = ref('')
-function handleSave() {
+const isSaving = ref(false)
+async function handleSave() {
   formError.value = ''
   let valid = true
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
@@ -266,6 +267,8 @@ function handleSave() {
     }
   }
   if (!valid) { scrollToFirstError(); return }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
   let lines: { sku: string; qty: number }[]
 
@@ -923,7 +926,7 @@ onMounted(() => {
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">Cancel</button>
-      <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">Save</button>
+      <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</button>
     </footer>
 
     <SelectProductDrawer v-model:open="drawerOpen" :products="pickerProducts" :model-value="selectedSkus" @save="applyPicker" />

@@ -13,7 +13,7 @@ import {
   type PickingBatchPick, type PickingSerialPick,
 } from '~/data/pickingTasks'
 import { orderSkuLines, productBySku } from '~/data/inventory'
-import { binForSku, getWarehouseDetail, autoSelectBatches, autoSelectSerials } from '~/data/warehouseDetails'
+import { binForSku, getWarehouseDetail, getReservationsForOrder } from '~/data/warehouseDetails'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { stockLocationPaths } from '~/data/storageLocations'
@@ -47,6 +47,7 @@ const prefillOrderIds = ((route.query.orderIds as string | undefined)?.split(','
 // ─── Warehouse selector ────────────────────────────────────────────────────────
 const warehouseId = ref(prefillWarehouse)
 const warehouseError = ref(false)
+const isSaving = ref(false)
 // User changing the warehouse resets the order selection (initial value doesn't fire).
 watch(warehouseId, (v) => { if (v) warehouseError.value = false })
 // Assignee options are scoped to the selected warehouse's operators — a stale
@@ -277,14 +278,14 @@ const serialDrawerOpen = computed({
   get: () => serialDrawerSku.value !== null,
   set: (v: boolean) => { if (!v) serialDrawerSku.value = null },
 })
-/** Target qty for a row's Manage batch/serial drawer — the manual override when
- *  partial picking is allowed, otherwise always the full cap (nothing to enter). */
+/** Target qty for a row's Manage batch/serial drawer — defaults to the full cap
+ *  (= order qty, when stock allows), overridable when partial picking is allowed. */
 function targetQtyForSku(sku: string): number {
-  return isLocked(sku) ? capForSku(sku) : (qtyOverrides.value[sku] ?? 0)
+  return isLocked(sku) ? capForSku(sku) : (qtyOverrides.value[sku] ?? capForSku(sku))
 }
 function openSerialDrawer(sku: string) {
   if (!targetQtyForSku(sku)) {
-    toast.notify({ variant: 'warning', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerSku.value = sku
@@ -302,48 +303,56 @@ function saveSerialLines(serials: CommittedSerial[]) {
   }
 }
 
-// ─── Auto-select batch/serial per the configured global rule ──────────────────
-// Every batch/serial-tracked row arrives pre-selected (FEFO / ascending / etc,
-// per Settings > Warehouse) with zero clicks — opening the drawer just shows (and
-// lets the operator override) that same pre-fill. Re-runs whenever a row's target
-// qty changes; skips any sku the operator has already touched via the drawer.
-const trackedTargetQty = computed(() => {
-  const map = new Map<string, number>()
-  for (const g of pickRows.value) {
-    if (isBatchTrackedSku(g.sku)) map.set(`b:${g.sku}`, capForSku(g.sku))
-    else if (isSerialTrackedSku(g.sku)) map.set(`s:${g.sku}`, targetQtyForSku(g.sku))
+// ─── Pre-fill batch/serial from each member order's EXISTING reservation ───────
+// Every batch/serial-tracked SKU was already reserved (FEFO / ascending / etc, per
+// Settings > Warehouse) the moment its order was created — picking just reads that
+// plan back, it never computes a fresh one. A merged row can span several orders,
+// so its pre-fill is the sum of every member order's own (order, sku) reservation.
+// Skips any sku the operator has already touched via the drawer.
+function reservedBatchesForSku(sku: string): CommittedBatch[] {
+  const item = stockMap.value.get(sku)
+  const members = pickRows.value.find(g => g.sku === sku)?.members ?? []
+  if (!item?.batches?.length) return []
+  const byBatch = new Map<string, number>()
+  for (const m of members) {
+    for (const r of getReservationsForOrder(m.orderId, sku)) {
+      if (!r.batchNo) continue
+      byBatch.set(r.batchNo, (byBatch.get(r.batchNo) ?? 0) + r.qty)
+    }
   }
-  return map
+  const out: CommittedBatch[] = []
+  for (const [batchNo, qty] of byBatch) {
+    const b = item.batches.find(x => x.batchNo === batchNo)
+    if (!b || qty <= 0) continue
+    out.push({ key: batchNo, batchNo, expiryDate: b.expiryDate, desc: '', onHand: b.onHand, counted: qty, unit: item.unit, location: b.location })
+  }
+  return out
+}
+function reservedSerialsForSku(sku: string): PickingSerialPick[] {
+  const members = pickRows.value.find(g => g.sku === sku)?.members ?? []
+  const out: PickingSerialPick[] = []
+  for (const m of members) {
+    for (const r of getReservationsForOrder(m.orderId, sku)) {
+      for (const serial of r.serials ?? []) out.push({ serial, location: locationForSerial(sku, serial) })
+    }
+  }
+  return out
+}
+const trackedSkus = computed(() => {
+  const set = new Set<string>()
+  for (const g of pickRows.value) {
+    if (isBatchTrackedSku(g.sku) || isSerialTrackedSku(g.sku)) set.add(g.sku)
+  }
+  return set
 })
-watch(trackedTargetQty, (map) => {
-  for (const [mapKey, qty] of map) {
-    const sku = mapKey.slice(2)
-    if (mapKey.startsWith('b:')) {
+watch(trackedSkus, (skus) => {
+  for (const sku of skus) {
+    if (isBatchTrackedSku(sku)) {
       if (manuallyEditedBatchSkus.has(sku)) continue
-      if (qty <= 0) {
-        if (batchLinesBySku.value[sku]?.length) batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: [] }
-        continue
-      }
-      const picks = autoSelectBatches(warehouseId.value, sku, qty)
-      const unit = stockMap.value.get(sku)?.unit ?? ''
-      batchLinesBySku.value = {
-        ...batchLinesBySku.value,
-        [sku]: picks.map(p => ({
-          key: p.batchNo, batchNo: p.batchNo, expiryDate: p.expiryDate,
-          desc: '', onHand: p.onHand, counted: p.take, unit, location: p.location,
-        })),
-      }
+      batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: reservedBatchesForSku(sku) }
     } else {
       if (manuallyEditedSerialSkus.has(sku)) continue
-      if (qty <= 0) {
-        if (serialLinesBySku.value[sku]?.length) serialLinesBySku.value = { ...serialLinesBySku.value, [sku]: [] }
-        continue
-      }
-      const serials = autoSelectSerials(warehouseId.value, sku, qty)
-      serialLinesBySku.value = {
-        ...serialLinesBySku.value,
-        [sku]: serials.map(s => ({ serial: s, location: locationForSerial(sku, s) })),
-      }
+      serialLinesBySku.value = { ...serialLinesBySku.value, [sku]: reservedSerialsForSku(sku) }
     }
   }
 }, { immediate: true })
@@ -473,12 +482,14 @@ function goPicking() {
   router.push({ path: '/outbound-delivery', query: { tab: 'Picking' } })
 }
 
-function handleCreate() {
+async function handleCreate() {
   let valid = true
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
   if (!assigneeId.value)  { assigneeError.value  = true; valid = false }
   if (!selectedOrders.value.length) valid = false
   if (!valid) { scrollToFirstError(); return }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
   // Build the planned pick lines from the merged SKU rows. The picking list is shown
   // merged, but downstream packing sorts back per sales order — so each SKU's To-pick
@@ -535,6 +546,18 @@ function handleCreate() {
     }
   }
 
+  // Only SKUs the operator actually touched in the drawer re-pin their order's
+  // reservation — untouched lines keep whatever was already reserved at order creation.
+  const skuOf = (lineKey: string) => lineKey.slice(lineKey.indexOf('::') + 2)
+  const overrideBatchPicks: Record<string, PickingBatchPick[]> = {}
+  const overrideSerialPicks: Record<string, PickingSerialPick[]> = {}
+  for (const [lineKey, picks] of Object.entries(batchPicks)) {
+    if (manuallyEditedBatchSkus.has(skuOf(lineKey))) overrideBatchPicks[lineKey] = picks
+  }
+  for (const [lineKey, picks] of Object.entries(serialPicks)) {
+    if (manuallyEditedSerialSkus.has(skuOf(lineKey))) overrideSerialPicks[lineKey] = picks
+  }
+
   addPickingTask({
     salesOrderIds: selectedOrders.value.map(o => o.id),
     salesNos:      selectedOrders.value.map(o => o.salesNo),
@@ -542,7 +565,9 @@ function handleCreate() {
     warehouseName: warehouseName.value,
     assignee:      assigneeLabel.value,
     lines,
-    assignments: { batchPicks, serialPicks },
+    ...(Object.keys(overrideBatchPicks).length || Object.keys(overrideSerialPicks).length
+      ? { overrides: { batchPicks: overrideBatchPicks, serialPicks: overrideSerialPicks } }
+      : {}),
   })
 
   router.push({ path: '/outbound-delivery', query: { tab: 'Picking', saved: '1' } })
@@ -636,48 +661,49 @@ function handleCreate() {
           <div ref="itemsScrollEl" class="pk-items-scroll">
             <table class="pk-items">
               <colgroup>
-                <col /><!-- Checkbox -->
-                <col /><!-- Product -->
+                <col /><!-- Product (+ checkbox) -->
                 <col /><!-- SKU -->
-                <col /><!-- Storage location -->
+                <col style="width: 170px" /><!-- Storage location -->
                 <col /><!-- Order qty -->
                 <col v-if="hasPriorPicks" /><!-- Picked qty -->
                 <col /><!-- Qty to pick -->
+                <col style="width: 100px" /><!-- Unit -->
                 <col /><!-- Action -->
-                <col /><!-- Unit -->
               </colgroup>
               <thead>
                 <tr>
-                  <th class="pk-th pk-th--check">
-                    <MpTooltip
-                      v-if="allLinesLocked"
-                      id="pk-lock-all-tt"
-                      :label="partialPickingLockedMsg"
-                      placement="top"
-                      use-portal
-                    >
-                      <span @click.stop>
-                        <MpCheckbox id="pk-all-lines" :is-checked="true" :is-disabled="true" />
+                  <th class="pk-th pk-th--product-check">
+                    <div class="pk-check-wrap">
+                      <MpTooltip
+                        v-if="allLinesLocked"
+                        id="pk-lock-all-tt"
+                        :label="partialPickingLockedMsg"
+                        placement="top"
+                        use-portal
+                      >
+                        <span @click.stop>
+                          <MpCheckbox id="pk-all-lines" :is-checked="true" :is-disabled="true" />
+                        </span>
+                      </MpTooltip>
+                      <span v-else @click.stop>
+                        <MpCheckbox
+                          id="pk-all-lines"
+                          :is-checked="allLinesSelected"
+                          :is-indeterminate="someLinesSelected"
+                          :is-disabled="allLinesLocked"
+                          @change="toggleAllLines"
+                        />
                       </span>
-                    </MpTooltip>
-                    <span v-else @click.stop>
-                      <MpCheckbox
-                        id="pk-all-lines"
-                        :is-checked="allLinesSelected"
-                        :is-indeterminate="someLinesSelected"
-                        :is-disabled="allLinesLocked"
-                        @change="toggleAllLines"
-                      />
-                    </span>
+                      <span>Product</span>
+                    </div>
                   </th>
-                  <th class="pk-th">Product</th>
                   <th class="pk-th">SKU</th>
                   <th class="pk-th">Storage location</th>
                   <th class="pk-th pk-th--num">Order qty</th>
                   <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
                   <th class="pk-th pk-th--num">Qty to pick</th>
-                  <th class="pk-th"></th>
                   <th class="pk-th">Unit</th>
+                  <th class="pk-th"></th>
                 </tr>
               </thead>
               <tbody>
@@ -688,28 +714,28 @@ function handleCreate() {
                   :class="{ 'pk-item-row--off': !isSelected(row.key) }"
                 >
                   <td class="pk-td">
-                    <MpTooltip
-                      v-if="isLocked(row.key)"
-                      :id="`pk-lock-${row.key}`"
-                      :label="partialPickingLockedMsg"
-                      placement="top"
-                      use-portal
-                    >
-                      <span @click.stop>
-                        <MpCheckbox :id="`pk-line-${row.key}`" :is-checked="true" :is-disabled="true" />
+                    <div class="pk-check-wrap">
+                      <MpTooltip
+                        v-if="isLocked(row.key)"
+                        :id="`pk-lock-${row.key}`"
+                        :label="partialPickingLockedMsg"
+                        placement="top"
+                        use-portal
+                      >
+                        <span @click.stop>
+                          <MpCheckbox :id="`pk-line-${row.key}`" :is-checked="true" :is-disabled="true" />
+                        </span>
+                      </MpTooltip>
+                      <span v-else @click.stop>
+                        <MpCheckbox
+                          :id="`pk-line-${row.key}`"
+                          :is-checked="isSelected(row.key)"
+                          :is-disabled="isLocked(row.key)"
+                          @change="toggleLine(row.key)"
+                        />
                       </span>
-                    </MpTooltip>
-                    <span v-else @click.stop>
-                      <MpCheckbox
-                        :id="`pk-line-${row.key}`"
-                        :is-checked="isSelected(row.key)"
-                        :is-disabled="isLocked(row.key)"
-                        @change="toggleLine(row.key)"
-                      />
-                    </span>
-                  </td>
-                  <td class="pk-td">
-                    <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
+                      <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
+                    </div>
                   </td>
                   <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
 
@@ -756,6 +782,8 @@ function handleCreate() {
                     />
                   </td>
 
+                  <td class="pk-td">{{ row.unit }}</td>
+
                   <!-- Action column: Manage batch / Manage serial numbers link -->
                   <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
                     <button class="pk-manage-btn" type="button" @click.stop="openBatchDrawer(row.sku)">Manage batch</button>
@@ -764,8 +792,6 @@ function handleCreate() {
                     <button class="pk-manage-btn" type="button" @click.stop="openSerialDrawer(row.sku)">Manage serial numbers</button>
                   </td>
                   <td v-else class="pk-td pk-td--action"></td>
-
-                  <td class="pk-td">{{ row.unit }}</td>
                 </tr>
               </tbody>
             </table>
@@ -785,7 +811,7 @@ function handleCreate() {
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goPicking">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleCreate">Save</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
 
@@ -953,7 +979,7 @@ function handleCreate() {
 .pk-items thead .pk-th { position: sticky; top: 0; z-index: 1; }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pk-loc-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pk-th--check { width: var(--mp-sizes-12, 48px); }
+.pk-check-wrap { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .pk-item-row--off { opacity: 0.45; }
 
 /* Once any row splits its Qty to pick cell (batch/serial-tracked SKU present), every
@@ -994,6 +1020,10 @@ function handleCreate() {
   text-align: right; font-variant-numeric: tabular-nums;
 }
 .pk-batch-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; }
+
+.pk-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+.pk-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
+.pk-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── Empty state ─────────────────────────────────────────────────────────────── */
 .pk-empty {

@@ -40,8 +40,14 @@ function remove(sku: string) { const s = new Set(sel.value); s.delete(sku); sel.
 function addAll() { const s = new Set(sel.value); for (const p of available.value) s.add(p.sku); sel.value = s }
 function removeAll() { const s = new Set(sel.value); for (const p of selected.value) s.delete(p.sku); sel.value = s }
 
+const isSaving = ref(false)
 function close() { emit('update:open', false) }
-function save() { emit('save', [...sel.value]); emit('update:open', false) }
+async function save() {
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
+  emit('save', [...sel.value])
+  emit('update:open', false)
+}
 </script>
 
 <template>
@@ -110,7 +116,7 @@ function save() { emit('save', [...sel.value]); emit('update:open', false) }
       <!-- Footer -->
       <footer class="spd-footer">
         <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-        <MpButton variant="primary" is-rounded @click="save">Save</MpButton>
+        <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
       </footer>
     </div>
   </div>

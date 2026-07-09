@@ -51,6 +51,7 @@ const UNIT_OPTIONS = [...new Set(CATALOG.map((p) => p.unit))].map((u) => ({ id: 
 // ── Form state ─────────────────────────────────────────────────────────────
 const vendor = ref('')
 const vendorError = ref(false)
+const isSaving = ref(false)
 
 
 const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
@@ -173,7 +174,7 @@ function goReceipts() {
 }
 
 // ── Save ──────────────────────────────────────────────────────────────────
-function handleSave() {
+async function handleSave() {
   let valid = true
   if (!vendor.value) { vendorError.value = true; valid = false }
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
@@ -185,6 +186,8 @@ function handleSave() {
     else row.qtyError = false
   }
   if (!valid) { scrollToFirstError(); return }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
   const wh = warehouseOptions.value.find((w) => w.id === warehouseId.value)
   const skuQty = filledRows.length || 1
@@ -561,7 +564,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goReceipts">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleSave">Save</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
 </template>

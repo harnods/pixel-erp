@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch, inject } from 'vue'
 import {
-  MpIcon, MpTooltip, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpIcon, MpTooltip, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -48,6 +48,9 @@ const kindFilter = computed<'count' | 'in-out' | null>(() => {
 })
 // Only Cycle counts and Stock inout pages use the WMS dataset; Stock counts is ERP.
 const isWmsPage  = computed(() => currentPageKey.value === 'Cycle counts' || currentPageKey.value === 'Stock inout')
+// ERP Stock counts is a unified stock-adjustment ledger (count + in/out together) —
+// unlike WMS Cycle counts, it doesn't restrict to kind==='count' or show task fields.
+const isErpStockCounts = computed(() => currentPageKey.value === 'Stock counts')
 const activeList    = computed(() => isWmsPage.value ? wmsStockAdjustments : stockAdjustments)
 const activeWhOpts  = computed(() => isWmsPage.value ? wmsAdjustmentWarehouseOptions() : adjustmentWarehouseOptions())
 function activeDelete(ids: string[]) { isWmsPage.value ? deleteWmsAdjustments(ids) : deleteAdjustments(ids) }
@@ -87,10 +90,10 @@ const visibleColumns = computed(() =>
   columns.filter(c =>
     colVis[c.key]
     && !(kindFilter.value && c.key === 'account')
-    && !(kindFilter.value === 'count' && c.key === 'category')
-    && !(kindFilter.value === 'count' && c.key === 'tags')
-    && !(kindFilter.value === 'count' && !isAwaiting.value && c.key === 'date')
-    && !(kindFilter.value !== 'count' && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
+    && !(kindFilter.value === 'count' && !isErpStockCounts.value && c.key === 'category')
+    && !(kindFilter.value === 'count' && !isErpStockCounts.value && c.key === 'tags')
+    && !(kindFilter.value === 'count' && !isErpStockCounts.value && !isAwaiting.value && c.key === 'date')
+    && !((kindFilter.value !== 'count' || isErpStockCounts.value) && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
     && !(isAwaiting.value && kindFilter.value === 'count' && (c.key === 'startDate' || c.key === 'endDate' || c.key === 'assignee'))
   )
 )
@@ -126,7 +129,7 @@ function setDemoState(s: DemoState) {
 
 // ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
 const warehouseFilter = ref<string[]>([])
-const categoryFilter = ref('')
+const categoryFilter = ref<string[]>([])
 const statusFilter = ref('')
 const STATUS_OPTIONS = [
   { value: 'not_started', label: 'Open' },
@@ -145,6 +148,17 @@ function toggleWarehouse(id: string) {
   if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
   else warehouseFilter.value = [...warehouseFilter.value, id]
 }
+const categoryLabel = computed(() => {
+  const n = categoryFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return categoryFilter.value[0]
+  return `${n} categories`
+})
+function toggleCategory(cat: string) {
+  const idx = categoryFilter.value.indexOf(cat)
+  if (idx >= 0) categoryFilter.value = categoryFilter.value.filter(v => v !== cat)
+  else categoryFilter.value = [...categoryFilter.value, cat]
+}
 
 // ─── Rows (demo state → tab → warehouse/category filter; search handled below) ────
 const baseRows = computed<StockAdjustment[]>(() => {
@@ -152,9 +166,9 @@ const baseRows = computed<StockAdjustment[]>(() => {
   let list = [...activeList.value]
   if (isAwaiting.value) list = list.filter(a => a.status === 'draft')
   else list = list.filter(a => a.status !== 'draft')
-  if (kindFilter.value) list = list.filter(a => a.kind === kindFilter.value)
+  if (kindFilter.value && !isErpStockCounts.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value.length) list = list.filter(a => warehouseFilter.value.includes(a.warehouseId))
-  if (categoryFilter.value) list = list.filter(a => a.category === categoryFilter.value)
+  if (categoryFilter.value.length) list = list.filter(a => categoryFilter.value.includes(a.category))
   if (statusFilter.value) list = list.filter(a => a.status === statusFilter.value)
   return list
 })
@@ -172,8 +186,8 @@ const {
     || (kindFilter.value === 'count' && (row.assignee ?? '').toLowerCase().includes(s)),
 })
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || !!categoryFilter.value || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = ''; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || categoryFilter.value.length > 0 || !!statusFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = []; statusFilter.value = '' }
 watch([warehouseFilter, categoryFilter, statusFilter, isAwaiting], () => setPage(1))
 
 // ─── Row actions ─────────────────────────────────────────────────────────────────
@@ -267,8 +281,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <!-- Warehouse (multi-select) -->
-        <MpPopover id="sa-warehouse-filter">
+        <!-- Warehouse — multi-select (checkbox list, mirrors OutgoingIndexPage's Status filter) -->
+        <MpPopover id="sa-warehouse-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
               id="sa-warehouse-select" placeholder="Warehouse"
@@ -279,37 +293,48 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in whOptions" :key="opt.value"
-                :is-active="warehouseFilter.includes(opt.value)" @click="toggleWarehouse(opt.value)"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in whOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`sa-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Category (hidden for WMS stock count) -->
-        <MpPopover v-if="kindFilter !== 'count'" id="sa-category-filter" is-close-on-select>
+        <!-- Category — multi-select (hidden for WMS stock count; shown for ERP Stock counts, which mixes count + in/out) -->
+        <MpPopover v-if="kindFilter !== 'count' || isErpStockCounts" id="sa-category-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="sa-category-select" placeholder="Category" :model-value="categoryFilter" is-clearable
-              :class="css({ width: '180px' })" @mousedown.prevent @clear="categoryFilter = ''"
+              id="sa-category-select" placeholder="Category"
+              :model-value="categoryFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '180px' })" @mousedown.prevent @clear="categoryFilter = []"
             >
-              <option v-if="categoryFilter" :value="categoryFilter">{{ categoryFilter }}</option>
+              <option v-if="categoryFilter.length" value="__selected__">{{ categoryLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in ADJUSTMENT_CATEGORIES" :key="opt"
-                :is-active="opt === categoryFilter" @click="categoryFilter = opt"
-              >{{ opt }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in ADJUSTMENT_CATEGORIES" :key="opt" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`sa-cat-${opt}`"
+                  :is-checked="categoryFilter.includes(opt)"
+                  @change="toggleCategory(opt)"
+                  @click.stop
+                />
+                <span>{{ opt }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
         <!-- Status (WMS stock count only) -->
-        <MpPopover v-if="kindFilter === 'count'" id="sa-status-filter" is-close-on-select>
+        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts" id="sa-status-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
               id="sa-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
@@ -656,6 +681,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+
+/* Checkbox multi-select filter list (mirrors OutgoingIndexPage's status-filter-list) */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 
 /* Cell hover chip */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }

@@ -8,7 +8,7 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
-import { pickingTasksFor, pickingTaskAgingDays, isPickingFinished, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
+import { pickingTasksFor, pickingTaskAgingDays, isPickingReadyToPack, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
 import { getPackingForOrder } from '~/data/packingTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
@@ -132,10 +132,13 @@ function createPacking(row: PickingTask) {
 function selectedPickingsOf(sel: Set<number>): PickingTask[] {
   return [...sel].map(i => paginated.value[i]).filter(Boolean) as PickingTask[]
 }
-// A picking list can spawn packing tasks when it's finished (completed / partially
-// picked) and has ≥1 packable order not already on a packing task.
+// A picking list can spawn packing tasks when its status allows it (open,
+// partially picked, or completed) and has ≥1 packable order not already on a
+// packing task — an open list is only actually eligible if another picking list
+// already picked something for one of its orders, so this stays correctly hidden
+// for a genuinely untouched open list.
 function pickingEligibleForPacking(t: PickingTask): boolean {
-  return isPickingFinished(t) && packableOrderIds(t).some(id => getPackingForOrder(id).length === 0)
+  return isPickingReadyToPack(t) && packableOrderIds(t).some(id => getPackingForOrder(id).length === 0)
 }
 // Show "Create packing" only when EVERY selected list is the SAME warehouse and ≥1 is
 // eligible (a packing batch is single-warehouse). Mixed warehouses ⇒ hidden.

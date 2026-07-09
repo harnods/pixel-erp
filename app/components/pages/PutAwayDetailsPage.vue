@@ -535,7 +535,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   border-bottom: 1px solid var(--mp-border-default);
 }
 .detail-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
-.detail-td--secondary { color: var(--mp-text-secondary); }
+.detail-td--secondary { color: var(--mp-text-default); }
 .detail-td--number { position: relative; }
 
 .detail-items-sentinel { height: 1px; }

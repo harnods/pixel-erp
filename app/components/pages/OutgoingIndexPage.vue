@@ -13,9 +13,9 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { outgoingForStages, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, type OutgoingOrder } from '~/data/outgoing'
-import { canPickOrder } from '~/data/pickingTasks'
-import { addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
+import { outgoingForStages, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, cancelOutgoingOrder, type OutgoingOrder } from '~/data/outgoing'
+import { canPickOrder, getPickingForOrder } from '~/data/pickingTasks'
+import { addPackingTaskFromOrder, canCreatePackingDirectlyForOrder, getPackingForOrder } from '~/data/packingTasks'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { warehouses } from '~/data/warehouses'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
@@ -48,6 +48,7 @@ const columns: TableColumn[] = [
   { key: 'source',        label: 'Source',    width: '180px', sortType: 'text' },
   { key: 'warehouseName', label: 'Warehouse', width: '180px', sortType: 'text' },
   { key: 'status',        label: 'Status',    width: '150px', sortType: 'text' },
+  { key: 'icons',         label: '',          width: '64px',  align: 'center', noHeader: true },
   { key: 'skuQty',        label: 'SKU qty',   width: '100px', align: 'right', sortType: 'number' },
   { key: 'orderQty',      label: 'Order qty', width: '120px', align: 'right', sortType: 'number' },
   { key: 'dueDate',       label: 'Due date',  width: '180px', sortType: 'date' },
@@ -56,7 +57,7 @@ const columns: TableColumn[] = [
 // the ColumnSettings menu turns them back on.
 const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
-const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
@@ -208,6 +209,14 @@ function expireHours(o: OutgoingOrder): number | null {
   return h > 0 && h < 24 ? Math.max(1, Math.ceil(h)) : null
 }
 
+// ─── Icon indicators ─────────────────────────────────────────────────────────
+function hasPickingList(orderId: string): boolean {
+  return getPickingForOrder(orderId).some(t => t.status !== 'canceled')
+}
+function hasPackingTask(orderId: string): boolean {
+  return getPackingForOrder(orderId).some(t => t.status !== 'canceled')
+}
+
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(row: OutgoingOrder) { router.push(`/outbound-delivery/${row.id}`) }
@@ -292,14 +301,19 @@ function bulkCancelable(selectedRows: Set<number>) { return cancelableSelection(
 // Bulk cancel → confirm via alert modal first (only the open orders are cancelled).
 const bulkCancelOpen = ref(false)
 const bulkCancelCount = ref(0)
+let _bulkCancelOrders: OutgoingOrder[] = []
 let _bulkDeselect: (() => void) | null = null
 function askBulkCancel(selectedRows: Set<number>, deselectAll: () => void) {
-  bulkCancelCount.value = cancelableSelection(selectedRows).length
+  _bulkCancelOrders = cancelableSelection(selectedRows)
+  bulkCancelCount.value = _bulkCancelOrders.length
   _bulkDeselect = deselectAll
   bulkCancelOpen.value = true
 }
 function confirmBulkCancel() {
-  // (stub) cancel the selected orders
+  const n = _bulkCancelOrders.length
+  for (const o of _bulkCancelOrders) cancelOutgoingOrder(o.id)
+  toast.notify({ variant: 'success', title: `${n} order${n > 1 ? 's' : ''} cancelled` })
+  _bulkCancelOrders = []
   _bulkDeselect?.()
   _bulkDeselect = null
   bulkCancelOpen.value = false
@@ -309,6 +323,13 @@ const cancelModalOpen = ref(false)
 const orderToCancel = ref<OutgoingOrder | null>(null)
 function openCancelModal(row: OutgoingOrder) { orderToCancel.value = row; cancelModalOpen.value = true }
 function closeCancelModal() { cancelModalOpen.value = false; orderToCancel.value = null }
+function confirmCancelOrder() {
+  if (orderToCancel.value) {
+    cancelOutgoingOrder(orderToCancel.value.id)
+    toast.notify({ variant: 'success', title: `Order ${orderToCancel.value.number} cancelled` })
+  }
+  closeCancelModal()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -486,6 +507,51 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <ErpStatusBadge :status="(value as string)" />
     </template>
 
+    <!-- ── Icon indicators — picking list + packing task badges ── -->
+    <template #cell-icons="{ row }">
+      <div class="out-icons-cell">
+        <MpTooltip
+          v-if="hasPickingList((row as unknown as OutgoingOrder).id)"
+          :id="`tt-picklist-${row.id}`"
+          label="Picking list created"
+          placement="top"
+          use-portal
+        >
+          <span class="out-icon-indicator" aria-label="Picking list created">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <g clip-path="url(#pl-clip)">
+              <path d="M11.2305 1.52879C11.2305 1.11458 10.8947 0.778794 10.4805 0.778794C10.0663 0.778794 9.73054 1.11458 9.73054 1.52879H10.4805H11.2305ZM10.8468 6.44705L10.5573 5.75519L10.5573 5.7552L10.8468 6.44705ZM12.5409 5.73816L12.2514 5.04628L12.2513 5.0463L12.5409 5.73816ZM12.7449 5.73816L13.0344 5.04629L13.0344 5.04628L12.7449 5.73816ZM14.4389 6.44705L14.1494 7.13892L14.1494 7.13892L14.4389 6.44705ZM15.5552 1.52883C15.5552 1.11461 15.2195 0.778826 14.8052 0.778826C14.391 0.778826 14.0552 1.11461 14.0552 1.52883H14.8052H15.5552ZM1.59144 8.79663C1.17802 8.8222 0.863606 9.17809 0.889184 9.59151C0.914763 10.0049 1.27064 10.3193 1.68407 10.2938L1.63775 9.54519L1.59144 8.79663ZM2.57986 9.48691L2.62617 10.2355H2.62618L2.57986 9.48691ZM5.8146 9.78686L5.99778 9.05957L5.99777 9.05957L5.8146 9.78686ZM7.37888 10.1808L7.1957 10.9081L7.19571 10.9081L7.37888 10.1808ZM8.70263 12.0717L9.4487 12.1484V12.1484L8.70263 12.0717ZM6.63788 13.6275L6.50596 14.3658L6.50596 14.3658L6.63788 13.6275ZM5.16212 13.3638L5.29403 12.6255C4.88637 12.5527 4.49682 12.824 4.42385 13.2317C4.35088 13.6393 4.62212 14.029 5.02974 14.1021L5.16212 13.3638ZM10.3654 14.2969L10.233 15.0351C10.3344 15.0533 10.4384 15.0504 10.5386 15.0266L10.3654 14.2969ZM15.7548 13.0178L15.5816 12.288L15.5816 12.288L15.7548 13.0178ZM17.7343 14.2021L18.4592 14.0098L18.4592 14.0098L17.7343 14.2021ZM16.7588 16.1576L17.0412 16.8524L17.0412 16.8524L16.7588 16.1576ZM12.4478 17.9092L12.1655 17.2143L12.1655 17.2143L12.4478 17.9092ZM5.8803 18.0591L6.13061 17.3521L6.13061 17.3521L5.8803 18.0591ZM1.66102 15.7697C1.27055 15.6315 0.841954 15.836 0.703714 16.2264C0.565475 16.6169 0.769943 17.0455 1.16041 17.1837L1.41071 16.4767L1.66102 15.7697ZM17.7251 10.5913C17.6949 11.0044 18.0053 11.3638 18.4184 11.394C18.8315 11.4242 19.1909 11.1138 19.2211 10.7007L18.4731 10.646L17.7251 10.5913ZM18.2536 2.67622L18.9956 2.56653L18.9956 2.56647L18.2536 2.67622ZM17.3966 1.8055L17.2799 2.54637L17.2799 2.54638L17.3966 1.8055ZM7.88887 1.8055L8.0055 2.54638H8.0055L7.88887 1.8055ZM7.03183 2.6763L7.77377 2.786L7.77377 2.786L7.03183 2.6763ZM5.94741 7.09672C5.9444 7.51093 6.27774 7.84915 6.69194 7.85216C7.10614 7.85517 7.44436 7.52183 7.44737 7.10763L6.69739 7.10218L5.94741 7.09672ZM10.4805 1.52879H9.73054V6.20326H10.4805H11.2305V1.52879H10.4805ZM10.4805 6.20326H9.73054C9.73054 6.92772 10.4681 7.41859 11.1364 7.13891L10.8468 6.44705L10.5573 5.7552C10.8773 5.62127 11.2305 5.85633 11.2305 6.20326H10.4805ZM10.8468 6.44705L11.1364 7.13892L12.8304 6.43002L12.5409 5.73816L12.2513 5.0463L10.5573 5.75519L10.8468 6.44705ZM12.5409 5.73816L12.8303 6.43004C12.7104 6.48022 12.5754 6.48022 12.4554 6.43003L12.7449 5.73816L13.0344 5.04628C12.7839 4.94147 12.5019 4.94147 12.2514 5.04628L12.5409 5.73816ZM12.7449 5.73816L12.4554 6.43002L14.1494 7.13892L14.4389 6.44705L14.7285 5.75519L13.0344 5.04629L12.7449 5.73816ZM14.4389 6.44705L14.1494 7.13892C14.8178 7.41858 15.5552 6.92767 15.5552 6.20326H14.8052H14.0552C14.0552 5.85638 14.4084 5.62128 14.7284 5.75518L14.4389 6.44705ZM14.8052 6.20326H15.5552V1.52883H14.8052H14.0552V6.20326H14.8052ZM1.63775 9.54519L1.68407 10.2938L2.62617 10.2355L2.57986 9.48691L2.53355 8.73834L1.59144 8.79663L1.63775 9.54519ZM2.57986 9.48691L2.62618 10.2355C3.6363 10.173 4.65002 10.267 5.63143 10.5141L5.8146 9.78686L5.99777 9.05957C4.86648 8.77465 3.69794 8.66629 2.53354 8.73834L2.57986 9.48691ZM5.8146 9.78686L5.63142 10.5141L7.1957 10.9081L7.37888 10.1808L7.56206 9.45355L5.99778 9.05957L5.8146 9.78686ZM7.37888 10.1808L7.19571 10.9081C7.68407 11.0311 8.0081 11.494 7.95657 11.995L8.70263 12.0717L9.4487 12.1484C9.57648 10.9062 8.77302 9.75854 7.56205 9.45355L7.37888 10.1808ZM8.70263 12.0717L7.95657 11.995C7.89624 12.5814 7.35015 12.9929 6.76979 12.8892L6.63788 13.6275L6.50596 14.3658C7.94501 14.6229 9.2991 13.6026 9.4487 12.1484L8.70263 12.0717ZM6.63788 13.6275L6.76979 12.8892L5.29403 12.6255L5.16212 13.3638L5.0302 14.1021L6.50596 14.3658L6.63788 13.6275ZM5.16212 13.3638L5.02974 14.1021L10.233 15.0351L10.3654 14.2969L10.4978 13.5587L5.2945 12.6256L5.16212 13.3638ZM10.3654 14.2969L10.5386 15.0266L15.928 13.7475L15.7548 13.0178L15.5816 12.288L10.1922 13.5672L10.3654 14.2969ZM15.7548 13.0178L15.928 13.7475C16.4043 13.6345 16.8839 13.9214 17.0094 14.3945L17.7343 14.2021L18.4592 14.0098C18.1252 12.7509 16.8491 11.9873 15.5816 12.288L15.7548 13.0178ZM17.7343 14.2021L17.0094 14.3945C17.126 14.834 16.8977 15.2916 16.4765 15.4628L16.7588 16.1576L17.0412 16.8524C18.1621 16.3969 18.7695 15.1792 18.4592 14.0098L17.7343 14.2021ZM16.7588 16.1576L16.4765 15.4628L12.1655 17.2143L12.4478 17.9092L12.7301 18.604L17.0412 16.8524L16.7588 16.1576ZM12.4478 17.9092L12.1655 17.2143C10.2385 17.9973 8.09131 18.0463 6.13061 17.3521L5.8803 18.0591L5.62999 18.7661C7.93679 19.5829 10.463 19.5251 12.7301 18.604L12.4478 17.9092ZM5.8803 18.0591L6.13061 17.3521L1.66102 15.7697L1.41071 16.4767L1.16041 17.1837L5.62999 18.7661L5.8803 18.0591ZM18.4731 10.646L19.2211 10.7007C19.3041 9.56623 19.3392 8.43576 19.3392 7.41072H18.5892H17.8392C17.8392 8.40316 17.8052 9.49691 17.7251 10.5913L18.4731 10.646ZM18.5892 7.41072H19.3392C19.3392 5.71951 19.2439 4.24599 18.9956 2.56653L18.2536 2.67622L17.5117 2.78591C17.7481 4.38495 17.8392 5.78461 17.8392 7.41072H18.5892ZM18.2536 2.67622L18.9956 2.56647C18.8823 1.80107 18.2889 1.18673 17.5132 1.06462L17.3966 1.8055L17.2799 2.54638C17.3962 2.56469 17.4928 2.65811 17.5117 2.78598L18.2536 2.67622ZM17.3966 1.8055L17.5132 1.06463C15.9657 0.820997 14.3106 0.714272 12.6427 0.714272V1.46427V2.21427C14.2496 2.21427 15.8249 2.3173 17.2799 2.54637L17.3966 1.8055ZM12.6427 1.46427V0.714272C10.9749 0.714272 9.31981 0.820997 7.77224 1.06462L7.88887 1.8055L8.0055 2.54638C9.46062 2.3173 11.0358 2.21427 12.6427 2.21427V1.46427ZM7.88887 1.8055L7.77224 1.06462C6.9965 1.18675 6.40305 1.80126 6.2899 2.56661L7.03183 2.6763L7.77377 2.786C7.79268 2.65811 7.88928 2.56467 8.0055 2.54638L7.88887 1.8055ZM7.03183 2.6763L6.2899 2.5666C6.05718 4.14053 5.95877 5.53415 5.94741 7.09672L6.69739 7.10218L7.44737 7.10763C7.45827 5.60924 7.55204 4.28556 7.77377 2.786L7.03183 2.6763Z" fill="currentColor"/>
+            </g>
+            <defs>
+              <clipPath id="pl-clip"><rect width="20" height="20" fill="white"/></clipPath>
+            </defs>
+          </svg>
+        </span>
+        </MpTooltip>
+        <MpTooltip
+          v-if="hasPackingTask((row as unknown as OutgoingOrder).id)"
+          :id="`tt-packtask-${row.id}`"
+          label="Packing task created"
+          placement="top"
+          use-portal
+        >
+          <span class="out-icon-indicator" aria-label="Packing task created">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <g clip-path="url(#pt-clip)">
+                <path d="M2.40711 7.72822C2.75157 6.54028 3.29326 5.44152 3.82046 4.37214C4.08056 3.84458 4.33712 3.32416 4.56474 2.8037C4.76946 2.33564 5.20689 1.99844 5.72079 1.95301C7.1385 1.82768 8.30968 1.74107 9.99988 1.74107C11.6747 1.74107 12.8399 1.8261 14.2403 1.94959C14.7739 1.99665 15.2218 2.35856 15.4226 2.84938C15.6759 3.46852 15.9734 4.06607 16.2769 4.67586C16.7475 5.62099 17.2326 6.5955 17.5907 7.72528" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9.99985 6.71288V1.74129" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M2.21244 16.7277C2.31101 17.3507 2.83008 17.8309 3.46628 17.8795C5.556 18.0392 7.74502 18.2588 9.99998 18.2588C12.2549 18.2588 14.444 18.0392 16.5337 17.8795C17.1698 17.8309 17.689 17.3507 17.7874 16.7277C18.003 15.3658 18.2589 13.9456 18.2589 12.4858C18.2589 11.026 18.003 9.60578 17.7874 8.24392C17.689 7.62086 17.1698 7.14058 16.5337 7.09199C14.444 6.93242 12.2549 6.71272 9.99998 6.71272C7.74502 6.71272 5.556 6.93242 3.46628 7.09199C2.83008 7.14058 2.31101 7.62086 2.21244 8.24392C1.99701 9.60578 1.74107 11.026 1.74107 12.4858C1.74107 13.9456 1.99701 15.3658 2.21244 16.7277Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M12.2367 14.7236H14.907" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </g>
+              <defs>
+                <clipPath id="pt-clip"><rect width="20" height="20" fill="white"/></clipPath>
+              </defs>
+            </svg>
+          </span>
+        </MpTooltip>
+      </div>
+    </template>
+
     <!-- ── Numeric cells ── -->
     <template #cell-skuQty="{ value }">{{ formatNum(value as number) }}</template>
     <template #cell-orderQty="{ value }">{{ formatNum(value as number) }}</template>
@@ -554,7 +620,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <MpModalFooter>
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep order</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="closeCancelModal">Cancel order</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelOrder">Cancel order</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -703,6 +769,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .out-due-expire {
   font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
   color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium);
+}
+
+/* Icon indicators cell — picking list + packing task */
+.out-icons-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mp-spacing-1);
+}
+.out-icon-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mp-text-subtle);
 }
 
 /* Source */

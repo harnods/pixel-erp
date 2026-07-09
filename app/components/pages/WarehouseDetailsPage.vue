@@ -293,6 +293,7 @@ const teamNameDraft = ref('')
 const teamUserIdDraft = ref('')
 const teamRoleDraft = ref<WarehouseRole>('operator')
 const teamUserError = ref(false)
+const isSaving = ref(false)
 function openAddTeamMember() {
   teamModalEditId.value = null
   teamNameDraft.value = ''
@@ -311,15 +312,20 @@ function editTeamMember(member: WarehouseTeamMember) {
 function closeTeamModal() {
   teamModalOpen.value = false
 }
-function saveTeamMember() {
+async function saveTeamMember() {
+  if (!teamModalEditId.value) {
+    if (!teamUserIdDraft.value) { teamUserError.value = true; return }
+  }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   if (teamModalEditId.value) {
     updateTeamMemberRole(teamModalEditId.value, teamRoleDraft.value)
     toast.notify({ variant: 'success', title: 'Team member updated', maxWidth: 'max-content' })
   } else {
-    if (!teamUserIdDraft.value) { teamUserError.value = true; return }
     addTeamMember(props.orderId, { userId: teamUserIdDraft.value, role: teamRoleDraft.value, addedBy: currentUserName.value })
     toast.notify({ variant: 'success', title: 'Team member added', maxWidth: 'max-content' })
   }
+  isSaving.value = false
   teamModalOpen.value = false
 }
 function onRemoveTeamMember(member: WarehouseTeamMember) {
@@ -580,22 +586,12 @@ function formatNum(n: number) {
 
 // Split a multi-location row into per-location qty breakdowns
 // 2 locations: 60% / 40%; 3 locations: 50% / 30% / 20%
-function locBreakdown(row: { locations: string[]; onHand: number; reserved: number }) {
-  const locs = row.locations
-  if (locs.length <= 1) return null
-  const weights = locs.length === 2 ? [0.6, 0.4] : [0.5, 0.3, 0.2]
-  const split = (total: number) => {
-    const parts = weights.slice(0, -1).map((w) => Math.round(total * w))
-    parts.push(Math.max(0, total - parts.reduce((a, b) => a + b, 0)))
-    return parts
-  }
-  const ohs = split(row.onHand)
-  const rvs = split(row.reserved)
-  return locs.map((loc, i) => {
-    const oh = ohs[i] ?? 0
-    const rv = Math.min(rvs[i] ?? 0, oh)
-    return { loc, onHand: oh, reserved: rv, available: oh - rv }
-  })
+// Real per-bin split (warehouseDetails.ts's WarehouseStockItem.bins) — was a
+// recomputed-on-render weight-split guess; now it's the persisted, reservation-
+// aware source of truth, so this just re-shapes it for the template.
+function locBreakdown(row: { bins?: { location: string; onHand: number; reserved: number; available: number }[] }) {
+  if (!row.bins || row.bins.length <= 1) return null
+  return row.bins.map((b) => ({ loc: b.location, onHand: b.onHand, reserved: b.reserved, available: b.available }))
 }
 
 function formatUpdatedAt(iso: string) {
@@ -1415,7 +1411,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <div v-if="!team.length" class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <p class="empty-full-title">No team members</p>
-              <p class="empty-full-desc">Add managers and operators to this warehouse — task assignees are picked from its operators.</p>
+              <p class="empty-full-desc">Add managers and operators to this warehouse. Task assignees are picked from its operators.</p>
               <MpButton variant="tertiary" is-rounded left-icon="add" class="wh-loc-empty-cta" @click="openAddTeamMember">Add team member</MpButton>
             </div>
 
@@ -1609,7 +1605,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         <MpModalFooter>
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--ghost" @click="closeTeamModal">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="saveTeamMember">{{ teamModalEditId ? 'Save changes' : 'Save' }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTeamMember">{{ isSaving ? 'Saving…' : (teamModalEditId ? 'Save changes' : 'Save') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>

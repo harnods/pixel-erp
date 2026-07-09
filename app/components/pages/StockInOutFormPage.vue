@@ -130,19 +130,12 @@ function selectPendingLoc(row: ProductRow, locId: string) {
   activeLocKey.value = null; locSearch.value = ''
 }
 
-// ── Per-location on-hand (mirrors WarehouseDetailsPage locBreakdown logic) ──────────
+// ── Per-location on-hand — reads the item's real per-bin split directly
+// (warehouseDetails.ts's WarehouseStockItem.bins), no more recomputed guess. ────────
 function onHandForLocation(sku: string, locationId: string): number {
   if (!locationId) return 0
   const item = stockMap.value.get(sku)
-  if (!item) return 0
-  const locs = item.locations
-  const idx = locs.indexOf(locationId)
-  if (idx === -1) return 0
-  if (locs.length === 1) return item.onHand
-  const weights = locs.length === 2 ? [0.6, 0.4] : [0.5, 0.3, 0.2]
-  const parts = weights.slice(0, -1).map(w => Math.round(item.onHand * w))
-  parts.push(Math.max(0, item.onHand - parts.reduce((a, b) => a + b, 0)))
-  return parts[idx] ?? 0
+  return item?.bins?.find(b => b.location === locationId)?.onHand ?? 0
 }
 
 // ── Delta input ───────────────────────────────────────────────────────────────────
@@ -264,7 +257,8 @@ function goBack() {
   router.push(isWms.value ? '/stock-inout' : '/stock-adjustments')
 }
 const formError = ref('')
-function handleSave() {
+const isSaving = ref(false)
+async function handleSave() {
   formError.value = ''
   let valid = true
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
@@ -284,6 +278,8 @@ function handleSave() {
     }
   }
   if (!valid) { scrollToFirstError(); return }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
   const lines = rows.value.map(r => ({
     sku: r.sku,
@@ -605,7 +601,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">Cancel</button>
-      <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">Save</button>
+      <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</button>
     </footer>
 
     <SelectProductDrawer v-model:open="drawerOpen" :products="pickerProducts" :model-value="selectedSkus" @save="applyPicker" />

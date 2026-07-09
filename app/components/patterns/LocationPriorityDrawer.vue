@@ -53,7 +53,13 @@ function onDragEnd() { dragSrc.value = null; dragOver.value = null }
 
 function resetToDefault() { rows.value = [...leaves.value].sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true })) }
 function close() { emit('update:isOpen', false) }
-function save() { emit('saved', rows.value.map((r) => r.id)); close() }
+const isSaving = ref(false)
+async function save() {
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
+  emit('saved', rows.value.map((r) => r.id))
+  close()
+}
 </script>
 
 <template>
@@ -73,12 +79,12 @@ function save() { emit('saved', rows.value.map((r) => r.id)); close() }
         <div class="lp-body">
           <p class="lp-desc">
             WMS reserves from the highest-priority location with available stock when an
-            outbound doesn't already specify one. Drag to reorder — highest priority first.
+            outbound doesn't already specify one. Drag to reorder, highest priority first.
             Locations added later fall to the end, ascending by name.
           </p>
 
           <div v-if="!rows.length" class="lp-empty">
-            No Storage-type locations in this warehouse yet — add one under Storage locations first.
+            No Storage-type locations in this warehouse yet. Add one under Storage locations first.
           </div>
 
           <ol v-else class="lp-list">
@@ -120,7 +126,7 @@ function save() { emit('saved', rows.value.map((r) => r.id)); close() }
         <!-- Footer -->
         <footer class="lp-footer">
           <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">Save changes</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save changes' }}</button>
         </footer>
 
       </div>

@@ -90,7 +90,7 @@ function createPacking() {
     if (packable.length === 0) {
       const anyPickComplete = packableOrderIds(t).length > 0
       toast.notify({
-        variant: 'danger',
+        variant: 'error',
         title: anyPickComplete ? 'Already packed' : 'Nothing can be packed yet',
         description: anyPickComplete
           ? 'These orders already have a packing task.'
@@ -476,7 +476,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         Continue picking
       </button>
       <button v-else-if="localStatus === 'completed' || localStatus === 'partially picked'" class="detail-btn detail-btn--primary" @click="createPacking">
-        Create packing task
+        Create packing
       </button>
     </footer>
 

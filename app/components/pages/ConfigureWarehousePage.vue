@@ -27,9 +27,10 @@ function goBack() {
 const committed = reactive<WarehouseConfig>(getWarehouseConfig(props.orderId))
 const draft     = reactive<WarehouseConfig>({ ...committed })
 
-const isEditing   = ref(false)
-const isSaving    = ref(false)
-const discardOpen = ref(false)
+const isEditing       = ref(false)
+const isSaving        = ref(false)
+const discardOpen     = ref(false)
+const ruleConfirmOpen = ref(false)
 
 const hasChanges = computed(() =>
   draft.pickingEnabled         !== committed.pickingEnabled         ||
@@ -44,12 +45,51 @@ const hasChanges = computed(() =>
   draft.cycleCountAutoTask     !== committed.cycleCountAutoTask     ||
   draft.cycleCountRuleNeg      !== committed.cycleCountRuleNeg      ||
   draft.cycleCountRuleVar      !== committed.cycleCountRuleVar      ||
-  draft.cycleCountRuleMin      !== committed.cycleCountRuleMin
+  draft.cycleCountRuleMin      !== committed.cycleCountRuleMin      ||
+  draft.cycleCountRuleOrder.join(',') !== committed.cycleCountRuleOrder.join(',')
+)
+// The location priority order only decides where a NEW order reserves from —
+// orders already reserved (at their own creation time) keep their original bin,
+// so changing this needs an explicit heads-up before it's saved.
+const hasLocationPriorityChange = computed(() =>
+  draft.locationPriority.join(',') !== committed.locationPriority.join(',')
 )
 
 const cycleCountActiveRules = computed(() =>
   [draft.cycleCountRuleNeg, draft.cycleCountRuleVar, draft.cycleCountRuleMin].filter(Boolean).length
 )
+
+// ─── Cycle count rule ordering ────────────────────────────────────────────────
+type RuleKey = 'neg' | 'var' | 'min'
+const RULE_META: Record<RuleKey, { draftKey: 'cycleCountRuleNeg' | 'cycleCountRuleVar' | 'cycleCountRuleMin'; title: string; desc: string; ariaLabel: string }> = {
+  neg: { draftKey: 'cycleCountRuleNeg', title: 'Negative stock',        ariaLabel: 'Negative stock rule',   desc: 'Flag SKUs that went negative within the lookback window, a confirmed signal of a system-vs-physical mismatch.' },
+  var: { draftKey: 'cycleCountRuleVar', title: 'Variance signal',       ariaLabel: 'Variance signal rule',  desc: 'Flag SKUs whose last count exceeded the variance tolerance, likely to drift again.' },
+  min: { draftKey: 'cycleCountRuleMin', title: 'Min stock (watch list)', ariaLabel: 'Min stock rule',        desc: 'Flag watch-listed SKUs at or below their minimum stock level, a predictive signal for high-priority products.' },
+}
+
+const ruleDragSrc  = ref<number | null>(null)
+const ruleDragOver = ref<number | null>(null)
+
+function onRuleDragStart(i: number, e: DragEvent) {
+  ruleDragSrc.value = i
+  e.dataTransfer!.effectAllowed = 'move'
+}
+function onRuleDragOver(i: number, e: DragEvent) {
+  e.preventDefault()
+  e.dataTransfer!.dropEffect = 'move'
+  ruleDragOver.value = i
+}
+function onRuleDrop(i: number, e: DragEvent) {
+  e.preventDefault()
+  if (ruleDragSrc.value === null || ruleDragSrc.value === i) { ruleDragOver.value = null; return }
+  const r = [...draft.cycleCountRuleOrder]
+  const [moved] = r.splice(ruleDragSrc.value, 1)
+  r.splice(i, 0, moved!)
+  draft.cycleCountRuleOrder = r
+  ruleDragSrc.value = null
+  ruleDragOver.value = null
+}
+function onRuleDragEnd() { ruleDragSrc.value = null; ruleDragOver.value = null }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 function startEdit() {
@@ -65,6 +105,16 @@ function exitEdit() {
   isEditing.value = false
   discardOpen.value = false
 }
+function requestSave() {
+  if (hasLocationPriorityChange.value) ruleConfirmOpen.value = true
+  else void saveEdit()
+}
+
+async function confirmRuleChange() {
+  ruleConfirmOpen.value = false
+  await saveEdit()
+}
+
 async function saveEdit() {
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
@@ -264,7 +314,7 @@ const toggleConfirmBody = computed(() => {
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
               <span class="cw-toggle-title">Put-away</span>
-              <span class="cw-toggle-desc">When off, receiving tasks in this warehouse skip put-away entirely — finishing receiving is the end of inbound.</span>
+              <span class="cw-toggle-desc">When off, receiving tasks in this warehouse skip put-away entirely. Finishing receiving completes the inbound flow.</span>
             </div>
             <MpToggle
               :is-checked="draft.putAwayEnabled"
@@ -314,43 +364,41 @@ const toggleConfirmBody = computed(() => {
           <!-- Sub-settings: only visible when master toggle is ON -->
           <template v-if="draft.cycleCountRec">
 
-            <!-- Recommendation rules -->
+            <!-- Recommendation rules (drag to reorder priority when editing) -->
             <div class="cw-rec-group">
               <span class="cw-rec-group-label">Recommendation rules</span>
 
-              <div class="cw-rec-rule-row">
+              <div
+                v-for="(ruleKey, i) in draft.cycleCountRuleOrder"
+                :key="ruleKey"
+                class="cw-rec-rule-row"
+                :class="{
+                  'cw-rec-rule-row--dragging':   isEditing && ruleDragSrc === i,
+                  'cw-rec-rule-row--over-above': isEditing && ruleDragOver === i && ruleDragSrc !== null && ruleDragSrc > i,
+                  'cw-rec-rule-row--over-below': isEditing && ruleDragOver === i && ruleDragSrc !== null && ruleDragSrc < i,
+                }"
+                :draggable="isEditing ? 'true' : 'false'"
+                @dragstart="isEditing && onRuleDragStart(i, $event)"
+                @dragover="isEditing && onRuleDragOver(i, $event)"
+                @drop="isEditing && onRuleDrop(i, $event)"
+                @dragend="isEditing && onRuleDragEnd()"
+              >
+                <span v-if="isEditing" class="cw-rec-handle" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <circle cx="5" cy="4" r="1.2"/><circle cx="11" cy="4" r="1.2"/>
+                    <circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/>
+                    <circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/>
+                  </svg>
+                </span>
                 <div class="cw-toggle-info">
-                  <span class="cw-toggle-title">Negative stock</span>
-                  <span class="cw-toggle-desc">Flag SKUs that went negative within the lookback window — a confirmed system-vs-physical mismatch.</span>
+                  <span class="cw-toggle-title">{{ RULE_META[ruleKey as RuleKey].title }}</span>
+                  <span class="cw-toggle-desc">{{ RULE_META[ruleKey as RuleKey].desc }}</span>
                 </div>
                 <MpToggle
-                  v-model:is-checked="draft.cycleCountRuleNeg"
-                  :is-disabled="!isEditing || (draft.cycleCountRuleNeg && cycleCountActiveRules === 1)"
-                  aria-label="Negative stock rule"
-                />
-              </div>
-
-              <div class="cw-rec-rule-row">
-                <div class="cw-toggle-info">
-                  <span class="cw-toggle-title">Variance signal</span>
-                  <span class="cw-toggle-desc">Flag SKUs whose last count exceeded the variance tolerance — likely to drift again.</span>
-                </div>
-                <MpToggle
-                  v-model:is-checked="draft.cycleCountRuleVar"
-                  :is-disabled="!isEditing || (draft.cycleCountRuleVar && cycleCountActiveRules === 1)"
-                  aria-label="Variance signal rule"
-                />
-              </div>
-
-              <div class="cw-rec-rule-row">
-                <div class="cw-toggle-info">
-                  <span class="cw-toggle-title">Min stock (watch list)</span>
-                  <span class="cw-toggle-desc">Flag watch-listed SKUs at or below their minimum stock level — a predictive signal for high-priority products.</span>
-                </div>
-                <MpToggle
-                  v-model:is-checked="draft.cycleCountRuleMin"
-                  :is-disabled="!isEditing || (draft.cycleCountRuleMin && cycleCountActiveRules === 1)"
-                  aria-label="Min stock rule"
+                  :is-checked="draft[RULE_META[ruleKey as RuleKey].draftKey]"
+                  :is-disabled="!isEditing || (draft[RULE_META[ruleKey as RuleKey].draftKey] && cycleCountActiveRules === 1)"
+                  :aria-label="RULE_META[ruleKey as RuleKey].ariaLabel"
+                  @update:is-checked="draft[RULE_META[ruleKey as RuleKey].draftKey] = $event"
                 />
               </div>
             </div>
@@ -359,7 +407,7 @@ const toggleConfirmBody = computed(() => {
             <div class="cw-toggle-row">
               <div class="cw-toggle-info">
                 <span class="cw-toggle-title">Auto-create cycle count tasks</span>
-                <span class="cw-toggle-desc">Automatically create pending cycle count tasks for all recommended SKUs. When off, the recommendation board is advisory only — no tasks are created.</span>
+                <span class="cw-toggle-desc">Automatically create pending cycle count tasks for all recommended SKUs. When off, the recommendation board is advisory only; no tasks are created.</span>
               </div>
               <MpToggle v-model:is-checked="draft.cycleCountAutoTask" :is-disabled="!isEditing" aria-label="Auto-create cycle count tasks" />
             </div>
@@ -370,7 +418,7 @@ const toggleConfirmBody = computed(() => {
 
         <div v-if="isEditing" class="cw-action-bar">
           <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">
+          <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="requestSave">
             {{ isSaving ? 'Saving…' : 'Save changes' }}
           </button>
         </div>
@@ -422,6 +470,34 @@ const toggleConfirmBody = computed(() => {
         <MpModalFooter>
           <button class="btn-enterprise btn-enterprise--ghost" @click="cancelToggleConfirm">Cancel</button>
           <button class="btn-enterprise btn-enterprise--primary" @click="confirmToggle">Confirm</button>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Non-retroactive location priority change confirmation ────────────── -->
+    <MpModal
+      id="cw-rule-confirm-dialog"
+      :is-open="ruleConfirmOpen"
+      size="sm"
+      is-close-on-esc
+      is-close-on-overlay-click
+      @close="ruleConfirmOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          Apply new storage location priority?
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <p class="cw-dialog-body">
+            This only applies to orders created from now on. Orders that already reserved a
+            storage location keep their original bin — they won't be recalculated.
+          </p>
+        </MpModalBody>
+        <MpModalFooter>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">Keep editing</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">Save changes</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -515,5 +591,17 @@ const toggleConfirmBody = computed(() => {
 .cw-rec-rule-row {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0;
+  transition: opacity 150ms;
 }
+.cw-rec-rule-row[draggable="true"] { cursor: grab; user-select: none; }
+.cw-rec-rule-row[draggable="true"]:active { cursor: grabbing; }
+.cw-rec-rule-row--dragging { opacity: 0.4; }
+.cw-rec-rule-row--over-above { border-top: 2px solid var(--mp-border-selected, #0f6d4d); }
+.cw-rec-rule-row--over-below { border-bottom: 2px solid var(--mp-border-selected, #0f6d4d); }
+
+.cw-rec-handle {
+  flex-shrink: 0; color: var(--mp-text-disabled, #b0b6b8);
+  display: flex; align-items: center;
+}
+.cw-rec-rule-row:hover .cw-rec-handle { color: var(--mp-text-subtle); }
 </style>

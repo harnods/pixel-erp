@@ -59,6 +59,7 @@ const editingKey = ref<string | null>(null)
 const editName = ref('')
 const editDesc = ref('')
 const editType = ref<'Organizational' | 'Storage'>('Organizational')
+const isSaving = ref(false)
 
 function openEdit(lvl: LevelRow) {
   editingKey.value = lvl.key
@@ -67,10 +68,13 @@ function openEdit(lvl: LevelRow) {
   editType.value = lvl.defaultType
   editOpen.value = true
 }
-function saveEdit() {
+async function saveEdit() {
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   if (editingKey.value) {
     updateStorageLevel(editingKey.value, { name: editName.value, defaultType: editType.value, description: editDesc.value })
   }
+  isSaving.value = false
   editOpen.value = false
 }
 </script>
@@ -168,7 +172,7 @@ function saveEdit() {
         <MpModalFooter>
           <div class="sl-modal-btns">
             <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="saveEdit">Save changes</button>
+            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">{{ isSaving ? 'Saving…' : 'Save changes' }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>

@@ -117,7 +117,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(key: string) {
   if (!(draftQty.value[key] ?? 0)) {
-    toast.notify({ variant: 'warning', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerKey.value = key
@@ -281,14 +281,14 @@ function commitPicking(createPacking = false) {
   }
   if (blockPacking) {
     toast.notify({
-      variant: 'warning',
+      variant: 'error',
       title: 'Saved as partially picked',
       description: 'Marketplace orders must be fully picked before a packing task can be created.',
       maxWidth: 'max-content',
     })
   } else {
     toast.notify({
-      variant: complete ? 'success' : 'warning',
+      variant: complete ? 'success' : 'error',
       title: complete ? 'Picking finished, ready to pack' : 'Picking finished (partially picked)',
       maxWidth: 'max-content',
     })
@@ -385,7 +385,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pik-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="search" class="pik-search" type="text" placeholder="Search..." />
           </div>
         </div>
         <p v-if="finishError" class="pik-finish-error">{{ finishError }}</p>
@@ -395,13 +395,13 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
             <table class="pik-items">
               <colgroup>
                 <col /><!-- Product -->
-                <col /><!-- SKU -->
-                <col /><!-- Storage location -->
+                <col style="width: 160px" /><!-- SKU -->
+                <col style="width: 170px" /><!-- Storage location -->
                 <col /><!-- To pick qty -->
                 <col /><!-- Picked qty -->
                 <col /><!-- Outstanding qty -->
+                <col style="width: 100px" /><!-- Unit -->
                 <col /><!-- Action -->
-                <col /><!-- Unit -->
               </colgroup>
               <thead>
                 <tr>
@@ -411,8 +411,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <th class="pik-th pik-th--num">To pick qty</th>
                   <th class="pik-th pik-th--num">Picked qty</th>
                   <th class="pik-th pik-th--num">Outstanding qty</th>
-                  <th class="pik-th"></th>
                   <th class="pik-th">Unit</th>
+                  <th class="pik-th"></th>
                 </tr>
               </thead>
               <tbody>
@@ -473,6 +473,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                     <span v-else class="pik-qty--full">—</span>
                   </td>
 
+                  <td class="pik-td">{{ item.unit }}</td>
+
                   <!-- Action column: Manage batch / Manage serial numbers link -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--action">
                     <button class="pik-manage-btn" type="button" @click="openBatchDrawer(item.key)">Manage batch</button>
@@ -481,8 +483,6 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                     <button class="pik-manage-btn" type="button" @click="openSerialDrawer(item.key)">Manage serial numbers</button>
                   </td>
                   <td v-else class="pik-td pik-td--action"></td>
-
-                  <td class="pik-td">{{ item.unit }}</td>
                 </tr>
                 <tr v-if="!filteredItems.length">
                   <td class="pik-td pik-empty" colspan="8">No products match your search.</td>
@@ -594,7 +594,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default);
 }
 .detail-stage {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  flex: 1; min-height: 0; overflow: hidden;
   background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -606,18 +606,18 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
-.pik-header { display: flex; gap: var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.pik-header { flex-shrink: 0; display: flex; gap: var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .pik-header :deep(.content-list) { padding-top: 0; }
-.pik-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
+.pik-summary { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pik-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
 .pik-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .pik-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.pik-sku-section { display: flex; flex-direction: column; }
-.pik-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
+.pik-sku-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.pik-filter-bar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
 .pik-filter-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .pik-editing-hint { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pik-finish-error { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
+.pik-finish-error { flex-shrink: 0; margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
 .pik-link-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-link); }
 .pik-link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .pik-search-wrap {
@@ -630,9 +630,9 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-search { flex: 1; border: none; background: transparent; outline: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pik-search::placeholder { color: var(--mp-text-placeholder); }
 
-.pik-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
+.pik-items-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .pik-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
-.pik-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.pik-items-scroll { min-height: 0; overflow-y: auto; overflow-x: auto; }
 .pik-items thead .pik-th { position: sticky; top: 0; z-index: 1; }
 .pik-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 .pik-th {
@@ -691,7 +691,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-sentinel { height: 1px; }
 .pik-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
 .pik-loading--inline { justify-content: center; padding: var(--mp-spacing-3); }
-.pik-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.pik-items-count { flex-shrink: 0; display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .pik-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-8) 0; }
 
 .pik-btn {

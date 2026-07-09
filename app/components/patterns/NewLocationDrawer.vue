@@ -97,7 +97,8 @@ watch(level, (lvl) => {
 })
 
 function close() { emit('update:isOpen', false) }
-function save() {
+const isSaving = ref(false)
+async function save() {
   const nm = name.value.trim()
   if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a location name' , maxWidth: 'max-content'}); return }
   if (!isEdit.value && props.parentId) {
@@ -111,6 +112,8 @@ function save() {
       }
     }
   }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   if (isEdit.value) {
     updateLocation(props.warehouseId, props.editId!, { level: level.value, name: nm, type: type.value, description: description.value.trim() })
     emit('saved', props.parentId)
@@ -121,6 +124,7 @@ function save() {
   if (props.parentId) addSubLocation(props.warehouseId, props.parentId, data)
   else addRootLocation(props.warehouseId, data)
   emit('saved', props.parentId)
+  isSaving.value = false
   close()
 }
 </script>
@@ -209,7 +213,7 @@ function save() {
           </div>
           <div class="nl-footer">
             <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="save">{{ isEdit ? 'Save changes' : 'Save' }}</MpButton>
+            <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
           </div>
         </div>
       </MpDrawerBody>

@@ -213,7 +213,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pak-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="search" class="pak-search" type="text" placeholder="Search..." />
           </div>
         </div>
         <p v-if="finishError" class="pak-finish-error">{{ finishError }}</p>

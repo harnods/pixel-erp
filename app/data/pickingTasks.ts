@@ -3,7 +3,7 @@ import { warehouses } from "./warehouses";
 import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, type OutgoingOrder } from "./outgoing";
 import { orderSkuLines } from "./inventory";
-import { binForSku, reserveStock, releaseReservationsForTask } from "./warehouseDetails";
+import { binForSku, getWarehouseDetail, getReservationsForOrder, releaseReservationsForOrderSku, reserveStock } from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
@@ -239,6 +239,45 @@ function freshSeq(): number {
   return nextSeq;
 }
 
+/**
+ * This task's batch/serial assignments, read straight from each bundled order's
+ * existing reservation (made once, when the order was created) — never computed
+ * fresh here. A picking task just reads what was already claimed; it doesn't reserve.
+ */
+function assignmentsFromReservations(
+  lines: PickingLine[],
+  warehouseId: string,
+): { batchPicks: Record<string, PickingBatchPick[]>; serialPicks: Record<string, PickingSerialPick[]> } {
+  const batchPicks: Record<string, PickingBatchPick[]> = {};
+  const serialPicks: Record<string, PickingSerialPick[]> = {};
+  const wh = getWarehouseDetail(warehouseId);
+  for (const l of lines) {
+    const item = wh?.stock.find((s) => s.sku === l.sku);
+    if (!item) continue;
+    const resv = getReservationsForOrder(l.orderId, l.sku);
+    if (!resv.length) continue;
+    if (item.batches?.length) {
+      const picks: PickingBatchPick[] = [];
+      for (const r of resv) {
+        const b = item.batches.find((x) => x.batchNo === r.batchNo);
+        if (!b) continue;
+        picks.push({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: "", qty: r.qty, unit: item.unit, location: b.location });
+      }
+      if (picks.length) batchPicks[l.key] = picks;
+    } else if (item.serials) {
+      const picks: PickingSerialPick[] = [];
+      for (const r of resv) {
+        for (const serial of r.serials ?? []) {
+          const u = item.serials.reserved.find((x) => x.serial === serial);
+          picks.push({ serial, location: u?.location ?? "" });
+        }
+      }
+      if (picks.length) serialPicks[l.key] = picks;
+    }
+  }
+  return { batchPicks, serialPicks };
+}
+
 /** Create a picking task from selected sales orders (same warehouse). Newly created → "open". */
 export function addPickingTask(opts: {
   salesOrderIds: string[];
@@ -249,11 +288,20 @@ export function addPickingTask(opts: {
   lines?: PickingLine[];
   skuQty?: number;
   toPickQty?: number;
-  /** Batch/serial picked at creation time — the plan the operator will follow. */
-  assignments?: PickingAssignments;
+  /** SKUs the operator explicitly re-picked in the drawer at creation time — re-pins
+   *  that (order, sku)'s reservation to this plan before the task's assignments are
+   *  read back out. Any line left out keeps whatever the order already had reserved. */
+  overrides?: PickingAssignments;
 }): PickingTask {
   const seq = freshSeq();
   const lines = opts.lines ?? buildPickingLines(opts.salesOrderIds, opts.salesNos);
+  if (opts.overrides) {
+    for (const [orderId, picks] of picksByOrder(opts.overrides)) {
+      for (const sku of new Set(picks.map((p) => p.sku))) releaseReservationsForOrderSku(orderId, sku);
+      reserveStock(orderId, opts.warehouseId, picks);
+    }
+  }
+  const { batchPicks, serialPicks } = assignmentsFromReservations(lines, opts.warehouseId);
   const task: PickingTask = {
     id: `pick-new-${seq}`,
     taskNo: `Picking #${seq}`,
@@ -267,37 +315,48 @@ export function addPickingTask(opts: {
     pickedQty: 0, // newly created → nothing picked yet
     status: "open",
     lines,
-    ...(opts.assignments?.batchPicks ? { batchPicks: opts.assignments.batchPicks } : {}),
-    ...(opts.assignments?.serialPicks ? { serialPicks: opts.assignments.serialPicks } : {}),
+    ...(Object.keys(batchPicks).length ? { batchPicks } : {}),
+    ...(Object.keys(serialPicks).length ? { serialPicks } : {}),
   };
   pickingTasks.unshift(task);
   persistPicking();
-  if (task.batchPicks || task.serialPicks) {
-    reserveStock(task.id, task.warehouseId, flattenPicksForReservation(task));
-  }
   return task;
 }
 
-/** Line keys are `${orderId}::${sku}` — split on the FIRST "::" so an sku/orderId
- *  can't itself confuse the split. Groups batch/serial picks back down to one
- *  reservation entry per sku (a merged sku can span several order lines). */
-function flattenPicksForReservation(
-  task: PickingTask,
-): { sku: string; batchNo?: string; qty: number; serials?: string[] }[] {
-  const out: { sku: string; batchNo?: string; qty: number; serials?: string[] }[] = [];
+/** Line keys are `${orderId}::${sku}` — split on the FIRST "::" so a sku/orderId
+ *  can't itself confuse the split. Groups batch/serial picks by (orderId, sku) —
+ *  each bundled order owns its own reservation, so a task spanning two orders must
+ *  never merge their picks together. */
+function picksByOrder(
+  task: PickingAssignments,
+): Map<string, { sku: string; batchNo?: string; qty: number; serials?: string[] }[]> {
+  const splitKey = (lineKey: string) => {
+    const idx = lineKey.indexOf("::");
+    return { orderId: lineKey.slice(0, idx), sku: lineKey.slice(idx + 2) };
+  };
+  const byOrder = new Map<string, { sku: string; batchNo?: string; qty: number; serials?: string[] }[]>();
+  const push = (orderId: string, pick: { sku: string; batchNo?: string; qty: number; serials?: string[] }) => {
+    const arr = byOrder.get(orderId) ?? [];
+    arr.push(pick);
+    byOrder.set(orderId, arr);
+  };
   for (const [lineKey, picks] of Object.entries(task.batchPicks ?? {})) {
-    const sku = lineKey.slice(lineKey.indexOf("::") + 2);
-    for (const p of picks) out.push({ sku, batchNo: p.batchNo, qty: p.qty });
+    const { orderId, sku } = splitKey(lineKey);
+    for (const p of picks) push(orderId, { sku, batchNo: p.batchNo, qty: p.qty });
   }
-  const serialsBySku = new Map<string, string[]>();
+  const serialsByOrderSku = new Map<string, Map<string, string[]>>();
   for (const [lineKey, picks] of Object.entries(task.serialPicks ?? {})) {
-    const sku = lineKey.slice(lineKey.indexOf("::") + 2);
-    serialsBySku.set(sku, [...(serialsBySku.get(sku) ?? []), ...picks.map((p) => p.serial)]);
+    const { orderId, sku } = splitKey(lineKey);
+    const bySku = serialsByOrderSku.get(orderId) ?? new Map<string, string[]>();
+    bySku.set(sku, [...(bySku.get(sku) ?? []), ...picks.map((p) => p.serial)]);
+    serialsByOrderSku.set(orderId, bySku);
   }
-  for (const [sku, serials] of serialsBySku) {
-    if (serials.length) out.push({ sku, qty: serials.length, serials });
+  for (const [orderId, bySku] of serialsByOrderSku) {
+    for (const [sku, serials] of bySku) {
+      if (serials.length) push(orderId, { sku, qty: serials.length, serials });
+    }
   }
-  return out;
+  return byOrder;
 }
 
 /** Picking tasks scoped to warehouses (all when none given). */
@@ -471,22 +530,27 @@ export function endPicking(
   if (assignments?.batchPicks) t.batchPicks = assignments.batchPicks;
   if (assignments?.serialPicks) t.serialPicks = assignments.serialPicks;
   if (assignments) {
-    // Operator may have changed batch/serial at the real pick — re-pin the
-    // reservation to whatever was actually picked (releases the stale claim first
-    // so a swapped-out batch/serial doesn't stay double-reserved).
-    releaseReservationsForTask(taskId);
-    reserveStock(taskId, t.warehouseId, flattenPicksForReservation(t));
+    // Operator may have changed batch/serial at the real pick — re-pin each affected
+    // order's reservation to whatever was actually picked (release that order+sku's
+    // stale claim first so a swapped-out batch/serial doesn't stay double-reserved).
+    // Scoped to (orderId, sku), never the whole task, since one task can bundle
+    // several orders and each owns its own reservation.
+    for (const [orderId, picks] of picksByOrder(t)) {
+      for (const sku of new Set(picks.map((p) => p.sku))) releaseReservationsForOrderSku(orderId, sku);
+      reserveStock(orderId, t.warehouseId, picks);
+    }
   }
   persistPicking();
 }
 
+/** Cancel a picking task — the order(s) it covered keep their reservation (they
+ *  still need picking, just via a different list later). */
 export function cancelPickingTask(taskId: string, reason?: string): void {
   const t = getPickingTask(taskId);
   if (!t) return;
   t.status = "canceled";
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;
-  releaseReservationsForTask(taskId);
   persistPicking();
 }
 
@@ -514,9 +578,11 @@ export function previewDisablePicking(warehouseId: string): { openPickings: numb
   return { openPickings };
 }
 
-/** True once picking is finished (fully or partially) — ready for a packing task. */
-export function isPickingFinished(t: PickingTask): boolean {
-  return t.status === "completed" || t.status === "partially picked";
+/** Status allows spawning a packing task — open (nothing picked yet on THIS list,
+ *  but another list may have already picked some of its orders), partially picked,
+ *  or completed. The actual gate on WHAT can be packed is packableOrderIds() below. */
+export function isPickingReadyToPack(t: PickingTask): boolean {
+  return t.status === "open" || t.status === "completed" || t.status === "partially picked";
 }
 /** True when every planned unit has been picked. */
 export function isFullyPicked(t: PickingTask): boolean {
@@ -571,5 +637,5 @@ export function packableOrderIds(t: PickingTask): string[] {
 }
 /** Can a packing task be created from this picking task yet? (any order packable) */
 export function canCreatePackingFrom(t: PickingTask): boolean {
-  return isPickingFinished(t) && packableOrderIds(t).length > 0;
+  return isPickingReadyToPack(t) && packableOrderIds(t).length > 0;
 }

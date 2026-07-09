@@ -299,6 +299,35 @@ export function getDeliveryTask(taskId: string): DeliveryTask | undefined {
   return deliveryTasks.find((t) => t.id === taskId);
 }
 
+/**
+ * Ready-to-ship delivery in a warehouse whose packing no. matches a scanned code
+ * (New shipment page — stands in for scanning the real shipping label/AWB, which
+ * isn't assigned yet at this stage; the packing no. is the document that already
+ * exists on the package before a courier/tracking no. is decided).
+ */
+export function findReadyToShipByPackingNo(warehouseId: string, packingNo: string): DeliveryTask | undefined {
+  const q = packingNo.trim();
+  if (!q) return undefined;
+  return deliveryTasks.find(
+    (t) =>
+      t.warehouseId === warehouseId &&
+      t.status === "ready to ship" &&
+      (t.packingTaskNo === q || t.packingTaskNos?.includes(q)),
+  );
+}
+
+/**
+ * Same match, ignoring warehouse — lets a caller tell "this packing no. belongs
+ * to a different warehouse" apart from a genuine not-found when a scan misses.
+ */
+export function findReadyToShipByPackingNoAnyWarehouse(packingNo: string): DeliveryTask | undefined {
+  const q = packingNo.trim();
+  if (!q) return undefined;
+  return deliveryTasks.find(
+    (t) => t.status === "ready to ship" && (t.packingTaskNo === q || t.packingTaskNos?.includes(q)),
+  );
+}
+
 let nextShipmentSeq = 70000;
 function freshShipmentSeq(): number {
   const used = deliveryTasks

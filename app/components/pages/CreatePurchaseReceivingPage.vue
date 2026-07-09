@@ -304,7 +304,7 @@ function handleCreate() {
                       <MpTooltip :id="`pr-rs-${it.productId}`" label="Restore" placement="left" use-portal>
                         <MpButton
                           :aria-label="`Restore ${it.productName}`"
-                          variant="ghost" size="sm" left-icon="add"
+                          variant="ghost" left-icon="add"
                           @click="restoreItem(it.productId)"
                         />
                       </MpTooltip>
@@ -313,7 +313,7 @@ function handleCreate() {
                       <MpTooltip :id="`pr-rm-${it.productId}`" label="Remove" placement="left" use-portal>
                         <MpButton
                           :aria-label="`Remove ${it.productName}`"
-                          variant="ghost" size="sm" left-icon="minus-circular"
+                          variant="ghost" left-icon="minus-circular"
                           @click="removeItem(it.productId)"
                         />
                       </MpTooltip>
@@ -482,7 +482,7 @@ function handleCreate() {
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
 }
 .pr-td--outstanding { color: var(--mp-text-warning, #b45309); font-weight: var(--mp-font-weights-semi-bold); }
-.pr-td--action { text-align: right; padding-right: var(--mp-spacing-2); }
+.pr-td--action { text-align: right; padding-block: 2px; padding-right: var(--mp-spacing-2); }
 .pr-item-row--removed .pr-td { background: var(--mp-background-neutral-subtle); color: var(--mp-text-disabled); }
 .pr-item-row--removed :deep(.pc-name),
 .pr-item-row--removed :deep(.pc-desc),

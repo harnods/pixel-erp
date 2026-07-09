@@ -429,7 +429,7 @@ function selectBatchDestLoc(lr: LocRow, locationId: string) {
 function removeBatchOriginLoc(id: number) { batchLocOriginRows.value = batchLocOriginRows.value.filter(r => r.id !== id) }
 function removeBatchDestLoc(id: number) { batchLocDestRows.value = batchLocDestRows.value.filter(r => r.id !== id) }
 
-function saveBatchLocDrawer() {
+async function saveBatchLocDrawer() {
   const filledOrigin = batchLocOriginRows.value.filter(r => r.locationId && Number(r.qty) > 0)
   const filledDest = batchLocDestRows.value.filter(r => r.locationId && Number(r.qty) > 0)
   if (filledOrigin.length && filledDest.length && batchLocOriginTotal.value !== batchLocDestTotal.value) {
@@ -446,11 +446,14 @@ function saveBatchLocDrawer() {
     batchLocError.value = `Total qty (${total}) exceeds available qty (${onHand})`
     return
   }
+  isSavingLoc.value = true
+  await new Promise(r => setTimeout(r, 600))
   if (batchLocRow.value) {
     batchLocRow.value.originLocRows = filledOrigin.length ? [...filledOrigin, makeLocRow()] : [makeLocRow()]
     batchLocRow.value.destLocRows = filledDest.length ? [...filledDest, makeLocRow()] : [makeLocRow()]
     if (total > 0) batchLocRow.value.counted = total
   }
+  isSavingLoc.value = false
   batchLocRow.value = null
 }
 
@@ -472,12 +475,14 @@ const trailingColspan = computed(() => 5 + (isPicking.value ? 1 : 0) + (hideStoc
 
 // ── Footer actions ────────────────────────────────────────────────────────────────
 const saveError = ref('')
+const isSaving = ref(false)
+const isSavingLoc = ref(false)
 
 function handleCancel() {
   emit('update:open', false)
 }
 
-function handleSave() {
+async function handleSave() {
   if (isPicking.value && props.targetCount !== undefined) {
     const total = rows.value.reduce((s, r) => s + (r.counted ?? 0), 0)
     if (total > props.targetCount) {
@@ -486,6 +491,8 @@ function handleSave() {
     }
   }
   saveError.value = ''
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   const committed: CommittedBatch[] = rows.value.map(r => {
     const filledOrigin = r.originLocRows.filter(l => l.locationId && Number(l.qty) > 0)
     const filledDest = r.destLocRows.filter(l => l.locationId && Number(l.qty) > 0)
@@ -566,6 +573,10 @@ function fmtNum(n: number | null): string {
             <template v-else>
               <div v-if="isReceiving" class="mbd-stat">
                 <span class="mbd-stat-label">Purchase qty</span>
+                <span class="mbd-stat-value">{{ (props.targetCount ?? 0).toLocaleString('id-ID') }}</span>
+              </div>
+              <div v-if="isPicking" class="mbd-stat">
+                <span class="mbd-stat-label">To pick qty</span>
                 <span class="mbd-stat-value">{{ (props.targetCount ?? 0).toLocaleString('id-ID') }}</span>
               </div>
               <div
@@ -918,7 +929,7 @@ function fmtNum(n: number | null): string {
       <!-- Footer -->
       <footer class="mbd-footer">
         <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="handleCancel">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="handleSave">Save</button>
+        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</button>
       </footer>
 
     </div>
@@ -1082,7 +1093,7 @@ function fmtNum(n: number | null): string {
 
       <footer class="mbd-loc2-footer">
         <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeBatchLocDrawer">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="saveBatchLocDrawer">Save changes</button>
+        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSavingLoc" @click="saveBatchLocDrawer">{{ isSavingLoc ? 'Saving…' : 'Save changes' }}</button>
       </footer>
     </div>
   </div>

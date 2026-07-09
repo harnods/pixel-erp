@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import {
-  MpBadge, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpBadge, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpCheckbox, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
@@ -12,26 +12,44 @@ import { getWarehouseConfig } from '~/data/warehouseConfig'
 
 const router = useRouter()
 
-// ── Warehouse options (non-default, active) ────────────────────────────────
+// ── Warehouse filter (non-default, active) — multi-select; empty = all warehouses ──
 const wmsWarehouses = computed(() => warehouses.filter(w => w.status === 'active' && !w.isDefault))
 const warehouseOptions = computed(() => wmsWarehouses.value.map(w => ({ value: w.id, label: w.name })))
-const warehouseFilter = ref(wmsWarehouses.value[0]?.id ?? '')
-const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
-
-const config = computed(() => warehouseFilter.value ? getWarehouseConfig(warehouseFilter.value) : null)
-const warehouseDetail = computed(() => warehouseFilter.value ? getWarehouseDetail(warehouseFilter.value) : null)
+const warehouseFilter = ref<string[]>([])
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
+const selectedWarehouses = computed(() =>
+  warehouseFilter.value.length ? wmsWarehouses.value.filter(w => warehouseFilter.value.includes(w.id)) : wmsWarehouses.value,
+)
+const anyRecEnabled = computed(() => selectedWarehouses.value.some(w => getWarehouseConfig(w.id).cycleCountRec))
 
 // ── Columns ─────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'product',   label: 'Product',         width: '260px', sortable: true, sortType: 'text'   },
-  { key: 'sku',       label: 'SKU',             width: '150px', sortable: true, sortType: 'text'   },
-  { key: 'locations', label: 'Storage location',width: '180px' },
-  { key: 'onHand',    label: 'On hand qty',     width: '120px', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'unit',      label: 'Unit',            width: '72px'  },
-  { key: 'reasons',   label: 'Reason',          width: '240px' },
+  { key: 'product',       label: 'Product',       width: '260px', sortable: true, sortType: 'text'   },
+  { key: 'sku',           label: 'SKU',           width: '150px', sortable: true, sortType: 'text'   },
+  { key: 'warehouseName', label: 'Warehouse',     width: '200px', sortable: true, sortType: 'text'   },
+  { key: 'onHand',        label: 'On hand qty',   width: '120px', sortable: true, sortType: 'number', align: 'right' },
+  { key: 'unit',          label: 'Unit',          width: '72px'  },
+  { key: 'score',         label: 'Score',         width: '160px', sortable: true, sortType: 'number', align: 'right' },
+  { key: 'reasons',       label: 'Reason',        width: '240px' },
 ]
 
 // ── Recommendation logic ─────────────────────────────────────────────────────
+// Formula per "[WMS PRD 2] Cycle Count Recommendation — Basic (MVP)":
+//   CountPriorityScore = W_neg × NegativeStockFlag + W_min × MinStockProximity + W_var × VarianceSignal
+//   Weights derive from the active-signal count + order (cycleCountRuleOrder):
+//   3 active → 0.5/0.3/0.2, 2 active → 0.6/0.4, 1 active → 1.0
+const MIN_STOCK_LIMIT = 10 // mirrors the existing "Min. stock" trigger threshold
+
 function hashStr(s: string): number {
   let h = 0
   for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0
@@ -42,6 +60,8 @@ const ALL_REASONS = ['Negative stock', 'Min. stock', 'Variance signal'] as const
 type Reason = typeof ALL_REASONS[number]
 
 interface Recommendation {
+  warehouseId: string
+  warehouseName: string
   product: string  // used for sorting (name)
   sku: string
   name: string
@@ -52,31 +72,64 @@ interface Recommendation {
   onHand: number
   unit: string
   reasons: Reason[]
+  score: number
 }
 
+const WEIGHT_TABLE: Record<number, number[]> = { 3: [0.5, 0.3, 0.2], 2: [0.6, 0.4], 1: [1] }
+const RULE_KEY = { neg: 'cycleCountRuleNeg', min: 'cycleCountRuleMin', var: 'cycleCountRuleVar' } as const
+
 const baseRows = computed<Recommendation[]>(() => {
-  if (!config.value?.cycleCountRec || !warehouseDetail.value) return []
   const results: Recommendation[] = []
-  for (const stock of warehouseDetail.value.stock) {
-    const reasons: Reason[] = []
-    if (config.value.cycleCountRuleNeg && stock.onHand === 0) reasons.push('Negative stock')
-    if (config.value.cycleCountRuleMin && stock.onHand > 0 && stock.onHand < 10) reasons.push('Min. stock')
-    if (config.value.cycleCountRuleVar && hashStr(stock.sku + warehouseFilter.value) % 5 === 0) reasons.push('Variance signal')
-    if (!reasons.length) continue
+  for (const wh of selectedWarehouses.value) {
+    const cfg = getWarehouseConfig(wh.id)
+    if (!cfg.cycleCountRec) continue
+    const detail = getWarehouseDetail(wh.id)
+    if (!detail) continue
 
-    const p = productBySku(stock.sku)
-    results.push({
-      product: stock.name ?? p?.name ?? stock.sku,
-      sku: stock.sku,
-      name: stock.name ?? p?.name ?? stock.sku,
-      photo: p?.img,
-      desc: p?.desc,
+    // Active signals in the user-configured priority order → positional weights.
+    const activeOrder = cfg.cycleCountRuleOrder.filter(r => cfg[RULE_KEY[r]])
+    const weights = WEIGHT_TABLE[activeOrder.length] ?? []
+    const weightFor = (rule: 'neg' | 'min' | 'var') => {
+      const i = activeOrder.indexOf(rule)
+      return i === -1 ? 0 : (weights[i] ?? 0)
+    }
 
-      locations: stock.locations ?? [],
-      onHand: stock.onHand,
-      unit: stock.unit,
-      reasons,
-    })
+    for (const stock of detail.stock) {
+      // Continuous, deterministic normalized variance (0–1) — same source used both to
+      // trigger the "Variance signal" reason and to score, so mock stays coherent.
+      const varianceNorm = (hashStr(stock.sku + wh.id + 'variance') % 101) / 100
+
+      const reasons: Reason[] = []
+      if (cfg.cycleCountRuleNeg && stock.onHand === 0) reasons.push('Negative stock')
+      if (cfg.cycleCountRuleMin && stock.onHand > 0 && stock.onHand < MIN_STOCK_LIMIT) reasons.push('Min. stock')
+      if (cfg.cycleCountRuleVar && varianceNorm > 0.8) reasons.push('Variance signal')
+      if (!reasons.length) continue
+
+      const negativeStockFlag = reasons.includes('Negative stock') ? 1 : 0
+      const minStockProximity = reasons.includes('Min. stock')
+        ? Math.max(0, (MIN_STOCK_LIMIT - stock.onHand) / MIN_STOCK_LIMIT)
+        : 0
+      const score = Math.round(
+        (weightFor('neg') * negativeStockFlag + weightFor('min') * minStockProximity + weightFor('var') * varianceNorm) * 1000,
+      ) / 1000
+
+      const p = productBySku(stock.sku)
+      results.push({
+        warehouseId: wh.id,
+        warehouseName: wh.name,
+        product: stock.name ?? p?.name ?? stock.sku,
+        sku: stock.sku,
+        name: stock.name ?? p?.name ?? stock.sku,
+        photo: p?.img,
+        desc: p?.desc,
+
+        locations: stock.locations ?? [],
+        onHand: stock.onHand,
+        unit: stock.unit,
+        reasons,
+        score,
+      })
+    }
   }
   return results
 })
@@ -90,11 +143,18 @@ const {
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<Recommendation>(baseRows, {
   filterFn: (row, s) => {
-    if (s && !row.sku.toLowerCase().includes(s) && !row.name.toLowerCase().includes(s)) return false
+    if (s
+      && !row.sku.toLowerCase().includes(s)
+      && !row.name.toLowerCase().includes(s)
+      && !row.warehouseName.toLowerCase().includes(s)
+    ) return false
     if (reasonFilter.value && !row.reasons.includes(reasonFilter.value as Reason)) return false
     return true
   },
 })
+
+sortKey.value = 'score'
+sortDir.value = 'desc'
 
 const hasActiveFilter = computed(() => !!search.value || !!reasonFilter.value)
 function clearFilters() { search.value = ''; reasonFilter.value = '' }
@@ -102,11 +162,21 @@ watch([warehouseFilter, reasonFilter], () => setPage(1))
 
 // ── Bulk: create cycle count ──────────────────────────────────────────────────
 function createCycleCount(sel: Set<number>, deselectAll: () => void) {
-  const skus = [...sel].map(i => paginated.value[i]?.sku).filter(Boolean) as string[]
-  if (!skus.length) return
+  const rows = [...sel].map(i => paginated.value[i]).filter(Boolean) as Recommendation[]
+  if (!rows.length) return
+  // A cycle count task is scoped to one warehouse — guard mixed selections instead
+  // of silently picking one (buttons stay clickable; show an error toast per convention).
+  const warehouseIds = new Set(rows.map(r => r.warehouseId))
+  if (warehouseIds.size > 1) {
+    toast.notify({ variant: 'critical', title: 'Select SKUs from a single warehouse to create a cycle count', maxWidth: 'max-content' })
+    return
+  }
+  const skus = rows.map(r => r.sku)
   deselectAll()
-  router.push({ path: '/stock-adjustments/new', query: { type: 'count', preselect: skus.join(','), warehouse: warehouseFilter.value } })
+  router.push({ path: '/stock-adjustments/new', query: { type: 'count', preselect: skus.join(','), warehouse: rows[0]!.warehouseId } })
 }
+
+function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
 
 // ── Badge type ────────────────────────────────────────────────────────────────
 function reasonBadgeType(reason: string): string {
@@ -126,7 +196,7 @@ function reasonBadgeType(reason: string): string {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     :has-active-filter="hasActiveFilter"
-    :has-checkbox="!!config?.cycleCountRec"
+    :has-checkbox="anyRecEnabled"
     bulk-label="SKU"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -137,24 +207,29 @@ function reasonBadgeType(reason: string): string {
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <!-- Warehouse — required selector, drives recommendations -->
-        <MpPopover id="ccr-warehouse-filter" is-close-on-select>
+        <!-- Warehouse — multi-select (checkbox list, mirrors OutgoingIndexPage's Status filter); empty = all warehouses -->
+        <MpPopover id="ccr-warehouse-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="ccr-warehouse-select" :model-value="warehouseFilter"
-              :class="css({ width: '220px' })" @mousedown.prevent
+              id="ccr-warehouse-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '220px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
-              <option :value="warehouseFilter">{{ warehouseLabel }}</option>
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter"
-                @click="warehouseFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`ccr-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
@@ -218,13 +293,23 @@ function reasonBadgeType(reason: string): string {
       </div>
     </template>
 
-    <!-- ── Storage location — word-wrap, first loc + overflow count ── -->
-    <template #cell-locations="{ value }">
-      <span v-if="!(value as string[]).length" class="ccr-loc-empty">—</span>
-      <template v-else>
-        <span class="ccr-loc">{{ (value as string[])[0] }}</span>
-        <span v-if="(value as string[]).length > 1" class="ccr-loc-more">+{{ (value as string[]).length - 1 }}</span>
-      </template>
+    <!-- ── Warehouse — View details chip → warehouse detail (mirrors StockAdjustmentsPage) ── -->
+    <template #cell-warehouseName="{ value, row }">
+      <div class="cell-with-action">
+        <span class="cell-text">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="viewWarehouse((row as any).warehouseId)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
+    </template>
+
+    <!-- ── Score ── -->
+    <template #cell-score="{ value }">
+      {{ (value as number).toFixed(2) }}
     </template>
 
     <!-- ── On hand qty ── -->
@@ -249,12 +334,12 @@ function reasonBadgeType(reason: string): string {
       <div class="empty-full">
         <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">
-          {{ !config?.cycleCountRec ? 'Cycle count recommendation is not enabled' : 'No recommendations' }}
+          {{ !anyRecEnabled ? 'Recommendations not set up' : 'No recommendations' }}
         </p>
         <p class="empty-full-desc">
-          {{ !config?.cycleCountRec
-            ? 'Enable Cycle count recommendation for this warehouse in Warehouse settings to see SKU suggestions here.'
-            : 'All SKUs in this warehouse are within acceptable levels based on the configured rules.' }}
+          {{ !anyRecEnabled
+            ? 'Turn on cycle count recommendations in Warehouse settings to see which SKUs need counting.'
+            : 'All SKUs are within their target stock levels.' }}
         </p>
       </div>
     </template>
@@ -278,6 +363,15 @@ function reasonBadgeType(reason: string): string {
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
 
+/* ── Checkbox multi-select filter list (mirrors OutgoingIndexPage's status-filter-list) ── */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
+
 /* ── Product cell ── */
 .ccr-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); min-width: 0; }
 .ccr-thumb {
@@ -294,14 +388,29 @@ function reasonBadgeType(reason: string): string {
 .ccr-product-name { color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ccr-product-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); margin-top: 2px; }
 
-/* ── Storage location cell ── */
-.ccr-loc { display: block; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
-.ccr-loc-empty { color: var(--mp-text-secondary); }
-.ccr-loc-more { display: inline-block; margin-top: 2px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-
 /* ── Reason badges ── */
 .ccr-reasons { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 
-/* No row hover — rows are not clickable (no view details) */
+/* ── Warehouse cell hover chip (mirrored from StockAdjustmentsPage) ── */
+.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+.cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.row-hover-btn {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
+}
+.row-hover-btn__label {
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+}
+:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 :deep(.erp-tr:hover .erp-td) { background: var(--mp-background-neutral); }
+
+/* ── Empty state ── */
+.empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); max-width: 360px; text-align: center; }
 </style>

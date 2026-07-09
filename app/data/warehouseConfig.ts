@@ -48,6 +48,8 @@ export interface WarehouseConfig {
   cycleCountRuleNeg: boolean
   cycleCountRuleVar: boolean
   cycleCountRuleMin: boolean
+  /** Priority order for recommendation rules — highest priority first. */
+  cycleCountRuleOrder: ('neg' | 'var' | 'min')[]
 }
 
 const DEFAULTS: WarehouseConfig = {
@@ -64,6 +66,7 @@ const DEFAULTS: WarehouseConfig = {
   cycleCountRuleNeg: true,
   cycleCountRuleVar: true,
   cycleCountRuleMin: true,
+  cycleCountRuleOrder: ['neg', 'var', 'min'],
 }
 
 function loadAll(): Record<string, WarehouseConfig> {

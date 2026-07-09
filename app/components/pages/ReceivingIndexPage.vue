@@ -551,8 +551,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-sm);
   font-size: var(--mp-font-sizes-xs); font-family: inherit; color: var(--mp-text-secondary);
 }
-/* Selected task row */
-.rcvg-task-row--selected .rcvg-td { background: var(--mp-background-selected-subtle, #eef6f2); }
 
 .rcvg-td {
   height: var(--mp-sizes-10, 40px);
@@ -572,7 +570,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-th--actions { background: var(--mp-background-neutral-subtle); }
 .rcvg-td--actions { background: var(--mp-background-default, #fff); }
 .rcvg-task-row:hover .rcvg-td--actions { background: var(--mp-background-neutral-subtle); }
-.rcvg-task-row--selected .rcvg-td--actions { background: var(--mp-background-selected-subtle, #eef6f2); }
 /* Shadow only when table is scrolled right */
 .rcvg-table-wrap--scrolled .rcvg-th--actions,
 .rcvg-table-wrap--scrolled .rcvg-td--actions { box-shadow: -1px 0 0 var(--mp-border-default); }
