@@ -7,6 +7,7 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton, MpDatePicker, MpSelect, MpButton, MpBadge, toast, css,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
+  MpFlex, MpText,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
@@ -23,12 +24,18 @@ import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTra
 import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
 import {
-  getWarehouseTeam, addTeamMember, removeTeamMember,
+  getWarehouseTeam, getWarehouseManagers, addTeamMember, removeTeamMember,
   getAvailableUsersForWarehouse,
   type WarehouseTeamMember,
 } from '~/data/warehouseTeam'
 import { TODAY } from '~/data/master'
 import { useUrlModal } from '@ds/proto-review'
+import { activePickingTasksFor, reassignPickingTasks } from '~/data/pickingTasks'
+import { activePackingTasksFor, reassignPackingTasks } from '~/data/packingTasks'
+import { activePutAwayTasksFor, reassignPutAwayTasks } from '~/data/putAwayTasks'
+import { activeReceivingTasksFor, reassignReceivingTasks } from '~/data/receivingTasks'
+import { activeDeliveryTasksFor, reassignDeliveryTasks } from '~/data/deliveryTasks'
+import { activeWmsAdjustmentsFor, reassignWmsAdjustments } from '~/data/wmsStockAdjustments'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -269,6 +276,7 @@ function onLocSaved(parentId: string | null) {
 // in the app are drawn ONLY from a warehouse's Operators (see warehouseTeam.ts). ──
 const teamSearch = ref('')
 const team = computed(() => getWarehouseTeam(props.orderId))
+const warehouseManagers = computed(() => getWarehouseManagers(props.orderId))
 const filteredTeam = computed(() => {
   const q = teamSearch.value.trim().toLowerCase()
   if (!q) return team.value
@@ -307,9 +315,59 @@ async function saveTeamMember() {
   isSaving.value = false
   teamModalOpen.value = false
 }
+const removeTeamModalOpen = ref(false)
+const memberToRemove = ref<WarehouseTeamMember | null>(null)
+const memberActiveTaskCount = ref(0)
+const reassignTargetId = ref('')
+
+function countActiveTasks(memberName: string): number {
+  const wid = props.orderId
+  return (
+    activePickingTasksFor(wid, memberName).length +
+    activePackingTasksFor(wid, memberName).length +
+    activePutAwayTasksFor(wid, memberName).length +
+    activeReceivingTasksFor(wid, memberName).length +
+    activeDeliveryTasksFor(wid, memberName).length +
+    activeWmsAdjustmentsFor(wid, memberName).length
+  )
+}
+
+const reassignOptions = computed(() =>
+  memberToRemove.value
+    ? team.value.filter((m) => m.id !== memberToRemove.value!.id)
+    : []
+)
+
 function onRemoveTeamMember(member: WarehouseTeamMember) {
-  removeTeamMember(member.id)
-  toast.notify({ variant: 'success', title: `${member.name} removed from the team`, maxWidth: 'max-content' })
+  memberToRemove.value = member
+  memberActiveTaskCount.value = countActiveTasks(member.name)
+  reassignTargetId.value = ''
+  removeTeamModalOpen.value = true
+}
+
+function confirmRemoveTeamMember() {
+  if (!memberToRemove.value) return
+  if (memberActiveTaskCount.value > 0 && !reassignTargetId.value) {
+    toast.notify({ variant: 'warning', title: 'Select a team member to reassign tasks to', maxWidth: 'max-content' })
+    return
+  }
+  const wid = props.orderId
+  const fromName = memberToRemove.value.name
+  if (memberActiveTaskCount.value > 0 && reassignTargetId.value) {
+    const toMember = team.value.find((m) => m.id === reassignTargetId.value)
+    if (toMember) {
+      reassignPickingTasks(wid, fromName, toMember.name)
+      reassignPackingTasks(wid, fromName, toMember.name)
+      reassignPutAwayTasks(wid, fromName, toMember.name)
+      reassignReceivingTasks(wid, fromName, toMember.name)
+      reassignDeliveryTasks(wid, fromName, toMember.name)
+      reassignWmsAdjustments(wid, fromName, toMember.name)
+    }
+  }
+  removeTeamMember(memberToRemove.value.id)
+  removeTeamModalOpen.value = false
+  memberToRemove.value = null
+  toast.notify({ variant: 'success', title: `${fromName} removed from the team`, maxWidth: 'max-content' })
 }
 
 const search = ref('')
@@ -716,8 +774,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <div v-for="row in infoRows" :key="row.label" class="wh-info-row">
             <dt class="wh-info-label">{{ row.label }}</dt>
             <dd v-if="row.key === 'pic'" class="wh-info-value">
-              <span v-if="warehouse.pics.length" class="wh-pic-tags">
-                <span v-for="p in warehouse.pics" :key="p.id" class="wh-pic-tag">{{ p.name }}</span>
+              <span v-if="warehouseManagers.length" class="wh-pic-tags">
+                <span v-for="m in warehouseManagers" :key="m.id" class="wh-pic-tag">{{ m.name }}</span>
               </span>
               <template v-else>—</template>
             </dd>
@@ -1560,7 +1618,14 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               is-full-width
               :is-invalid="teamUserError"
               @update:model-value="teamUserError = false"
-            />
+            >
+              <template #default="{ item }">
+                <MpFlex direction="column" gap="0">
+                  <MpText :class="css({ _nextTheme: { color: 'text.default' } })">{{ item.name }}</MpText>
+                  <MpText size="body-small" :class="css({ _nextTheme: { color: 'text.secondary' } })">{{ item.role === 'manager' ? 'Manager' : 'Operator' }}</MpText>
+                </MpFlex>
+              </template>
+            </MpAutocomplete>
             <MpFormErrorMessage>Select a user</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl v-if="selectedTeamUser" id="wh-team-role-display" :class="css({ marginTop: '16px' })">
@@ -1572,6 +1637,65 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--ghost" @click="closeTeamModal">Cancel</button>
             <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTeamMember">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <MpModal
+      id="wh-remove-team-modal"
+      :is-open="removeTeamModalOpen"
+      size="sm"
+      is-close-on-esc
+      is-close-on-overlay-click
+      :is-keep-alive="false"
+      @close="removeTeamModalOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          Remove team member?
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <template v-if="memberActiveTaskCount === 0">
+            <p>{{ memberToRemove?.name }} will be removed from this warehouse's team.</p>
+          </template>
+          <template v-else-if="reassignOptions.length === 0">
+            <p class="remove-team-warn">{{ memberToRemove?.name }} has <strong>{{ memberActiveTaskCount }} active task{{ memberActiveTaskCount > 1 ? 's' : '' }}</strong> that must be completed or cancelled before removal. There are no other team members to reassign to.</p>
+          </template>
+          <template v-else>
+            <p class="remove-team-warn">{{ memberToRemove?.name }} has <strong>{{ memberActiveTaskCount }} active task{{ memberActiveTaskCount > 1 ? 's' : '' }}</strong>. Reassign all tasks before removing.</p>
+            <MpFormControl id="wh-remove-reassign" is-required :class="css({ marginTop: '16px' })">
+              <MpFormLabel>Reassign tasks to</MpFormLabel>
+              <MpAutocomplete
+                id="wh-remove-reassign-ac"
+                v-model="reassignTargetId"
+                :data="reassignOptions"
+                label-prop="name"
+                value-prop="id"
+                placeholder="Select team member"
+                use-portal
+                is-full-width
+              >
+                <template #default="{ item }">
+                  <MpFlex direction="column" gap="0">
+                    <MpText :class="css({ _nextTheme: { color: 'text.default' } })">{{ item.name }}</MpText>
+                    <MpText size="body-small" :class="css({ _nextTheme: { color: 'text.secondary' } })">{{ item.role === 'manager' ? 'Manager' : 'Operator' }}</MpText>
+                  </MpFlex>
+                </template>
+              </MpAutocomplete>
+            </MpFormControl>
+          </template>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="removeTeamModalOpen = false">Cancel</button>
+            <button
+              v-if="memberActiveTaskCount === 0 || reassignOptions.length > 0"
+              class="btn-enterprise btn-enterprise--danger"
+              @click="confirmRemoveTeamMember"
+            >Remove</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1658,6 +1782,12 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: var(--mp-background-neutral-subtle);
   color: var(--mp-text-default);
   font-size: var(--mp-font-sizes-md);
+}
+
+.remove-team-warn {
+  color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md);
+  line-height: 1.5;
 }
 
 .detail-page {

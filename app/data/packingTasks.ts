@@ -425,3 +425,16 @@ export function endPacking(taskId: string, packed?: Record<string, number>): voi
   t.endDate = nowIso();
   persistPacking();
 }
+
+const PACKING_ACTIVE: PackingTask["status"][] = ["open", "in progress"];
+
+export function activePackingTasksFor(warehouseId: string, assignee: string): PackingTask[] {
+  return packingTasks.filter(
+    (t) => t.warehouseId === warehouseId && t.assignee === assignee && (PACKING_ACTIVE as string[]).includes(t.status),
+  );
+}
+
+export function reassignPackingTasks(warehouseId: string, fromName: string, toName: string): void {
+  for (const t of activePackingTasksFor(warehouseId, fromName)) t.assignee = toName;
+  persistPacking();
+}

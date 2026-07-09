@@ -224,4 +224,15 @@ export function updateWmsAdjustment(id: string, input: AdjustmentInput): StockAd
   return a
 }
 
+export function activeWmsAdjustmentsFor(warehouseId: string, assignee: string): StockAdjustment[] {
+  return wmsStockAdjustments.filter(
+    (a) => a.warehouseId === warehouseId && a.assignee === assignee && a.status !== 'completed',
+  );
+}
+
+export function reassignWmsAdjustments(warehouseId: string, fromName: string, toName: string): void {
+  for (const a of activeWmsAdjustmentsFor(warehouseId, fromName)) a.assignee = toName;
+  persist();
+}
+
 export { accountForCategory, accountCodeFor, adjustmentLineItems }

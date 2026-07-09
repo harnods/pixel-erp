@@ -423,5 +423,16 @@ export function listShipments(warehouseIds?: string[]): ShipmentSummary[] {
   });
 }
 
+export function activeDeliveryTasksFor(warehouseId: string, assignee: string): DeliveryTask[] {
+  return deliveryTasks.filter(
+    (t) => t.warehouseId === warehouseId && t.assignee === assignee && t.status === "ready to ship",
+  );
+}
+
+export function reassignDeliveryTasks(warehouseId: string, fromName: string, toName: string): void {
+  for (const t of activeDeliveryTasksFor(warehouseId, fromName)) t.assignee = toName;
+  persistDelivery();
+}
+
 /** Available couriers for the ship form. */
 export const DELIVERY_COURIERS = COURIERS;

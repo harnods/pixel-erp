@@ -702,3 +702,16 @@ export function packableOrderIds(t: PickingTask): string[] {
 export function canCreatePackingFrom(t: PickingTask): boolean {
   return isPickingReadyToPack(t) && packableOrderIds(t).length > 0;
 }
+
+const PICKING_ACTIVE: PickingTask["status"][] = ["open", "in progress", "partially picked"];
+
+export function activePickingTasksFor(warehouseId: string, assignee: string): PickingTask[] {
+  return pickingTasks.filter(
+    (t) => t.warehouseId === warehouseId && t.assignee === assignee && (PICKING_ACTIVE as string[]).includes(t.status),
+  );
+}
+
+export function reassignPickingTasks(warehouseId: string, fromName: string, toName: string): void {
+  for (const t of activePickingTasksFor(warehouseId, fromName)) t.assignee = toName;
+  persistPicking();
+}

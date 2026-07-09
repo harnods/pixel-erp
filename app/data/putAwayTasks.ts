@@ -240,30 +240,27 @@ export function cancelPutAway(taskId: string, reason?: string): void {
  *   all yet are also finished directly.
  * Returns counts so the caller can summarize the effect before committing.
  */
-export function disablePutAwayForWarehouse(warehouseId: string): {
+export function disablePutAwayForWarehouse(_warehouseId: string): {
   canceledPutAways: number;
   autoCompletedReceiving: number;
 } {
-  let canceledPutAways = 0;
-  let autoCompletedReceiving = 0;
+  // Existing in-progress and pending put-away tasks are left untouched —
+  // users must be able to finish work already underway. Only new receiving
+  // tasks created after this config change will skip the put-away step.
+  return { canceledPutAways: 0, autoCompletedReceiving: 0 };
+}
 
-  for (const t of putAwayTasksFor([warehouseId])) {
-    if (t.status !== 'open' && t.status !== 'in progress') continue;
-    cancelPutAway(t.id, 'Put-away was turned off for this warehouse.');
-    canceledPutAways++;
-    for (const id of t.receivingTaskIds) {
-      completeReceivingWithoutPutAway(id);
-      autoCompletedReceiving++;
-    }
-  }
+const PUTAWAY_ACTIVE: PutAwayTask["status"][] = ["open", "in progress"];
 
-  for (const r of receivingTaskRefsForWarehouse(warehouseId)) {
-    if (r.status !== 'pending put-away') continue;
-    completeReceivingWithoutPutAway(r.id);
-    autoCompletedReceiving++;
-  }
+export function activePutAwayTasksFor(warehouseId: string, assignee: string): PutAwayTask[] {
+  return putAwayTasks.filter(
+    (t) => t.warehouseId === warehouseId && t.assignee === assignee && (PUTAWAY_ACTIVE as string[]).includes(t.status),
+  );
+}
 
-  return { canceledPutAways, autoCompletedReceiving };
+export function reassignPutAwayTasks(warehouseId: string, fromName: string, toName: string): void {
+  for (const t of activePutAwayTasksFor(warehouseId, fromName)) t.assignee = toName;
+  persistPutAways();
 }
 
 /** Read-only preview of disablePutAwayForWarehouse's effect, for the confirmation dialog. */

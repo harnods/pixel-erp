@@ -624,4 +624,17 @@ export function receivedSummaryForReceipt(
   return out;
 }
 
+const RECEIVING_ACTIVE: ReceivingTask["status"][] = ["open", "in progress", "pending put-away"];
+
+export function activeReceivingTasksFor(warehouseId: string, assignee: string): ReceivingTask[] {
+  return receivingTasks.filter(
+    (t) => t.warehouseId === warehouseId && t.assignee === assignee && (RECEIVING_ACTIVE as string[]).includes(t.status),
+  );
+}
+
+export function reassignReceivingTasks(warehouseId: string, fromName: string, toName: string): void {
+  for (const t of activeReceivingTasksFor(warehouseId, fromName)) t.assignee = toName;
+  persistTasks();
+}
+
 initInbound();

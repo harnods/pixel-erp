@@ -178,35 +178,50 @@ const toggleConfirmTitle = computed(() => {
   return toggleConfirmNextValue.value ? `Turn on ${label} for this warehouse?` : `Turn off ${label} for this warehouse?`
 })
 
-function joinParts(parts: string[]): string {
-  return parts.length ? ` ${parts.join(' and ')}.` : ''
-}
-
-const toggleConfirmBody = computed(() => {
+const toggleConfirmItems = computed((): string[] => {
   const field = toggleConfirmField.value
-  if (!field) return ''
+  if (!field) return []
   const turningOn = toggleConfirmNextValue.value
 
   if (field === 'putAwayEnabled') {
     if (turningOn) {
-      return "New receiving tasks in this warehouse will need a put-away step again. Already-completed transactions aren't affected."
+      return [
+        'New receiving tasks will require a put-away step before completing.',
+        'Existing tasks in progress are not affected by this change.',
+        "Already-completed transactions aren't affected.",
+      ]
     }
     const { openPutAways, pendingReceiving } = previewDisablePutAway(props.orderId)
     const parts: string[] = []
-    if (openPutAways > 0) parts.push(`${openPutAways} in-progress put-away task${openPutAways === 1 ? '' : 's'} will be canceled right away`)
-    if (pendingReceiving > 0) parts.push(`${pendingReceiving} receiving task${pendingReceiving === 1 ? '' : 's'} awaiting put-away will be marked complete right away`)
-    return `New receiving tasks will skip put-away and complete immediately.${joinParts(parts)} Already-completed put-away tasks aren't affected.`
+    if (openPutAways > 0) parts.push(`${openPutAways} put-away task${openPutAways === 1 ? '' : 's'} in progress`)
+    if (pendingReceiving > 0) parts.push(`${pendingReceiving} receiving task${pendingReceiving === 1 ? '' : 's'} awaiting put-away`)
+    const existingNote = parts.length > 0
+      ? `There ${parts.join(' and ')} — ${parts.length === 1 ? 'it' : 'they'} can still be completed normally.`
+      : 'No tasks are currently in progress or awaiting put-away.'
+    return [
+      'New receiving tasks will skip put-away and complete immediately.',
+      existingNote,
+      "Already-completed put-away tasks aren't affected.",
+    ]
   }
 
   // pickingEnabled
   if (turningOn) {
-    return "New outbound orders in this warehouse will need a picking step again. Already-completed transactions aren't affected."
+    return [
+      'New outbound orders will require a picking step before packing.',
+      'Existing tasks in progress are not affected by this change.',
+      "Already-completed transactions aren't affected.",
+    ]
   }
   const { openPickings } = previewDisablePicking(props.orderId)
-  const parts = openPickings > 0
-    ? [`${openPickings} in-progress picking task${openPickings === 1 ? '' : 's'} will be canceled right away`]
-    : []
-  return `New outbound orders will skip picking and go straight to packing.${joinParts(parts)} Already-completed picking tasks aren't affected.`
+  const pickingNote = openPickings > 0
+    ? `${openPickings} in-progress picking task${openPickings === 1 ? '' : 's'} will be canceled immediately.`
+    : 'No picking tasks are currently in progress.'
+  return [
+    'New outbound orders will skip picking and go straight to packing.',
+    pickingNote,
+    "Already-completed picking tasks aren't affected.",
+  ]
 })
 </script>
 
@@ -458,7 +473,7 @@ const toggleConfirmBody = computed(() => {
     <MpModal
       id="cw-toggle-confirm-dialog"
       :is-open="toggleConfirmOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       @close="cancelToggleConfirm"
@@ -469,7 +484,9 @@ const toggleConfirmBody = computed(() => {
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
-          <p class="cw-dialog-body">{{ toggleConfirmBody }}</p>
+          <ul class="cw-dialog-list">
+            <li v-for="item in toggleConfirmItems" :key="item">{{ item }}</li>
+          </ul>
         </MpModalBody>
         <MpModalFooter>
           <button class="btn-enterprise btn-enterprise--ghost" @click="cancelToggleConfirm">Cancel</button>
@@ -551,7 +568,7 @@ const toggleConfirmBody = computed(() => {
 
 .cw-toggle-list { grid-column: 1 / 7; display: flex; flex-direction: column; }
 .cw-subsection-title { margin: 0; padding: var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cw-subsection-title--spaced { margin-top: var(--mp-spacing-3); }
+.cw-subsection-title--spaced { margin-top: var(--mp-spacing-4); padding-top: var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .cw-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; }
 .cw-toggle-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
 .cw-toggle-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -561,6 +578,7 @@ const toggleConfirmBody = computed(() => {
 .cw-action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .cw-dialog-body { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cw-dialog-list { margin: 0; padding-left: var(--mp-spacing-5); list-style-type: disc; display: flex; flex-direction: column; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 .cw-section--spaced { margin-top: var(--mp-spacing-6); padding-top: var(--mp-spacing-6); border-top: 1px solid var(--mp-border-default); }
 
