@@ -251,6 +251,19 @@ const MULTI_CATEGORIES: Record<string, string[]> = {
   '3002': ['Accessory', 'Maintenance', 'Cleaning'],
 }
 
+// A handful of (warehouse, SKU) pairs whose generated on-hand formula happens to
+// land below the total demand of every currently-pickable seed order for that SKU
+// in that warehouse — floored here (with a small buffer above known demand) so a
+// demo never hits a genuine out-of-stock/short-reservation during picking. Audited
+// against outgoingOrders' seeded demand; revisit if the order seed ever changes.
+const MIN_ONHAND_OVERRIDE: Record<string, number> = {
+  'wh-002::2001': 8,  // demand 5
+  'wh-010::2201': 12, // demand 9
+  'wh-010::2101': 10, // demand 7
+  'wh-009::1105': 10, // demand 7
+  'wh-003::2103': 9,  // demand 6
+}
+
 // Deterministic ISO date `days` before TODAY — used for created-at fields so the
 // "created date" selection rule has real, stable data to sort on.
 function daysAgoIso(days: number): string {
@@ -348,7 +361,7 @@ function reconcileSerialQty(item: WarehouseStockItem): void {
  * and pricing come from the DB; per-warehouse figures (on hand, reserved, bins,
  * batches, serials) are generated here.
  */
-function generateStock(products: Product[], seed: number): WarehouseStockItem[] {
+function generateStock(products: Product[], seed: number, warehouseId: string): WarehouseStockItem[] {
   const out: WarehouseStockItem[] = []
   // The warehouse's own assortment (a deterministic random subset), so its Products tab
   // shows exactly what orders sourced from it draw on — never a mismatched SKU.
@@ -359,10 +372,13 @@ function generateStock(products: Product[], seed: number): WarehouseStockItem[] 
     // Serialized hardware (machines, grinders): each unit is individually tracked, so
     // realistic warehouse qty stays small — 1 to 9 units. Every other SKU (consumables,
     // accessories) is capped at 25 — no warehouse stocks hundreds/thousands of one SKU.
+    // Floored by MIN_ONHAND_OVERRIDE for the few pairs where that range undershoots
+    // actual seeded order demand.
     const isSerial = isSerialized(c.category)
-    const onHand = isSerial
+    const onHandBase = isSerial
       ? ((i * 7 + seed * 3 + 2) % 9) + 1
       : ((i * 53 + seed * 7 + 17) % 21) + 5
+    const onHand = Math.max(onHandBase, MIN_ONHAND_OVERRIDE[`${warehouseId}::${c.sku}`] ?? 0)
     const reservedRaw = isSerial
       ? (((i * 5 + seed * 2) % 4 === 0) ? 0 : (i + seed) % 4)
       : (onHand > 8 ? (i * 13 + seed) % Math.max(1, Math.floor(onHand / 3)) : 0)
@@ -421,7 +437,7 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   if (!wh) return undefined
   // stock rows = the warehouse's own assortment (deterministic random subset), which is
   // exactly `skuTotal` distinct products.
-  const stock = generateStock(warehouseProducts(id), seedFromId(id))
+  const stock = generateStock(warehouseProducts(id), seedFromId(id), id)
   // Assign each product the REAL storage-tree bin it occupies (leaves tile the stock
   // array 1:1), so a product/batch/serial's location always matches the location you
   // opened it from — no more "Rack 03 contains an item tagged Rack 05".

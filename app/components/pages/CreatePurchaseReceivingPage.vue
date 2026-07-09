@@ -470,11 +470,10 @@ function handleCreate() {
 .pr-th--action { width: 56px; }
 
 .pr-td {
-  height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .pr-col--num { width: 110px; }
 .pr-td--num {

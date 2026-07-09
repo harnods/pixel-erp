@@ -11,7 +11,7 @@ import {
   autoSelectSerials,
   reserveStock,
   releaseReservationsForTask,
-  hasReservationsForTask,
+  getReservationsForOrder,
 } from './warehouseDetails'
 
 /** Outbound order status. */
@@ -310,12 +310,18 @@ function generateCanceled(count = 7): OutgoingOrder[] {
 
 /**
  * Reserve this order's batch/serial-tracked SKU lines against the warehouse's
- * *current* selection rules (batch/serial/location, from Settings) — called once,
- * the moment an order becomes reservable (bootstrap below for already-open seed
- * orders, or addOutgoing() for a live-created one). Non-retroactive by construction:
- * whatever rule is live right now is what gets locked in for this order, and this
- * never runs again for it. Plain (non-batch/non-serial) SKUs are left unreserved —
- * same pre-existing boundary as picking-time reservation had.
+ * *current* selection rules (batch/serial/location, from Settings) — the moment an
+ * order becomes reservable (bootstrap below for already-open seed orders, or
+ * addOutgoing() for a live-created one). Idempotent PER (order, sku), and
+ * quantity-aware, not just existence-based: a line whose already-reserved qty
+ * already meets its demand is left untouched (non-retroactive — whatever rule was
+ * live when it first reserved stays locked in), but a line that's still SHORT (fully
+ * unreserved, or only partially reserved from an earlier pass that ran out of stock,
+ * or from an older build with a gap) gets topped up for exactly the shortfall, every
+ * call — so safe to call unconditionally on every load rather than gating the whole
+ * order or trusting "any reservation exists" as "fully reserved". Plain (non-batch/
+ * non-serial) SKUs are left unreserved — same pre-existing boundary as picking-time
+ * reservation had.
  */
 function reserveOrder(order: OutgoingOrder): void {
   const wh = getWarehouseDetail(order.warehouseId);
@@ -324,13 +330,29 @@ function reserveOrder(order: OutgoingOrder): void {
   for (const line of orderSkuLines(order)) {
     const item = wh.stock.find((s) => s.sku === line.sku);
     if (!item) continue;
-    const preferredLocations = autoSelectLocationBins(order.warehouseId, line.sku, line.qty).map((b) => b.location);
+    // Only count a reservation record toward "already covered" if it still points at
+    // a batch/serial that actually exists on this item — a record left dangling by an
+    // earlier data shape (renamed/renumbered batch, re-seeded serials, etc.) would
+    // otherwise silently block this line from ever getting a real reservation, while
+    // never showing up as reserved anywhere (Warehouse Details included).
+    const already = getReservationsForOrder(order.id, line.sku).reduce((sum, r) => {
+      if (r.batchNo) return item.batches?.some((b) => b.batchNo === r.batchNo) ? sum + r.qty : sum;
+      if (r.serials?.length) {
+        const valid = r.serials.filter((sn) =>
+          item.serials?.available.some((u) => u.serial === sn) || item.serials?.reserved.some((u) => u.serial === sn));
+        return sum + valid.length;
+      }
+      return sum;
+    }, 0);
+    const remaining = line.qty - already;
+    if (remaining <= 0) continue;
+    const preferredLocations = autoSelectLocationBins(order.warehouseId, line.sku, remaining).map((b) => b.location);
     if (item.batches?.length) {
-      for (const b of autoSelectBatches(order.warehouseId, line.sku, line.qty, preferredLocations)) {
+      for (const b of autoSelectBatches(order.warehouseId, line.sku, remaining, preferredLocations)) {
         picks.push({ sku: line.sku, batchNo: b.batchNo, qty: b.take });
       }
     } else if (item.serials) {
-      const serials = autoSelectSerials(order.warehouseId, line.sku, line.qty, preferredLocations);
+      const serials = autoSelectSerials(order.warehouseId, line.sku, remaining, preferredLocations);
       if (serials.length) picks.push({ sku: line.sku, qty: serials.length, serials });
     }
   }
@@ -351,15 +373,24 @@ export const outgoingOrders = reactive<OutgoingOrder[]>(
 // pickingTasks.canPickOrder.)
 const PICKABLE_STATUSES = ["open", "in progress"];
 
-// Bootstrap-reserve every currently pickable (open / in-process) order once — stands
-// in for "reserve when the SO enters Requests" since there's no live SO-creation flow
-// yet (addOutgoing() below covers that path). An "in progress" seed order is one that
-// already had picking activity start on some of its SKUs before the app "boots" — it
-// still needs its own reservation, same as if it were still "open". Guarded by
-// hasReservationsForTask so a page reload never double-reserves an already-covered order.
-for (const o of outgoingOrders) {
-  if (PICKABLE_STATUSES.includes(o.status) && !hasReservationsForTask(o.id)) reserveOrder(o);
+/**
+ * Reserve every currently pickable (open / in-process) order — stands in for
+ * "reserve when the SO enters Requests" since there's no live SO-creation flow yet
+ * (addOutgoing() below covers that path). Idempotent (reserveOrder() is itself a
+ * per-(order,sku) no-op once fully reserved), so safe to call repeatedly — not just
+ * once at module load. This matters because a seed order's status isn't fully
+ * settled until syncOutboundOrderStatuses() runs (it can flip a "completed" seed
+ * label with no real task chain back to "open") — calling this again after that
+ * sync catches any order that just became pickable, instead of only ever seeing
+ * whatever status it had at the very first module evaluation.
+ */
+export function reserveAllPickableOrders(): void {
+  for (const o of outgoingOrders) {
+    if (PICKABLE_STATUSES.includes(o.status)) reserveOrder(o);
+  }
 }
+
+reserveAllPickableOrders();
 
 /** Orders with a pre-wired shipped chain — consumed by the task seeds. `partial`
  *  short-picks the last SKU so the order lands on "partially shipped". */

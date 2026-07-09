@@ -915,7 +915,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default);
-  vertical-align: middle;
+  vertical-align: top;
   background: var(--mp-background-neutral-subtle);
 }
 .wtf-td:last-child { border-right: none; }
@@ -927,7 +927,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-avail { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .wtf-avail-after { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 /* Editable cells — white, control fills edge-to-edge, focus ring */
-.wtf-td--input { padding: 0; vertical-align: middle; background: var(--mp-background-neutral, #fff); }
+.wtf-td--input { padding: 0; vertical-align: top; background: var(--mp-background-neutral, #fff); }
 /* Native qty input fills the cell; the cell's focus ring is the ONLY border. */
 .wtf-qty-input {
   width: 100%; text-align: right;
@@ -941,7 +941,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 
 /* Product cell — a changeable combobox: rich trigger [photo | name/desc | chevron]. */
-.wtf-td--prod { padding: 0; background: var(--mp-background-neutral, #fff); vertical-align: middle; }
+.wtf-td--prod { padding: 0; background: var(--mp-background-neutral, #fff); vertical-align: top; }
 .wtf-td--prod:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 .wtf-prod-trigger {
   display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%;
@@ -1077,7 +1077,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-loc-th--del { padding: 0; }
 .wtf-loc-tr .wtf-loc-td { border-bottom: 1px solid var(--mp-border-default); }
 .wtf-loc-tr:last-child .wtf-loc-td { border-bottom: none; }
-.wtf-loc-td { background: var(--mp-background-neutral, #fff); padding: 0; vertical-align: middle; }
+.wtf-loc-td { background: var(--mp-background-neutral, #fff); padding: 0; vertical-align: top; }
 .wtf-loc-td--sel:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 .wtf-loc-td--qty { text-align: right; }
 .wtf-loc-td--qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }

@@ -298,7 +298,6 @@ const toggleConfirmBody = computed(() => {
             <div class="cw-toggle-info">
               <span class="cw-toggle-title">Storage location priority</span>
               <span class="cw-toggle-desc">WMS reserves from the highest-priority location with available stock when an outbound doesn't already specify one.</span>
-              <span class="cw-rule-summary">{{ locationPrioritySummary }}</span>
             </div>
             <button
               v-if="isEditing && storageLeaves.length"
@@ -307,6 +306,11 @@ const toggleConfirmBody = computed(() => {
             >
               Manage priority
             </button>
+          </div>
+
+          <div class="cw-sub-row">
+            <span class="cw-sub-label">Priority order</span>
+            <span class="cw-sub-value">{{ locationPrioritySummary }}</span>
           </div>
 
           <h3 class="cw-subsection-title cw-subsection-title--spaced">Inbound delivery</h3>
@@ -365,7 +369,7 @@ const toggleConfirmBody = computed(() => {
           <template v-if="draft.cycleCountRec">
 
             <!-- Recommendation rules (drag to reorder priority when editing) -->
-            <div class="cw-rec-group">
+            <div class="cw-rec-group" :class="{ 'cw-rec-group--editing': isEditing }">
               <span class="cw-rec-group-label">Recommendation rules</span>
 
               <div
@@ -552,7 +556,6 @@ const toggleConfirmBody = computed(() => {
 .cw-toggle-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
 .cw-toggle-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cw-toggle-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.cw-rule-summary { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 
 .cw-action-bar { grid-column: 1 / 7; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); }
 .cw-action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -579,10 +582,10 @@ const toggleConfirmBody = computed(() => {
 .cw-rec-group {
   display: flex; flex-direction: column;
   margin: var(--mp-spacing-1) 0;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-1);
+  padding: var(--mp-spacing-3) 0 var(--mp-spacing-1) var(--mp-spacing-4);
   border-left: 2px solid var(--mp-border-default);
-  margin-left: var(--mp-spacing-2);
 }
+.cw-rec-group--editing { border-left: none; }
 .cw-rec-group-label {
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-subtle); text-transform: uppercase; letter-spacing: 0.4px;

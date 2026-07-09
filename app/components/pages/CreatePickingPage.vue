@@ -799,9 +799,9 @@ async function handleCreate() {
             <div v-if="loadingMore" class="pk-loading pk-items-loading">
               <MpSpinner size="sm" /> Loading SKUs…
             </div>
-          </div>
-          <div class="pk-items-count">
-            <span>Showing {{ visibleRows.length }} of {{ pickRows.length }} SKUs</span>
+            <div class="pk-items-count">
+              <span>Showing {{ visibleRows.length }} of {{ pickRows.length }} SKUs</span>
+            </div>
           </div>
         </section>
       </div>
@@ -809,7 +809,7 @@ async function handleCreate() {
     </div><!-- /detail-stage -->
 
     <!-- ── Sticky footer ── -->
-    <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
+    <footer class="detail-footer" :class="{ 'detail-footer--floating': itemsOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goPicking">Cancel</MpButton>
       <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
@@ -863,9 +863,10 @@ async function handleCreate() {
   color: var(--mp-text-default);
 }
 .detail-stage {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  flex: 1; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column;
   background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
-  padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
+  padding: 0 var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
 }
 .detail-footer {
@@ -878,7 +879,7 @@ async function handleCreate() {
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 /* ── Section / form grid ─────────────────────────────────────────────────────── */
-.pk-section { margin-bottom: var(--mp-spacing-6); }
+.pk-section { margin-bottom: var(--mp-spacing-6); flex-shrink: 0; }
 .pk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--mp-spacing-4); max-width: 558px; }
 .pk-assignee-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .pk-assignee-avatar {
@@ -905,7 +906,7 @@ async function handleCreate() {
 
 /* ── Sections ────────────────────────────────────────────────────────────────── */
 .pk-tasks-section { margin-bottom: var(--mp-spacing-6); }
-.pk-sku-section { margin-bottom: var(--mp-spacing-6); }
+.pk-sku-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .pk-tasks-error {
   margin: 0 0 var(--mp-spacing-3) 0;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c0392b);
@@ -931,7 +932,6 @@ async function handleCreate() {
 
 /* ── Rows ────────────────────────────────────────────────────────────────────── */
 .pk-td {
-  height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
@@ -960,12 +960,12 @@ async function handleCreate() {
 .pk-short { color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-semi-bold); }
 
 /* ── Picking list table ──────────────────────────────────────────────────────── */
-.pk-items-section { display: flex; flex-direction: column; }
+.pk-items-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .pk-items-section--bordered {
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-lg); overflow: hidden;
 }
-.pk-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.pk-items-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; }
 .pk-items-sentinel { height: 1px; }
 .pk-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
 .pk-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
@@ -997,7 +997,7 @@ async function handleCreate() {
 .pk-items .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
 .pk-items .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .pk-qty-input {
-  display: block; width: 100%; height: 100%; box-sizing: border-box; text-align: right;
+  display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box; text-align: right;
   padding: 0 var(--mp-spacing-2);
   border: none; background: transparent; color: var(--mp-text-default);
   font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none;
@@ -1014,7 +1014,7 @@ async function handleCreate() {
 
 .pk-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .pk-batch-qty-input {
-  display: block; width: 100%; height: 100%; box-sizing: border-box;
+  display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box;
   padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   text-align: right; font-variant-numeric: tabular-nums;

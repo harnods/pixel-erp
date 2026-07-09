@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  MpButton, MpAutocomplete, MpDatePicker, MpIcon,
+  MpButton, MpAutocomplete, MpDatePicker, MpIcon, MpSpinner,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css, toast,
 } from '@mekari/pixel3'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
-import { getDeliveryTask, handoverToCourierBulk, type DeliveryTask } from '~/data/deliveryTasks'
+import ScanBar from '~/components/patterns/ScanBar.vue'
+import {
+  getDeliveryTask, findReadyToShipByPackingNo, findReadyToShipByPackingNoAnyWarehouse,
+  handoverToCourierBulk, type DeliveryTask,
+} from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { scrollToFirstError } from '~/utils/form'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
@@ -23,12 +27,14 @@ function toISODate(display: string) {
 }
 const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 
-// ─── Source deliveries — bulk-selected on the Delivery index, all one warehouse ──
-const deliveryIds = computed<string[]>(() =>
+// ─── Source deliveries — bulk-selected on the Delivery index, all one warehouse.
+// Also extendable here by scanning a packing no. (same behavior as New shipment). ──
+const initialDeliveryIds = computed<string[]>(() =>
   (route.query.deliveryIds as string | undefined)?.split(',').map(s => s.trim()).filter(Boolean) ?? [],
 )
+const taskIds = ref<string[]>(initialDeliveryIds.value)
 const tasks = computed<DeliveryTask[]>(() =>
-  deliveryIds.value
+  taskIds.value
     .map(id => getDeliveryTask(id))
     .filter((t): t is DeliveryTask => !!t && t.status === 'ready to ship'),
 )
@@ -38,19 +44,83 @@ const warehouseAc = computed(() => tasks.value[0] ? [{ id: tasks.value[0]!.wareh
 const warehouseId = ref('')
 watch(tasks, (ts) => { warehouseId.value = ts[0]?.warehouseId ?? '' }, { immediate: true })
 
-interface Row { id: string; salesNo: string; taskNo: string; source: string; isMarketplace: boolean; skuQty: number; toShipQty: number }
+interface Row { id: string; salesNo: string; packingTaskNo: string; source: string; isMarketplace: boolean; skuQty: number; toShipQty: number }
 const rows = computed<Row[]>(() => tasks.value.map((t) => {
   const order = outgoingOrders.find(o => o.id === t.salesOrderId)
   return {
     id: t.id,
     salesNo: t.salesNo,
-    taskNo: t.taskNo,
+    packingTaskNo: t.packingTaskNo,
     source: order?.source ?? '',
     isMarketplace: isMarketplaceOrder(order),
     skuQty: t.skuQty,
     toShipQty: t.toShipQty,
   }
 }))
+
+// ─── Progressive pagination for the deliveries table (mirrors CreatePutAwayPage) ──
+const PAGE_SIZE = 10
+const shownCount = ref(PAGE_SIZE)
+const loadingMore = ref(false)
+const pagedRows = computed<Row[]>(() => rows.value.slice(0, shownCount.value))
+const hasMoreRows = computed(() => shownCount.value < rows.value.length)
+const isProgressive = computed(() => rows.value.length > PAGE_SIZE)
+
+function loadMoreRows(): void {
+  if (loadingMore.value || !hasMoreRows.value) return
+  loadingMore.value = true
+  setTimeout(() => {
+    shownCount.value = Math.min(shownCount.value + PAGE_SIZE, rows.value.length)
+    loadingMore.value = false
+  }, 400)
+}
+
+const itemsScrollEl = ref<HTMLElement | null>(null)
+const itemsSentinelEl = ref<HTMLElement | null>(null)
+let itemsObserver: IntersectionObserver | null = null
+function setupItemsObserver(): void {
+  itemsObserver?.disconnect()
+  if (!itemsScrollEl.value || !itemsSentinelEl.value) return
+  itemsObserver = new IntersectionObserver(
+    (entries) => { if (entries[0]?.isIntersecting) loadMoreRows() },
+    { root: itemsScrollEl.value, rootMargin: '0px 0px 120px 0px' },
+  )
+  itemsObserver.observe(itemsSentinelEl.value)
+}
+onMounted(() => { nextTick(setupItemsObserver) })
+onUnmounted(() => { itemsObserver?.disconnect() })
+
+// ─── Add more by scanning a packing no. — same match/flash behavior as New shipment,
+// scoped to this handover's (already-locked) warehouse. ─────────────────────────
+const flashRowId = ref<string | null>(null)
+function handleScan(raw: string) {
+  const value = raw.trim()
+  if (!value) return
+  const match = findReadyToShipByPackingNo(warehouseId.value, value)
+  if (!match) {
+    const elsewhere = findReadyToShipByPackingNoAnyWarehouse(value)
+    if (elsewhere) {
+      toast.notify({
+        variant: 'error',
+        title: `"${value}" belongs to ${elsewhere.warehouseName}, not ${warehouseName.value}`,
+        maxWidth: 'max-content',
+      })
+    } else {
+      toast.notify({ variant: 'error', title: `Barcode not found: "${value}"`, maxWidth: 'max-content' })
+    }
+    return
+  }
+  if (taskIds.value.includes(match.id)) {
+    toast.notify({ variant: 'error', title: 'Already added to this handover', maxWidth: 'max-content' })
+    return
+  }
+  taskIds.value = [...taskIds.value, match.id]
+  // Keep the newly-scanned row within the shown page so its flash is visible,
+  // instead of resetting pagination (which would hide it behind "load more").
+  shownCount.value = Math.max(shownCount.value, rows.value.length)
+  flashRowId.value = match.id
+  setTimeout(() => { if (flashRowId.value === match.id) flashRowId.value = null }, 700)
+}
 
 // ─── Assignee + transaction date/no. ──────────────────────────────────────────
 // Choices are scoped to this handover's warehouse — only its Operators are valid.
@@ -103,7 +173,7 @@ async function handleSave() {
   if (!hasSource.value || !validate()) { scrollToFirstError(); return }
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
-  const { shipmentSeq } = handoverToCourierBulk(deliveryIds.value, {
+  const { shipmentSeq } = handoverToCourierBulk(taskIds.value, {
     assignee: assigneeLabel.value,
     transactionDate: toISODate(transactionDate.value),
     courierByTaskId: Object.fromEntries(rows.value.map(r => [r.id, courierByRow.value[r.id]?.trim() ?? ''])),
@@ -223,8 +293,10 @@ async function handleSave() {
             </div>
           </div>
 
-          <section class="ho-items-section">
-            <div class="ho-items-scroll">
+          <ScanBar placeholder="Scan packing no..." class="ns-scanbar" @scan="handleScan" />
+
+          <section class="ho-items-section" :class="{ 'ho-items-section--bordered': isProgressive }">
+            <div ref="itemsScrollEl" class="ho-items-scroll">
               <table class="ho-items">
                 <colgroup>
                   <col style="width: 16%" />
@@ -238,7 +310,7 @@ async function handleSave() {
                 <thead>
                   <tr>
                     <th class="ho-th">Sales order no.</th>
-                    <th class="ho-th">Delivery no.</th>
+                    <th class="ho-th">Packing no.</th>
                     <th class="ho-th">Source</th>
                     <th class="ho-th ho-th--num">SKU qty</th>
                     <th class="ho-th ho-th--num">To ship qty</th>
@@ -247,9 +319,14 @@ async function handleSave() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in rows" :key="row.id" class="ho-item-row">
+                  <tr
+                    v-for="row in pagedRows"
+                    :key="row.id"
+                    class="ho-item-row"
+                    :class="{ 'ho-item-row--flash': flashRowId === row.id }"
+                  >
                     <td class="ho-td">{{ row.salesNo }}</td>
-                    <td class="ho-td">{{ row.taskNo }}</td>
+                    <td class="ho-td">{{ row.packingTaskNo }}</td>
                     <td class="ho-td"><SourceLabel :source="row.source" /></td>
                     <td class="ho-td ho-td--num">{{ formatNum(row.skuQty) }}</td>
                     <td class="ho-td ho-td--num">{{ formatNum(row.toShipQty) }}</td>
@@ -276,6 +353,13 @@ async function handleSave() {
                   </tr>
                 </tbody>
               </table>
+              <div ref="itemsSentinelEl" class="ho-items-sentinel" aria-hidden="true" />
+              <div v-if="loadingMore" class="ho-loading ho-items-loading">
+                <MpSpinner size="sm" /> Loading deliveries…
+              </div>
+            </div>
+            <div v-if="isProgressive" class="ho-items-count">
+              Showing {{ pagedRows.length }} of {{ rows.length }} deliveries
             </div>
           </section>
           <p v-if="showRowErrors && rows.some(r => rowCourierInvalid(r) || rowTrackingInvalid(r))" class="ho-error">
@@ -361,8 +445,11 @@ async function handleSave() {
 .ho-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ho-error { margin: var(--mp-spacing-3) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c0392b); }
 
+.ns-scanbar { margin-bottom: var(--mp-spacing-4); }
+
 /* ── Items table (form-table look: grey read-only cells, white editable cell) ── */
-.ho-items-section { display: flex; flex-direction: column; border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
+.ho-items-section { display: flex; flex-direction: column; }
+.ho-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
 .ho-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .ho-items { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .ho-items thead .ho-th { position: sticky; top: 0; z-index: 1; }
@@ -376,10 +463,9 @@ async function handleSave() {
 }
 .ho-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .ho-td {
-  height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
   background: var(--mp-background-neutral-subtle);
 }
 .ho-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
@@ -387,12 +473,31 @@ async function handleSave() {
 .ho-td--input { padding: 0; background: var(--mp-background-neutral); }
 .ho-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .ho-text-input {
-  display: block; width: 100%; height: 100%; box-sizing: border-box;
+  display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box;
   padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .ho-text-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
 .ho-text-input::placeholder { color: var(--mp-text-placeholder); }
+
+/* Newly-scanned row flash (~700ms), same idea as New shipment / receiving / put-away */
+.ho-item-row--flash .ho-td { animation: ho-row-flash 700ms ease-out; }
+@keyframes ho-row-flash {
+  0% { background: var(--mp-background-success-subtle, #e3f6ec); }
+  100% { background: transparent; }
+}
+
+/* Progressive pagination — sentinel + loading + count (mirrors CreatePutAwayPage) */
+.ho-items-sentinel { height: 1px; }
+.ho-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
+.ho-loading {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-md);
+}
+.ho-items-count {
+  padding: var(--mp-spacing-3) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+}
 
 /* ── Empty state ─────────────────────────────────────────────────────────── */
 .ho-empty {

@@ -1,4 +1,4 @@
-import { outgoingOrders } from "./outgoing";
+import { outgoingOrders, reserveAllPickableOrders } from "./outgoing";
 import { getPickingForOrder } from "./pickingTasks";
 import { getPackingForOrder } from "./packingTasks";
 import { deliveryTasks } from "./deliveryTasks";
@@ -41,4 +41,10 @@ export function syncOutboundOrderStatuses(): void {
       o.status = "open"; // open picking task, or nothing started yet
     }
   }
+  // A seed order's status isn't settled until the loop above runs — a "completed"
+  // seed label with no real task chain (only the curated demo set has one) just
+  // got flipped back to "open" here. Re-run the reservation pass so any order that
+  // just became pickable gets caught up immediately, instead of only ever being
+  // evaluated against whatever status it had at the very first module load.
+  reserveAllPickableOrders();
 }

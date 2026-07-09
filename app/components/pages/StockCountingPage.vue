@@ -5,7 +5,9 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpCheckbox,
   MpDatePicker,
+  MpIcon,
   toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -17,6 +19,7 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { PRODUCTS } from '~/data/inventory'
 import { formatDateTimeLong } from '~/utils/date'
 import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
+import { getStorageLeaves, getStorageTree, type LocNode } from '~/data/storageLocations'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -133,6 +136,106 @@ function saveSerialLines(serials: CommittedSerial[]) {
   serialLinesByKey.value = { ...serialLinesByKey.value, [key]: serials.map(s => s.serial) }
 }
 
+// ── Manually added locations ──────────────────────────────────────────────────
+const addedLocations = ref<string[]>([])
+
+// Location drawer (tree-based)
+const locDrawerOpen = ref(false)
+const locDrawerSearch = ref('')
+const locDrawerExpanded = ref<Set<string>>(new Set())
+const locDrawerSel = ref<Set<string>>(new Set())
+
+const leafPathToId = computed(() => {
+  const wh = adjustment.value?.warehouseId ?? ''
+  const map = new Map<string, string>()
+  for (const l of getStorageLeaves(wh)) map.set(l.path, l.id)
+  return map
+})
+const usedLeafIds = computed(() => {
+  const s = new Set<string>()
+  for (const g of groupedByLocation.value) {
+    const id = leafPathToId.value.get(g.location)
+    if (id) s.add(id)
+  }
+  return s
+})
+
+interface TreeDrawerItem { id: string; name: string; fullPath: string; depth: number; isLeaf: boolean; isExpanded: boolean; leafIds: string[] }
+function collectLocLeafIds(nodes: LocNode[]): string[] {
+  const ids: string[] = []
+  const walk = (ns: LocNode[]) => ns.forEach(n => n.children.length ? walk(n.children) : ids.push(n.id))
+  walk(nodes)
+  return ids
+}
+const locDrawerItems = computed((): TreeDrawerItem[] => {
+  const q = locDrawerSearch.value.trim().toLowerCase()
+  const wh = adjustment.value?.warehouseId ?? ''
+  const result: TreeDrawerItem[] = []
+  const walk = (nodes: LocNode[], depth: number, trail: string[]) => {
+    for (const n of nodes) {
+      const here = [...trail, n.name]
+      const isLeaf = n.children.length === 0
+      const fullPath = here.join(' / ')
+      if (q) {
+        if (isLeaf && fullPath.toLowerCase().includes(q))
+          result.push({ id: n.id, name: n.name, fullPath, depth: 0, isLeaf: true, isExpanded: false, leafIds: [n.id] })
+        else if (!isLeaf) walk(n.children, 0, here)
+      } else {
+        const isExpanded = locDrawerExpanded.value.has(n.id)
+        const leafIds = isLeaf ? [n.id] : collectLocLeafIds(n.children)
+        result.push({ id: n.id, name: n.name, fullPath, depth, isLeaf, isExpanded, leafIds })
+        if (!isLeaf && isExpanded) walk(n.children, depth + 1, here)
+      }
+    }
+  }
+  walk(getStorageTree(wh), 0, [])
+  return result
+})
+
+function openLocDrawer() {
+  locDrawerSearch.value = ''
+  locDrawerSel.value = new Set()
+  const expanded = new Set<string>()
+  const wh = adjustment.value?.warehouseId ?? ''
+  const walkExp = (nodes: LocNode[]) => {
+    for (const n of nodes) { if (n.children.length) { expanded.add(n.id); walkExp(n.children) } }
+  }
+  walkExp(getStorageTree(wh))
+  locDrawerExpanded.value = expanded
+  locDrawerOpen.value = true
+}
+function toggleLocExpanded(id: string) {
+  const s = new Set(locDrawerExpanded.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  locDrawerExpanded.value = s
+}
+function toggleLocDrawerSel(id: string) {
+  if (usedLeafIds.value.has(id)) return
+  const s = new Set(locDrawerSel.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  locDrawerSel.value = s
+}
+function toggleParentLocSel(leafIds: string[]) {
+  const avail = leafIds.filter(id => !usedLeafIds.value.has(id))
+  if (!avail.length) return
+  const s = new Set(locDrawerSel.value)
+  const allSel = avail.every(id => s.has(id))
+  avail.forEach(id => allSel ? s.delete(id) : s.add(id))
+  locDrawerSel.value = s
+}
+function confirmLocSelection() {
+  const wh = adjustment.value?.warehouseId ?? ''
+  const idToPath = new Map<string, string>()
+  for (const l of getStorageLeaves(wh)) idToPath.set(l.id, l.path)
+  const next = [...addedLocations.value]
+  for (const id of locDrawerSel.value) {
+    const path = idToPath.get(id)
+    if (path && !next.includes(path)) next.push(path)
+  }
+  addedLocations.value = next
+  locDrawerOpen.value = false
+}
+
 // ── Operator-added lines per location ─────────────────────────────────────────
 interface AddedLine { id: string; sku: string; productName: string; batchNumber: string; counted: number | undefined }
 let _addedId = 0
@@ -226,6 +329,9 @@ const groupedByLocation = computed(() => {
     if (!groups.has(loc)) groups.set(loc, [])
     groups.get(loc)!.push(item)
   }
+  for (const loc of addedLocations.value) {
+    if (!groups.has(loc)) groups.set(loc, [])
+  }
   const all = [...groups.entries()].map(([location, items]) => ({ location, items }))
   if (!q) return all
   return all
@@ -235,7 +341,7 @@ const groupedByLocation = computed(() => {
         ? g.items
         : g.items.filter(i => i.sku.toLowerCase().includes(q) || i.product.name.toLowerCase().includes(q) || (i.batchNumber ?? '').toLowerCase().includes(q)),
     }))
-    .filter(g => g.items.length > 0)
+    .filter(g => g.items.length > 0 || addedLocations.value.includes(g.location))
 })
 
 // ── Group by SKU (aggregated read-only summary) ───────────────────────────────
@@ -283,8 +389,14 @@ function buildLines(): { sku: string; qty: number; location?: string }[] {
     for (const r of rows) {
       if (!r.sku.trim() || !r.counted) continue
       const e = map.get(r.sku)
-      if (e) { e.qty += r.counted }
-      else { map.set(r.sku, { qty: r.counted, location: loc }) }
+      if (e) {
+        e.qty += r.counted
+      } else {
+        // SKU was not in the count plan: preserve existing on-hand at uncounted
+        // locations and add only the newly counted amount on top.
+        const existingOnHand = warehouseStockMap.value[r.sku]?.onHand ?? 0
+        map.set(r.sku, { qty: existingOnHand + r.counted, location: loc })
+      }
     }
   }
   return [...map.entries()].map(([sku, { qty, location }]) => ({ sku, qty, location }))
@@ -617,6 +729,16 @@ onUnmounted(() => {
           </MpAccordionItem>
         </MpAccordion>
 
+      <!-- Add location button -->
+      <div class="sc-add-loc-row">
+        <button class="sc-add-loc-btn" type="button" @click="openLocDrawer">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M7 2V12M2 7H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          Add location
+        </button>
+      </div>
+
     </div>
 
     <!-- ── Footer ── -->
@@ -710,6 +832,78 @@ onUnmounted(() => {
     :model-value="pickerCurrentSkus"
     @save="applyPicker"
   />
+
+  <!-- ── Add location drawer ── -->
+  <Transition name="sc-loc-drw">
+    <div v-if="locDrawerOpen" class="loc-drw-overlay" @click.self="locDrawerOpen = false">
+      <div class="loc-drw-panel" role="dialog" aria-label="Add location">
+        <div class="loc-drw-header">
+          <span class="loc-drw-title">Add location</span>
+          <button class="loc-drw-close" type="button" @click="locDrawerOpen = false">
+            <MpIcon name="close" size="sm" />
+          </button>
+        </div>
+        <div class="loc-drw-search-wrap">
+          <input v-model="locDrawerSearch" class="loc-drw-search-input" type="text" placeholder="Search location..." />
+        </div>
+        <div class="loc-drw-list">
+          <template v-for="node in locDrawerItems" :key="node.id">
+            <!-- Parent node -->
+            <div
+              v-if="!node.isLeaf"
+              class="loc-drw-item loc-drw-item--parent"
+              :style="{ paddingLeft: `${16 + node.depth * 20}px` }"
+            >
+              <span
+                class="loc-drw-chevron"
+                :class="{ 'loc-drw-chevron--open': node.isExpanded }"
+                @click="toggleLocExpanded(node.id)"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <MpCheckbox
+                :is-checked="node.leafIds.filter(id => !usedLeafIds.has(id)).length > 0 && node.leafIds.filter(id => !usedLeafIds.has(id)).every(id => locDrawerSel.has(id))"
+                :is-indeterminate="node.leafIds.filter(id => !usedLeafIds.has(id)).some(id => locDrawerSel.has(id)) && !node.leafIds.filter(id => !usedLeafIds.has(id)).every(id => locDrawerSel.has(id))"
+                :is-disabled="node.leafIds.every(id => usedLeafIds.has(id))"
+                @change="toggleParentLocSel(node.leafIds)"
+                @click.stop
+              />
+              <span class="loc-drw-name loc-drw-name--parent" @click="toggleLocExpanded(node.id)">{{ node.name }}</span>
+            </div>
+            <!-- Leaf node -->
+            <div
+              v-else
+              class="loc-drw-item loc-drw-item--leaf"
+              :class="{ 'loc-drw-item--used': usedLeafIds.has(node.id) }"
+              :style="{ paddingLeft: `${16 + node.depth * 20 + 40}px` }"
+            >
+              <MpCheckbox
+                :is-checked="usedLeafIds.has(node.id) || locDrawerSel.has(node.id)"
+                :is-disabled="usedLeafIds.has(node.id)"
+                @change="toggleLocDrawerSel(node.id)"
+              />
+              <span
+                class="loc-drw-name"
+                :class="{ 'loc-drw-name--used': usedLeafIds.has(node.id) }"
+                @click="toggleLocDrawerSel(node.id)"
+              >
+                {{ locDrawerSearch.trim() ? node.fullPath : node.name }}
+              </span>
+            </div>
+          </template>
+          <div v-if="!locDrawerItems.length" class="loc-drw-empty">No storage locations found</div>
+        </div>
+        <div class="loc-drw-footer">
+          <button class="sc-btn sc-btn--ghost" type="button" @click="locDrawerOpen = false">Cancel</button>
+          <button class="sc-btn sc-btn--primary" type="button" :disabled="!locDrawerSel.size" @click="confirmLocSelection">
+            Add{{ locDrawerSel.size ? ` (${locDrawerSel.size})` : '' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
 
   <!-- ── Serial drawer ── -->
   <ManageSerialDrawer
@@ -924,6 +1118,51 @@ onUnmounted(() => {
 .sc-batch-trigger:hover { background: var(--mp-background-neutral-hovered); }
 .sc-batch-trigger-label { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-batch-trigger-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+
+/* Add location button */
+.sc-add-loc-row { padding: 0 var(--mp-spacing-6) var(--mp-spacing-4); }
+.sc-add-loc-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
+  background: none; border: none; padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  border-radius: var(--mp-radii-sm); cursor: pointer;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-link);
+}
+.sc-add-loc-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Location drawer */
+.loc-drw-overlay { position: fixed; inset: 0; z-index: 1300; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }
+.loc-drw-panel { margin: var(--mp-spacing-3); width: min(480px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 24px; overflow: hidden; }
+.loc-drw-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); background: var(--mp-background-neutral-subtle); }
+.loc-drw-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.loc-drw-close { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.loc-drw-close:hover { background: var(--mp-background-neutral-hovered); }
+.loc-drw-search-wrap { padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.loc-drw-search-input { width: 100%; height: 36px; border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); padding: 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; box-sizing: border-box; }
+.loc-drw-list { flex: 1; overflow-y: auto; }
+.loc-drw-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.loc-drw-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: 8px 16px; border-bottom: 1px solid var(--mp-border-default); }
+.loc-drw-item:last-child { border-bottom: none; }
+.loc-drw-item--parent { cursor: pointer; min-height: 36px; }
+.loc-drw-item--parent:hover { background: var(--mp-background-neutral-subtle); }
+.loc-drw-item--leaf { cursor: pointer; min-height: 40px; }
+.loc-drw-item--leaf:hover:not(.loc-drw-item--used) { background: var(--mp-background-neutral-subtle); }
+.loc-drw-item--used { cursor: default; opacity: 0.55; }
+.loc-drw-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: 1.4; }
+.loc-drw-name--parent { font-weight: var(--mp-font-weights-semi-bold); }
+.loc-drw-chevron { display: inline-flex; align-items: center; justify-content: center; width: 20px; flex-shrink: 0; color: var(--mp-icon-subtle); transition: transform 150ms ease; }
+.loc-drw-chevron--open { transform: rotate(90deg); }
+.loc-drw-empty { padding: var(--mp-spacing-8); text-align: center; color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-md); }
+
+/* Drawer enter/leave transition */
+.sc-loc-drw-enter-active,
+.sc-loc-drw-leave-active { transition: background-color 250ms ease; }
+.sc-loc-drw-enter-from,
+.sc-loc-drw-leave-to { background-color: transparent; }
+.sc-loc-drw-enter-active .loc-drw-panel { transition: transform 350ms ease-out; }
+.sc-loc-drw-leave-active .loc-drw-panel { transition: transform 250ms ease-in; }
+.sc-loc-drw-enter-from .loc-drw-panel,
+.sc-loc-drw-leave-to .loc-drw-panel { transform: translateX(calc(100% + 12px)); }
 
 /* New batch modal form */
 .sc-new-batch-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }

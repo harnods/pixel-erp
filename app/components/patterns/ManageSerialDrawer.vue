@@ -78,6 +78,12 @@ watch(() => props.open, (isOpen) => {
   if (props.kind === 'transfer' || props.kind === 'picking') {
     const selectedSet = new Set(props.modelValue.map(cs => cs.serial))
     const selectedDestLoc = new Map(props.modelValue.map(cs => [cs.serial, cs.destLocationId ?? '']))
+    // Picking: a "reserved" unit already claimed by THIS order's own pre-existing
+    // reservation (present in modelValue) is this pick's own claim, not another
+    // order's — show it as a normal selected/toggleable row, not the read-only
+    // "Reserved" row a genuinely foreign claim gets.
+    const ownReservedUnits = props.kind === 'picking' ? reservedUnits.filter(u => selectedSet.has(u.serial)) : []
+    const foreignReservedUnits = props.kind === 'picking' ? reservedUnits.filter(u => !selectedSet.has(u.serial)) : reservedUnits
     rows.value = [
       ...availableUnits.map(u => ({
         serial: u.serial,
@@ -86,7 +92,14 @@ watch(() => props.open, (isOpen) => {
         originLocation: hasOriginLoc.value ? u.location : undefined,
         destLocId: selectedDestLoc.get(u.serial) ?? '',
       })),
-      ...reservedUnits.map(u => ({
+      ...ownReservedUnits.map(u => ({
+        serial: u.serial,
+        counted: true,
+        reserved: false as const,
+        originLocation: hasOriginLoc.value ? u.location : undefined,
+        destLocId: selectedDestLoc.get(u.serial) ?? '',
+      })),
+      ...foreignReservedUnits.map(u => ({
         serial: u.serial,
         counted: false,
         reserved: true as const,
