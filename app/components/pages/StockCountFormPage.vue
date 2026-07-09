@@ -623,7 +623,7 @@ onMounted(() => {
             <MpInput id="scf-transno-input" model-value="" placeholder="[Auto]" is-full-width is-disabled />
           </MpFormControl>
 
-          <MpFormControl id="scf-tags" class="scf-f-tags">
+          <MpFormControl v-if="!isWms" id="scf-tags" class="scf-f-tags">
             <MpFormLabel>Tags</MpFormLabel>
             <MpInputTag id="scf-tags-input" placeholder="Select tag" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
           </MpFormControl>
@@ -1078,7 +1078,8 @@ onMounted(() => {
 .scf-avg-edit { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: var(--mp-spacing-1); padding: 0; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
 .scf-tr:hover .scf-avg-edit { visibility: visible; }
 .scf-avg-edit:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
-.scf-prod { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.scf-td--prod { width: 40%; max-width: 0; }
+.scf-prod { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; width: 100%; }
 .scf-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral); }
 .scf-thumb--empty { background: var(--mp-background-neutral-subtle); }
 .scf-prod-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }

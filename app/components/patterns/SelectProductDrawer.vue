@@ -41,11 +41,12 @@ function addAll() { const s = new Set(sel.value); for (const p of available.valu
 function removeAll() { const s = new Set(sel.value); for (const p of selected.value) s.delete(p.sku); sel.value = s }
 
 const isSaving = ref(false)
-function close() { emit('update:open', false) }
+function close() { isSaving.value = false; emit('update:open', false) }
 async function save() {
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   emit('save', [...sel.value])
+  isSaving.value = false
   emit('update:open', false)
 }
 </script>

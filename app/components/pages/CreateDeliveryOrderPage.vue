@@ -9,6 +9,7 @@ import {
 import { warehouses } from '~/data/warehouses'
 import { addOutgoing } from '~/data/outgoing'
 import { CATALOG } from '~/data/catalog'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { scrollToFirstError } from '~/utils/form'
 
 function toDisplayDate(iso: string) {
@@ -84,11 +85,25 @@ interface LineRow {
   qty: string
   unit: string
   qtyError: boolean
+  qtyInsufficient: boolean
 }
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false }
+}
+
+function availableQty(sku: string): number {
+  if (!warehouseId.value) return Infinity
+  const detail = getWarehouseDetail(warehouseId.value)
+  if (!detail) return Infinity
+  const item = detail.stock.find((s) => s.sku === sku)
+  return item ? item.available : 0
+}
+
+function checkQtyInsufficient(row: LineRow) {
+  if (!row.productSku || !row.qty || Number(row.qty) < 1) { row.qtyInsufficient = false; return }
+  row.qtyInsufficient = Number(row.qty) > availableQty(row.productSku)
 }
 
 const rows = ref<LineRow[]>([makeRow()])
@@ -174,6 +189,8 @@ async function handleSave() {
   for (const row of filledRows) {
     if (!row.qty || Number(row.qty) < 1) { row.qtyError = true; valid = false }
     else row.qtyError = false
+    checkQtyInsufficient(row)
+    if (row.qtyInsufficient) valid = false
   }
   if (!valid) { scrollToFirstError(); return }
   isSaving.value = true
@@ -464,15 +481,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <td class="cr-td cr-td--input">
                       <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
                     </td>
-                    <td class="cr-td cr-td--input">
+                    <td class="cr-td cr-td--input cr-td--qty-cell">
                       <MpInput
                         :id="`cr-qty-${row.id}`"
                         v-model="row.qty"
                         type="number"
                         is-full-width
-                        :is-invalid="row.qtyError"
-                        @update:model-value="row.qtyError = false"
+                        :is-invalid="row.qtyError || row.qtyInsufficient"
+                        @update:model-value="() => { row.qtyError = false; checkQtyInsufficient(row) }"
                       />
+                      <span v-if="row.qtyInsufficient" class="cr-qty-error">
+                        Insufficient stock ({{ availableQty(row.productSku) }} available)
+                      </span>
                     </td>
                     <td class="cr-td cr-td--input">
                       <MpAutocomplete
@@ -656,6 +676,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-tr--dragging .cr-td--drag { cursor: grabbing; }
 
 .cr-td--input { padding: 0; vertical-align: middle; }
+.cr-td--qty-cell { vertical-align: top; }
+.cr-qty-error { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2); font-size: var(--mp-font-sizes-xs); color: var(--mp-text-danger, #c0392b); white-space: nowrap; }
 .cr-td--input :deep([class*='input']),
 .cr-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .cr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }

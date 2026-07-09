@@ -348,7 +348,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpInput id="scf-transno-input" model-value="" placeholder="[Auto]" is-full-width is-disabled />
           </MpFormControl>
 
-          <MpFormControl id="scf-tags" class="scf-f-tags">
+          <MpFormControl v-if="!isWms" id="scf-tags" class="scf-f-tags">
             <MpFormLabel>Tags</MpFormLabel>
             <MpInputTag id="scf-tags-input" placeholder="Select tag" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
           </MpFormControl>
