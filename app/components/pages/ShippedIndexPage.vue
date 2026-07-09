@@ -156,7 +156,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="shp-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-shp-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -165,6 +164,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="shp-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-shp-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>

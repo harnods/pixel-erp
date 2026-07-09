@@ -98,19 +98,21 @@ watch(() => props.orderId, () => {
   })
 })
 
-// Transaction (order creation) date — derived: a few days before the due date.
+// Transaction date: use stored value for user-created orders; derive for seed orders.
 const transactionDate = computed(() => {
   if (!order.value) return ''
+  if (order.value.transactionDate) return order.value.transactionDate
   const d = new Date(order.value.dueDate)
   d.setDate(d.getDate() - (3 + (seedNum(order.value.id) % 5)))
   return d.toISOString()
 })
-// Marketplace orders (Desty) carry a cut-off time on the due date and usually arrive
-// with the courier + tracking no. already assigned by the channel.
-const isMarketplace = computed(() => !!order.value && order.value.source !== 'Sales Order')
+// Marketplace = Desty channel orders (source contains ":"  e.g. "Shopee: Central Perk").
+// Sales Order and manual Outbound delivery orders are NOT marketplace.
+const isMarketplace = computed(() => !!order.value && order.value.source.includes(':'))
 const dueDateDisplay = computed(() =>
   order.value ? (isMarketplace.value ? formatDateTimeLong(order.value.dueDate) : formatDateLong(order.value.dueDate)) : '—',
 )
+const isManual = computed(() => order.value?.source === 'Outbound delivery')
 // Courier / tracking no. surface from the linked delivery task; for marketplace orders
 // they're pre-assigned by the channel even before shipping is processed (same source of
 // truth the shipping handover auto-fills from).
@@ -135,8 +137,15 @@ const attachments = computed(() => {
   const n = (s % 3) + 1 // always 1–3 files
   return Array.from({ length: n }, (_, i) => ({ name: NOTE_ATTACH[i % NOTE_ATTACH.length]!, sizeKB: 40 + ((s + i * 37) % 220) }))
 })
-const lastUpdatedBy = computed(() => order.value ? NOTE_UPDATERS[seedNum(order.value.id) % NOTE_UPDATERS.length]! : '')
-const lastUpdatedAt = computed(() => order.value?.shippedDate ?? order.value?.dueDate ?? new Date().toISOString())
+const lastUpdatedBy = computed(() => {
+  if (!order.value) return ''
+  return order.value.source === 'Outbound delivery' ? 'Rizal Candra' : NOTE_UPDATERS[seedNum(order.value.id) % NOTE_UPDATERS.length]!
+})
+const lastUpdatedAt = computed(() => {
+  if (!order.value) return new Date().toISOString()
+  if (order.value.source === 'Outbound delivery') return order.value.createdAt ?? order.value.transactionDate ?? order.value.dueDate
+  return order.value.shippedDate ?? order.value.dueDate ?? new Date().toISOString()
+})
 
 /** File-type → Pixel document icon for an attachment. */
 function attachmentIcon(name: string): string {
@@ -340,15 +349,15 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </section>
       </div>
 
-      <!-- Message / memo / attachment + audit (mirrors Sales order detail) -->
+      <!-- Message / memo / attachment + audit -->
       <section class="detail-notes-left">
-        <ContentList label="Message">
+        <ContentList v-if="!isManual" label="Message">
           <p class="detail-note-text">—</p>
         </ContentList>
         <ContentList label="Memo">
-          <p class="detail-note-text">—</p>
+          <p class="detail-note-text">{{ order.memo || '—' }}</p>
         </ContentList>
-        <ContentList :label="`Attachment (${attachments.length})`">
+        <ContentList v-if="!isManual" :label="`Attachment (${attachments.length})`">
           <div v-if="attachments.length" class="detail-attach-list">
             <a v-for="(a, i) in attachments" :key="i" class="detail-attach" @click.prevent>
               <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>

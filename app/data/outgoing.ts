@@ -59,6 +59,21 @@ export interface OutgoingOrder {
   memo?: string;
   /** customer — set on user-created orders; seed orders derive it by hash. */
   customer?: string;
+  /** ISO date the order was created (user-created orders only). */
+  transactionDate?: string;
+  /** Full ISO timestamp of creation — set on user-created orders for accurate audit display. */
+  createdAt?: string;
+  /** Actual line items — stored for user-created orders; seed orders derive via orderSkuLines(). */
+  lines?: StoredOrderLine[];
+}
+
+export interface StoredOrderLine {
+  sku: string;
+  productName: string;
+  desc: string;
+  img: string;
+  unit: string;
+  qty: number;
 }
 
 // Anchor "today" so the due-date presets line up with the mock data.
@@ -405,6 +420,16 @@ export function persistOutgoing(): void {
 }
 
 let outgoingAddSeq = outgoingOrders.filter((o) => o.id.startsWith("out-new-")).length;
+
+const DO_PREFIX_RE = /^Delivery Order #(\d+)$/;
+export function nextDeliveryOrderNo(): string {
+  let max = 0;
+  for (const o of outgoingOrders) {
+    const m = o.salesNo.match(DO_PREFIX_RE);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return `Delivery Order #${String(max + 1).padStart(5, "0")}`;
+}
 
 /** Create a new outbound order from the New order form — persists + clickable. */
 export function addOutgoing(

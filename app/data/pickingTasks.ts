@@ -136,8 +136,10 @@ function seedTasks(): PickingTask[] {
   // from other warehouses for the remaining statuses. No warehouse has 5 pickable
   // orders on its own, so the canceled list may sit in another warehouse — fine, it
   // isn't packable anyway.
-  const cands = PICKING_WAREHOUSES.map((w) => ({ w, orders: pickableOrders([w.id]) }))
-    .sort((a, b) => b.orders.length - a.orders.length);
+  const cands = PICKING_WAREHOUSES.map((w) => ({
+    w,
+    orders: pickableOrders([w.id]).filter((o) => o.source !== "Outbound delivery"),
+  })).sort((a, b) => b.orders.length - a.orders.length);
   const pool = cands.flatMap((c) => c.orders); // richest warehouse's orders come first
   if (pool.length) {
     const plan: PickingTask["status"][] = ["partially picked", "completed", "open", "in progress", "canceled"];

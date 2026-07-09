@@ -122,11 +122,14 @@ export function getWarehouseTransactions(warehouseId: string): WarehouseTransact
     })
   }
 
-  // ── Outgoing Orders → Sales Order ────────────────────────────────────────────
+  // ── Outgoing Orders → Sales Order / Outbound Delivery ───────────────────────
   for (const o of outgoingOrders) {
     if (o.warehouseId !== warehouseId) continue
+    const isManual = o.source === 'Outbound delivery'
     const seed = numericSeed(o.id)
-    const orderDate = shiftDate(o.dueDate, -(5 + (seed % 10)))
+    const orderDate = isManual && o.transactionDate
+      ? o.transactionDate.slice(0, 10)
+      : shiftDate(o.dueDate, -(5 + (seed % 10)))
     out.push({
       id: `so-${o.id}`,
       date: orderDate,
@@ -134,7 +137,7 @@ export function getWarehouseTransactions(warehouseId: string): WarehouseTransact
       number: o.salesNo,
       status: o.status === 'canceled' ? 'canceled' : 'completed',
       skuQty: o.skuQty,
-      link: null,
+      link: isManual ? `/outbound-delivery/${o.id}` : null,
     })
   }
 

@@ -3,11 +3,10 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon,
-  MpInputTag, MpDatePicker, toast,
-  type DataInterface,
+  MpTooltip, MpDatePicker, toast,
 } from '@mekari/pixel3'
 import { warehouses } from '~/data/warehouses'
-import { addOutgoing } from '~/data/outgoing'
+import { addOutgoing, nextDeliveryOrderNo } from '~/data/outgoing'
 import { CATALOG } from '~/data/catalog'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { scrollToFirstError } from '~/utils/form'
@@ -50,8 +49,6 @@ function onCustomerAdd(_suggestions: unknown, currentSearch: string) {
   customerError.value = false
 }
 
-const UNIT_OPTIONS = [...new Set(CATALOG.map((p) => p.unit))].map((u) => ({ id: u, name: u }))
-
 // ── Form state ─────────────────────────────────────────────────────────────
 const customer = ref('')
 const customerError = ref(false)
@@ -71,7 +68,6 @@ const transactionNo = ref('')
 const referenceNo = ref('')
 const shipVia = ref('')
 const trackingNo = ref('')
-const tags = ref<DataInterface[]>([])
 const memo = ref('')
 
 // ── Product line rows ─────────────────────────────────────────────────────
@@ -86,11 +82,12 @@ interface LineRow {
   unit: string
   qtyError: boolean
   qtyInsufficient: boolean
+  productError: boolean
 }
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, productError: false }
 }
 
 function availableQty(sku: string): number {
@@ -109,11 +106,22 @@ function checkQtyInsufficient(row: LineRow) {
 const rows = ref<LineRow[]>([makeRow()])
 const hasAnyProduct = computed(() => rows.value.some((r) => r.productId))
 
-const productOptions = CATALOG.map((p) => ({ id: p.id, name: p.name, desc: p.desc, unit: p.unit, img: p.img, sku: p.sku }))
+const ALL_PRODUCT_OPTIONS = CATALOG.map((p) => ({ id: p.id, name: p.name, desc: p.desc, unit: p.unit, img: p.img, sku: p.sku }))
+const productFilter = ref('')
+const productOptions = computed(() => {
+  const q = productFilter.value.trim().toLowerCase()
+  if (!q) return ALL_PRODUCT_OPTIONS
+  return ALL_PRODUCT_OPTIONS.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+})
+function onProductSearch(e: Event) {
+  productFilter.value = (e.target as HTMLInputElement).value
+}
 
 function onProductSelect(row: LineRow, id: string) {
+  productFilter.value = ''
   const p = CATALOG.find((c) => c.id === id)
   if (!p) { row.productName = ''; row.productSku = ''; row.productImg = ''; row.description = ''; row.unit = ''; return }
+  row.productError = false
   row.productName = p.name
   row.productSku = p.sku
   row.productImg = p.img
@@ -157,53 +165,54 @@ function onDrop(ev: DragEvent, toIdx: number) {
 }
 function onDragEnd() { dragSrcIndex.value = null; dragOverIndex.value = null }
 
-function onTagsChange(data: DataInterface[]) { tags.value = data }
-
-// ── Attachment ────────────────────────────────────────────────────────────
-const fileInput = ref<HTMLInputElement | null>(null)
-const attachedFiles = ref<File[]>([])
-
-function onFileChange(ev: Event) {
-  const input = ev.target as HTMLInputElement
-  if (input.files) {
-    for (const f of Array.from(input.files)) {
-      if (!attachedFiles.value.some((x) => x.name === f.name)) attachedFiles.value.push(f)
-    }
-  }
-  if (fileInput.value) fileInput.value.value = ''
-}
-function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter((f) => f.name !== name) }
-
 function goRequests() {
   router.push({ path: '/outbound-delivery', query: { tab: 'Requests' } })
 }
 
 // ── Save ──────────────────────────────────────────────────────────────────
-async function handleSave() {
+const isSavingAndAdding = ref(false)
+
+function resetForm() {
+  customer.value = ''; customerError.value = false
+  transactionDate.value = todayDisplay; transactionDateError.value = false
+  estimatedDelivery.value = todayDisplay
+  warehouseId.value = activeWarehouse.value?.id ?? ''; warehouseError.value = false
+  transactionNo.value = ''; referenceNo.value = ''; shipVia.value = ''; trackingNo.value = ''; memo.value = ''
+  rows.value = [makeRow()]
+  stageEl.value?.scrollTo({ top: 0 })
+}
+
+async function validate(): Promise<boolean> {
   let valid = true
   if (!customer.value) { customerError.value = true; valid = false }
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
 
   const filledRows = rows.value.filter((r) => r.productId)
+  if (filledRows.length === 0) {
+    rows.value.forEach((r) => { r.productError = true })
+    valid = false
+  }
   for (const row of filledRows) {
     if (!row.qty || Number(row.qty) < 1) { row.qtyError = true; valid = false }
     else row.qtyError = false
     checkQtyInsufficient(row)
     if (row.qtyInsufficient) valid = false
   }
-  if (!valid) { scrollToFirstError(); return }
-  isSaving.value = true
-  await new Promise(r => setTimeout(r, 600))
+  if (!valid) scrollToFirstError()
+  return valid
+}
 
+async function persist() {
+  const filledRows = rows.value.filter((r) => r.productId)
+  await new Promise(r => setTimeout(r, 600))
   const wh = warehouseOptions.value.find((w) => w.id === warehouseId.value)
   const skuQty = filledRows.length || 1
   const orderQty = filledRows.reduce((s, r) => s + (Number(r.qty) || 0), 0) || 1
-
   const txDate = toISODate(transactionDate.value)
   addOutgoing({
-    salesNo: transactionNo.value || `DO-${txDate.replace(/-/g, '')}-001`,
-    source: 'Manual',
+    salesNo: transactionNo.value || nextDeliveryOrderNo(),
+    source: 'Outbound delivery',
     warehouseId: warehouseId.value,
     warehouseName: wh?.name ?? '',
     skuQty,
@@ -213,10 +222,34 @@ async function handleSave() {
     dueDate: estimatedDelivery.value ? toISODate(estimatedDelivery.value) : txDate,
     memo: memo.value.trim() || undefined,
     customer: customer.value,
+    transactionDate: txDate,
+    createdAt: new Date().toISOString(),
+    lines: filledRows.map((r) => ({
+      sku: r.productSku,
+      productName: r.productName,
+      desc: r.description,
+      img: r.productImg,
+      unit: r.unit,
+      qty: Number(r.qty),
+    })),
   })
+}
 
+async function handleSave() {
+  if (!await validate()) return
+  isSaving.value = true
+  await persist()
   toast.notify({ variant: 'success', title: 'Delivery order saved', maxWidth: 'max-content' })
   goRequests()
+}
+
+async function handleSaveAndAdd() {
+  if (!await validate()) return
+  isSavingAndAdding.value = true
+  await persist()
+  toast.notify({ variant: 'success', title: 'Delivery order saved', maxWidth: 'max-content' })
+  isSavingAndAdding.value = false
+  resetForm()
 }
 
 // ── Sticky footer ─────────────────────────────────────────────────────────
@@ -279,7 +312,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   {{ currentSearch ? `Add "${currentSearch}" as a new customer` : 'Add new customer' }}
                 </template>
               </MpAutocomplete>
-              <MpFormErrorMessage>Please select a customer</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select customer</MpFormErrorMessage>
             </MpFormControl>
           </div>
         </div>
@@ -300,14 +333,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   @update:model-value="transactionDateError = false"
                 />
               </div>
-              <MpFormErrorMessage>Please enter a transaction date</MpFormErrorMessage>
+              <MpFormErrorMessage>You must enter transaction date</MpFormErrorMessage>
             </MpFormControl>
 
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-transno">
               <div class="cr-label-row">
-                <MpFormLabel>DO no.</MpFormLabel>
+                <MpFormLabel>Transaction no.</MpFormLabel>
                 <span class="cr-label-icon" title="Auto-generated">
                   <MpIcon name="settings" size="sm" />
                 </span>
@@ -333,7 +366,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </MpFormControl>
           </div>
 
-          <!-- Col 2: Estimated delivery date → Ship via → Tracking no. -->
+          <!-- Col 2: Estimated delivery date → Courier → Tracking no. -->
           <div class="cr-col">
             <MpFormControl id="cr-delivery">
               <MpFormLabel>Estimated delivery date</MpFormLabel>
@@ -352,7 +385,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-shipvia">
-              <MpFormLabel>Ship via</MpFormLabel>
+              <MpFormLabel>Courier</MpFormLabel>
               <MpInput
                 id="cr-shipvia-input"
                 v-model="shipVia"
@@ -372,7 +405,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </MpFormControl>
           </div>
 
-          <!-- Col 3: Warehouse → Tags -->
+          <!-- Col 3: Warehouse -->
           <div class="cr-col">
             <MpFormControl id="cr-warehouse" is-required :is-invalid="warehouseError">
               <MpFormLabel>Warehouse</MpFormLabel>
@@ -386,20 +419,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 :is-invalid="warehouseError"
                 @update:model-value="warehouseError = false"
               />
-              <MpFormErrorMessage>Please select a warehouse</MpFormErrorMessage>
-            </MpFormControl>
-
-            <div class="cr-field-spacer" />
-
-            <MpFormControl id="cr-tags">
-              <MpFormLabel>Tags</MpFormLabel>
-              <MpInputTag
-                id="cr-tags-input"
-                :data="tags"
-                :is-enable-create-new-tag="true"
-                :is-show-suggestions="false"
-                @change="onTagsChange"
-              />
+              <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
             </MpFormControl>
           </div>
         </div>
@@ -449,15 +469,51 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpIcon name="drag" size="sm" />
                   </td>
 
-                  <td class="cr-td cr-td--input">
+                  <td class="cr-td cr-td--input" :class="{ 'cr-td--prod-error': row.productError }">
+                    <MpTooltip
+                      v-if="row.productError"
+                      :id="`cr-prod-tooltip-${row.id}`"
+                      label="You must select product"
+                      placement="top"
+                      use-portal
+                      class="cr-qty-tooltip-wrap"
+                    >
+                      <MpAutocomplete
+                        :id="`cr-prod-${row.id}`"
+                        v-model="row.productId"
+                        :data="productOptions"
+                        label-prop="name"
+                        value-prop="id"
+                        is-searchable is-clearable use-portal is-full-width is-manual-filter
+                        @update:model-value="(v: string) => onProductSelect(row, v)"
+                        @input="onProductSearch"
+                      >
+                        <template #leftAddon>
+                          <img v-if="row.productImg" class="cr-prod-thumb" :src="row.productImg" :alt="row.productName" loading="lazy" />
+                          <span v-else-if="row.productId" class="cr-prod-thumb cr-prod-thumb--empty" />
+                        </template>
+                        <template #default="{ item }">
+                          <span class="cr-prod-option">
+                            <img v-if="item.img" class="cr-prod-thumb" :src="item.img" :alt="item.name" loading="lazy" />
+                            <span v-else class="cr-prod-thumb cr-prod-thumb--empty" />
+                            <span class="cr-prod-info">
+                              <span class="cr-prod-name">{{ item.name }}</span>
+                              <span class="cr-prod-sku">{{ item.sku }}</span>
+                            </span>
+                          </span>
+                        </template>
+                      </MpAutocomplete>
+                    </MpTooltip>
                     <MpAutocomplete
+                      v-else
                       :id="`cr-prod-${row.id}`"
                       v-model="row.productId"
                       :data="productOptions"
                       label-prop="name"
                       value-prop="id"
-                      is-searchable is-clearable use-portal is-full-width
+                      is-searchable is-clearable use-portal is-full-width is-manual-filter
                       @update:model-value="(v: string) => onProductSelect(row, v)"
+                      @input="onProductSearch"
                     >
                       <template #leftAddon>
                         <img v-if="row.productImg" class="cr-prod-thumb" :src="row.productImg" :alt="row.productName" loading="lazy" />
@@ -481,35 +537,41 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <td class="cr-td cr-td--input">
                       <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
                     </td>
-                    <td class="cr-td cr-td--input cr-td--qty-cell">
+                    <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-insufficient': row.qtyInsufficient }">
+                      <MpTooltip
+                        v-if="row.qtyInsufficient"
+                        :id="`cr-qty-tooltip-${row.id}`"
+                        :label="`Insufficient stock (${availableQty(row.productSku)} available)`"
+                        placement="top"
+                        use-portal
+                        class="cr-qty-tooltip-wrap"
+                      >
+                        <MpInput
+                          :id="`cr-qty-${row.id}`"
+                          v-model="row.qty"
+                          type="number"
+                          is-full-width
+                          :is-invalid="row.qtyError"
+                          @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false }"
+                        />
+                      </MpTooltip>
                       <MpInput
+                        v-else
                         :id="`cr-qty-${row.id}`"
                         v-model="row.qty"
                         type="number"
                         is-full-width
-                        :is-invalid="row.qtyError || row.qtyInsufficient"
-                        @update:model-value="() => { row.qtyError = false; checkQtyInsufficient(row) }"
-                      />
-                      <span v-if="row.qtyInsufficient" class="cr-qty-error">
-                        Insufficient stock ({{ availableQty(row.productSku) }} available)
-                      </span>
-                    </td>
-                    <td class="cr-td cr-td--input">
-                      <MpAutocomplete
-                        :id="`cr-unit-${row.id}`"
-                        v-model="row.unit"
-                        :data="UNIT_OPTIONS"
-                        label-prop="name"
-                        value-prop="id"
-                        is-searchable use-portal is-full-width
+                        :is-invalid="row.qtyError"
+                        @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false }"
                       />
                     </td>
+                    <td class="cr-td cr-td--unit">{{ row.unit }}</td>
                   </template>
 
                   <td v-else :colspan="hasAnyProduct ? 4 : 1" class="cr-td" />
 
                   <td class="cr-td cr-td--del">
-                    <button class="cr-del-btn" type="button" @click="removeRow(row.id)">
+                    <button v-if="row.productId" class="cr-del-btn" type="button" @click="removeRow(row.id)">
                       <MpIcon name="minus-circular" size="sm" />
                     </button>
                   </td>
@@ -520,7 +582,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         </div>
 
         <!-- ── Memo ───────────────────────────────────────────────────────── -->
-        <div class="cr-section cr-section--gap-top">
+        <div class="cr-section cr-section--gap-top cr-section--last">
           <MpFormControl id="cr-memo">
             <MpFormLabel>Memo</MpFormLabel>
             <MpTextarea
@@ -533,35 +595,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <p class="cr-helper-text">Only visible to you and your team</p>
         </div>
 
-        <!-- ── Attachment ─────────────────────────────────────────────────── -->
-        <div class="cr-section cr-section--last">
-          <div class="cr-section-label">Attachment</div>
-          <div class="cr-attachment">
-            <input
-              ref="fileInput"
-              type="file"
-              multiple
-              accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
-              class="cr-file-hidden"
-              @change="onFileChange"
-            />
-            <div class="cr-attachment-row">
-              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">
-                Choose file
-              </MpButton>
-              <span class="cr-attach-or">or drag and drop here</span>
-            </div>
-            <p class="cr-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
-            <ul v-if="attachedFiles.length" class="cr-file-list">
-              <li v-for="f in attachedFiles" :key="f.name" class="cr-file-item">
-                <span class="cr-file-name">{{ f.name }}</span>
-                <button class="cr-file-remove" type="button" @click="removeFile(f.name)">
-                  <MpIcon name="close" size="xs" />
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
 
       </div>
     </div>
@@ -569,7 +602,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goRequests">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+      <button class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}</button>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
 </template>
@@ -613,6 +647,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
+.cr-btn-secondary {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  border-radius: var(--mp-radii-full, 999px);
+  border: 1px solid var(--mp-border-bold);
+  background: var(--mp-background-neutral);
+  color: var(--mp-text-secondary);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  cursor: pointer; white-space: nowrap;
+}
+.cr-btn-secondary:hover:not(:disabled) { background: var(--mp-background-neutral-hovered); }
+.cr-btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
+
 .cr-body { display: flex; flex-direction: column; }
 
 .cr-header-1 {
@@ -642,7 +689,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
 
 .cr-col-drag { width: 40px; }
-.cr-col-prod { width: 280px; }
+.cr-col-prod { width: 360px; }
 .cr-col-qty  { width: 140px; }
 .cr-col-unit { width: 160px; }
 .cr-col-del  { width: 48px; }
@@ -676,11 +723,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-tr--dragging .cr-td--drag { cursor: grabbing; }
 
 .cr-td--input { padding: 0; vertical-align: middle; }
-.cr-td--qty-cell { vertical-align: top; }
-.cr-qty-error { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2); font-size: var(--mp-font-sizes-xs); color: var(--mp-text-danger, #c0392b); white-space: nowrap; }
+.cr-td--qty-cell { vertical-align: middle; }
+.cr-td--qty-insufficient { background: #FCEEED; border-bottom-color: #E2483D; }
+.cr-td--prod-error { background: #FCEEED; border-bottom-color: #E2483D; }
 .cr-td--input :deep([class*='input']),
 .cr-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
+.cr-td--qty-insufficient :deep([class*='input']) { background: transparent; }
+.cr-td--prod-error :deep([class*='autocomplete']),
+.cr-td--prod-error :deep([class*='input']) { background: transparent; }
 .cr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.cr-qty-tooltip-wrap { display: block; width: 100%; }
 
 .cr-td--del { padding: 0; text-align: center; vertical-align: middle; }
 
@@ -695,8 +747,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-del-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .cr-prod-option { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; }
-.cr-col-sku { width: 100px; }
-.cr-td--sku { color: var(--mp-text-secondary); white-space: nowrap; background: var(--mp-background-neutral-hovered); }
+.cr-col-sku { width: 160px; }
+.cr-td--sku  { color: var(--mp-text-secondary); white-space: nowrap; background: var(--mp-background-neutral-hovered); }
+.cr-td--unit { color: var(--mp-text-secondary); white-space: nowrap; background: var(--mp-background-neutral-hovered); }
 .cr-prod-thumb {
   width: 28px; height: 28px; border-radius: var(--mp-radii-md); flex-shrink: 0;
   object-fit: cover; border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral);
@@ -712,13 +765,4 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-section-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-1); }
 .cr-helper-text { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm); }
 
-.cr-file-hidden { display: none; }
-.cr-attachment { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.cr-attachment-row { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.cr-attach-or { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.cr-file-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.cr-file-item { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.cr-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cr-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
-.cr-file-remove:hover { color: var(--mp-text-default); }
 </style>
