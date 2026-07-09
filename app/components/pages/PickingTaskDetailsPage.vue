@@ -323,14 +323,16 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                     <ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" />
                   </td>
                   <td class="detail-td">{{ item.skuCode }}</td>
-                  <td class="detail-td">
+                  <td class="detail-td detail-td--location">
                     <template v-if="isTrackedItem(item)">
                       <template v-if="pickedLocations(item).length">
-                        <span v-for="loc in pickedLocations(item)" :key="loc" class="pkd-location-item">{{ loc }}</span>
+                        <span v-for="loc in pickedLocations(item)" :key="loc" class="pkd-location-item" :title="loc">{{ loc }}</span>
                       </template>
                       <span v-else>—</span>
                     </template>
-                    <template v-else>{{ item.binLocation }}</template>
+                    <template v-else>
+                      <span class="pkd-location-item" :title="item.binLocation">{{ item.binLocation }}</span>
+                    </template>
                   </td>
                   <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
                   <td v-if="showPickedCols" class="detail-td detail-td--num">
@@ -611,7 +613,8 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
-.pkd-location-item { display: block; }
+.detail-td--location { min-width: 160px; max-width: 200px; }
+.pkd-location-item { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pkd-location-item:not(:last-child) { margin-bottom: 2px; }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 

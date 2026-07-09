@@ -92,6 +92,7 @@ const ReceiveItemsPage = defineAsyncComponent(() => import('~/components/pages/R
 const CreatePurchaseReceivingPage = defineAsyncComponent(() => import('~/components/pages/CreatePurchaseReceivingPage.vue'))
 const CreatePutAwayPage = defineAsyncComponent(() => import('~/components/pages/CreatePutAwayPage.vue'))
 const CreateReceiptPage = defineAsyncComponent(() => import('~/components/pages/CreateReceiptPage.vue'))
+const CreateDeliveryOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateDeliveryOrderPage.vue'))
 const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
@@ -145,7 +146,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     return { component: ShipmentDetailsPage, id: segs[2]! }
   }
   // /outbound-delivery/:id → outgoing sales order detail (not the picking/packing/handover/shipment sub-routes)
-  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing' && segs[1] !== 'handover' && segs[1] !== 'new-shipment' && segs[1] !== 'shipment') {
+  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing' && segs[1] !== 'handover' && segs[1] !== 'new-shipment' && segs[1] !== 'shipment' && segs[1] !== 'new') {
     return { component: OutgoingOrderDetailsPage, id: segs[1] }
   }
   // /picking/:taskId/pick → operator picks items from bins
@@ -194,6 +195,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /inbound-delivery/new → create inbound receipt (PO) form
   if (segs.length >= 2 && segs[0] === 'inbound-delivery' && segs[1] === 'new') {
     return { component: CreateReceiptPage, id: 'new' }
+  }
+  // /outbound-delivery/new → create outbound delivery order form
+  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] === 'new') {
+    return { component: CreateDeliveryOrderPage, id: 'new' }
   }
   // /inbound-delivery/:id/receive → create purchase receiving (full page, not a modal)
   if (segs.length >= 3 && segs[0] === 'inbound-delivery' && segs[2] === 'receive') {
@@ -801,6 +806,14 @@ function startResize(e: MouseEvent) {
               New receipt
             </button>
           </template>
+        </div>
+        <div v-else-if="currentPageKey === 'Outbound delivery' && activeTab === 'Requests'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/outbound-delivery/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New delivery order
+          </button>
         </div>
         <div v-else-if="currentPageKey === 'Outbound delivery' && activeTab === 'Ready to ship'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/outbound-delivery/new-shipment/create')">

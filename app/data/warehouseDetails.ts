@@ -262,6 +262,7 @@ const MIN_ONHAND_OVERRIDE: Record<string, number> = {
   'wh-010::2101': 10, // demand 7
   'wh-009::1105': 10, // demand 7
   'wh-003::2103': 9,  // demand 6
+  'wh-008::2102': 7,  // demand 4 (pre-shipped seed order out-sh-001)
 }
 
 // Deterministic ISO date `days` before TODAY — used for created-at fields so the

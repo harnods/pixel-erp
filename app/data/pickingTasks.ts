@@ -3,7 +3,10 @@ import { warehouses } from "./warehouses";
 import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, type OutgoingOrder } from "./outgoing";
 import { orderSkuLines } from "./inventory";
-import { binForSku, getWarehouseDetail, getReservationsForOrder, releaseReservationsForOrderSku, reserveStock } from "./warehouseDetails";
+import {
+  binForSku, getWarehouseDetail, getReservationsForOrder, releaseReservationsForOrderSku, reserveStock,
+  autoSelectLocationBins, autoSelectBatches, autoSelectSerials,
+} from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
 
@@ -157,6 +160,10 @@ function seedTasks(): PickingTask[] {
         }
       }
       const dayOffset = -(t * 2) - 1;
+      // These demo tasks are pushed straight into the array (never through
+      // addPickingTask()), so they'd otherwise never pick up their order's
+      // already-reserved batch/serial — read it the same way addPickingTask() does.
+      const { batchPicks, serialPicks } = assignmentsFromReservations(lines, o.warehouseId);
       out.push({
         id: `pick-demo-${t}`,
         taskNo: `Picking #${seq++}`,
@@ -173,11 +180,64 @@ function seedTasks(): PickingTask[] {
         endDate: finished ? isoAt(dayOffset, 11, 15) : undefined,
         lines,
         pickedByKey,
+        ...(Object.keys(batchPicks).length ? { batchPicks } : {}),
+        ...(Object.keys(serialPicks).length ? { serialPicks } : {}),
       });
     });
   }
   out.push(...seedShippedPicks(seq));
   return out;
+}
+
+/**
+ * These pre-shipped orders never enter the live reservation system (they're seeded
+ * directly as completed/partially shipped, never open/in-progress — reserveOrder()
+ * skips them forever), so there's no order reservation to read back for their picking
+ * task the way seedTasks()/addPickingTask() do. Pick straight from current available
+ * stock instead — and actually reserve it (rather than just reading it), so a batch/
+ * serial doesn't end up double-shown for two different historical orders, and
+ * Warehouse Details' reserved/available stays consistent with what these View batch /
+ * View serial number drawers display. Safe: these orders are never revisited by
+ * reserveAllPickableOrders(), so nothing else ever competes for or releases this.
+ */
+function plausiblePicksFor(
+  orderId: string,
+  lines: PickingLine[],
+  warehouseId: string,
+  qtyByKey: Record<string, number>,
+): { batchPicks: Record<string, PickingBatchPick[]>; serialPicks: Record<string, PickingSerialPick[]> } {
+  const batchPicks: Record<string, PickingBatchPick[]> = {};
+  const serialPicks: Record<string, PickingSerialPick[]> = {};
+  const wh = getWarehouseDetail(warehouseId);
+  const reservePicks: { sku: string; batchNo?: string; qty: number; serials?: string[] }[] = [];
+  for (const l of lines) {
+    const qty = qtyByKey[l.key] ?? 0;
+    if (qty <= 0) continue;
+    const item = wh?.stock.find((s) => s.sku === l.sku);
+    if (!item) continue;
+    const preferredLocations = autoSelectLocationBins(warehouseId, l.sku, qty).map((b) => b.location);
+    if (item.batches?.length) {
+      const picks = autoSelectBatches(warehouseId, l.sku, qty, preferredLocations);
+      if (picks.length) {
+        batchPicks[l.key] = picks.map((b) => ({
+          batchNo: b.batchNo, expiryDate: b.expiryDate, desc: "", qty: b.take, unit: item.unit, location: b.location,
+        }));
+        for (const b of picks) reservePicks.push({ sku: l.sku, batchNo: b.batchNo, qty: b.take });
+      }
+    } else if (item.serials) {
+      const serials = autoSelectSerials(warehouseId, l.sku, qty, preferredLocations);
+      if (serials.length) {
+        serialPicks[l.key] = serials.map((sn) => ({
+          serial: sn,
+          location: item.serials!.available.find((u) => u.serial === sn)?.location
+            ?? item.serials!.reserved.find((u) => u.serial === sn)?.location ?? "",
+        }));
+        reservePicks.push({ sku: l.sku, qty: serials.length, serials });
+      }
+    }
+  }
+  if (reservePicks.length) reserveStock(orderId, warehouseId, reservePicks);
+  return { batchPicks, serialPicks };
 }
 
 // ── Seed: a COMPLETED picking task per pre-shipped order (full pick; partial orders
@@ -196,6 +256,7 @@ function seedShippedPicks(startSeq: number): PickingTask[] {
       pickedByKey[l.key] = q;
       pickedQty += q;
     });
+    const { batchPicks, serialPicks } = plausiblePicksFor(o.id, lines, o.warehouseId, pickedByKey);
     const dayOffset = -((k % 12) + 2);
     out.push({
       id: `pick-sh-${String(k + 1).padStart(3, "0")}`,
@@ -213,6 +274,8 @@ function seedShippedPicks(startSeq: number): PickingTask[] {
       endDate: isoAt(dayOffset, 11, 15),
       lines,
       pickedByKey,
+      ...(Object.keys(batchPicks).length ? { batchPicks } : {}),
+      ...(Object.keys(serialPicks).length ? { serialPicks } : {}),
     });
   });
   return out;
