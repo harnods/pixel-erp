@@ -314,18 +314,20 @@ const toggleConfirmItems = computed((): string[] => {
               <span class="cw-toggle-title">Storage location priority</span>
               <span class="cw-toggle-desc">WMS reserves from the highest-priority location with available stock when an outbound doesn't already specify one.</span>
             </div>
-            <button
-              v-if="isEditing && storageLeaves.length"
-              class="btn-enterprise btn-enterprise--secondary"
-              @click="locationPriorityDrawerOpen = true"
-            >
-              Manage priority
-            </button>
           </div>
 
           <div class="cw-sub-row">
             <span class="cw-sub-label">Priority order</span>
-            <span class="cw-sub-value">{{ locationPrioritySummary }}</span>
+            <div class="cw-sub-priority">
+              <span class="cw-sub-value">{{ locationPrioritySummary }}</span>
+              <button
+                v-if="isEditing && storageLeaves.length"
+                class="btn-enterprise btn-enterprise--secondary cw-manage-priority-btn"
+                @click="locationPriorityDrawerOpen = true"
+              >
+                Manage storage priority
+              </button>
+            </div>
           </div>
 
           <h3 class="cw-subsection-title cw-subsection-title--spaced">Inbound delivery</h3>
@@ -583,11 +585,13 @@ const toggleConfirmItems = computed((): string[] => {
 .cw-section--spaced { margin-top: var(--mp-spacing-6); padding-top: var(--mp-spacing-6); border-top: 1px solid var(--mp-border-default); }
 
 .cw-sub-row {
-  display: flex; align-items: center;
+  display: flex; align-items: flex-start;
   gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; padding-left: var(--mp-spacing-4);
 }
 .cw-sub-label { width: 160px; flex-shrink: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .cw-sub-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.cw-sub-priority { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-2); }
+.cw-manage-priority-btn { font-size: var(--mp-font-sizes-sm) !important; }
 .cw-sub-input {
   width: 80px; padding: 6px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
