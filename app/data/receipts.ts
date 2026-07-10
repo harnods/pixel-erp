@@ -234,6 +234,16 @@ export function persistReceipts(): void {
 
 let receiptAddSeq = receipts.filter((r) => r.id.startsWith("rcv-new-")).length;
 
+const RCV_PREFIX_RE = /^Receipt #(\d+)$/;
+export function nextReceiptNo(): string {
+  let max = 0;
+  for (const r of receipts) {
+    const m = r.purchaseNo.match(RCV_PREFIX_RE);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return `Receipt #${String(max + 1).padStart(5, "0")}`;
+}
+
 /** Create a new inbound receipt (PO) from the New receipt form — persists + clickable. */
 export function addReceipt(
   data: Omit<Receipt, "id" | "number">,
