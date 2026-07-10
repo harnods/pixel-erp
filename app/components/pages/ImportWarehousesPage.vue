@@ -203,6 +203,9 @@ function fmtBytes(bytes: number) {
                     <p class="iw-dropzone-hint">Supported formats: CSV, XLS, XLSX.</p>
                     <p class="iw-dropzone-hint">Maximum file size 10 MB.</p>
                   </div>
+                  <p v-if="uploadError === 'no-file'" class="iw-dropzone-error">
+                    You must upload file
+                  </p>
                   <p v-if="uploadError === 'format'" class="iw-dropzone-error">
                     File must be in CSV, XLS, or XLSX format
                   </p>

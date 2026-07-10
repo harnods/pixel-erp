@@ -106,14 +106,14 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(key: string) {
   if (!(draftCounted.value[key] ?? 0)) {
-    toast.notify({ variant: 'warning', title: 'Enter counted qty first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: 'Enter counted qty first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerKey.value = key
 }
 function openSerialDrawerForAdded(id: string, counted: number | undefined) {
   if (!(counted ?? 0)) {
-    toast.notify({ variant: 'warning', title: 'Enter counted qty first', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: 'Enter counted qty first', maxWidth: 'max-content' })
     return
   }
   serialDrawerKey.value = id
@@ -300,7 +300,7 @@ function openNewBatchModal(location: string, id: string) {
 }
 async function confirmNewBatch() {
   const nm = newBatchNo.value.trim()
-  if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a batch name', maxWidth: 'max-content' }); return }
+  if (!nm) { toast.notify({ variant: 'error', title: 'You must fill in batch name', maxWidth: 'max-content' }); return }
   const t = newBatchTarget.value
   if (!t) return
   isSaving.value = true
@@ -416,7 +416,7 @@ const showQtyErrors = ref(false)
 function clickFinish() {
   if (countedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'danger', title: 'Enter counted qty for at least one item' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: 'You must fill in counted qty for at least one item' , maxWidth: 'max-content'})
     return
   }
   // Validate serial counts match qty
@@ -426,8 +426,8 @@ function clickFinish() {
     const actual = serialCount(item.key)
     if (expected > 0 && actual !== expected) {
       toast.notify({
-        variant: 'danger',
-        title: `Enter all serial numbers for ${item.product.name} (${actual}/${expected})`,
+        variant: 'error',
+        title: `You must fill in all serial numbers for ${item.product.name} (${actual}/${expected})`,
         maxWidth: 'max-content',
       })
       return

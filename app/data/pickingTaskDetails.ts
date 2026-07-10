@@ -1,5 +1,5 @@
 import {
-  getPickingTask, pickingLinesOf, pickingTasks, type PickingTask,
+  getPickingTask, pickingLinesOf, pickingTasks, mergeBatchPicks, dedupeSerialPicks, type PickingTask,
   type PickingBatchPick, type PickingSerialPick,
 } from "./pickingTasks";
 import { packingTasks, type PackingTask } from "./packingTasks";
@@ -37,8 +37,8 @@ export function getPickingLineItems(task: PickingTask): PickLineItem[] {
     expectedQty: l.qty,
     pickedQty: task.pickedByKey?.[l.key] ?? 0,
     unit: l.unit,
-    batchPicks: task.batchPicks?.[l.key],
-    serialPicks: task.serialPicks?.[l.key],
+    batchPicks: task.batchPicks?.[l.key] ? mergeBatchPicks(task.batchPicks[l.key]) : undefined,
+    serialPicks: task.serialPicks?.[l.key] ? dedupeSerialPicks(task.serialPicks[l.key]) : undefined,
   }));
 }
 

@@ -19,6 +19,8 @@ import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { notifyScanError } from '~/utils/scan'
+import { playScanSuccessSound } from '~/utils/sound'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -323,6 +325,7 @@ function handleScan(rawValue: string) {
   // Bin scan
   if (locationOptions.value.includes(v)) {
     activeBin.value = v
+    playScanSuccessSound()
     return
   }
 
@@ -339,7 +342,7 @@ function handleScan(rawValue: string) {
       const totalQty    = totalQtyBySkuCode.value.get(v) ?? 0
       const assignedQty = skuRows.reduce((s, r) => s + (r.qty || 0), 0)
       if (assignedQty >= totalQty) {
-        toast.notify({ variant: 'error', title: `${v}: received qty already fully assigned`, maxWidth: 'max-content' })
+        notifyScanError(`${v}: received qty already fully assigned`)
         return
       }
       const newRow: DraftRow = { id: newRowId(), skuCode: v, qty: 1, binLocation: bin }
@@ -347,6 +350,7 @@ function handleScan(rawValue: string) {
       const next = [...draftRows.value]
       next.splice(lastSkuIdx + 1, 0, newRow)
       draftRows.value = next
+      playScanSuccessSound()
       flashRowId.value = newRow.id
       if (flashTimer) clearTimeout(flashTimer)
       flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
@@ -357,13 +361,14 @@ function handleScan(rawValue: string) {
     const target = binRow ?? skuRows.find(r => !r.binLocation) ?? skuRows[0]!
     const cap = remainingQtyFor(target)
     if (cap === 0) {
-      toast.notify({ variant: 'error', title: `${v}: received qty already fully assigned`, maxWidth: 'max-content' })
+      notifyScanError(`${v}: received qty already fully assigned`)
       return
     }
     const nextBin = target.binLocation || bin || ''
     draftRows.value = draftRows.value.map(r =>
       r.id === target.id ? { ...r, qty: Math.min((r.qty || 0) + 1, cap), binLocation: nextBin } : r,
     )
+    playScanSuccessSound()
     flashRowId.value = target.id
     if (flashTimer) clearTimeout(flashTimer)
     flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
@@ -375,13 +380,13 @@ function handleScan(rawValue: string) {
     const bIdx = batches.findIndex(b => b.batchNo === v)
     if (bIdx !== -1) {
       if (!bin) {
-        toast.notify({ variant: 'error', title: 'Scan a bin first before scanning batch numbers', maxWidth: 'max-content' })
+        notifyScanError('Scan a bin first before scanning batch numbers')
         return
       }
       const batch = batches[bIdx]!
       const totalAssigned = (batch.destLocations ?? []).reduce((s, d) => s + d.qty, 0)
       if (totalAssigned >= batch.onHand) {
-        toast.notify({ variant: 'error', title: `${v}: batch qty fully assigned`, maxWidth: 'max-content' })
+        notifyScanError(`${v}: batch qty fully assigned`)
         return
       }
       const newDest = [...(batch.destLocations ?? [])]
@@ -395,6 +400,7 @@ function handleScan(rawValue: string) {
         ...batchLinesBySku.value,
         [skuCode]: batches.map((b, i) => i === bIdx ? { ...b, destLocations: newDest } : b),
       }
+      playScanSuccessSound()
       const row = draftRows.value.find(r => r.skuCode === skuCode)
       if (row) {
         flashRowId.value = row.id
@@ -410,11 +416,12 @@ function handleScan(rawValue: string) {
     const idx = serials.findIndex(s => s.serial === v)
     if (idx !== -1) {
       if (!bin) {
-        toast.notify({ variant: 'error', title: 'Scan a bin first before scanning serial numbers', maxWidth: 'max-content' })
+        notifyScanError('Scan a bin first before scanning serial numbers')
         return
       }
       const updated = serials.map((s, i) => i === idx ? { ...s, destLocationId: bin } : s)
       serialLinesBySku.value = { ...serialLinesBySku.value, [skuCode]: updated }
+      playScanSuccessSound()
       const row = draftRows.value.find(r => r.skuCode === skuCode)
       if (row) {
         flashRowId.value = row.id
@@ -425,7 +432,7 @@ function handleScan(rawValue: string) {
     }
   }
 
-  toast.notify({ variant: 'error', title: `Barcode not found: "${v}"`, maxWidth: 'max-content' })
+  notifyScanError(`Barcode not found: "${v}"`)
 }
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
@@ -616,7 +623,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         </div>
 
         <!-- ── Scan bar ── -->
-        <ScanBar placeholder="Scan bin or item..." @scan="handleScan">
+        <ScanBar placeholder="Scan barcode..." @scan="handleScan">
           <div v-if="activeBin" class="pi-active-bin">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -842,11 +849,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 /* ── Task header ─────────────────────────────────────────────────────────────── */
 .pi-header {
-  display: flex; gap: var(--mp-spacing-10);
+  display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10);
   padding-bottom: var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.pi-header :deep(.content-list) { padding-top: 0; }
+.pi-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
 
 /* ── Summary stats ───────────────────────────────────────────────────────────── */
 .pi-summary { display: flex; gap: var(--mp-spacing-10); align-self: flex-start; }

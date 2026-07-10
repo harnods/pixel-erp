@@ -13,6 +13,8 @@ import {
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { scrollToFirstError } from '~/utils/form'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
+import { notifyScanError } from '~/utils/scan'
+import { playScanSuccessSound } from '~/utils/sound'
 
 const router = useRouter()
 const route = useRoute()
@@ -44,12 +46,14 @@ const warehouseAc = computed(() => tasks.value[0] ? [{ id: tasks.value[0]!.wareh
 const warehouseId = ref('')
 watch(tasks, (ts) => { warehouseId.value = ts[0]?.warehouseId ?? '' }, { immediate: true })
 
-interface Row { id: string; salesNo: string; packingTaskNo: string; source: string; isMarketplace: boolean; skuQty: number; toShipQty: number }
+interface Row { id: string; salesOrderId: string; salesNo: string; packingTaskId: string; packingTaskNo: string; source: string; isMarketplace: boolean; skuQty: number; toShipQty: number }
 const rows = computed<Row[]>(() => tasks.value.map((t) => {
   const order = outgoingOrders.find(o => o.id === t.salesOrderId)
   return {
     id: t.id,
+    salesOrderId: t.salesOrderId,
     salesNo: t.salesNo,
+    packingTaskId: t.packingTaskId,
     packingTaskNo: t.packingTaskNo,
     source: order?.source ?? '',
     isMarketplace: isMarketplaceOrder(order),
@@ -58,22 +62,34 @@ const rows = computed<Row[]>(() => tasks.value.map((t) => {
   }
 }))
 
-// ─── Progressive pagination for the deliveries table (mirrors CreatePutAwayPage) ──
+// ─── Search + progressive pagination for the deliveries table (mirrors CreatePutAwayPage) ──
+const search = ref('')
+const filteredRows = computed<Row[]>(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return rows.value
+  return rows.value.filter(r =>
+    r.salesNo.toLowerCase().includes(q) || r.packingTaskNo.toLowerCase().includes(q) || r.source.toLowerCase().includes(q),
+  )
+})
 const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
-const pagedRows = computed<Row[]>(() => rows.value.slice(0, shownCount.value))
-const hasMoreRows = computed(() => shownCount.value < rows.value.length)
-const isProgressive = computed(() => rows.value.length > PAGE_SIZE)
+const pagedRows = computed<Row[]>(() => filteredRows.value.slice(0, shownCount.value))
+const hasMoreRows = computed(() => shownCount.value < filteredRows.value.length)
+const isProgressive = computed(() => filteredRows.value.length > PAGE_SIZE)
 
 function loadMoreRows(): void {
   if (loadingMore.value || !hasMoreRows.value) return
   loadingMore.value = true
   setTimeout(() => {
-    shownCount.value = Math.min(shownCount.value + PAGE_SIZE, rows.value.length)
+    shownCount.value = Math.min(shownCount.value + PAGE_SIZE, filteredRows.value.length)
     loadingMore.value = false
   }, 400)
 }
+watch(search, () => {
+  shownCount.value = PAGE_SIZE
+  nextTick(() => { if (itemsScrollEl.value) itemsScrollEl.value.scrollTop = 0 })
+})
 
 const itemsScrollEl = ref<HTMLElement | null>(null)
 const itemsSentinelEl = ref<HTMLElement | null>(null)
@@ -92,6 +108,9 @@ onUnmounted(() => { itemsObserver?.disconnect() })
 
 // ─── Add more by scanning a packing no. — same match/flash behavior as New shipment,
 // scoped to this handover's (already-locked) warehouse. ─────────────────────────
+// Scanning is harmless to undo — nothing is persisted until Save — so let the
+// operator wipe every scan-added delivery and go back to what was pre-selected.
+function resetScan() { taskIds.value = [...initialDeliveryIds.value] }
 const flashRowId = ref<string | null>(null)
 function handleScan(raw: string) {
   const value = raw.trim()
@@ -100,24 +119,21 @@ function handleScan(raw: string) {
   if (!match) {
     const elsewhere = findReadyToShipByPackingNoAnyWarehouse(value)
     if (elsewhere) {
-      toast.notify({
-        variant: 'error',
-        title: `"${value}" belongs to ${elsewhere.warehouseName}, not ${warehouseName.value}`,
-        maxWidth: 'max-content',
-      })
+      notifyScanError(`"${value}" belongs to ${elsewhere.warehouseName}, not ${warehouseName.value}`)
     } else {
-      toast.notify({ variant: 'error', title: `Barcode not found: "${value}"`, maxWidth: 'max-content' })
+      notifyScanError(`Barcode not found: "${value}"`)
     }
     return
   }
   if (taskIds.value.includes(match.id)) {
-    toast.notify({ variant: 'error', title: 'Already added to this handover', maxWidth: 'max-content' })
+    notifyScanError('Already added to this handover')
     return
   }
   taskIds.value = [...taskIds.value, match.id]
+  playScanSuccessSound()
   // Keep the newly-scanned row within the shown page so its flash is visible,
   // instead of resetting pagination (which would hide it behind "load more").
-  shownCount.value = Math.max(shownCount.value, rows.value.length)
+  shownCount.value = Math.max(shownCount.value, filteredRows.value.length)
   flashRowId.value = match.id
   setTimeout(() => { if (flashRowId.value === match.id) flashRowId.value = null }, 700)
 }
@@ -196,7 +212,7 @@ async function handleSave() {
           <button class="detail-breadcrumb" @click="goBack">Ready to ship</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Handover to courier</h1>
+          <h1 class="detail-title">Create shipment</h1>
         </div>
       </div>
     </header>
@@ -248,7 +264,7 @@ async function handleSave() {
                 </div>
               </template>
             </MpAutocomplete>
-            <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="ho-txdate" is-required :is-invalid="transactionDateError">
@@ -263,7 +279,7 @@ async function handleSave() {
                 @update:model-value="transactionDateError = false"
               />
             </div>
-            <MpFormErrorMessage>Please enter a transaction date</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select transaction date</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="ho-txno">
@@ -280,20 +296,23 @@ async function handleSave() {
           <h2 class="ho-section-title">Deliveries</h2>
           <div class="ho-summary">
             <div class="ho-stat">
-              <span class="ho-stat-label">Deliveries</span>
+              <span class="ho-stat-label">Packages</span>
               <span class="ho-stat-val">{{ formatNum(rows.length) }}</span>
-            </div>
-            <div class="ho-stat">
-              <span class="ho-stat-label">SKU qty</span>
-              <span class="ho-stat-val">{{ formatNum(rows.reduce((a, r) => a + r.skuQty, 0)) }}</span>
-            </div>
-            <div class="ho-stat">
-              <span class="ho-stat-label">To ship qty</span>
-              <span class="ho-stat-val">{{ formatNum(rows.reduce((a, r) => a + r.toShipQty, 0)) }}</span>
             </div>
           </div>
 
-          <ScanBar placeholder="Scan packing no..." class="ns-scanbar" @scan="handleScan" />
+          <div class="ho-filter-bar">
+            <div class="ho-search-wrap">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <input v-model="search" class="ho-search" type="text" placeholder="Search..." />
+            </div>
+          </div>
+
+          <ScanBar placeholder="Scan barcode..." class="ns-scanbar" @scan="handleScan">
+            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</button>
+          </ScanBar>
 
           <section class="ho-items-section" :class="{ 'ho-items-section--bordered': isProgressive }">
             <div ref="itemsScrollEl" class="ho-items-scroll">
@@ -313,7 +332,7 @@ async function handleSave() {
                     <th class="ho-th">Packing no.</th>
                     <th class="ho-th">Source</th>
                     <th class="ho-th ho-th--num">SKU qty</th>
-                    <th class="ho-th ho-th--num">To ship qty</th>
+                    <th class="ho-th ho-th--num">Packed qty</th>
                     <th class="ho-th">Courier</th>
                     <th class="ho-th">Tracking no.</th>
                   </tr>
@@ -325,8 +344,30 @@ async function handleSave() {
                     class="ho-item-row"
                     :class="{ 'ho-item-row--flash': flashRowId === row.id }"
                   >
-                    <td class="ho-td">{{ row.salesNo }}</td>
-                    <td class="ho-td">{{ row.packingTaskNo }}</td>
+                    <td class="ho-td ho-td--number">
+                      <div class="cell-with-action">
+                        <span>{{ row.salesNo }}</span>
+                        <button class="row-hover-btn" type="button" @click.stop="router.push(`/outbound-delivery/${row.salesOrderId}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="ho-td ho-td--number">
+                      <div class="cell-with-action">
+                        <span>{{ row.packingTaskNo }}</span>
+                        <button class="row-hover-btn" type="button" @click.stop="router.push(`/packing/${row.packingTaskId}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
                     <td class="ho-td"><SourceLabel :source="row.source" /></td>
                     <td class="ho-td ho-td--num">{{ formatNum(row.skuQty) }}</td>
                     <td class="ho-td ho-td--num">{{ formatNum(row.toShipQty) }}</td>
@@ -359,7 +400,7 @@ async function handleSave() {
               </div>
             </div>
             <div v-if="isProgressive" class="ho-items-count">
-              Showing {{ pagedRows.length }} of {{ rows.length }} deliveries
+              Showing {{ pagedRows.length }} of {{ filteredRows.length }} deliveries
             </div>
           </section>
           <p v-if="showRowErrors && rows.some(r => rowCourierInvalid(r) || rowTrackingInvalid(r))" class="ho-error">
@@ -447,6 +488,13 @@ async function handleSave() {
 
 .ns-scanbar { margin-bottom: var(--mp-spacing-4); }
 
+/* ── Filter bar (search within already-added deliveries) ───────────────────── */
+.ho-filter-bar { display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-4); }
+.ho-search-wrap { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 240px; }
+.ho-search-wrap:focus-within { border-color: var(--mp-border-bold); box-shadow: 0 0 0 1px var(--mp-border-bold); }
+.ho-search { flex: 1; border: none; background: transparent; outline: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.ho-search::placeholder { color: var(--mp-text-placeholder); }
+
 /* ── Items table (form-table look: grey read-only cells, white editable cell) ── */
 .ho-items-section { display: flex; flex-direction: column; }
 .ho-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
@@ -467,8 +515,22 @@ async function handleSave() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
   background: var(--mp-background-neutral-subtle);
+  border-right: 1px solid var(--mp-border-default);
 }
+.ho-td:last-child { border-right: none; }
 .ho-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+
+/* Sales order no. / Packing no. cells — hover chip linking to their own detail page */
+.ho-td--number { position: relative; }
+.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
+.row-hover-btn {
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
+.ho-item-row:hover .row-hover-btn { display: flex; }
 /* Editable Courier/Tracking cell — white, input fills edge-to-edge, focus ring */
 .ho-td--input { padding: 0; background: var(--mp-background-neutral); }
 .ho-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }

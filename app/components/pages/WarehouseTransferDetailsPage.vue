@@ -134,7 +134,7 @@ const deleteError = ref('')
 const REASON_MAX = 256
 function askDelete() { deleteReason.value = ''; deleteError.value = ''; deleteOpen.value = true }
 function confirmDelete() {
-  if (!deleteReason.value.trim()) { deleteError.value = 'Enter a reason for deleting'; return }
+  if (!deleteReason.value.trim()) { deleteError.value = 'You must fill in reason for deleting'; return }
   deleteTransfers([props.orderId])
   deleteOpen.value = false
   router.push('/warehouse-transfers')

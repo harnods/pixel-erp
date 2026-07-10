@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpTooltip, MpIcon,
   css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -250,7 +250,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="pck-end-cell">
-              <span>{{ localEndDate ? formatDateTime(localEndDate) : '—' }}</span>
+              <span>{{ localEndDate ? formatDateTimeLong(localEndDate) : '—' }}</span>
               <span v-if="agingLabel()" class="pck-aging">{{ agingLabel() }}</span>
             </span>
           </ContentList>
@@ -285,6 +285,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                   <th class="detail-th detail-th--num">Packed qty</th>
                   <th class="detail-th detail-th--num">Outstanding qty</th>
                   <th class="detail-th">Unit</th>
+                  <th class="detail-th"></th>
                 </tr>
               </thead>
               <tbody>
@@ -292,39 +293,32 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                   <td class="detail-td"><ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" /></td>
                   <td class="detail-td">{{ item.skuCode }}</td>
                   <td class="detail-td">{{ item.binLocation }}</td>
-
-                  <!-- Picked qty: batch/serial-tracked SKUs split into a value row +
-                       a "View batch"/"View serial number" row (read-only — what was
-                       actually picked, no storage location). Hidden entirely when
-                       picking was skipped for this task's warehouse. -->
-                  <template v-if="!skippedPicking">
-                    <td v-if="isBatchTrackedSku(item.skuCode)" class="detail-td detail-td--picked-batch">
-                      <div class="pck-picked-qty">{{ fmt(item.pickedQty) }}</div>
-                      <div class="pck-picked-action">
-                        <button class="pck-view-link" type="button" @click="openViewBatch(item)">View batch</button>
-                      </div>
-                    </td>
-                    <td v-else-if="isSerialTrackedSku(item.skuCode)" class="detail-td detail-td--picked-batch">
-                      <div class="pck-picked-qty">{{ fmt(item.pickedQty) }}</div>
-                      <div class="pck-picked-action">
-                        <button class="pck-view-link" type="button" @click="openViewSerial(item)">View serial number</button>
-                      </div>
-                    </td>
-                    <td v-else class="detail-td detail-td--num">{{ fmt(item.pickedQty) }}</td>
-                  </template>
-
+                  <td v-if="!skippedPicking" class="detail-td detail-td--num">{{ fmt(item.pickedQty) }}</td>
                   <td class="detail-td detail-td--num">
                     <span :class="isInProgress ? '' : (rowPacked(item.key, item.packedQty) === item.pickedQty ? 'pck-qty--full' : rowPacked(item.key, item.packedQty) > 0 ? 'pck-qty--partial' : 'pck-qty--zero')">
                       {{ fmt(rowPacked(item.key, item.packedQty)) }}
                     </span>
                   </td>
                   <td class="detail-td detail-td--num">
-                    <span v-if="item.pickedQty - rowPacked(item.key, item.packedQty) > 0" class="pck-outstanding">
+                    <span :class="item.pickedQty - rowPacked(item.key, item.packedQty) > 0 ? 'pck-outstanding' : 'pck-qty--full'">
                       {{ fmt(item.pickedQty - rowPacked(item.key, item.packedQty)) }}
                     </span>
-                    <span v-else class="pck-qty--full">—</span>
                   </td>
                   <td class="detail-td">{{ item.unit }}</td>
+                  <td class="detail-td detail-td--action">
+                    <template v-if="!skippedPicking">
+                      <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pck-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
+                        <button class="pck-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                          <MpIcon name="competencies" size="md" />
+                        </button>
+                      </MpTooltip>
+                      <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`pck-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
+                        <button class="pck-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                          <MpIcon name="competencies" size="md" />
+                        </button>
+                      </MpTooltip>
+                    </template>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -584,21 +578,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .pck-qty--zero { color: var(--mp-text-placeholder); }
 .pck-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
 
-/* Batch/serial-tracked Picked qty — value row + View batch/SN action row. Plain
-   block divs (not flex on the <td> itself) so the row still stretches naturally. */
-.detail-td--picked-batch { padding: 0; vertical-align: top; }
-.pck-picked-qty {
-  height: var(--mp-sizes-10, 40px); display: flex; align-items: center; justify-content: flex-end;
-  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-4);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
-}
-.pck-picked-action {
-  height: var(--mp-sizes-10, 40px); display: flex; align-items: center; justify-content: flex-end;
-  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-4);
-}
-.pck-view-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); white-space: nowrap; }
-.pck-view-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.detail-td--action { text-align: center; white-space: nowrap; }
+.pck-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.pck-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .pck-tabs { flex-shrink: 0; }
 .pck-tabs :deep(.mp-tab--isSelected_true), .pck-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }

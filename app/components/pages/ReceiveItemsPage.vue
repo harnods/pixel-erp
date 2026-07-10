@@ -17,6 +17,8 @@ import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksFor
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { notifyScanError } from '~/utils/scan'
+import { playScanSuccessSound } from '~/utils/sound'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -220,6 +222,7 @@ function handleScan(rawValue: string) {
       batchLinesBySku.value = { ...batchLinesBySku.value, [skuCode]: updated }
       draftQty.value = { ...draftQty.value, [skuCode]: updated.reduce((s, b) => s + (b.counted ?? 0), 0) }
       if (showQtyErrors.value) showQtyErrors.value = false
+      playScanSuccessSound()
       flashRowId.value = skuCode
       if (flashTimer) clearTimeout(flashTimer)
       flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
@@ -230,24 +233,26 @@ function handleScan(rawValue: string) {
   // SKU scan
   const item = lineItems.value.find(it => it.skuCode === v)
   if (!item) {
-    toast.notify({ variant: 'error', title: `Barcode not found: "${v}"`, maxWidth: 'max-content' })
+    notifyScanError(`Barcode not found: "${v}"`)
     return
   }
   if (isBatchTrackedSku(v)) {
+    playScanSuccessSound()
     openBatchDrawer(v)
     return
   }
   if (isSerialTrackedSku(v)) {
-    toast.notify({ variant: 'error', title: `${v}: use Manage serial numbers to add serials`, maxWidth: 'max-content' })
+    notifyScanError(`${v}: use Manage serial numbers to add serials`)
     return
   }
   const current = draftQty.value[v] ?? 0
   if (current >= item.expectedQty) {
-    toast.notify({ variant: 'error', title: `${v}: purchase qty already fully received`, maxWidth: 'max-content' })
+    notifyScanError(`${v}: purchase qty already fully received`)
     return
   }
   draftQty.value = { ...draftQty.value, [v]: current + 1 }
   if (showQtyErrors.value) showQtyErrors.value = false
+  playScanSuccessSound()
   flashRowId.value = v
   if (flashTimer) clearTimeout(flashTimer)
   flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
@@ -271,7 +276,7 @@ const showConfirm = ref(false)
 function endReceiving() {
   if (draftReceivedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'error', title: 'Enter received qty for at least one item', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: 'You must fill in received qty for at least one item', maxWidth: 'max-content' })
     return
   }
   showConfirm.value = true
@@ -425,7 +430,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         </div>
 
         <!-- Scan bar -->
-        <ScanBar placeholder="Scan item..." @scan="handleScan" />
+        <ScanBar placeholder="Scan barcode..." @scan="handleScan" />
 
         <!-- SKU table -->
         <section class="ri-items-section" :class="{ 'ri-items-section--bordered': isProgressive }">
@@ -494,10 +499,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <td v-else class="ri-td ri-td--action"></td>
                   <td class="ri-td ri-td--num">
-                    <span v-if="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0) > 0" class="ri-outstanding">
+                    <span :class="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0) > 0 ? 'ri-outstanding' : 'ri-qty--full'">
                       {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0)) }}
                     </span>
-                    <span v-else class="ri-qty--full">—</span>
                   </td>
                   <td class="ri-td">{{ item.unit }}</td>
                 </tr>
@@ -641,11 +645,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 /* ── PO header ───────────────────────────────────────────────────────────────── */
 .ri-header {
-  display: flex; gap: var(--mp-spacing-10);
+  display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10);
   padding-bottom: var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.ri-header :deep(.content-list) { padding-top: 0; }
+.ri-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
 
 /* ── Summary stats ───────────────────────────────────────────────────────────── */
 .ri-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }

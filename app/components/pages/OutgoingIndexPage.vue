@@ -615,7 +615,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Cancel confirmation modal ── -->
   <MpModal
-    id="out-cancel-modal" :is-open="cancelModalOpen" size="sm"
+    id="out-cancel-modal" :is-open="cancelModalOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
   >
     <MpModalContent>
@@ -635,7 +635,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Bulk cancel confirmation modal ── -->
   <MpModal
-    id="out-bulk-cancel-modal" :is-open="bulkCancelOpen" size="sm"
+    id="out-bulk-cancel-modal" :is-open="bulkCancelOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkCancelOpen = false"
   >
     <MpModalContent>
@@ -657,7 +657,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
        this order's warehouse; non-marketplace orders go to the full create page
        instead, since they can be packed partially). ── -->
   <MpModal
-    id="out-direct-pack-modal" :is-open="directPackModalOpen" size="sm"
+    id="out-direct-pack-modal" :is-open="directPackModalOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
   >
     <MpModalContent>
@@ -678,7 +678,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             is-searchable is-clearable use-portal is-full-width
             :is-invalid="directPackAssigneeError"
           />
-          <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+          <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
         </MpFormControl>
       </MpModalBody>
       <MpModalFooter>

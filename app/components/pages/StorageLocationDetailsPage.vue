@@ -226,7 +226,7 @@ function confirmDeleteLocation() {
     <MpModal
       id="sld-delete-modal"
       :is-open="deleteConfirmOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"

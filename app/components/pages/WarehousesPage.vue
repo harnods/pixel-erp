@@ -478,7 +478,7 @@ const emptyDesc = computed(() =>
   <MpModal
     id="wh-delete-modal"
     :is-open="deleteModalOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -544,7 +544,7 @@ const emptyDesc = computed(() =>
   <MpModal
     id="wh-bulk-archive-modal"
     :is-open="bulkArchiveModalOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -687,7 +687,7 @@ const emptyDesc = computed(() =>
   <MpModal
     id="wh-bulk-delete-modal"
     :is-open="bulkDeleteModalOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"

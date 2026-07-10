@@ -136,6 +136,9 @@ async function save() {
 
 <style scoped>
 /* ── Transition ── */
+.lp-enter-active { transition: background-color 250ms ease; }
+.lp-leave-active { transition: background-color 250ms ease; }
+.lp-enter-from, .lp-leave-to { background-color: transparent; }
 .lp-enter-active .lp-panel { transition: transform 350ms ease-out; }
 .lp-leave-active .lp-panel { transition: transform 250ms ease-in; }
 .lp-enter-from .lp-panel,

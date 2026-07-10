@@ -3,13 +3,20 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
+  MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
-import { getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQtyInTask, type PickingTask } from '~/data/pickingTasks'
+import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
+import {
+  getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQtyInTask,
+  batchPicksForOrderSku, serialPicksForOrderSku, type PickingTask,
+} from '~/data/pickingTasks'
 import { addPackingTask, addPackingTaskFromOrder, getPackingForOrder, remainingSkusForOrder } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
-import { orderSkuLines } from '~/data/inventory'
+import { orderSkuLines, productBySku } from '~/data/inventory'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
 
@@ -125,16 +132,44 @@ const blockedTables = computed(() => orderTables.value.filter(t => !t.packable &
 const packedTables = computed(() => orderTables.value.filter(t => t.alreadyPacked))
 // Every picking list that contributed to the packable orders (an order split across
 // several lists shows them all, not just the one this form was opened from).
-const sourcePickingNos = computed(() => {
-  const seen = new Map<string, string>()
-  for (const p of picks.value) seen.set(p.id, p.taskNo)
+const sourcePickingLists = computed<PickingTask[]>(() => {
+  const seen = new Map<string, PickingTask>()
+  for (const p of picks.value) seen.set(p.id, p)
   for (const t of packableTables.value) {
     for (const pt of getPickingForOrder(t.orderId)) {
-      if (pt.status !== 'canceled' && orderPickedQtyInTask(pt, t.orderId) > 0) seen.set(pt.id, pt.taskNo)
+      if (pt.status !== 'canceled' && orderPickedQtyInTask(pt, t.orderId) > 0) seen.set(pt.id, pt)
     }
   }
   return [...seen.values()]
 })
+
+// ─── Batch / serial numbers actually picked — read-only "View batch" / "View
+// serial number" per line, same heuristic as picking/receiving/put-away. An order
+// can be picked across several lists, so the batch/serial picks are aggregated
+// across ALL of them (merging by batchNo, deduping serials), not just the one
+// list this form happened to be opened from. ────────────────────────────────────
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(warehouseId.value)
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+const viewBatchItem = ref<{ orderId: string; sku: string; product: string; img: string } | null>(null)
+const viewSerialItem = ref<{ orderId: string; sku: string; product: string; img: string } | null>(null)
+function openViewBatch(orderId: string, row: PackLine) { viewBatchItem.value = { orderId, sku: row.sku, product: row.product, img: row.img } }
+function openViewSerial(orderId: string, row: PackLine) { viewSerialItem.value = { orderId, sku: row.sku, product: row.product, img: row.img } }
 
 // ─── Which sales orders to pack (order-level selection) ──────────────────────────
 // Items are NOT individually selectable — everything picked must be packed. Only WHICH
@@ -393,30 +428,71 @@ async function handleCreate() {
                 </div>
               </template>
             </MpAutocomplete>
-            <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
           </MpFormControl>
         </div>
+
+        <!-- Picking lists that contributed to this packing — MpAccordion, collapsed
+             by default since it's supplementary reference info, not the main content. -->
+        <MpAccordion v-if="!isDirectMode && sourcePickingLists.length" is-allow-toggle class="pk-picking-accordion">
+          <MpAccordionItem id="pk-picking-lists-acc" icon-position="start">
+            <MpAccordionHeader>
+              <span class="pk-acc-chevron-wrap"><MpAccordionIcon /></span>
+              <span class="pk-acc-label">{{ sourcePickingLists.length > 1 ? 'Picking lists' : 'Picking list' }}</span>
+            </MpAccordionHeader>
+            <MpAccordionPanel>
+              <table class="pk-picking-table">
+                <thead>
+                  <tr class="pk-thead-row--plain">
+                    <th class="pk-th">Picking no.</th>
+                    <th class="pk-th">Assignee</th>
+                    <th class="pk-th pk-th--num">SKU qty</th>
+                    <th class="pk-th pk-th--num">Picked qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="pt in sourcePickingLists" :key="pt.id" class="pk-item-row">
+                    <td class="pk-td pk-td--number">
+                      <div class="cell-with-action">
+                        <span>{{ pt.taskNo }}</span>
+                        <button class="row-hover-btn" type="button" @click.stop="router.push(`/picking/${pt.id}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="pk-td">{{ pt.assignee }}</td>
+                    <td class="pk-td pk-td--num">{{ formatNum(pt.skuQty) }}</td>
+                    <td class="pk-td pk-td--num">{{ formatNum(pt.pickedQty) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </MpAccordionPanel>
+          </MpAccordionItem>
+        </MpAccordion>
 
         <!-- Items to pack, per sales order -->
         <div class="pk-sku-section">
           <h2 class="pk-section-title">Items to pack</h2>
-          <div class="pk-section-meta">
-            <div v-if="!isDirectMode" class="pk-picking-ref">
-              <span class="pk-picking-ref-label">{{ sourcePickingNos.length > 1 ? 'Picking lists' : 'Picking list' }}</span>
-              <span class="pk-picking-ref-val">{{ sourcePickingNos.join(', ') }}</span>
-            </div>
-            <div v-if="selectedTotals.orders" class="pk-picking-ref">
-              <span class="pk-picking-ref-label">Packing tasks</span>
-              <span class="pk-picking-ref-val">{{ formatNum(selectedTotals.orders) }}</span>
-            </div>
+          <div v-if="selectedTotals.orders" class="pk-picking-ref">
+            <span class="pk-picking-ref-label">Packing tasks</span>
+            <span class="pk-picking-ref-val">{{ formatNum(selectedTotals.orders) }}</span>
           </div>
           <p v-if="blockedTables.length" class="pk-tasks-note">
-            Note: {{ blockedTables.map(t => t.salesNo).join(', ') }} ({{ blockedTables.length > 1 ? 'marketplace orders' : 'marketplace order' }}) not fully picked yet across its picking lists, so {{ blockedTables.length > 1 ? 'they’re' : 'it’s' }} not included here — finish picking {{ blockedTables.length > 1 ? 'them' : 'it' }} to pack. You can still save this packing for the order{{ packableTables.length > 1 ? 's' : '' }} below.
+            Note: {{ blockedTables.map(t => t.salesNo).join(', ') }} ({{ blockedTables.length > 1 ? 'marketplace orders' : 'marketplace order' }}) not fully picked yet across its picking lists, so {{ blockedTables.length > 1 ? 'they’re' : 'it’s' }} not included here — finish picking {{ blockedTables.length > 1 ? 'them' : 'it' }} to pack.
+            <template v-if="packableTables.length"> You can still save this packing for the order{{ packableTables.length > 1 ? 's' : '' }} below.</template>
           </p>
           <p v-if="packedTables.length" class="pk-tasks-note">
             Note: {{ packedTables.map(t => t.salesNo).join(', ') }} already {{ packedTables.length > 1 ? 'have' : 'has a' }} packing task, so {{ packedTables.length > 1 ? 'they’re' : 'it’s' }} not shown here.
           </p>
-          <p v-if="orderError" class="pk-tasks-error">Select at least one SKU to pack.</p>
+          <p v-if="orderError" class="pk-tasks-error">
+            {{ !isDirectMode && packableTables.length === 0
+              ? 'Marketplace orders must be fully picked (across their picking lists) before a packing task can be created.'
+              : 'You must select at least one SKU to pack' }}
+          </p>
 
           <div v-for="t in packableTables" :key="t.orderId" class="pk-order-block">
             <div class="pk-order-head">
@@ -447,15 +523,16 @@ async function handleCreate() {
                 <table class="pk-items">
                   <colgroup>
                     <col v-if="isDirectMode" style="width: 6%" />
-                    <col :style="{ width: isDirectMode ? '30%' : '42%' }" />
-                    <col style="width: 18%" />
+                    <col :style="{ width: isDirectMode ? '30%' : '40%' }" />
+                    <col style="width: 16%" />
                     <col :style="{ width: isDirectMode ? '14%' : '14%' }" />
                     <col v-if="!isDirectMode" style="width: 14%" />
                     <col v-if="isDirectMode" style="width: 14%" />
                     <col style="width: 8%" />
+                    <col v-if="!isDirectMode" style="width: 8%" />
                   </colgroup>
                   <thead>
-                    <tr>
+                    <tr :class="{ 'pk-thead-row--plain': !isDirectMode }">
                       <th v-if="isDirectMode" class="pk-th pk-th--check" @click.stop>
                         <MpCheckbox
                           :id="`pc-all-${t.orderId}`"
@@ -469,6 +546,7 @@ async function handleCreate() {
                       <th v-if="!isDirectMode" class="pk-th pk-th--num">Picked qty</th>
                       <th v-if="isDirectMode" class="pk-th pk-th--num">Pack qty</th>
                       <th class="pk-th">Unit</th>
+                      <th v-if="!isDirectMode" class="pk-th"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -502,6 +580,18 @@ async function handleCreate() {
                         />
                       </td>
                       <td class="pk-td">{{ row.unit }}</td>
+                      <td v-if="!isDirectMode" class="pk-td pk-td--action">
+                        <MpTooltip v-if="isBatchTrackedSku(row.sku)" :id="`pc-tt-batch-${row.key}`" label="View batch" placement="top" use-portal>
+                          <button class="pk-view-btn" type="button" aria-label="View batch" @click.stop="openViewBatch(t.orderId, row)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                        <MpTooltip v-else-if="isSerialTrackedSku(row.sku)" :id="`pc-tt-serial-${row.key}`" label="View serial number" placement="top" use-portal>
+                          <button class="pk-view-btn" type="button" aria-label="View serial number" @click.stop="openViewSerial(t.orderId, row)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -526,6 +616,30 @@ async function handleCreate() {
       <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
+
+  <ViewBatchDrawer
+    v-if="viewBatchItem"
+    :open="true"
+    :sku="viewBatchItem.sku"
+    :warehouse-id="warehouseId"
+    kind="packing"
+    :picked-batches="batchPicksForOrderSku(viewBatchItem.orderId, viewBatchItem.sku)"
+    :product-name="viewBatchItem.product"
+    :product-img="viewBatchItem.img"
+    @update:open="viewBatchItem = null"
+  />
+  <ViewSerialDrawer
+    v-if="viewSerialItem"
+    :open="true"
+    :sku="viewSerialItem.sku"
+    :warehouse-id="warehouseId"
+    kind="packing"
+    :counted-total="serialPicksForOrderSku(viewSerialItem.orderId, viewSerialItem.sku).length"
+    :picked-serials="serialPicksForOrderSku(viewSerialItem.orderId, viewSerialItem.sku).map(s => s.serial)"
+    :product-name="viewSerialItem.product"
+    :product-img="viewSerialItem.img"
+    @update:open="viewSerialItem = null"
+  />
 </template>
 
 <style scoped>
@@ -567,10 +681,25 @@ async function handleCreate() {
 /* ── Source + form grid ──────────────────────────────────────────────────────── */
 .pk-source { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .pk-source strong { color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
-.pk-section-meta { display: flex; align-items: flex-start; gap: var(--mp-spacing-10); margin: var(--mp-spacing-2) 0 var(--mp-spacing-5); }
-.pk-picking-ref { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
+.pk-picking-ref { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); margin: var(--mp-spacing-2) 0 var(--mp-spacing-5); }
 .pk-picking-ref-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); }
 .pk-picking-ref-val { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); }
+.pk-picking-table { width: 100%; table-layout: auto; border-collapse: collapse; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); overflow: hidden; }
+.pk-picking-accordion { margin: 0 0 var(--mp-spacing-5); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); overflow: hidden; }
+.pk-acc-chevron-wrap { display: inline-flex; padding-left: 12px; }
+.pk-acc-label { flex: 1; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+
+/* Picking list row — hover chip linking to the picking task's own detail page */
+.pk-td--number { position: relative; }
+.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
+.row-hover-btn {
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
+.pk-item-row:hover .row-hover-btn { display: flex; }
 .pk-section { margin-bottom: var(--mp-spacing-6); }
 .pk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--mp-spacing-4); max-width: 558px; }
 .pk-assignee-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -595,9 +724,9 @@ async function handleCreate() {
 /* ── Per-order blocks ────────────────────────────────────────────────────────── */
 .pk-order-block { margin-bottom: var(--mp-spacing-5); }
 .pk-order-head { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-2); }
-.pk-order-no { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pk-order-no { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pk-order-cust { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.pk-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
 .pk-source-info { display: inline-flex; align-items: center; color: var(--mp-icon-default, var(--mp-text-secondary)); cursor: default; }
 
 /* ── Items table (form-table look) ───────────────────────────────────────────── */
@@ -618,6 +747,12 @@ async function handleCreate() {
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+}
+/* Picking-sourced table has no form columns (direct mode's Pack qty input is the
+   only one) — a plain, read-only table gets the standard filled header, not the
+   white/no-border thead reserved for tables that actually contain form cells. */
+.pk-thead-row--plain .pk-th {
+  background: var(--mp-background-neutral-subtle);
 }
 .pk-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pk-th--check { width: var(--mp-sizes-12, 48px); }
@@ -640,6 +775,10 @@ async function handleCreate() {
   font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none;
 }
 .pk-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
+
+.pk-td--action { text-align: center; white-space: nowrap; }
+.pk-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.pk-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .pk-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; margin-top: var(--mp-spacing-4); }
 .pk-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }

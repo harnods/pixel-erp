@@ -196,7 +196,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(row: ProductRow, locRow: LocationRow) {
   if (locRow.delta.trim() === '' || locRow.delta.trim() === '-') {
-    toast.notify({ variant: 'warning', title: 'Enter stock in/out qty first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: 'Enter stock in/out qty first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerSku.value = row.sku
@@ -264,7 +264,7 @@ async function handleSave() {
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
   if (!categoryId.value) { categoryError.value = true; valid = false }
-  if (!rows.value.length) { formError.value = 'Add at least one product.'; valid = false }
+  if (!rows.value.length) { formError.value = 'You must add at least one product'; valid = false }
   for (const r of rows.value) {
     if (!isSerialTrackedSku(r.sku)) continue
     for (const loc of r.locationRows) {
@@ -337,7 +337,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <div class="scf-datepicker">
               <MpDatePicker id="scf-txdate-dp" v-model="transactionDate" format="DD/MM/YYYY" value-type="format" use-portal @update:model-value="transactionDateError = false" />
             </div>
-            <MpFormErrorMessage>Please enter a transaction date</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select transaction date</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="scf-transno" class="scf-f-transno">
@@ -356,7 +356,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpFormControl id="scf-category" class="scf-f-category" is-required :is-invalid="categoryError">
             <MpFormLabel>Category</MpFormLabel>
             <MpAutocomplete id="scf-category-ac" v-model="categoryId" :data="categoryOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width :is-invalid="categoryError" @update:model-value="categoryError = false" />
-            <MpFormErrorMessage>Please select a category</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select category</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl v-if="!isWms" id="scf-account" class="scf-f-account">
@@ -367,7 +367,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpFormControl id="scf-warehouse" class="scf-f-warehouse" is-required :is-invalid="warehouseError">
             <MpFormLabel>Warehouse</MpFormLabel>
             <MpAutocomplete id="scf-warehouse-ac" v-model="warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width :is-invalid="warehouseError" @update:model-value="warehouseError = false" />
-            <MpFormErrorMessage>Please select a warehouse</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
           </MpFormControl>
         </div>
 
@@ -586,7 +586,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
               <span class="scf-attach-or">or drag and drop here</span>
             </div>
-            <p class="scf-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
+            <p class="scf-helper-text">File must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
             <ul v-if="attachedFiles.length" class="scf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="scf-file-item">
                 <span class="scf-file-name">{{ f.name }}</span>

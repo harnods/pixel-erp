@@ -124,7 +124,7 @@ async function saveEdit() {
   saveWarehouseConfig(props.orderId, { ...committed })
   isSaving.value = false
   isEditing.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse configuration saved.', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: 'Warehouse configuration saved', maxWidth: 'max-content' })
 }
 
 // ─── Toggle-intercept confirm dialog (Picking / Put-away only — the other two
@@ -450,7 +450,7 @@ const toggleConfirmItems = computed((): string[] => {
     <MpModal
       id="cw-discard-dialog"
       :is-open="discardOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       @close="discardOpen = false"
@@ -502,7 +502,7 @@ const toggleConfirmItems = computed((): string[] => {
     <MpModal
       id="cw-rule-confirm-dialog"
       :is-open="ruleConfirmOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       @close="ruleConfirmOpen = false"

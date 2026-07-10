@@ -80,7 +80,7 @@ async function save() {
   } else {
     const nameLower = name.value.trim().toLowerCase()
     const dup = warehouses.some(w => w.name.toLowerCase() === nameLower && (!isEdit.value || w.id !== props.orderId))
-    if (dup) nameError.value = 'Warehouse name already exists'
+    if (dup) nameError.value = 'Warehouse name already taken'
   }
 
   if (!code.value.trim()) {
@@ -88,7 +88,7 @@ async function save() {
   } else {
     const codeUpper = code.value.trim().toUpperCase()
     const dup = warehouses.some(w => w.code.toUpperCase() === codeUpper && (!isEdit.value || w.id !== props.orderId))
-    if (dup) codeError.value = 'Warehouse code already exists'
+    if (dup) codeError.value = 'Warehouse code already taken'
   }
 
   if (nameError.value || codeError.value || picError.value) return

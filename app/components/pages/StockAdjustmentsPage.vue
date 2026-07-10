@@ -246,7 +246,7 @@ function askBulkDelete(sel: Set<number>, deselectAll: () => void) {
 // Keep the button clickable (no disabled buttons) — validate on click, show inline error.
 function confirmDelete() {
   if (!deleteReason.value.trim()) {
-    deleteError.value = 'Enter a reason for deleting'
+    deleteError.value = 'You must fill in reason for deleting'
     return
   }
   activeDelete(deleteIds.value)

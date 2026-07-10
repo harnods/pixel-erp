@@ -176,7 +176,7 @@ function handleCreate() {
       assignee: assigneeLabel.value,
       skus: keptItems.value.map((i) => i.sku),
     })
-    toast.notify({ variant: 'success', title: 'Receiving task created successfully' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'success', title: 'Receiving task created' , maxWidth: 'max-content'})
     router.push(task ? `/receiving/${task.id}` : `/inbound-delivery/${props.orderId}`)
   }
 }

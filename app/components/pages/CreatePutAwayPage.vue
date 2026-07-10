@@ -307,7 +307,7 @@ async function handleCreate() {
             :is-disabled="isWarehouseLocked"
             :is-invalid="warehouseError"
           />
-          <MpFormErrorMessage>You must select a warehouse</MpFormErrorMessage>
+          <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
         </MpFormControl>
 
         <!-- Assignee -->
@@ -333,7 +333,7 @@ async function handleCreate() {
               </div>
             </template>
           </MpAutocomplete>
-          <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+          <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
         </MpFormControl>
       </div>
 
@@ -342,7 +342,7 @@ async function handleCreate() {
         <h2 class="pa-section-title">Receiving tasks</h2>
 
         <!-- Error -->
-        <p v-if="taskSelectionError" class="pa-tasks-error">You must select at least one receiving task.</p>
+        <p v-if="taskSelectionError" class="pa-tasks-error">You must select at least one receiving task</p>
 
         <!-- Empty state — no pending tasks for this warehouse -->
         <div v-if="!pendingTasks.length" class="pa-empty">

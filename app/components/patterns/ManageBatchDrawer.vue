@@ -2,12 +2,14 @@
 import { ref, computed, watch, reactive, nextTick } from 'vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import {
-  MpIcon,
+  MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpDatePicker, css,
 } from '@mekari/pixel3'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { resolveScan, notifyScanError } from '~/utils/scan'
+import { playScanSuccessSound } from '~/utils/sound'
 
 // ── Public interface ─────────────────────────────────────────────────────────────
 export interface BatchLocEntry { locationId: string; qty: number }
@@ -43,8 +45,20 @@ const props = defineProps<{
   originLocationPaths?: string[]
   /** All bins available in the destination warehouse */
   destLocationPaths?: string[]
-  /** Picking only: the line's to-pick qty — total picked across batches must not exceed this. */
+  /** Picking only: the line's to-pick qty — used to pre-trim batch rows when the drawer opens. */
   targetCount?: number
+  /** Picking only: the full order demand for this SKU (shown in header for reference). */
+  orderQty?: number
+  /** Picking only: the real ceiling a Save may not exceed (order qty capped by stock) — may be
+   *  higher than targetCount, since targetCount can lag behind after the picking table's qty
+   *  to pick was raised back up. Falls back to targetCount when not provided. */
+  maxCount?: number
+  /** Picking only: true when physically executing the pick (e.g. "Continue picking"),
+   *  as opposed to planning which batch to pick from at list-creation time. Execution
+   *  starts every row uncounted — the operator must scan (or enter a qty) before
+   *  anything counts as picked — and labels the counted column "Picked qty" instead
+   *  of "Qty to pick". */
+  executionMode?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -97,13 +111,26 @@ watch(() => props.open, (isOpen) => {
   if (!isOpen) return
 
   if (props.modelValue.length > 0) {
-    rows.value = props.modelValue.map(b => ({
+    rows.value = props.modelValue.map((b, i) => ({
       ...b,
+      desc: b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!,
       isNew: false,
       expiryDisplay: isoToDisplay(b.expiryDate),
       originLocRows: initLocRows(b.originLocations),
       destLocRows: initLocRows(b.destLocations),
     }))
+    // Picking: cap total counted to targetCount — user may have reduced qty to pick
+    // in the picking table after the drawer was last saved. Trim FIFO (first batch
+    // first). A no-op when every row is already uncounted (execution mode's
+    // not-yet-confirmed rows come in with counted: null from the caller).
+    if (props.kind === 'picking' && props.targetCount !== undefined) {
+      let budget = props.targetCount
+      for (const row of rows.value) {
+        const take = Math.min(row.counted ?? 0, budget)
+        row.counted = take > 0 ? take : null
+        budget -= take
+      }
+    }
     return
   }
 
@@ -167,7 +194,7 @@ const showAfterStats = computed(() => !hideStockStats.value && !isPicking.value)
 const qtyLabel = computed(() => {
   if (props.kind === 'transfer') return 'Transfer qty'
   if (props.kind === 'receiving' || props.kind === 'put-away') return 'Received qty'
-  if (props.kind === 'picking') return 'Picked qty'
+  if (props.kind === 'picking') return 'Reserved qty'
   return 'Stock in/out qty'
 })
 const onHandLabel = computed(() => (isTransfer.value || isPicking.value) ? 'Available qty' : 'On hand qty')
@@ -187,6 +214,13 @@ const totalDifference = computed(() => {
   if (totalCounted.value === null) return null
   return totalCounted.value - totalOnHand.value
 })
+// Live sum of what's currently allocated across batch rows — what Save will actually commit.
+const totalPickCount = computed(() => rows.value.reduce((s, r) => s + (r.counted ?? 0), 0))
+const pickMaxCount = computed(() => props.maxCount ?? props.targetCount ?? Infinity)
+const pickOverLimit = computed(() =>
+  isPicking.value && Number.isFinite(pickMaxCount.value) && totalPickCount.value > pickMaxCount.value,
+)
+const pickOverLimitMsg = computed(() => `Qty to pick (${totalPickCount.value}) exceeds the order qty (${pickMaxCount.value})`)
 const totalNewOnHand = computed(() => {
   if (totalCounted.value === null) return null
   return isTransfer.value
@@ -295,10 +329,46 @@ function handleDrawerScan(rawValue: string) {
   const existing = rows.value.find(r => r.batchNo === v)
   if (existing) {
     existing.counted = (existing.counted ?? 0) + 1
-    if (saveError.value) saveError.value = ''
+    playScanSuccessSound()
     flashScanned(existing.key)
     return
   }
+
+  // Resolve against the warehouse's real stock (not just this drawer's own rows) —
+  // catches a mis-scanned batch/serial that actually belongs to a different SKU,
+  // instead of silently absorbing it as a blank placeholder for this product.
+  const resolved = resolveScan(props.warehouseId, v)
+  if (resolved && resolved.sku !== props.sku) {
+    notifyScanError(`"${v}" belongs to SKU ${resolved.sku}, not ${props.sku}`)
+    return
+  }
+  if (resolved?.kind === 'batch') {
+    const b = warehouseStock.value?.batches?.find(x => x.batchNo === v)
+    if (b) {
+      const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
+      const idx = rows.value.length
+      rows.value.push({
+        key: b.batchNo,
+        batchNo: b.batchNo,
+        expiryDate: b.expiryDate,
+        expiryDisplay: isoToDisplay(b.expiryDate),
+        desc: DEMO_DESCS[idx % DEMO_DESCS.length]!,
+        onHand: (isTransfer.value || isPicking.value) ? b.available : b.onHand,
+        counted: 1,
+        unit,
+        location: b.location,
+        isNew: false,
+        originLocRows: [makeLocRow()],
+        destLocRows: [makeLocRow()],
+      })
+      playScanSuccessSound()
+      flashScanned(b.batchNo)
+      return
+    }
+  }
+
+  // Genuinely unrecognized code — fall back to a blank row the operator fills in
+  // manually (e.g. count mode cataloguing a batch not yet in the system).
   newCounter++
   const key = `__new__${newCounter}`
   const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
@@ -315,7 +385,14 @@ function handleDrawerScan(rawValue: string) {
     originLocRows: [makeLocRow()],
     destLocRows: [makeLocRow()],
   })
+  playScanSuccessSound()
   flashScanned(key)
+}
+
+/** Picking execution: a mis-scan is harmless (nothing is persisted until Save →
+ *  Finish picking), so let the operator clear every row's count and start over. */
+function resetPickedCount() {
+  for (const row of rows.value) row.counted = null
 }
 
 function removeRow(key: string) {
@@ -327,7 +404,6 @@ function setCounted(row: WorkRow, val: string) {
   // Picking can't pull more units from a batch than it actually holds.
   if (n !== null && isPicking.value && n > row.onHand) n = row.onHand
   row.counted = n
-  if (saveError.value) saveError.value = ''
 }
 
 function setExpiryDisplay(row: WorkRow, val: string) {
@@ -474,7 +550,6 @@ function diffLabel(row: WorkRow): string {
 const trailingColspan = computed(() => 5 + (isPicking.value ? 1 : 0) + (hideStockStats.value ? 0 : 1) + (showAfterStats.value ? 1 : 0))
 
 // ── Footer actions ────────────────────────────────────────────────────────────────
-const saveError = ref('')
 const isSaving = ref(false)
 const isSavingLoc = ref(false)
 
@@ -483,14 +558,7 @@ function handleCancel() {
 }
 
 async function handleSave() {
-  if (isPicking.value && props.targetCount !== undefined) {
-    const total = rows.value.reduce((s, r) => s + (r.counted ?? 0), 0)
-    if (total > props.targetCount) {
-      saveError.value = `Picked qty (${total}) exceeds the qty to pick (${props.targetCount})`
-      return
-    }
-  }
-  saveError.value = ''
+  if (pickOverLimit.value) return
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   const committed: CommittedBatch[] = rows.value.map(r => {
@@ -575,13 +643,22 @@ function fmtNum(n: number | null): string {
                 <span class="mbd-stat-label">Purchase qty</span>
                 <span class="mbd-stat-value">{{ (props.targetCount ?? 0).toLocaleString('id-ID') }}</span>
               </div>
-              <div v-if="isPicking" class="mbd-stat">
-                <span class="mbd-stat-label">To pick qty</span>
+              <div v-if="isPicking && props.orderQty !== undefined" class="mbd-stat">
+                <span class="mbd-stat-label">Order qty</span>
+                <span class="mbd-stat-value">{{ (props.orderQty ?? 0).toLocaleString('id-ID') }}</span>
+              </div>
+              <div v-if="isPicking && executionMode" class="mbd-stat">
+                <span class="mbd-stat-label">Qty to pick</span>
                 <span class="mbd-stat-value">{{ (props.targetCount ?? 0).toLocaleString('id-ID') }}</span>
               </div>
+              <div v-if="isPicking" class="mbd-stat">
+                <span class="mbd-stat-label">{{ executionMode ? 'Picked qty' : 'Qty to pick' }}</span>
+                <span class="mbd-stat-value">{{ totalPickCount.toLocaleString('id-ID') }}</span>
+              </div>
               <div
+                v-if="!isPicking"
                 class="mbd-stat"
-                :class="(isTransfer || isPicking || hideStockStats) ? {} : { 'mbd-stat--pos': (totalCounted ?? 0) > 0, 'mbd-stat--neg': (totalCounted ?? 0) < 0 }"
+                :class="(isTransfer || hideStockStats) ? {} : { 'mbd-stat--pos': (totalCounted ?? 0) > 0, 'mbd-stat--neg': (totalCounted ?? 0) < 0 }"
               >
                 <span class="mbd-stat-label">{{ qtyLabel }}</span>
                 <span class="mbd-stat-value">
@@ -648,8 +725,15 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
-        <!-- Scan bar — receiving mode only -->
-        <ScanBar v-if="isReceiving" placeholder="Scan batch number..." @scan="handleDrawerScan" />
+        <!-- Scan bar — receiving, and executing a pick (planning uses manual qty entry instead) -->
+        <ScanBar v-if="isReceiving || (isPicking && executionMode)" placeholder="Scan barcode..." @scan="handleDrawerScan">
+          <button
+            v-if="isPicking && executionMode"
+            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+            type="button"
+            @click="resetPickedCount"
+          >Reset count</button>
+        </ScanBar>
 
         <!-- Table -->
         <div class="mbd-table-wrap">
@@ -772,7 +856,7 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Description</th>
                 <th v-if="isPicking" class="mbd-th">Location</th>
                 <th v-if="!hideStockStats" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
-                <th class="mbd-th mbd-th--num">{{ isInOut ? qtyLabel : 'Counted qty' }}</th>
+                <th class="mbd-th mbd-th--num">{{ isPicking ? (executionMode ? 'Picked qty' : 'Qty to pick') : (isInOut ? qtyLabel : 'Counted qty') }}</th>
                 <th v-if="showAfterStats" class="mbd-th mbd-th--num">{{ afterLabel }}</th>
                 <th class="mbd-th">Unit</th>
                 <th class="mbd-th mbd-th--del" />
@@ -836,8 +920,26 @@ function fmtNum(n: number | null): string {
                     <button class="mbd-loc-link" :class="{ 'mbd-loc-link--set': batchLocIsSet(row) }" type="button" @click="openBatchLocDrawer(row)">Manage location</button>
                   </div>
                 </td>
-                <td v-else class="mbd-td mbd-td--input mbd-td--counted">
+                <td v-else class="mbd-td mbd-td--input mbd-td--counted" :class="{ 'mbd-td--counted-error': pickOverLimit }">
+                  <MpTooltip
+                    v-if="pickOverLimit"
+                    :id="`mbd-qty-tooltip-${row.key}`"
+                    :label="pickOverLimitMsg"
+                    placement="top"
+                    use-portal
+                    class="mbd-qty-tooltip-wrap"
+                  >
+                    <input
+                      class="mbd-qty-input"
+                      type="number"
+                      min="0"
+                      :value="row.counted ?? ''"
+                      placeholder="0"
+                      @input="setCounted(row, ($event.target as HTMLInputElement).value)"
+                    />
+                  </MpTooltip>
                   <input
+                    v-else
                     class="mbd-qty-input"
                     type="number"
                     min="0"
@@ -919,8 +1021,6 @@ function fmtNum(n: number | null): string {
           </div>
           </template>
         </div>
-
-        <p v-if="saveError" class="mbd-save-error">{{ saveError }}</p>
 
         </template>
 
@@ -1176,8 +1276,8 @@ function fmtNum(n: number | null): string {
 .mbd-info-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mbd-info-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mbd-info-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.mbd-info-stats { display: flex; gap: var(--mp-spacing-6); flex-shrink: 0; }
-.mbd-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.mbd-info-stats { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); }
+.mbd-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; min-width: 160px; }
 .mbd-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .mbd-stat-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; font-weight: var(--mp-font-weights-medium); }
 .mbd-stat--pos .mbd-stat-value { color: var(--mp-text-success, #18794e); }
@@ -1304,6 +1404,12 @@ function fmtNum(n: number | null): string {
   border: 1px solid var(--mp-border-bold);
   z-index: 2; pointer-events: none;
 }
+
+/* Qty to pick exceeds the order qty — same pink cell + red bottom border as the
+   New delivery order form's insufficient-stock cell. */
+.mbd-td--counted-error { background: #FCEEED; border-bottom-color: #E2483D; }
+.mbd-td--counted-error .mbd-qty-input { background: transparent; }
+.mbd-qty-tooltip-wrap { display: block; width: 100%; }
 
 .mbd-cell-input {
   width: 100%; height: var(--mp-sizes-10, 40px);
@@ -1436,7 +1542,6 @@ function fmtNum(n: number | null): string {
 .mbd-loc2-section-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .mbd-loc2-total { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .mbd-loc2-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
-.mbd-save-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 .mbd-loc2-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);

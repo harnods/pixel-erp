@@ -48,7 +48,12 @@ function freshReservationId(): string {
   return `resv-${Math.max(0, ...used) + 1}`
 }
 
-/** Reserve batch/serial stock for a picking task — called once at task creation. */
+/** Reserve batch/serial stock for a picking task/order — called at task creation,
+ *  at picking finish (re-pin to what was actually picked), and whenever an order's
+ *  still-outstanding remainder gets topped up. Called repeatedly for the SAME
+ *  (taskId, sku, batchNo) across those call sites, so it MERGES into any existing
+ *  matching reservation instead of pushing a new row — otherwise the same batch/
+ *  serial ends up double-reserved (and double-counted wherever qty is summed). */
 export function reserveStock(
   taskId: string,
   warehouseId: string,
@@ -56,6 +61,21 @@ export function reserveStock(
 ): void {
   for (const p of picks) {
     if (p.qty <= 0 && !p.serials?.length) continue
+    if (p.batchNo) {
+      const existing = stockReservations.find(
+        (r) => r.taskId === taskId && r.warehouseId === warehouseId && r.sku === p.sku && r.batchNo === p.batchNo,
+      )
+      if (existing) { existing.qty += p.qty; continue }
+    } else if (p.serials?.length) {
+      const existing = stockReservations.find(
+        (r) => r.taskId === taskId && r.warehouseId === warehouseId && r.sku === p.sku && !r.batchNo,
+      )
+      if (existing) {
+        existing.serials = [...new Set([...(existing.serials ?? []), ...p.serials])]
+        existing.qty = existing.serials.length
+        continue
+      }
+    }
     stockReservations.push({ id: freshReservationId(), taskId, warehouseId, sku: p.sku, batchNo: p.batchNo, qty: p.qty, serials: p.serials })
   }
   persistReservations()
@@ -251,25 +271,35 @@ const MULTI_CATEGORIES: Record<string, string[]> = {
   '3002': ['Accessory', 'Maintenance', 'Cleaning'],
 }
 
-// (warehouse, SKU) pairs whose generated on-hand formula lands below the total
-// demand of seeded outgoing orders for that SKU in that warehouse. Floored with a
-// buffer of +4 above known demand so available = onHand − reserved (max 3) ≥ demand.
-// Cannot import outgoing.ts here (it imports warehouseDetails → circular), so this
-// table is maintained manually. Audited comprehensively across all 52 seeded orders.
+// (warehouse, SKU) pairs where generated on-hand < total demand + reservations.
+// Values are set so that: available = onHand − formula_reserved − picking_reservations ≥ max_demand.
+// Formula: new_onHand = 2 * max(total_reserved, max_demand) + 3 — guarantees
+// available > max_demand even if formula_reserved grows to floor(new_onHand/3).
+// Cannot import outgoing.ts here (circular dep). Validated by tests/data-integrity.spec.ts.
 const MIN_ONHAND_OVERRIDE: Record<string, number> = {
-  // ── original 6 ───────────────────────────────────────────────────────────────
-  'wh-002::2001': 9,  // demand 5
-  'wh-010::2201': 13, // demand 9
-  'wh-010::2101': 11, // demand 7
-  'wh-009::1105': 11, // demand 7
-  'wh-003::2103': 10, // demand 6
-  'wh-008::2102': 9,  // demand 4 (pre-shipped seed order out-sh-001)
-  // ── 5 missed pairs found by comprehensive audit ───────────────────────────
-  'wh-002::2102': 9,  // demand 5 (onHand was 5, reserved 1, available only 4)
-  'wh-010::2103': 9,  // demand 5 (onHand was 3, available only 3)
-  'wh-001::2003': 9,  // demand 5 (onHand was 1, available only 1) — blocked picking
-  'wh-002::2103': 8,  // demand 4 (onHand was 3, available only 3)
-  'wh-002::2104': 9,  // demand 5 (onHand was 1, available only 1)
+  // ── pairs from earlier sessions ───────────────────────────────────────────
+  'wh-008::2102': 9,   // pre-shipped seed order out-sh-001
+  'wh-002::2102': 9,
+  'wh-010::2103': 9,
+  'wh-001::2003': 9,
+  'wh-002::2103': 8,
+  'wh-002::2104': 9,
+  // ── pairs found by data-integrity.spec.ts ─────────────────────────────────
+  'wh-002::2001': 13,  // was 9; total_reserved=5 demand=5
+  'wh-010::1001': 17,  // total_reserved=7 demand=3
+  'wh-001::2104': 17,  // total_reserved=7 demand=5
+  'wh-001::2004': 15,  // total_reserved=6 demand=4
+  'wh-010::2201': 23,  // was 13; total_reserved=10 demand=5
+  'wh-010::2101': 23,  // was 11; total_reserved=10 demand=4
+  'wh-010::1106': 19,  // total_reserved=8 demand=5
+  'wh-009::1105': 21,  // was 11; total_reserved=9 demand=4
+  'wh-009::1002': 25,  // total_reserved=11 demand=5
+  'wh-005::1102': 15,  // total_reserved=6 demand=4
+  'wh-009::2201': 15,  // total_reserved=6 demand=5
+  'wh-003::2002': 13,  // total_reserved=5 demand=5
+  'wh-003::2103': 21,  // was 10; total_reserved=9 demand=4
+  'wh-005::1004': 11,  // total_reserved=4 demand=4
+  'wh-009::2102': 7,   // total_reserved=2 demand=2
 }
 
 // Deterministic ISO date `days` before TODAY — used for created-at fields so the

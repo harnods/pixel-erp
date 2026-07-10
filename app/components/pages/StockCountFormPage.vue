@@ -114,7 +114,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(row: CountRow) {
   if (row.counted.trim() === '') {
-    toast.notify({ variant: 'warning', title: 'Enter counted qty first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: 'Enter counted qty first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerRow.value = row
@@ -240,7 +240,7 @@ async function handleSave() {
   if (isWms.value && !assigneeId.value) { assigneeError.value = true; valid = false }
   if (hasStorageLocs.value) {
     if (!selectedLocations.value.length || !selectedLocations.value.some(l => l.rows.length)) {
-      formError.value = 'Select at least one location with products to count.'
+      formError.value = 'You must select at least one location with products to count'
       valid = false
     }
     for (const loc of selectedLocations.value) {
@@ -255,7 +255,7 @@ async function handleSave() {
       }
     }
   } else {
-    if (!rows.value.length) { formError.value = 'Add at least one product to count.'; valid = false }
+    if (!rows.value.length) { formError.value = 'You must add at least one product to count'; valid = false }
     for (const r of rows.value) {
       if (!isSerialTrackedSku(r.sku) || !r.counted.trim()) continue
       const expected = parseCounted(r.counted)
@@ -510,7 +510,7 @@ const locSerialDrawerOpen = computed({
 })
 function openLocSerialDrawer(row: LocRow) {
   if (row.counted.trim() === '') {
-    toast.notify({ variant: 'warning', title: 'Enter counted qty first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: 'Enter counted qty first' , maxWidth: 'max-content'})
     return
   }
   locSerialDrawerRow.value = row
@@ -612,7 +612,7 @@ onMounted(() => {
             <div class="scf-datepicker">
               <MpDatePicker id="scf-txdate-dp" v-model="transactionDate" format="DD/MM/YYYY" value-type="format" use-portal @update:model-value="transactionDateError = false" />
             </div>
-            <MpFormErrorMessage>Please enter a transaction date</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select transaction date</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="scf-transno" class="scf-f-transno">
@@ -631,7 +631,7 @@ onMounted(() => {
           <MpFormControl id="scf-warehouse" class="scf-f-warehouse" is-required :is-invalid="warehouseError">
             <MpFormLabel>Warehouse</MpFormLabel>
             <MpAutocomplete id="scf-warehouse-ac" v-model="warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width :is-invalid="warehouseError" @update:model-value="warehouseError = false" />
-            <MpFormErrorMessage>Please select a warehouse</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl v-if="!isWms" id="scf-account" class="scf-f-account">
@@ -642,7 +642,7 @@ onMounted(() => {
           <MpFormControl v-if="isWms" id="scf-assignee" class="scf-f-assignee" is-required :is-invalid="assigneeError">
             <MpFormLabel>Assignee</MpFormLabel>
             <MpAutocomplete id="scf-assignee-ac" v-model="assigneeId" :data="assigneeOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width placeholder="Select assignee" :is-invalid="assigneeError" @update:model-value="assigneeError = false" />
-            <MpFormErrorMessage>Please select an assignee</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
           </MpFormControl>
 
         </div>
@@ -694,7 +694,7 @@ onMounted(() => {
 
           <template v-if="countBy === 'location'">
             <div class="scf-loc-banner">
-              This warehouse uses storage locations. Select a location before making adjustments.
+              This warehouse uses storage locations. Select location before making adjustments
             </div>
             <div class="scf-loc-actions">
               <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="locationDrawerOpen = true">
@@ -911,7 +911,7 @@ onMounted(() => {
               <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
               <span class="scf-attach-or">or drag and drop here</span>
             </div>
-            <p class="scf-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
+            <p class="scf-helper-text">File must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
             <ul v-if="attachedFiles.length" class="scf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="scf-file-item">
                 <span class="scf-file-name">{{ f.name }}</span>
@@ -933,7 +933,7 @@ onMounted(() => {
     <SelectProductDrawer v-model:open="bySkuDrawerOpen" :products="pickerProducts" :model-value="bySkuSelected" @save="applySkuPicker" />
 
     <!-- Select locations drawer -->
-    <Transition name="spd">
+    <Transition name="scf-loc">
       <div v-if="locationDrawerOpen" class="loc-spd-overlay" @click.self="locationDrawerOpen = false">
         <div class="loc-spd-panel" role="dialog" aria-label="Select locations">
           <div class="loc-spd-header">
@@ -1156,6 +1156,13 @@ onMounted(() => {
 .scf-acc-remove { margin-left: var(--mp-spacing-2); flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); }
 .scf-acc-remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 .scf-acc-body { padding: var(--mp-spacing-4) var(--mp-spacing-4) var(--mp-spacing-4) 0; }
+
+/* Location drawer transition */
+.scf-loc-enter-active, .scf-loc-leave-active { transition: background-color 250ms ease; }
+.scf-loc-enter-from, .scf-loc-leave-to { background-color: transparent; }
+.scf-loc-enter-active .loc-spd-panel { transition: transform 350ms ease-out; }
+.scf-loc-leave-active .loc-spd-panel { transition: transform 250ms ease-in; }
+.scf-loc-enter-from .loc-spd-panel, .scf-loc-leave-to .loc-spd-panel { transform: translateX(calc(100% + 12px)); }
 
 /* Location drawer — standalone styles (spd-* classes are scoped to SelectProductDrawer) */
 .loc-spd-overlay { position: fixed; inset: 0; z-index: 1300; background: rgba(8, 13, 14, 0.45); display: flex; justify-content: flex-end; }

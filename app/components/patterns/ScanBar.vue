@@ -21,7 +21,7 @@ function onEnter(e: Event) {
     <input
       class="scan-bar-input"
       type="text"
-      :placeholder="placeholder ?? 'Scan item...'"
+      :placeholder="placeholder ?? 'Scan barcode...'"
       @keydown.enter.prevent="onEnter($event)"
     />
     <slot />

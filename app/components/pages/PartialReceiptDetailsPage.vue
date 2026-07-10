@@ -499,7 +499,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 
     <!-- ── Close receipt confirmation modal ── -->
     <MpModal
-      id="prd-close-modal" :is-open="closeModalOpen" size="sm"
+      id="prd-close-modal" :is-open="closeModalOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="dismissCloseModal"
     >
       <MpModalContent>

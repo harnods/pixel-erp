@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css, toast,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -210,9 +211,6 @@ const pickRows = computed<MergedRow[]>(() => {
 })
 // True once any SKU has been partially picked on a previous list → show Picked qty column.
 const hasPriorPicks = computed(() => pickRows.value.some(g => g.pickedQty > 0))
-// Any batch/serial-tracked row splits its Qty to pick cell into 2 rows — once that
-// happens, every column gets left/right borders so the split reads as part of the grid.
-const hasTrackedRows = computed(() => pickRows.value.some(g => isBatchTrackedSku(g.sku) || isSerialTrackedSku(g.sku)))
 
 // ─── Stock per merged SKU — one pool (On hand − Reserved); cap = min(demand, avail) ─
 interface RowStock { onHand: number; reserved: number; available: number; cap: number; toPick: number }
@@ -262,7 +260,11 @@ const batchDrawerOpen = computed({
   get: () => batchDrawerSku.value !== null,
   set: (v: boolean) => { if (!v) batchDrawerSku.value = null },
 })
-function openBatchDrawer(sku: string) { batchDrawerSku.value = sku }
+const batchDrawerOrderQty = ref(0)
+function openBatchDrawer(sku: string) {
+  batchDrawerSku.value = sku
+  batchDrawerOrderQty.value = pickRows.value.find(r => r.sku === sku)?.orderQty ?? 0
+}
 function batchPickedQty(sku: string): number {
   return (batchLinesBySku.value[sku] ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
 }
@@ -271,6 +273,9 @@ function saveBatchLines(batches: CommittedBatch[]) {
   if (!sku) return
   manuallyEditedBatchSkus.add(sku)
   batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: batches }
+  // Keep the front table's own Qty to pick input in sync with what was just allocated
+  // across batches in the drawer — otherwise the row would keep showing a stale value.
+  qtyOverrides.value = { ...qtyOverrides.value, [sku]: batchPickedQty(sku) }
 }
 
 const serialDrawerSku = ref<string | null>(null)
@@ -301,6 +306,8 @@ function saveSerialLines(serials: CommittedSerial[]) {
     ...serialLinesBySku.value,
     [sku]: serials.map(s => ({ serial: s.serial, location: locationForSerial(sku, s.serial) })),
   }
+  // Same sync as saveBatchLines — front row's Qty to pick must reflect the drawer's save.
+  qtyOverrides.value = { ...qtyOverrides.value, [sku]: serials.length }
 }
 
 // ─── Pre-fill batch/serial from each member order's EXISTING reservation ───────
@@ -324,7 +331,7 @@ function reservedBatchesForSku(sku: string): CommittedBatch[] {
   for (const [batchNo, qty] of byBatch) {
     const b = item.batches.find(x => x.batchNo === batchNo)
     if (!b || qty <= 0) continue
-    out.push({ key: batchNo, batchNo, expiryDate: b.expiryDate, desc: '', onHand: b.onHand, counted: qty, unit: item.unit, location: b.location })
+    out.push({ key: batchNo, batchNo, expiryDate: b.expiryDate, desc: '', onHand: b.available, counted: qty, unit: item.unit, location: b.location })
   }
   return out
 }
@@ -369,11 +376,14 @@ function pickedLocations(sku: string): string[] {
 }
 
 /** Qty to pick for a row — batch/serial-tracked SKUs source it from their drawer
- *  selections, plain SKUs from the manual qty input. */
+ *  selections, capped at the row's own target (the qty-to-pick input): lowering that
+ *  target without reopening the drawer must still shrink what's actually picked,
+ *  not silently keep whatever was reserved/allocated before. Plain SKUs use the
+ *  manual qty input directly. */
 function qtyToPick(row: { key: string; sku: string }): number {
   if (!isSelected(row.key)) return 0
-  if (isBatchTrackedSku(row.sku)) return batchPickedQty(row.sku)
-  if (isSerialTrackedSku(row.sku)) return serialPickedQty(row.sku)
+  if (isBatchTrackedSku(row.sku)) return Math.min(batchPickedQty(row.sku), targetQtyForSku(row.sku))
+  if (isSerialTrackedSku(row.sku)) return Math.min(serialPickedQty(row.sku), targetQtyForSku(row.sku))
   return stockOf(row.key).toPick
 }
 
@@ -399,9 +409,13 @@ function toggleAllLines() {
   excludedKeys.value = s
 }
 
-const selectedRows = computed(() => pickRows.value.filter(g => isSelected(g.key)))
-const totalSkus   = computed(() => selectedRows.value.length)
-const totalToPick = computed(() => selectedRows.value.reduce((a, g) => a + qtyToPick(g), 0))
+const selectedRows    = computed(() => pickRows.value.filter(g => isSelected(g.key)))
+const totalSkus       = computed(() => selectedRows.value.length)
+const totalToPick     = computed(() => selectedRows.value.reduce((a, g) => a + qtyToPick(g), 0))
+const totalOrderQty   = computed(() => selectedRows.value.reduce((a, g) => a + (g.orderQty - g.pickedQty), 0))
+const isPartialPick   = computed(() => totalToPick.value < totalOrderQty.value)
+
+const showPartialConfirm = ref(false)
 
 // ─── Progressive loading — 10 rows, lazy-load past that; border only when > 10 ────
 const PAGE_SIZE = 10
@@ -493,6 +507,12 @@ async function handleCreate() {
   if (!assigneeId.value)  { assigneeError.value  = true; valid = false }
   if (!selectedOrders.value.length) valid = false
   if (!valid) { scrollToFirstError(); return }
+  if (isPartialPick.value) { showPartialConfirm.value = true; return }
+  await doCreate()
+}
+
+async function doCreate() {
+  showPartialConfirm.value = false
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
 
@@ -563,7 +583,7 @@ async function handleCreate() {
     if (manuallyEditedSerialSkus.has(skuOf(lineKey))) overrideSerialPicks[lineKey] = picks
   }
 
-  addPickingTask({
+  const task = addPickingTask({
     salesOrderIds: selectedOrders.value.map(o => o.id),
     salesNos:      selectedOrders.value.map(o => o.salesNo),
     warehouseId:   warehouseId.value,
@@ -575,7 +595,7 @@ async function handleCreate() {
       : {}),
   })
 
-  router.push({ path: '/outbound-delivery', query: { tab: 'Picking', saved: '1' } })
+  router.push(`/picking/${task.id}`)
 }
 </script>
 
@@ -613,7 +633,7 @@ async function handleCreate() {
             :is-disabled="isWarehouseLocked"
             :is-invalid="warehouseError"
           />
-          <MpFormErrorMessage>You must select a warehouse</MpFormErrorMessage>
+          <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
         </MpFormControl>
 
         <MpFormControl id="pk-assignee" is-required :is-invalid="assigneeError" :class="css({ gridColumn: 'span 3' })">
@@ -638,7 +658,7 @@ async function handleCreate() {
               </div>
             </template>
           </MpAutocomplete>
-          <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+          <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
         </MpFormControl>
       </div>
 
@@ -657,14 +677,14 @@ async function handleCreate() {
             <span class="pk-stat-val">{{ formatNum(totalSkus) }}</span>
           </div>
           <div class="pk-stat">
-            <span class="pk-stat-label">To pick qty</span>
+            <span class="pk-stat-label">Qty to pick</span>
             <span class="pk-stat-val">{{ formatNum(totalToPick) }}</span>
           </div>
         </div>
 
         <section class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pk-items-scroll">
-            <table class="pk-items">
+            <table class="pk-items pk-items--split">
               <colgroup>
                 <col /><!-- Product (+ checkbox) -->
                 <col /><!-- SKU -->
@@ -754,10 +774,19 @@ async function handleCreate() {
                   <td class="pk-td pk-td--num">{{ formatNum(row.orderQty) }}</td>
                   <td v-if="hasPriorPicks" class="pk-td pk-td--num">{{ formatNum(row.pickedQty) }}</td>
 
-                  <!-- Qty to pick: plain value for batch-tracked SKUs (total from drawer),
-                       input for serial-tracked SKUs, input for plain SKUs. -->
-                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--num">
-                    <span class="pk-batch-val">{{ formatNum(batchPickedQty(row.sku)) }}</span>
+                  <!-- Qty to pick: editable input for batch/serial/plain SKUs. For
+                       batch and serial, this is the target fed to the drawer; the
+                       actual allocation per batch/serial is managed inside the drawer. -->
+                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--input">
+                    <input
+                      type="number" min="0" :max="stockOf(row.key).cap" class="pk-batch-qty-input"
+                      :value="targetQtyForSku(row.sku)"
+                      :disabled="!isSelected(row.key) || isLocked(row.key)"
+                      :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
+                      :aria-label="`Qty to pick for ${row.product}`"
+                      @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
+                      @click.stop
+                    />
                   </td>
                   <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--input">
                     <input
@@ -829,7 +858,9 @@ async function handleCreate() {
     :warehouse-id="warehouseId"
     kind="picking"
     :origin-location-paths="locationOptions"
-    :target-count="capForSku(batchDrawerSku)"
+    :target-count="targetQtyForSku(batchDrawerSku)"
+    :order-qty="batchDrawerOrderQty"
+    :max-count="capForSku(batchDrawerSku)"
     :model-value="batchLinesBySku[batchDrawerSku] ?? []"
     @update:open="batchDrawerOpen = $event"
     @save="saveBatchLines"
@@ -846,6 +877,28 @@ async function handleCreate() {
     @update:open="serialDrawerOpen = $event"
     @save="saveSerialLines"
   />
+
+  <!-- Partial pick confirmation -->
+  <MpModal id="pk-partial-confirm" :is-open="showPartialConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showPartialConfirm = false">
+    <MpModalOverlay />
+    <MpModalContent>
+      <MpModalHeader>
+        <span>Confirm partial pick</span>
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <p style="margin:0;font-size:var(--mp-font-sizes-md);color:var(--mp-text-default)">
+          Total qty to pick (<strong>{{ totalToPick }}</strong>) is less than total order qty
+          (<strong>{{ totalOrderQty }}</strong>). The remaining items will not be picked in this task.
+          Are you sure you want to continue?
+        </p>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButton variant="ghost" is-rounded @click="showPartialConfirm = false">Cancel</MpButton>
+        <MpButton variant="primary" is-rounded @click="doCreate">Continue</MpButton>
+      </MpModalFooter>
+    </MpModalContent>
+  </MpModal>
 </template>
 
 <style scoped>
@@ -991,8 +1044,6 @@ async function handleCreate() {
 
 /* Once any row splits its Qty to pick cell (batch/serial-tracked SKU present), every
    column gets left/right borders — no double border, no outer border on the ends. */
-.pk-items--split .pk-th { border-right: 1px solid var(--mp-border-default); }
-.pk-items--split .pk-th:last-child { border-right: none; }
 .pk-items--split .pk-td { border-right: 1px solid var(--mp-border-default); }
 .pk-items--split .pk-td:last-child { border-right: none; }
 

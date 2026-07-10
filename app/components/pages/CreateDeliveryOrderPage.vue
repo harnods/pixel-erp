@@ -333,7 +333,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   @update:model-value="transactionDateError = false"
                 />
               </div>
-              <MpFormErrorMessage>You must enter transaction date</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select transaction date</MpFormErrorMessage>
             </MpFormControl>
 
             <div class="cr-field-spacer" />

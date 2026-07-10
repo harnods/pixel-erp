@@ -77,7 +77,7 @@ async function saveEdit() {
   persistSettings({ ...committed })
   isSaving.value = false
   isEditing.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse settings saved.', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: 'Warehouse settings saved', maxWidth: 'max-content' })
 }
 </script>
 
@@ -172,7 +172,7 @@ async function saveEdit() {
     <MpModal
       id="ws-discard-dialog"
       :is-open="discardOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       @close="discardOpen = false"
@@ -197,7 +197,7 @@ async function saveEdit() {
     <MpModal
       id="ws-rule-confirm-dialog"
       :is-open="ruleConfirmOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       @close="ruleConfirmOpen = false"

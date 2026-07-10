@@ -145,10 +145,10 @@ function startPutAway() {
   router.push(`/put-away/${props.orderId}/store`)
 }
 function editTask() {
-  toast.notify({ variant: 'info', title: 'Edit — coming soon' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'greeting', title: 'Edit — coming soon' , maxWidth: 'max-content'})
 }
 function deleteTask() {
-  toast.notify({ variant: 'info', title: 'Delete — coming soon' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'greeting', title: 'Delete — coming soon' , maxWidth: 'max-content'})
 }
 
 function goBack() { router.push('/inbound-delivery?tab=Put-away') }

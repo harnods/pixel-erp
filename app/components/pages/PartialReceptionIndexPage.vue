@@ -235,7 +235,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Close confirmation modal ── -->
   <MpModal
-    id="par-close-modal" :is-open="closeModalOpen" size="sm"
+    id="par-close-modal" :is-open="closeModalOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCloseModal"
   >
     <MpModalContent>

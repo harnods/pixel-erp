@@ -322,17 +322,28 @@ function assignmentsFromReservations(
     const resv = getReservationsForOrder(l.orderId, l.sku);
     if (!resv.length) continue;
     if (item.batches?.length) {
-      const picks: PickingBatchPick[] = [];
+      // Merge by batchNo — reservations can be spread across more than one record
+      // for the same batch (partial picks re-pinned, then the order's outstanding
+      // remainder topped up later); never surface the same batch as 2 rows.
+      const byBatch = new Map<string, number>();
       for (const r of resv) {
-        const b = item.batches.find((x) => x.batchNo === r.batchNo);
-        if (!b) continue;
-        picks.push({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: "", qty: r.qty, unit: item.unit, location: b.location });
+        if (!r.batchNo) continue;
+        byBatch.set(r.batchNo, (byBatch.get(r.batchNo) ?? 0) + r.qty);
+      }
+      const picks: PickingBatchPick[] = [];
+      for (const [batchNo, qty] of byBatch) {
+        const b = item.batches.find((x) => x.batchNo === batchNo);
+        if (!b || qty <= 0) continue;
+        picks.push({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: "", qty, unit: item.unit, location: b.location });
       }
       if (picks.length) batchPicks[l.key] = picks;
     } else if (item.serials) {
+      const seen = new Set<string>();
       const picks: PickingSerialPick[] = [];
       for (const r of resv) {
         for (const serial of r.serials ?? []) {
+          if (seen.has(serial)) continue;
+          seen.add(serial);
           const u = item.serials.reserved.find((x) => x.serial === serial);
           picks.push({ serial, location: u?.location ?? "" });
         }
@@ -500,6 +511,31 @@ export function pickedQtyForOrderSku(orderId: string, sku: string): number {
   return sum;
 }
 
+/** Merge a batch-pick array down to one entry per batchNo, summing qty — a task's
+ *  own batchPicks[key], or several tasks' concatenated, can otherwise carry the same
+ *  batch as 2+ separate entries (a stale reservation duplicate, a re-pin followed by
+ *  a top-up, etc.), which renders as duplicate rows and double-counted qty. */
+export function mergeBatchPicks(picks: PickingBatchPick[]): PickingBatchPick[] {
+  const byBatch = new Map<string, PickingBatchPick>();
+  for (const p of picks) {
+    const existing = byBatch.get(p.batchNo);
+    byBatch.set(p.batchNo, existing ? { ...existing, qty: existing.qty + p.qty } : p);
+  }
+  return [...byBatch.values()];
+}
+
+/** Dedupe a serial-pick array by serial number — same rationale as mergeBatchPicks. */
+export function dedupeSerialPicks(picks: PickingSerialPick[]): PickingSerialPick[] {
+  const seen = new Set<string>();
+  const result: PickingSerialPick[] = [];
+  for (const p of picks) {
+    if (seen.has(p.serial)) continue;
+    seen.add(p.serial);
+    result.push(p);
+  }
+  return result;
+}
+
 /** Batch(es) picked for one order+SKU across every (non-canceled) picking task —
  *  for packing to show which batch(es) the picked units actually came from. */
 export function batchPicksForOrderSku(orderId: string, sku: string): PickingBatchPick[] {
@@ -510,7 +546,7 @@ export function batchPicksForOrderSku(orderId: string, sku: string): PickingBatc
     const picks = t.batchPicks?.[key];
     if (picks) result.push(...picks);
   }
-  return result;
+  return mergeBatchPicks(result);
 }
 
 /** Serial(s) picked for one order+SKU across every (non-canceled) picking task. */
@@ -522,7 +558,7 @@ export function serialPicksForOrderSku(orderId: string, sku: string): PickingSer
     const picks = t.serialPicks?.[key];
     if (picks) result.push(...picks);
   }
-  return result;
+  return dedupeSerialPicks(result);
 }
 
 /** The pick lines of a task (stored, or generated for seed tasks without them). */

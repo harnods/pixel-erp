@@ -488,7 +488,7 @@ function confirmDelete() {
 
     <!-- ── Cancel confirmation modal ── -->
     <MpModal
-      id="rcd-cancel-modal" :is-open="cancelModalOpen" size="sm"
+      id="rcd-cancel-modal" :is-open="cancelModalOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
     >
       <MpModalContent>
@@ -508,7 +508,7 @@ function confirmDelete() {
 
     <!-- ── Delete confirmation modal (manually-created receipts only) ── -->
     <MpModal
-      id="rcd-delete-modal" :is-open="deleteModalOpen" size="sm"
+      id="rcd-delete-modal" :is-open="deleteModalOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
     >
       <MpModalContent>

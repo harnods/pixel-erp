@@ -380,10 +380,9 @@ function goBack() {
                   </span>
                 </td>
                 <td class="detail-td detail-td--num">
-                  <span v-if="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - rowReceived(item.skuCode, item.receivedQty) > 0" class="rcvgd-outstanding">
+                  <span :class="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-outstanding' : 'rcvgd-qty--full'">
                     {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - rowReceived(item.skuCode, item.receivedQty)) }}
                   </span>
-                  <span v-else class="rcvgd-qty--full">—</span>
                 </td>
                 <td class="detail-td">{{ item.unit }}</td>
               </tr>

@@ -2,18 +2,22 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip,
   css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { getDeliveryLineItems, allDeliveryTasksFlat } from '~/data/deliveryTaskDetails'
+import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
+import { getDeliveryLineItems, allDeliveryTasksFlat, type ShipLineItem } from '~/data/deliveryTaskDetails'
 import { getDeliveryTask, packingTaskIdsForDelivery } from '~/data/deliveryTasks'
 import { getPackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
@@ -24,6 +28,32 @@ const lineItems = computed(() => task.value ? getDeliveryLineItems(task.value) :
 const status = computed(() => task.value?.status ?? 'ready to ship')
 const isShipped = computed(() => status.value === 'shipped')
 const isPending = computed(() => status.value === 'ready to ship')
+
+// ── Batch / serial tracking heuristic (same as picking/packing/receiving) ───────
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
+// ── View batch / View serial number — read-only, which batch/SN is being shipped ─
+const viewBatchItem = ref<ShipLineItem | null>(null)
+const viewSerialItem = ref<ShipLineItem | null>(null)
+function openViewBatch(item: ShipLineItem) { viewBatchItem.value = item }
+function openViewSerial(item: ShipLineItem) { viewSerialItem.value = item }
 
 const shipTotal = computed(() => task.value?.toShipQty ?? 0)
 
@@ -185,17 +215,18 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="del-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="itemSearch" class="del-search" type="text" placeholder="Search..." />
           </div>
         </div>
         <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <colgroup>
-                <col style="width: 50%" />
-                <col style="width: 24%" />
-                <col style="width: 13%" />
-                <col style="width: 13%" />
+                <col style="width: 46%" />
+                <col style="width: 22%" />
+                <col style="width: 12%" />
+                <col style="width: 12%" />
+                <col style="width: 8%" />
               </colgroup>
               <thead>
                 <tr>
@@ -203,6 +234,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
                   <th class="detail-th">SKU</th>
                   <th class="detail-th detail-th--num">Qty</th>
                   <th class="detail-th">Unit</th>
+                  <th class="detail-th"></th>
                 </tr>
               </thead>
               <tbody>
@@ -211,6 +243,18 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
                   <td class="detail-td">{{ item.skuCode }}</td>
                   <td class="detail-td detail-td--num">{{ fmt(item.qty) }}</td>
                   <td class="detail-td">{{ item.unit }}</td>
+                  <td class="detail-td detail-td--action">
+                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`del-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
+                      <button class="del-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`del-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
+                      <button class="del-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -389,7 +433,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
         </MpPopoverContent>
       </MpPopover>
       <button v-if="isPending" class="detail-btn detail-btn--primary" @click="goHandover">
-        Handover to courier
+        Create shipment
       </button>
     </footer>
 
@@ -399,6 +443,32 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
     <p>Delivery not found.</p>
     <button class="detail-breadcrumb" @click="goBack">Back to Ready to ship</button>
   </div>
+
+  <ViewBatchDrawer
+    v-if="viewBatchItem"
+    :open="true"
+    :sku="viewBatchItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    qty-label="Packed qty"
+    :order-qty="viewBatchItem.orderQty"
+    :picked-batches="viewBatchItem.batchPicks ?? []"
+    :product-name="viewBatchItem.productName"
+    :product-img="viewBatchItem.image"
+    @update:open="viewBatchItem = null"
+  />
+  <ViewSerialDrawer
+    v-if="viewSerialItem"
+    :open="true"
+    :sku="viewSerialItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    :counted-total="(viewSerialItem.serialPicks ?? []).length"
+    :picked-serials="(viewSerialItem.serialPicks ?? []).map(s => s.serial)"
+    :product-name="viewSerialItem.productName"
+    :product-img="viewSerialItem.image"
+    @update:open="viewSerialItem = null"
+  />
 </template>
 
 <style scoped>
@@ -447,6 +517,9 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 .detail-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .detail-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+.detail-td--action { text-align: center; white-space: nowrap; }
+.del-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.del-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .del-tabs { flex-shrink: 0; }

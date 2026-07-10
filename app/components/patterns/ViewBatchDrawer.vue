@@ -26,11 +26,20 @@ const props = defineProps<{
   deltaTotal?: number
   /** Packing mode: the exact batches picked for this line — shown as-is, no derivation. */
   pickedBatches?: PickedBatchRow[]
+  /** Packing mode: label for the qty stat + table column — defaults to "Picked qty".
+   *  Callers downstream of picking (packing, delivery, ...) pass their own word for it
+   *  ("Packed qty", ...) since it's the same numbers, just a different stage's name. */
+  qtyLabel?: string
+  /** Packing mode: the SKU's full order demand, shown as an extra stat when given
+   *  (e.g. delivery wants "Order qty" next to "Packed qty"; picking doesn't need it
+   *  here since it already shows separately). */
+  orderQty?: number
   productName: string
   productImg: string
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean] }>()
+const qtyLabel = computed(() => props.qtyLabel ?? 'Picked qty')
 
 const isInOut = computed(() => props.kind === 'in-out')
 const isPacking = computed(() => props.kind === 'packing')
@@ -54,8 +63,8 @@ const rows = computed<BatchRow[]>(() => {
   // Packing: show the exact batches picked for this line, as-is — no derivation
   // from live warehouse stock, no on-hand/new-on-hand concept.
   if (isPacking.value) {
-    return (props.pickedBatches ?? []).map(b => ({
-      batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc,
+    return (props.pickedBatches ?? []).map((b, i) => ({
+      batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!,
       onHand: 0, value: b.qty, newOnHand: 0, unit: b.unit,
     }))
   }
@@ -138,8 +147,12 @@ function close() { emit('update:open', false) }
           <div class="vbd-info-stats">
             <!-- packing mode stats -->
             <template v-if="isPacking">
+              <div v-if="orderQty !== undefined" class="vbd-stat">
+                <span class="vbd-stat-label">Order qty</span>
+                <span class="vbd-stat-value">{{ fmt(orderQty) }}</span>
+              </div>
               <div class="vbd-stat">
-                <span class="vbd-stat-label">Picked qty</span>
+                <span class="vbd-stat-label">{{ qtyLabel }}</span>
                 <span class="vbd-stat-value">{{ fmt(totalPicked) }}</span>
               </div>
             </template>
@@ -192,7 +205,7 @@ function close() { emit('update:open', false) }
                 <th class="vbd-th">Expiry date</th>
                 <th class="vbd-th">Description</th>
                 <th v-if="!isPacking" class="vbd-th vbd-th--num">On hand qty</th>
-                <th v-if="isPacking" class="vbd-th vbd-th--num">Picked qty</th>
+                <th v-if="isPacking" class="vbd-th vbd-th--num">{{ qtyLabel }}</th>
                 <th v-else-if="!isInOut" class="vbd-th vbd-th--num">Counted qty</th>
                 <template v-else>
                   <th class="vbd-th vbd-th--num">Stock in/out qty</th>

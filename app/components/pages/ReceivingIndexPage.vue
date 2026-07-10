@@ -433,7 +433,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </div>
 
   <!-- ── Delete confirmation modal ── -->
-  <MpModal id="rcvg-delete-modal" :is-open="deleteModalOpen" size="sm"
+  <MpModal id="rcvg-delete-modal" :is-open="deleteModalOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal">
     <MpModalContent>
       <MpModalHeader>Delete {{ taskToDelete?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
@@ -457,7 +457,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   </MpModal>
 
   <!-- ── Bulk delete confirmation modal ── -->
-  <MpModal id="rcvg-bulk-delete-modal" :is-open="bulkDeleteOpen" size="sm"
+  <MpModal id="rcvg-bulk-delete-modal" :is-open="bulkDeleteOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkDeleteOpen = false">
     <MpModalContent>
       <MpModalHeader>Delete {{ selectedTasks.size }} {{ selectedTasks.size === 1 ? 'task' : 'tasks' }}?<MpModalCloseButton /></MpModalHeader>

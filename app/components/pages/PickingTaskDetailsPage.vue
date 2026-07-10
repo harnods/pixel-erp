@@ -3,6 +3,7 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -104,6 +105,7 @@ function startPickingAndNavigate() {
   startPicking(props.orderId)
   router.push(`/picking/${props.orderId}/pick`)
 }
+const cantPackModalOpen = ref(false)
 function createPacking() {
   // Packability is judged at the ORDER level across all picking lists, and an order
   // that already has a packing task is excluded. Only block when nothing is left.
@@ -112,14 +114,19 @@ function createPacking() {
     const packable = packableOrderIds(t).filter(id => getPackingForOrder(id).length === 0)
     if (packable.length === 0) {
       const anyPickComplete = packableOrderIds(t).length > 0
-      toast.notify({
-        variant: 'error',
-        title: anyPickComplete ? 'Already packed' : 'Nothing can be packed yet',
-        description: anyPickComplete
-          ? 'These orders already have a packing task.'
-          : 'Marketplace orders must be fully picked (across their picking lists) before packing.',
-        maxWidth: 'max-content',
-      })
+      if (anyPickComplete) {
+        toast.notify({
+          variant: 'error',
+          title: 'Already packed',
+          description: 'These orders already have a packing task.',
+          maxWidth: 'max-content',
+        })
+      } else {
+        // Genuinely nothing to pack yet — a marketplace order isn't all-or-nothing
+        // pickable one SKU at a time, so a quiet toast is easy to miss; a modal makes
+        // the "why" unmissable before the operator goes hunting for what went wrong.
+        cantPackModalOpen.value = true
+      }
       return
     }
   }
@@ -303,7 +310,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
           <span class="pkd-progress-val">{{ task.skuQty }}</span>
         </div>
         <div class="pkd-progress-stat">
-          <span class="pkd-progress-label">To pick qty</span>
+          <span class="pkd-progress-label">Qty to pick</span>
           <span class="pkd-progress-val">{{ fmt(toPickTotal) }}</span>
         </div>
         <div class="pkd-progress-stat">
@@ -334,7 +341,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                   <th class="detail-th">Product</th>
                   <th class="detail-th">SKU</th>
                   <th class="detail-th">Storage location</th>
-                  <th class="detail-th detail-th--num">To pick qty</th>
+                  <th class="detail-th detail-th--num">Qty to pick</th>
                   <th class="detail-th detail-th--num">Picked qty</th>
                   <th class="detail-th detail-th--num">Outstanding qty</th>
                   <th class="detail-th">Unit</th>
@@ -360,10 +367,9 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                     </span>
                   </td>
                   <td class="detail-td detail-td--num">
-                    <span v-if="item.expectedQty - rowPicked(item.key, item.pickedQty) > 0" class="pkd-outstanding">
+                    <span :class="item.expectedQty - rowPicked(item.key, item.pickedQty) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
                       {{ fmt(item.expectedQty - rowPicked(item.key, item.pickedQty)) }}
                     </span>
-                    <span v-else class="pkd-qty--full">—</span>
                   </td>
                   <td class="detail-td">{{ item.unit }}</td>
                   <td class="detail-td detail-td--action">
@@ -544,6 +550,27 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"
   />
+
+  <!-- Nothing can be packed yet — marketplace order(s) not fully picked -->
+  <MpModal id="pkd-cant-pack" :is-open="cantPackModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="cantPackModalOpen = false">
+    <MpModalContent>
+      <MpModalHeader>
+        Nothing can be packed yet
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <p style="margin:0;font-size:var(--mp-font-sizes-md);color:var(--mp-text-default)">
+          Marketplace orders must be picked in full — across every picking list that
+          covers them — before a packing task can be created. Finish picking the
+          remaining items, then come back here to create packing.
+        </p>
+      </MpModalBody>
+      <MpModalFooter>
+        <button class="detail-btn detail-btn--primary" @click="cantPackModalOpen = false">Got it</button>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 </template>
 
 <style scoped>

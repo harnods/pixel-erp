@@ -381,7 +381,7 @@ async function handleSave() {
             <!-- picking stats -->
             <template v-else-if="isPicking">
               <div class="msn-stat">
-                <span class="msn-stat-label">To pick qty</span>
+                <span class="msn-stat-label">Qty to pick</span>
                 <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
               </div>
               <div class="msn-stat">
@@ -646,8 +646,8 @@ async function handleSave() {
 .msn-info-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .msn-info-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msn-info-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.msn-info-stats { display: flex; gap: var(--mp-spacing-6); flex-shrink: 0; }
-.msn-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.msn-info-stats { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); }
+.msn-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; min-width: 160px; }
 .msn-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .msn-stat-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; font-weight: var(--mp-font-weights-medium); }
 .msn-stat--pos .msn-stat-value { color: var(--mp-text-success, #18794e); }

@@ -139,7 +139,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(row: LineRow) {
   if (!row.qty || Number(row.qty) < 1) {
-    toast.notify({ variant: 'warning', title: 'Enter transfer qty first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: 'Enter transfer qty first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerRow.value = row
@@ -341,19 +341,19 @@ async function handleSave() {
   if (!destId.value) { destError.value = true; valid = false }
   if (originId.value && destId.value && originId.value === destId.value) {
     destError.value = true; valid = false
-    formError.value = 'Origin and destination warehouse must be different.'
+    formError.value = 'Origin and destination warehouse must be different'
   }
   const filled = filledRows.value
-  if (!filled.length) { formError.value = formError.value || 'Add at least one product to transfer.'; valid = false }
+  if (!filled.length) { formError.value = formError.value || 'You must add at least one product to transfer'; valid = false }
   for (const row of filled) {
     if (isBatchTrackedSku(row.sku)) {
-      if (!batchHasCounts(row)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Enter batch details for all batch-tracked products.' }
-      else if (batchTotal(row) > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Transfer qty cannot exceed available stock.' }
+      if (!batchHasCounts(row)) { row.qtyError = true; valid = false; formError.value = formError.value || 'You must fill in batch details for all batch-tracked products' }
+      else if (batchTotal(row) > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Transfer qty cannot exceed available stock' }
       else row.qtyError = false
     } else {
       const qty = Number(row.qty)
       if (!qty || qty < 1) { row.qtyError = true; valid = false }
-      else if (qty > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Transfer qty cannot exceed available stock.' }
+      else if (qty > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Transfer qty cannot exceed available stock' }
       else {
         row.qtyError = false
         if (isSerialTrackedSku(row.sku)) {
@@ -435,7 +435,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 use-portal @update:model-value="transactionDateError = false"
               />
             </div>
-            <MpFormErrorMessage>Please enter a transaction date</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select transaction date</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="wtf-transno" class="wtf-f-transno">
@@ -461,7 +461,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               is-searchable use-portal is-full-width :is-invalid="originError"
               @update:model-value="originError = false"
             />
-            <MpFormErrorMessage>Please select an origin warehouse</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select origin warehouse</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="wtf-dest" class="wtf-f-dest" is-required :is-invalid="destError">
@@ -471,7 +471,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               is-searchable use-portal is-full-width :is-invalid="destError"
               @update:model-value="destError = false"
             />
-            <MpFormErrorMessage>Please select a destination warehouse</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select destination warehouse</MpFormErrorMessage>
           </MpFormControl>
         </div>
 
@@ -648,7 +648,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
               <span class="wtf-attach-or">or drag and drop here</span>
             </div>
-            <p class="wtf-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
+            <p class="wtf-helper-text">File must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
             <ul v-if="attachedFiles.length" class="wtf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="wtf-file-item">
                 <span class="wtf-file-name">{{ f.name }}</span>

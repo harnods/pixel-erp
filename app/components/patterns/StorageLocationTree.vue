@@ -203,7 +203,7 @@ function onSaved(pid: string | null) {
     <MpModal
       id="slt-delete-modal"
       :is-open="!!deleteTarget"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"

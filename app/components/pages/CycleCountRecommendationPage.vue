@@ -168,7 +168,7 @@ function createCycleCount(sel: Set<number>, deselectAll: () => void) {
   // of silently picking one (buttons stay clickable; show an error toast per convention).
   const warehouseIds = new Set(rows.map(r => r.warehouseId))
   if (warehouseIds.size > 1) {
-    toast.notify({ variant: 'critical', title: 'Select SKUs from a single warehouse to create a cycle count', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: 'Select SKUs from a single warehouse to create a cycle count', maxWidth: 'max-content' })
     return
   }
   const skus = rows.map(r => r.sku)

@@ -348,7 +348,7 @@ function onRemoveTeamMember(member: WarehouseTeamMember) {
 function confirmRemoveTeamMember() {
   if (!memberToRemove.value) return
   if (memberActiveTaskCount.value > 0 && !reassignTargetId.value) {
-    toast.notify({ variant: 'warning', title: 'Select a team member to reassign tasks to', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: 'Select team member to reassign tasks to', maxWidth: 'max-content' })
     return
   }
   const wid = props.orderId
@@ -1073,7 +1073,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <td v-if="batchColVisibility.reserved" class="wh-btd wh-btd--num">{{ formatNum(p.reserved) }}</td>
                       <td v-if="batchColVisibility.available" class="wh-btd wh-btd--num">{{ formatNum(p.available) }}</td>
                       <td v-if="batchColVisibility.minStock" class="wh-btd wh-btd--num" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">{{ formatNum(p.minStock) }}</td>
-                      <td v-if="batchColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
+                      <td v-if="batchColVisibility.unit" class="wh-btd" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">{{ p.unit }}</td>
                       <td v-if="batchColVisibility.lastUpdated" class="wh-btd"><LastUpdatedCell v-bind="lastUpdatedFor(p.id)" /></td>
                     </tr>
                     <!-- batch rows (only when expanded) -->
@@ -1108,7 +1108,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <td v-if="batchColVisibility.onHand" class="wh-btd wh-btd--num">{{ formatNum(b.onHand) }}</td>
                       <td v-if="batchColVisibility.reserved" class="wh-btd wh-btd--num">{{ formatNum(b.reserved) }}</td>
                       <td v-if="batchColVisibility.available" class="wh-btd wh-btd--num">{{ formatNum(b.available) }}</td>
-                      <td v-if="batchColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
                       <td v-if="batchColVisibility.lastUpdated" class="wh-btd" />
                     </tr>
                   </template>
@@ -1565,7 +1564,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     <MpModal
       id="wh-detail-delete-modal"
       :is-open="deleteModalOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -1593,7 +1592,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     <MpModal
       id="wh-team-modal"
       :is-open="teamModalOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -1626,7 +1625,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </MpFlex>
               </template>
             </MpAutocomplete>
-            <MpFormErrorMessage>Select a user</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select user</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl v-if="selectedTeamUser" id="wh-team-role-display" :class="css({ marginTop: '16px' })">
             <MpFormLabel>Role</MpFormLabel>
@@ -1646,7 +1645,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     <MpModal
       id="wh-remove-team-modal"
       :is-open="removeTeamModalOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"

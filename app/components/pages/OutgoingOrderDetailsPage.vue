@@ -520,7 +520,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <!-- ── Direct-to-packing modal — marketplace orders only ── -->
     <MpModal
-      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="sm"
+      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
     >
       <MpModalContent>
@@ -539,7 +539,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
               is-searchable is-clearable use-portal is-full-width
               :is-invalid="directPackAssigneeError"
             />
-            <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
           </MpFormControl>
         </MpModalBody>
         <MpModalFooter>
