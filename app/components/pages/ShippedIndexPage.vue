@@ -61,9 +61,9 @@ const baseRows = computed<Row[]>(() => {
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'shipmentNo',      label: 'Shipment no.',      width: '180px', sortType: 'text' },
-  { key: 'transactionDate', label: 'Transaction date',  width: '170px', sortType: 'date' },
-  { key: 'assignee',        label: 'Assignee',          width: '160px', sortType: 'text' },
+  { key: 'transactionDate', label: 'Date',              width: '170px', sortType: 'date' },
   { key: 'warehouseName',   label: 'Warehouse',         width: '180px', sortType: 'text' },
+  { key: 'assignee',        label: 'Assignee',          width: '160px', sortType: 'text' },
   { key: 'deliveryCount',   label: 'Delivery qty',      width: '120px', align: 'right', sortType: 'number' },
 ]
 // Column show/hide — Shipment no. stays on; the sort menu's "Hide column" flips these off,
@@ -109,6 +109,7 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 // ─── Row actions ──────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(row: Row) { router.push(`/outbound-delivery/shipment/${row.shipmentSeq}`) }
+function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -195,10 +196,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Transaction date ── -->
     <template #cell-transactionDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
 
-    <!-- ── Assignee / Warehouse ── -->
+    <!-- ── Assignee / Warehouse — View details chip on hover ── -->
     <template #cell-assignee="{ value }">{{ value || '—' }}</template>
-    <template #cell-warehouseName="{ value }">
-      <span class="shp-warehouse">{{ value }}</span>
+    <template #cell-warehouseName="{ value, row }">
+      <div class="cell-with-action">
+        <span class="cell-text shp-warehouse">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as Row).warehouseId)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
     </template>
 
     <!-- ── Numeric cells ── -->

@@ -337,6 +337,16 @@ function freshShipmentSeq(): number {
   return nextShipmentSeq;
 }
 
+// Keeps the operator's picked business date, stamped with the actual time of
+// save (nothing meaningful was ever typed for the time — a bare "YYYY-MM-DD"
+// fed into a datetime formatter renders a spurious UTC-shifted hour).
+function stampSaveTime(dateOnly: string): string {
+  const time = new Date();
+  const hh = String(time.getHours()).padStart(2, "0");
+  const mm = String(time.getMinutes()).padStart(2, "0");
+  return `${dateOnly}T${hh}:${mm}:00`;
+}
+
 /**
  * Hand several ready-to-ship deliveries (same warehouse) over to the courier in one
  * batch — each keeps/gets its own courier + tracking no. (marketplace orders arrive
@@ -360,7 +370,7 @@ export function handoverToCourierBulk(
     if (!t || t.status !== "ready to ship") continue;
     t.status = "shipped";
     t.shippedQty = t.toShipQty;
-    t.shippedDate = opts.transactionDate;
+    t.shippedDate = stampSaveTime(opts.transactionDate);
     t.assignee = opts.assignee;
     t.shipmentNo = shipmentNo;
     const courier = opts.courierByTaskId?.[id];
