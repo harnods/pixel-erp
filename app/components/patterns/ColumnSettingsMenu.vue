@@ -39,13 +39,14 @@ function toggle(item: ColumnSettingItem) {
           :class="{ 'cs-item--disabled': item.disabled }"
           @click="toggle(item)"
         >
-          <MpCheckbox
-            :id="`${id}-${item.key}`"
-            :is-checked="visibility[item.key]"
-            :is-disabled="item.disabled"
-            @change="() => toggle(item)"
-            @click.stop
-          />
+          <span @click.stop>
+            <MpCheckbox
+              :id="`${id}-${item.key}`"
+              :is-checked="visibility[item.key]"
+              :is-disabled="item.disabled"
+              @change="() => toggle(item)"
+            />
+          </span>
           <span class="cs-label">{{ item.label }}</span>
         </li>
       </ul>

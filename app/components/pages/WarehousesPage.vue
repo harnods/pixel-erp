@@ -339,13 +339,14 @@ const emptyDesc = computed(() =>
                   :class="{ 'col-settings-item--disabled': item.disabled }"
                   @click="!item.disabled && (columnVisibility[item.key] = !columnVisibility[item.key])"
                 >
-                  <MpCheckbox
-                    :id="`col-chk-${item.key}`"
-                    :is-checked="columnVisibility[item.key]"
-                    :is-disabled="item.disabled"
-                    @change="() => { if (!item.disabled) columnVisibility[item.key] = !columnVisibility[item.key] }"
-                    @click.stop
-                  />
+                  <span @click.stop>
+                    <MpCheckbox
+                      :id="`col-chk-${item.key}`"
+                      :is-checked="columnVisibility[item.key]"
+                      :is-disabled="item.disabled"
+                      @change="() => { if (!item.disabled) columnVisibility[item.key] = !columnVisibility[item.key] }"
+                    />
+                  </span>
                   <span class="col-settings-label">{{ item.label }}</span>
                 </li>
               </ul>
