@@ -229,7 +229,7 @@ function viewDetails(row: OutgoingOrder) { router.push(`/outbound-delivery/${row
 // Create a picking list for a single order → prefill the create form (warehouse
 // locked + order preselected). Supervisor can then trim SKUs / qty.
 function createPicking(row: OutgoingOrder) {
-  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: row.warehouseId, orderIds: row.id } })
+  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: row.warehouseId, orderIds: row.id, from: 'requests' } })
 }
 
 // ─── Direct-to-packing (Picking disabled for the order's warehouse) ─────────────
@@ -295,7 +295,7 @@ function bulkCreatePicking(selectedRows: Set<number>, deselectAll: () => void) {
   const eligible = selectedOrdersOf(selectedRows).filter(canPickOrder)
   const wh = eligible[0]!.warehouseId
   deselectAll()
-  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: wh, orderIds: eligible.map(o => o.id).join(',') } })
+  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: wh, orderIds: eligible.map(o => o.id).join(','), from: 'requests' } })
 }
 
 // Only open orders can be cancelled.

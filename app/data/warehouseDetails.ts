@@ -251,18 +251,25 @@ const MULTI_CATEGORIES: Record<string, string[]> = {
   '3002': ['Accessory', 'Maintenance', 'Cleaning'],
 }
 
-// A handful of (warehouse, SKU) pairs whose generated on-hand formula happens to
-// land below the total demand of every currently-pickable seed order for that SKU
-// in that warehouse — floored here (with a small buffer above known demand) so a
-// demo never hits a genuine out-of-stock/short-reservation during picking. Audited
-// against outgoingOrders' seeded demand; revisit if the order seed ever changes.
+// (warehouse, SKU) pairs whose generated on-hand formula lands below the total
+// demand of seeded outgoing orders for that SKU in that warehouse. Floored with a
+// buffer of +4 above known demand so available = onHand − reserved (max 3) ≥ demand.
+// Cannot import outgoing.ts here (it imports warehouseDetails → circular), so this
+// table is maintained manually. Audited comprehensively across all 52 seeded orders.
 const MIN_ONHAND_OVERRIDE: Record<string, number> = {
-  'wh-002::2001': 8,  // demand 5
-  'wh-010::2201': 12, // demand 9
-  'wh-010::2101': 10, // demand 7
-  'wh-009::1105': 10, // demand 7
-  'wh-003::2103': 9,  // demand 6
-  'wh-008::2102': 7,  // demand 4 (pre-shipped seed order out-sh-001)
+  // ── original 6 ───────────────────────────────────────────────────────────────
+  'wh-002::2001': 9,  // demand 5
+  'wh-010::2201': 13, // demand 9
+  'wh-010::2101': 11, // demand 7
+  'wh-009::1105': 11, // demand 7
+  'wh-003::2103': 10, // demand 6
+  'wh-008::2102': 9,  // demand 4 (pre-shipped seed order out-sh-001)
+  // ── 5 missed pairs found by comprehensive audit ───────────────────────────
+  'wh-002::2102': 9,  // demand 5 (onHand was 5, reserved 1, available only 4)
+  'wh-010::2103': 9,  // demand 5 (onHand was 3, available only 3)
+  'wh-001::2003': 9,  // demand 5 (onHand was 1, available only 1) — blocked picking
+  'wh-002::2103': 8,  // demand 4 (onHand was 3, available only 3)
+  'wh-002::2104': 9,  // demand 5 (onHand was 1, available only 1)
 }
 
 // Deterministic ISO date `days` before TODAY — used for created-at fields so the

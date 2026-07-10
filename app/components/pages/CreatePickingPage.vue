@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip,
+  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css, toast,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -478,8 +478,13 @@ watch(selectedOrders, () => nextTick(() => { checkStageOverflow(); checkItemsOve
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
-function goPicking() {
-  router.push({ path: '/outbound-delivery', query: { tab: 'Picking' } })
+function goBack() {
+  const from = route.query.from as string | undefined
+  if (from?.startsWith('order:')) {
+    router.push(`/outbound-delivery/${from.slice(6)}`)
+  } else {
+    router.push('/outbound-delivery?tab=Requests')
+  }
 }
 
 async function handleCreate() {
@@ -581,7 +586,7 @@ async function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPicking">Picking</button>
+          <button class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? 'Order details' : 'Picking' }}</button>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New picking list</h1>
@@ -668,7 +673,7 @@ async function handleCreate() {
                 <col v-if="hasPriorPicks" /><!-- Picked qty -->
                 <col /><!-- Qty to pick -->
                 <col style="width: 100px" /><!-- Unit -->
-                <col /><!-- Action -->
+                <col style="width: 48px" /><!-- Action -->
               </colgroup>
               <thead>
                 <tr>
@@ -739,16 +744,10 @@ async function handleCreate() {
                   </td>
                   <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
 
-                  <!-- Storage location: read-only bin list for batch/serial-tracked SKUs
-                       (location is wherever the chosen batch/serial already sits — decided
-                       inside the drawer, not shown as a static bin here). -->
-                  <td v-if="isBatchTrackedSku(row.sku) || isSerialTrackedSku(row.sku)" class="pk-td pk-td--location-summary">
-                    <div class="pk-location-summary-wrap">
-                      <template v-if="pickedLocations(row.sku).length">
-                        <span v-for="loc in pickedLocations(row.sku)" :key="loc" class="pk-location-summary-item">{{ loc }}</span>
-                      </template>
-                      <span v-else class="pk-location-summary-item">—</span>
-                    </div>
+                  <!-- Storage location: shown as -- for batch/serial-tracked SKUs
+                       (their location is managed inside the drawer, per batch/serial unit). -->
+                  <td v-if="isBatchTrackedSku(row.sku) || isSerialTrackedSku(row.sku)" class="pk-td">
+                    <span class="pk-loc-text">—</span>
                   </td>
                   <td v-else class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
 
@@ -784,12 +783,20 @@ async function handleCreate() {
 
                   <td class="pk-td">{{ row.unit }}</td>
 
-                  <!-- Action column: Manage batch / Manage serial numbers link -->
+                  <!-- Action column: icon button for batch / serial management -->
                   <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
-                    <button class="pk-manage-btn" type="button" @click.stop="openBatchDrawer(row.sku)">Manage batch</button>
+                    <MpTooltip :id="`tt-batch-${row.sku}`" label="Manage batch" placement="top" use-portal>
+                      <button class="pk-manage-icon-btn" type="button" @click.stop="openBatchDrawer(row.sku)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
                   </td>
                   <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--action">
-                    <button class="pk-manage-btn" type="button" @click.stop="openSerialDrawer(row.sku)">Manage serial numbers</button>
+                    <MpTooltip :id="`tt-serial-${row.sku}`" label="Manage serial numbers" placement="top" use-portal>
+                      <button class="pk-manage-icon-btn" type="button" @click.stop="openSerialDrawer(row.sku)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
                   </td>
                   <td v-else class="pk-td pk-td--action"></td>
                 </tr>
@@ -810,7 +817,7 @@ async function handleCreate() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': itemsOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goPicking">Cancel</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goBack">Cancel</MpButton>
       <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
@@ -1021,9 +1028,14 @@ async function handleCreate() {
 }
 .pk-batch-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; }
 
-.pk-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
-.pk-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
-.pk-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+.pk-td--action { padding: 4px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+.pk-manage-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
+  background: none; border: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary); padding: 0;
+}
+.pk-manage-icon-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 /* ── Empty state ─────────────────────────────────────────────────────────────── */
 .pk-empty {

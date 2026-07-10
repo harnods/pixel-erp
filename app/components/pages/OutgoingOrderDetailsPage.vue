@@ -202,7 +202,7 @@ function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/outbound-deli
 function goBack() { router.push('/outbound-delivery?tab=Requests') }
 function createPicking() {
   if (!order.value) return
-  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id } })
+  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id, from: `order:${order.value.id}` } })
 }
 
 // ─── Direct-to-packing (Picking disabled for the order's warehouse) ─────────────
