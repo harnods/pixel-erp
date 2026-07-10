@@ -52,11 +52,14 @@ const columns: TableColumn[] = [
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on.
 // trackingNos is hidden by default — user can enable it via column settings.
-const colVis = reactive<Record<string, boolean>>(
-  Object.fromEntries(columns.map(c => [c.key, c.key !== 'trackingNos'])),
-)
+// `memo` is a sub-row of Number, not a real column, so it lives in colVis only.
+const colVis = reactive<Record<string, boolean>>({
+  ...Object.fromEntries(columns.map(c => [c.key, c.key !== 'trackingNos'])),
+  memo: true,
+})
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
-const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const baseColumnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columnItems = [baseColumnItems[0]!, { key: 'memo', label: 'Memo' }, ...baseColumnItems.slice(1)]
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
@@ -439,7 +442,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="cell-with-action">
         <span class="rcv-po">
           <span class="cell-text rcv-po__no">{{ value }}</span>
-          <span v-if="(row as unknown as Receipt).memo" class="rcv-po__memo">{{ (row as unknown as Receipt).memo }}</span>
+          <span v-if="colVis.memo && (row as unknown as Receipt).memo" class="rcv-po__memo">{{ (row as unknown as Receipt).memo }}</span>
         </span>
         <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as Receipt)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">

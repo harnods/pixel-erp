@@ -54,10 +54,15 @@ const columns: TableColumn[] = [
   { key: 'dueDate',       label: 'Due date',  width: '180px', sortType: 'date' },
 ]
 // Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
-// the ColumnSettings menu turns them back on.
-const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+// the ColumnSettings menu turns them back on. `memo` is a sub-row of Number, not a
+// real column, so it lives in colVis only (not in columns/visibleColumns).
+const colVis = reactive<Record<string, boolean>>({
+  ...Object.fromEntries(columns.map(c => [c.key, true])),
+  memo: true,
+})
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
-const columnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const baseColumnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columnItems = [baseColumnItems[0]!, { key: 'memo', label: 'Memo' }, ...baseColumnItems.slice(1)]
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
@@ -481,6 +486,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="cell-with-action">
         <span class="out-so">
           <span class="cell-text out-so__no">{{ value }}</span>
+          <span v-if="colVis.memo && (row as unknown as OutgoingOrder).memo" class="out-so__memo">{{ (row as unknown as OutgoingOrder).memo }}</span>
         </span>
         <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as OutgoingOrder)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -760,9 +766,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   white-space: normal;
 }
 
-/* Sales no. */
+/* Sales no. + memo subtitle */
 .out-so { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .out-so__no { color: var(--mp-text-default); }
+.out-so__memo {
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm);
+  color: var(--mp-text-secondary);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
 
 /* Due date + expiry caption */
 .out-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
