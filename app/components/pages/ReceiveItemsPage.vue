@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { formatDateTimeLong } from '~/utils/date'
 import {
-  MpButton, MpSpinner,
+  MpButton, MpSpinner, MpIcon, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
   toast,
@@ -451,9 +451,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <th class="ri-th">SKU</th>
                   <th class="ri-th ri-th--num">Purchase qty</th>
                   <th class="ri-th ri-th--num">Received qty</th>
-                  <th class="ri-th"></th>
                   <th class="ri-th ri-th--num">Outstanding qty</th>
                   <th class="ri-th">Unit</th>
+                  <th class="ri-th"></th>
                 </tr>
               </thead>
               <tbody>
@@ -490,20 +490,28 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       @input="onQtyInput(item.skuCode, item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0), $event)"
                     />
                   </td>
-                  <!-- Manage action column — only for batch/serial SKUs -->
-                  <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--action">
-                    <button class="ri-manage-btn" type="button" @click="openBatchDrawer(item.skuCode)">Manage batch</button>
-                  </td>
-                  <td v-else-if="isSerialTrackedSku(item.skuCode)" class="ri-td ri-td--action">
-                    <button class="ri-manage-btn" type="button" @click="openSerialDrawer(item.skuCode)">Manage serial numbers</button>
-                  </td>
-                  <td v-else class="ri-td ri-td--action"></td>
                   <td class="ri-td ri-td--num">
                     <span :class="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0) > 0 ? 'ri-outstanding' : 'ri-qty--full'">
                       {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0)) }}
                     </span>
                   </td>
                   <td class="ri-td">{{ item.unit }}</td>
+                  <!-- Manage action column — only for batch/serial SKUs -->
+                  <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--action">
+                    <MpTooltip :id="`ri-tt-batch-${item.skuCode}`" label="Manage batch" placement="top" use-portal>
+                      <button class="ri-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(item.skuCode)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(item.skuCode)" class="ri-td ri-td--action">
+                    <MpTooltip :id="`ri-tt-serial-${item.skuCode}`" label="Manage serial numbers" placement="top" use-portal>
+                      <button class="ri-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(item.skuCode)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </td>
+                  <td v-else class="ri-td ri-td--action"></td>
                 </tr>
                 <tr v-if="!filteredItems.length">
                   <td class="ri-td ri-empty" colspan="7">No products match your search.</td>
@@ -753,12 +761,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 /* Manage action column */
-.ri-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
-.ri-manage-btn {
-  background: none; border: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link);
+.ri-td--action { text-align: center; white-space: nowrap; position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
+.ri-view-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  border-radius: var(--mp-radii-md); background: none; border: none;
+  cursor: pointer; color: var(--mp-icon-default);
 }
-.ri-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+.ri-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Qty colors */
 .ri-qty--full   { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }

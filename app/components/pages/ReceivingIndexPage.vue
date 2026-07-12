@@ -10,6 +10,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { formatDateTime } from '~/utils/date'
 import { receivingPOsFor, taskAgingDays, type ReceivingPO, type ReceivingTask } from '~/data/receivingTasks'
+import { putAwayTasksFor } from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -99,8 +100,13 @@ const pagedPOs    = computed(() => {
 watch([search, warehouseFilter, assigneeFilter, statusFilter, perPage], () => { currentPage.value = 1 })
 
 // Total columns (Assignee hidden for Ops) — for the bulk bar colspan.
-// PO no. + Task no. + Warehouse + Assignee? + SKU scope + Purch qty + Recv qty + Status + Start + End + Actions
-const colCount = computed(() => (isScoped.value ? 10 : 11))
+// PO no. + Task no. + Warehouse + Assignee? + SKU scope + Purch qty + Recv qty + Status + Icons + Start + End + Actions
+const colCount = computed(() => (isScoped.value ? 11 : 12))
+
+// ─── Icon indicator — put-away task badge ───────────────────────────────────
+function hasPutAwayTask(taskId: string): boolean {
+  return putAwayTasksFor().some((pa) => pa.receivingTaskIds.includes(taskId) && pa.status !== 'canceled')
+}
 
 // ─── Bulk select (tasks) ───────────────────────────────────────────────────────
 // Any task can be selected. The available bulk action depends on the selection:
@@ -286,6 +292,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <col style="width: 120px" />
           <col style="width: 100px" />
           <col style="width: 130px" />
+          <col style="width: 100px" />
           <col style="width: 180px" />
           <col style="width: 200px" />
           <col style="width: 44px" />
@@ -321,6 +328,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <th class="rcvg-th rcvg-th--right">Purchase qty</th>
             <th class="rcvg-th rcvg-th--right">Received qty</th>
             <th class="rcvg-th">Status</th>
+            <th class="rcvg-th" />
             <th class="rcvg-th">Start date</th>
             <th class="rcvg-th">End date</th>
             <th class="rcvg-th rcvg-th--actions" />
@@ -384,6 +392,21 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
               <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
               <td class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
+              <td class="rcvg-td">
+                <div class="rcvg-icons-cell">
+                  <MpTooltip
+                    v-if="hasPutAwayTask(t.id)"
+                    :id="`tt-putaway-${t.id}`"
+                    label="Put-away task created"
+                    placement="top"
+                    use-portal
+                  >
+                    <span class="rcvg-icon-indicator" aria-label="Put-away task created">
+                      <MpIcon name="doc" size="20px" />
+                    </span>
+                  </MpTooltip>
+                </div>
+              </td>
               <td class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
               <td class="rcvg-td">
                 <span class="rcvg-end">
@@ -562,6 +585,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-td:last-child { border-right: none; }
 .rcvg-td--right { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .rcvg-td--muted { color: var(--mp-text-secondary); }
+
+/* Icon indicator cell — put-away task badge */
+.rcvg-icons-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mp-spacing-2);
+}
+.rcvg-icon-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mp-text-subtle);
+}
 .rcvg-th--actions,
 .rcvg-td--actions {
   position: sticky; right: 0; z-index: 1;

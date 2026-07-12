@@ -294,6 +294,8 @@ height and focus area.
 Use an inline caption only when there is enough vertical room and it does not
 break the row rhythm.
 
+Error copy follows [Form.md → Error message copy](Form.md#error-message-copy).
+
 ---
 
 ## Progressive Form Tables

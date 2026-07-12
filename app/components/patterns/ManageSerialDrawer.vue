@@ -82,9 +82,11 @@ const locSearches = reactive<Record<string, string>>({})
 const hasOriginLoc = computed(() => (props.originLocationPaths?.length ?? 0) > 0)
 const hasDestLoc = computed(() => (props.destLocationPaths?.length ?? 0) > 0)
 
-watch(() => props.open, (isOpen) => {
-  if (!isOpen) return
-
+// Builds rows from scratch, straight off props — the drawer's initial state on
+// open, and also what "Reset" restores back to (undoing every scan/toggle without
+// touching props). Kept as its own function so both callers share one source of
+// truth for what "the starting point" is, per mode.
+function seedRows(): void {
   const wh = getWarehouseDetail(props.warehouseId)
   const sr = wh?.stock.find(s => s.sku === props.sku)?.serials
   const availableUnits = sr?.available ?? []
@@ -175,7 +177,9 @@ watch(() => props.open, (isOpen) => {
   page.value = 1
   saveError.value = ''
   locActiveKey.value = null
-}, { immediate: true })
+}
+
+watch(() => props.open, (isOpen) => { if (isOpen) seedRows() }, { immediate: true })
 
 const product = computed(() => productBySku(props.sku))
 const warehouseStock = computed(() => {
@@ -201,6 +205,12 @@ const isReceiving = computed(() => props.kind === 'receiving')
 const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
 const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
+// Modes where a genuinely unrecognized scanned serial is a NEW one worth adding
+// (matching the textarea's "Add to list" behavior) rather than an error — receiving
+// and stock in/out both exist to register serials the system doesn't know yet;
+// count can likewise turn up more than expected. Transfer/picking/put-away only
+// ever move or assign EXISTING, already-known stock.
+const acceptsNewSerials = computed(() => isCountMode.value || isReceiving.value || props.kind === 'in-out')
 const qtyLabel = computed(() => {
   if (props.kind === 'transfer') return 'Transfer qty'
   if (props.kind === 'receiving') return 'Purchase qty'
@@ -290,25 +300,53 @@ async function flashScanned(key: string) {
   scannedTimer = setTimeout(() => { lastScannedKey.value = null }, 1000)
 }
 
-// Scanning a serial inside the drawer (picking execution) selects it the same way
-// clicking its toggle button would — same guards, just with scan-specific feedback.
+// Scanning a serial inside the drawer selects it the same way clicking its toggle
+// button would (picking/transfer), confirms it (count), registers it as a new one
+// if it's genuinely unrecognized (count/receiving/in-out — same as "Add to list"),
+// or just flashes it to help the operator find the row (put-away, whose serials
+// are a fixed, already-known set with nothing left to "select").
 function handleDrawerScan(rawValue: string) {
   const v = rawValue.trim()
   if (!v) return
   const row = rows.value.find(r => r.serial === v)
+
   if (!row) {
     const resolved = resolveScan(props.warehouseId, v)
     if (resolved && resolved.sku !== props.sku) {
       notifyScanError(`"${v}" belongs to SKU ${resolved.sku}, not ${props.sku}`)
-    } else {
-      notifyScanError(`Serial number not found: "${v}"`)
+      return
     }
+    if (acceptsNewSerials.value && !resolved) {
+      const blocked = new Set(props.blockedSerials ?? [])
+      if (isReceiving.value && blocked.has(v)) {
+        notifyScanError(`"${v}" was already received in a prior task`)
+        return
+      }
+      rows.value.push({ serial: v, counted: true })
+      saveError.value = ''
+      playScanSuccessSound()
+      flashScanned(v)
+      return
+    }
+    notifyScanError(`Serial number not found: "${v}"`)
     return
   }
+
   if (row.reserved) {
     notifyScanError(`"${v}" is already reserved for another order`)
     return
   }
+
+  // Put-away: every row is a fixed, already-known fact (counted stays true) — there's
+  // nothing to "select". Scanning just confirms/flashes the row so the operator can
+  // find it and assign its destination bin, instead of always erroring.
+  if (isPutAway.value) {
+    saveError.value = ''
+    playScanSuccessSound()
+    flashScanned(row.serial)
+    return
+  }
+
   if (row.counted) {
     notifyScanError(`"${v}" is already selected`)
     return
@@ -323,8 +361,12 @@ function handleDrawerScan(rawValue: string) {
   flashScanned(row.serial)
 }
 
+// Undo every scan/toggle by re-seeding from props — correct for every mode, unlike
+// blanket-clearing `counted`, which would wipe real baseline state that isn't
+// scan-driven (in-out/receiving's existing-stock rows start counted=true;
+// put-away's rows are fixed facts, not a count at all).
 function resetPicked() {
-  for (const row of rows.value) if (!row.reserved) row.counted = false
+  seedRows()
 }
 
 const filtered = computed(() => {
@@ -516,9 +558,16 @@ async function handleSave() {
           </div>
         </div>
 
-        <!-- Scan bar — executing a pick only (planning/creation uses the toggle buttons) -->
-        <ScanBar v-if="isPicking && executionMode" placeholder="Scan barcode..." @scan="handleDrawerScan">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetPicked">Reset count</button>
+        <!-- Scan bar — every mode, same position as outbound (picking). Reset
+             re-seeds from props (not a blanket counted=false), so it's safe in
+             every mode — it undoes scans/toggles without touching real baseline
+             state (in-out/receiving's existing-stock rows, put-away's fixed set). -->
+        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
+          <button
+            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+            type="button"
+            @click="resetPicked"
+          >Reset count</button>
         </ScanBar>
 
         <div class="msn-table-wrap">

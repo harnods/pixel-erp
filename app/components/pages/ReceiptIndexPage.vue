@@ -13,7 +13,7 @@ import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
 import { receiptsForStages, receiptStage, cancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
-import { canCreateReceivingTask } from '~/data/receivingTasks'
+import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -44,6 +44,7 @@ const columns: TableColumn[] = [
   { key: 'warehouseName',    label: 'Warehouse',         width: '180px', sortType: 'text' },
   { key: 'vendor',           label: 'Vendor',            width: '200px', sortType: 'text' },
   { key: 'status',           label: 'Status',            width: '150px', sortType: 'text' },
+  { key: 'icons',            label: '',                  width: '100px', align: 'center', noHeader: true },
   { key: 'trackingNos',      label: 'Tracking no.',      width: '150px' },
   { key: 'skuQty',           label: 'SKU qty',           width: '100px', align: 'right', sortType: 'number' },
   { key: 'purchaseQty',      label: 'Purchase qty',      width: '120px', align: 'right', sortType: 'number' },
@@ -58,7 +59,7 @@ const colVis = reactive<Record<string, boolean>>({
   memo: true,
 })
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
-const baseColumnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const baseColumnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const columnItems = [baseColumnItems[0]!, { key: 'memo', label: 'Memo' }, ...baseColumnItems.slice(1)]
 function hideColumn(key: string) { colVis[key] = false }
 
@@ -203,6 +204,11 @@ function clearFilters() {
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
+
+// ─── Icon indicator — purchase receiving task badge ─────────────────────────
+function hasReceivingTask(receiptId: string): boolean {
+  return receivingTasksForReceipt(receiptId).length > 0
+}
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
@@ -469,6 +475,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <ErpStatusBadge :status="(value as string)" />
     </template>
 
+    <!-- ── Icon indicator — purchase receiving task badge ── -->
+    <template #cell-icons="{ row }">
+      <div class="rcv-icons-cell">
+        <MpTooltip
+          v-if="hasReceivingTask((row as unknown as Receipt).id)"
+          :id="`tt-recvtask-${row.id}`"
+          label="Purchase receiving created"
+          placement="top"
+          use-portal
+        >
+          <span class="rcv-icon-indicator" aria-label="Purchase receiving created">
+            <MpIcon name="doc" size="20px" />
+          </span>
+        </MpTooltip>
+      </div>
+    </template>
+
     <!-- ── Tracking no. (one PO may have several) — edit on hover ── -->
     <template #cell-trackingNos="{ value, row }">
       <div class="rcv-track-cell">
@@ -701,6 +724,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   -webkit-line-clamp: 2;
   overflow: hidden;
   white-space: normal;
+}
+
+/* Icon indicator cell — purchase receiving task badge */
+.rcv-icons-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mp-spacing-2);
+}
+.rcv-icon-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mp-text-subtle);
 }
 
 /* Tracking no. — one or more, stacked; edit icon sits right next to the text (row hover) */

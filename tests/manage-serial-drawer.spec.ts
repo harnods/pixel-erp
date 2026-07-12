@@ -46,6 +46,21 @@ function rowStatus(wrapper: ReturnType<typeof mount>, serial: string): string {
   return ''
 }
 
+function rowCount(wrapper: ReturnType<typeof mount>): number {
+  return wrapper.findAll('tbody tr').filter((r) => !r.classes().includes('msn-tr--empty')).length
+}
+
+async function scan(wrapper: ReturnType<typeof mount>, value: string) {
+  const input = wrapper.find('.scan-bar-input')
+  await input.setValue(value)
+  await input.trigger('keydown.enter')
+}
+
+async function clickResetCount(wrapper: ReturnType<typeof mount>) {
+  const btn = wrapper.findAll('button').find((b) => b.text() === 'Reset count')
+  await btn?.trigger('click')
+}
+
 describe('ManageSerialDrawer — picking mode, row status by executionMode', () => {
   it('planning (kind=picking, no executionMode): a row already in modelValue reads "Reserved", never "Picked"', async () => {
     const serials = reservedSerials()
@@ -110,6 +125,130 @@ describe('ManageSerialDrawer — picking mode, row status by executionMode', () 
     const stats = wrapper.findAll('.msn-stat')
     const pickedStat = stats.find((s) => s.text().includes('Picked qty'))
     expect(pickedStat?.text()).toMatch(/Picked qty0|Picked qty\s*0/)
+    wrapper.unmount()
+  })
+})
+
+describe('ManageSerialDrawer — scan bar available in every mode, with correct per-mode behavior', () => {
+  it('count mode: scanning a genuinely unrecognized serial adds it as a new counted row (an "extra" found during count)', async () => {
+    const wrapper = mountDrawer({ kind: 'count', targetCount: 0, modelValue: [] })
+    await flushPromises()
+    const before = rowCount(wrapper)
+
+    await scan(wrapper, 'FAKE-NEW-COUNT-001')
+    await flushPromises()
+
+    expect(rowCount(wrapper)).toBe(before + 1)
+    expect(wrapper.text()).toContain('FAKE-NEW-COUNT-001')
+    wrapper.unmount()
+  })
+
+  it('receiving mode: scanning a genuinely new serial registers it; a serial already received in a prior task is rejected', async () => {
+    const wrapper = mountDrawer({
+      kind: 'receiving',
+      targetCount: 0,
+      modelValue: [],
+      blockedSerials: ['ALREADY-RECEIVED-001'],
+    })
+    await flushPromises()
+    const before = rowCount(wrapper)
+
+    await scan(wrapper, 'FAKE-NEW-RECEIVING-001')
+    await flushPromises()
+    expect(rowCount(wrapper)).toBe(before + 1)
+    expect(wrapper.text()).toContain('FAKE-NEW-RECEIVING-001')
+
+    const afterFirstScan = rowCount(wrapper)
+    await scan(wrapper, 'ALREADY-RECEIVED-001')
+    await flushPromises()
+    // Rejected — row count must NOT increase, and the blocked serial must not
+    // silently get added to the list.
+    expect(rowCount(wrapper)).toBe(afterFirstScan)
+    wrapper.unmount()
+  })
+
+  it('in-out mode: scanning a genuinely new serial registers it (stock coming in)', async () => {
+    const wrapper = mountDrawer({ kind: 'in-out', targetCount: 0, modelValue: [] })
+    await flushPromises()
+    const before = rowCount(wrapper)
+
+    await scan(wrapper, 'FAKE-NEW-INOUT-001')
+    await flushPromises()
+
+    expect(rowCount(wrapper)).toBe(before + 1)
+    expect(wrapper.text()).toContain('FAKE-NEW-INOUT-001')
+    wrapper.unmount()
+  })
+
+  it('put-away mode: scanning an already-listed serial does not error or duplicate the row (fixed, already-known set)', async () => {
+    const wrapper = mountDrawer({
+      kind: 'put-away',
+      targetCount: 1,
+      modelValue: [{ serial: 'PA-SN-001' }],
+    })
+    await flushPromises()
+    const before = rowCount(wrapper)
+
+    await scan(wrapper, 'PA-SN-001')
+    await flushPromises()
+
+    expect(rowCount(wrapper)).toBe(before) // no duplicate row
+    wrapper.unmount()
+  })
+
+  it('put-away mode: scanning a serial NOT in the fixed set is rejected, not silently added', async () => {
+    const wrapper = mountDrawer({
+      kind: 'put-away',
+      targetCount: 1,
+      modelValue: [{ serial: 'PA-SN-001' }],
+    })
+    await flushPromises()
+    const before = rowCount(wrapper)
+
+    await scan(wrapper, 'PA-SN-UNKNOWN-999')
+    await flushPromises()
+
+    expect(rowCount(wrapper)).toBe(before) // put-away's set is fixed — never grows via scan
+    expect(wrapper.text()).not.toContain('PA-SN-UNKNOWN-999')
+    wrapper.unmount()
+  })
+
+  it('"Reset count" undoes scans by re-seeding from props — an extra found during count disappears again', async () => {
+    const wrapper = mountDrawer({ kind: 'count', targetCount: 0, modelValue: [] })
+    await flushPromises()
+    const before = rowCount(wrapper)
+
+    await scan(wrapper, 'FAKE-NEW-RESET-001')
+    await flushPromises()
+    expect(rowCount(wrapper)).toBe(before + 1)
+
+    await clickResetCount(wrapper)
+    await flushPromises()
+
+    expect(rowCount(wrapper)).toBe(before)
+    expect(wrapper.text()).not.toContain('FAKE-NEW-RESET-001')
+    wrapper.unmount()
+  })
+
+  it('"Reset count" in receiving mode restores blockedSerials rows correctly, without wiping them', async () => {
+    const wrapper = mountDrawer({
+      kind: 'receiving',
+      targetCount: 0,
+      modelValue: [],
+      blockedSerials: ['PRIOR-TASK-SN-001'],
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('PRIOR-TASK-SN-001')
+
+    await scan(wrapper, 'FAKE-NEW-RESET-RECEIVING-001')
+    await flushPromises()
+    expect(wrapper.text()).toContain('FAKE-NEW-RESET-RECEIVING-001')
+
+    await clickResetCount(wrapper)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('FAKE-NEW-RESET-RECEIVING-001')
+    expect(wrapper.text()).toContain('PRIOR-TASK-SN-001') // real baseline data survives reset
     wrapper.unmount()
   })
 })

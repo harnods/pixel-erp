@@ -37,10 +37,12 @@ Start here. This is the home for ERP UI/UX documentation.
 | Table | [ErpTablePage.md](patterns/ErpTablePage.md) | Header/row/sticky columns, props, slots, emits, formatters, standard columns |
 | Pagination | [ErpPagination.md](patterns/ErpPagination.md) | Rows-per-page selector, page info, prev/next |
 | Filter Bar | [ErpFilterBar.md](patterns/ErpFilterBar.md) | Layout container for filter controls + standard search pattern |
+| Button | [Button.md](patterns/Button.md) | Secondary vs ghost usage, ERP button visuals, cancel/dismiss rules |
 | Status Badge | [ErpStatusBadge.md](patterns/ErpStatusBadge.md) | Status → badge type mapping |
 | Content List | [ContentList.md](patterns/ContentList.md) | Labelled key/value field (label over value); detail header + key/value displays |
 | Date format | [date-format.md](patterns/date-format.md) | Numeric `DD/MM/YYYY` table date standard; `formatDate` / `formatDateTime` helpers |
 | Form | [Form.md](patterns/Form.md) | Field anatomy, layout rules (558px / 6-col), field type → Pixel component |
 | Form Table | [FormTable.md](patterns/FormTable.md) | Editable table cells in forms/drawers: input cells, select/search cells, focus/error states |
+| Toast | [Toast.md](patterns/Toast.md) | Success/error feedback, Pixel icon rule, UXW copy rule, implementation checklist |
 | Modal | [Modal.md](patterns/Modal.md) | Centered dialog for focused/interrupting tasks |
 | Drawer | [Drawer.md](patterns/Drawer.md) | Side panel for contextual detail/edit without leaving the page |

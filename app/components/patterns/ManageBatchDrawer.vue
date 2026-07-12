@@ -109,12 +109,11 @@ function displayToIso(display: string): string {
 
 const rows = ref<WorkRow[]>([])
 
-// seed rows from modelValue or warehouse batches when drawer opens.
-// { immediate: true } is required because the component mounts with open=true
-// (parent uses v-if="batchDrawerRow"), so a lazy watch never fires on first open.
-watch(() => props.open, (isOpen) => {
-  if (!isOpen) return
-
+// Builds rows from scratch, straight off props — the drawer's initial state on
+// open, and also what "Reset" restores back to (undoing every scan/manual edit
+// without touching props). Kept as its own function so both callers share one
+// source of truth for what "the starting point" is, per mode.
+function seedRows(): void {
   if (props.modelValue.length > 0) {
     rows.value = props.modelValue.map((b, i) => ({
       ...b,
@@ -173,7 +172,11 @@ watch(() => props.open, (isOpen) => {
     originLocRows: [makeLocRow()],
     destLocRows: [makeLocRow()],
   }))
-}, { immediate: true })
+}
+
+// { immediate: true } is required because the component mounts with open=true
+// (parent uses v-if="batchDrawerRow"), so a lazy watch never fires on first open.
+watch(() => props.open, (isOpen) => { if (isOpen) seedRows() }, { immediate: true })
 
 // ── Product info ─────────────────────────────────────────────────────────────────
 const product = computed(() => productBySku(props.sku))
@@ -394,10 +397,11 @@ function handleDrawerScan(rawValue: string) {
   flashScanned(key)
 }
 
-/** Picking execution: a mis-scan is harmless (nothing is persisted until Save →
- *  Finish picking), so let the operator clear every row's count and start over. */
+// Undo every scan/manual edit (including any locally-added new/scanned rows) by
+// re-seeding from props — correct for every mode, unlike blanket-clearing
+// `counted`, which would wipe real baseline state that isn't scan-driven.
 function resetPickedCount() {
-  for (const row of rows.value) row.counted = null
+  seedRows()
 }
 
 function removeRow(key: string) {
@@ -737,10 +741,14 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
-        <!-- Scan bar — receiving, and executing a pick (planning uses manual qty entry instead) -->
-        <ScanBar v-if="isReceiving || (isPicking && executionMode)" placeholder="Scan barcode..." @scan="handleDrawerScan">
+        <!-- Scan bar — every mode, same position as outbound (picking). Not put-away:
+             its table splits qty per destination bin (destLocRows), never row.counted
+             (which is what a scan increments), so scanning here would silently do
+             nothing the operator could see — put-away keeps its dedicated storage-
+             location picker instead. Reset re-seeds from props (not a blanket
+             counted=null), so it's safe in every mode. -->
+        <ScanBar v-if="!isPutAway" placeholder="Scan barcode..." @scan="handleDrawerScan">
           <button
-            v-if="isPicking && executionMode"
             class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
             type="button"
             @click="resetPickedCount"

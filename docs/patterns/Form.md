@@ -41,6 +41,48 @@ Every field that needs a label, help text, or validation is wrapped in
 
 ---
 
+## Error message copy
+
+Form error messages must follow the UXW library. When exact UXW copy is not
+available in the local repo, use the ERP fallback patterns below and confirm
+with UXW before shipping production copy.
+
+Rules:
+
+- keep the message close to the affected field, cell, or table;
+- make the message actionable;
+- mention the field/object the user must fix;
+- use sentence case;
+- keep it short;
+- do not use technical/internal terms;
+- do not use vague copy such as `Invalid`, `Required`, `Error`, or `Something went wrong`;
+- do not use toast for visible field-level errors.
+
+Fallback copy patterns:
+
+| Case | Pattern | Example |
+|---|---|---|
+| Required select | `You must select {field}` | `You must select warehouse` |
+| Required text/input | `You must fill in {field}` | `You must fill in warehouse name` |
+| Required at least one item | `You must select at least one {object}` | `You must select at least one receiving task` |
+| Required table row/item | `You must add at least one {object}` | `You must add at least one product` |
+| Required quantity before action | `Enter {quantity} first` | `Enter counted qty first` |
+| Cross-field rule | `{Field A} and {field B} must be different` | `Origin and destination warehouse must be different` |
+| Limit exceeded | `{Object} cannot exceed {limit}` | `Transfer qty cannot exceed available stock` |
+| Batch/serial completion | `Enter all {items} for "{object}" ({actual}/{expected} entered)` | `Enter all serial numbers for "USB Cable" (2/5 entered)` |
+
+Punctuation follows UXW. Do not copy toast punctuation rules automatically into
+form errors; inline form errors are often short field messages.
+
+Use the right surface:
+
+- field-level error → `MpFormErrorMessage`;
+- form-table cell error → cell state + tooltip/inline caption;
+- aggregate table/form error → inline text near the table/form section;
+- blocking explanation → modal.
+
+---
+
 ## Field type → Pixel component
 
 | UI need | Component | Notes |

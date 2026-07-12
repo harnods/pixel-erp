@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { formatDateTimeLong } from '~/utils/date'
 import {
-  MpSpinner,
+  MpSpinner, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   css, toast,
 } from '@mekari/pixel3'
@@ -672,12 +672,19 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <!-- SKU — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ row.skuCode }}</td>
-                  <!-- Storage location: batch/serial = manage link; plain SKUs keep the picker. -->
-                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--location-manage">
-                    <button class="pi-manage-btn" type="button" @click="openBatchDrawer(row.skuCode)">Manage storage location</button>
+                  <!-- Storage location: batch/serial-tracked SKUs manage it via the
+                       action column's icon button instead (location detail lives in
+                       the Manage batch / Manage serial numbers drawer, not here);
+                       plain SKUs keep the picker. -->
+                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--location-tracked">
+                    <MpTooltip :id="`pi-tt-loc-batch-${row.id}`" label="View via Manage batch" placement="top" use-portal>
+                      <span>—</span>
+                    </MpTooltip>
                   </td>
-                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--location-manage">
-                    <button class="pi-manage-btn" type="button" @click="openSerialDrawer(row.skuCode)">Manage storage location</button>
+                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--location-tracked">
+                    <MpTooltip :id="`pi-tt-loc-serial-${row.id}`" label="View via Manage serial numbers" placement="top" use-portal>
+                      <span>—</span>
+                    </MpTooltip>
                   </td>
                   <td v-else class="pi-td pi-td--location">
                     <MpPopover :id="`pi-loc-${row.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(row.id)">
@@ -734,10 +741,21 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <!-- Unit — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.unit }}</td>
-                  <!-- Actions — "Split storage location" only applies to plain SKUs -->
+                  <!-- Actions — batch/serial-tracked SKUs manage storage location here
+                       (icon button); "Split storage location" only applies to plain SKUs. -->
                   <td class="pi-td pi-td--action">
+                    <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pi-tt-batch-${row.id}`" label="Manage batch" placement="top" use-portal>
+                      <button class="pi-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(row.skuCode)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pi-tt-serial-${row.id}`" label="Manage serial numbers" placement="top" use-portal>
+                      <button class="pi-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(row.skuCode)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
                     <MpPopover
-                      v-if="!isBatchTrackedSku(row.skuCode) && !isSerialTrackedSku(row.skuCode)"
+                      v-else
                       :id="`pi-row-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
                     >
                       <MpPopoverTrigger>
@@ -961,9 +979,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
 
 .pi-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.pi-td--location-manage { padding: 10px var(--mp-spacing-4); vertical-align: top; }
-.pi-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); white-space: nowrap; }
-.pi-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+.pi-td--location-tracked { padding: 10px var(--mp-spacing-4); vertical-align: top; color: var(--mp-text-secondary); }
+.pi-view-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  border-radius: var(--mp-radii-md); background: none; border: none;
+  cursor: pointer; color: var(--mp-icon-default);
+}
+.pi-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Row actions (kebab) ─────────────────────────────────────────────────────── */
 .pi-row-kebab {
