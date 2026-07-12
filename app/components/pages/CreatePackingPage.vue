@@ -10,10 +10,13 @@ import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import {
-  getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQtyInTask,
-  batchPicksForOrderSku, serialPicksForOrderSku, type PickingTask,
+  getPickingTask, getPickingForOrder, orderPickedQtyInTask,
+  pickedQtyForPickingTasks, batchPicksForPickingTasks, serialPicksForPickingTasks, type PickingTask,
 } from '~/data/pickingTasks'
-import { addPackingTask, addPackingTaskFromOrder, getPackingForOrder, remainingSkusForOrder } from '~/data/packingTasks'
+import {
+  addPackingTask, addPackingTaskFromOrder, getPackingForOrder, remainingSkusForOrder,
+  orderPackedFromPickingTask,
+} from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { orderSkuLines, productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -67,6 +70,17 @@ const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assignee
 interface PackLine { key: string; sku: string; product: string; desc: string; img: string; unit: string; order: number; picked: number }
 interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; packable: boolean; lines: PackLine[] }
 
+// Which non-canceled picking lists for this order still have something new to
+// pack — excludes any list that already has its OWN (non-canceled) packing task,
+// so an earlier, independent picking→packing→shipment cycle for the same order
+// (e.g. partially shipped, then picked again for the remainder) never gets its
+// already-packed-and-shipped units re-swept into a brand-new packing task.
+function eligiblePickingIdsForOrder(orderId: string): string[] {
+  return getPickingForOrder(orderId)
+    .filter(pt => pt.status !== 'canceled' && orderPickedQtyInTask(pt, orderId) > 0 && !orderPackedFromPickingTask(orderId, pt.id))
+    .map(pt => pt.id)
+}
+
 const orderTables = computed<OrderTable[]>(() => {
   // Direct mode: no picking task at all — only the SKUs not yet covered by an earlier
   // direct-mode packing task on this order are available to pack (picking was skipped
@@ -99,22 +113,31 @@ const orderTables = computed<OrderTable[]>(() => {
   }
   return [...orderNo.entries()].map(([orderId, salesNoFallback]) => {
     const o = outgoingOrders.find(x => x.id === orderId)
-    // Pack the order's TOTAL picked across every picking list (an order split over 2
-    // lists still packs as one), so completeness is judged at the order level.
+    const eligibleIds = eligiblePickingIdsForOrder(orderId)
+    // Pack the TOTAL picked across every picking list LINKED TO THIS eligible set
+    // (an order split over 2 still-unpacked lists packs as one) — never an earlier,
+    // independent cycle's lists that already have their own packing task, or this
+    // would double-count units that are already packed/shipped.
     const lines: PackLine[] = o
       ? orderSkuLines(o).map((l) => ({
           key: `${orderId}::${l.sku}`,
           sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
           unit: l.product.unit, order: l.qty,
-          picked: Math.min(l.qty, pickedQtyForOrderSku(orderId, l.sku)),
+          picked: Math.min(l.qty, pickedQtyForPickingTasks(eligibleIds, orderId, l.sku)),
         }))
       : []
     const isMarketplace = isMarketplaceOrder(o)
     const fullyPicked = lines.length > 0 && lines.every(l => l.picked >= l.order)
     const pickedAny = lines.some(l => l.picked > 0)
-    const alreadyPacked = getPackingForOrder(orderId).length > 0
+    // "Already packed" = genuinely nothing NEW left — something was picked at some
+    // point (across the order's whole history), but every contributing picking list
+    // already has its own packing task. Not "never picked at all" (that falls
+    // through as neither packable nor alreadyPacked, same as before).
+    const alreadyPacked = !pickedAny && getPickingForOrder(orderId).some(
+      pt => pt.status !== 'canceled' && orderPickedQtyInTask(pt, orderId) > 0,
+    )
     // Marketplace ⇒ packable only when fully picked (across lists); others ⇒ any picked
-    // unit. Never twice — an order that already has a packing task is excluded.
+    // unit. Never twice — a picking list that already has a packing task is excluded.
     const packable = !alreadyPacked && pickedAny && (isMarketplace ? fullyPicked : true)
     return {
       orderId,
@@ -131,13 +154,14 @@ const packableTables = computed(() => orderTables.value.filter(t => t.packable))
 const blockedTables = computed(() => orderTables.value.filter(t => !t.packable && !t.alreadyPacked && t.isMarketplace && t.lines.some(l => l.picked > 0)))
 const packedTables = computed(() => orderTables.value.filter(t => t.alreadyPacked))
 // Every picking list that contributed to the packable orders (an order split across
-// several lists shows them all, not just the one this form was opened from).
+// several still-unpacked lists shows them all, not just the one this form was
+// opened from) — scoped the same way as orderTables above.
 const sourcePickingLists = computed<PickingTask[]>(() => {
   const seen = new Map<string, PickingTask>()
-  for (const p of picks.value) seen.set(p.id, p)
   for (const t of packableTables.value) {
-    for (const pt of getPickingForOrder(t.orderId)) {
-      if (pt.status !== 'canceled' && orderPickedQtyInTask(pt, t.orderId) > 0) seen.set(pt.id, pt)
+    for (const id of eligiblePickingIdsForOrder(t.orderId)) {
+      const pt = getPickingTask(id)
+      if (pt) seen.set(pt.id, pt)
     }
   }
   return [...seen.values()]
@@ -342,11 +366,16 @@ async function handleCreate() {
 
   const p = pick.value!
   // One packing task per selected PACKABLE sales order — packs everything picked for it
-  // across ALL its picking lists, and records every contributing picking list.
+  // across ALL its still-unpacked picking lists, and records every contributing one.
+  // Scoped via eligiblePickingIdsForOrder — never an earlier, independent picking
+  // cycle's list that already has its own packing task (partially shipped, then
+  // picked again for the remainder), or its already-packed-and-shipped units would
+  // get double-counted into this brand-new packing task.
   for (const t of packableTables.value) {
     if (!isOrderSelected(t.orderId) || !t.lines.length) continue
-    const lists = getPickingForOrder(t.orderId)
-      .filter(pt => pt.status !== 'canceled' && orderPickedQtyInTask(pt, t.orderId) > 0)
+    const lists = eligiblePickingIdsForOrder(t.orderId)
+      .map(id => getPickingTask(id))
+      .filter((x): x is PickingTask => !!x)
     addPackingTask({
       salesOrderId:  t.orderId,
       salesNo:       t.salesNo,
@@ -546,7 +575,7 @@ async function handleCreate() {
                       <th v-if="!isDirectMode" class="pk-th pk-th--num">Picked qty</th>
                       <th v-if="isDirectMode" class="pk-th pk-th--num">Pack qty</th>
                       <th class="pk-th">Unit</th>
-                      <th v-if="!isDirectMode" class="pk-th"></th>
+                      <th v-if="!isDirectMode" class="pk-th pk-th--action"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -623,7 +652,7 @@ async function handleCreate() {
     :sku="viewBatchItem.sku"
     :warehouse-id="warehouseId"
     kind="packing"
-    :picked-batches="batchPicksForOrderSku(viewBatchItem.orderId, viewBatchItem.sku)"
+    :picked-batches="batchPicksForPickingTasks(eligiblePickingIdsForOrder(viewBatchItem.orderId), viewBatchItem.orderId, viewBatchItem.sku)"
     :product-name="viewBatchItem.product"
     :product-img="viewBatchItem.img"
     @update:open="viewBatchItem = null"
@@ -634,8 +663,9 @@ async function handleCreate() {
     :sku="viewSerialItem.sku"
     :warehouse-id="warehouseId"
     kind="packing"
-    :counted-total="serialPicksForOrderSku(viewSerialItem.orderId, viewSerialItem.sku).length"
-    :picked-serials="serialPicksForOrderSku(viewSerialItem.orderId, viewSerialItem.sku).map(s => s.serial)"
+    :counted-total="serialPicksForPickingTasks(eligiblePickingIdsForOrder(viewSerialItem.orderId), viewSerialItem.orderId, viewSerialItem.sku).length"
+    :picked-serials="serialPicksForPickingTasks(eligiblePickingIdsForOrder(viewSerialItem.orderId), viewSerialItem.orderId, viewSerialItem.sku)"
+    :planned-serials="serialPicksForPickingTasks(eligiblePickingIdsForOrder(viewSerialItem.orderId), viewSerialItem.orderId, viewSerialItem.sku)"
     :product-name="viewSerialItem.product"
     :product-img="viewSerialItem.img"
     @update:open="viewSerialItem = null"
@@ -777,6 +807,9 @@ async function handleCreate() {
 .pk-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
 
 .pk-td--action { text-align: center; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.pk-th--action { position: sticky; right: 0; z-index: 2; }
+.pk-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
 .pk-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .pk-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 

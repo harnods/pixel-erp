@@ -15,7 +15,7 @@ import {
   getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask, type PickLineItem,
 } from '~/data/pickingTaskDetails'
 import { getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
-import { getPackingForOrder } from '~/data/packingTasks'
+import { orderPackedFromPickingTask } from '~/data/packingTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
@@ -91,6 +91,25 @@ const linkedOrders = computed(() =>
   (task.value?.salesOrderIds ?? []).map(id => outgoingOrders.find(o => o.id === id)).filter(Boolean) as typeof outgoingOrders,
 )
 const linkedPacking = computed(() => task.value ? getPackingForPickingTask(task.value.id) : [])
+// Whether there's still an order on THIS picking task without a packing task
+// created FROM IT yet — once every bundled order already has one (specifically
+// from this task, not just anywhere in the order's history), "Create packing" has
+// nothing left to do (that's the "Already packed" toast case — hide the button,
+// not just the toast). Scoped per (order, this task) rather than "the order has
+// ANY packing task ever" — an order can go through more than one independent
+// picking→packing→shipment cycle (partially shipped, then picked again for the
+// remainder), and an earlier cycle's packing task must never block a later,
+// separate picking task's own still-unpacked remainder from ever being packed.
+// When nothing is packable yet for a DIFFERENT reason (e.g. a marketplace order
+// not fully picked across all its lists), packableOrderIds is empty rather than
+// "all packed" — keep the button so clicking still surfaces the explanatory modal.
+const hasPackableOrders = computed(() => {
+  const t = task.value
+  if (!t) return true
+  const ids = packableOrderIds(t)
+  if (ids.length === 0) return true
+  return ids.some(id => !orderPackedFromPickingTask(id, t.id))
+})
 
 const lastUpdated = computed(() => {
   if (!task.value?.startDate) return null
@@ -108,10 +127,12 @@ function startPickingAndNavigate() {
 const cantPackModalOpen = ref(false)
 function createPacking() {
   // Packability is judged at the ORDER level across all picking lists, and an order
-  // that already has a packing task is excluded. Only block when nothing is left.
+  // that already has a packing task created FROM THIS picking task is excluded —
+  // not one from an earlier, independent picking→packing→shipment cycle for the
+  // same order. Only block when nothing is left.
   const t = task.value
   if (t) {
-    const packable = packableOrderIds(t).filter(id => getPackingForOrder(id).length === 0)
+    const packable = packableOrderIds(t).filter(id => !orderPackedFromPickingTask(id, t.id))
     if (packable.length === 0) {
       const anyPickComplete = packableOrderIds(t).length > 0
       if (anyPickComplete) {
@@ -345,7 +366,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                   <th class="detail-th detail-th--num">Picked qty</th>
                   <th class="detail-th detail-th--num">Outstanding qty</th>
                   <th class="detail-th">Unit</th>
-                  <th class="detail-th"></th>
+                  <th class="detail-th detail-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -357,7 +378,15 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                   <td class="detail-td detail-td--location">
                     <!-- Batch/serial-tracked: location detail now lives in the View
                          batch / View serial number drawer, not duplicated here. -->
-                    <span v-if="isTrackedItem(item)">—</span>
+                    <MpTooltip
+                      v-if="isTrackedItem(item)"
+                      :id="`pkd-tt-loc-${item.key}`"
+                      :label="isBatchTrackedSku(item.skuCode) ? 'View via View batch' : 'View via View serial number'"
+                      placement="top"
+                      use-portal
+                    >
+                      <span>—</span>
+                    </MpTooltip>
                     <span v-else class="pkd-location-item" :title="item.binLocation">{{ item.binLocation }}</span>
                   </td>
                   <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
@@ -514,7 +543,11 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/picking/${orderId}/pick`)">
         Continue picking
       </button>
-      <button v-else-if="localStatus === 'completed' || localStatus === 'partially picked'" class="detail-btn detail-btn--primary" @click="createPacking">
+      <button
+        v-else-if="(localStatus === 'completed' || localStatus === 'partially picked') && hasPackableOrders"
+        class="detail-btn detail-btn--primary"
+        @click="createPacking"
+      >
         Create packing
       </button>
     </footer>
@@ -533,7 +566,10 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     :sku="viewBatchItem.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
+    :qty-to-pick="viewBatchItem.expectedQty"
+    :picked-qty="rowPicked(viewBatchItem.key, viewBatchItem.pickedQty)"
     :picked-batches="viewBatchItem.batchPicks ?? []"
+    :planned-batches="viewBatchItem.plannedBatchPicks ?? []"
     :product-name="viewBatchItem.productName"
     :product-img="viewBatchItem.image"
     @update:open="viewBatchItem = null"
@@ -544,8 +580,12 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     :sku="viewSerialItem.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
+    :qty-to-pick="viewSerialItem.expectedQty"
+    :picked-qty="rowPicked(viewSerialItem.key, viewSerialItem.pickedQty)"
     :counted-total="(viewSerialItem.serialPicks ?? []).length"
-    :picked-serials="(viewSerialItem.serialPicks ?? []).map(s => s.serial)"
+    :picked-serials="viewSerialItem.serialPicks ?? []"
+    :planned-serials="viewSerialItem.plannedSerialPicks ?? []"
+    :task-finished="task?.status === 'completed' || task?.status === 'partially picked'"
     :product-name="viewSerialItem.productName"
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"
@@ -698,6 +738,9 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 .detail-td--location { min-width: 160px; max-width: 200px; }
 .pkd-location-item { display: block; white-space: normal; word-break: break-word; }
 .detail-td--action { text-align: center; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.detail-th--action { position: sticky; right: 0; z-index: 2; }
+.detail-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
 .pkd-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .pkd-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }

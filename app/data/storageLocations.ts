@@ -53,6 +53,9 @@ interface WhStorageProfile {
   levels: string[]
   /** Which stock indices (0-based) have more than one location, and how many */
   multiLoc: MultiLocEntry[]
+  /** Digits to zero-pad auto-generated Bin names to (default 3, e.g. "Bin 001").
+   *  A flat, single-level (Bin-only) warehouse reads better with fewer digits. */
+  binPad?: number
 }
 
 export const WH_STORAGE_PROFILES: Record<string, WhStorageProfile> = {
@@ -91,10 +94,11 @@ export const WH_STORAGE_PROFILES: Record<string, WhStorageProfile> = {
     levels: ['Aisle', 'Rack', 'Bin'],
     multiLoc: [],
   },
-  // ── Small, 9 SKUs — 2-level (Rack/Bin); no multi-loc ──
+  // ── Small, 9 SKUs — flat single-level (Bin only, "Bin 01" 2-digit); no multi-loc ──
   'wh-006': {
-    levels: ['Rack', 'Bin'],
+    levels: ['Bin'],
     multiLoc: [],
+    binPad: 2,
   },
   // ── Small archived, 8 SKUs — single-level (Bin only); no multi-loc ──
   'wh-007': {
@@ -128,7 +132,7 @@ export function getMultiLocConfig(warehouseId: string): MultiLocEntry[] {
 
 function seedFrom(id: string): number { return Number(id.replace(/\D/g, '')) || 1 }
 
-function buildTree(seed: number, skuTotal: number, levels: string[]): LocNode[] {
+function buildTree(seed: number, skuTotal: number, levels: string[], binPad = 3): LocNode[] {
   if (levels.length === 0) return []
   let s = (seed * 2654435761) >>> 0
   s ^= s >>> 15; s = (s * 2246822519) >>> 0; s ^= s >>> 13; s = s >>> 0
@@ -147,7 +151,7 @@ function buildTree(seed: number, skuTotal: number, levels: string[]): LocNode[] 
       const seq = (levelSeq[level] = (levelSeq[level] ?? 0) + 1)
       const pool = NAME_POOLS[level]
       const name = level === 'Bin'
-        ? `Bin ${String(seq).padStart(3, '0')}`
+        ? `Bin ${String(seq).padStart(binPad, '0')}`
         : (pool ?? [level])[(seq - 1) % (pool?.length ?? 1)]!
       nodes.push({
         id: nid(), level, name,
@@ -225,7 +229,7 @@ export function getStorageTree(warehouseId: string): LocNode[] {
     } else {
       const profile = WH_STORAGE_PROFILES[warehouseId]
       const levels = profile?.levels ?? STORAGE_LEVELS  // fallback: full 7-level
-      store[warehouseId] = buildTree(seedFrom(warehouseId), wh.skuTotal, levels)
+      store[warehouseId] = buildTree(seedFrom(warehouseId), wh.skuTotal, levels, profile?.binPad)
     }
   }
   return store[warehouseId]!

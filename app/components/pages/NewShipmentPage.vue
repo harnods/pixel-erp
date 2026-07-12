@@ -182,8 +182,6 @@ function setCourier(id: string, val: string) { courierByRow.value = { ...courier
 function setTracking(id: string, val: string) { trackingByRow.value = { ...trackingByRow.value, [id]: val } }
 
 const showRowErrors = ref(false)
-function rowCourierInvalid(r: Row) { return showRowErrors.value && !r.isMarketplace && !courierByRow.value[r.id]?.trim() }
-function rowTrackingInvalid(r: Row) { return showRowErrors.value && !r.isMarketplace && !trackingByRow.value[r.id]?.trim() }
 
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Ready to ship' } }) }
@@ -195,7 +193,6 @@ function validate(): boolean {
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
   if (!rows.value.length) valid = false
   showRowErrors.value = true
-  if (rows.value.some(r => rowCourierInvalid(r) || rowTrackingInvalid(r))) valid = false
   return valid
 }
 
@@ -389,7 +386,6 @@ async function handleSave() {
                       type="text" class="ho-text-input"
                       :value="courierByRow[row.id] ?? ''"
                       :disabled="row.isMarketplace"
-                      :aria-invalid="rowCourierInvalid(row)"
                       placeholder="e.g. JNE, SiCepat"
                       @input="setCourier(row.id, ($event.target as HTMLInputElement).value)"
                     />
@@ -399,7 +395,6 @@ async function handleSave() {
                       type="text" class="ho-text-input"
                       :value="trackingByRow[row.id] ?? ''"
                       :disabled="row.isMarketplace"
-                      :aria-invalid="rowTrackingInvalid(row)"
                       placeholder="e.g. SD0009583"
                       @input="setTracking(row.id, ($event.target as HTMLInputElement).value)"
                     />
@@ -417,9 +412,6 @@ async function handleSave() {
           </div>
         </section>
         <p v-if="showRowErrors && !rows.length" class="ho-error">You must scan at least one delivery to ship</p>
-        <p v-else-if="showRowErrors && rows.some(r => rowCourierInvalid(r) || rowTrackingInvalid(r))" class="ho-error">
-          Courier and tracking no. are required for non-marketplace orders.
-        </p>
       </div>
 
     </div><!-- /detail-stage -->

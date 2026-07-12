@@ -21,6 +21,7 @@ import type { WarehouseStockItem } from '~/data/warehouseDetails'
 
 const props = withDefaults(defineProps<{
   stock: WarehouseStockItem[]
+  warehouseId: string
   /** noun for empty-state copy, e.g. "this location" */
   subject?: string
   /** label for the optional trailing tab, rendered when the #extra slot is filled */
@@ -618,6 +619,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   <StockSerialDrawer
     :open="serialDrawerOpen"
     :product="serialDrawerProduct"
+    :warehouse-id="props.warehouseId"
     :initial-tab="serialDrawerTab"
     @update:open="serialDrawerOpen = $event"
   />

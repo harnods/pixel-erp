@@ -285,7 +285,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                   <th class="detail-th detail-th--num">Packed qty</th>
                   <th class="detail-th detail-th--num">Outstanding qty</th>
                   <th class="detail-th">Unit</th>
-                  <th class="detail-th"></th>
+                  <th class="detail-th detail-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -500,7 +500,8 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
     :counted-total="(viewSerialItem.serialPicks ?? []).length"
-    :picked-serials="(viewSerialItem.serialPicks ?? []).map(s => s.serial)"
+    :picked-serials="viewSerialItem.serialPicks ?? []"
+    :planned-serials="viewSerialItem.serialPicks ?? []"
     :product-name="viewSerialItem.productName"
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"
@@ -579,6 +580,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .pck-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
 
 .detail-td--action { text-align: center; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.detail-th--action { position: sticky; right: 0; z-index: 2; }
+.detail-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
 .pck-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .pck-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 

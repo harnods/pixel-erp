@@ -24,6 +24,46 @@ const SERIAL_OVERLAY_KEY = 'wh-serial-overlay-v1'
 const serialOverlay = reactive<SerialOverlay>(loadSnapshot<SerialOverlay>(SERIAL_OVERLAY_KEY) ?? {})
 function persistSerialOverlay() { saveSnapshot(SERIAL_OVERLAY_KEY, serialOverlay) }
 
+// ── Persisted new-batch overlay ──────────────────────────────────────────────
+// Ad-hoc batches an operator registers on the fly (e.g. found/picked stock under
+// a batch number the warehouse never logged) — merged into item.batches on top
+// of the deterministic generated base, same overlay pattern as serialOverlay above.
+type BatchOverlay = Record<string, Record<string, ProductBatch[]>> // warehouseId → sku → new batches
+const BATCH_OVERLAY_KEY = 'wh-batch-overlay-v1'
+const batchOverlay = reactive<BatchOverlay>(loadSnapshot<BatchOverlay>(BATCH_OVERLAY_KEY) ?? {})
+function persistBatchOverlay() { saveSnapshot(BATCH_OVERLAY_KEY, batchOverlay) }
+
+/**
+ * Register a brand-new batch that isn't already in the warehouse's inventory —
+ * e.g. an operator picks from (or otherwise finds) stock under a batch number the
+ * system never logged. Idempotent: re-registering the same (warehouseId, sku,
+ * batchNo) is a no-op, whether it's already a real generated batch or was already
+ * registered here. Starts fully available (reserved 0) — the caller's own
+ * reservation (reserveStock) applies on top, same as any other batch.
+ */
+export function registerNewBatch(
+  warehouseId: string,
+  sku: string,
+  batch: { batchNo: string; expiryDate: string; onHand: number; location?: string },
+): void {
+  if (!batch.batchNo || batch.onHand <= 0) return
+  const item = getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)
+  if (item?.batches?.some((b) => b.batchNo === batch.batchNo)) return
+  if (!batchOverlay[warehouseId]) batchOverlay[warehouseId] = {}
+  const bySku = batchOverlay[warehouseId]!
+  if (!bySku[sku]) bySku[sku] = []
+  bySku[sku]!.push({
+    batchNo: batch.batchNo,
+    expiryDate: batch.expiryDate || '',
+    createdAt: TODAY.toISOString().slice(0, 10),
+    location: batch.location || item?.locations[0] || '',
+    onHand: batch.onHand,
+    reserved: 0,
+    available: batch.onHand,
+  })
+  persistBatchOverlay()
+}
+
 // ── Stock reservations ────────────────────────────────────────────────────────
 // A batch/serial an outbound task has claimed — written at picking-task creation
 // (reserveStock), removed on cancellation (releaseReservationsForTask). Applied
@@ -98,6 +138,20 @@ export function hasReservationsForTask(taskId: string): boolean {
 /** Every reservation an owner (order id) holds for a given SKU. */
 export function getReservationsForOrder(orderId: string, sku: string): StockReservation[] {
   return stockReservations.filter((r) => r.taskId === orderId && r.sku === sku)
+}
+
+/** Every order (task id) holding a reservation against one specific batch. */
+export function getReservationsForBatch(warehouseId: string, sku: string, batchNo: string): StockReservation[] {
+  return stockReservations.filter(
+    (r) => r.warehouseId === warehouseId && r.sku === sku && r.batchNo === batchNo,
+  )
+}
+
+/** The reservation holding one specific serial number, if any order has claimed it. */
+export function getReservationForSerial(warehouseId: string, sku: string, serial: string): StockReservation | undefined {
+  return stockReservations.find(
+    (r) => r.warehouseId === warehouseId && r.sku === sku && r.serials?.includes(serial),
+  )
 }
 
 /** Release only one (order, sku) pair's reservations — used when a pick-time
@@ -300,6 +354,15 @@ const MIN_ONHAND_OVERRIDE: Record<string, number> = {
   'wh-003::2103': 21,  // was 10; total_reserved=9 demand=4
   'wh-005::1004': 11,  // total_reserved=4 demand=4
   'wh-009::2102': 7,   // total_reserved=2 demand=2
+  // ── plain (non batch/serial-tracked) SKUs — exposed once reserveOrder() started
+  // actually reserving them too (previously unenforced, silent oversell risk) ──
+  'wh-006::3005': 13,  // total_reserved=5 demand=5
+  // ── exposed once "partially shipped" orders became pickable again (their
+  // un-picked remainder now correctly gets reserved too) ────────────────────
+  'wh-003::2004': 15,  // total_reserved=6 demand=2
+  'wh-001::2101': 15,  // total_reserved=6 demand=3
+  'wh-001::2001': 11,  // total_reserved=4 demand=2
+  'wh-001::3005': 21,  // total_reserved=9 demand=4
 }
 
 // Deterministic ISO date `days` before TODAY — used for created-at fields so the
@@ -476,6 +539,27 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   // stock rows = the warehouse's own assortment (deterministic random subset), which is
   // exactly `skuTotal` distinct products.
   const stock = generateStock(warehouseProducts(id), seedFromId(id), id)
+
+  // Merge any ad-hoc new batches registered via registerNewBatch() (e.g. picked
+  // from stock the warehouse never logged) — bumps the item's aggregate onHand/
+  // available by the same amount so batch sums still match item totals; the
+  // bin-split and reservation-application steps below then treat it exactly like
+  // any other batch.
+  const bOverlay = batchOverlay[id]
+  if (bOverlay) {
+    for (const item of stock) {
+      const extra = bOverlay[item.sku]
+      if (!extra?.length) continue
+      if (!item.batches) item.batches = []
+      for (const nb of extra) {
+        if (item.batches.some((b) => b.batchNo === nb.batchNo)) continue
+        item.batches.push({ ...nb })
+        item.onHand += nb.onHand
+        item.available += nb.onHand
+      }
+    }
+  }
+
   // Assign each product the REAL storage-tree bin it occupies (leaves tile the stock
   // array 1:1), so a product/batch/serial's location always matches the location you
   // opened it from — no more "Rack 03 contains an item tagged Rack 05".
@@ -597,6 +681,15 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
         const bin = item.bins.find((x) => x.location === u!.location)
         if (bin) { bin.reserved += 1; bin.available = Math.max(0, bin.available - 1) }
       }
+    }
+    // Plain (non batch/serial-tracked) SKU — a reservation still holds real qty
+    // against oversell, it just isn't pinned to a specific lot/unit.
+    if (!r.batchNo && !r.serials?.length) {
+      const take = Math.min(r.qty, item.available)
+      item.reserved += take
+      item.available = Math.max(0, item.available - take)
+      const bin = item.bins.find((x) => x.location === item.locations[0])
+      if (bin) { bin.reserved += take; bin.available = Math.max(0, bin.available - take) }
     }
   }
 

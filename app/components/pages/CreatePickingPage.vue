@@ -288,12 +288,14 @@ const serialDrawerOpen = computed({
 function targetQtyForSku(sku: string): number {
   return isLocked(sku) ? capForSku(sku) : (qtyOverrides.value[sku] ?? capForSku(sku))
 }
+const serialDrawerOrderQty = ref(0)
 function openSerialDrawer(sku: string) {
   if (!targetQtyForSku(sku)) {
     toast.notify({ variant: 'error', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
     return
   }
   serialDrawerSku.value = sku
+  serialDrawerOrderQty.value = pickRows.value.find(r => r.sku === sku)?.orderQty ?? 0
 }
 function serialPickedQty(sku: string): number {
   return (serialLinesBySku.value[sku] ?? []).length
@@ -327,11 +329,18 @@ function reservedBatchesForSku(sku: string): CommittedBatch[] {
       byBatch.set(r.batchNo, (byBatch.get(r.batchNo) ?? 0) + r.qty)
     }
   }
+  // The order may have reserved more than THIS task is picking right now (e.g. a
+  // partial pick split across two tasks) — only pre-fill up to this task's own
+  // target, leaving the rest available for whatever task picks the remainder.
+  let remaining = targetQtyForSku(sku)
   const out: CommittedBatch[] = []
   for (const [batchNo, qty] of byBatch) {
+    if (remaining <= 0) break
     const b = item.batches.find(x => x.batchNo === batchNo)
     if (!b || qty <= 0) continue
-    out.push({ key: batchNo, batchNo, expiryDate: b.expiryDate, desc: '', onHand: b.available, counted: qty, unit: item.unit, location: b.location })
+    const take = Math.min(qty, remaining)
+    out.push({ key: batchNo, batchNo, expiryDate: b.expiryDate, desc: '', onHand: b.available, counted: take, unit: item.unit, location: b.location })
+    remaining -= take
   }
   return out
 }
@@ -343,7 +352,10 @@ function reservedSerialsForSku(sku: string): PickingSerialPick[] {
       for (const serial of r.serials ?? []) out.push({ serial, location: locationForSerial(sku, serial) })
     }
   }
-  return out
+  // The order may have reserved more than THIS task is picking right now (e.g. a
+  // partial pick split across two tasks) — only pre-fill up to this task's own
+  // target, leaving the rest available for whatever task picks the remainder.
+  return out.slice(0, targetQtyForSku(sku))
 }
 const trackedSkus = computed(() => {
   const set = new Set<string>()
@@ -728,7 +740,7 @@ async function doCreate() {
                   <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
                   <th class="pk-th pk-th--num">Qty to pick</th>
                   <th class="pk-th">Unit</th>
-                  <th class="pk-th"></th>
+                  <th class="pk-th pk-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -766,8 +778,15 @@ async function doCreate() {
 
                   <!-- Storage location: shown as -- for batch/serial-tracked SKUs
                        (their location is managed inside the drawer, per batch/serial unit). -->
-                  <td v-if="isBatchTrackedSku(row.sku) || isSerialTrackedSku(row.sku)" class="pk-td">
-                    <span class="pk-loc-text">—</span>
+                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td">
+                    <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage batch" placement="top" use-portal>
+                      <span class="pk-loc-text">—</span>
+                    </MpTooltip>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td">
+                    <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage serial numbers" placement="top" use-portal>
+                      <span class="pk-loc-text">—</span>
+                    </MpTooltip>
                   </td>
                   <td v-else class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
 
@@ -872,6 +891,7 @@ async function doCreate() {
     :warehouse-id="warehouseId"
     kind="picking"
     :target-count="targetQtyForSku(serialDrawerSku)"
+    :order-qty="serialDrawerOrderQty"
     :origin-location-paths="locationOptions"
     :model-value="(serialLinesBySku[serialDrawerSku] ?? []).map(s => ({ serial: s.serial }))"
     @update:open="serialDrawerOpen = $event"
@@ -1080,6 +1100,9 @@ async function doCreate() {
 .pk-batch-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; }
 
 .pk-td--action { padding: 4px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.pk-th--action { position: sticky; right: 0; z-index: 2; }
+.pk-td--action { position: sticky; right: 0; z-index: 1; }
 .pk-manage-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);

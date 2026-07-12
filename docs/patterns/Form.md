@@ -189,6 +189,9 @@ Some forms embed an **editable line-items table** — e.g. the **Create purchase
 receiving** page (`CreatePurchaseReceivingPage.vue`), where the user narrows the SKU
 scope, edits storage locations, and removes rows.
 
+Input/select cell specs live in [FormTable.md](FormTable.md). Do not duplicate
+editable table-cell dimensions, focus states, or select trigger rules here.
+
 This table follows the **progressive-loading** model, identical to detail-page line
 items — see [ErpPagination.md → Progressive pagination](ErpPagination.md#progressive-pagination-infinite-scroll).
 

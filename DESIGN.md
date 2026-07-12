@@ -122,59 +122,12 @@ Note for Pixel team: add these to the Enterprise library.
 
 ## Table Component Design
 
-### Header
+`ErpTablePage` is the **single source of truth** for table specs: header, row
+metrics, sticky columns, standard columns, skeleton, row-hover actions, row action
+menus, and empty states.
 
-| Property | Value | Token |
-|----------|-------|-------|
-| Background | neutral subtle | `var(--mp-background-neutral-subtle)` |
-| Height | 28px | `var(--mp-sizes-7)` |
-| Font size | 12px | `var(--mp-font-sizes-sm)` |
-| Font weight | 600 (semibold) | `var(--mp-font-weights-semi-bold)` |
-| Text transform | uppercase | — |
-| Padding (left-aligned) | `4px 16px 4px 8px` | `var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2)` |
-| Padding (right-aligned) | `4px 8px 4px 16px` | `var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4)` |
-| Border bottom | 1px solid | `var(--mp-border-default)` |
-| Position | sticky top: 0 | — |
-
-### Row
-
-| Property | Value | Token |
-|----------|-------|-------|
-| Min-height | 40px | `var(--mp-sizes-10)` |
-| Font size | 14px | `var(--mp-font-sizes-md)` |
-| Font weight | 400 (regular) | `var(--mp-font-weights-regular)` |
-| Text color | default | `var(--mp-text-default)` |
-| Padding (left-aligned) | `6px 16px 6px 8px` | `var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2)` |
-| Padding (right-aligned) | `6px 8px 6px 16px` | `var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4)` |
-| Border bottom | 1px solid | `var(--mp-border-default)` |
-| Hover background | neutral hovered | `var(--mp-background-neutral-hovered)` |
-
-### Sticky right column (actions)
-
-```css
-position: sticky;
-right: 0;
-box-shadow: inset 2px 0 var(--mp-border-default);
-background: inherit;
-```
-
-Handled automatically by `ErpTablePage` when the `#actions` slot is used.
-
-### Standard columns
-
-| Column | Width | Align | Notes |
-|--------|-------|-------|-------|
-| Checkbox | — | — | Inside the **first column's cell** (select-all in header) via `has-checkbox` — not a separate column |
-| Date | 120px | left | `DD/MM/YYYY` |
-| Document number | 200px | left | link style |
-| Attachment | 40px | center | `noHeader: true`, `MpIcon name="attachment"` |
-| Customer / Vendor | 240px | left | |
-| Due date | 108px | left | `DD/MM/YYYY` |
-| Status | 160px | left | `ErpStatusBadge` + optional sub-label |
-| Balance due | 160px | right | IDR format |
-| Total | 160px | right | IDR format |
-| Tags | 160px | left | `MpBadge for="additionalInformation"` |
-| Actions | 44px | center | `MpButton variant="tertiary" left-icon="more-vertical"`, sticky right |
+See **[docs/patterns/ErpTablePage.md](docs/patterns/ErpTablePage.md)**. Do not
+duplicate table dimensions or spacing rules in page-level docs.
 
 ### Number format (IDR)
 ```ts

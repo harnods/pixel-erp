@@ -15,11 +15,13 @@ import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
+import BatchReservationsDrawer from '~/components/patterns/BatchReservationsDrawer.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDate } from '~/utils/date'
-import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { getWarehouseDetail, getReservationsForBatch, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { outgoingOrders } from '~/data/outgoing'
 import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
 import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
@@ -599,6 +601,28 @@ function openSerialDrawer(p: WarehouseStockItem, tab: 'available' | 'reserved' =
   serialDrawerOpen.value    = true
 }
 
+// ── Batch reservations drawer (temporary design) ────────────────────────────
+const batchReservationsProduct = ref<WarehouseStockItem | null>(null)
+const batchReservationsBatchNo = ref('')
+const batchReservationsOpen    = ref(false)
+function openBatchReservations(p: WarehouseStockItem, batchNo: string) {
+  batchReservationsProduct.value = p
+  batchReservationsBatchNo.value = batchNo
+  batchReservationsOpen.value    = true
+}
+const batchReservationRows = computed(() => {
+  const p = batchReservationsProduct.value
+  if (!p) return []
+  return getReservationsForBatch(props.orderId, p.sku, batchReservationsBatchNo.value).map((r) => {
+    const order = outgoingOrders.find((o) => o.id === r.taskId)
+    return {
+      salesNo: order?.salesNo ?? r.taskId,
+      orderNumber: order?.number ?? r.taskId,
+      qty: r.qty,
+    }
+  })
+})
+
 function formatDateNumeric(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
 }
@@ -1080,7 +1104,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
                       <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
                         <span>{{ b.batchNo }}</span>
-                        <button class="row-hover-btn" @click.stop>
+                        <button class="row-hover-btn" @click.stop="openBatchReservations(p, b.batchNo)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1722,8 +1746,19 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     <StockSerialDrawer
       :open="serialDrawerOpen"
       :product="serialDrawerProduct"
+      :warehouse-id="props.orderId"
       :initial-tab="serialDrawerTab"
       @update:open="serialDrawerOpen = $event"
+    />
+
+    <BatchReservationsDrawer
+      :open="batchReservationsOpen"
+      :product-name="batchReservationsProduct?.name ?? ''"
+      :product-img="batchReservationsProduct?.photo ?? ''"
+      :sku="batchReservationsProduct?.sku ?? ''"
+      :batch-no="batchReservationsBatchNo"
+      :rows="batchReservationRows"
+      @update:open="batchReservationsOpen = $event"
     />
 
   </div>

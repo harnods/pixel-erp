@@ -20,6 +20,33 @@ export interface ShipLineItem {
   batchPicks?: PickingBatchPick[];
   /** Serial-tracked SKUs only — which serial(s) are being shipped. */
   serialPicks?: PickingSerialPick[];
+  /** Units of this SKU already shipped by an earlier, independent picking→
+   *  packing→shipment cycle for the same order (partially shipped, then picked/
+   *  packed/shipped again for the remainder) — 0 for a normal, single-cycle order. */
+  shippedElsewhere: number;
+}
+
+/** Units of (this delivery's order, sku) already shipped by OTHER (status
+ *  "shipped") delivery tasks for the same order, excluding this task itself —
+ *  i.e. what a prior, independent cycle already shipped. A delivery task has no
+ *  per-SKU shipped figure of its own, so this reads it back off each contributing
+ *  packing task's packedByKey (packed = shipped, 1:1, once a delivery ships). */
+function shippedElsewhereBySku(task: DeliveryTask): Map<string, number> {
+  const result = new Map<string, number>();
+  const prefix = `${task.salesOrderId}::`;
+  for (const d of deliveryTasks) {
+    if (d.salesOrderId !== task.salesOrderId || d.id === task.id || d.status !== "shipped") continue;
+    for (const packId of packingTaskIdsForDelivery(d)) {
+      const pack = getPackingTask(packId);
+      if (!pack) continue;
+      for (const [key, qty] of Object.entries(pack.packedByKey ?? {})) {
+        if (!qty || !key.startsWith(prefix)) continue;
+        const sku = key.slice(prefix.length);
+        result.set(sku, (result.get(sku) ?? 0) + qty);
+      }
+    }
+  }
+  return result;
 }
 
 /** Combined per-SKU lines across every packing task feeding this delivery — a SKU
@@ -33,6 +60,7 @@ export function getDeliveryLineItems(task: DeliveryTask): ShipLineItem[] {
   const order = outgoingOrders.find((o) => o.id === task.salesOrderId);
   const orderQtyBySku = new Map<string, number>();
   if (order) for (const l of orderSkuLines(order)) orderQtyBySku.set(l.sku, l.qty);
+  const shippedBySku = shippedElsewhereBySku(task);
   const bySku = new Map<string, ShipLineItem>();
   const batchesBySku = new Map<string, PickingBatchPick[]>();
   const serialsBySku = new Map<string, PickingSerialPick[]>();
@@ -54,6 +82,7 @@ export function getDeliveryLineItems(task: DeliveryTask): ShipLineItem[] {
         orderQty: orderQtyBySku.get(l.sku) ?? qty,
         qty,
         unit: l.unit,
+        shippedElsewhere: shippedBySku.get(l.sku) ?? 0,
       });
     }
   }

@@ -9,7 +9,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
 import { pickingTasksFor, pickingTaskAgingDays, isPickingReadyToPack, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
-import { getPackingForOrder } from '~/data/packingTasks'
+import { getPackingForOrder, pickingTaskHasPacking } from '~/data/packingTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 
@@ -52,6 +52,7 @@ const columns: TableColumn[] = [
   { key: 'toPickQty',     label: 'To pick',      width: '100px', align: 'right', sortType: 'number' },
   { key: 'pickedQty',     label: 'Picked qty',   width: '100px', align: 'right', sortType: 'number' },
   { key: 'status',        label: 'Status',       width: '140px', sortType: 'text' },
+  { key: 'icons',         label: '',             width: '48px',  align: 'center', noHeader: true },
   { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
   { key: 'endDate',       label: 'End date',     width: '190px', sortType: 'date' },
 ]
@@ -59,7 +60,7 @@ const columns: TableColumn[] = [
 // the ColumnSettings menu turns them back on.
 const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
-const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — max 2 quick filters: Status + Warehouse (hidden when scoped) ───
@@ -302,6 +303,33 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Status ── -->
     <template #cell-status="{ value }"><ErpStatusBadge :status="value as string" /></template>
 
+    <!-- ── Icon indicators — packing task created ── -->
+    <template #cell-icons="{ row }">
+      <div class="pick-icons-cell">
+        <MpTooltip
+          v-if="pickingTaskHasPacking((row as unknown as PickingTask).id)"
+          :id="`tt-packtask-${row.id}`"
+          label="Packing task created"
+          placement="top"
+          use-portal
+        >
+          <span class="pick-icon-indicator" aria-label="Packing task created">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <g clip-path="url(#pt-clip)">
+                <path d="M2.40711 7.72822C2.75157 6.54028 3.29326 5.44152 3.82046 4.37214C4.08056 3.84458 4.33712 3.32416 4.56474 2.8037C4.76946 2.33564 5.20689 1.99844 5.72079 1.95301C7.1385 1.82768 8.30968 1.74107 9.99988 1.74107C11.6747 1.74107 12.8399 1.8261 14.2403 1.94959C14.7739 1.99665 15.2218 2.35856 15.4226 2.84938C15.6759 3.46852 15.9734 4.06607 16.2769 4.67586C16.7475 5.62099 17.2326 6.5955 17.5907 7.72528" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9.99985 6.71288V1.74129" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M2.21244 16.7277C2.31101 17.3507 2.83008 17.8309 3.46628 17.8795C5.556 18.0392 7.74502 18.2588 9.99998 18.2588C12.2549 18.2588 14.444 18.0392 16.5337 17.8795C17.1698 17.8309 17.689 17.3507 17.7874 16.7277C18.003 15.3658 18.2589 13.9456 18.2589 12.4858C18.2589 11.026 18.003 9.60578 17.7874 8.24392C17.689 7.62086 17.1698 7.14058 16.5337 7.09199C14.444 6.93242 12.2549 6.71272 9.99998 6.71272C7.74502 6.71272 5.556 6.93242 3.46628 7.09199C2.83008 7.14058 2.31101 7.62086 2.21244 8.24392C1.99701 9.60578 1.74107 11.026 1.74107 12.4858C1.74107 13.9456 1.99701 15.3658 2.21244 16.7277Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M12.2367 14.7236H14.907" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </g>
+              <defs>
+                <clipPath id="pt-clip"><rect width="20" height="20" fill="white"/></clipPath>
+              </defs>
+            </svg>
+          </span>
+        </MpTooltip>
+      </div>
+    </template>
+
     <!-- ── Start / End date + aging ── -->
     <template #cell-startDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
     <template #cell-endDate="{ row }">
@@ -415,6 +443,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .pick-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
+
+/* Icon indicators cell — packing task created */
+.pick-icons-cell { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
+.pick-icon-indicator { display: inline-flex; align-items: center; justify-content: center; color: var(--mp-text-subtle); }
 
 /* Start/End date + aging badge */
 .pick-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }

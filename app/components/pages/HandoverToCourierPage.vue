@@ -169,9 +169,6 @@ watch(tasks, (ts) => {
 function setCourier(id: string, val: string) { courierByRow.value = { ...courierByRow.value, [id]: val } }
 function setTracking(id: string, val: string) { trackingByRow.value = { ...trackingByRow.value, [id]: val } }
 
-const showRowErrors = ref(false)
-function rowCourierInvalid(r: Row) { return showRowErrors.value && !r.isMarketplace && !courierByRow.value[r.id]?.trim() }
-function rowTrackingInvalid(r: Row) { return showRowErrors.value && !r.isMarketplace && !trackingByRow.value[r.id]?.trim() }
 
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Ready to ship' } }) }
@@ -180,8 +177,6 @@ function validate(): boolean {
   let valid = true
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
-  showRowErrors.value = true
-  if (rows.value.some(r => rowCourierInvalid(r) || rowTrackingInvalid(r))) valid = false
   return valid
 }
 
@@ -376,7 +371,6 @@ async function handleSave() {
                         type="text" class="ho-text-input"
                         :value="courierByRow[row.id] ?? ''"
                         :disabled="row.isMarketplace"
-                        :aria-invalid="rowCourierInvalid(row)"
                         placeholder="e.g. JNE, SiCepat"
                         @input="setCourier(row.id, ($event.target as HTMLInputElement).value)"
                       />
@@ -386,7 +380,6 @@ async function handleSave() {
                         type="text" class="ho-text-input"
                         :value="trackingByRow[row.id] ?? ''"
                         :disabled="row.isMarketplace"
-                        :aria-invalid="rowTrackingInvalid(row)"
                         placeholder="e.g. SD0009583"
                         @input="setTracking(row.id, ($event.target as HTMLInputElement).value)"
                       />
@@ -403,9 +396,6 @@ async function handleSave() {
               Showing {{ pagedRows.length }} of {{ filteredRows.length }} deliveries
             </div>
           </section>
-          <p v-if="showRowErrors && rows.some(r => rowCourierInvalid(r) || rowTrackingInvalid(r))" class="ho-error">
-            Courier and tracking no. are required for non-marketplace orders.
-          </p>
         </div>
       </template>
 

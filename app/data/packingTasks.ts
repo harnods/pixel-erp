@@ -2,8 +2,8 @@ import { reactive } from "vue";
 import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, type OutgoingOrder } from "./outgoing";
 import {
-  pickingTasks, pickingLinesOf, getPickingTask, pickedQtyForOrderSku,
-  batchPicksForOrderSku, serialPicksForOrderSku,
+  pickingTasks, pickingLinesOf, getPickingTask,
+  pickedQtyForPickingTasks, batchPicksForPickingTasks, serialPicksForPickingTasks,
   type PickingTask, type PickingBatchPick, type PickingSerialPick,
 } from "./pickingTasks";
 import { orderSkuLines, type OrderSkuLine } from "./inventory";
@@ -81,6 +81,12 @@ export function pickedLinesForPacking(task: PackingTask): PackedSourceLine[] {
   const directQtyBySku = skippedPicking && task.directLines
     ? new Map(task.directLines.map((l) => [l.sku, l.qty]))
     : null;
+  // Scoped to THIS task's own linked picking list(s) only — never every picking
+  // task the order has ever had. An order can go through more than one independent
+  // picking→packing→shipment cycle (partially shipped, then picked again for the
+  // remainder); reading order-wide would double-count an earlier, unrelated
+  // cycle's already-packed-and-shipped units into this task's own figures.
+  const pickingIds = task.pickingTaskIds ?? (task.pickingTaskId ? [task.pickingTaskId] : []);
   const lines: PackedSourceLine[] = [];
   for (const l of orderSkuLines(order)) {
     let picked: number;
@@ -88,14 +94,14 @@ export function pickedLinesForPacking(task: PackingTask): PackedSourceLine[] {
       if (!directQtyBySku.has(l.sku)) continue; // excluded from this task — available for a follow-up
       picked = directQtyBySku.get(l.sku)!;
     } else {
-      // Read the ORDER's total picked across ALL its picking lists (a packing task
-      // can come from several lists), not just the primary one — so match-order
-      // shows the full qty.
-      picked = skippedPicking ? l.qty : pickedQtyForOrderSku(task.salesOrderId, l.sku);
+      // Read the TOTAL picked across every picking list LINKED TO THIS TASK (an
+      // order split over 2 lists that both feed this same packing task still packs
+      // as one), not just the primary one — so match-order shows the full qty.
+      picked = skippedPicking ? l.qty : pickedQtyForPickingTasks(pickingIds, task.salesOrderId, l.sku);
     }
     if (picked <= 0) continue; // only what's actually available to pack
-    const batchPicks = skippedPicking ? [] : batchPicksForOrderSku(task.salesOrderId, l.sku);
-    const serialPicks = skippedPicking ? [] : serialPicksForOrderSku(task.salesOrderId, l.sku);
+    const batchPicks = skippedPicking ? [] : batchPicksForPickingTasks(pickingIds, task.salesOrderId, l.sku);
+    const serialPicks = skippedPicking ? [] : serialPicksForPickingTasks(pickingIds, task.salesOrderId, l.sku);
     lines.push({
       key: `${task.salesOrderId}::${l.sku}`,
       sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
@@ -374,6 +380,32 @@ export function packingOpenCount(warehouseIds?: string[]): number {
 /** Packing task(s) for a given outbound order. */
 export function getPackingForOrder(orderId: string): PackingTask[] {
   return packingTasks.filter((t) => t.salesOrderId === orderId);
+}
+
+/** True if a picking task already has a (non-canceled) packing task created from
+ *  it — an order picked across several lists can feed the same packing task, so
+ *  check both the primary pickingTaskId and the full pickingTaskIds list. */
+export function pickingTaskHasPacking(pickingTaskId: string): boolean {
+  return packingTasks.some(
+    (t) =>
+      t.status !== "canceled" &&
+      (t.pickingTaskId === pickingTaskId || t.pickingTaskIds?.includes(pickingTaskId)),
+  );
+}
+
+/**
+ * True if THIS specific order already has a (non-canceled) packing task created
+ * from THIS specific picking task — narrower than "the order has any packing task
+ * ever" (getPackingForOrder(id).length > 0), which would incorrectly block a
+ * later, independent picking cycle's own remainder from ever being packed once an
+ * earlier cycle for the same order was already packed and shipped. Scoped per
+ * order (not just per picking task like pickingTaskHasPacking) since one picking
+ * task can bundle several orders, each with its own separate packing task.
+ */
+export function orderPackedFromPickingTask(orderId: string, pickingTaskId: string): boolean {
+  return getPackingForOrder(orderId).some(
+    (t) => t.status !== "canceled" && (t.pickingTaskId === pickingTaskId || t.pickingTaskIds?.includes(pickingTaskId)),
+  );
 }
 
 export function getPackingTask(taskId: string): PackingTask | undefined {

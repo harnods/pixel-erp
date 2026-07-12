@@ -95,6 +95,7 @@ const taskBatchByKey = computed(() => {
         counted: b.qty,
         unit: b.unit,
         location: b.location,
+        reservedQty: b.qty,
       }))
     }
   }
@@ -152,13 +153,7 @@ const serialDrawerOpen = computed({
   get: () => serialDrawerKey.value !== null,
   set: (v: boolean) => { if (!v) serialDrawerKey.value = null },
 })
-function openSerialDrawer(key: string) {
-  if (!(draftQty.value[key] ?? 0)) {
-    toast.notify({ variant: 'error', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
-    return
-  }
-  serialDrawerKey.value = key
-}
+function openSerialDrawer(key: string) { serialDrawerKey.value = key }
 function serialPickedQty(key: string): number {
   return (serialLinesByKey.value[key] ?? []).length
 }
@@ -588,7 +583,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <th class="pik-th pik-th--num">Picked qty</th>
                   <th class="pik-th pik-th--num">Outstanding qty</th>
                   <th class="pik-th">Unit</th>
-                  <th class="pik-th"></th>
+                  <th class="pik-th pik-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -604,30 +599,29 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                       <template v-if="pickedLocations(item.key).length">
                         <span v-for="loc in pickedLocations(item.key)" :key="loc" class="pik-location-summary-item">{{ loc }}</span>
                       </template>
-                      <span v-else class="pik-location-summary-item">—</span>
+                      <MpTooltip
+                        v-else
+                        :id="`pik-tt-loc-${item.key}`"
+                        :label="isBatchTrackedSku(item.skuCode) ? 'View via Manage batch' : 'View via Manage serial numbers'"
+                        placement="top"
+                        use-portal
+                      >
+                        <span class="pik-location-summary-item">—</span>
+                      </MpTooltip>
                     </div>
                   </td>
                   <td v-else class="pik-td">{{ item.binLocation }}</td>
 
                   <td class="pik-td pik-td--num">{{ fmt(item.expectedQty) }}</td>
 
-                  <!-- Picked qty: plain value for batch-tracked SKUs (total from drawer),
-                       input for serial-tracked SKUs, input for plain SKUs. -->
+                  <!-- Picked qty: plain value for batch/serial-tracked SKUs (total from
+                       drawer, filled by scanning — never manually typed), input for
+                       plain SKUs. -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--num">
                     <span class="pik-batch-val">{{ fmt(batchPickedQty(item.key)) }}</span>
                   </td>
-                  <td
-                    v-else-if="isSerialTrackedSku(item.skuCode)"
-                    class="pik-td pik-td--input"
-                    :class="{ 'pik-td--input--error': showQtyErrors && !(draftQty[item.key] ?? 0) }"
-                  >
-                    <input
-                      class="pik-batch-qty-input"
-                      type="number" min="0" :max="item.expectedQty"
-                      :value="draftQty[item.key] ?? 0"
-                      :aria-label="`Picked qty for ${item.productName}`"
-                      @input="onQtyInput(item.key, item.expectedQty, $event)"
-                    />
+                  <td v-else-if="isSerialTrackedSku(item.skuCode)" class="pik-td pik-td--num">
+                    <span class="pik-batch-val">{{ fmt(serialPickedQty(item.key)) }}</span>
                   </td>
                   <td
                     v-else
@@ -749,9 +743,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     :sku="itemByKey.get(serialDrawerKey)?.skuCode ?? ''"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="picking"
-    :target-count="draftQty[serialDrawerKey] ?? 0"
+    :target-count="itemByKey.get(serialDrawerKey)?.expectedQty ?? 0"
+    :execution-mode="true"
     :origin-location-paths="locationOptions"
-    :model-value="(serialLinesByKey[serialDrawerKey] ?? planSerialByKey[serialDrawerKey] ?? []).map(s => ({ serial: s.serial }))"
+    :model-value="(serialLinesByKey[serialDrawerKey] ?? []).map(s => ({ serial: s.serial }))"
+    :planned-serials="(planSerialByKey[serialDrawerKey] ?? []).map(s => s.serial)"
     @update:open="serialDrawerOpen = $event"
     @save="saveSerialLines"
   />
@@ -865,6 +861,9 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   text-align: right; font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md);
 }
 .pik-td--action { padding: 4px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.pik-th--action { position: sticky; right: 0; z-index: 2; }
+.pik-td--action { position: sticky; right: 0; z-index: 1; }
 .pik-manage-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);

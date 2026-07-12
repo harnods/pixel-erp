@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, reactive } from 'vue'
-import { MpIcon, MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { ref, computed, watch, reactive, nextTick } from 'vue'
+import { MpIcon, MpBadge, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import ScanBar from '~/components/patterns/ScanBar.vue'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { resolveScan, notifyScanError } from '~/utils/scan'
+import { playScanSuccessSound } from '~/utils/sound'
 
 export interface CommittedSerial {
   serial: string
@@ -13,6 +16,10 @@ interface SerialRow {
   serial: string
   counted: boolean
   reserved?: boolean
+  /** Held for THIS task (prevents oversell) but not yet actually scanned — shows
+   *  "Reserved" until the operator scans it, at which point counted flips true and
+   *  the badge becomes "Picked". Being reserved is not the same as being picked. */
+  plannedOwn?: boolean
   originLocation?: string
   destLocId?: string
   fromPriorTask?: boolean
@@ -40,6 +47,19 @@ const props = defineProps<{
   destLocationPaths?: string[]
   /** SNs already received in prior tasks for the same PO — cannot be added again. */
   blockedSerials?: string[]
+  /** Picking only — the sales order's full demand for this SKU, shown as a stat
+   *  alongside Qty to pick (only when passed, so other kinds are unaffected). */
+  orderQty?: number
+  /** Picking only — true once picking is actually being executed (PickItemsPage),
+   *  as opposed to just being set up (CreatePickingPage). At creation time there's
+   *  nothing picked yet, so no "Picked qty" stat is shown — only Qty to pick. */
+  executionMode?: boolean
+  /** Picking + execution mode only — serials already reserved for THIS task (holds
+   *  them against oversell) but not yet actually scanned. Shown as normal, selectable
+   *  "Reserved" rows (not blocked like a genuinely foreign claim) — but unlike
+   *  modelValue, being here does NOT count them as picked; only actually scanning
+   *  (or toggling) one moves it into modelValue / counted. */
+  plannedSerials?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -78,12 +98,16 @@ watch(() => props.open, (isOpen) => {
   if (props.kind === 'transfer' || props.kind === 'picking') {
     const selectedSet = new Set(props.modelValue.map(cs => cs.serial))
     const selectedDestLoc = new Map(props.modelValue.map(cs => [cs.serial, cs.destLocationId ?? '']))
-    // Picking: a "reserved" unit already claimed by THIS order's own pre-existing
-    // reservation (present in modelValue) is this pick's own claim, not another
-    // order's — show it as a normal selected/toggleable row, not the read-only
-    // "Reserved" row a genuinely foreign claim gets.
-    const ownReservedUnits = props.kind === 'picking' ? reservedUnits.filter(u => selectedSet.has(u.serial)) : []
-    const foreignReservedUnits = props.kind === 'picking' ? reservedUnits.filter(u => !selectedSet.has(u.serial)) : reservedUnits
+    const plannedSet = new Set(props.plannedSerials ?? [])
+    // Picking: a "reserved" unit already claimed by THIS order — whether actually
+    // scanned (in modelValue) or merely held against oversell (in plannedSerials,
+    // execution mode only) — is this pick's own claim, not another order's — show
+    // it as a normal selected/toggleable row, not the read-only "Reserved" row a
+    // genuinely foreign claim gets. Only modelValue membership counts as picked;
+    // a merely-planned unit starts unscanned until the operator scans/toggles it.
+    const mineSet = new Set([...selectedSet, ...plannedSet])
+    const ownReservedUnits = props.kind === 'picking' ? reservedUnits.filter(u => mineSet.has(u.serial)) : []
+    const foreignReservedUnits = props.kind === 'picking' ? reservedUnits.filter(u => !mineSet.has(u.serial)) : reservedUnits
     rows.value = [
       ...availableUnits.map(u => ({
         serial: u.serial,
@@ -94,8 +118,9 @@ watch(() => props.open, (isOpen) => {
       })),
       ...ownReservedUnits.map(u => ({
         serial: u.serial,
-        counted: true,
+        counted: selectedSet.has(u.serial),
         reserved: false as const,
+        plannedOwn: !selectedSet.has(u.serial),
         originLocation: hasOriginLoc.value ? u.location : undefined,
         destLocId: selectedDestLoc.get(u.serial) ?? '',
       })),
@@ -253,6 +278,55 @@ function toggleRow(row: SerialRow) {
   saveError.value = ''
 }
 
+const lastScannedKey = ref<string | null>(null)
+let scannedTimer: ReturnType<typeof setTimeout> | null = null
+async function flashScanned(key: string) {
+  if (scannedTimer) clearTimeout(scannedTimer)
+  if (lastScannedKey.value === key) {
+    lastScannedKey.value = null
+    await nextTick()
+  }
+  lastScannedKey.value = key
+  scannedTimer = setTimeout(() => { lastScannedKey.value = null }, 1000)
+}
+
+// Scanning a serial inside the drawer (picking execution) selects it the same way
+// clicking its toggle button would — same guards, just with scan-specific feedback.
+function handleDrawerScan(rawValue: string) {
+  const v = rawValue.trim()
+  if (!v) return
+  const row = rows.value.find(r => r.serial === v)
+  if (!row) {
+    const resolved = resolveScan(props.warehouseId, v)
+    if (resolved && resolved.sku !== props.sku) {
+      notifyScanError(`"${v}" belongs to SKU ${resolved.sku}, not ${props.sku}`)
+    } else {
+      notifyScanError(`Serial number not found: "${v}"`)
+    }
+    return
+  }
+  if (row.reserved) {
+    notifyScanError(`"${v}" is already reserved for another order`)
+    return
+  }
+  if (row.counted) {
+    notifyScanError(`"${v}" is already selected`)
+    return
+  }
+  if (countedCount.value >= props.targetCount) {
+    notifyScanError('Qty to pick already fully selected')
+    return
+  }
+  row.counted = true
+  saveError.value = ''
+  playScanSuccessSound()
+  flashScanned(row.serial)
+}
+
+function resetPicked() {
+  for (const row of rows.value) if (!row.reserved) row.counted = false
+}
+
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return rows.value
@@ -380,11 +454,15 @@ async function handleSave() {
             </template>
             <!-- picking stats -->
             <template v-else-if="isPicking">
+              <div v-if="props.orderQty !== undefined" class="msn-stat">
+                <span class="msn-stat-label">Order qty</span>
+                <span class="msn-stat-value">{{ fmtSerial(props.orderQty) }}</span>
+              </div>
               <div class="msn-stat">
                 <span class="msn-stat-label">Qty to pick</span>
                 <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
               </div>
-              <div class="msn-stat">
+              <div v-if="executionMode" class="msn-stat">
                 <span class="msn-stat-label">Picked qty</span>
                 <span class="msn-stat-value">{{ fmtSerial(countedCount) }}</span>
               </div>
@@ -438,6 +516,11 @@ async function handleSave() {
           </div>
         </div>
 
+        <!-- Scan bar — executing a pick only (planning/creation uses the toggle buttons) -->
+        <ScanBar v-if="isPicking && executionMode" placeholder="Scan barcode..." @scan="handleDrawerScan">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetPicked">Reset count</button>
+        </ScanBar>
+
         <div class="msn-table-wrap">
           <table class="msn-table" :class="{ 'msn-table--locs': hasOriginLoc || hasDestLoc, 'msn-table--form': hasDestLoc }">
             <colgroup>
@@ -467,11 +550,16 @@ async function handleSave() {
               </tr>
               <tr
                 v-for="row in displayRows" :key="row.serial" class="msn-tr"
-                :class="(isTransfer || isPicking)
-                  ? { 'msn-tr--selected': row.counted, 'msn-tr--reserved': row.reserved }
+                :class="[(isTransfer || isPicking)
+                  ? {
+                      'msn-tr--confirmed': row.counted && isPicking && executionMode,
+                      'msn-tr--own-reserved': row.plannedOwn || (row.counted && !(isPicking && executionMode)),
+                      'msn-tr--reserved': row.reserved,
+                    }
                   : isCountMode
                     ? { 'msn-tr--selected': row.counted }
-                    : { 'msn-tr--removed': !row.counted }"
+                    : { 'msn-tr--removed': !row.counted },
+                  { 'msn-tr--scanned': lastScannedKey === row.serial }]"
               >
                 <td class="msn-td" :class="{ 'msn-td--strike': !isCountMode && !(isTransfer || isPicking) && !row.counted }">{{ row.serial }}</td>
                 <td v-if="hasOriginLoc" class="msn-td msn-td--from-bin">
@@ -526,8 +614,17 @@ async function handleSave() {
                 </td>
                 <td class="msn-td msn-td--status">
                   <template v-if="isTransfer || isPicking">
-                    <MpBadge v-if="row.reserved" type="warning">Reserved</MpBadge>
-                    <MpBadge v-else-if="row.counted" type="success">Selected</MpBadge>
+                    <MpTooltip
+                      v-if="row.reserved"
+                      :id="`msn-status-tt-${row.serial}`"
+                      label="Not available — already reserved for another order"
+                      placement="top"
+                      use-portal
+                    >
+                      <MpBadge for="tableStatus" type="announcement">Not available</MpBadge>
+                    </MpTooltip>
+                    <MpBadge v-else-if="row.counted" type="success">{{ (isPicking && executionMode) ? 'Picked' : 'Reserved' }}</MpBadge>
+                    <MpBadge v-else-if="row.plannedOwn" for="tableStatus" type="warning">Reserved</MpBadge>
                   </template>
                   <template v-else-if="isPutAway">
                     <MpBadge v-if="row.destLocId" type="success">Assigned</MpBadge>
@@ -598,7 +695,7 @@ async function handleSave() {
 }
 .msn-panel {
   margin: var(--mp-spacing-3);
-  width: min(80vw, calc(100% - 24px));
+  width: min(1400px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
@@ -728,7 +825,16 @@ async function handleSave() {
 .msn-td--strike { text-decoration: line-through; color: var(--mp-text-secondary); }
 .msn-tr--removed .msn-td { background: var(--mp-background-danger-subtle, #fff5f5); }
 .msn-tr--selected .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
-.msn-tr--reserved .msn-td { background: var(--mp-background-warning-subtle, #fffbeb); color: var(--mp-text-secondary); }
+.msn-tr--confirmed .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
+.msn-tr--own-reserved .msn-td { background: var(--mp-background-warning-subtle, #fffbeb); }
+.msn-tr--reserved .msn-td { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
+
+@keyframes msn-scan-flash {
+  0%   { background: var(--mp-background-success-subtle, #f0fdf4); }
+  20%  { background: var(--mp-background-success-subtle, #f0fdf4); }
+  100% { background: var(--mp-background-neutral, #fff); }
+}
+.msn-tr--scanned .msn-td { animation: msn-scan-flash 1s ease-out forwards; }
 
 /* Form-table rules — only when INTO LOCATION is a real editable picker (transfer/
    put-away's destination bin). Read-only location display (picking) stays plain:
@@ -736,7 +842,8 @@ async function handleSave() {
 .msn-table--form .msn-th { background: var(--mp-background-neutral, #fff); }
 .msn-table--form .msn-td { background: var(--mp-background-neutral-subtle); }
 .msn-table--form .msn-td--to-bin { background: var(--mp-background-neutral, #fff); }
-.msn-table--form .msn-tr--selected .msn-td--to-bin,
+.msn-table--form .msn-tr--confirmed .msn-td--to-bin,
+.msn-table--form .msn-tr--own-reserved .msn-td--to-bin,
 .msn-table--form .msn-tr--removed .msn-td--to-bin { background: var(--mp-background-neutral, #fff); }
 
 .msn-td--status { padding: 8px var(--mp-spacing-2); vertical-align: middle; }
@@ -776,6 +883,9 @@ async function handleSave() {
   visibility: hidden;
 }
 .msn-tr:hover .msn-toggle-btn { visibility: visible; }
+/* Reserved-but-unscanned rows: always show the toggle — a visible manual way to
+   mark it picked without scanning, not just a hover-reveal easy to miss. */
+.msn-tr--own-reserved .msn-toggle-btn { visibility: visible; }
 .msn-toggle-btn--remove { color: var(--mp-text-secondary); visibility: visible; }
 .msn-toggle-btn--remove:hover { color: var(--mp-text-danger, #dc2626); }
 .msn-toggle-btn--restore { color: var(--mp-text-secondary); }

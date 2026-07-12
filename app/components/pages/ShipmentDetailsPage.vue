@@ -13,7 +13,7 @@ const shipment = computed(() => getShipment(props.orderId))
 
 interface Row {
   id: string; salesOrderId: string; salesNo: string; packingTaskId: string; packingTaskNo: string
-  source: string; skuQty: number; shippedQty: number; courier: string; trackingNo: string
+  source: string; skuQty: number; orderQty: number; shippedQty: number; courier: string; trackingNo: string
 }
 const rows = computed<Row[]>(() => {
   const s = shipment.value
@@ -28,6 +28,9 @@ const rows = computed<Row[]>(() => {
       packingTaskNo: t.packingTaskNo,
       source: order?.source ?? '',
       skuQty: t.skuQty,
+      // Full order demand for this SKU line's sales order — same source as the
+      // "Order qty" column on Delivery details' linked-orders table.
+      orderQty: order?.orderQty ?? t.orderQty,
       shippedQty: t.shippedQty,
       courier: t.courier ?? '—',
       trackingNo: t.trackingNo ?? '—',
@@ -70,13 +73,14 @@ function printPdf() { /* generates the shipment PDF — not built in this protot
       <div class="shd-table-wrap">
         <table class="detail-items">
           <colgroup>
+            <col style="width: 15%" />
+            <col style="width: 15%" />
             <col style="width: 16%" />
-            <col style="width: 16%" />
-            <col style="width: 18%" />
-            <col style="width: 13%" />
-            <col style="width: 13%" />
             <col style="width: 12%" />
             <col style="width: 12%" />
+            <col style="width: 10%" />
+            <col style="width: 10%" />
+            <col style="width: 10%" />
           </colgroup>
           <thead>
             <tr>
@@ -86,6 +90,7 @@ function printPdf() { /* generates the shipment PDF — not built in this protot
               <th class="detail-th">Courier</th>
               <th class="detail-th">Tracking no.</th>
               <th class="detail-th detail-th--num">SKU qty</th>
+              <th class="detail-th detail-th--num">Order qty</th>
               <th class="detail-th detail-th--num">Shipped qty</th>
             </tr>
           </thead>
@@ -119,6 +124,7 @@ function printPdf() { /* generates the shipment PDF — not built in this protot
               <td class="detail-td">{{ row.courier }}</td>
               <td class="detail-td">{{ row.trackingNo }}</td>
               <td class="detail-td detail-td--num">{{ formatNum(row.skuQty) }}</td>
+              <td class="detail-td detail-td--num">{{ formatNum(row.orderQty) }}</td>
               <td class="detail-td detail-td--num">{{ formatNum(row.shippedQty) }}</td>
             </tr>
           </tbody>

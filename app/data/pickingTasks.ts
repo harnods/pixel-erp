@@ -5,7 +5,7 @@ import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, s
 import { orderSkuLines } from "./inventory";
 import {
   binForSku, getWarehouseDetail, getReservationsForOrder, releaseReservationsForOrderSku, reserveStock,
-  autoSelectLocationBins, autoSelectBatches, autoSelectSerials,
+  autoSelectLocationBins, autoSelectBatches, autoSelectSerials, registerNewBatch,
 } from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
@@ -83,6 +83,20 @@ export interface PickingTask {
   batchPicks?: Record<string, PickingBatchPick[]>;
   /** Per-line serial picks (serial-tracked SKUs), keyed by PickingLine.key. */
   serialPicks?: Record<string, PickingSerialPick[]>;
+  /** Snapshot of batchPicks, taken ONCE at task creation (the reservation plan) —
+   *  batchPicks above gets overwritten with the real per-batch result the moment
+   *  anything is actually picked, so this is the only place "what this task
+   *  originally asked for, per batch" survives. Never mutated after creation. */
+  plannedBatchPicks?: Record<string, PickingBatchPick[]>;
+  /** Same idea as plannedBatchPicks, for serial-tracked SKUs. */
+  plannedSerialPicks?: Record<string, PickingSerialPick[]>;
+}
+
+/** Deep-clone a batch/serial pick record so a later reassignment of the live
+ *  batchPicks/serialPicks field can never retroactively alter a frozen plan
+ *  snapshot taken from the same object. */
+function clonePicks<T>(picks: Record<string, T[]>): Record<string, T[]> {
+  return JSON.parse(JSON.stringify(picks));
 }
 
 const PICKING_WAREHOUSES = warehouses.filter(
@@ -182,8 +196,8 @@ function seedTasks(): PickingTask[] {
         endDate: finished ? isoAt(dayOffset, 11, 15) : undefined,
         lines,
         pickedByKey,
-        ...(Object.keys(batchPicks).length ? { batchPicks } : {}),
-        ...(Object.keys(serialPicks).length ? { serialPicks } : {}),
+        ...(Object.keys(batchPicks).length ? { batchPicks, plannedBatchPicks: clonePicks(batchPicks) } : {}),
+        ...(Object.keys(serialPicks).length ? { serialPicks, plannedSerialPicks: clonePicks(serialPicks) } : {}),
       });
     });
   }
@@ -276,8 +290,8 @@ function seedShippedPicks(startSeq: number): PickingTask[] {
       endDate: isoAt(dayOffset, 11, 15),
       lines,
       pickedByKey,
-      ...(Object.keys(batchPicks).length ? { batchPicks } : {}),
-      ...(Object.keys(serialPicks).length ? { serialPicks } : {}),
+      ...(Object.keys(batchPicks).length ? { batchPicks, plannedBatchPicks: clonePicks(batchPicks) } : {}),
+      ...(Object.keys(serialPicks).length ? { serialPicks, plannedSerialPicks: clonePicks(serialPicks) } : {}),
     });
   });
   return out;
@@ -308,6 +322,13 @@ function freshSeq(): number {
  * This task's batch/serial assignments, read straight from each bundled order's
  * existing reservation (made once, when the order was created) — never computed
  * fresh here. A picking task just reads what was already claimed; it doesn't reserve.
+ *
+ * Capped to each line's OWN qty (l.qty) — an order's reservation covers its FULL
+ * demand for that SKU, but a picking task can request only PART of it (a partial
+ * pick, leaving the rest for a later list). Without this cap, a reduced-qty line
+ * whose batch/serial allocation was never manually re-pinned in the drawer would
+ * surface the order's entire reservation here, well over what this task's own
+ * "Qty to pick" says — table total ends up inflated past the header stat.
  */
 function assignmentsFromReservations(
   lines: PickingLine[],
@@ -330,18 +351,23 @@ function assignmentsFromReservations(
         if (!r.batchNo) continue;
         byBatch.set(r.batchNo, (byBatch.get(r.batchNo) ?? 0) + r.qty);
       }
+      let budget = l.qty;
       const picks: PickingBatchPick[] = [];
       for (const [batchNo, qty] of byBatch) {
+        if (budget <= 0) break;
         const b = item.batches.find((x) => x.batchNo === batchNo);
         if (!b || qty <= 0) continue;
-        picks.push({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: "", qty, unit: item.unit, location: b.location });
+        const take = Math.min(qty, budget);
+        picks.push({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: "", qty: take, unit: item.unit, location: b.location });
+        budget -= take;
       }
       if (picks.length) batchPicks[l.key] = picks;
     } else if (item.serials) {
       const seen = new Set<string>();
       const picks: PickingSerialPick[] = [];
-      for (const r of resv) {
+      outer: for (const r of resv) {
         for (const serial of r.serials ?? []) {
+          if (picks.length >= l.qty) break outer;
           if (seen.has(serial)) continue;
           seen.add(serial);
           const u = item.serials.reserved.find((x) => x.serial === serial);
@@ -391,8 +417,8 @@ export function addPickingTask(opts: {
     pickedQty: 0, // newly created → nothing picked yet
     status: "open",
     lines,
-    ...(Object.keys(batchPicks).length ? { batchPicks } : {}),
-    ...(Object.keys(serialPicks).length ? { serialPicks } : {}),
+    ...(Object.keys(batchPicks).length ? { batchPicks, plannedBatchPicks: clonePicks(batchPicks) } : {}),
+    ...(Object.keys(serialPicks).length ? { serialPicks, plannedSerialPicks: clonePicks(serialPicks) } : {}),
   };
   pickingTasks.unshift(task);
   persistPicking();
@@ -561,6 +587,51 @@ export function serialPicksForOrderSku(orderId: string, sku: string): PickingSer
   return dedupeSerialPicks(result);
 }
 
+/**
+ * Same idea as pickedQtyForOrderSku, but scoped to a SPECIFIC set of picking task
+ * ids instead of every non-canceled picking task the order has EVER had. An order
+ * can go through more than one independent picking→packing→shipment cycle (e.g.
+ * partially shipped, then picked again for the remainder) — a packing task must
+ * only ever count what its OWN linked picking task(s) actually picked, never an
+ * earlier, unrelated cycle's already-packed-and-shipped units too.
+ */
+export function pickedQtyForPickingTasks(pickingTaskIds: string[], orderId: string, sku: string): number {
+  const key = `${orderId}::${sku}`;
+  let sum = 0;
+  for (const id of pickingTaskIds) {
+    const t = getPickingTask(id);
+    if (!t || t.status === "canceled") continue;
+    sum += t.pickedByKey?.[key] ?? 0;
+  }
+  return sum;
+}
+
+/** Same scoping as pickedQtyForPickingTasks, for batch picks. */
+export function batchPicksForPickingTasks(pickingTaskIds: string[], orderId: string, sku: string): PickingBatchPick[] {
+  const key = `${orderId}::${sku}`;
+  const result: PickingBatchPick[] = [];
+  for (const id of pickingTaskIds) {
+    const t = getPickingTask(id);
+    if (!t || t.status === "canceled") continue;
+    const picks = t.batchPicks?.[key];
+    if (picks) result.push(...picks);
+  }
+  return mergeBatchPicks(result);
+}
+
+/** Same scoping as pickedQtyForPickingTasks, for serial picks. */
+export function serialPicksForPickingTasks(pickingTaskIds: string[], orderId: string, sku: string): PickingSerialPick[] {
+  const key = `${orderId}::${sku}`;
+  const result: PickingSerialPick[] = [];
+  for (const id of pickingTaskIds) {
+    const t = getPickingTask(id);
+    if (!t || t.status === "canceled") continue;
+    const picks = t.serialPicks?.[key];
+    if (picks) result.push(...picks);
+  }
+  return dedupeSerialPicks(result);
+}
+
 /** The pick lines of a task (stored, or generated for seed tasks without them). */
 export function pickingLinesOf(task: PickingTask): PickingLine[] {
   return task.lines?.length ? task.lines : buildPickingLines(task.salesOrderIds, task.salesNos);
@@ -631,6 +702,22 @@ export function endPicking(
   if (assignments?.batchPicks) t.batchPicks = assignments.batchPicks;
   if (assignments?.serialPicks) t.serialPicks = assignments.serialPicks;
   if (assignments) {
+    // Operator may have picked from a batch the warehouse never logged (found/
+    // counted stock under an unrecognized batch no.) — register it BEFORE
+    // reserving, so reserveStock() below has an actual batch to apply against
+    // instead of silently reserving into thin air.
+    if (assignments.batchPicks) {
+      const wh = getWarehouseDetail(t.warehouseId);
+      for (const [lineKey, picks] of Object.entries(assignments.batchPicks)) {
+        const sku = lineKey.slice(lineKey.indexOf("::") + 2);
+        const known = new Set(wh?.stock.find((s) => s.sku === sku)?.batches?.map((b) => b.batchNo));
+        for (const p of picks) {
+          if (known.has(p.batchNo)) continue;
+          registerNewBatch(t.warehouseId, sku, { batchNo: p.batchNo, expiryDate: p.expiryDate, onHand: p.qty, location: p.location });
+          known.add(p.batchNo);
+        }
+      }
+    }
     // Operator may have changed batch/serial at the real pick — re-pin each affected
     // order's reservation to whatever was actually picked (release that order+sku's
     // stale claim first so a swapped-out batch/serial doesn't stay double-reserved).

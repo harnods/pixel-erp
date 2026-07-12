@@ -24,6 +24,11 @@ export interface CommittedBatch {
   unit: string
   /** Fixed bin this batch currently sits in — used for picking's read-only Location column. */
   location?: string
+  /** Picking only — how much of THIS batch this task specifically reserved (may be
+   *  less than onHand, which is warehouse-wide available and already excludes this
+   *  task's own hold). Manual qty entry caps against this, not onHand — otherwise a
+   *  batch this task fully reserved reads as ~0 available and silently clamps input. */
+  reservedQty?: number
   originLocations?: BatchLocEntry[]
   destLocations?: BatchLocEntry[]
 }
@@ -401,8 +406,15 @@ function removeRow(key: string) {
 
 function setCounted(row: WorkRow, val: string) {
   let n = val === '' ? null : Math.max(0, Math.floor(Number(val) || 0))
-  // Picking can't pull more units from a batch than it actually holds.
-  if (n !== null && isPicking.value && n > row.onHand) n = row.onHand
+  // Picking can't pull more units from a batch than this task actually reserved
+  // from it — NOT onHand, which is warehouse-wide available and already nets out
+  // this task's own hold (so a fully-reserved batch would otherwise clamp to ~0).
+  // A brand-new batch (isNew) has no existing reservation/onHand to cap against at
+  // all — it's being registered right now with whatever qty the operator counted.
+  if (n !== null && isPicking.value && !row.isNew) {
+    const cap = row.reservedQty ?? row.onHand
+    if (n > cap) n = cap
+  }
   row.counted = n
 }
 
@@ -1001,7 +1013,7 @@ function fmtNum(n: number | null): string {
                         <MpPopoverListItem v-if="!availableBatches.length" disabled>
                           All batches added
                         </MpPopoverListItem>
-                        <template v-if="props.kind !== 'transfer' && !isPicking">
+                        <template v-if="props.kind !== 'transfer'">
                           <div class="mbd-popover-divider" />
                           <MpPopoverListItem @click="addNewBatch">
                             <span class="mbd-popover-add-row"><MpIcon name="add" size="sm" />Add new batch</span>

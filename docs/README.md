@@ -41,5 +41,6 @@ Start here. This is the home for ERP UI/UX documentation.
 | Content List | [ContentList.md](patterns/ContentList.md) | Labelled key/value field (label over value); detail header + key/value displays |
 | Date format | [date-format.md](patterns/date-format.md) | Numeric `DD/MM/YYYY` table date standard; `formatDate` / `formatDateTime` helpers |
 | Form | [Form.md](patterns/Form.md) | Field anatomy, layout rules (558px / 6-col), field type → Pixel component |
+| Form Table | [FormTable.md](patterns/FormTable.md) | Editable table cells in forms/drawers: input cells, select/search cells, focus/error states |
 | Modal | [Modal.md](patterns/Modal.md) | Centered dialog for focused/interrupting tasks |
 | Drawer | [Drawer.md](patterns/Drawer.md) | Side panel for contextual detail/edit without leaving the page |

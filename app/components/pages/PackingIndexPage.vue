@@ -11,6 +11,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { useTableState } from '~/composables/useTableState'
 import { packingTasksFor, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
+import { packingTaskHasShipment } from '~/data/deliveryTasks'
 import { outgoingOrders } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
@@ -60,6 +61,7 @@ const columns: TableColumn[] = [
   { key: 'toPackQty',     label: 'To pack',     width: '100px', align: 'right', sortType: 'number' },
   { key: 'packedQty',     label: 'Packed qty',  width: '100px', align: 'right', sortType: 'number' },
   { key: 'status',        label: 'Status',      width: '140px', sortType: 'text' },
+  { key: 'icons',         label: '',            width: '48px',  align: 'center', noHeader: true },
   { key: 'startDate',     label: 'Start date',  width: '170px', sortType: 'date' },
   { key: 'endDate',       label: 'End date',    width: '190px', sortType: 'date' },
 ]
@@ -70,7 +72,7 @@ const colVis = reactive<Record<string, boolean>>(
   Object.fromEntries(columns.map(c => [c.key, c.key !== 'toPackQty'])),
 )
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
-const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — Status + Warehouse (hidden when scoped) ───
@@ -262,6 +264,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Status ── -->
     <template #cell-status="{ value }"><ErpStatusBadge :status="value as string" /></template>
 
+    <!-- ── Icon indicators — shipment created ── -->
+    <template #cell-icons="{ row }">
+      <div class="pack-icons-cell">
+        <MpTooltip
+          v-if="packingTaskHasShipment((row as unknown as PackingTask).id)"
+          :id="`tt-shipment-${row.id}`"
+          label="Shipment created"
+          placement="top"
+          use-portal
+        >
+          <span class="pack-icon-indicator" aria-label="Shipment created">
+            <MpIcon name="truck" size="20px" />
+          </span>
+        </MpTooltip>
+      </div>
+    </template>
+
     <!-- ── Start / End date + aging ── -->
     <template #cell-startDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
     <template #cell-endDate="{ row }">
@@ -362,6 +381,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .pack-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
+
+/* Icon indicators cell — shipment created */
+.pack-icons-cell { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
+.pack-icon-indicator { display: inline-flex; align-items: center; justify-content: center; color: var(--mp-text-subtle); }
 .pack-source {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden; white-space: normal; color: var(--mp-text-default);

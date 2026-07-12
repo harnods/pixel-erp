@@ -6,7 +6,7 @@
  *     This is a CUSTOM implementation using Pixel design tokens.
  *     Request to Pixel team: update MpTable Enterprise to match this spec:
  *       • Header: bg surface (#f1f5f9), 28px height, uppercase 12px semibold, pl-8 pr-16 py-4
- *       • Row: 40px min-height, border-bottom, pl-8 pr-16 py-6, 14px regular
+ *       • Row: 40px min-height, border-bottom, pl-8 pr-16 py-10, 14px regular
  *       • Sticky right column with inset left box-shadow
  *
  * Props:
@@ -886,7 +886,7 @@ const bulkCountLabel = computed(() => {
 /*
  * Figma spec → Pixel 3 2.4 Enterprise mapping:
  *   min-height : var(--mp-sizes-10)        (40px)
- *   padding    : var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2)
+ *   padding    : var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2)
  *   font       : var(--mp-font-sizes-md) / var(--mp-font-weights-regular)
  *   border-bot : 1px solid var(--mp-border-default)
  */

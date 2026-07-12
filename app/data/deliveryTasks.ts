@@ -295,6 +295,14 @@ export function orderHasDelivery(orderId: string): boolean {
   );
 }
 
+/** True if a packing task has already been shipped (its delivery — possibly
+ *  merged from several packing tasks in a bulk "Create delivery" — is shipped). */
+export function packingTaskHasShipment(packingTaskId: string): boolean {
+  return deliveryTasks.some(
+    (t) => t.status === "shipped" && packingTaskIdsForDelivery(t).includes(packingTaskId),
+  );
+}
+
 export function getDeliveryTask(taskId: string): DeliveryTask | undefined {
   return deliveryTasks.find((t) => t.id === taskId);
 }

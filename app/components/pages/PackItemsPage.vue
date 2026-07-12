@@ -310,7 +310,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <th class="pak-th pak-th--num">Packed qty</th>
                   <th class="pak-th pak-th--num">Outstanding qty</th>
                   <th class="pak-th">Unit</th>
-                  <th class="pak-th"></th>
+                  <th class="pak-th pak-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -433,7 +433,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
     :counted-total="(viewSerialItem.serialPicks ?? []).length"
-    :picked-serials="(viewSerialItem.serialPicks ?? []).map(s => s.serial)"
+    :picked-serials="viewSerialItem.serialPicks ?? []"
+    :planned-serials="viewSerialItem.serialPicks ?? []"
     :product-name="viewSerialItem.productName"
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"
@@ -493,6 +494,9 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pak-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-8) 0; }
 
 .pak-td--action { text-align: center; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.pak-th--action { position: sticky; right: 0; z-index: 2; }
+.pak-td--action { position: sticky; right: 0; z-index: 1; }
 .pak-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .pak-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 

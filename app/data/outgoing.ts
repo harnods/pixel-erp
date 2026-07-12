@@ -357,7 +357,8 @@ function reserveOrder(order: OutgoingOrder): void {
           item.serials?.available.some((u) => u.serial === sn) || item.serials?.reserved.some((u) => u.serial === sn));
         return sum + valid.length;
       }
-      return sum;
+      // Plain SKU — a bare qty reservation, nothing to validate it against.
+      return sum + r.qty;
     }, 0);
     const remaining = line.qty - already;
     if (remaining <= 0) continue;
@@ -369,9 +370,66 @@ function reserveOrder(order: OutgoingOrder): void {
     } else if (item.serials) {
       const serials = autoSelectSerials(order.warehouseId, line.sku, remaining, preferredLocations);
       if (serials.length) picks.push({ sku: line.sku, qty: serials.length, serials });
+    } else {
+      // Plain SKU — no lot/unit to pin, just hold the qty against oversell.
+      picks.push({ sku: line.sku, qty: remaining });
     }
   }
   if (picks.length) reserveStock(order.id, order.warehouseId, picks);
+}
+
+/**
+ * Demo scenario: an open order at Gudang Makassar Selatan (wh-006, whose storage
+ * locations are a flat single-level "Bin 01"/"Bin 02"… tree) covering all three
+ * tracking modes in one order — a batch-tracked SKU that happens to sit in 2
+ * distinct batches there, a serial-tracked SKU, and a plain (untracked) SKU.
+ * Explicit `lines` pin the exact SKUs (orderSkuLines() would otherwise derive
+ * them deterministically from skuQty, with no control over which land here).
+ */
+function generateTrackingScenario(): OutgoingOrder[] {
+  return [
+    {
+      id: "out-demo-001",
+      number: "OUT-2026-0700",
+      salesNo: "Sales Order #10199",
+      source: "Sales Order",
+      warehouseId: "wh-006",
+      warehouseName: "Gudang Makassar Selatan",
+      skuQty: 3,
+      orderQty: 9,
+      shippedQty: 0,
+      status: "open",
+      dueDate: isoOffset(7),
+      memo: "For demo 001",
+      customer: "Anomali Coffee",
+      lines: [
+        {
+          sku: "1003",
+          productName: "Green Beans Arabica Toraja Sapan",
+          desc: "Sulawesi 1,600 masl, semi-washed, 60 kg sack",
+          img: "https://cdn.shopify.com/s/files/1/0801/9439/files/image_Beans_Single_Rwanda-Mbilima-Soil-Project-Lot.0704-2026.jpg?v=1779845863",
+          unit: "Sack",
+          qty: 3,
+        },
+        {
+          sku: "2004",
+          productName: "Espresso Machine Lever Manual 1-Group",
+          desc: "Spring-lever, chrome body, commercial",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/files/La-Marzocco-Linea-Mini-Espresso-Machine-White-Hero-KO-by-Clive-Coffee.jpg?v=1711570888",
+          unit: "Unit",
+          qty: 2,
+        },
+        {
+          sku: "3004",
+          productName: "Coffee Scale 2kg / 0.1g",
+          desc: "Built-in brew timer, USB-C rechargeable",
+          img: "https://cdn.shopify.com/s/files/1/0831/7573/5603/files/ACAIALUNAR2021SMARTESPRESSOSCALEnew.jpg?v=1711084594",
+          unit: "Unit",
+          qty: 4,
+        },
+      ],
+    },
+  ];
 }
 
 // The outbound graph (orders + picking + packing + delivery) is persisted as a
@@ -380,13 +438,16 @@ function reserveOrder(order: OutgoingOrder): void {
 // "Reset demo data" clears it.
 const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
-  outgoingSnapshot ?? [...generateOrders(), ...generateShipped(3), ...generateCanceled()],
+  outgoingSnapshot ?? [...generateTrackingScenario(), ...generateOrders(), ...generateShipped(3), ...generateCanceled()],
 );
 
-// Only open / in-process orders are pickable. (An in-process order can still spawn
-// additional pick lists for SKUs not yet on any list — the per-SKU check lives in
-// pickingTasks.canPickOrder.)
-const PICKABLE_STATUSES = ["open", "in progress"];
+// Open / in-process / partially-shipped orders are pickable. (A partially shipped
+// order flips to that status the moment ANY of it ships — even if most of it was
+// never picked at all — so it still needs to allow further pick lists for whatever
+// SKU/qty remains uncovered; the per-SKU/qty check lives in pickingTasks.canPickOrder.
+// "completed" is excluded on purpose: shippedTotal >= orderQty there, so nothing
+// can possibly be left to pick.)
+const PICKABLE_STATUSES = ["open", "in progress", "partially shipped"];
 
 /**
  * Reserve every currently pickable (open / in-process) order — stands in for

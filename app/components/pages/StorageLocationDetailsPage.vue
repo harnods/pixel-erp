@@ -190,6 +190,7 @@ function confirmDeleteLocation() {
       <StockTables
         v-if="showStockTabs"
         :stock="locStock"
+        :warehouse-id="warehouseId"
         :subject="node.name"
         extra-label="Storage location"
         :exclude-columns="['minStock', 'locations', 'location']"

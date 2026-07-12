@@ -234,7 +234,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
                   <th class="detail-th">SKU</th>
                   <th class="detail-th detail-th--num">Qty</th>
                   <th class="detail-th">Unit</th>
-                  <th class="detail-th"></th>
+                  <th class="detail-th detail-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -452,7 +452,11 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
     kind="packing"
     qty-label="Packed qty"
     :order-qty="viewBatchItem.orderQty"
+    planned-qty-label="Picked qty"
+    :qty-to-pick="(viewBatchItem.batchPicks ?? []).reduce((s, b) => s + b.qty, 0)"
+    :planned-batches="viewBatchItem.batchPicks ?? []"
     :picked-batches="viewBatchItem.batchPicks ?? []"
+    :shipped-qty="viewBatchItem.shippedElsewhere"
     :product-name="viewBatchItem.productName"
     :product-img="viewBatchItem.image"
     @update:open="viewBatchItem = null"
@@ -464,7 +468,13 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
     :counted-total="(viewSerialItem.serialPicks ?? []).length"
-    :picked-serials="(viewSerialItem.serialPicks ?? []).map(s => s.serial)"
+    :order-qty="viewSerialItem.orderQty"
+    planned-qty-label="Picked qty"
+    :qty-to-pick="(viewSerialItem.serialPicks ?? []).length"
+    qty-label="Packed qty"
+    :planned-serials="viewSerialItem.serialPicks ?? []"
+    :picked-serials="viewSerialItem.serialPicks ?? []"
+    :shipped-qty="viewSerialItem.shippedElsewhere"
     :product-name="viewSerialItem.productName"
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"
@@ -518,6 +528,9 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 .detail-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-td--action { text-align: center; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.detail-th--action { position: sticky; right: 0; z-index: 2; }
+.detail-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
 .del-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .del-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }

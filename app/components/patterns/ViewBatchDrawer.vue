@@ -11,7 +11,7 @@ const DEMO_DESCS = [
   'Single origin, certified organic, lot #B12',
 ]
 
-export interface PickedBatchRow { batchNo: string; expiryDate: string; desc: string; qty: number; unit: string }
+export interface PickedBatchRow { batchNo: string; expiryDate: string; desc: string; qty: number; unit: string; location?: string }
 
 const props = defineProps<{
   open: boolean
@@ -26,6 +26,12 @@ const props = defineProps<{
   deltaTotal?: number
   /** Packing mode: the exact batches picked for this line — shown as-is, no derivation. */
   pickedBatches?: PickedBatchRow[]
+  /** Packing mode: this line's ORIGINAL per-batch reservation plan, frozen at task
+   *  creation — distinct from pickedBatches, which becomes the real per-batch result
+   *  once anything is actually picked. When given, the table shows both a fixed
+   *  "Qty to pick" column (from this) and a "Picked qty"/qtyLabel column (from
+   *  pickedBatches) side by side, keyed by batchNo, instead of one relabeled column. */
+  plannedBatches?: PickedBatchRow[]
   /** Packing mode: label for the qty stat + table column — defaults to "Picked qty".
    *  Callers downstream of picking (packing, delivery, ...) pass their own word for it
    *  ("Packed qty", ...) since it's the same numbers, just a different stage's name. */
@@ -34,12 +40,52 @@ const props = defineProps<{
    *  (e.g. delivery wants "Order qty" next to "Packed qty"; picking doesn't need it
    *  here since it already shows separately). */
   orderQty?: number
+  /** Packing mode: this line's planned/target qty, shown as its own stat (label
+   *  below) when given (picking, before it's fully executed — pickedBatches already
+   *  reflects the reservation plan, not real progress, so the two need to be told
+   *  apart explicitly). */
+  qtyToPick?: number
+  /** Label for the qtyToPick stat + the "planned"/hasPlanned table column —
+   *  defaults to "Qty to pick" (picking). Other stages reuse the exact same
+   *  qtyToPick/plannedBatches plumbing under their own name, e.g. delivery's
+   *  "Picked qty" shown before "Packed qty". */
+  plannedQtyLabel?: string
+  /** Packing mode: the REAL picked-so-far qty, overriding the qtyLabel stat's value
+   *  (which otherwise sums pickedBatches — accurate once picking is finished, but
+   *  wrong while a task is still open/in progress and pickedBatches is just the plan). */
+  pickedQty?: number
+  /** Packing mode: label for the TABLE's qty column only — defaults to qtyLabel.
+   *  Split out from qtyLabel because the two can legitimately differ: e.g. picking
+   *  (not yet executed) wants its header stat to say "Picked qty" (real progress,
+   *  via pickedQty above) while the table's per-batch breakdown is still just the
+   *  plan, so it reads "Qty to pick" instead. */
+  tableQtyLabel?: string
+  /** Delivery only: units of this line ALREADY shipped by an earlier, independent
+   *  picking→packing→shipment cycle for the same order (partially shipped, then
+   *  picked/packed/shipped again for the remainder) — shown as its own
+   *  "Previously shipped" stat after Packed qty, explaining why Order qty doesn't
+   *  match Picked/Packed qty. Only rendered when > 0 — a normal, single-cycle
+   *  shipment never shows this stat at all. */
+  shippedQty?: number
   productName: string
   productImg: string
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 const qtyLabel = computed(() => props.qtyLabel ?? 'Picked qty')
+const plannedQtyLabel = computed(() => props.plannedQtyLabel ?? 'Qty to pick')
+// batchPicks is ONE field, not "plan" + "actual" side by side — endPicking/
+// savePickingDraft overwrite it in place with the real result the moment anything
+// is actually picked. So callers that want BOTH numbers per batch (picking) pass
+// plannedBatches separately — a frozen snapshot taken at task creation, never
+// touched by that overwrite — and the table renders two columns keyed by batchNo.
+// Callers that don't have/need that distinction (packing, delivery, ...) keep the
+// single, dynamically-labeled column as before.
+const hasPlanned = computed(() => isPacking.value && props.plannedBatches !== undefined)
+const tableQtyLabel = computed(() => {
+  if (props.pickedQty !== undefined) return props.pickedQty > 0 ? qtyLabel.value : 'Qty to pick'
+  return props.tableQtyLabel ?? qtyLabel.value
+})
 
 const isInOut = computed(() => props.kind === 'in-out')
 const isPacking = computed(() => props.kind === 'packing')
@@ -54,18 +100,50 @@ interface BatchRow {
   expiryDate: string
   desc: string
   onHand: number
-  value: number      // counted qty (count mode) OR delta (in-out mode)
-  newOnHand: number  // only used in in-out mode
+  value: number        // counted qty (count mode), delta (in-out mode), OR picked qty (packing)
+  plannedValue: number // packing + plannedBatches only: this batch's original planned qty
+  newOnHand: number    // only used in in-out mode
   unit: string
+  location?: string
 }
 
 const rows = computed<BatchRow[]>(() => {
   // Packing: show the exact batches picked for this line, as-is — no derivation
   // from live warehouse stock, no on-hand/new-on-hand concept.
   if (isPacking.value) {
+    if (props.plannedBatches) {
+      // Two-column path: union of every batch that was ever planned or ever
+      // actually picked, keyed by batchNo — a re-pinned pick can name a batch
+      // that wasn't in the original plan (plannedValue 0), and a partial pick
+      // can leave a planned batch untouched (value 0).
+      //
+      // pickedBatches only reflects the REAL result once the task has actually
+      // been draft-saved/finished at least once (pickedQty > 0) — savePickingDraft/
+      // endPicking are what overwrite it down to just the batches genuinely
+      // counted. Before that first save, pickedBatches is still the untouched
+      // creation-time plan (identical to plannedBatches) — reading it as "picked"
+      // would show the full plan as already picked on a task that hasn't started.
+      // Callers with no such ambiguity (packing/delivery — their batch data is
+      // always the real, already-settled result, never a leftover plan copy)
+      // don't pass pickedQty at all, so they're never gated by this.
+      const hasRealPicks = props.pickedQty === undefined || props.pickedQty > 0
+      const plannedMap = new Map(props.plannedBatches.map(b => [b.batchNo, b]))
+      const pickedMap = hasRealPicks ? new Map((props.pickedBatches ?? []).map(b => [b.batchNo, b])) : new Map<string, PickedBatchRow>()
+      const batchNos = [...new Set([...plannedMap.keys(), ...pickedMap.keys()])]
+      return batchNos.map((batchNo, i) => {
+        const planned = plannedMap.get(batchNo)
+        const picked = pickedMap.get(batchNo)
+        const src = picked ?? planned!
+        return {
+          batchNo, expiryDate: src.expiryDate, desc: src.desc || DEMO_DESCS[i % DEMO_DESCS.length]!,
+          onHand: 0, value: picked?.qty ?? 0, plannedValue: planned?.qty ?? 0, newOnHand: 0,
+          unit: src.unit, location: src.location,
+        }
+      })
+    }
     return (props.pickedBatches ?? []).map((b, i) => ({
       batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!,
-      onHand: 0, value: b.qty, newOnHand: 0, unit: b.unit,
+      onHand: 0, value: b.qty, plannedValue: 0, newOnHand: 0, unit: b.unit, location: b.location,
     }))
   }
 
@@ -83,6 +161,7 @@ const rows = computed<BatchRow[]>(() => {
         desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
         onHand: b.onHand,
         value: delta,
+        plannedValue: 0,
         newOnHand: b.onHand + delta,
         unit,
       }
@@ -97,6 +176,7 @@ const rows = computed<BatchRow[]>(() => {
     desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
     onHand: b.onHand,
     value: totalOnHand > 0 ? Math.round((b.onHand / totalOnHand) * counted) : 0,
+    plannedValue: 0,
     newOnHand: 0,
     unit,
   }))
@@ -151,9 +231,17 @@ function close() { emit('update:open', false) }
                 <span class="vbd-stat-label">Order qty</span>
                 <span class="vbd-stat-value">{{ fmt(orderQty) }}</span>
               </div>
+              <div v-if="qtyToPick !== undefined" class="vbd-stat">
+                <span class="vbd-stat-label">{{ plannedQtyLabel }}</span>
+                <span class="vbd-stat-value">{{ fmt(qtyToPick) }}</span>
+              </div>
               <div class="vbd-stat">
                 <span class="vbd-stat-label">{{ qtyLabel }}</span>
-                <span class="vbd-stat-value">{{ fmt(totalPicked) }}</span>
+                <span class="vbd-stat-value">{{ fmt(pickedQty ?? totalPicked) }}</span>
+              </div>
+              <div v-if="shippedQty !== undefined && shippedQty > 0" class="vbd-stat">
+                <span class="vbd-stat-label">Previously shipped</span>
+                <span class="vbd-stat-value">{{ fmt(shippedQty) }}</span>
               </div>
             </template>
             <template v-else>
@@ -194,7 +282,9 @@ function close() { emit('update:open', false) }
               <col class="vbd-col-batch" />
               <col class="vbd-col-expiry" />
               <col class="vbd-col-desc" />
+              <col v-if="isPacking" class="vbd-col-loc" />
               <col v-if="!isPacking" class="vbd-col-num" />
+              <col v-if="hasPlanned" class="vbd-col-num" />
               <col class="vbd-col-num" />
               <template v-if="isInOut"><col class="vbd-col-num" /></template>
               <col class="vbd-col-unit" />
@@ -204,10 +294,12 @@ function close() { emit('update:open', false) }
                 <th class="vbd-th">Batch</th>
                 <th class="vbd-th">Expiry date</th>
                 <th class="vbd-th">Description</th>
+                <th v-if="isPacking" class="vbd-th">Storage location</th>
                 <th v-if="!isPacking" class="vbd-th vbd-th--num">On hand qty</th>
-                <th v-if="isPacking" class="vbd-th vbd-th--num">{{ qtyLabel }}</th>
-                <th v-else-if="!isInOut" class="vbd-th vbd-th--num">Counted qty</th>
-                <template v-else>
+                <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
+                <th v-if="isPacking" class="vbd-th vbd-th--num">{{ hasPlanned ? qtyLabel : tableQtyLabel }}</th>
+                <th v-if="!isPacking && !isInOut" class="vbd-th vbd-th--num">Counted qty</th>
+                <template v-if="!isPacking && isInOut">
                   <th class="vbd-th vbd-th--num">Stock in/out qty</th>
                   <th class="vbd-th vbd-th--num">New on hand qty</th>
                 </template>
@@ -219,9 +311,11 @@ function close() { emit('update:open', false) }
                 <td class="vbd-td vbd-td--muted">{{ row.batchNo }}</td>
                 <td class="vbd-td vbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
                 <td class="vbd-td vbd-td--muted">{{ row.desc }}</td>
+                <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.location ?? '—' }}</td>
                 <td v-if="!isPacking" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
+                <td v-if="hasPlanned" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
                 <td v-if="isPacking || !isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
-                <template v-else>
+                <template v-if="!isPacking && isInOut">
                   <td class="vbd-td vbd-td--num" :class="{ 'vbd-diff--pos': row.value > 0, 'vbd-diff--neg': row.value < 0 }">
                     {{ fmtDelta(row.value) }}
                   </td>
@@ -230,7 +324,7 @@ function close() { emit('update:open', false) }
                 <td class="vbd-td vbd-td--muted">{{ row.unit }}</td>
               </tr>
               <tr v-if="!rows.length" class="vbd-tr">
-                <td :colspan="isPacking ? 5 : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">No batch data available.</td>
+                <td :colspan="isPacking ? (hasPlanned ? 7 : 6) : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">No batch data available.</td>
               </tr>
             </tbody>
           </table>
@@ -259,7 +353,7 @@ function close() { emit('update:open', false) }
 }
 .vbd-panel {
   margin: var(--mp-spacing-3);
-  width: min(900px, calc(100% - 24px));
+  width: min(1400px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
@@ -324,6 +418,7 @@ function close() { emit('update:open', false) }
 .vbd-col-batch   { width: 170px; }
 .vbd-col-expiry  { width: 140px; }
 .vbd-col-desc    { /* flexible */ }
+.vbd-col-loc     { width: 150px; }
 .vbd-col-num     { width: 120px; }
 .vbd-col-unit    { width: 78px; }
 

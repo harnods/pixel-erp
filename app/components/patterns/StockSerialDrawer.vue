@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { MpIcon, MpSpinner } from '@mekari/pixel3'
-import type { WarehouseStockItem } from '~/data/warehouseDetails'
+import { getReservationForSerial, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { outgoingOrders } from '~/data/outgoing'
 
 const props = defineProps<{
   open: boolean
   product: WarehouseStockItem | null
+  warehouseId: string
   initialTab?: 'available' | 'reserved'
 }>()
 
@@ -17,6 +19,13 @@ const list = computed<SerialUnit[]>(() =>
     ? (props.product?.serials?.reserved ?? [])
     : (props.product?.serials?.available ?? [])
 )
+
+function salesNoFor(serial: string): string {
+  if (!props.product) return '—'
+  const r = getReservationForSerial(props.warehouseId, props.product.sku, serial)
+  if (!r) return '—'
+  return outgoingOrders.find((o) => o.id === r.taskId)?.salesNo ?? r.taskId
+}
 
 const search = ref('')
 
@@ -116,32 +125,35 @@ function close() { emit('update:open', false) }
             <colgroup>
               <col style="width: 200px" />
               <col />
+              <col v-if="initialTab === 'reserved'" style="width: 200px" />
             </colgroup>
             <thead>
               <tr>
                 <th class="ssd-th">Serial number</th>
                 <th class="ssd-th">Storage location</th>
+                <th v-if="initialTab === 'reserved'" class="ssd-th">Sales order</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in visibleRows" :key="row.serial" class="ssd-tr">
                 <td class="ssd-td">{{ row.serial }}</td>
                 <td class="ssd-td ssd-td--muted">{{ row.location }}</td>
+                <td v-if="initialTab === 'reserved'" class="ssd-td">{{ salesNoFor(row.serial) }}</td>
               </tr>
               <tr v-if="!filtered.length">
-                <td colspan="2" class="ssd-td ssd-td--empty">
+                <td :colspan="initialTab === 'reserved' ? 3 : 2" class="ssd-td ssd-td--empty">
                   {{ search ? 'No matching serial numbers.' : 'No serial numbers.' }}
                 </td>
               </tr>
               <!-- sentinel row at end of tbody triggers progressive load -->
               <tr aria-hidden="true" class="ssd-sentinel-row">
-                <td colspan="2"><div ref="sentinelEl" /></td>
+                <td :colspan="initialTab === 'reserved' ? 3 : 2"><div ref="sentinelEl" /></td>
               </tr>
             </tbody>
             <!-- sticky count/loading bar at the bottom of the table -->
             <tfoot>
               <tr>
-                <td colspan="2" class="ssd-td--count">
+                <td :colspan="initialTab === 'reserved' ? 3 : 2" class="ssd-td--count">
                   <span v-if="loadingMore" class="ssd-td--count-loading">
                     <MpSpinner size="sm" /> Loading…
                   </span>
