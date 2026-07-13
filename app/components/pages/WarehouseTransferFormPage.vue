@@ -502,7 +502,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <col class="wtf-col-num" />
                 <col class="wtf-col-num" />
                 <col class="wtf-col-num" />
-                <col class="wtf-col-action" />
                 <col class="wtf-col-unit" />
                 <col class="wtf-col-del" />
               </colgroup>
@@ -512,7 +511,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <th class="wtf-th" rowspan="2">SKU</th>
                   <th class="wtf-th wtf-th--group" colspan="2">Origin</th>
                   <th class="wtf-th wtf-th--group" colspan="2">Destination</th>
-                  <th class="wtf-th" rowspan="2" />
                   <th class="wtf-th" rowspan="2">Unit</th>
                   <th class="wtf-th wtf-th--del" rowspan="2" />
                 </tr>
@@ -574,23 +572,32 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         <span v-if="isBatchTrackedSku(row.sku) ? batchHasCounts(row) : Number(row.qty) > 0" class="wtf-avail-after" title="Available after transfer">→ {{ originAfter(row).toLocaleString('id-ID') }}</span>
                       </span>
                     </td>
-                    <!-- Transfer qty: batch -->
+                    <!-- Transfer qty: batch — value + Manage batch stacked as 2 lines in the same cell -->
                     <td v-if="isBatchTrackedSku(row.sku)" class="wtf-td wtf-td--num">
-                      <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
-                      <span v-else class="wtf-batch-empty">—</span>
+                      <span class="wtf-qty-stack">
+                        <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
+                        <span v-else class="wtf-batch-empty">—</span>
+                        <button class="wtf-manage-btn" type="button" @click="openBatchDrawer(row)">Manage batch</button>
+                      </span>
                     </td>
-                    <!-- Transfer qty: serial -->
-                    <td v-else-if="isSerialTrackedSku(row.sku)" class="wtf-td wtf-td--input">
-                      <input
-                        :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
-                        :value="row.qty"
-                        @input="setQty(row, ($event.target as HTMLInputElement).value)"
-                      />
+                    <!-- Transfer qty: serial — input + Manage serial numbers stacked as 2 lines in the same cell -->
+                    <td v-else-if="isSerialTrackedSku(row.sku)" class="wtf-td wtf-td--input wtf-td--input-stacked">
+                      <div class="wtf-qty-stack-input">
+                        <input
+                          :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
+                          :value="row.qty"
+                          @input="setQty(row, ($event.target as HTMLInputElement).value)"
+                        />
+                        <button class="wtf-manage-btn wtf-manage-btn--under-input" type="button" @click="openSerialDrawer(row)">Manage serial numbers</button>
+                      </div>
                     </td>
                     <!-- Transfer qty: regular with storage location -->
                     <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--num">
-                      <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
-                      <span v-else class="wtf-batch-empty">—</span>
+                      <span class="wtf-qty-stack">
+                        <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
+                        <span v-else class="wtf-batch-empty">—</span>
+                        <button class="wtf-manage-btn" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">Manage storage location</button>
+                      </span>
                     </td>
                     <!-- Transfer qty: regular plain -->
                     <td v-else class="wtf-td wtf-td--input">
@@ -604,17 +611,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       {{ onHandFor(row.sku) === undefined ? '—' : onHandFor(row.sku)!.toLocaleString('id-ID') }}
                     </td>
                     <td class="wtf-td wtf-td--num">{{ afterTransfer(row).toLocaleString('id-ID') }}</td>
-                    <!-- Action column -->
-                    <td v-if="isBatchTrackedSku(row.sku)" class="wtf-td wtf-td--action">
-                      <button class="wtf-manage-btn" type="button" @click="openBatchDrawer(row)">Manage batch</button>
-                    </td>
-                    <td v-else-if="isSerialTrackedSku(row.sku)" class="wtf-td wtf-td--action">
-                      <button class="wtf-manage-btn" type="button" @click="openSerialDrawer(row)">Manage serial numbers</button>
-                    </td>
-                    <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--action">
-                      <button class="wtf-manage-btn" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">Manage storage location</button>
-                    </td>
-                    <td v-else class="wtf-td wtf-td--action" />
                     <td class="wtf-td wtf-td--muted">{{ row.unit }}</td>
                     <td class="wtf-td wtf-td--del">
                       <button class="wtf-del-btn" type="button" @click="removeRow(row.id)">
@@ -622,7 +618,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       </button>
                     </td>
                   </template>
-                  <td v-else class="wtf-td wtf-td--empty" colspan="8" />
+                  <td v-else class="wtf-td wtf-td--empty" colspan="7" />
                 </tr>
               </tbody>
             </table>
@@ -674,6 +670,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :model-value="batchDrawerRow?.batchLines ?? []"
       :origin-location-paths="batchDrawerOriginBins"
       :dest-location-paths="destLocationPaths"
+      :origin-warehouse-name="warehouseName(originId)"
+      :dest-warehouse-name="warehouseName(destId)"
       @update:open="batchDrawerOpen = $event"
       @save="saveBatchLines"
     />
@@ -904,10 +902,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-table { width: 100%; table-layout: auto; border-collapse: collapse; border-spacing: 0; min-width: 860px; }
 /* Proportional column widths; the remove column hugs its icon button (width:1px →
    shrinks to min-content in auto layout) and sits at the right edge. */
-.wtf-col-prod   { width: 22%; }
+.wtf-col-prod   { width: 35%; }
 .wtf-col-sku    { width: 10%; }
 .wtf-col-num    { width: 12%; }
-.wtf-col-action { width: auto; }
 .wtf-col-unit   { width: 7%; }
 .wtf-col-del    { width: 52px; }
 /* Form-row table: header + editable cells are white; read-only cells are grey
@@ -953,6 +950,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; box-shadow: none !important; }
 .wtf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 
+/* Transfer qty (batch) — qty value + Manage batch stacked as 2 lines in one cell,
+   same right-aligned column pattern as .wtf-avail above. */
+.wtf-qty-stack { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+
+/* Transfer qty (serial) — input on top, Manage serial numbers stacked below it,
+   still edge-to-edge/no double border like every other .wtf-td--input cell. */
+.wtf-td--input-stacked { padding: 0 0 6px; }
+.wtf-qty-stack-input { display: flex; flex-direction: column; align-items: flex-end; }
+.wtf-qty-stack-input .wtf-qty-input { height: 32px; }
+.wtf-manage-btn--under-input { padding: 0 var(--mp-spacing-2); }
+
 /* Product cell — a changeable combobox: rich trigger [photo | name/desc | chevron]. */
 .wtf-td--prod { padding: 0; background: var(--mp-background-neutral, #fff); vertical-align: top; }
 .wtf-td--prod:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
@@ -990,8 +998,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .wtf-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-/* ── Action column ────────────────────────────────────────────────────────── */
-.wtf-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+/* ── Manage batch/serial/location links — now stacked inside the Transfer qty cell ── */
 .wtf-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .wtf-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .wtf-manage-btn--set { color: var(--mp-text-success, #18794e); }

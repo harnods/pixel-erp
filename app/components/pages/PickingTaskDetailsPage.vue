@@ -20,6 +20,7 @@ import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { generatePickingListPdf } from '~/utils/pickingListPdf'
 import { toast } from '@mekari/pixel3'
 
 type TaskStatus = 'open' | 'in progress' | 'partially picked' | 'completed' | 'canceled'
@@ -123,6 +124,10 @@ const lastUpdated = computed(() => {
 function startPickingAndNavigate() {
   startPicking(props.orderId)
   router.push(`/picking/${props.orderId}/pick`)
+}
+function printPickingList() {
+  if (!task.value) return
+  generatePickingListPdf(task.value, lineItems.value)
 }
 const cantPackModalOpen = ref(false)
 function createPacking() {
@@ -542,7 +547,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Print picking list</MpPopoverListItem>
+            <MpPopoverListItem @click="printPickingList">Print picking list</MpPopoverListItem>
             <MpPopoverListItem>Print label</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>

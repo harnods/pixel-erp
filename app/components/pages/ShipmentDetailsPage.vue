@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
-import { getShipment } from '~/data/deliveryTasks'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import {
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
+  MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpDatePicker, MpIcon, toast,
+} from '@mekari/pixel3'
+import { getShipment, completeShipment } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTimeLong } from '~/utils/date'
+import { generateShipmentPdf } from '~/utils/shipmentPdf'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -42,7 +48,76 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Shipped' } }) }
 function viewSalesOrder(row: Row) { router.push(`/outbound-delivery/${row.salesOrderId}`) }
 function viewPacking(row: Row) { router.push(`/packing/${row.packingTaskId}`) }
-function printPdf() { /* generates the shipment PDF — not built in this prototype */ }
+function printPdf() {
+  if (!shipment.value) return
+  generateShipmentPdf(shipment.value, rows.value.map((r) => ({
+    salesNo: r.salesNo,
+    packingTaskNo: r.packingTaskNo,
+    source: r.source,
+    courier: r.courier,
+    trackingNo: r.trackingNo,
+    skuQty: r.skuQty,
+    orderQty: r.orderQty,
+    shippedQty: r.shippedQty,
+  })))
+}
+
+/** File-type → Pixel document icon for an attachment (mirrors Sales/Outgoing order detail). */
+function attachmentIcon(name: string): string {
+  const ext = name.toLowerCase().split('.').pop() ?? ''
+  if (ext === 'pdf') return 'pdf-document'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'heic'].includes(ext)) return 'image-document'
+  return 'attachment'
+}
+
+// ── Complete shipment — courier/customer has signed for the goods ──────────────
+function toDisplayDate(iso: string) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+function toISODate(display: string) {
+  const [d, m, y] = display.split('/')
+  return `${y}-${m}-${d}`
+}
+const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
+
+const completeOpen = ref(false)
+const receivedDate = ref(todayDisplay)
+const receivedBy = ref('')
+const receivedByError = ref('')
+const note = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
+const attachedFiles = ref<File[]>([])
+
+function onFileChange(ev: Event) {
+  const files = (ev.target as HTMLInputElement).files
+  for (const f of Array.from(files ?? [])) {
+    if (!attachedFiles.value.some(x => x.name === f.name)) attachedFiles.value.push(f)
+  }
+  if (fileInput.value) fileInput.value.value = ''
+}
+function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
+
+function openComplete() {
+  receivedDate.value = todayDisplay
+  receivedBy.value = ''
+  receivedByError.value = ''
+  note.value = ''
+  attachedFiles.value = []
+  completeOpen.value = true
+}
+function confirmComplete() {
+  if (!shipment.value) return
+  if (!receivedBy.value.trim()) { receivedByError.value = 'You must fill in received by'; return }
+  completeShipment(shipment.value.shipmentSeq, {
+    receivedDate: toISODate(receivedDate.value),
+    receivedBy: receivedBy.value.trim(),
+    note: note.value.trim() || undefined,
+    proofFile: attachedFiles.value[0]?.name,
+  })
+  toast.notify({ variant: 'success', title: 'Shipment completed', maxWidth: 'max-content' })
+  completeOpen.value = false
+}
 </script>
 
 <template>
@@ -53,6 +128,7 @@ function printPdf() { /* generates the shipment PDF — not built in this protot
         <button class="detail-breadcrumb" @click="goBack">Shipped</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ shipment.shipmentNo }}</h1>
+          <ErpStatusBadge :status="shipment.status" badge-for="additionalInformation" size="md" />
         </div>
       </div>
     </header>
@@ -67,6 +143,10 @@ function printPdf() { /* generates the shipment PDF — not built in this protot
         <div class="content-list-col">
           <ContentList label="Transaction date" :value="shipment.transactionDate ? formatDateTimeLong(shipment.transactionDate) : '—'" />
           <ContentList label="Transaction no." :value="shipment.shipmentNo" />
+          <template v-if="shipment.status === 'completed'">
+            <ContentList label="Received by" :value="shipment.receivedBy || '—'" />
+            <ContentList label="Date received" :value="shipment.receivedDate ? formatDateTimeLong(shipment.receivedDate) : '—'" />
+          </template>
         </div>
       </section>
 
@@ -131,11 +211,85 @@ function printPdf() { /* generates the shipment PDF — not built in this protot
         </table>
       </div>
 
+      <section v-if="shipment.status === 'completed'" class="detail-notes-left">
+        <ContentList label="Note">
+          <p class="detail-note-text">{{ shipment.receivedNote || '—' }}</p>
+        </ContentList>
+        <ContentList label="Attachment">
+          <div v-if="shipment.proofFile" class="detail-attach-list">
+            <a class="detail-attach" @click.prevent>
+              <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(shipment.proofFile)" size="md" /></span>
+              <span class="detail-attach-meta">
+                <span class="detail-attach-name">{{ shipment.proofFile }}</span>
+              </span>
+            </a>
+          </div>
+          <p v-else class="detail-note-text">—</p>
+        </ContentList>
+      </section>
+
     </div>
 
     <footer class="detail-footer">
       <button class="detail-btn detail-btn--secondary" @click="printPdf">Print PDF</button>
+      <button v-if="shipment.status === 'open'" class="detail-btn detail-btn--primary" @click="openComplete">Complete shipment</button>
     </footer>
+
+    <!-- Complete shipment -->
+    <MpModal
+      id="shd-complete" :is-open="completeOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="completeOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>Complete shipment<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <MpFormControl id="shd-received-date" is-required class="shd-complete-field">
+            <MpFormLabel>Date received</MpFormLabel>
+            <div class="shd-datepicker">
+              <MpDatePicker id="shd-received-date-dp" v-model="receivedDate" format="DD/MM/YYYY" value-type="format" use-portal />
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="shd-received-by" is-required :is-invalid="!!receivedByError" class="shd-complete-field">
+            <MpFormLabel>Received by</MpFormLabel>
+            <MpInput
+              id="shd-received-by-input" v-model="receivedBy" placeholder="Recipient name"
+              @update:model-value="receivedByError = ''"
+            />
+            <MpFormErrorMessage>{{ receivedByError }}</MpFormErrorMessage>
+          </MpFormControl>
+
+          <MpFormControl id="shd-note" class="shd-complete-field">
+            <MpFormLabel>Note</MpFormLabel>
+            <MpTextarea id="shd-note-textarea" v-model="note" is-full-width :rows="3" />
+          </MpFormControl>
+
+          <MpFormControl id="shd-attachment" class="shd-complete-field">
+            <MpFormLabel>Attachment</MpFormLabel>
+            <div class="shd-attachment">
+              <input ref="fileInput" type="file" accept=".pdf,.jpg,.jpeg,.png" class="shd-file-hidden" @change="onFileChange" />
+              <div class="shd-attachment-row">
+                <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
+                <span class="shd-attach-or">or drag and drop here</span>
+              </div>
+              <ul v-if="attachedFiles.length" class="shd-file-list">
+                <li v-for="f in attachedFiles" :key="f.name" class="shd-file-item">
+                  <span class="shd-file-name">{{ f.name }}</span>
+                  <button class="shd-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
+                </li>
+              </ul>
+            </div>
+          </MpFormControl>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="shd-modal-footer">
+            <MpButton variant="ghost" is-rounded @click="completeOpen = false">Cancel</MpButton>
+            <MpButton variant="primary" is-rounded @click="confirmComplete">Complete shipment</MpButton>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
   </div>
 
@@ -221,6 +375,32 @@ function printPdf() { /* generates the shipment PDF — not built in this protot
 }
 .detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
+.detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
+.detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
 
 .shd-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); height: 100%; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* Note / Attachment (mirrors Outgoing order detail) */
+.detail-notes-left { display: flex; flex-direction: column; }
+.detail-note-text { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); white-space: pre-line; }
+.detail-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.detail-attach { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; width: fit-content; }
+.detail-attach-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.detail-attach-meta { display: flex; flex-direction: column; }
+.detail-attach-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
+.detail-attach:hover .detail-attach-name { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Complete shipment modal */
+.shd-complete-field { margin-bottom: var(--mp-spacing-4); }
+.shd-datepicker :deep(.mp-date-picker) { width: 100%; }
+.shd-attachment { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.shd-file-hidden { display: none; }
+.shd-attachment-row { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.shd-attach-or { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.shd-file-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.shd-file-item { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.shd-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shd-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
+.shd-file-remove:hover { color: var(--mp-text-default); }
+.shd-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

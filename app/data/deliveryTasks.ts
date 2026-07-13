@@ -45,14 +45,26 @@ export interface DeliveryTask {
   courier?: string;
   /** tracking / waybill number (set at create shipping) */
   trackingNo?: string;
-  /** proof-of-pickup file name (uploaded at handover) */
+  /** signed proof-of-delivery file name (uploaded when the shipment is completed) */
   proofFile?: string;
   /** the shipment batch this delivery went out under (bulk "Handover to courier"
    *  can cover several deliveries from the same warehouse at once). */
   shipmentNo?: string;
+  /** the SHIPMENT doc's own status (shown on the "Shipped" tab, independent of
+   *  this delivery's own status above) — "open" once handed to the courier, not
+   *  yet confirmed; "completed" once the courier/customer has signed for it
+   *  (proof uploaded). Same value across every delivery sharing one shipmentNo. */
+  shipmentStatus?: "open" | "completed";
+  /** date the goods were confirmed received (ISO), set once completed */
+  receivedDate?: string;
+  /** name of the person who received/signed for the goods, set once completed */
+  receivedBy?: string;
+  /** free-text note captured when completing the shipment */
+  receivedNote?: string;
 }
 
 const COURIERS = ["JNE", "SiCepat", "J&T Express", "AnterAja", "Internal fleet"];
+const RECEIVER_NAMES = ["Andi Wijaya", "Siti Nurhaliza", "Budi Santoso", "Rina Marlina"];
 
 // A Desty marketplace channel never hands over to the seller's internal fleet.
 const MARKETPLACE_COURIERS = COURIERS.filter((c) => c !== "Internal fleet");
@@ -80,6 +92,10 @@ const SEED_STATUSES: DeliveryTask["status"][] = [
   "ready to ship", "shipped", "ready to ship", "shipped", "canceled", "ready to ship",
 ];
 
+// Shipment-doc status mix for seeded shipped deliveries — mostly Open (dispatched,
+// awaiting courier confirmation), some Completed (signed proof already on file).
+const SEED_SHIPMENT_STATUSES: NonNullable<DeliveryTask["shipmentStatus"]>[] = ["open", "completed"];
+
 // ── Seed: a delivery for every completed packing task (one per sales order) —
 // finishing packing always creates its delivery, so seed data mirrors that. ──
 function seedTasks(): DeliveryTask[] {
@@ -90,6 +106,7 @@ function seedTasks(): DeliveryTask[] {
     idx++;
     const order = outgoingOrders.find((o) => o.id === pack.salesOrderId);
     const status = SEED_STATUSES[idx % SEED_STATUSES.length]!;
+    const shipmentStatus = status === "shipped" ? SEED_SHIPMENT_STATUSES[idx % SEED_SHIPMENT_STATUSES.length]! : undefined;
     const toShipQty = pack.toPackQty;
     // marketplace ⇒ always online shipping; others alternate self / online
     const method: "self" | "online" = isMarketplaceOrder(order) ? "online" : (idx % 2 === 0 ? "self" : "online");
@@ -114,10 +131,14 @@ function seedTasks(): DeliveryTask[] {
       // online shipping → courier + tracking; self delivery → optional (often blank)
       courier: status !== "canceled" && method === "online" ? COURIERS[idx % 4] : undefined,
       trackingNo: status !== "canceled" && method === "online" ? `SD${String(9000 + thisSeq).padStart(7, "0")}` : undefined,
-      proofFile: status === "shipped" ? "pickup-proof.jpg" : undefined,
+      // proof of delivery only exists once the shipment doc is actually completed
+      proofFile: shipmentStatus === "completed" ? "pickup-proof.jpg" : undefined,
       // seed shipped deliveries as their own single-delivery shipment batch, so the
       // Shipped tab (grouped by shipment) has demo content out of the box.
       shipmentNo: status === "shipped" ? `Shipment #${60000 + thisSeq}` : undefined,
+      shipmentStatus,
+      receivedDate: shipmentStatus === "completed" ? new Date().toISOString().slice(0, 10) : undefined,
+      receivedBy: shipmentStatus === "completed" ? RECEIVER_NAMES[idx % RECEIVER_NAMES.length] : undefined,
     });
     void order;
   }
@@ -153,8 +174,12 @@ function seedShippedDeliveries(startSeq: number): DeliveryTask[] {
       shippedDate: new Date().toISOString(),
       courier: COURIERS[k % COURIERS.length],
       trackingNo: `SD${String(9500 + thisSeq).padStart(7, "0")}`,
+      // these are long-since-processed historical shipments — always Completed.
       proofFile: "pickup-proof.jpg",
       shipmentNo: `Shipment #${60000 + thisSeq}`,
+      shipmentStatus: "completed",
+      receivedDate: new Date().toISOString().slice(0, 10),
+      receivedBy: RECEIVER_NAMES[k % RECEIVER_NAMES.length],
     });
   });
   return out;
@@ -355,11 +380,23 @@ function stampSaveTime(dateOnly: string): string {
   return `${dateOnly}T${hh}:${mm}:00`;
 }
 
+/** One shipment doc created by a handover batch. */
+export interface HandoverResult {
+  shipmentNo: string;
+  shipmentSeq: string;
+  courier: string;
+  shippedCount: number;
+}
+
 /**
  * Hand several ready-to-ship deliveries (same warehouse) over to the courier in one
  * batch — each keeps/gets its own courier + tracking no. (marketplace orders arrive
  * with theirs fixed; non-marketplace ones take whatever the admin entered on the
- * handover page), and all share one shipment doc number, date, and assignee.
+ * handover page). Deliveries are grouped by their (post-assignment) courier — each
+ * distinct courier gets its OWN shipment doc number, since a shipment physically
+ * travels with one courier at a time; a batch spanning several couriers produces
+ * several shipments. Every shipment doc starts "open" (dispatched, handover not yet
+ * confirmed) — it becomes "completed" once the courier/customer signs for the goods.
  */
 export function handoverToCourierBulk(
   taskIds: string[],
@@ -369,30 +406,42 @@ export function handoverToCourierBulk(
     courierByTaskId?: Record<string, string>;
     trackingNoByTaskId?: Record<string, string>;
   },
-): { shipmentNo: string; shipmentSeq: string; shippedCount: number } {
-  const seq = freshShipmentSeq();
-  const shipmentNo = `Shipment #${seq}`;
-  let shippedCount = 0;
+): HandoverResult[] {
+  const groups = new Map<string, string[]>();
   for (const id of taskIds) {
     const t = getDeliveryTask(id);
     if (!t || t.status !== "ready to ship") continue;
-    t.status = "shipped";
-    t.shippedQty = t.toShipQty;
-    t.shippedDate = stampSaveTime(opts.transactionDate);
-    t.assignee = opts.assignee;
-    t.shipmentNo = shipmentNo;
-    const courier = opts.courierByTaskId?.[id];
-    const trackingNo = opts.trackingNoByTaskId?.[id];
-    if (courier) t.courier = courier;
-    if (trackingNo) t.trackingNo = trackingNo;
-    shippedCount++;
+    const courier = opts.courierByTaskId?.[id]?.trim() || t.courier || "";
+    if (!groups.has(courier)) groups.set(courier, []);
+    groups.get(courier)!.push(id);
+  }
+
+  const results: HandoverResult[] = [];
+  for (const [courier, ids] of groups) {
+    const seq = freshShipmentSeq();
+    const shipmentNo = `Shipment #${seq}`;
+    let shippedCount = 0;
+    for (const id of ids) {
+      const t = getDeliveryTask(id)!;
+      t.status = "shipped";
+      t.shipmentStatus = "open";
+      t.shippedQty = t.toShipQty;
+      t.shippedDate = stampSaveTime(opts.transactionDate);
+      t.assignee = opts.assignee;
+      t.shipmentNo = shipmentNo;
+      if (courier) t.courier = courier;
+      const trackingNo = opts.trackingNoByTaskId?.[id];
+      if (trackingNo) t.trackingNo = trackingNo;
+      shippedCount++;
+    }
+    results.push({ shipmentNo, shipmentSeq: String(seq), courier, shippedCount });
   }
   persistDelivery();
-  return { shipmentNo, shipmentSeq: String(seq), shippedCount };
+  return results;
 }
 
 /** Every delivery shipped together under one shipment batch, oldest call wins the
- *  summary fields (assignee/date/warehouse are the same across the batch). */
+ *  summary fields (assignee/date/warehouse/status are the same across the batch). */
 export interface ShipmentSummary {
   shipmentSeq: string;
   shipmentNo: string;
@@ -400,6 +449,15 @@ export interface ShipmentSummary {
   transactionDate: string;
   warehouseId: string;
   warehouseName: string;
+  /** the shipment doc's own status — "open" (dispatched, not yet confirmed) or
+   *  "completed" (courier/customer signed for it). */
+  status: "open" | "completed";
+  /** set once completed — who received/signed for the goods, when, and any note. */
+  receivedDate?: string;
+  receivedBy?: string;
+  receivedNote?: string;
+  /** signed proof-of-delivery file name, set once completed. */
+  proofFile?: string;
   deliveries: DeliveryTask[];
 }
 export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
@@ -413,6 +471,11 @@ export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
     transactionDate: first.shippedDate ?? "",
     warehouseId: first.warehouseId,
     warehouseName: first.warehouseName,
+    status: first.shipmentStatus ?? "open",
+    receivedDate: first.receivedDate,
+    receivedBy: first.receivedBy,
+    receivedNote: first.receivedNote,
+    proofFile: first.proofFile,
     deliveries,
   };
 }
@@ -436,9 +499,30 @@ export function listShipments(warehouseIds?: string[]): ShipmentSummary[] {
       transactionDate: first.shippedDate ?? "",
       warehouseId: first.warehouseId,
       warehouseName: first.warehouseName,
+      status: first.shipmentStatus ?? "open",
       deliveries,
     };
   });
+}
+
+/**
+ * Mark a shipment doc as completed — the courier/customer has signed for the
+ * goods. Applies to every delivery sharing this shipment no. together (they were
+ * dispatched as one batch, so they're confirmed received as one batch too).
+ */
+export function completeShipment(
+  shipmentSeq: string,
+  opts: { receivedDate: string; receivedBy: string; note?: string; proofFile?: string },
+): void {
+  for (const t of deliveryTasks) {
+    if (t.shipmentNo?.replace(/\D/g, "") !== shipmentSeq) continue;
+    t.shipmentStatus = "completed";
+    t.receivedDate = opts.receivedDate;
+    t.receivedBy = opts.receivedBy;
+    t.receivedNote = opts.note;
+    if (opts.proofFile) t.proofFile = opts.proofFile;
+  }
+  persistDelivery();
 }
 
 export function activeDeliveryTasksFor(warehouseId: string, assignee: string): DeliveryTask[] {

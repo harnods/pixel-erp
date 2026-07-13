@@ -50,6 +50,10 @@ const props = defineProps<{
   originLocationPaths?: string[]
   /** All bins available in the destination warehouse */
   destLocationPaths?: string[]
+  /** Transfer only: origin warehouse name — shown in the "Out from" section title. */
+  originWarehouseName?: string
+  /** Transfer only: destination warehouse name — shown in the "Into" section title. */
+  destWarehouseName?: string
   /** Picking only: the line's to-pick qty — used to pre-trim batch rows when the drawer opens. */
   targetCount?: number
   /** Picking only: the full order demand for this SKU (shown in header for reference). */
@@ -472,6 +476,17 @@ const locSearches = reactive<Record<string, string>>({})
 const batchLocOriginTotal = computed(() => batchLocOriginRows.value.reduce((s, r) => s + (Number(r.qty) || 0), 0))
 const batchLocDestTotal = computed(() => batchLocDestRows.value.reduce((s, r) => s + (Number(r.qty) || 0), 0))
 
+// Transfer: keep a single (not-yet-split) destination location's qty mirroring
+// the "Out from" total live, so editing the origin qty after already picking a
+// destination still carries through. Two or more destination locations means the
+// operator is deliberately splitting it, so the auto-fill stops there.
+watch(batchLocOriginRows, () => {
+  if (!isTransfer.value) return
+  const filledDest = batchLocDestRows.value.filter(r => r.locationId)
+  if (filledDest.length !== 1) return
+  filledDest[0]!.qty = batchLocOriginTotal.value > 0 ? String(batchLocOriginTotal.value) : ''
+}, { deep: true })
+
 function openBatchLocDrawer(row: WorkRow) {
   batchLocRow.value = row
   batchLocOriginRows.value = row.originLocRows.some(r => r.locationId)
@@ -483,6 +498,10 @@ function openBatchLocDrawer(row: WorkRow) {
     // Put-away: default the first bin's qty to the full received qty — the operator
     // just picks a bin, or lowers the qty and adds more rows to split it.
     batchLocDestRows.value = [{ id: locSeq++, locationId: '', qty: row.onHand > 0 ? String(row.onHand) : '' }]
+  } else if (isTransfer.value) {
+    // Transfer: default the single destination row to the full "Out from" qty —
+    // the operator just picks a bin, or adds a second destination row to split it.
+    batchLocDestRows.value = [{ id: locSeq++, locationId: '', qty: batchLocOriginTotal.value > 0 ? String(batchLocOriginTotal.value) : '' }]
   } else {
     batchLocDestRows.value = [makeLocRow()]
   }
@@ -516,6 +535,13 @@ function selectBatchOriginLoc(lr: LocRow, locationId: string) {
 function selectBatchDestLoc(lr: LocRow, locationId: string) {
   lr.locationId = locationId; locActiveKey.value = null; delete locSearches[`d-${lr.id}`]
   if (batchLocDestRows.value[batchLocDestRows.value.length - 1]?.id === lr.id) batchLocDestRows.value.push(makeLocRow())
+  // Transfer: a single destination location defaults to the full "Out from" qty —
+  // picking a SECOND destination location means the operator is splitting it, so
+  // this default-fill only applies while exactly one destination is chosen.
+  if (isTransfer.value) {
+    const filledDest = batchLocDestRows.value.filter(r => r.locationId)
+    if (filledDest.length === 1) lr.qty = batchLocOriginTotal.value > 0 ? String(batchLocOriginTotal.value) : ''
+  }
 }
 
 function removeBatchOriginLoc(id: number) { batchLocOriginRows.value = batchLocOriginRows.value.filter(r => r.id !== id) }
@@ -524,8 +550,8 @@ function removeBatchDestLoc(id: number) { batchLocDestRows.value = batchLocDestR
 async function saveBatchLocDrawer() {
   const filledOrigin = batchLocOriginRows.value.filter(r => r.locationId && Number(r.qty) > 0)
   const filledDest = batchLocDestRows.value.filter(r => r.locationId && Number(r.qty) > 0)
-  if (filledOrigin.length && filledDest.length && batchLocOriginTotal.value !== batchLocDestTotal.value) {
-    batchLocError.value = `Origin total (${batchLocOriginTotal.value}) doesn't match destination total (${batchLocDestTotal.value})`
+  if (filledOrigin.length && filledDest.length && batchLocDestTotal.value > batchLocOriginTotal.value) {
+    batchLocError.value = `Destination total (${batchLocDestTotal.value}) cannot exceed origin total (${batchLocOriginTotal.value})`
     return
   }
   const total = batchLocOriginTotal.value || batchLocDestTotal.value
@@ -933,17 +959,17 @@ function fmtNum(n: number | null): string {
                 <!-- ON HAND -->
                 <td v-if="!hideStockStats" class="mbd-td mbd-td--num mbd-td--muted">{{ row.onHand.toLocaleString('id-ID') }}</td>
 
-                <!-- COUNTED: 2-row cell (loc mode) or plain input. Put-away's received
-                     qty is a known fact from receiving — show it directly, not "—". -->
-                <td v-if="showLocSplit" class="mbd-td mbd-td--loc-cell">
-                  <div class="mbd-cell-row mbd-cell-row--total">
+                <!-- COUNTED: value + Manage location stacked as 2 lines in one cell —
+                     same compact pattern as the Transfer qty column on the main
+                     transfer form. Put-away's received qty is a known fact from
+                     receiving — show it directly, not "—". -->
+                <td v-if="showLocSplit" class="mbd-td mbd-td--num">
+                  <span class="mbd-qty-stack">
                     <span v-if="isPutAway" class="mbd-cell-val">{{ row.onHand.toLocaleString('id-ID') }}</span>
                     <span v-else-if="row.counted !== null" class="mbd-cell-val">{{ row.counted.toLocaleString('id-ID') }}</span>
                     <span v-else class="mbd-cell-empty">—</span>
-                  </div>
-                  <div class="mbd-cell-row mbd-cell-row--action">
                     <button class="mbd-loc-link" :class="{ 'mbd-loc-link--set': batchLocIsSet(row) }" type="button" @click="openBatchLocDrawer(row)">Manage location</button>
-                  </div>
+                  </span>
                 </td>
                 <td v-else class="mbd-td mbd-td--input mbd-td--counted" :class="{ 'mbd-td--counted-error': pickOverLimit }">
                   <MpTooltip
@@ -1094,7 +1120,7 @@ function fmtNum(n: number | null): string {
         <!-- Out from (origin) -->
         <div v-if="hasOriginLoc" class="mbd-loc2-section">
           <div class="mbd-loc2-section-header">
-            <span class="mbd-loc2-section-title">Out from (origin warehouse)</span>
+            <span class="mbd-loc2-section-title">Out from ({{ originWarehouseName || 'origin warehouse' }})</span>
             <span class="mbd-loc2-total">Total: {{ batchLocOriginTotal }}</span>
           </div>
           <div class="mbd-loc-tbl-wrap"><table class="mbd-loc-tbl">
@@ -1155,7 +1181,7 @@ function fmtNum(n: number | null): string {
         <!-- Into (destination) -->
         <div v-if="hasDestLoc" class="mbd-loc2-section">
           <div class="mbd-loc2-section-header">
-            <span class="mbd-loc2-section-title">{{ isPutAway ? 'Put away in' : 'Into (destination warehouse)' }}</span>
+            <span class="mbd-loc2-section-title">{{ isPutAway ? 'Put away in' : `Into (${destWarehouseName || 'destination warehouse'})` }}</span>
             <span class="mbd-loc2-total">Total: {{ batchLocDestTotal }}</span>
           </div>
           <div class="mbd-loc-tbl-wrap"><table class="mbd-loc-tbl">
@@ -1527,16 +1553,11 @@ function fmtNum(n: number | null): string {
 .mbd-batch-placeholder { color: var(--mp-text-placeholder); font-size: var(--mp-font-sizes-md); }
 .mbd-batch-chevron { color: var(--mp-icon-default); flex-shrink: 0; }
 
-/* ── 2-row "Manage location" cell in batch table ─────────────────────────────── */
-.mbd-td--loc-cell {
-  padding: 0; background: var(--mp-background-neutral-subtle);
-  display: flex; flex-direction: column; height: auto;
-}
-.mbd-cell-row { display: flex; align-items: center; height: 40px; padding: 0 var(--mp-spacing-2); }
-.mbd-cell-row--total { justify-content: flex-end; }
+/* ── Value + "Manage location" stacked as 2 lines in one cell — same compact
+   pattern as .wtf-qty-stack on the main transfer form's Transfer qty column. ── */
+.mbd-qty-stack { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .mbd-cell-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .mbd-cell-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.mbd-cell-row--action { border-top: 1px solid var(--mp-border-default); justify-content: flex-end; }
 .mbd-loc-link {
   background: none; border: none; cursor: pointer; padding: 0;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-link, #3b82f6); text-decoration: none;

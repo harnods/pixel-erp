@@ -200,14 +200,24 @@ async function handleSave() {
   if (!validate()) { scrollToFirstError(); return }
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
-  const { shipmentSeq } = handoverToCourierBulk(taskIds.value, {
+  const shipments = handoverToCourierBulk(taskIds.value, {
     assignee: assigneeLabel.value,
     transactionDate: toISODate(transactionDate.value),
     courierByTaskId: Object.fromEntries(rows.value.map(r => [r.id, courierByRow.value[r.id]?.trim() ?? ''])),
     trackingNoByTaskId: Object.fromEntries(rows.value.map(r => [r.id, trackingByRow.value[r.id]?.trim() ?? ''])),
   })
-  toast.notify({ variant: 'success', title: 'Shipment created', maxWidth: 'max-content' })
-  router.push(`/outbound-delivery/shipment/${shipmentSeq}`)
+  toast.notify({
+    variant: 'success',
+    title: shipments.length > 1 ? `${shipments.length} shipments created` : 'Shipment created',
+    maxWidth: 'max-content',
+  })
+  // A mixed-courier batch splits into several shipments, so there's no single
+  // details page to land on — go back to the Shipped tab instead.
+  if (shipments.length === 1) {
+    router.push(`/outbound-delivery/shipment/${shipments[0]!.shipmentSeq}`)
+  } else {
+    router.push({ path: '/outbound-delivery', query: { tab: 'Shipped' } })
+  }
 }
 </script>
 

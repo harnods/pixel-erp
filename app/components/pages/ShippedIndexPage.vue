@@ -6,6 +6,7 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { useTableState } from '~/composables/useTableState'
 import { listShipments } from '~/data/deliveryTasks'
 import { warehouses } from '~/data/warehouses'
@@ -26,7 +27,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Handed over to courier' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'success', title: 'Shipment created' , maxWidth: 'max-content'})
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })
@@ -43,7 +44,7 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Rows — one per shipment batch (a batch can cover several deliveries) ───────
 interface Row {
   shipmentSeq: string; shipmentNo: string; transactionDate: string; assignee: string
-  warehouseId: string; warehouseName: string; deliveryCount: number
+  warehouseId: string; warehouseName: string; deliveryCount: number; status: 'open' | 'completed'
 }
 const baseRows = computed<Row[]>(() => {
   if (demoState.value !== 'data') return []
@@ -55,6 +56,7 @@ const baseRows = computed<Row[]>(() => {
     warehouseId: h.warehouseId,
     warehouseName: h.warehouseName,
     deliveryCount: h.deliveries.length,
+    status: h.status,
   }))
 })
 
@@ -65,6 +67,7 @@ const columns: TableColumn[] = [
   { key: 'warehouseName',   label: 'Warehouse',         width: '180px', sortType: 'text' },
   { key: 'assignee',        label: 'Assignee',          width: '160px', sortType: 'text' },
   { key: 'deliveryCount',   label: 'Delivery qty',      width: '120px', align: 'right', sortType: 'number' },
+  { key: 'status',          label: 'Status',            width: '130px', sortType: 'text' },
 ]
 // Column show/hide — Shipment no. stays on; the sort menu's "Hide column" flips these off,
 // the ColumnSettings menu turns them back on.
@@ -73,8 +76,9 @@ const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
 const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 function hideColumn(key: string) { colVis[key] = false }
 
-// ─── Filters — Warehouse (hidden when scoped) ───
+// ─── Filters — Warehouse (hidden when scoped), Status ───
 const warehouseFilter = ref('')
+const statusFilter = ref('')
 
 const warehouseOptions = computed(() => {
   const src = isScoped.value
@@ -83,6 +87,11 @@ const warehouseOptions = computed(() => {
   return src.map(w => ({ label: w.name, value: w.id }))
 })
 const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
+const statusOptions = [
+  { label: 'Open',      value: 'open' },
+  { label: 'Completed', value: 'completed' },
+]
+const statusLabel = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
 
 const {
   search, currentPage, paginated, total, perPage,
@@ -95,13 +104,14 @@ const {
       || row.assignee.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
     const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
-    return matchesSearch && matchesWarehouse
+    const matchesStatus = !statusFilter.value || row.status === statusFilter.value
+    return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
-watch(warehouseFilter, () => setPage(1))
+watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!statusFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = ''; statusFilter.value = '' }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -149,6 +159,25 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <MpPopoverListItem
                 v-for="opt in warehouseOptions" :key="opt.value"
                 :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
+              >{{ opt.label }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+
+        <MpPopover id="shp-status-filter" is-close-on-select>
+          <MpPopoverTrigger>
+            <MpSelect
+              id="shp-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''"
+            >
+              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+            <MpPopoverList>
+              <MpPopoverListItem
+                v-for="opt in statusOptions" :key="opt.value"
+                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value"
               >{{ opt.label }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -218,6 +247,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Numeric cells ── -->
     <template #cell-deliveryCount="{ value }">{{ formatNum(value as number) }}</template>
+
+    <!-- ── Status ── -->
+    <template #cell-status="{ value }"><ErpStatusBadge :status="value as string" /></template>
 
     <!-- ── Actions kebab ── -->
     <template #actions="{ row }">

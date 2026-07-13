@@ -16,9 +16,10 @@ import {
 } from '~/data/packingTaskDetails'
 import { getPackingTask, startPacking, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
-import { getShipment, type ShipmentSummary } from '~/data/deliveryTasks'
+import { getShipment, marketplaceShipping, type ShipmentSummary } from '~/data/deliveryTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { generatePackingListPdf } from '~/utils/packingListPdf'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 
@@ -81,6 +82,11 @@ function openViewSerial(item: PackLineItem) { viewSerialItem.value = item }
 
 const linkedOrder = computed(() => outgoingOrders.find(o => o.id === task.value?.salesOrderId))
 const linkedDelivery = computed(() => task.value ? getDeliveryForPackingTask(task.value.id) : [])
+// Courier / tracking no. surface from the linked delivery; for marketplace orders
+// they're pre-assigned by the channel even before shipping is processed (mirrors
+// the same lookup on the sales order detail page).
+const courier = computed(() => linkedDelivery.value.find(d => d.courier)?.courier ?? marketplaceShipping(linkedOrder.value)?.courier)
+const trackingNo = computed(() => linkedDelivery.value.find(d => d.trackingNo)?.trackingNo ?? marketplaceShipping(linkedOrder.value)?.trackingNo)
 // Delivery is just an in-between state (packed, waiting to leave) — not a document
 // worth linking to on its own. Once shipped, the shipment batch is what matters.
 const linkedShipments = computed<ShipmentSummary[]>(() => {
@@ -107,6 +113,17 @@ const lastUpdated = computed(() => {
 function startPackingAndNavigate() {
   startPacking(props.orderId)
   router.push(`/packing/${props.orderId}/pack`)
+}
+async function printPackingList() {
+  if (!task.value) return
+  await generatePackingListPdf(task.value, lineItems.value, {
+    salesNo: linkedOrder.value?.salesNo,
+    customer: linkedOrder.value?.customer,
+    source: linkedOrder.value?.source,
+    dueDate: linkedOrder.value?.dueDate,
+    courier: courier.value,
+    trackingNo: trackingNo.value,
+  })
 }
 // Finishing packing auto-creates the delivery (see PackItemsPage.vue) — a
 // completed task always has one to jump to.
@@ -469,7 +486,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Print packing slip</MpPopoverListItem>
+            <MpPopoverListItem @click="printPackingList">Print packing list</MpPopoverListItem>
             <MpPopoverListItem>Print shipping label</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>

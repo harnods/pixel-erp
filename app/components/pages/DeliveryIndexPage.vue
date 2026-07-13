@@ -179,7 +179,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
         @click="bulkCreateHandover(selectedRows as Set<number>, deselectAll)"
       >
-        Create handover to courier
+        Create shipment
       </button>
     </template>
 
