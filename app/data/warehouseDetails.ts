@@ -214,6 +214,27 @@ export function applyTransfer(
   persistSerialOverlay()
 }
 
+/** Bring brand-new serial units into a warehouse's inventory — e.g. put-away
+ *  registering hardware received for the first time. Unlike applyTransfer, there's
+ *  no origin warehouse to remove them from: this only ever adds. Bumps onHand via
+ *  the same overlay stock-in/out uses, and registers the exact serial numbers via
+ *  the serial overlay's "added" list so they surface under item.serials.available
+ *  with their real identity instead of the synthesized placeholders
+ *  reconcileSerialQty() would otherwise invent to close the onHand↔serial-count gap. */
+export function receiveNewSerials(warehouseId: string, sku: string, serials: string[]): void {
+  const fresh = [...new Set(serials)].filter(Boolean)
+  if (!fresh.length) return
+  applyStockInOut(warehouseId, [{ sku, qty: fresh.length }])
+  if (!serialOverlay[warehouseId]) serialOverlay[warehouseId] = {}
+  if (!serialOverlay[warehouseId]![sku]) serialOverlay[warehouseId]![sku] = { added: [], removed: [] }
+  const entry = serialOverlay[warehouseId]![sku]!
+  for (const sn of fresh) {
+    if (!entry.added.includes(sn)) entry.added.push(sn)
+    entry.removed = entry.removed.filter(s => s !== sn)
+  }
+  persistSerialOverlay()
+}
+
 /** A tracked batch (lot) of a product within a warehouse (Batches tab).
  *  A batch sits in one bin; a batch split across bins is modelled as separate rows. */
 export interface ProductBatch {

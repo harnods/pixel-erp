@@ -42,6 +42,8 @@ const basePOs = computed<ReceivingPO[]>(() => {
     ? receivingPOsFor(isScoped.value ? scopedWarehouseIds.value : undefined)
     : []
 })
+// Flat task list — receiving tasks are no longer grouped/merged by PO in this table.
+const baseTasks = computed<ReceivingTask[]>(() => basePOs.value.flatMap(po => po.tasks))
 
 const warehouseOptions = computed(() => {
   const src = isScoped.value
@@ -50,7 +52,7 @@ const warehouseOptions = computed(() => {
   return src.map(w => ({ label: w.name, value: w.id }))
 })
 const assigneeOptions = computed(() =>
-  [...new Set(basePOs.value.flatMap(po => po.tasks.map(t => t.assignee)))].map(a => ({ label: a, value: a })),
+  [...new Set(baseTasks.value.map(t => t.assignee))].map(a => ({ label: a, value: a })),
 )
 const statusOptions = [
   { label: 'Open',             value: 'open' },
@@ -62,23 +64,18 @@ const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value =
 const assigneeLabel = computed(() => assigneeOptions.value.find(o => o.value === assigneeFilter.value)?.label ?? '')
 const statusLabel = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
 
-// PO list with tasks filtered by the active criteria; drop POs left with no tasks.
-const filteredPOs = computed<ReceivingPO[]>(() => {
+// Flat task list filtered by the active criteria.
+const filteredTasks = computed<ReceivingTask[]>(() => {
   const s = search.value.toLowerCase().trim()
-  return basePOs.value
-    .filter(po => !warehouseFilter.value || po.warehouseId === warehouseFilter.value)
-    .map(po => ({
-      ...po,
-      tasks: po.tasks.filter(t =>
-        (!assigneeFilter.value || t.assignee === assigneeFilter.value) &&
-        (!statusFilter.value || t.status === statusFilter.value),
-      ),
-    }))
-    .filter(po => po.tasks.length > 0)
-    .filter(po =>
+  return baseTasks.value
+    .filter(t => !warehouseFilter.value || t.warehouseId === warehouseFilter.value)
+    .filter(t => !assigneeFilter.value || t.assignee === assigneeFilter.value)
+    .filter(t => !statusFilter.value || t.status === statusFilter.value)
+    .filter(t =>
       !s
-      || po.purchaseNo.toLowerCase().includes(s)
-      || po.tasks.some(t => t.taskNo.toLowerCase().includes(s) || t.assignee.toLowerCase().includes(s)),
+      || t.purchaseNo.toLowerCase().includes(s)
+      || t.taskNo.toLowerCase().includes(s)
+      || t.assignee.toLowerCase().includes(s),
     )
 })
 
@@ -92,10 +89,10 @@ function clearFilters() {
 // ─── Pagination ───────────────────────────────────────────────────────────────
 const currentPage = ref(1)
 const perPage     = ref(25)
-const totalPOs    = computed(() => filteredPOs.value.length)
-const pagedPOs    = computed(() => {
+const totalTasks  = computed(() => filteredTasks.value.length)
+const pagedTasks  = computed(() => {
   const start = (currentPage.value - 1) * perPage.value
-  return filteredPOs.value.slice(start, start + perPage.value)
+  return filteredTasks.value.slice(start, start + perPage.value)
 })
 watch([search, warehouseFilter, assigneeFilter, statusFilter, perPage], () => { currentPage.value = 1 })
 
@@ -112,7 +109,7 @@ function hasPutAwayTask(taskId: string): boolean {
 // Any task can be selected. The available bulk action depends on the selection:
 //   all "pending put-away" → Create put-away · anything else (incl. mixed) → Delete only.
 const selectedTasks = ref(new Set<string>())
-const allTaskIds = computed(() => pagedPOs.value.flatMap(po => po.tasks.map(t => t.id)))
+const allTaskIds = computed(() => pagedTasks.value.map(t => t.id))
 const allSelected = computed(() => allTaskIds.value.length > 0 && allTaskIds.value.every(id => selectedTasks.value.has(id)))
 const someSelected = computed(() => selectedTasks.value.size > 0 && !allSelected.value)
 const bulkCountLabel = computed(() => {
@@ -120,13 +117,13 @@ const bulkCountLabel = computed(() => {
   return `${n} ${n === 1 ? 'task' : 'tasks'} selected`
 })
 const selectedTaskObjs = computed(() =>
-  filteredPOs.value.flatMap(po => po.tasks).filter(t => selectedTasks.value.has(t.id)),
+  filteredTasks.value.filter(t => selectedTasks.value.has(t.id)),
 )
 // Create put-away: all selected tasks must be pending put-away AND from the same warehouse.
 const selectedPutAwayWarehouseId = computed<string | null>(() => {
   const objs = selectedTaskObjs.value
   if (!objs.length || !objs.every(t => t.status === 'pending put-away')) return null
-  const whs = new Set(filteredPOs.value.filter(po => po.tasks.some(t => selectedTasks.value.has(t.id))).map(po => po.warehouseId))
+  const whs = new Set(objs.map(t => t.warehouseId))
   return whs.size === 1 ? [...whs][0]! : null
 })
 const canCreatePutAway = computed(() => selectedPutAwayWarehouseId.value !== null)
@@ -137,15 +134,6 @@ function toggleTask(id: string) {
 }
 function toggleAll() {
   selectedTasks.value = allSelected.value ? new Set() : new Set(allTaskIds.value)
-}
-function poTaskIds(po: ReceivingPO) { return po.tasks.map(t => t.id) }
-function poAllSelected(po: ReceivingPO) { return po.tasks.length > 0 && poTaskIds(po).every(id => selectedTasks.value.has(id)) }
-function poSomeSelected(po: ReceivingPO) { return poTaskIds(po).some(id => selectedTasks.value.has(id)) && !poAllSelected(po) }
-function togglePO(po: ReceivingPO) {
-  const s = new Set(selectedTasks.value)
-  if (poAllSelected(po)) poTaskIds(po).forEach(id => s.delete(id))
-  else poTaskIds(po).forEach(id => s.add(id))
-  selectedTasks.value = s
 }
 function deselectAll() { selectedTasks.value = new Set() }
 function bulkCreatePutAway() {
@@ -184,23 +172,13 @@ function aging(t: ReceivingTask) {
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(t: ReceivingTask) { router.push(`/receiving/${t.id}`) }
-function createPutAway(t: ReceivingTask, po: ReceivingPO) {
-  router.push({ path: '/inbound-delivery/put-away/create', query: { warehouseId: po.warehouseId, taskId: t.id } })
+function createPutAway(t: ReceivingTask) {
+  router.push({ path: '/inbound-delivery/put-away/create', query: { warehouseId: t.warehouseId, taskId: t.id } })
 }
 const deleteModalOpen = ref(false)
 const taskToDelete = ref<ReceivingTask | null>(null)
 function openDeleteModal(t: ReceivingTask) { taskToDelete.value = t; deleteModalOpen.value = true }
 function closeDeleteModal() { deleteModalOpen.value = false; taskToDelete.value = null }
-
-function assigneeRowspan(po: ReceivingPO, tIdx: number): number {
-  if (tIdx > 0 && po.tasks[tIdx].assignee === po.tasks[tIdx - 1].assignee) return 0
-  let span = 1
-  for (let i = tIdx + 1; i < po.tasks.length; i++) {
-    if (po.tasks[i].assignee === po.tasks[tIdx].assignee) span++
-    else break
-  }
-  return span
-}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -275,12 +253,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
 
     <!-- ── Table + pagination (no gap between them) ── -->
-    <div v-if="filteredPOs.length" class="rcvg-table-section">
+    <div v-if="filteredTasks.length" class="rcvg-table-section">
     <div ref="tableWrapEl" class="rcvg-table-wrap" :class="{ 'rcvg-table-wrap--scrolled': tableScrolled }" @scroll.passive="onTableScroll">
       <table class="rcvg-table">
         <colgroup>
@@ -335,79 +318,73 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </tr>
         </thead>
         <tbody>
-          <template v-for="po in pagedPOs" :key="po.id">
-            <tr
-              v-for="(t, tIdx) in po.tasks"
-              :key="t.id"
-              class="rcvg-task-row"
-              :class="{ 'rcvg-task-row--selected': selectedTasks.has(t.id) }"
-            >
-              <!-- Receiving task cell (first column) -->
-              <td class="rcvg-td rcvg-td--task">
-                <div class="rcvg-task-cell">
-                  <span class="rcvg-check" @click.stop>
-                    <MpCheckbox :id="`rcvg-task-${t.id}`" :is-checked="selectedTasks.has(t.id)" @change="toggleTask(t.id)" />
+          <tr
+            v-for="t in pagedTasks"
+            :key="t.id"
+            class="rcvg-task-row"
+            :class="{ 'rcvg-task-row--selected': selectedTasks.has(t.id) }"
+          >
+            <!-- Receiving task cell (first column) -->
+            <td class="rcvg-td rcvg-td--task">
+              <div class="rcvg-task-cell">
+                <span class="rcvg-check" @click.stop>
+                  <MpCheckbox :id="`rcvg-task-${t.id}`" :is-checked="selectedTasks.has(t.id)" @change="toggleTask(t.id)" />
+                </span>
+                <span class="rcvg-task-no">{{ t.taskNo }}</span>
+                <button class="row-hover-btn" @click.stop="viewDetails(t)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </td>
+            <td class="rcvg-td rcvg-td--po">
+              <div class="rcvg-po-cell">
+                <span class="rcvg-po-no">{{ t.purchaseNo }}</span>
+                <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${t.receiptId}`)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </td>
+            <td class="rcvg-td rcvg-td--warehouse">
+              <div class="rcvg-wh-cell">
+                <span>{{ t.warehouseName }}</span>
+                <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${t.warehouseId}`)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </td>
+            <td v-if="!isScoped" class="rcvg-td rcvg-td--assignee">{{ t.assignee }}</td>
+            <td class="rcvg-td">{{ t.skuCount }}</td>
+            <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
+            <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
+            <td class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
+            <td class="rcvg-td">
+              <div class="rcvg-icons-cell">
+                <MpTooltip
+                  v-if="hasPutAwayTask(t.id)"
+                  :id="`tt-putaway-${t.id}`"
+                  label="Put-away task created"
+                  placement="top"
+                  use-portal
+                >
+                  <span class="rcvg-icon-indicator" aria-label="Put-away task created">
+                    <MpIcon name="doc" size="20px" />
                   </span>
-                  <span class="rcvg-task-no">{{ t.taskNo }}</span>
-                  <button class="row-hover-btn" @click.stop="viewDetails(t)">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
-                </div>
-              </td>
-              <!-- PO cell — only rendered for first task, spans all tasks in this PO -->
-              <td v-if="tIdx === 0" :rowspan="po.tasks.length" class="rcvg-td rcvg-td--po">
-                <div class="rcvg-po-cell">
-                  <span class="rcvg-po-no">{{ po.purchaseNo }}</span>
-                  <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${po.receiptId}`)">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
-                </div>
-              </td>
-              <td v-if="tIdx === 0" :rowspan="po.tasks.length" class="rcvg-td rcvg-td--warehouse">
-                <div class="rcvg-wh-cell">
-                  <span>{{ po.warehouseName }}</span>
-                  <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${po.warehouseId}`)">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
-                </div>
-              </td>
-              <td
-                v-if="!isScoped && assigneeRowspan(po, tIdx) > 0"
-                :rowspan="assigneeRowspan(po, tIdx)"
-                class="rcvg-td rcvg-td--assignee"
-              >{{ t.assignee }}</td>
-              <td class="rcvg-td">{{ t.skuCount }}</td>
-              <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
-              <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
-              <td class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
-              <td class="rcvg-td">
-                <div class="rcvg-icons-cell">
-                  <MpTooltip
-                    v-if="hasPutAwayTask(t.id)"
-                    :id="`tt-putaway-${t.id}`"
-                    label="Put-away task created"
-                    placement="top"
-                    use-portal
-                  >
-                    <span class="rcvg-icon-indicator" aria-label="Put-away task created">
-                      <MpIcon name="doc" size="20px" />
-                    </span>
-                  </MpTooltip>
-                </div>
-              </td>
-              <td class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
+                </MpTooltip>
+              </div>
+            </td>
+            <td class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
               <td class="rcvg-td">
                 <span class="rcvg-end">
                   <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
@@ -427,21 +404,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
                       <MpPopoverListItem @click="viewDetails(t)">View details</MpPopoverListItem>
-                      <MpPopoverListItem v-if="t.status === 'pending put-away'" @click="createPutAway(t, po)">Create put-away</MpPopoverListItem>
+                      <MpPopoverListItem v-if="t.status === 'pending put-away'" @click="createPutAway(t)">Create put-away</MpPopoverListItem>
                       <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal(t)">Delete</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
               </td>
             </tr>
-          </template>
         </tbody>
       </table>
     </div>
     <ErpPagination
       :current-page="currentPage"
       :per-page="perPage"
-      :total="totalPOs"
+      :total="totalTasks"
       @page-change="currentPage = $event"
       @per-page-change="perPage = $event"
     />
@@ -538,6 +514,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Table */
 .rcvg-table-section { display: flex; flex-direction: column; }
@@ -549,11 +533,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; color: var(--mp-text-secondary); text-align: left; white-space: nowrap;
 }
-.rcvg-th:last-child { border-right: none; }
 .rcvg-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 
 /* Checkbox column + bulk bar */
@@ -579,10 +561,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle; white-space: nowrap;
 }
-.rcvg-td:last-child { border-right: none; }
 .rcvg-td--right { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .rcvg-td--muted { color: var(--mp-text-secondary); }
 
@@ -590,7 +570,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-icons-cell {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--mp-spacing-2);
 }
 .rcvg-icon-indicator {
@@ -623,10 +603,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
 
-/* Merged PO + Warehouse cells */
-.rcvg-td--po { vertical-align: top; position: relative; }
-.rcvg-td--warehouse { vertical-align: top; position: relative; }
-.rcvg-td--assignee { vertical-align: top; }
+/* PO + Warehouse cells */
+.rcvg-td--po { position: relative; }
+.rcvg-td--warehouse { position: relative; }
 .rcvg-po-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rcvg-wh-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rcvg-po-no { color: var(--mp-text-default); }

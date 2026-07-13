@@ -744,6 +744,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search warehouse…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="w in jumpResults" :key="w.id" class="detail-jump-item" @click="jumpTo(w.id)">
@@ -861,6 +866,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <div class="wh-search">
                     <MpIcon name="search" size="md" />
                     <input v-model="search" class="wh-search-input" type="text" placeholder="Search..." />
+                    <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                      </svg>
+                    </button>
                   </div>
                 </div>
               </template>
@@ -1015,6 +1025,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
                   <input v-model="batchSearch" class="wh-search-input" type="text" placeholder="Search..." />
+                  <button v-if="batchSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="batchSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1172,6 +1187,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
                   <input v-model="serialSearch" class="wh-search-input" type="text" placeholder="Search..." />
+                  <button v-if="serialSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="serialSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1306,6 +1326,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
                   <input v-model="txSearch" class="wh-search-input" type="text" placeholder="Search..." />
+                  <button v-if="txSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="txSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1378,6 +1403,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <div class="wh-search">
                 <MpIcon name="search" size="md" />
                 <input v-model="locSearch" class="wh-search-input" type="text" placeholder="Search location..." />
+                <button v-if="locSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="locSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                  </svg>
+                </button>
               </div>
               <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewLoc">New location</MpButton>
             </div>
@@ -1480,6 +1510,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <div class="wh-search">
                 <MpIcon name="search" size="md" />
                 <input v-model="teamSearch" class="wh-search-input" type="text" placeholder="Search name..." />
+                <button v-if="teamSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="teamSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                  </svg>
+                </button>
               </div>
               <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddTeamMember">Add team member</MpButton>
             </div>
@@ -1885,16 +1920,26 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search {
   width: 100%; box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   background: var(--mp-background-surface);
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5);

@@ -9,6 +9,7 @@ import {
   completeReceivingWithoutPutAway,
 } from "./receivingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
+import { getWarehouseDetail, registerNewBatch, receiveNewSerials, applyStockInOut } from "./warehouseDetails";
 
 /**
  * A put-away task — once goods are received they must be moved from the receiving
@@ -219,6 +220,29 @@ export function endPutAway(
   t.completedItems = items.filter((it) => it.qty > 0);
   if (assignments?.batchAssignments) t.batchAssignments = assignments.batchAssignments;
   if (assignments?.serialAssignments) t.serialAssignments = assignments.serialAssignments;
+
+  // Commit the received stock into the warehouse — same "apply on End, not on
+  // Save draft" convention endPicking() uses for reservations/new batches.
+  const wh = getWarehouseDetail(t.warehouseId);
+  for (const it of t.completedItems) {
+    const batchLines = assignments?.batchAssignments?.[it.skuCode];
+    const serialLines = assignments?.serialAssignments?.[it.skuCode];
+    if (batchLines?.length) {
+      const known = new Set(wh?.stock.find((s) => s.sku === it.skuCode)?.batches?.map((b) => b.batchNo));
+      for (const b of batchLines) {
+        if (known.has(b.batchNo)) continue; // already-registered batch — no re-add
+        const dest = b.destLocations ?? [];
+        const qty = dest.length ? dest.reduce((s, d) => s + d.qty, 0) : b.qty;
+        const location = dest[0]?.locationId ?? it.binLocation;
+        registerNewBatch(t.warehouseId, it.skuCode, { batchNo: b.batchNo, expiryDate: b.expiryDate, onHand: qty, location });
+        known.add(b.batchNo);
+      }
+    } else if (serialLines?.length) {
+      receiveNewSerials(t.warehouseId, it.skuCode, serialLines.map((s) => s.serial));
+    } else {
+      applyStockInOut(t.warehouseId, [{ sku: it.skuCode, qty: it.qty }]);
+    }
+  }
   persistPutAways();
 }
 

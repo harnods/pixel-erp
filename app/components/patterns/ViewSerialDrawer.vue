@@ -276,6 +276,11 @@ function close() { emit('update:open', false) }
               <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="serialSearch" class="vsd-filter-search" type="text" placeholder="Search..." />
+            <button v-if="serialSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="serialSearch = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -412,12 +417,22 @@ function close() { emit('update:open', false) }
 .vsd-filter-search {
   width: 100%; box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-2) calc(var(--mp-spacing-3) + 16px + var(--mp-spacing-2));
+  padding-right: 30px;
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   background: var(--mp-background-neutral, #fff); outline: none;
 }
 .vsd-filter-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .vsd-filter-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: var(--mp-spacing-3, 12px); top: 50%; transform: translateY(-50%); }
 
 .vsd-table-wrap {
   flex: 1; min-height: 0;

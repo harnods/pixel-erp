@@ -115,6 +115,11 @@ function close() { emit('update:open', false) }
         <div class="ssd-search">
           <MpIcon name="search" size="md" />
           <input v-model="search" class="ssd-search-input" type="text" placeholder="Search serial number…" />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -246,6 +251,14 @@ function close() { emit('update:open', false) }
   line-height: var(--mp-line-heights-md); outline: none;
 }
 .ssd-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ssd-content is the scroll container; shrinks when rows are few */
 .ssd-content {

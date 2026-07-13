@@ -174,6 +174,32 @@ function generateReceipts(count = 42): Receipt[] {
   return out;
 }
 
+/**
+ * Hand-crafted demo receipt exercising all three stock-tracking modes at once — a
+ * batch-tracked SKU, a serial-tracked SKU, and a plain (untracked) SKU — at Gudang
+ * Makassar Selatan (wh-006), so receiving + put-away can be walked through end to
+ * end (including partial receiving across two receiving-task passes) with a known,
+ * reproducible SKU mix. Exact line items live in receiptLineItems.ts (DEMO_RECEIPT_ID).
+ */
+function generateDemoInbound(): Receipt[] {
+  const id = 'rcv-demo-001'
+  return [{
+    id,
+    number: 'RCV-2026-0700',
+    purchaseNo: 'Purchase Order #10500',
+    warehouseId: 'wh-006',
+    warehouseName: 'Gudang Makassar Selatan',
+    skuQty: 3,
+    purchaseQty: 6,
+    receivedQty: 0,
+    status: 'on the way',
+    estimatedArrival: isoOffset(2),
+    memo: 'Demo PO: 1 batch-tracked, 1 serial-tracked, 1 plain SKU (qty 2 each) — for partial receiving test',
+    trackingNos: [],
+    vendor: VENDORS[hashId(id) % VENDORS.length],
+  }]
+}
+
 const CANCEL_REASONS = [
   "Supplier out of stock",
   "Duplicate order",
@@ -223,9 +249,15 @@ function generateCanceled(count = 7): Receipt[] {
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
 const receiptSnapshot = loadSnapshot<Receipt>("receipts-v2");
-export const receipts = reactive<Receipt[]>(
-  receiptSnapshot ?? [...generateReceipts(), ...generateCanceled()],
-);
+const initialReceipts = receiptSnapshot ?? [...generateDemoInbound(), ...generateReceipts(), ...generateCanceled()];
+// Keep the demo inbound PO pinned at the very top of the list, regardless of
+// where a persisted snapshot from an earlier session happened to leave it.
+const demoIdx = initialReceipts.findIndex((r) => r.id === "rcv-demo-001");
+if (demoIdx > 0) {
+  const [demo] = initialReceipts.splice(demoIdx, 1);
+  initialReceipts.unshift(demo!);
+}
+export const receipts = reactive<Receipt[]>(initialReceipts);
 
 /** Persist the receipts snapshot (call after any mutation). */
 export function persistReceipts(): void {

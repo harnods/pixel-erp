@@ -639,6 +639,11 @@ const emptyDesc = computed(() =>
                 type="text"
                 placeholder="Search columns..."
               />
+              <button v-if="exportColumnSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="exportColumnSearch = ''">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                </svg>
+              </button>
             </div>
 
             <!-- All columns toggle -->
@@ -1001,6 +1006,15 @@ const emptyDesc = computed(() =>
 }
 
 .export-col-search__input::placeholder { color: var(--mp-text-placeholder); }
+
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* All columns row */
 .export-col-all {
