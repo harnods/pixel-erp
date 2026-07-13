@@ -6,6 +6,8 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   devServer: { port: 4321 },
 
+  modules: ['@vercel/speed-insights'],
+
   app: {
     head: {
       title: "Mekari ERP",
