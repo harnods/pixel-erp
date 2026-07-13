@@ -738,6 +738,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     :origin-location-paths="locationOptions"
     :target-count="itemByKey.get(batchDrawerKey)?.expectedQty ?? 0"
     :execution-mode="true"
+    :planned-batches="itemByKey.get(batchDrawerKey)?.plannedBatchPicks?.map(b => ({ batchNo: b.batchNo, qty: b.qty }))"
     :model-value="batchLinesByKey[batchDrawerKey] ?? planBatchByKey[batchDrawerKey] ?? []"
     @update:open="batchDrawerOpen = $event"
     @save="saveBatchLines"

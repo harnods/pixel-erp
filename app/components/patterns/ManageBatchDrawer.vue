@@ -68,6 +68,11 @@ const props = defineProps<{
    *  anything counts as picked — and labels the counted column "Picked qty" instead
    *  of "Qty to pick". */
   executionMode?: boolean
+  /** Picking + executionMode only: this line's ORIGINAL per-batch reservation plan,
+   *  frozen at task creation — keyed by batchNo. When given, shows a read-only
+   *  "Qty to pick" column next to Available qty, so the operator knows how much of
+   *  THIS specific batch to take, distinct from how much is physically on hand. */
+  plannedBatches?: { batchNo: string; qty: number }[]
 }>()
 
 const emit = defineEmits<{
@@ -210,6 +215,11 @@ const qtyLabel = computed(() => {
   return 'Stock in/out qty'
 })
 const onHandLabel = computed(() => (isTransfer.value || isPicking.value) ? 'Available qty' : 'On hand qty')
+// Read-only "Qty to pick" column, next to Available qty — only meaningful once
+// actually executing a pick (planning IS the qty-to-pick input, nothing to show
+// alongside it) and only when the caller actually has a plan to show.
+const showPlannedQty = computed(() => isPicking.value && !!props.executionMode && props.plannedBatches !== undefined)
+const plannedQtyByBatch = computed(() => new Map((props.plannedBatches ?? []).map((b) => [b.batchNo, b.qty])))
 const afterLabel = computed(() => isTransfer.value ? 'After transfer qty' : (isInOut.value ? 'New on hand qty' : 'Difference'))
 
 const totalOnHand = computed(() => rows.value.reduce((s, r) => s + r.onHand, 0))
@@ -589,7 +599,7 @@ function diffLabel(row: WorkRow): string {
 
 // Trailing-row colspan = every data column except the leading "select batch" cell:
 // expiry, desc, (location if picking), (on hand + after if stats shown), counted, unit.
-const trailingColspan = computed(() => 5 + (isPicking.value ? 1 : 0) + (hideStockStats.value ? 0 : 1) + (showAfterStats.value ? 1 : 0))
+const trailingColspan = computed(() => 5 + (isPicking.value ? 1 : 0) + (hideStockStats.value ? 0 : 1) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
 
 // ── Footer actions ────────────────────────────────────────────────────────────────
 const isSaving = ref(false)
@@ -895,6 +905,7 @@ function fmtNum(n: number | null): string {
               <col class="mbd-col-desc" />
               <col v-if="isPicking" class="mbd-col-location" />
               <col v-if="!hideStockStats" class="mbd-col-num" />
+              <col v-if="showPlannedQty" class="mbd-col-num" />
               <col class="mbd-col-counted" />
               <col v-if="showAfterStats" class="mbd-col-after" />
               <col class="mbd-col-unit" />
@@ -907,6 +918,7 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Description</th>
                 <th v-if="isPicking" class="mbd-th">Location</th>
                 <th v-if="!hideStockStats" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
+                <th v-if="showPlannedQty" class="mbd-th mbd-th--num mbd-th--planned">Qty to pick</th>
                 <th class="mbd-th mbd-th--num">{{ isPicking ? (executionMode ? 'Picked qty' : 'Qty to pick') : (isInOut ? qtyLabel : 'Counted qty') }}</th>
                 <th v-if="showAfterStats" class="mbd-th mbd-th--num">{{ afterLabel }}</th>
                 <th class="mbd-th">Unit</th>
@@ -958,6 +970,9 @@ function fmtNum(n: number | null): string {
 
                 <!-- ON HAND -->
                 <td v-if="!hideStockStats" class="mbd-td mbd-td--num mbd-td--muted">{{ row.onHand.toLocaleString('id-ID') }}</td>
+
+                <!-- QTY TO PICK (picking + executionMode only) — this batch's original plan -->
+                <td v-if="showPlannedQty" class="mbd-td mbd-td--num mbd-td--planned">{{ (plannedQtyByBatch.get(row.batchNo) ?? 0).toLocaleString('id-ID') }}</td>
 
                 <!-- COUNTED: value + Manage location stacked as 2 lines in one cell —
                      same compact pattern as the Transfer qty column on the main
