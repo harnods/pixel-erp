@@ -50,16 +50,17 @@ function viewSalesOrder(row: Row) { router.push(`/outbound-delivery/${row.salesO
 function viewPacking(row: Row) { router.push(`/packing/${row.packingTaskId}`) }
 function printPdf() {
   if (!shipment.value) return
-  generateShipmentPdf(shipment.value, rows.value.map((r) => ({
-    salesNo: r.salesNo,
-    packingTaskNo: r.packingTaskNo,
-    source: r.source,
-    courier: r.courier,
-    trackingNo: r.trackingNo,
-    skuQty: r.skuQty,
-    orderQty: r.orderQty,
-    shippedQty: r.shippedQty,
-  })))
+  generateShipmentPdf(
+    { ...shipment.value, courier: rows.value[0]?.courier ?? '-' },
+    rows.value.map((r) => ({
+      salesNo: r.salesNo,
+      packingTaskNo: r.packingTaskNo,
+      trackingNo: r.trackingNo,
+      skuQty: r.skuQty,
+      orderQty: r.orderQty,
+      shippedQty: r.shippedQty,
+    })),
+  )
 }
 
 /** File-type → Pixel document icon for an attachment (mirrors Sales/Outgoing order detail). */

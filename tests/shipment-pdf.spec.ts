@@ -15,11 +15,12 @@ const BASE_SHIPMENT: ShipmentPdfInfo = {
   assignee: 'Test Operator',
   transactionDate: '2026-07-13T10:00:00',
   status: 'open',
+  courier: 'JNE',
 }
 
 const ROWS: ShipmentPdfRow[] = [
-  { salesNo: 'SO-0001', packingTaskNo: 'Packing #40001', source: 'Manual', courier: 'JNE', trackingNo: 'SD1234567', skuQty: 1, orderQty: 2, shippedQty: 2 },
-  { salesNo: 'SO-0002', packingTaskNo: 'Packing #40002', source: 'Manual', courier: 'JNE', trackingNo: 'SD1234568', skuQty: 2, orderQty: 3, shippedQty: 3 },
+  { salesNo: 'SO-0001', packingTaskNo: 'Packing #40001', trackingNo: 'SD1234567', skuQty: 1, orderQty: 2, shippedQty: 2 },
+  { salesNo: 'SO-0002', packingTaskNo: 'Packing #40002', trackingNo: 'SD1234568', skuQty: 2, orderQty: 3, shippedQty: 3 },
 ]
 
 describe('generateShipmentPdf', () => {

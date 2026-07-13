@@ -6,8 +6,6 @@ import { formatDateTimeLong } from './date'
 export interface ShipmentPdfRow {
   salesNo: string
   packingTaskNo: string
-  source: string
-  courier: string
   trackingNo: string
   skuQty: number
   orderQty: number
@@ -20,6 +18,9 @@ export interface ShipmentPdfInfo {
   assignee: string
   transactionDate: string
   status: 'open' | 'completed'
+  /** a shipment doc is per courier (a batch is split into one shipment per courier) —
+   *  shown as its own header above the table, not repeated on every row. */
+  courier: string
   receivedBy?: string
   receivedDate?: string
 }
@@ -80,19 +81,23 @@ export function generateShipmentPdf(shipment: ShipmentPdfInfo, rows: ShipmentPdf
     doc.setFont('helvetica', 'normal'); doc.text(value, rightX + 92, ry)
     ry += 16
   }
-  y = Math.max(ly, ry) + 12
+  y = Math.max(ly, ry) + 20
+
+  doc.setFontSize(12)
+  doc.setFont('helvetica', 'bold')
+  doc.text(`Courier: ${shipment.courier || '-'}`, marginX, y)
+  y += 20
 
   autoTable(doc, {
     startY: y,
-    head: [['No.', 'Sales order no.', 'Packing no.', 'Source', 'Courier', 'Tracking no.', 'SKU qty', 'Order qty', 'Shipped qty']],
-    body: rows.map((r, i) => [i + 1, r.salesNo, r.packingTaskNo, r.source, r.courier, r.trackingNo, r.skuQty, r.orderQty, r.shippedQty]),
+    head: [['No.', 'Sales order no.', 'Packing no.', 'Tracking no.', 'SKU qty', 'Order qty']],
+    body: rows.map((r, i) => [i + 1, r.salesNo, r.packingTaskNo, r.trackingNo, r.skuQty, r.orderQty]),
     styles: { fontSize: 9, cellPadding: 5, lineColor: [220, 220, 220], lineWidth: 0.5 },
     headStyles: { fillColor: [235, 235, 235], textColor: 20, fontStyle: 'bold' },
     columnStyles: {
       0: { cellWidth: 26, halign: 'center' },
-      6: { cellWidth: 55, halign: 'right' },
-      7: { cellWidth: 60, halign: 'right' },
-      8: { cellWidth: 65, halign: 'right' },
+      4: { cellWidth: 60, halign: 'right' },
+      5: { cellWidth: 70, halign: 'right' },
     },
     margin: { left: marginX, right: marginX },
   })
