@@ -212,6 +212,12 @@ const pickRows = computed<MergedRow[]>(() => {
 // True once any SKU has been partially picked on a previous list → show Picked qty column.
 const hasPriorPicks = computed(() => pickRows.value.some(g => g.pickedQty > 0))
 
+// Storage location + Manage batch/Manage serial number columns are hidden for this
+// release (planned for a later one) — the underlying logic below (openBatchDrawer,
+// openSerialDrawer, isBatchTrackedSku, etc.) is untouched, only these columns' cells
+// are not rendered. Flip this back to re-show them.
+const SHOW_STORAGE_AND_MANAGE_COLUMNS = false
+
 // ─── Stock per merged SKU — one pool (On hand − Reserved); cap = min(demand, avail) ─
 interface RowStock { onHand: number; reserved: number; available: number; cap: number; toPick: number }
 const rowStock = computed<Map<string, RowStock>>(() => {
@@ -700,12 +706,12 @@ async function doCreate() {
               <colgroup>
                 <col /><!-- Product (+ checkbox) -->
                 <col /><!-- SKU -->
-                <col style="width: 170px" /><!-- Storage location -->
+                <col v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" style="width: 170px" /><!-- Storage location -->
                 <col /><!-- Order qty -->
                 <col v-if="hasPriorPicks" /><!-- Picked qty -->
                 <col /><!-- Qty to pick -->
                 <col style="width: 100px" /><!-- Unit -->
-                <col style="width: 48px" /><!-- Action -->
+                <col v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" style="width: 48px" /><!-- Action -->
               </colgroup>
               <thead>
                 <tr>
@@ -735,12 +741,12 @@ async function doCreate() {
                     </div>
                   </th>
                   <th class="pk-th">SKU</th>
-                  <th class="pk-th">Storage location</th>
+                  <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th">Storage location</th>
                   <th class="pk-th pk-th--num">Order qty</th>
                   <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
                   <th class="pk-th pk-th--num">Qty to pick</th>
                   <th class="pk-th">Unit</th>
-                  <th class="pk-th pk-th--action"></th>
+                  <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th pk-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -778,17 +784,19 @@ async function doCreate() {
 
                   <!-- Storage location: shown as -- for batch/serial-tracked SKUs
                        (their location is managed inside the drawer, per batch/serial unit). -->
-                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td">
-                    <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage batch" placement="top" use-portal>
-                      <span class="pk-loc-text">—</span>
-                    </MpTooltip>
-                  </td>
-                  <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td">
-                    <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage serial numbers" placement="top" use-portal>
-                      <span class="pk-loc-text">—</span>
-                    </MpTooltip>
-                  </td>
-                  <td v-else class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
+                  <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
+                    <td v-if="isBatchTrackedSku(row.sku)" class="pk-td">
+                      <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage batch" placement="top" use-portal>
+                        <span class="pk-loc-text">—</span>
+                      </MpTooltip>
+                    </td>
+                    <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td">
+                      <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage serial numbers" placement="top" use-portal>
+                        <span class="pk-loc-text">—</span>
+                      </MpTooltip>
+                    </td>
+                    <td v-else class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
+                  </template>
 
                   <td class="pk-td pk-td--num">{{ formatNum(row.orderQty) }}</td>
                   <td v-if="hasPriorPicks" class="pk-td pk-td--num">{{ formatNum(row.pickedQty) }}</td>
@@ -832,21 +840,23 @@ async function doCreate() {
                   <td class="pk-td">{{ row.unit }}</td>
 
                   <!-- Action column: icon button for batch / serial management -->
-                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
-                    <MpTooltip :id="`tt-batch-${row.sku}`" label="Manage batch" placement="top" use-portal>
-                      <button class="pk-manage-icon-btn" type="button" @click.stop="openBatchDrawer(row.sku)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
-                    </MpTooltip>
-                  </td>
-                  <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--action">
-                    <MpTooltip :id="`tt-serial-${row.sku}`" label="Manage serial numbers" placement="top" use-portal>
-                      <button class="pk-manage-icon-btn" type="button" @click.stop="openSerialDrawer(row.sku)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
-                    </MpTooltip>
-                  </td>
-                  <td v-else class="pk-td pk-td--action"></td>
+                  <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
+                    <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
+                      <MpTooltip :id="`tt-batch-${row.sku}`" label="Manage batch" placement="top" use-portal>
+                        <button class="pk-manage-icon-btn" type="button" @click.stop="openBatchDrawer(row.sku)">
+                          <MpIcon name="competencies" size="md" />
+                        </button>
+                      </MpTooltip>
+                    </td>
+                    <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--action">
+                      <MpTooltip :id="`tt-serial-${row.sku}`" label="Manage serial numbers" placement="top" use-portal>
+                        <button class="pk-manage-icon-btn" type="button" @click.stop="openSerialDrawer(row.sku)">
+                          <MpIcon name="competencies" size="md" />
+                        </button>
+                      </MpTooltip>
+                    </td>
+                    <td v-else class="pk-td pk-td--action"></td>
+                  </template>
                 </tr>
               </tbody>
             </table>
