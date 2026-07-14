@@ -933,7 +933,13 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   text-align: right; font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md);
 }
 .pik-td--action { padding: 4px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
-/* Sticky action column — stays visible when the table scrolls wider than the stage */
+/* Sticky action column — stays visible when the table scrolls wider than the stage.
+   `.pik-items thead .pik-th` (z-index: 1) outranks the plain `.pik-th--action`
+   class on specificity alone, so its z-index silently won here and tied the
+   header's sticky corner cell with the body's — letting scrolled-past rows
+   paint over the header at the top-right intersection. Match that selector's
+   specificity (and go higher) so the header corner always wins. */
+.pik-items thead .pik-th--action { z-index: 3; }
 .pik-th--action { position: sticky; right: 0; z-index: 2; }
 .pik-td--action { position: sticky; right: 0; z-index: 1; }
 .pik-manage-icon-btn {

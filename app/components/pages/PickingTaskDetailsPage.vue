@@ -799,7 +799,14 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 .detail-td--location { min-width: 160px; max-width: 200px; }
 .pkd-location-item { display: block; white-space: normal; word-break: break-word; }
 .detail-td--action { text-align: center; white-space: nowrap; }
-/* Sticky action column — stays visible when the table scrolls wider than the stage */
+/* Sticky action column — stays visible when the table scrolls wider than the stage.
+   `.detail-items thead .detail-th` (z-index: 1) outranks the plain
+   `.detail-th--action` class on specificity alone, so its z-index silently won
+   here and tied the header's sticky corner cell with the body's — letting
+   scrolled-past rows paint over the header at the top-right intersection.
+   Match that selector's specificity (and go higher) so the header corner
+   always wins. */
+.detail-items thead .detail-th--action { z-index: 3; }
 .detail-th--action { position: sticky; right: 0; z-index: 2; }
 .detail-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
 .pkd-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
