@@ -2,7 +2,7 @@
 /**
  * New / sub-location drawer — shared by the warehouse detail "Storage locations" tab
  * and the storage-location detail page. Pick a level (master label), a warehouse-specific
- * name + code, and a type (Organizational / Storage). `parentId` null = root location;
+ * name, and a type (Organizational / Storage). `parentId` null = root location;
  * otherwise a sub-location (breadcrumb shows the parent path). Persists via the storage
  * location store and emits `saved` with the parent id so callers can expand it.
  */
@@ -12,7 +12,7 @@ import {
   MpButton, MpText, toast,
 } from '@mekari/pixel3'
 import {
-  addRootLocation, addSubLocation, updateLocation, suggestCode, defaultTypeForLevel, findLocation,
+  addRootLocation, addSubLocation, updateLocation, defaultTypeForLevel, findLocation,
   STORAGE_LEVELS, type LocType,
 } from '~/data/storageLocations'
 import { levelOptions, levelLabel } from '~/data/storageLevels'
@@ -41,7 +41,6 @@ const levelPickerOptions = computed(() => {
 })
 const level = ref<string>(STORAGE_LEVELS[0]!)
 const name = ref('')
-const code = ref('')
 const type = ref<LocType>('Organizational')
 const description = ref('')
 
@@ -77,55 +76,55 @@ function defaultLevelFor(): string {
 }
 function reset() {
   if (isEdit.value) {
-    // prefill from the location being edited (keep its code)
     const node = findLocation(props.warehouseId, props.editId!)?.node
     level.value = node?.level ?? STORAGE_LEVELS[0]!
     name.value = node?.name ?? ''
     type.value = node?.type ?? 'Organizational'
-    code.value = node?.code ?? ''
     description.value = node?.description ?? ''
     return
   }
   level.value = defaultLevelFor()
   name.value = ''
   type.value = defaultTypeForLevel(level.value)
-  code.value = suggestCode(props.warehouseId, props.parentId, level.value)
   description.value = ''
 }
 // Reset each time the drawer opens.
 watch(() => props.isOpen, (open) => { if (open) reset() })
-// Level drives sensible defaults for code + type (only while adding).
+// Level drives sensible default type (only while adding).
 watch(level, (lvl) => {
   if (!props.isOpen || isEdit.value) return
-  code.value = suggestCode(props.warehouseId, props.parentId, lvl)
   type.value = defaultTypeForLevel(lvl)
 })
 
 function close() { emit('update:isOpen', false) }
-function save() {
+const isSaving = ref(false)
+async function save() {
   const nm = name.value.trim()
-  if (!nm) { toast.notify({ variant: 'danger', title: 'Enter a location name' }); return }
+  if (!nm) { toast.notify({ variant: 'error', title: 'You must fill in location name' , maxWidth: 'max-content'}); return }
   if (!isEdit.value && props.parentId) {
     const parent = findLocation(props.warehouseId, props.parentId)?.node
     if (parent) {
       const parentIdx = STORAGE_LEVELS.indexOf(parent.level)
       const chosenIdx = STORAGE_LEVELS.indexOf(level.value)
       if (chosenIdx <= parentIdx) {
-        toast.notify({ variant: 'danger', title: 'Level must be deeper than its parent' })
+        toast.notify({ variant: 'error', title: 'Level must be deeper than its parent' , maxWidth: 'max-content'})
         return
       }
     }
   }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   if (isEdit.value) {
     updateLocation(props.warehouseId, props.editId!, { level: level.value, name: nm, type: type.value, description: description.value.trim() })
     emit('saved', props.parentId)
     close()
     return
   }
-  const data = { level: level.value, name: nm, code: code.value.trim() || level.value.slice(0, 1).toUpperCase(), type: type.value }
+  const data = { level: level.value, name: nm, type: type.value }
   if (props.parentId) addSubLocation(props.warehouseId, props.parentId, data)
   else addRootLocation(props.warehouseId, data)
   emit('saved', props.parentId)
+  isSaving.value = false
   close()
 }
 </script>
@@ -214,7 +213,7 @@ function save() {
           </div>
           <div class="nl-footer">
             <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="save">{{ isEdit ? 'Save changes' : 'Save' }}</MpButton>
+            <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
           </div>
         </div>
       </MpDrawerBody>

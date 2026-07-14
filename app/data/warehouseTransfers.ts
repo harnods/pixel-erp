@@ -3,6 +3,7 @@ import { warehouses } from './warehouses'
 import { warehouseProducts, productBySku, PRODUCTS, type Product } from './inventory'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { TODAY } from './master'
+import { applyTransfer } from './warehouseDetails'
 
 /**
  * Warehouse transfers (ERP only) — stock moved between two of the company's own
@@ -11,7 +12,7 @@ import { TODAY } from './master'
  * demo data" regenerates), and resettable.
  */
 export type TransferStatus =
-  | 'awaiting approval'
+  | 'draft'
   | 'approved'
   | 'in transit'
   | 'completed'
@@ -32,7 +33,7 @@ export interface WarehouseTransfer {
   /** User-entered memo (create form). Absent → a deterministic demo memo is shown. */
   memo?: string
   /** User-entered product lines (create form). Absent → lines are derived from stock. */
-  lines?: { sku: string; qty: number }[]
+  lines?: { sku: string; qty: number; serials?: string[] }[]
   /** Audit trail (chronological) — created/edited events from the form. */
   activity?: TransferActivity[]
 }
@@ -64,11 +65,11 @@ function isoOffset(days: number): string {
 
 const TAG_POOL = ['Restock', 'Rebalancing', 'Urgent', 'Seasonal', 'Overstock', 'Damaged return', 'New store opening']
 
-// Weighted status — a healthy queue leans to awaiting approval / in transit, fewer
+// Weighted status — a healthy queue leans to draft / in transit, fewer
 // completed / rejected, so both tabs have plenty to show.
 function statusFor(i: number): TransferStatus {
   const h = hash100(i * 7 + 3)
-  if (h < 34) return 'awaiting approval' // ~34% pending sign-off
+  if (h < 34) return 'draft' // ~34% pending sign-off
   if (h < 54) return 'approved'
   if (h < 74) return 'in transit'
   if (h < 92) return 'completed'
@@ -108,7 +109,7 @@ function generate(count = 24): WarehouseTransfer[] {
   return out
 }
 
-const KEY = 'warehouse-transfers'
+const KEY = 'warehouse-transfers-v2'
 const snapshot = loadSnapshot<WarehouseTransfer>(KEY)
 export const warehouseTransfers = reactive<WarehouseTransfer[]>(snapshot ?? generate())
 
@@ -292,13 +293,13 @@ export function transferWarehouseOptions(): { value: string; label: string }[] {
 
 /** Count still awaiting approval — badge for the "Awaiting approval" tab. */
 export function awaitingApprovalCount(): number {
-  return warehouseTransfers.filter((t) => t.status === 'awaiting approval').length
+  return warehouseTransfers.filter((t) => t.status === 'draft').length
 }
 
 /** Approve a transfer — moves it out of "Awaiting approval" and logs the activity. */
 export function approveTransfer(id: string): WarehouseTransfer | undefined {
   const t = warehouseTransfers.find((x) => x.id === id)
-  if (!t || t.status !== 'awaiting approval') return t
+  if (!t || t.status !== 'draft') return t
   if (!t.activity?.length) {
     t.activity = [{
       date: derivedUpdatedAt(t), user: derivedUpdatedBy(t), activity: 'Created',
@@ -308,8 +309,10 @@ export function approveTransfer(id: string): WarehouseTransfer | undefined {
       ],
     }]
   }
-  t.activity.push({ date: new Date().toISOString(), user: ACTOR, activity: 'Approved', details: [{ label: 'Status', value: 'Awaiting approval → Approved' }] })
+  t.activity.push({ date: new Date().toISOString(), user: ACTOR, activity: 'Approved', details: [{ label: 'Status', value: 'Draft → Approved' }] })
   t.status = 'approved'
+  const lines = t.lines ?? transferLineItems(t).map(l => ({ sku: l.sku, qty: l.qty }))
+  applyTransfer(t.originId, t.destinationId, lines)
   persistTransfers()
   return t
 }
@@ -334,7 +337,7 @@ export function duplicateTransfer(id: string): WarehouseTransfer | undefined {
     id: `wt-new-${n}`,
     number: `Warehouse Transfer #${String(90 + n).padStart(4, '0')}`,
     date: isoOffset(0),
-    status: 'awaiting approval',
+    status: 'draft',
   }
   warehouseTransfers.unshift(copy)
   persistTransfers()
@@ -349,7 +352,7 @@ export interface TransferInput {
   destinationName: string
   tags: string[]
   memo?: string
-  lines: { sku: string; qty: number }[]
+  lines: { sku: string; qty: number; serials?: string[] }[]
 }
 
 /** Create a new (awaiting-approval) transfer from the create form. */
@@ -364,7 +367,7 @@ export function addTransfer(input: TransferInput): WarehouseTransfer {
     originName: input.originName,
     destinationId: input.destinationId,
     destinationName: input.destinationName,
-    status: 'awaiting approval',
+    status: 'draft',
     tags: input.tags,
     memo: input.memo,
     lines: input.lines,

@@ -35,7 +35,7 @@ const children = computed<LocNode[]>(() => {
 const expanded = ref<Set<string>>(new Set())
 const search = ref('')
 function nameMatch(n: LocNode, q: string): boolean {
-  return n.name.toLowerCase().includes(q) || n.code.toLowerCase().includes(q) || n.children.some(c => nameMatch(c, q))
+  return n.name.toLowerCase().includes(q) || n.children.some(c => nameMatch(c, q))
 }
 const flat = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -101,6 +101,11 @@ function onSaved(pid: string | null) {
       <div class="wh-search">
         <MpIcon name="search" size="md" />
         <input v-model="search" class="wh-search-input" type="text" placeholder="Search location..." />
+        <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          </svg>
+        </button>
       </div>
       <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNew">New location</MpButton>
     </div>
@@ -203,7 +208,7 @@ function onSaved(pid: string | null) {
     <MpModal
       id="slt-delete-modal"
       :is-open="!!deleteTarget"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -240,6 +245,14 @@ function onSaved(pid: string | null) {
 .wh-search:focus-within { border-color: var(--mp-border-bold); box-shadow: 0 0 0 1px var(--mp-border-bold); }
 .wh-search-input { flex: 1; border: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); outline: none; }
 .wh-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .wh-loc-scroll { overflow-x: auto; }
 .wh-loc-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -253,7 +266,6 @@ function onSaved(pid: string | null) {
 .wh-loc-type-icon { flex-shrink: 0; display: inline-flex; }
 .wh-loc-type-icon--org { color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-type-icon--storage { color: var(--mp-icon-brand, var(--mp-colors-emerald-600, #0f9d58)); }
-.wh-loc-code { text-transform: uppercase; flex-shrink: 0; }
 .wh-loc-chevron { flex-shrink: 0; transition: transform 0.15s ease; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-chevron--open { transform: rotate(90deg); }
 .wh-loc-chevron-spacer { display: inline-block; width: 16px; flex-shrink: 0; }

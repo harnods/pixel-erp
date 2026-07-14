@@ -2,19 +2,28 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import {
-  getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask,
+  getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask, type PickLineItem,
 } from '~/data/pickingTaskDetails'
 import { getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
-import { getPackingForOrder } from '~/data/packingTasks'
+import { orderPackedFromPickingTask } from '~/data/packingTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { generatePickingListPdf } from '~/utils/pickingListPdf'
 import { toast } from '@mekari/pixel3'
+import type jsPDF from 'jspdf'
 
 type TaskStatus = 'open' | 'in progress' | 'partially picked' | 'completed' | 'canceled'
 
@@ -38,8 +47,6 @@ watch([() => props.orderId, lineItems], () => {
 }, { immediate: true })
 
 const isInProgress = computed(() => localStatus.value === 'in progress')
-// Open tasks haven't started — show only To pick (no Picked / Outstanding columns).
-const showPickedCols = computed(() => localStatus.value !== 'open')
 
 const toPickTotal = computed(() => lineItems.value.reduce((s, it) => s + it.expectedQty, 0))
 const pickedTotal = computed(() => Object.values(localPicked.value).reduce((a, b) => a + (b || 0), 0))
@@ -49,11 +56,63 @@ function rowPicked(key: string, fallback: number): number {
   return localPicked.value[key] ?? fallback
 }
 
+// Batch/serial-tracked lines show "—" (location detail lives in the View batch /
+// View serial number drawer instead) rather than the static binLocation.
+function isTrackedItem(item: { batchPicks?: unknown[]; serialPicks?: unknown[] }): boolean {
+  return !!(item.batchPicks?.length || item.serialPicks?.length)
+}
+
+// ── Batch / serial helpers (same heuristic as receiving / put-away / packing) ───
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
+// ── View batch / View serial number — read-only, which batch/SN is reserved for
+// this line (to be picked, or already picked). ──────────────────────────────────
+const viewBatchItem = ref<PickLineItem | null>(null)
+const viewSerialItem = ref<PickLineItem | null>(null)
+function openViewBatch(item: PickLineItem) { viewBatchItem.value = item }
+function openViewSerial(item: PickLineItem) { viewSerialItem.value = item }
+
 // Linked sales orders + packing tasks
 const linkedOrders = computed(() =>
   (task.value?.salesOrderIds ?? []).map(id => outgoingOrders.find(o => o.id === id)).filter(Boolean) as typeof outgoingOrders,
 )
 const linkedPacking = computed(() => task.value ? getPackingForPickingTask(task.value.id) : [])
+// Whether there's still an order on THIS picking task without a packing task
+// created FROM IT yet — once every bundled order already has one (specifically
+// from this task, not just anywhere in the order's history), "Create packing" has
+// nothing left to do (that's the "Already packed" toast case — hide the button,
+// not just the toast). Scoped per (order, this task) rather than "the order has
+// ANY packing task ever" — an order can go through more than one independent
+// picking→packing→shipment cycle (partially shipped, then picked again for the
+// remainder), and an earlier cycle's packing task must never block a later,
+// separate picking task's own still-unpacked remainder from ever being packed.
+// When nothing is packable yet for a DIFFERENT reason (e.g. a marketplace order
+// not fully picked across all its lists), packableOrderIds is empty rather than
+// "all packed" — keep the button so clicking still surfaces the explanatory modal.
+const hasPackableOrders = computed(() => {
+  const t = task.value
+  if (!t) return true
+  const ids = packableOrderIds(t)
+  if (ids.length === 0) return true
+  return ids.some(id => !orderPackedFromPickingTask(id, t.id))
+})
 
 const lastUpdated = computed(() => {
   if (!task.value?.startDate) return null
@@ -68,25 +127,43 @@ function startPickingAndNavigate() {
   startPicking(props.orderId)
   router.push(`/picking/${props.orderId}/pick`)
 }
+const pdfPreviewOpen = ref(false)
+const pdfPreviewDoc = ref<jsPDF | null>(null)
+const pdfPreviewFilename = ref('')
+async function printPickingList() {
+  if (!task.value) return
+  pdfPreviewDoc.value = await generatePickingListPdf(task.value, lineItems.value)
+  pdfPreviewFilename.value = `Picking List - ${task.value.taskNo}.pdf`
+  pdfPreviewOpen.value = true
+}
+const cantPackModalOpen = ref(false)
 function createPacking() {
   // Packability is judged at the ORDER level across all picking lists, and an order
-  // that already has a packing task is excluded. Only block when nothing is left.
+  // that already has a packing task created FROM THIS picking task is excluded —
+  // not one from an earlier, independent picking→packing→shipment cycle for the
+  // same order. Only block when nothing is left.
   const t = task.value
   if (t) {
-    const packable = packableOrderIds(t).filter(id => getPackingForOrder(id).length === 0)
+    const packable = packableOrderIds(t).filter(id => !orderPackedFromPickingTask(id, t.id))
     if (packable.length === 0) {
       const anyPickComplete = packableOrderIds(t).length > 0
-      toast.notify({
-        variant: 'danger',
-        title: anyPickComplete ? 'Already packed' : 'Nothing can be packed yet',
-        description: anyPickComplete
-          ? 'These orders already have a packing task.'
-          : 'Marketplace orders must be fully picked (across their picking lists) before packing.',
-      })
+      if (anyPickComplete) {
+        toast.notify({
+          variant: 'error',
+          title: 'Already packed',
+          description: 'These orders already have a packing task.',
+          maxWidth: 'max-content',
+        })
+      } else {
+        // Genuinely nothing to pack yet — a marketplace order isn't all-or-nothing
+        // pickable one SKU at a time, so a quiet toast is easy to miss; a modal makes
+        // the "why" unmissable before the operator goes hunting for what went wrong.
+        cantPackModalOpen.value = true
+      }
       return
     }
   }
-  router.push({ path: '/barang-keluar/packing/create', query: { pickingId: props.orderId } })
+  router.push({ path: '/outbound-delivery/packing/create', query: { pickingId: props.orderId } })
 }
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
@@ -189,7 +266,7 @@ const jumpResults = computed(() => {
 })
 function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/picking/${id}`) }
 
-function goBack() { router.push('/barang-keluar?tab=Picking') }
+function goBack() { router.push('/outbound-delivery?tab=Picking') }
 </script>
 
 <template>
@@ -215,6 +292,11 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search task or sales order…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
@@ -246,7 +328,11 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
         </div>
         <div class="content-list-col">
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
-          <ContentList label="End date">
+          <template v-if="localStatus === 'canceled'">
+            <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+          </template>
+          <ContentList v-else label="End date">
             <span class="pkd-end-cell">
               <span>{{ localEndDate ? formatDateTimeLong(localEndDate) : '—' }}</span>
               <span v-if="agingLabel()" class="pkd-aging">{{ agingLabel() }}</span>
@@ -262,7 +348,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
           <span class="pkd-progress-val">{{ task.skuQty }}</span>
         </div>
         <div class="pkd-progress-stat">
-          <span class="pkd-progress-label">To pick qty</span>
+          <span class="pkd-progress-label">Qty to pick</span>
           <span class="pkd-progress-val">{{ fmt(toPickTotal) }}</span>
         </div>
         <div class="pkd-progress-stat">
@@ -282,7 +368,12 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="pkd-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="itemSearch" class="pkd-search" type="text" placeholder="Search..." />
+            <button v-if="itemSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="itemSearch = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
         </div>
         <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
@@ -293,10 +384,11 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
                   <th class="detail-th">Product</th>
                   <th class="detail-th">SKU</th>
                   <th class="detail-th">Storage location</th>
-                  <th class="detail-th detail-th--num">To pick qty</th>
-                  <th v-if="showPickedCols" class="detail-th detail-th--num">Picked qty</th>
-                  <th v-if="showPickedCols" class="detail-th detail-th--num">Outstanding qty</th>
+                  <th class="detail-th detail-th--num">Qty to pick</th>
+                  <th class="detail-th detail-th--num">Picked qty</th>
+                  <th class="detail-th detail-th--num">Outstanding qty</th>
                   <th class="detail-th">Unit</th>
+                  <th class="detail-th detail-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -305,20 +397,44 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
                     <ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" />
                   </td>
                   <td class="detail-td">{{ item.skuCode }}</td>
-                  <td class="detail-td">{{ item.binLocation }}</td>
+                  <td class="detail-td detail-td--location">
+                    <!-- Batch/serial-tracked: location detail now lives in the View
+                         batch / View serial number drawer, not duplicated here. -->
+                    <MpTooltip
+                      v-if="isTrackedItem(item)"
+                      :id="`pkd-tt-loc-${item.key}`"
+                      :label="isBatchTrackedSku(item.skuCode) ? 'View via View batch' : 'View via View serial number'"
+                      placement="top"
+                      use-portal
+                    >
+                      <span>—</span>
+                    </MpTooltip>
+                    <span v-else class="pkd-location-item" :title="item.binLocation">{{ item.binLocation }}</span>
+                  </td>
                   <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
-                  <td v-if="showPickedCols" class="detail-td detail-td--num">
+                  <td class="detail-td detail-td--num">
                     <span :class="isInProgress ? '' : (rowPicked(item.key, item.pickedQty) === item.expectedQty ? 'pkd-qty--full' : rowPicked(item.key, item.pickedQty) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
                       {{ fmt(rowPicked(item.key, item.pickedQty)) }}
                     </span>
                   </td>
-                  <td v-if="showPickedCols" class="detail-td detail-td--num">
-                    <span v-if="item.expectedQty - rowPicked(item.key, item.pickedQty) > 0" class="pkd-outstanding">
+                  <td class="detail-td detail-td--num">
+                    <span :class="item.expectedQty - rowPicked(item.key, item.pickedQty) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
                       {{ fmt(item.expectedQty - rowPicked(item.key, item.pickedQty)) }}
                     </span>
-                    <span v-else class="pkd-qty--full">—</span>
                   </td>
                   <td class="detail-td">{{ item.unit }}</td>
+                  <td class="detail-td detail-td--action">
+                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pkd-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
+                      <button class="pkd-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`pkd-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
+                      <button class="pkd-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -360,7 +476,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
                         <span class="pkd-linked-num">{{ o.salesNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/barang-keluar/${o.id}`)">
+                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/${o.id}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -370,7 +486,7 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
                       </div>
                     </td>
                     <td class="detail-td">{{ o.customer ?? '—' }}</td>
-                    <td class="detail-td">{{ o.source }}</td>
+                    <td class="detail-td"><SourceLabel :source="o.source" /></td>
                     <td class="detail-td detail-td--num">{{ fmt(o.skuQty) }}</td>
                     <td class="detail-td detail-td--num">{{ fmt(o.orderQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="outgoingStage(o)" /></td>
@@ -427,30 +543,19 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpPopover id="pkd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            Print
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>Print picking list</MpPopoverListItem>
-            <MpPopoverListItem>Print label</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <button class="detail-btn detail-btn--secondary" @click="printPickingList">Print picking list</button>
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">
         Start picking
       </button>
       <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/picking/${orderId}/pick`)">
         Continue picking
       </button>
-      <button v-else-if="localStatus === 'completed' || localStatus === 'partially picked'" class="detail-btn detail-btn--primary" @click="createPacking">
-        Create packing task
+      <button
+        v-else-if="(localStatus === 'completed' || localStatus === 'partially picked') && hasPackableOrders"
+        class="detail-btn detail-btn--primary"
+        @click="createPacking"
+      >
+        Create packing
       </button>
     </footer>
 
@@ -461,6 +566,66 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
     <p>Picking task not found.</p>
     <button class="detail-breadcrumb" @click="goBack">Back to Picking</button>
   </div>
+
+  <ViewBatchDrawer
+    v-if="viewBatchItem"
+    :open="true"
+    :sku="viewBatchItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    :qty-to-pick="viewBatchItem.expectedQty"
+    :picked-qty="rowPicked(viewBatchItem.key, viewBatchItem.pickedQty)"
+    :picked-batches="viewBatchItem.batchPicks ?? []"
+    :planned-batches="viewBatchItem.plannedBatchPicks ?? []"
+    :product-name="viewBatchItem.productName"
+    :product-img="viewBatchItem.image"
+    @update:open="viewBatchItem = null"
+  />
+  <ViewSerialDrawer
+    v-if="viewSerialItem"
+    :open="true"
+    :sku="viewSerialItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    :qty-to-pick="viewSerialItem.expectedQty"
+    :picked-qty="rowPicked(viewSerialItem.key, viewSerialItem.pickedQty)"
+    :counted-total="(viewSerialItem.serialPicks ?? []).length"
+    :picked-serials="viewSerialItem.serialPicks ?? []"
+    :planned-serials="viewSerialItem.plannedSerialPicks ?? []"
+    :task-finished="task?.status === 'completed' || task?.status === 'partially picked'"
+    :product-name="viewSerialItem.productName"
+    :product-img="viewSerialItem.image"
+    @update:open="viewSerialItem = null"
+  />
+
+  <PdfPreviewModal
+    :open="pdfPreviewOpen"
+    :doc="pdfPreviewDoc"
+    :filename="pdfPreviewFilename"
+    title="Picking list preview"
+    @close="pdfPreviewOpen = false"
+  />
+
+  <!-- Nothing can be packed yet — marketplace order(s) not fully picked -->
+  <MpModal id="pkd-cant-pack" :is-open="cantPackModalOpen" size="md" is-close-on-esc :is-keep-alive="false" @close="cantPackModalOpen = false">
+    <MpModalContent>
+      <MpModalHeader>
+        Nothing can be packed yet
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <p style="margin:0;font-size:var(--mp-font-sizes-md);color:var(--mp-text-default)">
+          Marketplace orders must be picked in full — across every picking list that
+          covers them — before a packing task can be created. Finish picking the
+          remaining items, then come back here to create packing.
+        </p>
+      </MpModalBody>
+      <MpModalFooter>
+        <button class="detail-btn detail-btn--primary" @click="cantPackModalOpen = false">Got it</button>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 </template>
 
 <style scoped>
@@ -510,13 +675,23 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search {
   width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
@@ -585,6 +760,14 @@ function goBack() { router.push('/barang-keluar?tab=Picking') }
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+.detail-td--location { min-width: 160px; max-width: 200px; }
+.pkd-location-item { display: block; white-space: normal; word-break: break-word; }
+.detail-td--action { text-align: center; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.detail-th--action { position: sticky; right: 0; z-index: 2; }
+.detail-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
+.pkd-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.pkd-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .pkd-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }

@@ -6,26 +6,21 @@ import {
   toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import { scrollToFirstError } from '~/utils/form'
+import { formatDateLong } from '~/utils/date'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { receipts, type Receipt } from '~/data/receipts'
 import { lineItemsForReceipt, type ReceiptLineItem } from '~/data/receiptLineItems'
-import { createReceivingTask, uncoveredLineItems } from '~/data/receivingTasks'
+import { createReceivingTask, uncoveredLineItems, receivingTasksForReceipt } from '~/data/receivingTasks'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
 const receipt = computed<Receipt | null>(() => receipts.find(r => r.id === props.orderId) ?? null)
 
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
+// Assignee choices are scoped to this PO's warehouse — only its Operators are valid.
+const ASSIGNEES = computed(() => getWarehouseOperators(receipt.value?.warehouseId ?? ''))
 
 // ─── Form state ────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
@@ -33,7 +28,7 @@ const assigneeId    = ref('')
 // clears once an assignee is picked.
 const assigneeError = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
-const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // SKU scope = whatever stays in the table. Removing a row narrows the scope.
 const removed = ref(new Set<string>())
@@ -50,17 +45,29 @@ const lineItems = computed<ReceiptLineItem[]>(() => {
 const keptItems = computed<ReceiptLineItem[]>(() =>
   lineItems.value.filter(i => !removed.value.has(i.productId)),
 )
-// What the table renders — kept items narrowed by the search box.
+// Table shows ALL items; removed rows stay visible but dimmed.
 const visibleItems = computed<ReceiptLineItem[]>(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return keptItems.value
-  return keptItems.value.filter(i =>
+  if (!q) return lineItems.value
+  return lineItems.value.filter(i =>
     i.productName.toLowerCase().includes(q) ||
     i.sku.toLowerCase().includes(q) ||
     i.productDesc.toLowerCase().includes(q),
   )
 })
 const hasRemoved = computed(() => removed.value.size > 0)
+
+// ─── Partial reception context ────────────────────────────────────────────────
+const isPartialReceipt = computed(() => receipt.value?.status === 'partial reception')
+
+const receivedPerSku = computed<Record<string, number>>(() => {
+  const map: Record<string, number> = {}
+  for (const t of receivingTasksForReceipt(props.orderId)) {
+    if (t.status !== 'pending put-away' && t.status !== 'completed') continue
+    for (const it of t.items) map[it.sku] = (map[it.sku] ?? 0) + it.receivedQty
+  }
+  return map
+})
 
 // ─── Progressive pagination — auto lazy-load on scroll ────────────────────────
 const PAGE_SIZE   = 10
@@ -109,6 +116,11 @@ function removeItem(id: string): void {
   s.add(id)
   removed.value = s
 }
+function restoreItem(id: string): void {
+  const s = new Set(removed.value)
+  s.delete(id)
+  removed.value = s
+}
 function resetItems(): void { removed.value = new Set() }
 
 // Reset the form whenever the order changes.
@@ -146,27 +158,27 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
 function goBack() {
-  router.push(`/barang-masuk/${props.orderId}`)
+  router.push(`/inbound-delivery/${props.orderId}`)
 }
 function goReceipts() {
-  router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } })
+  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
 }
 
 function handleCreate() {
   // Button is always active — validate on submit and surface the error inline.
-  if (!assigneeId.value) { assigneeError.value = true; return }
+  if (!assigneeId.value) { assigneeError.value = true; scrollToFirstError(); return }
   if (!keptItems.value.length) return
   if (receipt.value) {
     // Create an Open receiving task covering the kept (included) SKUs. The operator
     // does the actual receiving; PO status stays Open until a task is ended.
-    createReceivingTask({
+    const task = createReceivingTask({
       receiptId: receipt.value.id,
       assignee: assigneeLabel.value,
       skus: keptItems.value.map((i) => i.sku),
     })
+    toast.notify({ variant: 'success', title: 'Receiving task created' , maxWidth: 'max-content'})
+    router.push(task ? `/receiving/${task.id}` : `/inbound-delivery/${props.orderId}`)
   }
-  toast.notify({ variant: 'success', title: 'Tugas penerimaan berhasil dibuat' })
-  router.push(`/barang-masuk/${props.orderId}`)
 }
 </script>
 
@@ -198,6 +210,7 @@ function handleCreate() {
           label="Tracking no."
           :value="receipt.trackingNos.length ? receipt.trackingNos.join(', ') : '—'"
         />
+        <ContentList label="Estimated arrival" :value="formatDateLong(receipt.estimatedArrival)" />
       </div>
 
       <!-- Assignee — select spans 3 of the 6-col (558px) form grid -->
@@ -230,7 +243,7 @@ function handleCreate() {
 
       <!-- SKU table — scope is whatever stays here -->
       <div class="pr-sku-section">
-        <h2 class="pr-section-title">SKUs to receive</h2>
+        <h2 class="pr-section-title">SKU to receive</h2>
 
         <!-- Filter bar: scope count (left) + search (always right) -->
         <div class="pr-filter-bar">
@@ -243,18 +256,16 @@ function handleCreate() {
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="pr-filter-search-input" type="text" placeholder="Search SKU or product" />
+            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
         </div>
 
-        <!-- Empty — scope emptied -->
-        <div v-if="!keptItems.length" class="pr-empty">
-          <p class="pr-empty-title">No SKUs included</p>
-          <p class="pr-empty-desc">You removed every SKU. Reset to include them again.</p>
-          <MpButton variant="textLink" size="sm" @click="resetItems">Reset SKUs</MpButton>
-        </div>
-
         <!-- Empty — search matched nothing -->
-        <div v-else-if="!visibleItems.length" class="pr-empty">
+        <div v-if="!visibleItems.length" class="pr-empty">
           <p class="pr-empty-title">No results found</p>
           <p class="pr-empty-desc">No SKU matches your search. Try a different keyword.</p>
         </div>
@@ -266,7 +277,9 @@ function handleCreate() {
               <colgroup>
                 <col />
                 <col />
-                <col />
+                <col class="pr-col--num" />
+                <col v-if="isPartialReceipt" class="pr-col--num" />
+                <col v-if="isPartialReceipt" class="pr-col--num" />
                 <col />
                 <col />
               </colgroup>
@@ -275,26 +288,41 @@ function handleCreate() {
                   <th class="pr-th">Product</th>
                   <th class="pr-th">SKU</th>
                   <th class="pr-th pr-th--num">Purchase qty</th>
+                  <th v-if="isPartialReceipt" class="pr-th pr-th--num">Received qty</th>
+                  <th v-if="isPartialReceipt" class="pr-th pr-th--num">Outstanding qty</th>
                   <th class="pr-th">Unit</th>
                   <th class="pr-th pr-th--action" aria-hidden="true" />
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="it in pagedItems" :key="it.productId" class="pr-item-row">
+                <tr v-for="it in pagedItems" :key="it.productId" class="pr-item-row" :class="{ 'pr-item-row--removed': removed.has(it.productId) }">
                   <td class="pr-td">
                     <ProductCell :name="it.productName" :desc="it.productDesc" :image="it.image" />
                   </td>
                   <td class="pr-td"><span class="pr-sku-text">{{ it.sku }}</span></td>
                   <td class="pr-td pr-td--num">{{ formatNum(it.purchaseQty) }}</td>
+                  <td v-if="isPartialReceipt" class="pr-td pr-td--num">{{ formatNum(receivedPerSku[it.sku] ?? 0) }}</td>
+                  <td v-if="isPartialReceipt" class="pr-td pr-td--num pr-td--outstanding">{{ formatNum(it.purchaseQty - (receivedPerSku[it.sku] ?? 0)) }}</td>
                   <td class="pr-td">{{ it.unit }}</td>
                   <td class="pr-td pr-td--action">
-                    <MpTooltip :id="`pr-rm-${it.productId}`" label="Remove" placement="left" use-portal>
-                      <MpButton
-                        :aria-label="`Remove ${it.productName}`"
-                        variant="ghost" size="sm" left-icon="minus-circular"
-                        @click="removeItem(it.productId)"
-                      />
-                    </MpTooltip>
+                    <template v-if="removed.has(it.productId)">
+                      <MpTooltip :id="`pr-rs-${it.productId}`" label="Restore" placement="left" use-portal>
+                        <MpButton
+                          :aria-label="`Restore ${it.productName}`"
+                          variant="ghost" left-icon="add"
+                          @click="restoreItem(it.productId)"
+                        />
+                      </MpTooltip>
+                    </template>
+                    <template v-else>
+                      <MpTooltip :id="`pr-rm-${it.productId}`" label="Remove" placement="left" use-portal>
+                        <MpButton
+                          :aria-label="`Remove ${it.productName}`"
+                          variant="ghost" left-icon="minus-circular"
+                          @click="removeItem(it.productId)"
+                        />
+                      </MpTooltip>
+                    </template>
                   </td>
                 </tr>
               </tbody>
@@ -324,7 +352,7 @@ function handleCreate() {
   <!-- Not found fallback -->
   <div v-else class="pr-not-found">
     <p>Purchase order not found.</p>
-    <button class="detail-breadcrumb" @click="router.push('/barang-masuk')">Back to Inbound delivery</button>
+    <button class="detail-breadcrumb" @click="router.push('/inbound-delivery')">Back to Inbound delivery</button>
   </div>
 </template>
 
@@ -418,6 +446,14 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .pr-filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Items table — ERP table spec + progressive internal scroll ─────────────── */
 .pr-items-section { display: flex; flex-direction: column; }
@@ -427,7 +463,6 @@ function handleCreate() {
   overflow: hidden;
 }
 .pr-items-section--bordered .pr-items-count {
-  border-top: 1px solid var(--mp-border-default);
 }
 .pr-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pr-items { width: 100%; table-layout: auto; border-collapse: collapse; }
@@ -448,17 +483,22 @@ function handleCreate() {
 .pr-th--action { width: 56px; }
 
 .pr-td {
-  height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
+.pr-col--num { width: 110px; }
 .pr-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
 }
-.pr-td--action { text-align: right; padding-right: var(--mp-spacing-2); }
+.pr-td--outstanding { color: var(--mp-text-warning, #b45309); font-weight: var(--mp-font-weights-semi-bold); }
+.pr-td--action { text-align: right; padding-block: 2px; padding-right: var(--mp-spacing-2); }
+.pr-item-row--removed .pr-td { background: var(--mp-background-neutral-subtle); color: var(--mp-text-disabled); }
+.pr-item-row--removed :deep(.pc-name),
+.pr-item-row--removed :deep(.pc-desc),
+.pr-item-row--removed .pr-sku-text { color: var(--mp-text-disabled); }
 
 /* Product cell — real photo + name + description */
 .pr-product { display: flex; align-items: center; gap: var(--mp-spacing-3); }

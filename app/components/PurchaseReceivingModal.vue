@@ -11,24 +11,16 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import type { Receipt } from '~/data/receipts'
 import { lineItemsForReceipt, BINS, type ReceiptLineItem } from '~/data/receiptLineItems'
 import { addPurchaseReceiving } from '~/data/purchaseReceivings'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 
 const props = defineProps<{ receipt: Receipt | null; open: boolean }>()
 const emit = defineEmits<{ close: []; created: [] }>()
 
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
-
 // ─── Form state ────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
-const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+// Assignee can only be an operator of the receipt's warehouse.
+const ASSIGNEES = computed(() => getWarehouseOperators(props.receipt?.warehouseId ?? ''))
+const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // SKU scope = whatever stays in the table. Removing a row narrows the scope.
 const removed = ref(new Set<string>())
@@ -153,7 +145,7 @@ function handleCreate() {
       endDate: dateStr,
     })
   }
-  toast.notify({ variant: 'success', title: 'Purchase receiving saved' })
+  toast.notify({ variant: 'success', title: 'Purchase receiving saved' , maxWidth: 'max-content'})
   emit('created')
   emit('close')
 }
@@ -227,6 +219,11 @@ function handleCreate() {
                 <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
               <input v-model="search" class="pr-filter-search-input" type="text" placeholder="Search SKU or product" />
+              <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -401,6 +398,14 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .pr-filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Items table — ERP table spec + progressive internal scroll ─────────────── */
 .pr-items-section { display: flex; flex-direction: column; }
@@ -410,9 +415,7 @@ function handleCreate() {
   border-radius: var(--mp-radii-lg);
   overflow: hidden;
 }
-/* count row sits at the bottom of the bordered panel → divider above */
 .pr-items-section--bordered .pr-items-count {
-  border-top: 1px solid var(--mp-border-default);
 }
 /* table scrolls internally at ~10 rows so 25+ SKUs don't grow the modal */
 .pr-items-scroll { max-height: 638px; overflow-y: auto; overflow-x: hidden; }
@@ -435,11 +438,10 @@ function handleCreate() {
 .pr-th--action { width: 56px; }
 
 .pr-td {
-  height: var(--mp-sizes-10, 40px);
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .pr-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;

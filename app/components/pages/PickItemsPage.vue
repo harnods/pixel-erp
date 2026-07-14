@@ -2,22 +2,302 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { formatDateTimeLong } from '~/utils/date'
 import {
-  MpSpinner,
+  MpSpinner, MpIcon, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
   toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { getPickingLineItems } from '~/data/pickingTaskDetails'
-import { getPickingTask, savePickingDraft, endPicking } from '~/data/pickingTasks'
+import ScanBar from '~/components/patterns/ScanBar.vue'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
+import { getPickingLineItems, type PickLineItem } from '~/data/pickingTaskDetails'
+import {
+  getPickingTask, savePickingDraft, endPicking, packableOrderIds,
+  orderPickedTotal, orderPickedQtyInTask, orderDemand,
+  type PickingBatchPick, type PickingSerialPick, type PickingAssignments,
+} from '~/data/pickingTasks'
+import { getPackingForOrder } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
+import { stockLocationPaths } from '~/data/storageLocations'
+import { productBySku } from '~/data/inventory'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { resolveScan, notifyScanError } from '~/utils/scan'
+import { playScanSuccessSound } from '~/utils/sound'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
 const task = computed(() => getPickingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPickingLineItems(task.value) : [])
+const itemByKey = computed(() => new Map(lineItems.value.map(it => [it.key, it])))
+// stockLocationPaths() repeats a bin once per unit of capacity — dedupe before use as
+// a dropdown's option list (same fix as PutAwayItemsPage.vue).
+const locationOptions = computed(() => {
+  if (!task.value) return []
+  return [...new Set(stockLocationPaths(task.value.warehouseId).filter(Boolean))]
+})
+
+// ── Batch / serial helpers (same heuristic as receiving / put-away) ────────────
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+// The drawer's "onHand" field doubles as "Available qty" for picking (never raw on
+// hand) — a batch already claimed by another order can't be offered again here.
+function batchAvailable(sku: string, batchNo: string): number {
+  return stockMap.value.get(sku)?.batches?.find(b => b.batchNo === batchNo)?.available ?? 0
+}
+function locationForSerial(sku: string, serial: string): string {
+  const sr = stockMap.value.get(sku)?.serials
+  return sr?.available.find(u => u.serial === serial)?.location
+    ?? sr?.reserved.find(u => u.serial === serial)?.location
+    ?? ''
+}
+
+// ── Manage batch / Manage serial number — pick FROM existing batches/serials,
+// keyed by picking line key (orderId::sku), matching the table's existing per-line
+// granularity (a task bundling 2 orders for the same SKU already shows 2 independent
+// rows today). Storage location is derived from wherever the chosen batch/serial
+// already sits — never chosen manually, unlike put-away's destination picker. ────
+//
+// task.batchPicks/serialPicks is the RESERVATION PLAN decided when the picking list
+// was created — it's what to suggest, not proof the operator has actually picked it.
+// It only becomes real once they open Manage batch/serial and hit Save, or once this
+// task has genuinely been draft-saved/finished before (pickedByKey then exists).
+const taskBatchByKey = computed(() => {
+  const map: Record<string, CommittedBatch[]> = {}
+  for (const it of lineItems.value) {
+    // getPickingLineItems already merges batchPicks by batchNo at the source —
+    // never show the same batch as 2 rows (it also doubles the "Available qty" total).
+    if (it.batchPicks?.length) {
+      map[it.key] = it.batchPicks.map(b => ({
+        key: b.batchNo,
+        batchNo: b.batchNo,
+        expiryDate: b.expiryDate,
+        desc: b.desc,
+        onHand: batchAvailable(it.skuCode, b.batchNo),
+        counted: b.qty,
+        unit: b.unit,
+        location: b.location,
+        reservedQty: b.qty,
+      }))
+    }
+  }
+  return map
+})
+const taskSerialByKey = computed(() => {
+  const map: Record<string, PickingSerialPick[]> = {}
+  for (const it of lineItems.value) {
+    if (it.serialPicks?.length) map[it.key] = it.serialPicks.map(s => ({ ...s }))
+  }
+  return map
+})
+// Drawer fallback for a line the operator hasn't confirmed yet — same suggested
+// batches as above, but uncounted: the operator must scan (or enter a qty) before
+// anything counts as picked.
+const planBatchByKey = computed(() => {
+  const map: Record<string, CommittedBatch[]> = {}
+  for (const [key, batches] of Object.entries(taskBatchByKey.value)) {
+    map[key] = batches.map(b => ({ ...b, counted: null }))
+  }
+  return map
+})
+const planSerialByKey = taskSerialByKey
+
+const batchLinesByKey  = ref<Record<string, CommittedBatch[]>>({})
+const serialLinesByKey = ref<Record<string, PickingSerialPick[]>>({})
+
+function seedConfirmedLines() {
+  // pickedByKey only ever gets set by savePickingDraft/endPicking — if it's still
+  // undefined, nothing has actually been picked on this task yet, so Picked qty must
+  // start at 0 even though the reservation plan already has batches/serials assigned.
+  const hasRealProgress = task.value?.pickedByKey !== undefined
+  batchLinesByKey.value = hasRealProgress ? { ...taskBatchByKey.value } : {}
+  serialLinesByKey.value = hasRealProgress ? { ...taskSerialByKey.value } : {}
+}
+watch([() => props.orderId, task], seedConfirmedLines, { immediate: true })
+
+const batchDrawerKey = ref<string | null>(null)
+const batchDrawerOpen = computed({
+  get: () => batchDrawerKey.value !== null,
+  set: (v: boolean) => { if (!v) batchDrawerKey.value = null },
+})
+function openBatchDrawer(key: string) { batchDrawerKey.value = key }
+function batchPickedQty(key: string): number {
+  return (batchLinesByKey.value[key] ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
+}
+function saveBatchLines(batches: CommittedBatch[]) {
+  const key = batchDrawerKey.value
+  if (!key) return
+  batchLinesByKey.value = { ...batchLinesByKey.value, [key]: batches }
+}
+
+const serialDrawerKey = ref<string | null>(null)
+const serialDrawerOpen = computed({
+  get: () => serialDrawerKey.value !== null,
+  set: (v: boolean) => { if (!v) serialDrawerKey.value = null },
+})
+function openSerialDrawer(key: string) { serialDrawerKey.value = key }
+function serialPickedQty(key: string): number {
+  return (serialLinesByKey.value[key] ?? []).length
+}
+function saveSerialLines(serials: CommittedSerial[]) {
+  const key = serialDrawerKey.value
+  if (!key) return
+  const item = itemByKey.value.get(key)
+  if (!item) return
+  serialLinesByKey.value = {
+    ...serialLinesByKey.value,
+    [key]: serials.map(s => ({ serial: s.serial, location: locationForSerial(item.skuCode, s.serial) })),
+  }
+}
+
+// ── Page-level scan bar ─────────────────────────────────────────────────────────
+const flashRowKey = ref<string | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | null = null
+function flashRow(key: string) {
+  flashRowKey.value = key
+  if (flashTimer) clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => { flashRowKey.value = null }, 700)
+}
+
+/** Add 1 unit of `batchNo` to a line's picked batches — creates the row (with real
+ *  batch data from the warehouse) the first time it's scanned, no drawer required.
+ *  Returns whether it actually applied (false = rejected, already notified). */
+function addOrIncrementBatch(item: PickLineItem, batchNo: string): boolean {
+  if (batchPickedQty(item.key) >= item.expectedQty) {
+    notifyScanError(`${item.skuCode}: qty to pick already fully picked`)
+    return false
+  }
+  const existing = batchLinesByKey.value[item.key] ?? []
+  const idx = existing.findIndex(b => b.batchNo === batchNo)
+  if (idx !== -1) {
+    const updated = existing.map((b, i) => i === idx ? { ...b, counted: (b.counted ?? 0) + 1 } : b)
+    batchLinesByKey.value = { ...batchLinesByKey.value, [item.key]: updated }
+    return true
+  }
+  const b = stockMap.value.get(item.skuCode)?.batches?.find(x => x.batchNo === batchNo)
+  if (!b) return false
+  const newBatch: CommittedBatch = {
+    key: b.batchNo, batchNo: b.batchNo, expiryDate: b.expiryDate, desc: '',
+    onHand: batchAvailable(item.skuCode, b.batchNo), counted: 1,
+    unit: stockMap.value.get(item.skuCode)?.unit ?? '', location: b.location,
+  }
+  batchLinesByKey.value = { ...batchLinesByKey.value, [item.key]: [...existing, newBatch] }
+  return true
+}
+
+/** Add a serial number to a line's picked serials — first scan creates the entry,
+ *  no drawer required; a repeat scan of the same serial is a silent no-op (just
+ *  re-flashes, no sound either way). Returns whether it actually applied. */
+function addSerialPick(item: PickLineItem, serial: string): boolean {
+  const existing = serialLinesByKey.value[item.key] ?? []
+  if (existing.some(s => s.serial === serial)) return false
+  if (existing.length >= item.expectedQty) {
+    notifyScanError(`${item.skuCode}: qty to pick already fully picked`)
+    return false
+  }
+  serialLinesByKey.value = {
+    ...serialLinesByKey.value,
+    [item.key]: [...existing, { serial, location: locationForSerial(item.skuCode, serial) }],
+  }
+  return true
+}
+
+function handleScan(rawValue: string) {
+  const v = rawValue.trim()
+  if (!v || !task.value) return
+
+  // Global resolver — maps Batch No. / Serial Number / SKU straight to its real
+  // SKU from the warehouse's own stock, regardless of what this page already has
+  // loaded locally. Scanning a batch/serial never requires opening its drawer first.
+  const resolved = resolveScan(task.value.warehouseId, v)
+  if (!resolved) {
+    notifyScanError(`Barcode not found: "${v}"`)
+    return
+  }
+
+  // Is this SKU actually on this picking list? A task can bundle the same SKU
+  // across 2+ orders (2 independent rows) — fill the first one that isn't fully
+  // picked yet, not just the first match.
+  const candidates = lineItems.value.filter(it => it.skuCode === resolved.sku)
+  if (!candidates.length) {
+    notifyScanError(`${v}: SKU ${resolved.sku} isn't on this picking list`)
+    return
+  }
+  const item = candidates.find(it => effectivePickedQty(it) < it.expectedQty)
+  if (!item) {
+    notifyScanError(`${resolved.sku}: qty to pick already fully picked`)
+    return
+  }
+
+  if (resolved.kind === 'batch') {
+    if (addOrIncrementBatch(item, resolved.batchNo!)) {
+      playScanSuccessSound()
+      flashRow(item.key)
+    }
+    return
+  }
+  if (resolved.kind === 'serial') {
+    if (addSerialPick(item, resolved.serial!)) {
+      playScanSuccessSound()
+      flashRow(item.key)
+    }
+    return
+  }
+  // Plain SKU scan
+  if (isBatchTrackedSku(item.skuCode)) {
+    playScanSuccessSound()
+    openBatchDrawer(item.key)
+    return
+  }
+  if (isSerialTrackedSku(item.skuCode)) {
+    notifyScanError(`${v}: use Manage serial numbers to add serials`)
+    return
+  }
+  draftQty.value = { ...draftQty.value, [item.key]: (draftQty.value[item.key] ?? 0) + 1 }
+  if (showQtyErrors.value) showQtyErrors.value = false
+  if (finishError.value) finishError.value = ''
+  playScanSuccessSound()
+  flashRow(item.key)
+}
+
+/** Read-only bin list for the Storage location column, batch/serial-tracked SKUs only. */
+function pickedLocations(key: string): string[] {
+  const item = itemByKey.value.get(key)
+  if (!item) return []
+  const bins = new Set<string>()
+  if (isBatchTrackedSku(item.skuCode)) {
+    for (const b of batchLinesByKey.value[key] ?? []) if ((b.counted ?? 0) > 0 && b.location) bins.add(b.location)
+  } else if (isSerialTrackedSku(item.skuCode)) {
+    for (const s of serialLinesByKey.value[key] ?? []) if (s.location) bins.add(s.location)
+  }
+  return [...bins]
+}
+
+/** Picked qty for a line — batch/serial-tracked SKUs source it from their drawer
+ *  selections, plain SKUs from the manual qty input (draftQty). */
+function effectivePickedQty(item: PickLineItem): number {
+  if (isBatchTrackedSku(item.skuCode)) return batchPickedQty(item.key)
+  if (isSerialTrackedSku(item.skuCode)) return serialPickedQty(item.key)
+  return draftQty.value[item.key] ?? 0
+}
 
 // Any picking task can be finished partially (regardless of marketplace) → it becomes
 // "partially picked". The marketplace "must be complete" rule applies only when turning
@@ -27,22 +307,59 @@ const marketplaceOrderIds = computed(
 )
 const hasMarketplaceOrder = computed(() => marketplaceOrderIds.value.size > 0)
 
+// This task's own outstanding qty is NOT enough to decide whether packing can be
+// created — an order can span several picking lists, so "fully picked" has to be
+// judged across ALL of them, combining what's already saved elsewhere with what's
+// still just a live, unsaved draft in this session (endPicking hasn't run yet).
+function orderPickedTotalWithDraft(orderId: string): number {
+  if (!task.value) return 0
+  const otherTasksTotal = Math.max(0, orderPickedTotal(orderId) - orderPickedQtyInTask(task.value, orderId))
+  const liveInThisTask = lineItems.value
+    .filter(it => it.orderId === orderId)
+    .reduce((s, it) => s + effectivePickedQty(it), 0)
+  return otherTasksTotal + liveInThisTask
+}
+/** Would at least one order in this task actually become packable if I finish now? */
+const wouldHaveAnyPackableOrder = computed(() => {
+  if (!task.value) return false
+  return task.value.salesOrderIds.some(orderId => {
+    if (getPackingForOrder(orderId).length > 0) return false
+    const o = outgoingOrders.find(x => x.id === orderId)
+    if (!o) return false
+    const total = orderPickedTotalWithDraft(orderId)
+    if (total <= 0) return false
+    return isMarketplaceOrder(o) ? total >= orderDemand(orderId) : true
+  })
+})
+
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
 // ── Draft picked qty (keyed by line key) ──────────────────────────────────────
 const draftQty = ref<Record<string, number>>({})
 const search = ref('')
-watch([() => props.orderId, lineItems], () => {
+function seedDraftQty() {
   const map: Record<string, number> = {}
   for (const it of lineItems.value) map[it.key] = it.pickedQty
   draftQty.value = map
+}
+watch([() => props.orderId, lineItems], () => {
+  seedDraftQty()
   search.value = ''
 }, { immediate: true })
 
+// Scanning is harmless to undo — nothing is persisted until Save draft / Finish
+// picking — so let the operator wipe every unsaved scan/entry and start over.
+function resetProgress() {
+  seedDraftQty()
+  seedConfirmedLines()
+  if (showQtyErrors.value) showQtyErrors.value = false
+  if (finishError.value) finishError.value = ''
+}
+
 const toPickTotal = computed(() => lineItems.value.reduce((s, it) => s + it.expectedQty, 0))
-const draftPickedTotal = computed(() => Object.values(draftQty.value).reduce((a, b) => a + (b || 0), 0))
+const draftPickedTotal = computed(() => lineItems.value.reduce((s, it) => s + effectivePickedQty(it), 0))
 const draftOutstanding = computed(() => Math.max(0, toPickTotal.value - draftPickedTotal.value))
-const shortItemsCount = computed(() => lineItems.value.filter(it => (draftQty.value[it.key] ?? 0) < it.expectedQty).length)
+const shortItemsCount = computed(() => lineItems.value.filter(it => effectivePickedQty(it) < it.expectedQty).length)
 
 const filteredItems = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -74,12 +391,6 @@ function setupItemsObserver() {
 }
 watch(search, () => { shownCount.value = PAGE_SIZE; nextTick(() => { if (itemsScrollEl.value) itemsScrollEl.value.scrollTop = 0; setupItemsObserver() }) })
 
-function pickAll() {
-  const map: Record<string, number> = {}
-  for (const it of lineItems.value) map[it.key] = it.expectedQty
-  draftQty.value = map
-}
-
 const showQtyErrors = ref(false)
 // Inline validation caption under the toolbar (shown on a failed Finish attempt), not a toast.
 const finishError = ref('')
@@ -93,12 +404,34 @@ function onQtyInput(key: string, expected: number, e: Event) {
 }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
+// Build the picked-qty-per-line map and the batch/serial pick assignments to persist.
+function buildPickedMap(): Record<string, number> {
+  const map: Record<string, number> = {}
+  for (const it of lineItems.value) map[it.key] = effectivePickedQty(it)
+  return map
+}
+function buildAssignments(): PickingAssignments {
+  const batchPicks: Record<string, PickingBatchPick[]> = {}
+  for (const [key, batches] of Object.entries(batchLinesByKey.value)) {
+    const picks = batches.filter(b => (b.counted ?? 0) > 0).map(b => ({
+      batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc,
+      qty: b.counted ?? 0, unit: b.unit, location: b.location ?? '',
+    }))
+    if (picks.length) batchPicks[key] = picks
+  }
+  const serialPicks: Record<string, PickingSerialPick[]> = {}
+  for (const [key, serials] of Object.entries(serialLinesByKey.value)) {
+    if (serials.length) serialPicks[key] = serials
+  }
+  return { batchPicks, serialPicks }
+}
+
 // ── Finish picking confirmation ───────────────────────────────────────────────
 const showConfirm = ref(false)
 function endPickingClick() {
   if (draftPickedTotal.value === 0) {
     showQtyErrors.value = true
-    finishError.value = 'Enter picked qty for at least 1 item'
+    finishError.value = 'You must fill in picked qty for at least 1 item'
     return
   }
   finishError.value = ''
@@ -107,34 +440,43 @@ function endPickingClick() {
 function commitPicking(createPacking = false) {
   showConfirm.value = false
   const complete = draftPickedTotal.value >= toPickTotal.value
-  endPicking(props.orderId, { ...draftQty.value })
-  // Marketplace orders can only become a packing task when fully picked.
-  const blockPacking = createPacking && hasMarketplaceOrder.value && !complete
+  endPicking(props.orderId, buildPickedMap(), buildAssignments())
+  // Re-check packability at the ORDER level (across every picking list for that
+  // order), same as the picking detail page's own "Create packing" guard — this
+  // task alone being fully picked doesn't mean the order is, if it spans more lists.
+  let blockPacking = false
+  if (createPacking) {
+    const t = task.value
+    const packable = t ? packableOrderIds(t).filter(id => getPackingForOrder(id).length === 0) : []
+    blockPacking = packable.length === 0
+  }
   if (createPacking && !blockPacking) {
-    router.push({ path: '/barang-keluar/packing/create', query: { pickingId: props.orderId } })
+    router.push({ path: '/outbound-delivery/packing/create', query: { pickingId: props.orderId } })
     return
   }
   if (blockPacking) {
     toast.notify({
-      variant: 'warning',
+      variant: 'error',
       title: 'Saved as partially picked',
-      description: 'Marketplace orders must be fully picked before a packing task can be created.',
+      description: 'Marketplace orders must be fully picked (across their picking lists) before a packing task can be created.',
+      maxWidth: 'max-content',
     })
   } else {
     toast.notify({
-      variant: complete ? 'success' : 'warning',
+      variant: complete ? 'success' : 'error',
       title: complete ? 'Picking finished, ready to pack' : 'Picking finished (partially picked)',
+      maxWidth: 'max-content',
     })
   }
   router.push(`/picking/${props.orderId}`)
 }
 function saveDraft() {
-  savePickingDraft(props.orderId, { ...draftQty.value })
-  toast.notify({ variant: 'success', title: 'Picking draft saved' })
+  savePickingDraft(props.orderId, buildPickedMap(), buildAssignments())
+  toast.notify({ variant: 'success', title: 'Picking draft saved' , maxWidth: 'max-content'})
   router.push(`/picking/${props.orderId}`)
 }
 function goBack() { router.push(`/picking/${props.orderId}`) }
-function goPicking() { router.push('/barang-keluar?tab=Picking') }
+function goPicking() { router.push('/outbound-delivery?tab=Picking') }
 
 // ── Footer divider ────────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)
@@ -192,58 +534,102 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
       <div class="pik-header">
         <ContentList label="Warehouse" :value="task.warehouseName" />
         <ContentList label="Assignee" :value="task.assignee" />
-        <ContentList label="Sales orders" :value="task.salesNos.join(', ')" />
         <ContentList label="Start date" :value="startDateLabel" />
         <ContentList label="End date" :value="task.endDate ? formatDateTimeLong(task.endDate) : '—'" />
       </div>
 
       <div class="pik-summary">
         <div class="pik-stat"><span class="pik-stat-label">SKU qty</span><span class="pik-stat-val">{{ fmt(lineItems.length) }}</span></div>
-        <div class="pik-stat"><span class="pik-stat-label">To pick qty</span><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">Qty to pick</span><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span></div>
         <div class="pik-stat"><span class="pik-stat-label">Picked qty</span><span class="pik-stat-val">{{ fmt(draftPickedTotal) }}</span></div>
         <div class="pik-stat"><span class="pik-stat-label">Outstanding qty</span><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pik-sku-section">
         <div class="pik-filter-bar">
-          <div class="pik-filter-bar-left">
-            <span class="pik-editing-hint">
-              {{ hasMarketplaceOrder
-                ? 'Marketplace order — pick every item in full to finish picking.'
-                : 'Pick each item from its storage location and enter the picked qty.' }}
-            </span>
-            <button class="pik-link-btn" @click="pickAll">Pick all</button>
-          </div>
           <div class="pik-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pik-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="search" class="pik-search" type="text" placeholder="Search..." />
+            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
         </div>
+
+        <ScanBar placeholder="Scan barcode..." @scan="handleScan">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">Reset count</button>
+        </ScanBar>
+
         <p v-if="finishError" class="pik-finish-error">{{ finishError }}</p>
 
         <section class="pik-items-section" :class="{ 'pik-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pik-items-scroll">
             <table class="pik-items">
+              <colgroup>
+                <col /><!-- Product -->
+                <col style="width: 160px" /><!-- SKU -->
+                <col style="width: 170px" /><!-- Storage location -->
+                <col /><!-- Qty to pick -->
+                <col /><!-- Picked qty -->
+                <col /><!-- Outstanding qty -->
+                <col style="width: 100px" /><!-- Unit -->
+                <col /><!-- Action -->
+              </colgroup>
               <thead>
                 <tr>
                   <th class="pik-th">Product</th>
                   <th class="pik-th">SKU</th>
                   <th class="pik-th">Storage location</th>
-                  <th class="pik-th pik-th--num">To pick qty</th>
+                  <th class="pik-th pik-th--num">Qty to pick</th>
                   <th class="pik-th pik-th--num">Picked qty</th>
                   <th class="pik-th pik-th--num">Outstanding qty</th>
                   <th class="pik-th">Unit</th>
+                  <th class="pik-th pik-th--action"></th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in pagedItems" :key="item.key" class="pik-row">
+                <tr v-for="item in pagedItems" :key="item.key" class="pik-row" :class="{ 'pik-row--flash': flashRowKey === item.key }">
                   <td class="pik-td"><ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" /></td>
                   <td class="pik-td">{{ item.skuCode }}</td>
-                  <td class="pik-td">{{ item.binLocation }}</td>
+
+                  <!-- Storage location: read-only bin list for batch/serial-tracked SKUs
+                       (no picker — the location is wherever the picked batch/serial already
+                       sits); plain SKUs keep the static bin text. -->
+                  <td v-if="isBatchTrackedSku(item.skuCode) || isSerialTrackedSku(item.skuCode)" class="pik-td pik-td--location-summary">
+                    <div class="pik-location-summary-wrap">
+                      <template v-if="pickedLocations(item.key).length">
+                        <span v-for="loc in pickedLocations(item.key)" :key="loc" class="pik-location-summary-item">{{ loc }}</span>
+                      </template>
+                      <MpTooltip
+                        v-else
+                        :id="`pik-tt-loc-${item.key}`"
+                        :label="isBatchTrackedSku(item.skuCode) ? 'View via Manage batch' : 'View via Manage serial numbers'"
+                        placement="top"
+                        use-portal
+                      >
+                        <span class="pik-location-summary-item">—</span>
+                      </MpTooltip>
+                    </div>
+                  </td>
+                  <td v-else class="pik-td">{{ item.binLocation }}</td>
+
                   <td class="pik-td pik-td--num">{{ fmt(item.expectedQty) }}</td>
+
+                  <!-- Picked qty: plain value for batch/serial-tracked SKUs (total from
+                       drawer, filled by scanning — never manually typed), input for
+                       plain SKUs. -->
+                  <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--num">
+                    <span class="pik-batch-val">{{ fmt(batchPickedQty(item.key)) }}</span>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(item.skuCode)" class="pik-td pik-td--num">
+                    <span class="pik-batch-val">{{ fmt(serialPickedQty(item.key)) }}</span>
+                  </td>
                   <td
+                    v-else
                     class="pik-td pik-td--input"
                     :class="{ 'pik-td--input--error': showQtyErrors && !(draftQty[item.key] ?? 0) }"
                   >
@@ -256,15 +642,32 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                     />
                   </td>
                   <td class="pik-td pik-td--num">
-                    <span v-if="item.expectedQty - (draftQty[item.key] ?? 0) > 0" class="pik-outstanding">
-                      {{ fmt(item.expectedQty - (draftQty[item.key] ?? 0)) }}
+                    <span :class="item.expectedQty - effectivePickedQty(item) > 0 ? 'pik-outstanding' : 'pik-qty--full'">
+                      {{ fmt(item.expectedQty - effectivePickedQty(item)) }}
                     </span>
-                    <span v-else class="pik-qty--full">—</span>
                   </td>
+
                   <td class="pik-td">{{ item.unit }}</td>
+
+                  <!-- Action column: Manage batch / Manage serial numbers icon -->
+                  <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--action">
+                    <MpTooltip :id="`pik-tt-batch-${item.key}`" label="Manage batch" placement="top" use-portal>
+                      <button class="pik-manage-icon-btn" type="button" @click="openBatchDrawer(item.key)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(item.skuCode)" class="pik-td pik-td--action">
+                    <MpTooltip :id="`pik-tt-serial-${item.key}`" label="Manage serial numbers" placement="top" use-portal>
+                      <button class="pik-manage-icon-btn" type="button" @click="openSerialDrawer(item.key)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </td>
+                  <td v-else class="pik-td pik-td--action"></td>
                 </tr>
                 <tr v-if="!filteredItems.length">
-                  <td class="pik-td pik-empty" colspan="7">No products match your search.</td>
+                  <td class="pik-td pik-empty" colspan="8">No products match your search.</td>
                 </tr>
               </tbody>
             </table>
@@ -316,7 +719,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
           <button class="pik-btn pik-btn--ghost" @click="showConfirm = false">Cancel</button>
           <button class="pik-btn pik-btn--secondary" @click="commitPicking(false)">Finish picking</button>
           <button
-            v-if="!(hasMarketplaceOrder && draftOutstanding > 0)"
+            v-if="wouldHaveAnyPackableOrder"
             class="pik-btn pik-btn--primary"
             @click="commitPicking(true)"
           >Finish &amp; create packing</button>
@@ -325,6 +728,35 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <ManageBatchDrawer
+    v-if="batchDrawerKey"
+    :open="batchDrawerOpen"
+    :sku="itemByKey.get(batchDrawerKey)?.skuCode ?? ''"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="picking"
+    :origin-location-paths="locationOptions"
+    :target-count="itemByKey.get(batchDrawerKey)?.expectedQty ?? 0"
+    :execution-mode="true"
+    :planned-batches="itemByKey.get(batchDrawerKey)?.plannedBatchPicks?.map(b => ({ batchNo: b.batchNo, qty: b.qty }))"
+    :model-value="batchLinesByKey[batchDrawerKey] ?? planBatchByKey[batchDrawerKey] ?? []"
+    @update:open="batchDrawerOpen = $event"
+    @save="saveBatchLines"
+  />
+  <ManageSerialDrawer
+    v-if="serialDrawerKey"
+    :open="true"
+    :sku="itemByKey.get(serialDrawerKey)?.skuCode ?? ''"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="picking"
+    :target-count="itemByKey.get(serialDrawerKey)?.expectedQty ?? 0"
+    :execution-mode="true"
+    :origin-location-paths="locationOptions"
+    :model-value="(serialLinesByKey[serialDrawerKey] ?? []).map(s => ({ serial: s.serial }))"
+    :planned-serials="(planSerialByKey[serialDrawerKey] ?? []).map(s => s.serial)"
+    @update:open="serialDrawerOpen = $event"
+    @save="saveSerialLines"
+  />
 </template>
 
 <style scoped>
@@ -348,7 +780,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default);
 }
 .detail-stage {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  flex: 1; min-height: 0; overflow: hidden;
   background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -360,20 +792,16 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
-.pik-header { display: flex; gap: var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
-.pik-header :deep(.content-list) { padding-top: 0; }
-.pik-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
+.pik-header { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.pik-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
+.pik-summary { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pik-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
 .pik-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .pik-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.pik-sku-section { display: flex; flex-direction: column; }
-.pik-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
-.pik-filter-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
-.pik-editing-hint { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pik-finish-error { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
-.pik-link-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-link); }
-.pik-link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+.pik-sku-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.pik-filter-bar { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
+.pik-finish-error { flex-shrink: 0; margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
 .pik-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
@@ -383,10 +811,18 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-search-wrap:focus-within { border-color: var(--mp-border-bold); box-shadow: 0 0 0 1px var(--mp-border-bold); }
 .pik-search { flex: 1; border: none; background: transparent; outline: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pik-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-.pik-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
+.pik-items-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .pik-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
-.pik-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.pik-items-scroll { min-height: 0; overflow-y: auto; overflow-x: auto; }
 .pik-items thead .pik-th { position: sticky; top: 0; z-index: 1; }
 .pik-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 .pik-th {
@@ -398,12 +834,16 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .pik-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+
+.pik-th { border-right: 1px solid var(--mp-border-default); }
+.pik-th:last-child { border-right: none; }
 .pik-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   background: var(--mp-background-neutral-hovered);
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
+  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: top;
 }
+.pik-td:last-child { border-right: none; }
 .pik-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pik-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .pik-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
@@ -418,10 +858,38 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 }
 .pik-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
 .pik-outstanding { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium); }
+
+/* Storage location — read-only bin list for batch/serial-tracked SKUs. The flex
+   layout lives on an inner wrapper div, not the <td> itself — display:flex directly
+   on a <td> breaks the browser's native table-row height stretch. */
+.pik-td--location-summary { padding: 0; color: var(--mp-text-default); background: var(--mp-background-neutral-hovered); vertical-align: top; }
+.pik-location-summary-wrap { display: flex; flex-direction: column; height: 100%; }
+.pik-location-summary-item { display: flex; align-items: center; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
+.pik-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
+
+.pik-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pik-batch-qty-input {
+  display: block; width: 100%; height: 100%; box-sizing: border-box;
+  padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  text-align: right; font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md);
+}
+.pik-td--action { padding: 4px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.pik-th--action { position: sticky; right: 0; z-index: 2; }
+.pik-td--action { position: sticky; right: 0; z-index: 1; }
+.pik-manage-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
+  background: none; border: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary); padding: 0;
+}
+.pik-manage-icon-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+
 .pik-sentinel { height: 1px; }
 .pik-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
 .pik-loading--inline { justify-content: center; padding: var(--mp-spacing-3); }
-.pik-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.pik-items-count { flex-shrink: 0; display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .pik-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-8) 0; }
 
 .pik-btn {
@@ -441,4 +909,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 .pik-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; height: 100%; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── Row flash on scan ────────────────────────────────────────────────────────── */
+@keyframes pik-flash {
+  0%   { background-color: var(--mp-background-success-subtle, #dcfce7); }
+  100% { background-color: transparent; }
+}
+.pik-row--flash td { animation: pik-flash 0.7s ease-out forwards; }
 </style>

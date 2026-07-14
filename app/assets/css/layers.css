@@ -1,0 +1,3 @@
+/* Establishes @layer order before any component or Pixel styles are injected.
+   This file must be loaded FIRST so HMR re-injections never break layer precedence. */
+@layer pixel_reset, pixel_base, pixel_tokens, pixel_recipes, pixel_utilities;

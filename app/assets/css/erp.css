@@ -15,10 +15,10 @@
   border: 1px solid transparent;
 }
 
-/* Secondary (ERP) — black border, black text on a neutral fill. */
+/* Secondary (ERP) — #8c9596 border, black text on a neutral fill. */
 .btn-enterprise--secondary {
   background: var(--mp-background-neutral);
-  border-color: var(--mp-text-default);
+  border-color: var(--mp-border-bold);
   color: var(--mp-text-default);
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
@@ -333,4 +333,42 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--mp-spacing-1);
+}
+
+/* ── Table cell form: no input/select border (project-wide rule) ──────────────
+ * Any .mp-select__control inside a cell marked .erp-td-form loses its own
+ * border — the column border is the visual boundary. erp.css is unlayered so
+ * this beats Pixel's @layer pixel_recipes rules without !important.
+ */
+.erp-td-form .mp-select__control {
+  border: none;
+  border-width: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* ── Toast centering fix: when --width is max-content the toaster container
+   collapses to 0px (absolute children have no flow size), so individual toasts
+   must self-center. Also prevent text wrapping so width truly hugs content. ─── */
+[data-sonner-toaster][data-x-position="center"] [data-sonner-toast] {
+  left: 50%;
+  transform: translateX(-50%) var(--y);
+}
+[data-sonner-toast][data-styled="true"] {
+  white-space: nowrap;
+}
+
+/* ── Number inputs — hide the native up/down spinner everywhere in the app.
+   Keeping type="number" (not switching to text) preserves numeric-only input,
+   :min/:max clamping, and the numeric keyboard on mobile — just without the
+   spinner arrows cluttering table cells. ─────────────────────────────────── */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }

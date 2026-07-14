@@ -1,8 +1,11 @@
-import { getPackingTask, pickedLinesForPacking, packingTasks, type PackingTask } from "./packingTasks";
+import {
+  getPackingTask, pickedLinesForPacking, packingTasks, type PackingTask,
+} from "./packingTasks";
 import { deliveryTasks, type DeliveryTask } from "./deliveryTasks";
 import { outgoingOrders } from "./outgoing";
 import { orderSkuLines } from "./inventory";
 import { binForSku } from "./warehouseDetails";
+import type { PickingBatchPick, PickingSerialPick } from "./pickingTasks";
 
 /** Enriched packing line for the detail / pack pages. */
 export interface PackLineItem {
@@ -16,6 +19,10 @@ export interface PackLineItem {
   pickedQty: number;  // available to pack (what picking delivered)
   packedQty: number;  // matched/packed so far
   unit: string;
+  /** Batch-tracked SKUs only — which batch(es) the picked units came from. */
+  batchPicks?: PickingBatchPick[];
+  /** Serial-tracked SKUs only — which serial(s) were picked. */
+  serialPicks?: PickingSerialPick[];
 }
 
 export function getPackingLineItems(task: PackingTask): PackLineItem[] {
@@ -35,6 +42,8 @@ export function getPackingLineItems(task: PackingTask): PackLineItem[] {
     pickedQty: l.picked,
     packedQty: task.packedByKey?.[l.key] ?? 0,
     unit: l.unit,
+    batchPicks: l.batchPicks,
+    serialPicks: l.serialPicks,
   }));
 }
 

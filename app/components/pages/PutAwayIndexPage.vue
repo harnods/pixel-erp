@@ -2,7 +2,7 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -26,7 +26,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Put-away task saved' })
+    toast.notify({ variant: 'success', title: 'Put-away task saved' , maxWidth: 'max-content'})
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })
@@ -42,8 +42,8 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'taskNo',            label: 'Number',            width: '180px', sortType: 'text' },
-  { key: 'receivingTaskNos',  label: 'Receiving tasks',   width: '240px' },
+  { key: 'taskNo',            label: 'Put-away no.',      width: '180px', sortType: 'text' },
+  { key: 'receivingTaskNos',  label: 'Receiving task no.', width: '240px' },
   { key: 'warehouseName',     label: 'Warehouse',         width: '180px', sortType: 'text' },
   { key: 'assignee',          label: 'Assignee',          width: '160px', sortType: 'text' },
   { key: 'itemQty',           label: 'Items',             width: '90px',  align: 'right', sortType: 'number' },
@@ -57,7 +57,7 @@ const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disable
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — max 2 quick filters: Status + Warehouse (hidden when scoped) ───
-const warehouseFilter = ref('')
+const warehouseFilter = ref<string[]>([])
 const statusFilter = ref('')
 
 const baseTasks = computed<PutAwayTask[]>(() =>
@@ -76,8 +76,19 @@ const statusOptions = [
   { label: 'Open',        value: 'open' },
   { label: 'In process', value: 'in progress' },
   { label: 'Completed',   value: 'completed' },
+  { label: 'Canceled',    value: 'canceled' },
 ]
-const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
 const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
 
 const {
@@ -90,15 +101,15 @@ const {
       || row.taskNo.toLowerCase().includes(s)
       || row.receivingTaskNos.some(n => n.toLowerCase().includes(s))
       || row.warehouseName.toLowerCase().includes(s)
-    const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
+    const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
     return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
 watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = ''; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || !!statusFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = '' }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -114,6 +125,7 @@ function toggleExpand(id: string) {
 // ─── Row actions ──────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(row: PutAwayTask) { router.push(`/put-away/${row.id}`) }
+function viewReceivingTask(taskId: string) { router.push(`/receiving/${taskId}`) }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -140,22 +152,28 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover v-if="!isScoped" id="pa-wh-filter" is-close-on-select>
+        <MpPopover v-if="!isScoped" id="pa-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="pa-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = ''"
+              id="pa-wh-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
-              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`pa-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
@@ -181,7 +199,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="pa-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pa-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -190,6 +207,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="pa-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pa-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -199,6 +217,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -217,15 +240,33 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Receiving tasks — expandable list ── -->
+    <!-- ── Receiving tasks — expandable list, View details chip per task on hover ── -->
     <template #cell-receivingTaskNos="{ value, row }">
       <span class="pa-rtasks">
         <template v-if="expandedRows.has((row as unknown as PutAwayTask).id)">
-          <span v-for="no in (value as string[])" :key="no" class="pa-rtasks__item">{{ no }}</span>
+          <span v-for="(no, i) in (value as string[])" :key="no" class="cell-with-action pa-rtasks__row">
+            <span class="pa-rtasks__item">{{ no }}</span>
+            <button class="row-hover-btn" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[i]!)">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="row-hover-btn__label">VIEW DETAILS</span>
+            </button>
+          </span>
           <button class="pa-rtasks__toggle" @click.stop="toggleExpand((row as unknown as PutAwayTask).id)">Show less</button>
         </template>
         <template v-else>
-          <span class="pa-rtasks__item">{{ (value as string[])[0] }}</span>
+          <span class="cell-with-action pa-rtasks__row">
+            <span class="pa-rtasks__item">{{ (value as string[])[0] }}</span>
+            <button class="row-hover-btn" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[0]!)">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="row-hover-btn__label">VIEW DETAILS</span>
+            </button>
+          </span>
           <button
             v-if="(value as string[]).length > 1"
             class="pa-rtasks__toggle"
@@ -235,9 +276,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </span>
     </template>
 
-    <!-- ── Warehouse ── -->
-    <template #cell-warehouseName="{ value }">
-      <span class="pa-warehouse">{{ value }}</span>
+    <!-- ── Warehouse — View details chip on hover ── -->
+    <template #cell-warehouseName="{ value, row }">
+      <div class="cell-with-action">
+        <span class="pa-warehouse">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as PutAwayTask).warehouseId}`)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
     </template>
 
     <!-- ── Items qty ── -->
@@ -294,6 +344,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 <style scoped>
 .filter-left  { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Warehouse multi-select list */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -314,6 +373,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Number cell — View details chip on hover */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }

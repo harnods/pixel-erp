@@ -8,10 +8,13 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { putAwayTasks, startPutAway as startPutAwayTask } from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
-import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { formatDate, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { generatePutAwaySlipPdf } from '~/utils/putAwaySlipPdf'
+import type jsPDF from 'jspdf'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -22,7 +25,6 @@ const lineItems = computed(() => task.value ? getPutAwayLineItems(props.orderId)
 
 // ── Progress stats ─────────────────────────────────────────────────────────
 const storedQty = computed(() => lineItems.value.reduce((a, it) => a + it.stored, 0))
-const outstandingQty = computed(() => Math.max(0, (task.value?.itemQty ?? 0) - storedQty.value))
 
 // ── Aging badge ────────────────────────────────────────────────────────────
 const AGING_REF = '2026-06-25'
@@ -34,11 +36,8 @@ function agingDays(startDate?: string, endDate?: string): number {
 }
 
 // ── Linked receiving tasks (for the tab) ──────────────────────────────────
-// Completed tasks always have an end date; generate a fallback when the
-// underlying mock data doesn't have one (task was in-progress / open in data).
 function ensureEndDate(startDate: string | undefined, seed: number): string {
   if (!startDate) {
-    // No start date either — generate both relative to AGING_REF
     const base = new Date(AGING_REF)
     base.setDate(base.getDate() - 7 - (seed % 14))
     return base.toISOString().slice(0, 10)
@@ -60,9 +59,11 @@ const linkedReceivingTasks = computed(() => {
       id,
       taskNo: task.value!.receivingTaskNos[i],
       purchaseOrderNo: entry?.po.purchaseNo ?? '—',
+      receiptId: entry?.po.receiptId ?? null,
       status: 'completed' as const,
       startDate,
       endDate,
+      warehouseId: task.value!.warehouseId,
       warehouseName: task.value!.warehouseName,
     }
   })
@@ -147,13 +148,23 @@ function startPutAway() {
   router.push(`/put-away/${props.orderId}/store`)
 }
 function editTask() {
-  toast.notify({ variant: 'info', title: 'Edit — coming soon' })
+  toast.notify({ variant: 'greeting', title: 'Edit — coming soon' , maxWidth: 'max-content'})
 }
 function deleteTask() {
-  toast.notify({ variant: 'info', title: 'Delete — coming soon' })
+  toast.notify({ variant: 'greeting', title: 'Delete — coming soon' , maxWidth: 'max-content'})
 }
 
-function goBack() { router.push('/barang-masuk?tab=Put-away') }
+const pdfPreviewOpen = ref(false)
+const pdfPreviewDoc = ref<jsPDF | null>(null)
+const pdfPreviewFilename = ref('')
+async function printPutAwaySlip() {
+  if (!task.value) return
+  pdfPreviewDoc.value = await generatePutAwaySlipPdf(task.value, lineItems.value)
+  pdfPreviewFilename.value = `Put-Away Slip - ${task.value.taskNo}.pdf`
+  pdfPreviewOpen.value = true
+}
+
+function goBack() { router.push('/inbound-delivery?tab=Put-away') }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 </script>
 
@@ -179,13 +190,18 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Cari tugas put-away…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.receivingTaskNos[0] }}{{ t.receivingTaskNos.length > 1 ? ` +${t.receivingTaskNos.length - 1} more` : '' }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">Tugas tidak ditemukan. Coba kata kunci lain.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">No tasks found.</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -205,7 +221,11 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </div>
         <div class="content-list-col">
           <ContentList label="Start date" :value="formatDateTimeLong(task.startDate)" />
-          <ContentList label="End date" :value="formatDateTimeLong(task.endDate)" />
+          <template v-if="task.status === 'canceled'">
+            <ContentList label="Canceled date" :value="formatDateTimeLong(task.canceledDate)" />
+            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+          </template>
+          <ContentList v-else label="End date" :value="formatDateTimeLong(task.endDate)" />
         </div>
       </section>
 
@@ -220,20 +240,24 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <span class="pad-progress-val">{{ fmt(task.itemQty) }}</span>
         </div>
         <div class="pad-progress-stat">
-          <span class="pad-progress-label">Stored qty</span>
+          <span class="pad-progress-label">Put-away qty</span>
           <span class="pad-progress-val">{{ fmt(storedQty) }}</span>
         </div>
       </section>
 
       <!-- ── Items table ── -->
       <div class="pad-table-wrap">
-        <!-- Filter bar — search always right-aligned -->
         <div class="pad-filter-bar">
           <div class="pad-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="pad-search" type="text" placeholder="Cari produk atau SKU…" />
+            <input v-model="itemSearch" class="pad-search" type="text" placeholder="Search..." />
+            <button v-if="itemSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="itemSearch = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -241,13 +265,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <colgroup>
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
+                <col /><col /><col /><col /><col /><col />
+                <col v-if="task.status !== 'open'" />
               </colgroup>
               <thead>
                 <tr>
@@ -255,9 +274,9 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                   <th class="detail-th">SKU</th>
                   <th class="detail-th">Receiving task</th>
                   <th class="detail-th detail-th--num">Received qty</th>
-                  <th class="detail-th detail-th--num">Stored qty</th>
+                  <th class="detail-th detail-th--num">Put-away qty</th>
                   <th class="detail-th">Unit</th>
-                  <th class="detail-th">Storage location</th>
+                  <th v-if="task.status !== 'open'" class="detail-th">Storage location</th>
                 </tr>
               </thead>
               <tbody>
@@ -274,7 +293,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                     </span>
                   </td>
                   <td class="detail-td detail-td--secondary">{{ item.unit }}</td>
-                  <td class="detail-td">
+                  <td v-if="task.status !== 'open'" class="detail-td">
                     <span class="pad-bin">{{ item.binLocation }}</span>
                   </td>
                 </tr>
@@ -291,7 +310,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </section>
       </div>
 
-      <!-- ── Purchase receiving tab ── -->
+      <!-- ── Linked transactions ── -->
       <MpTabs id="pad-tabs" :default-value="0" variant-color="green" class="pad-tabs">
         <MpTabList>
           <MpTab id="pad-tab-linked" value="linked">Purchase receiving ({{ linkedReceivingTasks.length }})</MpTab>
@@ -302,21 +321,16 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <div class="pad-linked-wrap">
               <table class="pad-linked">
                 <colgroup>
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
+                  <col /><col /><col /><col /><col /><col />
                 </colgroup>
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Purchase order no.</th>
+                    <th class="detail-th">Warehouse</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Start date</th>
                     <th class="detail-th">End date</th>
-                    <th class="detail-th">Warehouse</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -333,16 +347,35 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                         </button>
                       </div>
                     </td>
-                    <td class="detail-td detail-td--secondary">{{ rt.purchaseOrderNo }}</td>
+                    <td class="detail-td detail-td--po">
+                      <span class="pad-po-no">{{ rt.purchaseOrderNo }}</span>
+                      <button v-if="rt.receiptId" class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${rt.receiptId}`)">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span class="row-hover-btn__label">VIEW DETAILS</span>
+                      </button>
+                    </td>
+                    <td class="detail-td detail-td--wh">
+                      <span class="pad-wh-name">{{ rt.warehouseName }}</span>
+                      <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${rt.warehouseId}`)">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span class="row-hover-btn__label">VIEW DETAILS</span>
+                      </button>
+                    </td>
                     <td class="detail-td"><ErpStatusBadge :status="rt.status" /></td>
-                    <td class="detail-td">{{ rt.startDate ? formatDate(rt.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ rt.startDate ? formatDateTime(rt.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        {{ formatDate(rt.endDate!) }}
+                        <span v-if="rt.endDate">{{ formatDateTime(rt.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(rt.startDate, rt.endDate) > 1" class="linked-aging">{{ agingDays(rt.startDate, rt.endDate) }} days</span>
                       </span>
                     </td>
-                    <td class="detail-td">{{ rt.warehouseName }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -355,26 +388,9 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
     <!-- ── Footer action bar ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <!-- Print (secondary dropdown) -->
-      <MpPopover id="pad-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            Print
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>Print put-away slip</MpPopoverListItem>
-            <MpPopoverListItem>Print location label</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <button class="detail-btn detail-btn--secondary" @click="printPutAwaySlip">Print put-away slip</button>
 
-      <!-- Actions-only when completed; split button otherwise -->
-      <template v-if="task.status === 'completed'">
+      <template v-if="task.status === 'completed' || task.status === 'canceled'">
         <MpPopover id="pad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
             <button class="detail-btn detail-btn--primary">
@@ -416,6 +432,14 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       </template>
     </footer>
 
+    <PdfPreviewModal
+      :open="pdfPreviewOpen"
+      :doc="pdfPreviewDoc"
+      :filename="pdfPreviewFilename"
+      title="Put-away slip preview"
+      @close="pdfPreviewOpen = false"
+    />
+
   </div>
 
   <!-- ── Not found ── -->
@@ -425,10 +449,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 </template>
 
 <style scoped>
-/* ── Page shell ── */
 .detail-page  { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
-/* ── Title bar ── */
 .detail-bar {
   height: var(--mp-sizes-18, 72px); flex-shrink: 0;
   background: var(--mp-background-neutral-subtle);
@@ -448,7 +470,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   color: var(--mp-text-default); line-height: 32px; letter-spacing: -0.2px; margin: 0;
 }
 
-/* ── Jump switcher ── */
 .detail-jump-chevron {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7); height: var(--mp-sizes-7); border: none; background: none;
@@ -456,35 +477,42 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default); position: relative; }
 .detail-jump-search {
   width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); background: none; outline: none;
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1) 0; }
 .detail-jump-item {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3); background: none; border: none; cursor: pointer;
-  text-align: left;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3); background: none; border: none; cursor: pointer; text-align: left;
 }
 .detail-jump-item:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty { padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-placeholder); margin: 0; }
 
-/* ── Stage ── */
 .detail-stage {
   flex: 1; overflow-y: auto;
   background: var(--mp-background-stage, var(--mp-background-neutral-subtle));
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
-  padding: var(--mp-spacing-6) var(--mp-spacing-6) var(--mp-spacing-6);
+  padding: var(--mp-spacing-6);
   display: flex; flex-direction: column; gap: var(--mp-spacing-8);
 }
 
-/* ── Summary grid (2 cols) ── */
 .pad-summary {
   display: grid;
   grid-template-columns: minmax(0, 318px) 1fr;
@@ -492,17 +520,12 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 .content-list-col { display: flex; flex-direction: column; }
 
-/* ── Progress stats ── */
 .pad-progress { display: flex; gap: var(--mp-spacing-10); }
 .pad-progress-stat { display: flex; flex-direction: column; min-width: 112px; }
-.pad-progress-val {
-  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
-}
+.pad-progress-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pad-progress-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-/* ── Items table wrapper ── */
 .pad-table-wrap { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-/* Search always right-aligned in filter bar */
 .pad-filter-bar { display: flex; align-items: center; justify-content: flex-end; }
 .pad-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
@@ -516,11 +539,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 .pad-search::placeholder { color: var(--mp-text-placeholder); }
 
-/* ── Table shared classes (reuse detail-* pattern) ── */
 .detail-items-section { display: flex; flex-direction: column; }
-.detail-items-section--bordered {
-  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden;
-}
+.detail-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; }
 .detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 
@@ -540,8 +560,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.detail-td--num { text-align: right; padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4); }
-.detail-td--secondary { color: var(--mp-text-secondary); }
+.detail-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+.detail-td--secondary { color: var(--mp-text-default); }
 .detail-td--number { position: relative; }
 
 .detail-items-sentinel { height: 1px; }
@@ -555,47 +575,30 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
 }
 
-/* ── Product cell ── */
-.pad-product { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.pad-product-thumb {
-  width: var(--mp-sizes-10); height: var(--mp-sizes-10); object-fit: cover; border-radius: var(--mp-radii-md); flex-shrink: 0;
-}
-.pad-product-name {
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-
-/* ── Quantity colouring ── */
 .pad-qty--full     { color: var(--mp-text-success); }
 .pad-qty--partial  { color: var(--mp-text-warning); }
 .pad-qty--zero     { color: var(--mp-text-placeholder); }
-.pad-outstanding   { color: var(--mp-text-default); }
+.pad-bin { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-/* ── Storage location bin ── */
-.pad-bin {
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-}
-
-/* ── Linked transactions tab ── */
 .pad-tabs :deep(.mp-tab--isSelected_true),
-.pad-tabs :deep(.mp-tab--isSelected_true:hover) {
-  color: var(--mp-text-selected) !important;
-}
-.pad-tabs :deep(.mp-tab-selected-border) {
-  background-color: var(--mp-border-selected, #029861) !important;
-}
+.pad-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.pad-tabs :deep(.mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 .pad-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 
 .linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pad-linked-wrap { overflow-x: auto; }
 .pad-linked { width: 100%; border-collapse: collapse; }
-
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
 .cell-with-action { position: relative; display: flex; align-items: center; }
 .pad-linked-num { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-td--po { position: relative; }
+.pad-po-no { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-item-row:hover .detail-td--po .row-hover-btn { display: flex; }
+.detail-td--wh { position: relative; }
+.pad-wh-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-item-row:hover .detail-td--wh .row-hover-btn { display: flex; }
 .row-hover-btn {
   position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
@@ -609,7 +612,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 :global(.detail-item-row:hover .row-hover-btn) { display: flex; }
 
-/* ── Footer ── */
 .detail-footer {
   flex-shrink: 0;
   display: flex; justify-content: flex-end; gap: var(--mp-spacing-3);
@@ -628,7 +630,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 .detail-btn--secondary {
   background: var(--mp-background-neutral); border-color: var(--mp-border-bold);
-  color: var(--mp-text-secondary);
+  color: var(--mp-text-default);
 }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary {
@@ -649,7 +651,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   border-left: 1px solid rgba(255, 255, 255, 0.3); gap: 0;
 }
 
-/* ── Not found ── */
 .pad-not-found {
   display: flex; align-items: center; justify-content: center; height: 100%;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);

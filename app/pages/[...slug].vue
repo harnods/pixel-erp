@@ -15,6 +15,8 @@ import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
+import { useWarehouseContext } from '~/composables/useWarehouseContext'
+import { getWarehouseConfig } from '~/data/warehouseConfig'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
@@ -45,6 +47,9 @@ const pageRegistry: Record<string, Component> = {
   'Bill of materials':  defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsIndexPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
@@ -54,6 +59,7 @@ const SalesOrderDetailsPage = defineAsyncComponent(() => import('~/components/pa
 const ImportWarehousesPage = defineAsyncComponent(() => import('~/components/pages/ImportWarehousesPage.vue'))
 const NewWarehousePage = defineAsyncComponent(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseDetailsPage.vue'))
+const ConfigureWarehousePage = defineAsyncComponent(() => import('~/components/pages/ConfigureWarehousePage.vue'))
 const StorageLocationDetailsPage = defineAsyncComponent(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
 const ReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue'))
@@ -65,6 +71,7 @@ const OutgoingIndexPage = defineAsyncComponent(() => import('~/components/pages/
 const PickingIndexPage = defineAsyncComponent(() => import('~/components/pages/PickingIndexPage.vue'))
 const PackingIndexPage = defineAsyncComponent(() => import('~/components/pages/PackingIndexPage.vue'))
 const DeliveryIndexPage = defineAsyncComponent(() => import('~/components/pages/DeliveryIndexPage.vue'))
+const ShippedIndexPage = defineAsyncComponent(() => import('~/components/pages/ShippedIndexPage.vue'))
 const CreatePickingPage = defineAsyncComponent(() => import('~/components/pages/CreatePickingPage.vue'))
 const CreatePackingPage = defineAsyncComponent(() => import('~/components/pages/CreatePackingPage.vue'))
 const PickingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PickingTaskDetailsPage.vue'))
@@ -72,6 +79,9 @@ const PickItemsPage = defineAsyncComponent(() => import('~/components/pages/Pick
 const PackingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PackingTaskDetailsPage.vue'))
 const PackItemsPage = defineAsyncComponent(() => import('~/components/pages/PackItemsPage.vue'))
 const DeliveryTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
+const HandoverToCourierPage = defineAsyncComponent(() => import('~/components/pages/HandoverToCourierPage.vue'))
+const NewShipmentPage = defineAsyncComponent(() => import('~/components/pages/NewShipmentPage.vue'))
+const ShipmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/ShipmentDetailsPage.vue'))
 const OutgoingOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
 const WarehouseTransferDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
 const WarehouseTransferFormPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
@@ -85,6 +95,7 @@ const ReceiveItemsPage = defineAsyncComponent(() => import('~/components/pages/R
 const CreatePurchaseReceivingPage = defineAsyncComponent(() => import('~/components/pages/CreatePurchaseReceivingPage.vue'))
 const CreatePutAwayPage = defineAsyncComponent(() => import('~/components/pages/CreatePutAwayPage.vue'))
 const CreateReceiptPage = defineAsyncComponent(() => import('~/components/pages/CreateReceiptPage.vue'))
+const CreateDeliveryOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateDeliveryOrderPage.vue'))
 const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateWorkOrderPage.vue'))
@@ -96,7 +107,9 @@ const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/p
 const StockAdjustmentsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue'))
 const StockAdjustmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
 const StockCountFormPage = defineAsyncComponent(() => import('~/components/pages/StockCountFormPage.vue'))
+const StockCountingPage = defineAsyncComponent(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = defineAsyncComponent(() => import('~/components/pages/StockInOutFormPage.vue'))
+const CycleCountRecommendationPage = defineAsyncComponent(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -130,19 +143,32 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
         ? { component: StockInOutFormPage, id: 'new' }
         : { component: StockCountFormPage, id: 'new' }
     }
+    if (segs.length >= 3 && segs[2] === 'count') return { component: StockCountingPage, id: segs[1]! }
     if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
     return { component: StockAdjustmentDetailsPage, id: segs[1]! }
   }
-  // /barang-keluar/picking/create → create a new picking list (bundles sales orders)
-  if (segs.length >= 3 && segs[0] === 'barang-keluar' && segs[1] === 'picking' && segs[2] === 'create') {
+  // /outbound-delivery/picking/create → create a new picking list (bundles sales orders)
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'picking' && segs[2] === 'create') {
     return { component: CreatePickingPage, id: 'create' }
   }
-  // /barang-keluar/packing/create → create packing tasks from a completed picking task
-  if (segs.length >= 3 && segs[0] === 'barang-keluar' && segs[1] === 'packing' && segs[2] === 'create') {
+  // /outbound-delivery/packing/create → create packing tasks from a completed picking task
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'packing' && segs[2] === 'create') {
     return { component: CreatePackingPage, id: 'create' }
   }
-  // /barang-keluar/:id → outgoing sales order detail (not the picking/packing sub-routes)
-  if (segs.length >= 2 && segs[0] === 'barang-keluar' && segs[1] !== 'picking' && segs[1] !== 'packing') {
+  // /outbound-delivery/handover/create → bulk handover several ready-to-ship deliveries
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'handover' && segs[2] === 'create') {
+    return { component: HandoverToCourierPage, id: 'create' }
+  }
+  // /outbound-delivery/new-shipment/create → build a shipment by scanning packing nos.
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'new-shipment' && segs[2] === 'create') {
+    return { component: NewShipmentPage, id: 'create' }
+  }
+  // /outbound-delivery/shipment/:seq → a saved shipment batch's details (Print PDF lives here)
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment') {
+    return { component: ShipmentDetailsPage, id: segs[2]! }
+  }
+  // /outbound-delivery/:id → outgoing sales order detail (not the picking/packing/handover/shipment sub-routes)
+  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing' && segs[1] !== 'handover' && segs[1] !== 'new-shipment' && segs[1] !== 'shipment' && segs[1] !== 'new') {
     return { component: OutgoingOrderDetailsPage, id: segs[1] }
   }
   // /picking/:taskId/pick → operator picks items from bins
@@ -168,7 +194,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
   }
-  // /barang-masuk/:id → inbound PO detail (kept under the section path so the
+  // /inbound-delivery/:id → inbound PO detail (kept under the section path so the
   // level-2 sidebar submenu stays active, like /sales-orders/:id).
   // /receiving/:taskId → task detail; "Receiving" resolves as Inbound delivery panel sub-item
   // so the level-2 sidebar panel stays open with "Receiving" highlighted.
@@ -184,19 +210,23 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'put-away') {
     return { component: PutAwayDetailsPage, id: segs[1] }
   }
-  // /barang-masuk/put-away/create → create put-away task form
-  if (segs.length >= 3 && segs[0] === 'barang-masuk' && segs[1] === 'put-away' && segs[2] === 'create') {
+  // /inbound-delivery/put-away/create → create put-away task form
+  if (segs.length >= 3 && segs[0] === 'inbound-delivery' && segs[1] === 'put-away' && segs[2] === 'create') {
     return { component: CreatePutAwayPage, id: 'create' }
   }
-  // /barang-masuk/new → create inbound receipt (PO) form
-  if (segs.length >= 2 && segs[0] === 'barang-masuk' && segs[1] === 'new') {
+  // /inbound-delivery/new → create inbound receipt (PO) form
+  if (segs.length >= 2 && segs[0] === 'inbound-delivery' && segs[1] === 'new') {
     return { component: CreateReceiptPage, id: 'new' }
   }
-  // /barang-masuk/:id/receive → create purchase receiving (full page, not a modal)
-  if (segs.length >= 3 && segs[0] === 'barang-masuk' && segs[2] === 'receive') {
+  // /outbound-delivery/new → create outbound delivery order form
+  if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] === 'new') {
+    return { component: CreateDeliveryOrderPage, id: 'new' }
+  }
+  // /inbound-delivery/:id/receive → create purchase receiving (full page, not a modal)
+  if (segs.length >= 3 && segs[0] === 'inbound-delivery' && segs[2] === 'receive') {
     return { component: CreatePurchaseReceivingPage, id: segs[1] }
   }
-  if (segs.length >= 2 && segs[0] === 'barang-masuk') {
+  if (segs.length >= 2 && segs[0] === 'inbound-delivery') {
     const r = receipts.find((x) => x.id === segs[1])
     let component = ReceiptDetailsPage
     if (r?.status === 'partial reception') component = PartialReceiptDetailsPage
@@ -213,6 +243,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /warehouses/:id/edit → reuse the warehouse form in edit mode
   if (segs.length >= 3 && segs[0] === 'warehouses' && segs[2] === 'edit') {
     return { component: NewWarehousePage, id: segs[1]! }
+  }
+  // /warehouses/:id/configure → per-warehouse configuration (placeholder)
+  if (segs.length >= 3 && segs[0] === 'warehouses' && segs[2] === 'configure') {
+    return { component: ConfigureWarehousePage, id: segs[1]! }
   }
   // /warehouses/:whId/locations/:locId → storage location detail
   if (segs.length >= 4 && segs[0] === 'warehouses' && segs[2] === 'locations') {
@@ -232,11 +266,12 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Delivery'],
+  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipped'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Pending', 'Completed', 'Rejected'],
+  'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -259,13 +294,13 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     // Outgoing badges the actionable orders: everything not yet Completed/Canceled.
     const outgoing = outgoingOpenCount() // ERP = all warehouses
     if (outgoing) out['Requests'] = outgoing
-    // Picking / Packing / Delivery are task-based (a different dataset than the orders)
+    // Picking / Packing / Ready to ship are task-based (a different dataset than the orders)
     const picking = pickingOpenCount()
     if (picking) out['Picking'] = picking
     const packing = packingOpenCount()
     if (packing) out['Packing'] = packing
     const delivery = deliveryOpenCount()
-    if (delivery) out['Delivery'] = delivery
+    if (delivery) out['Ready to ship'] = delivery
     return out
   }
   if (currentPageKey.value === 'Warehouse transfers') {
@@ -280,10 +315,28 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const pending = productionRequestPendingCount()
     return pending ? { 'Pending': pending } : {}
   }
+  if (currentPageKey.value === 'Stock counts') {
+    const awaiting = awaitingAdjustmentCount()
+    return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
   return {}
 })
 
-const currentTabs = computed<string[]>(() => pageTabs[currentPageKey.value] ?? [])
+// Single-warehouse-scoped users (WMS Ops / Ops 2) don't see a tab for a stage
+// that's disabled for their active warehouse (see ConfigureWarehousePage.vue).
+// Multi-warehouse views (ERP/WMS Standalone) keep every tab — a disabled
+// warehouse's tasks just never appear in it, no need to hide the tab itself.
+const { hasWarehouseContext, activeWarehouse } = useWarehouseContext()
+const currentTabs = computed<string[]>(() => {
+  const tabs = pageTabs[currentPageKey.value] ?? []
+  if (!hasWarehouseContext.value || !activeWarehouse.value) return tabs
+  const config = getWarehouseConfig(activeWarehouse.value.id)
+  return tabs.filter((tab) => {
+    if (currentPageKey.value === 'Inbound delivery' && tab === 'Put-away') return config.putAwayEnabled
+    if (currentPageKey.value === 'Outbound delivery' && tab === 'Picking') return config.pickingEnabled
+    return true
+  })
+})
 const activeTab = ref('')
 watch([currentPageKey, () => route.query.tab], () => {
   const tabs = currentTabs.value
@@ -314,7 +367,8 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Requests': OutgoingIndexPage,
     'Picking': PickingIndexPage,
     'Packing': PackingIndexPage,
-    'Delivery': DeliveryIndexPage,
+    'Ready to ship': DeliveryIndexPage,
+    'Shipped': ShippedIndexPage,
   },
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,
@@ -329,6 +383,11 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Pending':   () => h(ProductionRequestIndexPage, { tab: 'pending' }),
     'Completed': () => h(ProductionRequestIndexPage, { tab: 'completed' }),
     'Rejected':  () => h(ProductionRequestIndexPage, { tab: 'rejected' }),
+  },
+  'Stock counts': {
+    'All stock counts': StockAdjustmentsPage,
+    'Awaiting approval': StockAdjustmentsPage,
+    'Recommendations': CycleCountRecommendationPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -380,6 +439,8 @@ function newStockAdjustment(kind: 'count' | 'in-out') {
   stockActionsOpen.value = false
   router.push({ path: '/stock-adjustments/new', query: { type: kind } })
 }
+function newStockCount()  { router.push({ path: '/stock-adjustments/new', query: { type: 'count' } }) }
+function newStockInOut()  { router.push({ path: '/stock-adjustments/new', query: { type: 'in-out' } }) }
 
 // ── Chat sessions + history ───────────────────────────────────────────────
 interface ChatMessage {
@@ -776,7 +837,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Inbound delivery'" class="page-title-actions">
           <template v-if="activeTab === 'Put-away'">
-            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/barang-masuk/put-away/create')">
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/inbound-delivery/put-away/create')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
@@ -787,13 +848,29 @@ function startResize(e: MouseEvent) {
             <button class="btn-enterprise btn-enterprise--secondary">
               Import
             </button>
-            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/barang-masuk/new')">
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/inbound-delivery/new')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
               New receipt
             </button>
           </template>
+        </div>
+        <div v-else-if="currentPageKey === 'Outbound delivery' && activeTab === 'Requests'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/outbound-delivery/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New delivery order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Outbound delivery' && activeTab === 'Ready to ship'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/outbound-delivery/new-shipment/create')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New shipment
+          </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">
           <!-- Import button + dropdown -->
@@ -869,6 +946,40 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newWarehouseTransfer">
             <MpIcon name="add" size="md" color="icon.inverse" />
             New warehouse transfer
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Cycle counts'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockCount">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            New stock count
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Stock counts'" class="page-title-actions">
+          <div ref="stockActionsWrapEl" class="import-wrap">
+            <button
+              class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-after"
+              @click.stop="stockActionsOpen = !stockActionsOpen"
+            >
+              Actions
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                class="import-chevron" :class="{ 'import-chevron--open': stockActionsOpen }"
+              >
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <div v-if="stockActionsOpen" class="import-dropdown" @click.stop>
+              <div class="import-group">
+                <button class="import-item" @click="router.push({ path: '/stock-adjustments/new', query: { type: 'count', from: 'stock-counts' } }); stockActionsOpen = false">Stock count</button>
+                <button class="import-item" @click="router.push({ path: '/stock-adjustments/new', query: { type: 'in-out', from: 'stock-counts' } }); stockActionsOpen = false">Stock in/out</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else-if="currentPageKey === 'Stock inout'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockInOut">
+            <MpIcon name="add" size="md" color="icon.inverse" />
+            New stock in/out
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock adjustments'" class="page-title-actions">
@@ -1338,6 +1449,15 @@ function startResize(e: MouseEvent) {
 }
 
 /* ── Stage ────────────────────────────────────────────────────────────────── */
+
+.stage-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--mp-spacing-12, 48px);
+  color: var(--mp-text-placeholder);
+}
 
 .stage {
   flex: 1;

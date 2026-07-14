@@ -1,12 +1,15 @@
 import { reactive } from "vue";
-import { warehouses, picForWarehouse } from "./warehouses";
+import { warehouses } from "./warehouses";
+import { operatorForWarehouse } from "./warehouseTeam";
 import {
   receivingTaskRefsForWarehouse,
   receivingTasksForReceipt,
   getReceivingTask,
   linkPutAway,
+  completeReceivingWithoutPutAway,
 } from "./receivingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
+import { getWarehouseDetail, registerNewBatch, receiveNewSerials, applyStockInOut } from "./warehouseDetails";
 
 /**
  * A put-away task — once goods are received they must be moved from the receiving
@@ -15,6 +18,22 @@ import { loadSnapshot, saveSnapshot } from "./persist";
  * tasks "completed". Operator Start/End put-away is out of scope for now, so a
  * created put-away stays "open". See docs/scenarios/inbound-complete-scenario.md.
  */
+/** One batch's destination bin split, as assigned via Manage batch during put-away. */
+export interface PutAwayBatchAssignment {
+  batchNo: string;
+  expiryDate: string;
+  desc: string;
+  qty: number;
+  unit: string;
+  destLocations?: Array<{ locationId: string; qty: number }>;
+}
+
+/** One serial's destination bin, as assigned via Manage serial number during put-away. */
+export interface PutAwaySerialAssignment {
+  serial: string;
+  destLocationId?: string;
+}
+
 export interface PutAwayTask {
   id: string;
   taskNo: string;
@@ -25,10 +44,18 @@ export interface PutAwayTask {
   assignee: string;
   itemQty: number;
   destination: string;
-  status: "open" | "in progress" | "completed";
+  status: "open" | "in progress" | "completed" | "canceled";
   startDate?: string;
   endDate?: string;
+  /** ISO timestamp — set when auto-canceled by disabling Put-away for the warehouse. */
+  canceledDate?: string;
+  /** Why this task was canceled — shown on the task detail page. */
+  canceledReason?: string;
   completedItems?: Array<{ skuCode: string; qty: number; binLocation: string }>;
+  /** Per-SKU batch destination assignments (batch-tracked SKUs), draft or final. */
+  batchAssignments?: Record<string, PutAwayBatchAssignment[]>;
+  /** Per-SKU serial destination assignments (serial-tracked SKUs), draft or final. */
+  serialAssignments?: Record<string, PutAwaySerialAssignment[]>;
 }
 
 const ZONES = ["A", "B", "C", "D"];
@@ -66,7 +93,7 @@ function seedTasks(): PutAwayTask[] {
       receivingTaskNos: rtasks.map((r) => r.no),
       warehouseId: wh.id,
       warehouseName: wh.name,
-      assignee: picForWarehouse(wh.id, p),
+      assignee: operatorForWarehouse(wh.id, p),
       itemQty: receivedUnits(rtasks.map((r) => r.id)),
       destination: `${zone}-${String((p % 9) + 1).padStart(2, "0")}-${String((p % 5) + 1).padStart(2, "0")}`,
       status: "open",
@@ -136,7 +163,9 @@ export function putAwayTasksFor(warehouseIds?: string[]): PutAwayTask[] {
 
 /** Badge count for the Put-away stage = unfinished put-away tasks (scoped). */
 export function putAwayOpenCount(warehouseIds?: string[]): number {
-  return putAwayTasksFor(warehouseIds).filter((t) => t.status !== "completed").length;
+  return putAwayTasksFor(warehouseIds).filter(
+    (t) => t.status !== "completed" && t.status !== "canceled",
+  ).length;
 }
 
 /** Put-away task(s) for a receipt — only those consuming THIS receipt's receiving tasks. */
@@ -160,24 +189,114 @@ export function startPutAway(taskId: string): void {
   persistPutAways();
 }
 
+export interface PutAwayAssignments {
+  batchAssignments?: Record<string, PutAwayBatchAssignment[]>;
+  serialAssignments?: Record<string, PutAwaySerialAssignment[]>;
+}
+
 export function savePutAwayDraft(
   taskId: string,
   items: Array<{ skuCode: string; qty: number; binLocation: string }>,
+  assignments?: PutAwayAssignments,
 ): void {
   const t = getPutAwayTask(taskId);
   if (!t) return;
   if (t.status === 'open') { t.status = 'in progress'; t.startDate = nowIso(); }
+  t.completedItems = items.filter((it) => it.qty > 0);
+  if (assignments?.batchAssignments) t.batchAssignments = assignments.batchAssignments;
+  if (assignments?.serialAssignments) t.serialAssignments = assignments.serialAssignments;
   persistPutAways();
 }
 
 export function endPutAway(
   taskId: string,
   items: Array<{ skuCode: string; qty: number; binLocation: string }>,
+  assignments?: PutAwayAssignments,
 ): void {
   const t = getPutAwayTask(taskId);
   if (!t) return;
   t.status = 'completed';
   t.endDate = nowIso();
   t.completedItems = items.filter((it) => it.qty > 0);
+  if (assignments?.batchAssignments) t.batchAssignments = assignments.batchAssignments;
+  if (assignments?.serialAssignments) t.serialAssignments = assignments.serialAssignments;
+
+  // Commit the received stock into the warehouse — same "apply on End, not on
+  // Save draft" convention endPicking() uses for reservations/new batches.
+  const wh = getWarehouseDetail(t.warehouseId);
+  for (const it of t.completedItems) {
+    const batchLines = assignments?.batchAssignments?.[it.skuCode];
+    const serialLines = assignments?.serialAssignments?.[it.skuCode];
+    if (batchLines?.length) {
+      const known = new Set(wh?.stock.find((s) => s.sku === it.skuCode)?.batches?.map((b) => b.batchNo));
+      for (const b of batchLines) {
+        if (known.has(b.batchNo)) continue; // already-registered batch — no re-add
+        const dest = b.destLocations ?? [];
+        const qty = dest.length ? dest.reduce((s, d) => s + d.qty, 0) : b.qty;
+        const location = dest[0]?.locationId ?? it.binLocation;
+        registerNewBatch(t.warehouseId, it.skuCode, { batchNo: b.batchNo, expiryDate: b.expiryDate, onHand: qty, location });
+        known.add(b.batchNo);
+      }
+    } else if (serialLines?.length) {
+      receiveNewSerials(t.warehouseId, it.skuCode, serialLines.map((s) => s.serial));
+    } else {
+      applyStockInOut(t.warehouseId, [{ sku: it.skuCode, qty: it.qty }]);
+    }
+  }
   persistPutAways();
+}
+
+export function cancelPutAway(taskId: string, reason?: string): void {
+  const t = getPutAwayTask(taskId);
+  if (!t) return;
+  t.status = 'canceled';
+  t.canceledDate = nowIso();
+  if (reason) t.canceledReason = reason;
+  persistPutAways();
+}
+
+/**
+ * Put-away just got disabled for this warehouse (see ConfigureWarehousePage.vue):
+ * - open/in-progress put-away tasks are voided — canceled, and their source
+ *   receiving task(s) are finished directly (the goods were received; there's just
+ *   no put-away step anymore). Already-`completed` put-away tasks are untouched.
+ * - receiving tasks already sitting in "pending put-away" with no put-away task at
+ *   all yet are also finished directly.
+ * Returns counts so the caller can summarize the effect before committing.
+ */
+export function disablePutAwayForWarehouse(_warehouseId: string): {
+  canceledPutAways: number;
+  autoCompletedReceiving: number;
+} {
+  // Existing in-progress and pending put-away tasks are left untouched —
+  // users must be able to finish work already underway. Only new receiving
+  // tasks created after this config change will skip the put-away step.
+  return { canceledPutAways: 0, autoCompletedReceiving: 0 };
+}
+
+const PUTAWAY_ACTIVE: PutAwayTask["status"][] = ["open", "in progress"];
+
+export function activePutAwayTasksFor(warehouseId: string, assignee: string): PutAwayTask[] {
+  return putAwayTasks.filter(
+    (t) => t.warehouseId === warehouseId && t.assignee === assignee && (PUTAWAY_ACTIVE as string[]).includes(t.status),
+  );
+}
+
+export function reassignPutAwayTasks(warehouseId: string, fromName: string, toName: string): void {
+  for (const t of activePutAwayTasksFor(warehouseId, fromName)) t.assignee = toName;
+  persistPutAways();
+}
+
+/** Read-only preview of disablePutAwayForWarehouse's effect, for the confirmation dialog. */
+export function previewDisablePutAway(warehouseId: string): {
+  openPutAways: number;
+  pendingReceiving: number;
+} {
+  const openPutAways = putAwayTasksFor([warehouseId]).filter(
+    (t) => t.status === 'open' || t.status === 'in progress',
+  ).length;
+  const pendingReceiving = receivingTaskRefsForWarehouse(warehouseId).filter(
+    (r) => r.status === 'pending put-away',
+  ).length;
+  return { openPutAways, pendingReceiving };
 }

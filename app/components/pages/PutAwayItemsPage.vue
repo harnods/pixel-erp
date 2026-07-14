@@ -2,27 +2,38 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { formatDateTimeLong } from '~/utils/date'
 import {
-  MpSpinner,
-  MpAutocomplete, MpFormControl, MpFormLabel,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton,
+  MpSpinner, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpButton, css,
-  toast,
+  css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask } from '~/data/putAwayTasks'
+import ScanBar from '~/components/patterns/ScanBar.vue'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
+import {
+  getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask,
+  type PutAwayBatchAssignment, type PutAwaySerialAssignment,
+} from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
-import { BINS } from '~/data/receiptLineItems'
-
-const BINS_AC = BINS.map(b => ({ id: b, name: b }))
+import { stockLocationPaths } from '~/data/storageLocations'
+import { productBySku } from '~/data/inventory'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { notifyScanError } from '~/utils/scan'
+import { playScanSuccessSound } from '~/utils/sound'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
-const task      = computed(() => getPutAwayTask(props.orderId))
-const lineItems = computed(() => task.value ? getPutAwayLineItems(props.orderId) : [])
+const task            = computed(() => getPutAwayTask(props.orderId))
+const lineItems       = computed(() => task.value ? getPutAwayLineItems(props.orderId) : [])
+// stockLocationPaths() is a sparse array with one entry per storage-capacity slot
+// (a bin repeats once per unit of its capacity) — dedupe before using it as a
+// dropdown's option list, or bins with capacity > 1 show up more than once.
+const locationOptions = computed(() => {
+  if (!task.value) return []
+  return [...new Set(stockLocationPaths(task.value.warehouseId).filter(Boolean))]
+})
 
 // ── Draft rows — one per displayed table line (can be split into multiple) ────
 interface DraftRow {
@@ -40,11 +51,11 @@ const search    = ref('')
 
 watch([() => props.orderId, lineItems], () => {
   rowCounter = 0
-  draftRows.value = lineItems.value.map(it => ({
-    id: newRowId(),
-    skuCode: it.skuCode,
-    qty: 0,
-    binLocation: it.binLocation,
+  // Deduplicate by skuCode — one row per SKU, merging qty from multiple receiving tasks
+  const seen = new Map<string, string>()
+  lineItems.value.forEach(it => { if (!seen.has(it.skuCode)) seen.set(it.skuCode, it.binLocation) })
+  draftRows.value = [...seen.entries()].map(([skuCode, binLocation]) => ({
+    id: newRowId(), skuCode, qty: 0, binLocation,
   }))
   search.value = ''
 }, { immediate: true })
@@ -52,11 +63,127 @@ watch([() => props.orderId, lineItems], () => {
 // Lookup map: skuCode → line item (for product info)
 const itemBySkuCode = computed(() => new Map(lineItems.value.map(it => [it.skuCode, it])))
 
+// Summed received qty per SKU across all receiving tasks
+const totalQtyBySkuCode = computed(() => {
+  const map = new Map<string, number>()
+  lineItems.value.forEach(it => { map.set(it.skuCode, (map.get(it.skuCode) ?? 0) + it.qty) })
+  return map
+})
+
+// ── Batch / serial helpers (same heuristic as receiving / stock count / stock in-out) ──
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
+// ── Manage batch / Manage serial number — destination bin(s) per batch or serial,
+// seeded from what was recorded at receiving (or a previously-saved draft). Storage
+// location for these SKUs is decided entirely inside the drawers, never in the main
+// table — the table only shows a read-only summary of the bins actually used. ─────
+const batchLinesBySku  = ref<Record<string, CommittedBatch[]>>({})
+const serialLinesBySku = ref<Record<string, CommittedSerial[]>>({})
+
+watch(lineItems, (items) => {
+  const nextBatch: Record<string, CommittedBatch[]> = {}
+  const nextSerial: Record<string, CommittedSerial[]> = {}
+  const seen = new Set<string>()
+  for (const it of items) {
+    if (seen.has(it.skuCode)) continue
+    seen.add(it.skuCode)
+    if (it.batchLines?.length) {
+      nextBatch[it.skuCode] = it.batchLines.map(b => ({
+        key: b.batchNo,
+        batchNo: b.batchNo,
+        expiryDate: b.expiryDate,
+        desc: b.desc,
+        onHand: b.qty,
+        counted: b.destLocations?.length ? b.destLocations.reduce((s, d) => s + d.qty, 0) : null,
+        unit: b.unit,
+        destLocations: b.destLocations,
+      }))
+    }
+    if (it.serialAssignments?.length) {
+      nextSerial[it.skuCode] = it.serialAssignments.map(s => ({ serial: s.serial, destLocationId: s.destLocationId }))
+    }
+  }
+  batchLinesBySku.value = nextBatch
+  serialLinesBySku.value = nextSerial
+}, { immediate: true })
+
+const batchDrawerSku = ref<string | null>(null)
+const batchDrawerOpen = computed({
+  get: () => batchDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) batchDrawerSku.value = null },
+})
+function openBatchDrawer(skuCode: string) { batchDrawerSku.value = skuCode }
+function batchAssignedQty(skuCode: string): number {
+  return (batchLinesBySku.value[skuCode] ?? []).reduce(
+    (s, b) => s + (b.destLocations?.reduce((ss, d) => ss + d.qty, 0) ?? 0), 0,
+  )
+}
+function batchBins(skuCode: string): string[] {
+  const bins = new Set<string>()
+  for (const b of batchLinesBySku.value[skuCode] ?? []) {
+    for (const d of b.destLocations ?? []) if (d.qty > 0) bins.add(d.locationId)
+  }
+  return [...bins]
+}
+function saveBatchLines(batches: CommittedBatch[]) {
+  const sku = batchDrawerSku.value
+  if (!sku) return
+  batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: batches }
+}
+
+const serialDrawerSku = ref<string | null>(null)
+const serialDrawerOpen = computed({
+  get: () => serialDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) serialDrawerSku.value = null },
+})
+function openSerialDrawer(skuCode: string) { serialDrawerSku.value = skuCode }
+function serialAssignedQty(skuCode: string): number {
+  return (serialLinesBySku.value[skuCode] ?? []).filter(s => s.destLocationId).length
+}
+function serialBins(skuCode: string): string[] {
+  const bins = new Set<string>()
+  for (const s of serialLinesBySku.value[skuCode] ?? []) if (s.destLocationId) bins.add(s.destLocationId)
+  return [...bins]
+}
+function saveSerialLines(serials: CommittedSerial[]) {
+  const sku = serialDrawerSku.value
+  if (!sku) return
+  serialLinesBySku.value = { ...serialLinesBySku.value, [sku]: serials }
+}
+
+/** Read-only bin list shown in the main table for batch/serial-tracked SKUs —
+ * listed one per line rather than comma-joined, since a SKU can span several bins. */
+function binsList(skuCode: string): string[] {
+  return isBatchTrackedSku(skuCode) ? batchBins(skuCode) : serialBins(skuCode)
+}
+
 // ── Summary ───────────────────────────────────────────────────────────────────
-const skuQty           = computed(() => lineItems.value.length)
+const skuQty           = computed(() => new Set(lineItems.value.map(it => it.skuCode)).size)
 const receivedQty      = computed(() => lineItems.value.reduce((s, it) => s + it.qty, 0))
-const draftHandled     = computed(() => draftRows.value.reduce((s, r) => s + (r.qty || 0), 0))
-const draftOutstanding = computed(() => Math.max(0, receivedQty.value - draftHandled.value))
+// Batch/serial-tracked SKUs get their qty from bin assignments, not row.qty (each
+// such SKU has exactly one draftRow — "Split storage location" is hidden for them).
+const draftHandled = computed(() => draftRows.value.reduce((s, r) => {
+  if (isBatchTrackedSku(r.skuCode)) return s + batchAssignedQty(r.skuCode)
+  if (isSerialTrackedSku(r.skuCode)) return s + serialAssignedQty(r.skuCode)
+  return s + (r.qty || 0)
+}, 0))
 
 // ── Filter ────────────────────────────────────────────────────────────────────
 const filteredRows = computed(() => {
@@ -130,7 +257,21 @@ watch(search, () => {
 })
 
 // ── Qty to handle input ───────────────────────────────────────────────────────
-function onQtyInput(rowId: string, max: number, e: Event) {
+// Cap per row at what's left of the SKU's total once every OTHER split row for
+// that SKU is subtracted — a fixed max of the full total let two split rows each
+// take the full amount (e.g. 19 + 1 on a 19-unit SKU) without ever erroring.
+function remainingQtyFor(row: DraftRow): number {
+  const total = totalQtyBySkuCode.value.get(row.skuCode) ?? 0
+  const others = draftRows.value
+    .filter(r => r.skuCode === row.skuCode && r.id !== row.id)
+    .reduce((s, r) => s + (r.qty || 0), 0)
+  return Math.max(0, total - others)
+}
+
+function onQtyInput(rowId: string, e: Event) {
+  const row = draftRows.value.find(r => r.id === rowId)
+  if (!row) return
+  const max = remainingQtyFor(row)
   let n = Math.floor(Number((e.target as HTMLInputElement).value))
   if (!Number.isFinite(n) || n < 0) n = 0
   if (n > max) n = max
@@ -142,81 +283,257 @@ function splitRow(rowId: string) {
   const idx = draftRows.value.findIndex(r => r.id === rowId)
   if (idx === -1) return
   const row = draftRows.value[idx]!
-  const item = itemBySkuCode.value.get(row.skuCode)
-  if (!item) return
-
+  const totalQty = totalQtyBySkuCode.value.get(row.skuCode) ?? 0
   const totalAssigned = draftRows.value
     .filter(r => r.skuCode === row.skuCode)
     .reduce((s, r) => s + (r.qty || 0), 0)
-  const remainder = Math.max(0, item.qty - totalAssigned)
-
-  const newRow: DraftRow = {
-    id: newRowId(),
-    skuCode: row.skuCode,
-    qty: remainder,
-    binLocation: row.binLocation,
-  }
-
+  const remainder = Math.max(0, totalQty - totalAssigned)
+  const newRow: DraftRow = { id: newRowId(), skuCode: row.skuCode, qty: remainder, binLocation: row.binLocation }
   const next = [...draftRows.value]
   next.splice(idx + 1, 0, newRow)
   draftRows.value = next
-
-  nextTick(() => openLocationEdit(newRow.id))
 }
 
-// ── Storage location edit modal ───────────────────────────────────────────────
-const editingLocationKey = ref<string | null>(null)  // rowId
-const editLocationValue  = ref('')
+// ── Storage location picker ───────────────────────────────────────────────────
+const activeLocRowId = ref<string | null>(null)
+const locSearch      = ref('')
 
-function openLocationEdit(rowId: string) {
-  const row = draftRows.value.find(r => r.id === rowId)
-  editingLocationKey.value = rowId
-  editLocationValue.value  = row?.binLocation ?? ''
+function openLocPicker(rowId: string)  { activeLocRowId.value = rowId; locSearch.value = '' }
+function closeLocPicker(rowId: string) { if (activeLocRowId.value === rowId) { activeLocRowId.value = null; locSearch.value = '' } }
+function locOptionsFiltered(rowId: string) {
+  const q = activeLocRowId.value === rowId ? locSearch.value.trim().toLowerCase() : ''
+  if (!q) return locationOptions.value
+  return locationOptions.value.filter(loc => loc.toLowerCase().includes(q))
 }
-function closeLocationEdit() {
-  editingLocationKey.value = null
-  editLocationValue.value  = ''
+// First 3 options surface as "Recommended locations"; the rest sit below a divider.
+function recommendedLocOptions(rowId: string) { return locOptionsFiltered(rowId).slice(0, 3) }
+function otherLocOptions(rowId: string) { return locOptionsFiltered(rowId).slice(3) }
+
+function updateLocation(rowId: string, loc: string) {
+  draftRows.value = draftRows.value.map(r => r.id === rowId ? { ...r, binLocation: loc } : r)
 }
-function saveLocationEdit() {
-  if (editingLocationKey.value) {
-    const key = editingLocationKey.value
-    draftRows.value = draftRows.value.map(r =>
-      r.id === key ? { ...r, binLocation: editLocationValue.value } : r,
-    )
+
+// ── Scan bar ──────────────────────────────────────────────────────────────────
+const activeBin  = ref<string | null>(null)
+const flashRowId = ref<string | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | null = null
+
+function handleScan(rawValue: string) {
+  const v = rawValue.trim()
+  if (!v) return
+
+  // Bin scan
+  if (locationOptions.value.includes(v)) {
+    activeBin.value = v
+    playScanSuccessSound()
+    return
   }
-  closeLocationEdit()
+
+  // SKU scan — only for plain (non-batch, non-serial) rows
+  const bin = activeBin.value
+  const skuRows = draftRows.value.filter(r =>
+    r.skuCode === v && !isBatchTrackedSku(r.skuCode) && !isSerialTrackedSku(r.skuCode),
+  )
+  if (skuRows.length) {
+    const binRow = bin ? skuRows.find(r => r.binLocation === bin) : null
+
+    if (bin && !binRow) {
+      // Active bin differs from every existing row → auto-split a new row for this bin
+      const totalQty    = totalQtyBySkuCode.value.get(v) ?? 0
+      const assignedQty = skuRows.reduce((s, r) => s + (r.qty || 0), 0)
+      if (assignedQty >= totalQty) {
+        notifyScanError(`${v}: received qty already fully assigned`)
+        return
+      }
+      const newRow: DraftRow = { id: newRowId(), skuCode: v, qty: 1, binLocation: bin }
+      const lastSkuIdx = draftRows.value.reduce((acc, r, i) => r.skuCode === v ? i : acc, -1)
+      const next = [...draftRows.value]
+      next.splice(lastSkuIdx + 1, 0, newRow)
+      draftRows.value = next
+      playScanSuccessSound()
+      flashRowId.value = newRow.id
+      if (flashTimer) clearTimeout(flashTimer)
+      flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+      return
+    }
+
+    // Update existing row — prefer matching-bin row > unassigned row > first row
+    const target = binRow ?? skuRows.find(r => !r.binLocation) ?? skuRows[0]!
+    const cap = remainingQtyFor(target)
+    if (cap === 0) {
+      notifyScanError(`${v}: received qty already fully assigned`)
+      return
+    }
+    const nextBin = target.binLocation || bin || ''
+    draftRows.value = draftRows.value.map(r =>
+      r.id === target.id ? { ...r, qty: Math.min((r.qty || 0) + 1, cap), binLocation: nextBin } : r,
+    )
+    playScanSuccessSound()
+    flashRowId.value = target.id
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+    return
+  }
+
+  // Batch number scan — find the batch across all batch-tracked SKUs
+  for (const [skuCode, batches] of Object.entries(batchLinesBySku.value)) {
+    const bIdx = batches.findIndex(b => b.batchNo === v)
+    if (bIdx !== -1) {
+      if (!bin) {
+        notifyScanError('Scan a bin first before scanning batch numbers')
+        return
+      }
+      const batch = batches[bIdx]!
+      const totalAssigned = (batch.destLocations ?? []).reduce((s, d) => s + d.qty, 0)
+      if (totalAssigned >= batch.onHand) {
+        notifyScanError(`${v}: batch qty fully assigned`)
+        return
+      }
+      const newDest = [...(batch.destLocations ?? [])]
+      const dIdx = newDest.findIndex(d => d.locationId === bin)
+      if (dIdx !== -1) {
+        newDest[dIdx] = { locationId: bin, qty: newDest[dIdx]!.qty + 1 }
+      } else {
+        newDest.push({ locationId: bin, qty: 1 })
+      }
+      batchLinesBySku.value = {
+        ...batchLinesBySku.value,
+        [skuCode]: batches.map((b, i) => i === bIdx ? { ...b, destLocations: newDest } : b),
+      }
+      playScanSuccessSound()
+      const row = draftRows.value.find(r => r.skuCode === skuCode)
+      if (row) {
+        flashRowId.value = row.id
+        if (flashTimer) clearTimeout(flashTimer)
+        flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+      }
+      return
+    }
+  }
+
+  // Serial number scan — find the serial across all serial-tracked SKUs
+  for (const [skuCode, serials] of Object.entries(serialLinesBySku.value)) {
+    const idx = serials.findIndex(s => s.serial === v)
+    if (idx !== -1) {
+      if (!bin) {
+        notifyScanError('Scan a bin first before scanning serial numbers')
+        return
+      }
+      const updated = serials.map((s, i) => i === idx ? { ...s, destLocationId: bin } : s)
+      serialLinesBySku.value = { ...serialLinesBySku.value, [skuCode]: updated }
+      playScanSuccessSound()
+      const row = draftRows.value.find(r => r.skuCode === skuCode)
+      if (row) {
+        flashRowId.value = row.id
+        if (flashTimer) clearTimeout(flashTimer)
+        flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+      }
+      return
+    }
+  }
+
+  notifyScanError(`Barcode not found: "${v}"`)
 }
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
+// Plain SKUs contribute their draftRows as-is; batch/serial-tracked SKUs get
+// flattened from their per-bin drawer assignments into the same {skuCode, qty,
+// binLocation} shape, and their full assignment detail is kept for persistence
+// (so reopening a draft restores exactly which batch/serial went where).
+function buildItemsAndAssignments() {
+  const items: Array<{ skuCode: string; qty: number; binLocation: string }> = []
+  const batchAssignments: Record<string, PutAwayBatchAssignment[]> = {}
+  const serialAssignments: Record<string, PutAwaySerialAssignment[]> = {}
+  const seenTracked = new Set<string>()
+
+  for (const r of draftRows.value) {
+    if (isBatchTrackedSku(r.skuCode)) {
+      if (seenTracked.has(r.skuCode)) continue
+      seenTracked.add(r.skuCode)
+      const lines = batchLinesBySku.value[r.skuCode] ?? []
+      batchAssignments[r.skuCode] = lines.map(b => ({
+        batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.onHand, unit: b.unit,
+        destLocations: b.destLocations,
+      }))
+      const byBin = new Map<string, number>()
+      for (const b of lines) for (const d of b.destLocations ?? []) {
+        if (d.qty > 0) byBin.set(d.locationId, (byBin.get(d.locationId) ?? 0) + d.qty)
+      }
+      for (const [binLocation, qty] of byBin) items.push({ skuCode: r.skuCode, qty, binLocation })
+    } else if (isSerialTrackedSku(r.skuCode)) {
+      if (seenTracked.has(r.skuCode)) continue
+      seenTracked.add(r.skuCode)
+      const serials = serialLinesBySku.value[r.skuCode] ?? []
+      serialAssignments[r.skuCode] = serials.map(s => ({ serial: s.serial, destLocationId: s.destLocationId }))
+      const byBin = new Map<string, number>()
+      for (const s of serials) if (s.destLocationId) byBin.set(s.destLocationId, (byBin.get(s.destLocationId) ?? 0) + 1)
+      for (const [binLocation, qty] of byBin) items.push({ skuCode: r.skuCode, qty, binLocation })
+    } else {
+      items.push({ skuCode: r.skuCode, qty: r.qty, binLocation: r.binLocation })
+    }
+  }
+  return { items, assignments: { batchAssignments, serialAssignments } }
+}
+
+// Per-SKU check — an aggregate qty total can hit zero even when one SKU is
+// over-assigned and another under-assigned, or when a plain SKU's qty was entered
+// but never given a location. Every SKU must land on EXACTLY its received qty,
+// fully backed by a real storage location, for batch/serial/plain alike.
+function findIncompleteSku(): { name: string; reason: 'missing' | 'over' } | null {
+  const skus = new Set(draftRows.value.map(r => r.skuCode))
+  for (const sku of skus) {
+    const expected = totalQtyBySkuCode.value.get(sku) ?? 0
+    let assigned: number
+    let missingLocation: boolean
+
+    if (isBatchTrackedSku(sku)) {
+      assigned = batchAssignedQty(sku)
+      missingLocation = assigned < expected
+    } else if (isSerialTrackedSku(sku)) {
+      assigned = serialAssignedQty(sku)
+      missingLocation = assigned < expected
+    } else {
+      const rows = draftRows.value.filter(r => r.skuCode === sku)
+      assigned = rows.reduce((s, r) => s + (r.qty || 0), 0)
+      missingLocation = rows.some(r => (r.qty || 0) > 0 && !r.binLocation)
+    }
+
+    if (missingLocation || assigned !== expected) {
+      const name = itemBySkuCode.value.get(sku)?.productName ?? sku
+      return { name, reason: assigned > expected ? 'over' : 'missing' }
+    }
+  }
+  return null
+}
+
 function postPutAway() {
-  if (draftOutstanding.value > 0) {
-    toast.notify({ variant: 'danger', title: `Masih ada ${fmt(draftOutstanding.value)} unit belum disimpan` })
+  const incomplete = findIncompleteSku()
+  if (incomplete) {
+    toast.notify({
+      variant: 'error',
+      title: incomplete.reason === 'over'
+        ? `${incomplete.name}: put away qty exceeds received qty`
+        : `${incomplete.name}: select a storage location for the full received qty`,
+      maxWidth: 'max-content',
+    })
     return
   }
-  const items = draftRows.value.map(r => ({
-    skuCode: r.skuCode,
-    qty: r.qty,
-    binLocation: r.binLocation,
-  }))
-  endPutAwayTask(props.orderId, items)
-  toast.notify({ variant: 'success', title: 'Put-away selesai' })
+  const { items, assignments } = buildItemsAndAssignments()
+  endPutAwayTask(props.orderId, items, assignments)
+  toast.notify({ variant: 'success', title: 'Put-away finished' , maxWidth: 'max-content'})
   router.push(`/put-away/${props.orderId}`)
 }
 
 function saveDraft() {
-  const items = draftRows.value.map(r => ({
-    skuCode: r.skuCode,
-    qty: r.qty,
-    binLocation: r.binLocation,
-  }))
-  savePutAwayDraft(props.orderId, items)
-  toast.notify({ variant: 'success', title: 'Draf put-away tersimpan' })
+  const { items, assignments } = buildItemsAndAssignments()
+  savePutAwayDraft(props.orderId, items, assignments)
+  toast.notify({ variant: 'success', title: 'Put-away draft saved' , maxWidth: 'max-content'})
   router.push(`/put-away/${props.orderId}`)
 }
 
 function goBack()    { router.push(`/put-away/${props.orderId}`) }
-function goPutAway() { router.push('/barang-masuk?tab=Put-away') }
+function goPutAway() { router.push('/inbound-delivery?tab=Put-away') }
 
 // ── Start date label ──────────────────────────────────────────────────────────
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
@@ -247,6 +564,7 @@ onUnmounted(() => {
   stageObserver?.disconnect()
   stageEl.value?.removeEventListener('scroll', checkStageOverflow)
   itemsObserver?.disconnect()
+  if (flashTimer) clearTimeout(flashTimer)
 })
 watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 </script>
@@ -263,7 +581,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Store items</h1>
+          <h1 class="detail-title">Put away items</h1>
         </div>
       </div>
     </header>
@@ -287,7 +605,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <span class="pi-stat-val">{{ fmt(receivedQty) }}</span>
         </div>
         <div class="pi-stat">
-          <span class="pi-stat-label">Qty to store</span>
+          <span class="pi-stat-label">Put away qty</span>
           <span class="pi-stat-val">{{ fmt(draftHandled) }}</span>
         </div>
       </div>
@@ -295,14 +613,34 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       <div class="pi-sku-section">
 
         <div class="pi-filter-bar">
-          <span class="pi-editing-hint">Scan or enter the qty to store and confirm the storage location for each item.</span>
+          <span class="pi-editing-hint">Scan or enter the put away qty and confirm the storage location for each item.</span>
           <div class="pi-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pi-search" type="text" placeholder="Search product, SKU, or location…" />
+            <input v-model="search" class="pi-search" type="text" placeholder="Search..." />
+            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
         </div>
+
+        <!-- ── Scan bar ── -->
+        <ScanBar placeholder="Scan barcode..." @scan="handleScan">
+          <div v-if="activeBin" class="pi-active-bin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>{{ activeBin }}</span>
+            <button class="pi-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+        </ScanBar>
 
         <section class="pi-items-section" :class="{ 'pi-items-section--bordered': isProgressive }">
           <div ref="itemsScrollEl" class="pi-items-scroll">
@@ -315,22 +653,20 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <col />
                 <col />
                 <col />
-                <col />
               </colgroup>
               <thead>
                 <tr>
                   <th class="pi-th">Product</th>
                   <th class="pi-th">SKU</th>
-                  <th class="pi-th">Receiving task</th>
-                  <th class="pi-th pi-th--num">Received qty</th>
-                  <th class="pi-th pi-th--num">Qty to store</th>
-                  <th class="pi-th">Unit</th>
                   <th class="pi-th">Storage location</th>
+                  <th class="pi-th pi-th--num">Received qty</th>
+                  <th class="pi-th pi-th--num">Put away qty</th>
+                  <th class="pi-th">Unit</th>
                   <th class="pi-th pi-th--action" aria-hidden="true" />
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in rowsWithMeta" :key="row.id" class="pi-row">
+                <tr v-for="row in rowsWithMeta" :key="row.id" class="pi-row" :class="{ 'pi-row--flash': flashRowId === row.id }">
                   <!-- Product — merged across split rows -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">
                     <ProductCell
@@ -341,32 +677,92 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <!-- SKU — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ row.skuCode }}</td>
-                  <!-- Receiving task — merged -->
-                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.receivingTaskNo }}</td>
-                  <!-- Received qty — merged -->
-                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(itemBySkuCode.get(row.skuCode)?.qty ?? 0) }}</td>
-                  <!-- Qty to handle (editable — per split row) -->
-                  <td class="pi-td pi-td--input">
+                  <!-- Storage location: batch/serial-tracked SKUs manage it via the
+                       action column's icon button instead (location detail lives in
+                       the Manage batch / Manage serial numbers drawer, not here);
+                       plain SKUs keep the picker. -->
+                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--location-tracked">
+                    <MpTooltip :id="`pi-tt-loc-batch-${row.id}`" label="View via Manage batch" placement="top" use-portal>
+                      <span>—</span>
+                    </MpTooltip>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--location-tracked">
+                    <MpTooltip :id="`pi-tt-loc-serial-${row.id}`" label="View via Manage serial numbers" placement="top" use-portal>
+                      <span>—</span>
+                    </MpTooltip>
+                  </td>
+                  <td v-else class="pi-td pi-td--location">
+                    <MpPopover :id="`pi-loc-${row.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(row.id)">
+                      <MpPopoverTrigger>
+                        <div class="pi-loc-trigger">
+                          <input
+                            class="pi-loc-input"
+                            type="text"
+                            autocomplete="off"
+                            :value="activeLocRowId === row.id ? locSearch : row.binLocation"
+                            placeholder="Select storage location"
+                            @focus="openLocPicker(row.id)"
+                            @input="activeLocRowId = row.id; locSearch = ($event.target as HTMLInputElement).value"
+                          />
+                          <svg class="pi-loc-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </div>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
+                        <template v-if="locOptionsFiltered(row.id).length">
+                          <p class="pi-loc-section-heading">Recommended locations</p>
+                          <MpPopoverList>
+                            <MpPopoverListItem v-for="loc in recommendedLocOptions(row.id)" :key="loc" :is-active="loc === row.binLocation" @click="updateLocation(row.id, loc)">{{ loc }}</MpPopoverListItem>
+                          </MpPopoverList>
+                          <template v-if="otherLocOptions(row.id).length">
+                            <div class="pi-loc-divider" />
+                            <MpPopoverList>
+                              <MpPopoverListItem v-for="loc in otherLocOptions(row.id)" :key="loc" :is-active="loc === row.binLocation" @click="updateLocation(row.id, loc)">{{ loc }}</MpPopoverListItem>
+                            </MpPopoverList>
+                          </template>
+                        </template>
+                        <p v-else class="pi-loc-none">No locations found.</p>
+                      </MpPopoverContent>
+                    </MpPopover>
+                  </td>
+                  <!-- Received qty — merged, summed across all receiving tasks -->
+                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(totalQtyBySkuCode.get(row.skuCode) ?? 0) }}</td>
+                  <!-- Put away qty: batch/serial-tracked SKUs show the value directly -->
+                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--num">
+                    <span class="pi-batch-val">{{ fmt(batchAssignedQty(row.skuCode)) }}</span>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--num">
+                    <span class="pi-batch-val">{{ fmt(serialAssignedQty(row.skuCode)) }}</span>
+                  </td>
+                  <td v-else class="pi-td pi-td--input">
                     <input
                       class="pi-qty-input"
-                      type="number" min="0" :max="itemBySkuCode.get(row.skuCode)?.qty ?? 0"
+                      type="number" min="0" :max="remainingQtyFor(row)"
                       :value="row.qty"
-                      :aria-label="`Qty to store for ${itemBySkuCode.get(row.skuCode)?.productName}`"
-                      @input="onQtyInput(row.id, itemBySkuCode.get(row.skuCode)?.qty ?? 0, $event)"
+                      :aria-label="`Put away qty for ${itemBySkuCode.get(row.skuCode)?.productName}`"
+                      @input="onQtyInput(row.id, $event)"
                     />
                   </td>
                   <!-- Unit — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.unit }}</td>
-                  <!-- Storage location (per split row) -->
-                  <td class="pi-td pi-td--location">
-                    <span
-                      class="pi-location-value"
-                      :class="{ 'pi-location-value--empty': !row.binLocation }"
-                    >{{ row.binLocation || '—' }}</span>
-                  </td>
-                  <!-- Actions -->
+                  <!-- Actions — batch/serial-tracked SKUs manage storage location here
+                       (icon button); "Split storage location" only applies to plain SKUs. -->
                   <td class="pi-td pi-td--action">
-                    <MpPopover :id="`pi-row-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                    <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pi-tt-batch-${row.id}`" label="Manage batch" placement="top" use-portal>
+                      <button class="pi-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(row.skuCode)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pi-tt-serial-${row.id}`" label="Manage serial numbers" placement="top" use-portal>
+                      <button class="pi-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(row.skuCode)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpPopover
+                      v-else
+                      :id="`pi-row-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
+                    >
                       <MpPopoverTrigger>
                         <button class="pi-row-kebab" aria-label="More actions">
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -376,7 +772,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       </MpPopoverTrigger>
                       <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
                         <MpPopoverList>
-                          <MpPopoverListItem @click="openLocationEdit(row.id)">Edit storage location</MpPopoverListItem>
                           <MpPopoverListItem @click="splitRow(row.id)">Split storage location</MpPopoverListItem>
                         </MpPopoverList>
                       </MpPopoverContent>
@@ -384,7 +779,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                 </tr>
                 <tr v-if="!filteredRows.length">
-                  <td class="pi-td pi-empty" colspan="8">No products match your search.</td>
+                  <td class="pi-td pi-empty" colspan="7">No products match your search.</td>
                 </tr>
               </tbody>
             </table>
@@ -404,8 +799,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="pi-btn pi-btn--ghost" @click="goBack">Cancel</button>
-      <button class="pi-btn pi-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="pi-btn pi-btn--primary" @click="postPutAway">Post</button>
+      <button class="pi-btn pi-btn--secondary" @click="saveDraft">Save as draft</button>
+      <button class="pi-btn pi-btn--primary" @click="postPutAway">Finish put-away</button>
     </footer>
   </div>
 
@@ -414,39 +809,29 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <button class="detail-breadcrumb" @click="goPutAway">Back to Put-away</button>
   </div>
 
-  <!-- ── Edit storage location modal ── -->
-  <MpModal :is-open="!!editingLocationKey" :is-keep-alive="false" is-close-on-esc @close="closeLocationEdit">
-    <MpModalContent>
-      <MpModalHeader>
-        Edit storage location
-        <MpModalCloseButton />
-      </MpModalHeader>
-      <MpModalBody>
-        <MpFormControl>
-          <MpFormLabel>Bin location</MpFormLabel>
-          <MpAutocomplete
-            id="pi-loc-modal-ac"
-            v-model="editLocationValue"
-            :data="BINS_AC"
-            label-prop="name"
-            value-prop="id"
-            is-searchable
-            is-full-width
-            use-portal
-            placeholder="Select bin location…"
-          />
-        </MpFormControl>
-      </MpModalBody>
-      <MpModalFooter>
-        <div :class="css({ display: 'flex', justifyContent: 'flex-end', gap: 'spacing-2', width: '100%' })">
-          <MpButton variant="ghost" is-rounded @click="closeLocationEdit">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="saveLocationEdit">Save changes</MpButton>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
-
+  <ManageBatchDrawer
+    v-if="batchDrawerSku"
+    :open="batchDrawerOpen"
+    :sku="batchDrawerSku"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="put-away"
+    :dest-location-paths="locationOptions"
+    :model-value="batchLinesBySku[batchDrawerSku] ?? []"
+    @update:open="batchDrawerOpen = $event"
+    @save="saveBatchLines"
+  />
+  <ManageSerialDrawer
+    v-if="serialDrawerSku"
+    :open="true"
+    :sku="serialDrawerSku"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="put-away"
+    :target-count="(serialLinesBySku[serialDrawerSku] ?? []).length"
+    :dest-location-paths="locationOptions"
+    :model-value="serialLinesBySku[serialDrawerSku] ?? []"
+    @update:open="serialDrawerOpen = $event"
+    @save="saveSerialLines"
+  />
 </template>
 
 <style scoped>
@@ -487,11 +872,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 /* ── Task header ─────────────────────────────────────────────────────────────── */
 .pi-header {
-  display: flex; gap: var(--mp-spacing-10);
+  display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10);
   padding-bottom: var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.pi-header :deep(.content-list) { padding-top: 0; }
+.pi-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
 
 /* ── Summary stats ───────────────────────────────────────────────────────────── */
 .pi-summary { display: flex; gap: var(--mp-spacing-10); align-self: flex-start; }
@@ -526,6 +911,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .pi-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Items table section ─────────────────────────────────────────────────────── */
 .pi-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
@@ -539,15 +932,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-default, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default); white-space: nowrap;
+  white-space: nowrap;
 }
-.pi-th:last-child { border-right: none; }
 .pi-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-.pi-th--action { padding: 0; width: 48px; min-width: 48px; position: sticky; right: 0; z-index: 2; background: var(--mp-background-neutral-subtle); }
+.pi-th--action { padding: 0; width: 48px; min-width: 48px; position: sticky; right: 0; z-index: 2; background: var(--mp-background-default, #fff); }
 
 .pi-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
@@ -574,9 +966,40 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   line-height: var(--mp-line-heights-md);
 }
 
-/* ── Storage location cell ───────────────────────────────────────────────────── */
-.pi-location-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
-.pi-location-value--empty { color: var(--mp-text-secondary); }
+/* ── Storage location cell (popover picker) ──────────────────────────────────── */
+.pi-td--location { padding: 0; background: var(--mp-background-neutral, #fff); }
+.pi-td--location:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.pi-loc-trigger { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); cursor: text; }
+.pi-loc-input { flex: 1; min-width: 0; border: none; outline: none; background: none; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+.pi-loc-input::placeholder { color: var(--mp-text-placeholder); }
+.pi-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+.pi-loc-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
+.pi-loc-section-heading { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pi-loc-divider { height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
+
+/* Storage location — read-only bin summary for batch/serial-tracked SKUs.
+   The flex layout lives on an inner wrapper div, not the <td> itself — display:flex
+   directly on a <td> breaks the browser's native table-row height stretch, so the
+   <td> stays a normal table cell and the wrapper's height:100% fills whatever
+   height the row ends up being (matching the "Unit" column exactly). */
+.pi-td--location-summary {
+  padding: 0; color: var(--mp-text-default);
+  background: var(--mp-background-neutral-subtle);
+  vertical-align: top;
+}
+.pi-location-summary-wrap { display: flex; flex-direction: column; height: 100%; }
+.pi-location-summary-item { display: flex; align-items: center; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
+.pi-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
+
+.pi-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pi-td--location-tracked { padding: 10px var(--mp-spacing-4); vertical-align: top; color: var(--mp-text-secondary); }
+.pi-view-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  border-radius: var(--mp-radii-md); background: none; border: none;
+  cursor: pointer; color: var(--mp-icon-default);
+}
+.pi-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Row actions (kebab) ─────────────────────────────────────────────────────── */
 .pi-row-kebab {
@@ -614,6 +1037,29 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .pi-btn--primary   { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .pi-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+
+.pi-active-bin {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
+  background: #e6f7ef; border: 1px solid #029861;
+  border-radius: var(--mp-radii-full); white-space: nowrap;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: #027a4e; flex-shrink: 0;
+}
+.pi-active-bin-clear {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
+}
+.pi-active-bin-clear:hover { opacity: 1; }
+
+/* ── Row flash on SKU scan ───────────────────────────────────────────────────── */
+@keyframes pi-row-flash {
+  0%   { background: rgba(2, 152, 97, 0.12); }
+  100% { background: var(--mp-background-neutral-hovered); }
+}
+.pi-row--flash .pi-td { animation: pi-row-flash 0.7s ease-out forwards; }
+.pi-row--flash .pi-td--input,
+.pi-row--flash .pi-td--location { animation: pi-row-flash 0.7s ease-out forwards; }
 
 /* ── Not found ───────────────────────────────────────────────────────────────── */
 .pi-not-found {

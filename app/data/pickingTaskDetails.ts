@@ -1,4 +1,7 @@
-import { getPickingTask, pickingLinesOf, pickingTasks, type PickingTask } from "./pickingTasks";
+import {
+  getPickingTask, pickingLinesOf, pickingTasks, mergeBatchPicks, dedupeSerialPicks, type PickingTask,
+  type PickingBatchPick, type PickingSerialPick,
+} from "./pickingTasks";
 import { packingTasks, type PackingTask } from "./packingTasks";
 import { binForSku } from "./warehouseDetails";
 
@@ -15,6 +18,15 @@ export interface PickLineItem {
   expectedQty: number; // to-pick (planned)
   pickedQty: number;   // picked so far
   unit: string;
+  /** Batch-tracked SKUs only — undefined if the SKU isn't batch-tracked. */
+  batchPicks?: PickingBatchPick[];
+  /** Serial-tracked SKUs only — undefined if the SKU isn't serial-tracked. */
+  serialPicks?: PickingSerialPick[];
+  /** The ORIGINAL per-batch reservation plan, frozen at task creation — never
+   *  affected by later real-pick overwrites of batchPicks above. */
+  plannedBatchPicks?: PickingBatchPick[];
+  /** Same idea as plannedBatchPicks, for serial-tracked SKUs. */
+  plannedSerialPicks?: PickingSerialPick[];
 }
 
 export function getPickingLineItems(task: PickingTask): PickLineItem[] {
@@ -30,6 +42,10 @@ export function getPickingLineItems(task: PickingTask): PickLineItem[] {
     expectedQty: l.qty,
     pickedQty: task.pickedByKey?.[l.key] ?? 0,
     unit: l.unit,
+    batchPicks: task.batchPicks?.[l.key] ? mergeBatchPicks(task.batchPicks[l.key]) : undefined,
+    serialPicks: task.serialPicks?.[l.key] ? dedupeSerialPicks(task.serialPicks[l.key]) : undefined,
+    plannedBatchPicks: task.plannedBatchPicks?.[l.key] ? mergeBatchPicks(task.plannedBatchPicks[l.key]) : undefined,
+    plannedSerialPicks: task.plannedSerialPicks?.[l.key] ? dedupeSerialPicks(task.plannedSerialPicks[l.key]) : undefined,
   }));
 }
 

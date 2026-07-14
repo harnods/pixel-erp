@@ -2,21 +2,23 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpFormControl, MpFormLabel, MpAutocomplete, MpInput, MpButton,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
   css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { useTableState } from '~/composables/useTableState'
 import { packingTasksFor, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
-import { addDeliveryTask, orderHasDelivery } from '~/data/deliveryTasks'
-import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
+import { packingTaskHasShipment } from '~/data/deliveryTasks'
+import { outgoingOrders } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
-import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTime } from '~/utils/date'
+
+// A packing task's order source (Sales Order / Manual / marketplace channel) —
+// looked up from the order since PackingTask itself doesn't carry it.
+type PackingRow = PackingTask & { source: string }
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -33,7 +35,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Packing task saved' })
+    toast.notify({ variant: 'success', title: 'Packing task saved' , maxWidth: 'max-content'})
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })
@@ -50,31 +52,37 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Columns ───────────────────────────────────────────────────────────────────
 // Packing is per sales order — one task = one order (no bundling).
 const columns: TableColumn[] = [
-  { key: 'taskNo',        label: 'Number',      width: '180px', sortType: 'text' },
-  { key: 'salesNo',       label: 'Sales order', width: '200px', sortType: 'text' },
+  { key: 'taskNo',        label: 'Packing no.',    width: '180px', sortType: 'text' },
+  { key: 'salesNo',       label: 'Sales order no.', width: '200px', sortType: 'text' },
+  { key: 'source',        label: 'Source',      width: '280px', sortType: 'text' },
   { key: 'warehouseName', label: 'Warehouse',   width: '180px', sortType: 'text' },
   { key: 'assignee',      label: 'Assignee',    width: '160px', sortType: 'text' },
   { key: 'skuQty',        label: 'SKU qty',     width: '100px', align: 'right', sortType: 'number' },
   { key: 'toPackQty',     label: 'To pack',     width: '100px', align: 'right', sortType: 'number' },
   { key: 'packedQty',     label: 'Packed qty',  width: '100px', align: 'right', sortType: 'number' },
   { key: 'status',        label: 'Status',      width: '140px', sortType: 'text' },
+  { key: 'icons',         label: '',            width: '48px',  align: 'center', noHeader: true },
   { key: 'startDate',     label: 'Start date',  width: '170px', sortType: 'date' },
   { key: 'endDate',       label: 'End date',    width: '190px', sortType: 'date' },
 ]
-// Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
-// the ColumnSettings menu turns them back on.
-const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+// Column show/hide — To pack is hidden by default (not useful — SKU qty + Packed
+// qty already tell the story). The sort menu's "Hide column" flips others off, the
+// ColumnSettings menu turns them back on.
+const colVis = reactive<Record<string, boolean>>(
+  Object.fromEntries(columns.map(c => [c.key, c.key !== 'toPackQty'])),
+)
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
-const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — Status + Warehouse (hidden when scoped) ───
-const warehouseFilter = ref('')
+const warehouseFilter = ref<string[]>([])
 const statusFilter = ref('')
 
-const baseTasks = computed<PackingTask[]>(() =>
+const baseTasks = computed<PackingRow[]>(() =>
   demoState.value === 'data'
     ? packingTasksFor(isScoped.value ? scopedWarehouseIds.value : undefined)
+        .map(t => ({ ...t, source: outgoingOrders.find(o => o.id === t.salesOrderId)?.source ?? '' }))
     : [],
 )
 
@@ -90,28 +98,39 @@ const statusOptions = [
   { label: 'Completed',   value: 'completed' },
   { label: 'Canceled',    value: 'canceled' },
 ]
-const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
 const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
 
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
-} = useTableState<PackingTask>(baseTasks, {
+} = useTableState<PackingRow>(baseTasks, {
   perPage: 25,
   filterFn: (row, s) => {
     const matchesSearch = !s
       || row.taskNo.toLowerCase().includes(s)
       || row.salesNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
-    const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
+      || row.source.toLowerCase().includes(s)
+    const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
     return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
 watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = ''; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || !!statusFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = '' }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -120,118 +139,7 @@ function agingDays(t: PackingTask) { return packingTaskAgingDays(t) }
 // ─── Row actions ──────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(row: PackingTask) { router.push(`/packing/${row.id}`) }
-
-// A completed packing task can create a delivery only if its sales order doesn't
-// already have a live delivery — one delivery per order (an order already being
-// delivered/shipped can't spawn another, even from a different packing task).
-function canCreateShipping(t: PackingTask) {
-  return t.status === 'completed'
-    && getDeliveryForPackingTask(t.id).length === 0
-    && !orderHasDelivery(t.salesOrderId)
-}
-// A completed task whose order already has a delivery can't be selected for the
-// bulk "Create delivery" action — so a duplicate can't be started from bulk.
-function rowNotSelectable(row: Record<string, unknown>) {
-  const t = row as unknown as PackingTask
-  return t.status === 'completed'
-    && (getDeliveryForPackingTask(t.id).length > 0 || orderHasDelivery(t.salesOrderId))
-}
-
-// ── Create delivery → pick an assignee, then make a delivery per packing task ──
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
-const shipModalOpen = ref(false)
-const shipQueue = ref<PackingTask[]>([])
-const shipAssigneeId = ref('')
-const shipAssigneeError = ref(false)
-const shipAssigneeLabel = computed(() => ASSIGNEES.find(a => a.id === shipAssigneeId.value)?.name ?? '')
-// Courier + tracking captured here for a single shipment (scan label auto-fills);
-// for bulk they're filled later at handover (per package).
-const shipScan = ref('')
-const shipCourier = ref('')
-const shipTracking = ref('')
-const shipSingle = computed(() => shipQueue.value.length === 1)
-const SHIP_COURIERS = ['JNE', 'SiCepat', 'J&T Express', 'AnterAja', 'Internal fleet']
-function marketplaceShipInfo(salesNo: string) {
-  let h = 0; for (const c of salesNo) h = (h * 31 + c.charCodeAt(0)) >>> 0
-  return { courier: SHIP_COURIERS[h % 4]!, trackingNo: 'SD' + (1_000_000 + (h % 9_000_000)) }
-}
-// A single marketplace shipment already carries courier + tracking (fixed) → show them
-// locked; other single shipments let the user fill them in (not required).
-const shipHasFixedCourier = computed(() =>
-  shipSingle.value && isMarketplaceOrder(outgoingOrders.find(o => o.id === shipQueue.value[0]?.salesOrderId)),
-)
-
-function openShipModal(tasks: PackingTask[]) {
-  shipQueue.value = tasks
-  shipAssigneeId.value = ''
-  shipAssigneeError.value = false
-  const single = tasks.length === 1 ? tasks[0] : undefined
-  const order = single ? outgoingOrders.find(o => o.id === single.salesOrderId) : undefined
-  if (single && isMarketplaceOrder(order)) {
-    const info = marketplaceShipInfo(single.salesNo)
-    shipCourier.value = info.courier
-    shipTracking.value = info.trackingNo
-    shipScan.value = info.trackingNo
-  } else {
-    shipScan.value = ''
-    shipCourier.value = ''
-    shipTracking.value = ''
-  }
-  shipModalOpen.value = true
-}
-// Scanning a shipping label (issued by OMS) → auto-fills courier + tracking (dummy random).
-function applyShipScan() {
-  if (shipHasFixedCourier.value) return // fixed
-  shipCourier.value = SHIP_COURIERS[Math.floor(Math.random() * SHIP_COURIERS.length)]!
-  shipTracking.value = 'SD' + Math.floor(1_000_000 + Math.random() * 9_000_000)
-  if (!shipScan.value.trim()) shipScan.value = shipTracking.value
-}
-function createShipping(t: PackingTask) { openShipModal([t]) }
-// Bulk → one delivery per selected completed packing task (delivery is per order).
-function bulkCreateShipping(selectedRows: Set<number>, deselectAll: () => void) {
-  const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as PackingTask[]
-  const eligible = rows.filter(canCreateShipping)
-  deselectAll()
-  if (eligible.length) {
-    openShipModal(eligible)
-  } else {
-    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' })
-  }
-}
-function confirmShipping() {
-  if (!shipAssigneeId.value) { shipAssigneeError.value = true; return }
-  let created = 0
-  for (const t of shipQueue.value) {
-    // Skip orders that already have a live delivery — including duplicates within
-    // this same batch (addDeliveryTask updates the store immediately).
-    if (orderHasDelivery(t.salesOrderId)) continue
-    created++
-    addDeliveryTask({
-      salesOrderId: t.salesOrderId, salesNo: t.salesNo,
-      packingTaskId: t.id, packingTaskNo: t.taskNo,
-      warehouseId: t.warehouseId, warehouseName: t.warehouseName,
-      assignee: shipAssigneeLabel.value, skuQty: t.skuQty, toShipQty: t.packedQty,
-      deliveryMethod: (shipSingle.value && (shipHasFixedCourier.value || shipCourier.value.trim())) ? 'online' : (shipSingle.value ? 'self' : 'online'),
-      courier: shipSingle.value ? (shipCourier.value.trim() || undefined) : undefined,
-      trackingNo: shipSingle.value ? (shipTracking.value.trim() || undefined) : undefined,
-    })
-  }
-  shipModalOpen.value = false
-  if (!created) {
-    toast.notify({ variant: 'error', title: 'Delivery already exists', description: 'The selected order(s) already have a delivery task.' })
-    return
-  }
-  router.push({ path: '/barang-keluar', query: { tab: 'Delivery', saved: '1' } })
-}
+function viewSalesOrder(row: PackingTask) { router.push(`/outbound-delivery/${row.salesOrderId}`) }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -247,8 +155,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
-    has-checkbox
-    :row-disabled="rowNotSelectable"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -256,34 +162,31 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
-    <!-- ── Bulk actions ── -->
-    <template #bulk-actions="{ deselectAll, selectedRows }">
-      <button
-        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-        @click="bulkCreateShipping(selectedRows as Set<number>, deselectAll)"
-      >
-        Create delivery
-      </button>
-    </template>
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover v-if="!isScoped" id="pack-wh-filter" is-close-on-select>
+        <MpPopover v-if="!isScoped" id="pack-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="pack-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = ''"
+              id="pack-wh-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
-              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`pack-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
@@ -309,7 +212,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="pack-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pack-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -318,6 +220,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="pack-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pack-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -327,6 +230,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -345,14 +253,37 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Sales order (single) ── -->
-    <template #cell-salesNo="{ value }">
-      <span class="pack-so">{{ value }}</span>
+    <!-- ── Sales order no. — View details chip on hover (opens the sales order) ── -->
+    <template #cell-salesNo="{ value, row }">
+      <div class="cell-with-action">
+        <span class="cell-text pack-so">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="viewSalesOrder(row as unknown as PackingTask)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
     </template>
 
-    <!-- ── Warehouse ── -->
-    <template #cell-warehouseName="{ value }">
-      <span class="pack-warehouse">{{ value }}</span>
+    <!-- ── Source — wrap to 2 lines instead of bleeding ── -->
+    <template #cell-source="{ value }">
+      <span class="pack-source"><SourceLabel :source="value as string" /></span>
+    </template>
+
+    <!-- ── Warehouse — View details chip on hover ── -->
+    <template #cell-warehouseName="{ value, row }">
+      <div class="cell-with-action">
+        <span class="pack-warehouse">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as PackingTask).warehouseId}`)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
     </template>
 
     <!-- ── Numeric cells ── -->
@@ -362,6 +293,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Status ── -->
     <template #cell-status="{ value }"><ErpStatusBadge :status="value as string" /></template>
+
+    <!-- ── Icon indicators — shipment created ── -->
+    <template #cell-icons="{ row }">
+      <div class="pack-icons-cell">
+        <MpTooltip
+          v-if="packingTaskHasShipment((row as unknown as PackingTask).id)"
+          :id="`tt-shipment-${row.id}`"
+          label="Shipment created"
+          placement="top"
+          use-portal
+        >
+          <span class="pack-icon-indicator" aria-label="Shipment created">
+            <MpIcon name="truck" size="20px" />
+          </span>
+        </MpTooltip>
+      </div>
+    </template>
 
     <!-- ── Start / End date + aging ── -->
     <template #cell-startDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
@@ -386,10 +334,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as PackingTask)">View details</MpPopoverListItem>
-            <MpPopoverListItem
-              v-if="canCreateShipping(row as unknown as PackingTask)"
-              @click="createShipping(row as unknown as PackingTask)"
-            >Create delivery</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -420,62 +364,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>
-
-  <!-- ── Create delivery: pick assignee ── -->
-  <MpModal id="pack-ship-modal" :is-open="shipModalOpen" size="lg" is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="shipModalOpen = false">
-    <MpModalContent>
-      <MpModalHeader>Create delivery<MpModalCloseButton /></MpModalHeader>
-      <MpModalBody>
-        <MpFormControl id="pack-ship-assignee" is-required :is-invalid="shipAssigneeError" :class="css({ marginBottom: shipSingle ? '16px' : '0' })">
-          <MpFormLabel>Assignee</MpFormLabel>
-          <MpAutocomplete
-            id="pack-ship-assignee-ac"
-            v-model="shipAssigneeId"
-            :data="ASSIGNEES"
-            label-prop="name"
-            value-prop="id"
-            placeholder="Select assignee"
-            is-searchable is-clearable use-portal is-full-width
-            :is-invalid="shipAssigneeError"
-          />
-        </MpFormControl>
-
-        <!-- Courier + AWB (single shipment): fixed & disabled when the order carries
-             them, else the user can fill them (not required) -->
-        <template v-if="shipSingle">
-          <MpFormControl v-if="!shipHasFixedCourier" id="pack-ship-scan" :class="css({ marginBottom: '16px' })">
-            <MpFormLabel>Scan shipping label</MpFormLabel>
-            <div class="ship-scan-field">
-              <MpInput id="pack-ship-scan-input" v-model="shipScan" placeholder="Scan or paste label…" is-full-width @keyup.enter="applyShipScan" />
-              <MpButton variant="secondary" is-rounded class="erp-outline-btn" @click="applyShipScan">Apply</MpButton>
-            </div>
-          </MpFormControl>
-          <div class="ship-modal-grid">
-            <MpFormControl id="pack-ship-courier">
-              <MpFormLabel>Courier</MpFormLabel>
-              <MpInput id="pack-ship-courier-input" v-model="shipCourier" placeholder="e.g. JNE, SiCepat" is-full-width :is-disabled="shipHasFixedCourier" />
-            </MpFormControl>
-            <MpFormControl id="pack-ship-tracking">
-              <MpFormLabel>AWB / tracking no.</MpFormLabel>
-              <MpInput id="pack-ship-tracking-input" v-model="shipTracking" placeholder="e.g. SD0009583" is-full-width :is-disabled="shipHasFixedCourier" />
-            </MpFormControl>
-          </div>
-        </template>
-      </MpModalBody>
-      <MpModalFooter>
-        <div class="ship-modal-footer">
-          <MpButton variant="ghost" is-rounded @click="shipModalOpen = false">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="confirmShipping">Create delivery</MpButton>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
 </template>
 
 <style scoped>
 .filter-left  { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Warehouse multi-select list */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -496,6 +398,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Number cell — View details chip on hover */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
@@ -517,6 +427,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 .pack-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+
+/* Icon indicators cell — shipment created */
+.pack-icons-cell { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
+.pack-icon-indicator { display: inline-flex; align-items: center; justify-content: center; color: var(--mp-text-subtle); }
+.pack-source {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; white-space: normal; color: var(--mp-text-default);
 }
 
 /* Start/End date + aging badge */
@@ -552,11 +470,4 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .demo-fab:hover { opacity: 0.9; }
 .demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.ship-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
-/* secondary/outline button: gray-bold border + default text */
-:deep(.erp-outline-btn) { border-color: var(--mp-border-bold) !important; color: var(--mp-text-default) !important; }
-.ship-modal-note { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
-.ship-scan-field { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.ship-scan-field > :first-child { flex: 1; min-width: 0; }
-.ship-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
 </style>

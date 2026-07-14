@@ -149,7 +149,14 @@ export interface OrderSkuLine {
  * Every outbound feature (picking build, create-picking, create-packing, packing
  * details) resolves an order's lines through this one function, so they never drift.
  */
-export function orderSkuLines(order: { id: string; warehouseId: string; skuQty: number }): OrderSkuLine[] {
+export function orderSkuLines(order: { id: string; warehouseId: string; skuQty: number; lines?: { sku: string; qty: number }[] }): OrderSkuLine[] {
+  if (order.lines?.length) {
+    return order.lines.map((l) => {
+      const product = PRODUCTS.find((p) => p.sku === l.sku)
+      if (!product) return null
+      return { sku: l.sku, product, qty: l.qty }
+    }).filter((x): x is OrderSkuLine => x !== null)
+  }
   const pool = warehouseProducts(order.warehouseId)
   if (!pool.length) return []
   const base = seedNum(order.id)

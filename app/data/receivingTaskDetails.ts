@@ -50,7 +50,7 @@ export interface PutAwayLink {
   assignee: string
   itemQty: number
   destination: string
-  status: 'open' | 'in progress' | 'completed'
+  status: 'open' | 'in progress' | 'completed' | 'canceled'
   startDate?: string
   endDate?: string
 }

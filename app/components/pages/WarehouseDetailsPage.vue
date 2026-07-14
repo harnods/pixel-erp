@@ -6,6 +6,8 @@ import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton, MpDatePicker, MpSelect, MpButton, MpBadge, toast, css,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
+  MpFlex, MpText,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
@@ -13,16 +15,29 @@ import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
+import BatchReservationsDrawer from '~/components/patterns/BatchReservationsDrawer.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDate } from '~/utils/date'
-import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { getWarehouseDetail, getReservationsForBatch, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { outgoingOrders } from '~/data/outgoing'
 import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
-import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses } from '~/data/warehouses'
+import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
 import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
+import {
+  getWarehouseTeam, getWarehouseManagers, addTeamMember, removeTeamMember,
+  getAvailableUsersForWarehouse,
+  type WarehouseTeamMember,
+} from '~/data/warehouseTeam'
 import { TODAY } from '~/data/master'
 import { useUrlModal } from '@ds/proto-review'
+import { activePickingTasksFor, reassignPickingTasks } from '~/data/pickingTasks'
+import { activePackingTasksFor, reassignPackingTasks } from '~/data/packingTasks'
+import { activePutAwayTasksFor, reassignPutAwayTasks } from '~/data/putAwayTasks'
+import { activeReceivingTasksFor, reassignReceivingTasks } from '~/data/receivingTasks'
+import { activeDeliveryTasksFor, reassignDeliveryTasks } from '~/data/deliveryTasks'
+import { activeWmsAdjustmentsFor, reassignWmsAdjustments } from '~/data/wmsStockAdjustments'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -33,7 +48,7 @@ const route  = useRoute()
 const TAB_NAMES = computed(() => {
   const t = ['products', 'batches', 'serial']
   if (!isWmsOps.value) t.push('transactions')
-  t.push('locations')
+  t.push('locations', 'team')
   return t
 })
 const activeTabIndex = computed({
@@ -119,24 +134,26 @@ const deleteModalOpen = ref(false)
 const archiveModalOpen = ref(false)
 
 function goEdit() {
-  // edit form not in scope for this story — navigate to the (future) edit route
   router.push(`/warehouses/${props.orderId}/edit`)
+}
+function goConfigure() {
+  router.push(`/warehouses/${props.orderId}/configure`)
 }
 function confirmArchive() {
   if (!warehouse.value) return
   archiveWarehouses([warehouse.value.id])
   archiveModalOpen.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse archived' })
+  toast.notify({ variant: 'success', title: 'Warehouse archived' , maxWidth: 'max-content'})
 }
 /** Unarchive is a low-friction, reversible action — no confirmation modal (matches the index). */
 function unarchive() {
   if (!warehouse.value) return
   unarchiveWarehouses([warehouse.value.id])
-  toast.notify({ variant: 'success', title: 'Warehouse unarchived' })
+  toast.notify({ variant: 'success', title: 'Warehouse unarchived' , maxWidth: 'max-content'})
 }
 function confirmDelete() {
   deleteModalOpen.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse deleted' })
+  toast.notify({ variant: 'success', title: 'Warehouse deleted' , maxWidth: 'max-content'})
   router.push('/warehouses')
 }
 
@@ -255,6 +272,104 @@ function addSubLoc(node: LocNode) {
 }
 function onLocSaved(parentId: string | null) {
   if (parentId) expandedLoc.value = new Set([...expandedLoc.value, parentId])
+}
+
+// ── Team — this warehouse's Managers + Operators. Task assignees everywhere else
+// in the app are drawn ONLY from a warehouse's Operators (see warehouseTeam.ts). ──
+const teamSearch = ref('')
+const team = computed(() => getWarehouseTeam(props.orderId))
+const warehouseManagers = computed(() => getWarehouseManagers(props.orderId))
+const filteredTeam = computed(() => {
+  const q = teamSearch.value.trim().toLowerCase()
+  if (!q) return team.value
+  return team.value.filter(m => m.name.toLowerCase().includes(q))
+})
+// Who's making the change — mirrors ErpUserMenu.vue's "logged in as" logic
+// (the active warehouse's PIC in an Ops scenario, back-office otherwise).
+const { activeWarehouse, hasWarehouseContext } = useWarehouseContext()
+const currentUserName = computed(() =>
+  hasWarehouseContext.value && activeWarehouse.value
+    ? picForWarehouse(activeWarehouse.value.id, 0)
+    : 'Rizal Candra',
+)
+const availableTeamUsers = computed(() => getAvailableUsersForWarehouse(props.orderId))
+const teamModalOpen = ref(false)
+const teamUserIdDraft = ref('')
+const teamUserError = ref(false)
+const isSaving = ref(false)
+
+const selectedTeamUser = computed(() => availableTeamUsers.value.find(u => u.id === teamUserIdDraft.value) ?? null)
+
+function openAddTeamMember() {
+  teamUserIdDraft.value = ''
+  teamUserError.value = false
+  teamModalOpen.value = true
+}
+function closeTeamModal() {
+  teamModalOpen.value = false
+}
+async function saveTeamMember() {
+  if (!teamUserIdDraft.value) { teamUserError.value = true; return }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
+  addTeamMember(props.orderId, { userId: teamUserIdDraft.value, addedBy: currentUserName.value })
+  toast.notify({ variant: 'success', title: 'Team member added', maxWidth: 'max-content' })
+  isSaving.value = false
+  teamModalOpen.value = false
+}
+const removeTeamModalOpen = ref(false)
+const memberToRemove = ref<WarehouseTeamMember | null>(null)
+const memberActiveTaskCount = ref(0)
+const reassignTargetId = ref('')
+
+function countActiveTasks(memberName: string): number {
+  const wid = props.orderId
+  return (
+    activePickingTasksFor(wid, memberName).length +
+    activePackingTasksFor(wid, memberName).length +
+    activePutAwayTasksFor(wid, memberName).length +
+    activeReceivingTasksFor(wid, memberName).length +
+    activeDeliveryTasksFor(wid, memberName).length +
+    activeWmsAdjustmentsFor(wid, memberName).length
+  )
+}
+
+const reassignOptions = computed(() =>
+  memberToRemove.value
+    ? team.value.filter((m) => m.id !== memberToRemove.value!.id)
+    : []
+)
+
+function onRemoveTeamMember(member: WarehouseTeamMember) {
+  memberToRemove.value = member
+  memberActiveTaskCount.value = countActiveTasks(member.name)
+  reassignTargetId.value = ''
+  removeTeamModalOpen.value = true
+}
+
+function confirmRemoveTeamMember() {
+  if (!memberToRemove.value) return
+  if (memberActiveTaskCount.value > 0 && !reassignTargetId.value) {
+    toast.notify({ variant: 'error', title: 'Select team member to reassign tasks to', maxWidth: 'max-content' })
+    return
+  }
+  const wid = props.orderId
+  const fromName = memberToRemove.value.name
+  if (memberActiveTaskCount.value > 0 && reassignTargetId.value) {
+    const toMember = team.value.find((m) => m.id === reassignTargetId.value)
+    if (toMember) {
+      reassignPickingTasks(wid, fromName, toMember.name)
+      reassignPackingTasks(wid, fromName, toMember.name)
+      reassignPutAwayTasks(wid, fromName, toMember.name)
+      reassignReceivingTasks(wid, fromName, toMember.name)
+      reassignDeliveryTasks(wid, fromName, toMember.name)
+      reassignWmsAdjustments(wid, fromName, toMember.name)
+    }
+  }
+  removeTeamMember(memberToRemove.value.id)
+  removeTeamModalOpen.value = false
+  memberToRemove.value = null
+  toast.notify({ variant: 'success', title: `${fromName} removed from the team`, maxWidth: 'max-content' })
 }
 
 const search = ref('')
@@ -439,6 +554,7 @@ const filteredSerialProducts = computed(() => {
 })
 function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' : 'serial numbers'}` }
 const hasBatchMergedRows = computed(() => filteredBatchProducts.value.length > 0)
+const hasMultiLocProduct = computed(() => filteredStock.value.some((s: any) => (s.locations?.length ?? 0) > 1))
 const hasBatchTab  = computed(() => batchProducts.value.length > 0)
 const hasSerialTab = computed(() => serialProducts.value.length > 0)
 
@@ -485,6 +601,28 @@ function openSerialDrawer(p: WarehouseStockItem, tab: 'available' | 'reserved' =
   serialDrawerOpen.value    = true
 }
 
+// ── Batch reservations drawer (temporary design) ────────────────────────────
+const batchReservationsProduct = ref<WarehouseStockItem | null>(null)
+const batchReservationsBatchNo = ref('')
+const batchReservationsOpen    = ref(false)
+function openBatchReservations(p: WarehouseStockItem, batchNo: string) {
+  batchReservationsProduct.value = p
+  batchReservationsBatchNo.value = batchNo
+  batchReservationsOpen.value    = true
+}
+const batchReservationRows = computed(() => {
+  const p = batchReservationsProduct.value
+  if (!p) return []
+  return getReservationsForBatch(props.orderId, p.sku, batchReservationsBatchNo.value).map((r) => {
+    const order = outgoingOrders.find((o) => o.id === r.taskId)
+    return {
+      salesNo: order?.salesNo ?? r.taskId,
+      orderNumber: order?.number ?? r.taskId,
+      qty: r.qty,
+    }
+  })
+})
+
 function formatDateNumeric(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
 }
@@ -509,22 +647,12 @@ function formatNum(n: number) {
 
 // Split a multi-location row into per-location qty breakdowns
 // 2 locations: 60% / 40%; 3 locations: 50% / 30% / 20%
-function locBreakdown(row: { locations: string[]; onHand: number; reserved: number }) {
-  const locs = row.locations
-  if (locs.length <= 1) return null
-  const weights = locs.length === 2 ? [0.6, 0.4] : [0.5, 0.3, 0.2]
-  const split = (total: number) => {
-    const parts = weights.slice(0, -1).map((w) => Math.round(total * w))
-    parts.push(Math.max(0, total - parts.reduce((a, b) => a + b, 0)))
-    return parts
-  }
-  const ohs = split(row.onHand)
-  const rvs = split(row.reserved)
-  return locs.map((loc, i) => {
-    const oh = ohs[i] ?? 0
-    const rv = Math.min(rvs[i] ?? 0, oh)
-    return { loc, onHand: oh, reserved: rv, available: oh - rv }
-  })
+// Real per-bin split (warehouseDetails.ts's WarehouseStockItem.bins) — was a
+// recomputed-on-render weight-split guess; now it's the persisted, reservation-
+// aware source of truth, so this just re-shapes it for the template.
+function locBreakdown(row: { bins?: { location: string; onHand: number; reserved: number; available: number }[] }) {
+  if (!row.bins || row.bins.length <= 1) return null
+  return row.bins.map((b) => ({ loc: b.location, onHand: b.onHand, reserved: b.reserved, available: b.available }))
 }
 
 function formatUpdatedAt(iso: string) {
@@ -616,6 +744,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search warehouse…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="w in jumpResults" :key="w.id" class="detail-jump-item" @click="jumpTo(w.id)">
@@ -630,7 +763,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
         </div>
       </div>
 
-      <!-- Actions dropdown: Edit · Archive/Unarchive · Delete (if applicable) -->
+      <!-- Actions dropdown: Edit · Archive/Unarchive · Delete (if applicable) · divider · Configure warehouse -->
       <MpPopover id="wh-detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
@@ -653,6 +786,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             >
               Delete
             </MpPopoverListItem>
+            <div class="wh-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
+            <MpPopoverListItem @click="goConfigure">Configure warehouse</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -668,8 +803,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <div v-for="row in infoRows" :key="row.label" class="wh-info-row">
             <dt class="wh-info-label">{{ row.label }}</dt>
             <dd v-if="row.key === 'pic'" class="wh-info-value">
-              <span v-if="warehouse.pics.length" class="wh-pic-tags">
-                <span v-for="p in warehouse.pics" :key="p.id" class="wh-pic-tag">{{ p.name }}</span>
+              <span v-if="warehouseManagers.length" class="wh-pic-tags">
+                <span v-for="m in warehouseManagers" :key="m.id" class="wh-pic-tag">{{ m.name }}</span>
               </span>
               <template v-else>—</template>
             </dd>
@@ -689,10 +824,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <MpTab v-if="hasSerialTab" id="wh-tab-serial" value="serial">Serial numbers</MpTab>
           <MpTab v-if="!isWmsOps" id="wh-tab-transactions" value="transactions">Transactions</MpTab>
           <MpTab id="wh-tab-locations" value="locations">Storage locations</MpTab>
+          <MpTab id="wh-tab-team" value="team">Team</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="products">
-            <div ref="productsTableEl" class="wh-products-table" @scroll.capture="onTableScroll">
+            <div ref="productsTableEl" :class="['wh-products-table', { 'wh-products-bordered': hasMultiLocProduct }]" @scroll.capture="onTableScroll">
             <ErpTablePage
               ref="productsTableRef"
               class="erp-products"
@@ -730,6 +866,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <div class="wh-search">
                     <MpIcon name="search" size="md" />
                     <input v-model="search" class="wh-search-input" type="text" placeholder="Search..." />
+                    <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                      </svg>
+                    </button>
                   </div>
                 </div>
               </template>
@@ -884,6 +1025,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
                   <input v-model="batchSearch" class="wh-search-input" type="text" placeholder="Search..." />
+                  <button v-if="batchSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="batchSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -966,14 +1112,14 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <td v-if="batchColVisibility.reserved" class="wh-btd wh-btd--num">{{ formatNum(p.reserved) }}</td>
                       <td v-if="batchColVisibility.available" class="wh-btd wh-btd--num">{{ formatNum(p.available) }}</td>
                       <td v-if="batchColVisibility.minStock" class="wh-btd wh-btd--num" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">{{ formatNum(p.minStock) }}</td>
-                      <td v-if="batchColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
+                      <td v-if="batchColVisibility.unit" class="wh-btd" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">{{ p.unit }}</td>
                       <td v-if="batchColVisibility.lastUpdated" class="wh-btd"><LastUpdatedCell v-bind="lastUpdatedFor(p.id)" /></td>
                     </tr>
                     <!-- batch rows (only when expanded) -->
                     <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
                       <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
                         <span>{{ b.batchNo }}</span>
-                        <button class="row-hover-btn" @click.stop>
+                        <button class="row-hover-btn" @click.stop="openBatchReservations(p, b.batchNo)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1001,7 +1147,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <td v-if="batchColVisibility.onHand" class="wh-btd wh-btd--num">{{ formatNum(b.onHand) }}</td>
                       <td v-if="batchColVisibility.reserved" class="wh-btd wh-btd--num">{{ formatNum(b.reserved) }}</td>
                       <td v-if="batchColVisibility.available" class="wh-btd wh-btd--num">{{ formatNum(b.available) }}</td>
-                      <td v-if="batchColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
                       <td v-if="batchColVisibility.lastUpdated" class="wh-btd" />
                     </tr>
                   </template>
@@ -1042,6 +1187,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
                   <input v-model="serialSearch" class="wh-search-input" type="text" placeholder="Search..." />
+                  <button v-if="serialSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="serialSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1176,6 +1326,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <div class="wh-search">
                   <MpIcon name="search" size="md" />
                   <input v-model="txSearch" class="wh-search-input" type="text" placeholder="Search..." />
+                  <button v-if="txSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="txSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1248,6 +1403,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
               <div class="wh-search">
                 <MpIcon name="search" size="md" />
                 <input v-model="locSearch" class="wh-search-input" type="text" placeholder="Search location..." />
+                <button v-if="locSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="locSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                  </svg>
+                </button>
               </div>
               <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewLoc">New location</MpButton>
             </div>
@@ -1334,6 +1494,88 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             </div>
             </template>
           </MpTabPanel>
+
+          <!-- Team — Managers + Operators for this warehouse. Task assignees
+               elsewhere in the app are drawn only from the Operators here. -->
+          <MpTabPanel value="team">
+            <div v-if="!team.length" class="empty-full">
+              <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+              <p class="empty-full-title">No team members</p>
+              <p class="empty-full-desc">Add managers and operators to this warehouse. Task assignees are picked from its operators.</p>
+              <MpButton variant="tertiary" is-rounded left-icon="add" class="wh-loc-empty-cta" @click="openAddTeamMember">Add team member</MpButton>
+            </div>
+
+            <template v-else>
+            <div class="wh-loc-filterbar">
+              <div class="wh-search">
+                <MpIcon name="search" size="md" />
+                <input v-model="teamSearch" class="wh-search-input" type="text" placeholder="Search name..." />
+                <button v-if="teamSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="teamSearch = ''">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+              <MpButton variant="tertiary" is-rounded left-icon="add" @click="openAddTeamMember">Add team member</MpButton>
+            </div>
+
+            <div class="wh-loc-scroll">
+              <table class="wh-loc-table wh-team-table">
+                <colgroup>
+                  <col style="width: 300px" />
+                  <col style="width: 120px" />
+                  <col style="width: 150px" />
+                  <col style="width: 160px" />
+                  <col /><!-- filler: pushes the action button to the far right -->
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="wh-bth">Name</th>
+                    <th class="wh-bth">Role</th>
+                    <th class="wh-bth">Date added</th>
+                    <th class="wh-bth">Added by</th>
+                    <th class="wh-bth" />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="member in filteredTeam" :key="member.id" class="wh-loc-row">
+                    <td class="wh-btd">
+                      <div class="wh-team-name">
+                        <span
+                          class="wh-team-avatar"
+                          :style="{ background: `hsl(${member.hue},50%,88%)`, color: `hsl(${member.hue},55%,35%)` }"
+                        >{{ member.initials }}</span>
+                        <span class="wh-loc-name-text">{{ member.name }}</span>
+                      </div>
+                    </td>
+                    <td class="wh-btd">{{ member.role === 'manager' ? 'Manager' : 'Operator' }}</td>
+                    <td class="wh-btd">{{ formatDate(member.addedAt) }}</td>
+                    <td class="wh-btd">{{ member.addedBy }}</td>
+                    <td class="wh-btd wh-loc-td--action">
+                      <MpPopover :id="`wh-team-actions-${member.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                        <MpPopoverTrigger>
+                          <button class="row-kebab" aria-label="More actions" @click.stop>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                              <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+                            </svg>
+                          </button>
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                          <MpPopoverList>
+                            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="onRemoveTeamMember(member)">Remove</MpPopoverListItem>
+                          </MpPopoverList>
+                        </MpPopoverContent>
+                      </MpPopover>
+                    </td>
+                  </tr>
+                  <tr v-if="!filteredTeam.length">
+                    <td class="wh-btd wh-loc-empty" colspan="5">No team members found.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            </template>
+          </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
 
@@ -1381,7 +1623,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     <MpModal
       id="wh-detail-delete-modal"
       :is-open="deleteModalOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -1399,6 +1641,119 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">Cancel</button>
             <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Add/edit team member modal ── -->
+    <MpModal
+      id="wh-team-modal"
+      :is-open="teamModalOpen"
+      size="md"
+      is-close-on-esc
+      is-close-on-overlay-click
+      :is-keep-alive="false"
+      @close="closeTeamModal"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          Add team member
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <MpFormControl id="wh-team-user" is-required :is-invalid="teamUserError">
+            <MpFormLabel>User</MpFormLabel>
+            <MpAutocomplete
+              id="wh-team-user-ac"
+              v-model="teamUserIdDraft"
+              :data="availableTeamUsers"
+              label-prop="name"
+              value-prop="id"
+              placeholder="Select user"
+              use-portal
+              is-full-width
+              :is-invalid="teamUserError"
+              @update:model-value="teamUserError = false"
+            >
+              <template #default="{ item }">
+                <MpFlex direction="column" gap="0">
+                  <MpText :class="css({ _nextTheme: { color: 'text.default' } })">{{ item.name }}</MpText>
+                  <MpText size="body-small" :class="css({ _nextTheme: { color: 'text.secondary' } })">{{ item.role === 'manager' ? 'Manager' : 'Operator' }}</MpText>
+                </MpFlex>
+              </template>
+            </MpAutocomplete>
+            <MpFormErrorMessage>You must select user</MpFormErrorMessage>
+          </MpFormControl>
+          <MpFormControl v-if="selectedTeamUser" id="wh-team-role-display" :class="css({ marginTop: '16px' })">
+            <MpFormLabel>Role</MpFormLabel>
+            <div class="wh-team-modal-role">{{ selectedTeamUser.role === 'manager' ? 'Manager' : 'Operator' }}</div>
+          </MpFormControl>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="closeTeamModal">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTeamMember">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <MpModal
+      id="wh-remove-team-modal"
+      :is-open="removeTeamModalOpen"
+      size="md"
+      is-close-on-esc
+      is-close-on-overlay-click
+      :is-keep-alive="false"
+      @close="removeTeamModalOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          Remove team member?
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <template v-if="memberActiveTaskCount === 0">
+            <p>{{ memberToRemove?.name }} will be removed from this warehouse's team.</p>
+          </template>
+          <template v-else-if="reassignOptions.length === 0">
+            <p class="remove-team-warn">{{ memberToRemove?.name }} has <strong>{{ memberActiveTaskCount }} active task{{ memberActiveTaskCount > 1 ? 's' : '' }}</strong> that must be completed or cancelled before removal. There are no other team members to reassign to.</p>
+          </template>
+          <template v-else>
+            <p class="remove-team-warn">{{ memberToRemove?.name }} has <strong>{{ memberActiveTaskCount }} active task{{ memberActiveTaskCount > 1 ? 's' : '' }}</strong>. Reassign all tasks before removing.</p>
+            <MpFormControl id="wh-remove-reassign" is-required :class="css({ marginTop: '16px' })">
+              <MpFormLabel>Reassign tasks to</MpFormLabel>
+              <MpAutocomplete
+                id="wh-remove-reassign-ac"
+                v-model="reassignTargetId"
+                :data="reassignOptions"
+                label-prop="name"
+                value-prop="id"
+                placeholder="Select team member"
+                use-portal
+                is-full-width
+              >
+                <template #default="{ item }">
+                  <MpFlex direction="column" gap="0">
+                    <MpText :class="css({ _nextTheme: { color: 'text.default' } })">{{ item.name }}</MpText>
+                    <MpText size="body-small" :class="css({ _nextTheme: { color: 'text.secondary' } })">{{ item.role === 'manager' ? 'Manager' : 'Operator' }}</MpText>
+                  </MpFlex>
+                </template>
+              </MpAutocomplete>
+            </MpFormControl>
+          </template>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="removeTeamModalOpen = false">Cancel</button>
+            <button
+              v-if="memberActiveTaskCount === 0 || reassignOptions.length > 0"
+              class="btn-enterprise btn-enterprise--danger"
+              @click="confirmRemoveTeamMember"
+            >Remove</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1426,8 +1781,19 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
     <StockSerialDrawer
       :open="serialDrawerOpen"
       :product="serialDrawerProduct"
+      :warehouse-id="props.orderId"
       :initial-tab="serialDrawerTab"
       @update:open="serialDrawerOpen = $event"
+    />
+
+    <BatchReservationsDrawer
+      :open="batchReservationsOpen"
+      :product-name="batchReservationsProduct?.name ?? ''"
+      :product-img="batchReservationsProduct?.photo ?? ''"
+      :sku="batchReservationsProduct?.sku ?? ''"
+      :batch-no="batchReservationsBatchNo"
+      :rows="batchReservationRows"
+      @update:open="batchReservationsOpen = $event"
     />
 
   </div>
@@ -1441,14 +1807,15 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-loc-table .wh-btd { vertical-align: middle; }
 .wh-loc-row--branch { cursor: pointer; }
 .wh-loc-table tbody tr:hover .wh-btd { background: var(--mp-background-neutral-hovered); }
+/* Team rows have no row-level action (no "view details") — skip the hover fill. */
+.wh-team-table tbody tr:hover .wh-btd { background: transparent; }
 .wh-loc-name { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .wh-loc-name-text { color: var(--mp-text-default); }
 /* type marker: folder = Organizational (grouping), box = Storage (holds stock) */
 .wh-loc-type-icon { flex-shrink: 0; display: inline-flex; }
 .wh-loc-type-icon--org { color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-type-icon--storage { color: var(--mp-icon-brand, var(--mp-colors-emerald-600, #0f9d58)); }
-.wh-loc-code { text-transform: uppercase; flex-shrink: 0; }
-/* "View details" chip sits inline right after the name/code. Kept in layout with
+/* "View details" chip sits inline right after the location name. Kept in layout with
    visibility (not display) + a fixed height so revealing it on hover never shifts
    the row height. */
 .wh-loc-view {
@@ -1469,6 +1836,28 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-loc-table .wh-loc-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
 .wh-loc-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
 .wh-loc-empty-cta { margin-top: var(--mp-spacing-3); }
+
+.wh-team-name { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.wh-team-avatar {
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
+  border-radius: var(--mp-radii-full); flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--mp-font-sizes-xs); font-weight: var(--mp-font-weights-semi-bold);
+}
+.wh-team-modal-name,
+.wh-team-modal-role {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral-subtle);
+  color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md);
+}
+
+.remove-team-warn {
+  color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md);
+  line-height: 1.5;
+}
 
 .detail-page {
   height: 100%;
@@ -1531,16 +1920,26 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search {
   width: 100%; box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
   background: var(--mp-background-surface);
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5);
@@ -1575,6 +1974,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: var(--mp-colors-emerald-800, #186f4a);
   border-color: var(--mp-colors-emerald-800, #186f4a);
 }
+.wh-menu-divider { display: block; height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
 
 /* ── Stage ── */
 .detail-stage {
@@ -1806,6 +2206,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-col-row:not(:last-child) {
   border-bottom: 1px solid var(--mp-border-default);
 }
+/* Column borders when any product has multiple locations */
+.wh-products-bordered :deep(.erp-products .erp-th) { border-right: 1px solid var(--mp-border-default); }
+.wh-products-bordered :deep(.erp-products .erp-th:last-child) { border-right: none; }
+.wh-products-bordered :deep(.erp-products .erp-td) { border-right: 1px solid var(--mp-border-default); }
+.wh-products-bordered :deep(.erp-products .erp-td:last-child) { border-right: none; }
 .wh-cat-list { margin: 0; padding: 0 0 0 var(--mp-spacing-4); list-style: disc; display: flex; flex-direction: column; gap: 2px; }
 .wh-cat-item { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: normal; }
 .wh-cat-toggle {
@@ -2000,5 +2405,5 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .archive-modal-body p { margin: 0; }
 .archive-modal-body ul { margin: 0; padding-left: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .archive-modal-body li { list-style: disc; }
-.archive-modal-body__note { color: var(--mp-text-secondary); }
+.archive-modal-body__note { color: var(--mp-text-default); }
 </style>

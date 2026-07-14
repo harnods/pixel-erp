@@ -40,8 +40,15 @@ function remove(sku: string) { const s = new Set(sel.value); s.delete(sku); sel.
 function addAll() { const s = new Set(sel.value); for (const p of available.value) s.add(p.sku); sel.value = s }
 function removeAll() { const s = new Set(sel.value); for (const p of selected.value) s.delete(p.sku); sel.value = s }
 
-function close() { emit('update:open', false) }
-function save() { emit('save', [...sel.value]); emit('update:open', false) }
+const isSaving = ref(false)
+function close() { isSaving.value = false; emit('update:open', false) }
+async function save() {
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
+  emit('save', [...sel.value])
+  isSaving.value = false
+  emit('update:open', false)
+}
 </script>
 
 <template>
@@ -61,6 +68,11 @@ function save() { emit('save', [...sel.value]); emit('update:open', false) }
           <div class="spd-search">
             <MpIcon name="search" size="sm" />
             <input v-model="leftSearch" class="spd-search-input" type="text" placeholder="Search..." />
+            <button v-if="leftSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="leftSearch = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
           <div class="spd-col-head">
             <span class="spd-col-title">Products</span>
@@ -87,6 +99,11 @@ function save() { emit('save', [...sel.value]); emit('update:open', false) }
           <div class="spd-search">
             <MpIcon name="search" size="sm" />
             <input v-model="rightSearch" class="spd-search-input" type="text" placeholder="Search..." />
+            <button v-if="rightSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="rightSearch = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
           <div class="spd-col-head">
             <span class="spd-col-title">Selected products ({{ selectedCount }})</span>
@@ -110,7 +127,7 @@ function save() { emit('save', [...sel.value]); emit('update:open', false) }
       <!-- Footer -->
       <footer class="spd-footer">
         <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-        <MpButton variant="primary" is-rounded @click="save">Save</MpButton>
+        <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
       </footer>
     </div>
   </div>
@@ -131,7 +148,7 @@ function save() { emit('save', [...sel.value]); emit('update:open', false) }
 .spd-panel {
   margin: var(--mp-spacing-3); width: min(920px, calc(100% - 24px)); height: calc(100% - 24px);
   display: flex; flex-direction: column; background: var(--mp-background-stage, #fff);
-  border-radius: var(--mp-radii-lg, 12px); overflow: hidden;
+  border-radius: 24px; overflow: hidden;
 }
 .spd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
@@ -148,6 +165,14 @@ function save() { emit('save', [...sel.value]); emit('update:open', false) }
 .spd-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); flex-shrink: 0; }
 .spd-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .spd-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 .spd-col-head { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .spd-col-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .spd-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }

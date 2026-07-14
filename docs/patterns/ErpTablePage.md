@@ -24,7 +24,7 @@ Component path: `app/components/patterns/ErpTablePage.vue`
 
 | Property | Value | Token |
 | -------- | ----- | ----- |
-| Min-height | 40px | `var(--mp-sizes-10)` |
+| Min-height / baseline | 40px | `var(--mp-sizes-10)` |
 | Font size | 14px | `var(--mp-font-sizes-md)` |
 | Font weight | 400 (regular) | `var(--mp-font-weights-regular)` |
 | Text color | default | `var(--mp-text-default)` |
@@ -35,20 +35,25 @@ Component path: `app/components/patterns/ErpTablePage.vue`
 
 > **⚠️ Important — these must not change:**
 >
-> * A **single-line row is exactly 40px** (`height: var(--mp-sizes-10)`).
-> * **Vertical padding is always 10px** (`var(--mp-spacing-2\.5)`) on every column —
->     including icon-button columns (actions / checkbox).
-> * Vertical alignment: **single-line → middle, multi-line → top** (see below).
+> * The row **minimum / baseline height is 40px** (`var(--mp-sizes-10)`). A
+>   single-line row renders at this 40px baseline; taller content can grow the row.
+> * Default body-cell vertical padding is **10px top/bottom**
+>   (`var(--mp-spacing-2\.5)`).
+> * Icon action cells are the exception: they use **2px top/bottom** so a 36px icon
+>   button fits inside the 40px baseline row.
+> * Vertical alignment: **single-line → middle, taller row → top** (see below).
 
 ## Cell content rules
 
-* **Vertical padding is always 10px** (`var(--mp-spacing-2.5)`) — both text-only and multi-line rows.
-* **Vertical alignment is conditional.** Text-only rows: `vertical-align: middle`,
-    `height: 40px`. When a row contains a **description** (2-line text), **tags**,
-    or an **avatar/photo**, the whole row switches to **`vertical-align: top`** so
-    single-line cells line up with the first line of the tall cell. `ErpTablePage`
-    measures row heights against a 44px absolute threshold and toggles
-    `.erp-tr--align-top` automatically.
+* **Default vertical padding is 10px** (`var(--mp-spacing-2.5)`) — both text-only
+    and multi-line rows. Action/icon cells may use 2px top/bottom to fit a 36px
+    icon button in the 40px baseline.
+* **Vertical alignment is conditional.** Single-line rows: `vertical-align: middle`,
+    40px baseline. When a row grows beyond 40px because it contains a **description**,
+    **caption**, **tags**, an **avatar/photo**, or other taller content, the whole row
+    switches to **`vertical-align: top`** so single-line cells line up with the first
+    line/top edge of the tall cell. `ErpTablePage` measures row heights against a 44px
+    absolute threshold and toggles `.erp-tr--align-top` automatically.
 * **Tags: max 2 lines + "More".** Render the tags column with **`ErpTagList`**
     ([ErpTagList.vue](../../app/components/patterns/ErpTagList.vue)) — it clamps chips to
     two lines and shows a **`More`** text-link (bottom-right) when tags overflow. Use it
@@ -59,6 +64,47 @@ Component path: `app/components/patterns/ErpTablePage.vue`
   <ErpTagList :tags="(value as string[])" />
 </template>
 ```
+
+## Split-row / merged-cell tables
+
+When any row or column is visually split into sub-rows, the table needs vertical
+column separators so users can still track which sub-row belongs to which column.
+This applies to both techniques used in the codebase:
+
+- true merged cells with `rowspan` / `colspan`;
+- one cell that contains stacked sub-rows inside it, such as qty + action link,
+  per-location stock breakdown, or batch/location splits.
+
+Rule:
+
+- add a right border to every header and body cell in that table;
+- do **not** add a left border to the first column;
+- remove the right border from the last column;
+- keep the existing row bottom borders;
+- top-align cells that span multiple sub-rows or sit beside a split cell.
+
+```css
+.erp-table--split .erp-th,
+.erp-table--split .erp-td {
+  border-right: 1px solid var(--mp-border-default);
+}
+
+.erp-table--split .erp-th:last-child,
+.erp-table--split .erp-td:last-child {
+  border-right: none;
+}
+```
+
+Reference implementations:
+
+- `CreatePickingPage.vue` uses `pk-items--split` when the qty-to-pick cell can
+  split into tracked-item actions.
+- `StockCountingPage.vue` uses `sc-loc-scroll--split` when serial rows split the
+  counted-qty cell into input + serial-number action.
+- `PutAwayItemsPage.vue` and `ManageBatchDrawer.vue` use `rowspan` for merged
+  product/batch metadata across storage-location split rows.
+- `WarehouseDetailsPage.vue` / `StockTables.vue` add column borders when product
+  stock is split by location or expanded batch rows.
 
 ***
 
@@ -78,19 +124,32 @@ this is a component change, out of scope for the docs.
 ```css
 position: sticky;
 right: 0;
-box-shadow: inset 2px 0 var(--mp-border-default);  /* separator — overflow only */
+box-shadow: inset 1px 0 0 0 var(--mp-border-bold); /* separator — overflow only */
 background: inherit;
 ```
 
 Handled automatically by `ErpTablePage` when the `#actions` slot is used. Behaviour:
 
-* The actions column is `position: sticky; right: 0` always, but the **separatorborder (`box-shadow`) only shows when the table is wider than the stage** — i.e.
-    when there's horizontal scroll. Detected via JS (`ResizeObserver` + window resize)
-    which toggles `.is-overflowing` on the wrapper. No overflow → no border.
+* The actions column is `position: sticky; right: 0` by default, but the **separator
+    border (`box-shadow`) only shows when the table is wider than the table wrapper /
+    stage** — i.e. when horizontal scroll is possible.
+* Overflow is detected by comparing the wrapper's `scrollWidth` and `clientWidth`.
+    `ResizeObserver` watches both the wrapper and the table, and window resize also
+    rechecks. Overflow toggles `.is-overflowing` on `.erp-table-wrapper`.
+    No overflow → no sticky separator.
 * When overflowing, a **persistent horizontal scrollbar** is shown at the bottom of
     the table (styled `::-webkit-scrollbar` + `scrollbar-width: thin`), so users
     without a trackpad can always drag to scroll left/right (instead of an auto-hiding
     overlay bar).
+* The table uses `min-width: max-content` so wide column definitions can create the
+    horizontal overflow needed for sticky behaviour.
+* If `hasAiChat` is enabled, the AI column is the outermost sticky-right column
+    (`right: 0`, width 28px). The actions/fixed column shifts left by 28px.
+* If the action slot contains more than one kebab/icon button, set `actionsWidth`
+    so the sticky column is wide enough for the full action group.
+* Page-level exceptions can add scroll-position behaviour. Example:
+    `WarehouseDetailsPage.vue` intentionally un-sticks the actions column at the
+    far-right scroll end via `wh-scroll-end`; this is not the default table behaviour.
 
 ***
 
@@ -128,6 +187,7 @@ Handled automatically by `ErpTablePage` when the `#actions` slot is used. Behavi
 | `loading` | `boolean` | `false` | Show 3 solid, static (no-gradient, no-animation) `MpSkeleton` placeholder rows — see First-load skeleton |
 | `hasActiveFilter` | `boolean` | `false` | When the table is empty AND a search/filter is active → show the inline "No results found" empty state (vs the full illustrated one) |
 | `contextLabel` | `(row) => string` | `undefined` | Returns a context chip label for the AI chat input, per row |
+| `actionsWidth` | `string` | `undefined` | Optional sticky actions column width override; use when `#actions` renders multiple buttons instead of one 44px kebab |
 
 ## TableColumn Interface
 

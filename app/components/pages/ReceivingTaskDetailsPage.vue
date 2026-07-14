@@ -8,10 +8,14 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask } from '~/data/receivingTaskDetails'
-import { taskAgingDays, startReceiving, type ReceivingTask } from '~/data/receivingTasks'
+import { taskAgingDays, startReceiving, receivingTasksForReceipt, type ReceivingTask } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
+import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { generateReceivingSlipPdf } from '~/utils/receivingSlipPdf'
+import type jsPDF from 'jspdf'
 
 type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed'
 
@@ -24,6 +28,14 @@ const task  = computed(() => entry.value?.task)
 const po    = computed(() => entry.value?.po)
 
 const lineItems = computed(() => task.value ? getTaskLineItems(task.value) : [])
+
+// The source receipt — single source of truth for PO-level totals. Purchase/Received
+// qty must come from here, not from summing task.receivedQty across po.tasks: a task's
+// receivedQty updates live as soon as a draft is saved, before the receiving is ended,
+// so summing it would leak still-in-progress numbers into the PO's Received qty.
+// receipt.receivedQty only advances via recomputeReceiptStatus(), once a task ends.
+const poReceipt = computed(() => receipts.find(r => r.id === po.value?.receiptId))
+const poSkuQty = computed(() => poReceipt.value?.skuQty ?? 0)
 
 // ── Local receiving state ───────────────────────────────────────────────────
 // Plain mock data isn't deeply reactive, so we mirror the mutable bits in local
@@ -57,7 +69,26 @@ const poStatus = computed<string>(() => {
 
 const purchaseTotal      = computed(() => task.value?.purchaseQty ?? 0)
 const savedReceivedTotal = computed(() => Object.values(localReceived.value).reduce((a, b) => a + (b || 0), 0))
-const outstandingTotal   = computed(() => Math.max(0, purchaseTotal.value - savedReceivedTotal.value))
+
+// Qty received in other ended tasks for the same receipt, per SKU
+const priorReceivedPerSku = computed<Record<string, number>>(() => {
+  const receiptId = task.value?.receiptId
+  if (!receiptId) return {}
+  const map: Record<string, number> = {}
+  for (const t of receivingTasksForReceipt(receiptId)) {
+    if (t.id === props.orderId) continue
+    if (t.status !== 'pending put-away' && t.status !== 'completed') continue
+    for (const it of t.items) map[it.sku] = (map[it.sku] ?? 0) + it.receivedQty
+  }
+  return map
+})
+const outstandingTotal = computed(() =>
+  lineItems.value.reduce((sum, it) => {
+    const prior = priorReceivedPerSku.value[it.skuCode] ?? 0
+    const saved = localReceived.value[it.skuCode] ?? 0
+    return sum + Math.max(0, it.expectedQty - prior - saved)
+  }, 0),
+)
 
 /** Saved received qty for a page-table row. */
 function rowReceived(skuCode: string, fallback: number): number {
@@ -77,7 +108,7 @@ const lastUpdated = computed(() => {
 function createPutAway() {
   if (!task.value || !po.value) return
   router.push({
-    path: '/barang-masuk/put-away/create',
+    path: '/inbound-delivery/put-away/create',
     query: { warehouseId: po.value.warehouseId, taskId: task.value.id },
   })
 }
@@ -88,9 +119,28 @@ function startReceivingAndNavigate() {
   router.push(`/receiving/${props.orderId}/receive`)
 }
 
+const pdfPreviewOpen = ref(false)
+const pdfPreviewDoc = ref<jsPDF | null>(null)
+const pdfPreviewFilename = ref('')
+async function printReceivingSlip() {
+  if (!task.value) return
+  pdfPreviewDoc.value = await generateReceivingSlipPdf(task.value, lineItems.value)
+  pdfPreviewFilename.value = `Receiving Slip - ${task.value.taskNo}.pdf`
+  pdfPreviewOpen.value = true
+}
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
+
+// Distinct SKUs bundled into a linked put-away task, and how many units of them
+// have actually been stored so far (0/— until the put-away is completed).
+function paSkuQty(pa: { id: string }): number {
+  return getPutAwayLineItems(pa.id).length
+}
+function paStoredQty(pa: { id: string }): number {
+  return getPutAwayLineItems(pa.id).reduce((s, it) => s + it.stored, 0)
+}
 
 // Aging for a linked put-away row (start → end, or start → today while open).
 function paAging(pa: { startDate?: string; endDate?: string; status: string }): number {
@@ -206,7 +256,7 @@ function jumpTo(id: string) {
 // goBack: return to the Inbound delivery page on the Receiving tab so the inbound
 // stage tabs (On the way / Receiving / Put-away / …) stay visible.
 function goBack() {
-  router.push('/barang-masuk?tab=Receiving')
+  router.push('/inbound-delivery?tab=Receiving')
 }
 </script>
 
@@ -234,6 +284,11 @@ function goBack() {
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search task or PO…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
@@ -266,7 +321,6 @@ function goBack() {
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Sku qty" :value="task.skuScope" />
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <ContentList label="End date">
             <span class="rcvgd-end-cell">
@@ -305,7 +359,12 @@ function goBack() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="rcvgd-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="itemSearch" class="rcvgd-search" type="text" placeholder="Search..." />
+            <button v-if="itemSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="itemSearch = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
         </div>
         <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
@@ -315,8 +374,8 @@ function goBack() {
               <col />
               <col />
               <col />
-              <col v-if="showReceivedCols" />
-              <col v-if="showReceivedCols" />
+              <col />
+              <col />
               <col />
             </colgroup>
             <thead>
@@ -324,8 +383,8 @@ function goBack() {
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
                 <th class="detail-th detail-th--num">Purchase qty</th>
-                <th v-if="showReceivedCols" class="detail-th detail-th--num">Received qty</th>
-                <th v-if="showReceivedCols" class="detail-th detail-th--num">Outstanding qty</th>
+                <th class="detail-th detail-th--num">Received qty</th>
+                <th class="detail-th detail-th--num">Outstanding qty</th>
                 <th class="detail-th">Unit</th>
               </tr>
             </thead>
@@ -336,20 +395,17 @@ function goBack() {
                 </td>
                 <td class="detail-td">{{ item.skuCode }}</td>
                 <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
-                <td v-if="showReceivedCols" class="detail-td detail-td--num">
-                  <!-- While in progress the count is still changing — keep it neutral;
-                       only colour the final received qty once the task is done. -->
+                <td class="detail-td detail-td--num">
                   <span
                     :class="isInProgress ? '' : (rowReceived(item.skuCode, item.receivedQty) === item.expectedQty ? 'rcvgd-qty--full' : rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-qty--partial' : 'rcvgd-qty--zero')"
                   >
                     {{ fmt(rowReceived(item.skuCode, item.receivedQty)) }}
                   </span>
                 </td>
-                <td v-if="showReceivedCols" class="detail-td detail-td--num">
-                  <span v-if="item.expectedQty - rowReceived(item.skuCode, item.receivedQty) > 0" class="rcvgd-outstanding">
-                    {{ fmt(item.expectedQty - rowReceived(item.skuCode, item.receivedQty)) }}
+                <td class="detail-td detail-td--num">
+                  <span :class="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-outstanding' : 'rcvgd-qty--full'">
+                    {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - rowReceived(item.skuCode, item.receivedQty)) }}
                   </span>
-                  <span v-else class="rcvgd-qty--full">—</span>
                 </td>
                 <td class="detail-td">{{ item.unit }}</td>
               </tr>
@@ -385,6 +441,7 @@ function goBack() {
                   <col />
                   <col />
                   <col />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
@@ -392,6 +449,7 @@ function goBack() {
                     <th class="detail-th">Warehouse</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Estimated arrival</th>
+                    <th class="detail-th">SKU qty</th>
                     <th class="detail-th">Purchase qty</th>
                     <th class="detail-th">Received qty</th>
                   </tr>
@@ -401,7 +459,7 @@ function goBack() {
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
                         <span class="rcvgd-linked-num">{{ po.purchaseNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/barang-masuk/${po.receiptId}`)">
+                        <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${po.receiptId}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -413,8 +471,9 @@ function goBack() {
                     <td class="detail-td">{{ po.warehouseName }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="poStatus" /></td>
                     <td class="detail-td">{{ formatDate(po.estimatedArrival) }}</td>
-                    <td class="detail-td">{{ fmt(po.tasks.reduce((s, t) => s + t.purchaseQty, 0)) }}</td>
-                    <td class="detail-td">{{ fmt(po.tasks.reduce((s, t) => s + t.receivedQty, 0)) }}</td>
+                    <td class="detail-td">{{ fmt(poSkuQty) }}</td>
+                    <td class="detail-td">{{ fmt(poReceipt?.purchaseQty ?? 0) }}</td>
+                    <td class="detail-td">{{ fmt(poReceipt?.receivedQty ?? 0) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -431,12 +490,18 @@ function goBack() {
                   <col />
                   <col />
                   <col />
+                  <col />
+                  <col />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Assignee</th>
                     <th class="detail-th">Status</th>
+                    <th class="detail-th">SKU qty</th>
+                    <th class="detail-th">Received qty</th>
+                    <th class="detail-th">Put-away qty</th>
                     <th class="detail-th">Start date</th>
                     <th class="detail-th">End date</th>
                   </tr>
@@ -457,11 +522,15 @@ function goBack() {
                     </td>
                     <td class="detail-td">{{ pa.assignee }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
+                    <td class="detail-td">{{ fmt(paSkuQty(pa)) }}</td>
+                    <td class="detail-td">{{ fmt(pa.itemQty) }}</td>
+                    <td class="detail-td">{{ fmt(paStoredQty(pa)) }}</td>
                     <td class="detail-td">{{ pa.startDate ? formatDateTime(pa.startDate) : '—' }}</td>
                     <td class="detail-td">
-                      <span class="rcvgd-end-cell">
-                        <span>{{ pa.endDate ? formatDateTime(pa.endDate) : '—' }}</span>
-                        <span v-if="paAging(pa) > 1" class="rcvgd-aging">{{ paAging(pa) }} days</span>
+                      <span class="linked-end">
+                        <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="paAging(pa) > 1" class="linked-aging">{{ paAging(pa) }} days</span>
                       </span>
                     </td>
                   </tr>
@@ -477,22 +546,7 @@ function goBack() {
 
     <!-- ── Sticky footer — Print + Start/Continue (open & in-progress only) ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpPopover id="rcvgd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            Print
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>Print receiving slip</MpPopoverListItem>
-            <MpPopoverListItem>Print label</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">Print receiving slip</button>
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">
         Start receiving
       </button>
@@ -503,6 +557,14 @@ function goBack() {
         Create put-away
       </button>
     </footer>
+
+    <PdfPreviewModal
+      :open="pdfPreviewOpen"
+      :doc="pdfPreviewDoc"
+      :filename="pdfPreviewFilename"
+      title="Receiving slip preview"
+      @close="pdfPreviewOpen = false"
+    />
 
   </div>
 
@@ -580,14 +642,24 @@ function goBack() {
 
 /* ── Jump popover ────────────────────────────────────────────────────────── */
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search {
   width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
@@ -657,7 +729,7 @@ function goBack() {
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden;
 }
 .detail-items-section--bordered .detail-items-count {
-  border-top: 1px solid var(--mp-border-default); border-bottom: none;
+ border-bottom: none;
 }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
@@ -709,6 +781,9 @@ function goBack() {
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
 .rcvgd-linked .detail-item-row:hover .row-hover-btn { display: flex; }
+.linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.linked-end__muted { color: var(--mp-text-secondary); }
+.linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
 /* Product cell — photo + name, same pattern as the other detail pages */
 .rcvgd-product { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }

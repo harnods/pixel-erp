@@ -123,14 +123,14 @@ function closeArchiveModal() {
 function confirmArchive() {
   if (!warehouseToArchive.value) return
   archiveWarehouses([warehouseToArchive.value.id])
-  toast.notify({ variant: 'success', title: `${warehouseToArchive.value.name} archived` })
+  toast.notify({ variant: 'success', title: `${warehouseToArchive.value.name} archived` , maxWidth: 'max-content'})
   closeArchiveModal()
 }
 
 /** Unarchive is a low-friction, reversible action — no confirmation needed. */
 function unarchive(row: Warehouse) {
   unarchiveWarehouses([row.id])
-  toast.notify({ variant: 'success', title: `${row.name} unarchived` })
+  toast.notify({ variant: 'success', title: `${row.name} unarchived` , maxWidth: 'max-content'})
 }
 
 // ─── Bulk delete confirmation ─────────────────────────────────────────────────
@@ -167,7 +167,7 @@ function closeBulkArchiveModal() {
 function confirmBulkArchive() {
   const count = bulkArchiveCount.value
   archiveWarehouses(bulkArchiveIds.value)
-  toast.notify({ variant: 'success', title: `${count} warehouse${count !== 1 ? 's' : ''} archived` })
+  toast.notify({ variant: 'success', title: `${count} warehouse${count !== 1 ? 's' : ''} archived` , maxWidth: 'max-content'})
   bulkArchiveDeselect?.()
   closeBulkArchiveModal()
 }
@@ -339,13 +339,14 @@ const emptyDesc = computed(() =>
                   :class="{ 'col-settings-item--disabled': item.disabled }"
                   @click="!item.disabled && (columnVisibility[item.key] = !columnVisibility[item.key])"
                 >
-                  <MpCheckbox
-                    :id="`col-chk-${item.key}`"
-                    :is-checked="columnVisibility[item.key]"
-                    :is-disabled="item.disabled"
-                    @change="() => { if (!item.disabled) columnVisibility[item.key] = !columnVisibility[item.key] }"
-                    @click.stop
-                  />
+                  <span @click.stop>
+                    <MpCheckbox
+                      :id="`col-chk-${item.key}`"
+                      :is-checked="columnVisibility[item.key]"
+                      :is-disabled="item.disabled"
+                      @change="() => { if (!item.disabled) columnVisibility[item.key] = !columnVisibility[item.key] }"
+                    />
+                  </span>
                   <span class="col-settings-label">{{ item.label }}</span>
                 </li>
               </ul>
@@ -477,7 +478,7 @@ const emptyDesc = computed(() =>
   <MpModal
     id="wh-delete-modal"
     :is-open="deleteModalOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -543,7 +544,7 @@ const emptyDesc = computed(() =>
   <MpModal
     id="wh-bulk-archive-modal"
     :is-open="bulkArchiveModalOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -638,6 +639,11 @@ const emptyDesc = computed(() =>
                 type="text"
                 placeholder="Search columns..."
               />
+              <button v-if="exportColumnSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="exportColumnSearch = ''">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                </svg>
+              </button>
             </div>
 
             <!-- All columns toggle -->
@@ -686,7 +692,7 @@ const emptyDesc = computed(() =>
   <MpModal
     id="wh-bulk-delete-modal"
     :is-open="bulkDeleteModalOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -929,7 +935,7 @@ const emptyDesc = computed(() =>
 }
 
 .archive-modal-body__note {
-  color: var(--mp-text-secondary);
+  color: var(--mp-text-default);
 }
 
 /* Export modal body */
@@ -1000,6 +1006,15 @@ const emptyDesc = computed(() =>
 }
 
 .export-col-search__input::placeholder { color: var(--mp-text-placeholder); }
+
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* All columns row */
 .export-col-all {

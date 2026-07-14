@@ -6,7 +6,7 @@
  *     This is a CUSTOM implementation using Pixel design tokens.
  *     Request to Pixel team: update MpTable Enterprise to match this spec:
  *       • Header: bg surface (#f1f5f9), 28px height, uppercase 12px semibold, pl-8 pr-16 py-4
- *       • Row: 40px min-height, border-bottom, pl-8 pr-16 py-6, 14px regular
+ *       • Row: 40px min-height, border-bottom, pl-8 pr-16 py-10, 14px regular
  *       • Sticky right column with inset left box-shadow
  *
  * Props:
@@ -449,7 +449,9 @@ const bulkCountLabel = computed(() => {
                       :class="{ 'erp-sort-btn--active': sortKey === col.key }"
                       aria-label="Sort column" @click.stop
                     >
-                      <MpIcon name="sort-default" size="sm" />
+                      <!-- Literal px, not "sm" — MpIcon's "sm" resolves to ~20px (token
+                           spacing.5), which doesn't fit the 28px-fixed header row. -->
+                      <MpIcon name="sort-default" size="16px" />
                     </button>
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -754,6 +756,10 @@ const bulkCountLabel = computed(() => {
   top: 0;
   z-index: 2;
   height: var(--mp-sizes-7);
+  /* Table cells otherwise treat `height` as a minimum and let a tall child (e.g. the
+     20px sort icon button) grow the row — this pins it at a hard 28px everywhere. */
+  overflow: hidden;
+  line-height: 1;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-sm);
@@ -851,7 +857,8 @@ const bulkCountLabel = computed(() => {
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; flex-shrink: 0;
+  /* Must fit inside the 28px header row (28 - 2×4px padding - 1px border ≈ 19px). */
+  width: 18px; height: 18px; flex-shrink: 0;
   border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm);
   color: var(--mp-icon-default, var(--mp-text-secondary));
   visibility: hidden;
@@ -884,7 +891,7 @@ const bulkCountLabel = computed(() => {
 /*
  * Figma spec → Pixel 3 2.4 Enterprise mapping:
  *   min-height : var(--mp-sizes-10)        (40px)
- *   padding    : var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2)
+ *   padding    : var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2)
  *   font       : var(--mp-font-sizes-md) / var(--mp-font-weights-regular)
  *   border-bot : 1px solid var(--mp-border-default)
  */
@@ -939,18 +946,19 @@ const bulkCountLabel = computed(() => {
 /* Sticky separator border only when the table actually overflows horizontally */
 .erp-table-wrapper.is-overflowing .erp-th--fixed,
 .erp-table-wrapper.is-overflowing .erp-td--fixed {
-  box-shadow: inset 2px 0 var(--mp-border-default);
+  box-shadow: inset 1px 0 0 0 var(--mp-border-bold);
 }
 .has-ai .erp-td--fixed {
   right: var(--mp-sizes-7);
 }
 
-/* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width. */
+/* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width.
+   Vertical padding is 2px so md-size buttons (36px) fit inside a 40px row. */
 .erp-td--actions {
   width: var(--erp-actions-width, var(--mp-sizes-11));
   min-width: var(--erp-actions-width, var(--mp-sizes-11));
   text-align: right;
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2);
+  padding: 2px var(--mp-spacing-2);
 }
 
 /* AI chat cell */

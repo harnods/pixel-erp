@@ -1,28 +1,27 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  MpButton, MpCheckbox, MpAutocomplete, MpSpinner,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, css,
+  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, css, toast,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { pickableOrders, type OutgoingOrder } from '~/data/outgoing'
-import { addPickingTask, pickedQtyForOrderSku, type PickingLine } from '~/data/pickingTasks'
-import { orderSkuLines } from '~/data/inventory'
-import { binForSku } from '~/data/warehouseDetails'
+import {
+  addPickingTask, pickedQtyForOrderSku, type PickingLine,
+  type PickingBatchPick, type PickingSerialPick,
+} from '~/data/pickingTasks'
+import { orderSkuLines, productBySku } from '~/data/inventory'
+import { binForSku, getWarehouseDetail, getReservationsForOrder } from '~/data/warehouseDetails'
+import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
+import { stockLocationPaths } from '~/data/storageLocations'
+import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
-
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
 
 // ─── Pickable orders (open / in progress) ──────────────────────────────────────
 const allPickable = computed<OutgoingOrder[]>(() => pickableOrders())
@@ -49,18 +48,51 @@ const prefillOrderIds = ((route.query.orderIds as string | undefined)?.split(','
 // ─── Warehouse selector ────────────────────────────────────────────────────────
 const warehouseId = ref(prefillWarehouse)
 const warehouseError = ref(false)
+const isSaving = ref(false)
 // User changing the warehouse resets the order selection (initial value doesn't fire).
 watch(warehouseId, (v) => { if (v) warehouseError.value = false })
+// Assignee options are scoped to the selected warehouse's operators — a stale
+// pick from a previous warehouse is no longer valid, so clear it on change.
+watch(warehouseId, () => { assigneeId.value = '' })
 const warehouseName = computed(() =>
   availableWarehouses.value.find(w => w.id === warehouseId.value)?.name ?? '',
 )
 const isWarehouseLocked = computed(() => !!route.query.warehouseId)
 
+// stockLocationPaths() repeats a bin once per unit of capacity — dedupe before use as
+// a dropdown's option list (same fix as PutAwayItemsPage.vue / PickItemsPage.vue).
+const locationOptions = computed(() => {
+  if (!warehouseId.value) return []
+  return [...new Set(stockLocationPaths(warehouseId.value).filter(Boolean))]
+})
+
+// ─── Batch / serial helpers (same heuristic as receiving / put-away / picking) ───
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(warehouseId.value)
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
 const assigneeError = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
-const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+// Assignee can only be an operator of the selected warehouse.
+const ASSIGNEES = computed(() => getWarehouseOperators(warehouseId.value))
+const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // ─── Orders to pick — fixed from the selection made on the Outgoing tab ──────────
 // The sales orders are chosen on the Outgoing list (row / bulk "Create picking list")
@@ -125,7 +157,15 @@ const orderTables = computed<OrderTable[]>(() =>
 // packing-task creation, not here.
 const excludedKeys = ref(new Set<string>())
 const qtyOverrides = ref<Record<string, number>>({})
-const lockedKeys = computed(() => new Set<string>()) // nothing is locked
+// When the warehouse doesn't allow partial picking, every SKU must be picked in
+// full — nothing can be excluded and qty can't be lowered below the order qty.
+const partialPickingAllowed = computed(() =>
+  warehouseId.value ? getWarehouseConfig(warehouseId.value).allowPartialPicking : true,
+)
+const lockedKeys = computed(() =>
+  partialPickingAllowed.value ? new Set<string>() : new Set(pickRows.value.map(g => g.key)),
+)
+const partialPickingLockedMsg = "This warehouse doesn't allow partial picking."
 function isLocked(key: string) { return lockedKeys.value.has(key) }
 function isSelected(key: string) { return isLocked(key) || !excludedKeys.value.has(key) }
 function toggleLine(key: string) {
@@ -172,6 +212,12 @@ const pickRows = computed<MergedRow[]>(() => {
 // True once any SKU has been partially picked on a previous list → show Picked qty column.
 const hasPriorPicks = computed(() => pickRows.value.some(g => g.pickedQty > 0))
 
+// Storage location + Manage batch/Manage serial number columns are hidden for this
+// release (planned for a later one) — the underlying logic below (openBatchDrawer,
+// openSerialDrawer, isBatchTrackedSku, etc.) is untouched, only these columns' cells
+// are not rendered. Flip this back to re-show them.
+const SHOW_STORAGE_AND_MANAGE_COLUMNS = false
+
 // ─── Stock per merged SKU — one pool (On hand − Reserved); cap = min(demand, avail) ─
 interface RowStock { onHand: number; reserved: number; available: number; cap: number; toPick: number }
 const rowStock = computed<Map<string, RowStock>>(() => {
@@ -185,7 +231,9 @@ const rowStock = computed<Map<string, RowStock>>(() => {
     const remaining = Math.max(0, g.orderQty - g.pickedQty)
     const cap = Math.min(remaining, available)
     const selected = isSelected(g.key)
-    const desired = qtyOverrides.value[g.key] ?? cap
+    // Locked rows always pick the full cap — qty overrides never apply to them,
+    // even a stale one left over from a different (partial-allowed) warehouse.
+    const desired = isLocked(g.key) ? cap : (qtyOverrides.value[g.key] ?? cap)
     const toPick = selected ? Math.min(Math.max(0, desired), cap) : 0
     map.set(g.key, { onHand, reserved, available, cap, toPick })
   }
@@ -193,6 +241,174 @@ const rowStock = computed<Map<string, RowStock>>(() => {
 })
 function stockOf(key: string): RowStock {
   return rowStock.value.get(key) ?? { onHand: 0, reserved: 0, available: 0, cap: 0, toPick: 0 }
+}
+
+// ─── Manage batch / Manage serial number — decide up front, at creation, which
+// batch(es)/serial(s) to pick and from where, so the operator already has a plan to
+// follow when they walk the warehouse floor. Keyed by SKU (rows here are merged
+// across orders — the per-order split happens later, in handleCreate). ────────────
+const batchLinesBySku  = ref<Record<string, CommittedBatch[]>>({})
+const serialLinesBySku = ref<Record<string, PickingSerialPick[]>>({})
+// Skus the operator has explicitly reviewed/edited via the drawer — once touched,
+// the auto-select watcher below stops overwriting that sku (manual choice wins).
+const manuallyEditedBatchSkus  = new Set<string>()
+const manuallyEditedSerialSkus = new Set<string>()
+
+function locationForSerial(sku: string, serial: string): string {
+  const sr = stockMap.value.get(sku)?.serials
+  return sr?.available.find(u => u.serial === serial)?.location
+    ?? sr?.reserved.find(u => u.serial === serial)?.location
+    ?? ''
+}
+
+const batchDrawerSku = ref<string | null>(null)
+const batchDrawerOpen = computed({
+  get: () => batchDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) batchDrawerSku.value = null },
+})
+const batchDrawerOrderQty = ref(0)
+function openBatchDrawer(sku: string) {
+  batchDrawerSku.value = sku
+  batchDrawerOrderQty.value = pickRows.value.find(r => r.sku === sku)?.orderQty ?? 0
+}
+function batchPickedQty(sku: string): number {
+  return (batchLinesBySku.value[sku] ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
+}
+function saveBatchLines(batches: CommittedBatch[]) {
+  const sku = batchDrawerSku.value
+  if (!sku) return
+  manuallyEditedBatchSkus.add(sku)
+  batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: batches }
+  // Keep the front table's own Qty to pick input in sync with what was just allocated
+  // across batches in the drawer — otherwise the row would keep showing a stale value.
+  qtyOverrides.value = { ...qtyOverrides.value, [sku]: batchPickedQty(sku) }
+}
+
+const serialDrawerSku = ref<string | null>(null)
+const serialDrawerOpen = computed({
+  get: () => serialDrawerSku.value !== null,
+  set: (v: boolean) => { if (!v) serialDrawerSku.value = null },
+})
+/** Target qty for a row's Manage batch/serial drawer — defaults to the full cap
+ *  (= order qty, when stock allows), overridable when partial picking is allowed. */
+function targetQtyForSku(sku: string): number {
+  return isLocked(sku) ? capForSku(sku) : (qtyOverrides.value[sku] ?? capForSku(sku))
+}
+const serialDrawerOrderQty = ref(0)
+function openSerialDrawer(sku: string) {
+  if (!targetQtyForSku(sku)) {
+    toast.notify({ variant: 'error', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
+    return
+  }
+  serialDrawerSku.value = sku
+  serialDrawerOrderQty.value = pickRows.value.find(r => r.sku === sku)?.orderQty ?? 0
+}
+function serialPickedQty(sku: string): number {
+  return (serialLinesBySku.value[sku] ?? []).length
+}
+function saveSerialLines(serials: CommittedSerial[]) {
+  const sku = serialDrawerSku.value
+  if (!sku) return
+  manuallyEditedSerialSkus.add(sku)
+  serialLinesBySku.value = {
+    ...serialLinesBySku.value,
+    [sku]: serials.map(s => ({ serial: s.serial, location: locationForSerial(sku, s.serial) })),
+  }
+  // Same sync as saveBatchLines — front row's Qty to pick must reflect the drawer's save.
+  qtyOverrides.value = { ...qtyOverrides.value, [sku]: serials.length }
+}
+
+// ─── Pre-fill batch/serial from each member order's EXISTING reservation ───────
+// Every batch/serial-tracked SKU was already reserved (FEFO / ascending / etc, per
+// Settings > Warehouse) the moment its order was created — picking just reads that
+// plan back, it never computes a fresh one. A merged row can span several orders,
+// so its pre-fill is the sum of every member order's own (order, sku) reservation.
+// Skips any sku the operator has already touched via the drawer.
+function reservedBatchesForSku(sku: string): CommittedBatch[] {
+  const item = stockMap.value.get(sku)
+  const members = pickRows.value.find(g => g.sku === sku)?.members ?? []
+  if (!item?.batches?.length) return []
+  const byBatch = new Map<string, number>()
+  for (const m of members) {
+    for (const r of getReservationsForOrder(m.orderId, sku)) {
+      if (!r.batchNo) continue
+      byBatch.set(r.batchNo, (byBatch.get(r.batchNo) ?? 0) + r.qty)
+    }
+  }
+  // The order may have reserved more than THIS task is picking right now (e.g. a
+  // partial pick split across two tasks) — only pre-fill up to this task's own
+  // target, leaving the rest available for whatever task picks the remainder.
+  let remaining = targetQtyForSku(sku)
+  const out: CommittedBatch[] = []
+  for (const [batchNo, qty] of byBatch) {
+    if (remaining <= 0) break
+    const b = item.batches.find(x => x.batchNo === batchNo)
+    if (!b || qty <= 0) continue
+    const take = Math.min(qty, remaining)
+    out.push({ key: batchNo, batchNo, expiryDate: b.expiryDate, desc: '', onHand: b.available, counted: take, unit: item.unit, location: b.location })
+    remaining -= take
+  }
+  return out
+}
+function reservedSerialsForSku(sku: string): PickingSerialPick[] {
+  const members = pickRows.value.find(g => g.sku === sku)?.members ?? []
+  const out: PickingSerialPick[] = []
+  for (const m of members) {
+    for (const r of getReservationsForOrder(m.orderId, sku)) {
+      for (const serial of r.serials ?? []) out.push({ serial, location: locationForSerial(sku, serial) })
+    }
+  }
+  // The order may have reserved more than THIS task is picking right now (e.g. a
+  // partial pick split across two tasks) — only pre-fill up to this task's own
+  // target, leaving the rest available for whatever task picks the remainder.
+  return out.slice(0, targetQtyForSku(sku))
+}
+const trackedSkus = computed(() => {
+  const set = new Set<string>()
+  for (const g of pickRows.value) {
+    if (isBatchTrackedSku(g.sku) || isSerialTrackedSku(g.sku)) set.add(g.sku)
+  }
+  return set
+})
+watch(trackedSkus, (skus) => {
+  for (const sku of skus) {
+    if (isBatchTrackedSku(sku)) {
+      if (manuallyEditedBatchSkus.has(sku)) continue
+      batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: reservedBatchesForSku(sku) }
+    } else {
+      if (manuallyEditedSerialSkus.has(sku)) continue
+      serialLinesBySku.value = { ...serialLinesBySku.value, [sku]: reservedSerialsForSku(sku) }
+    }
+  }
+}, { immediate: true })
+
+/** Read-only bin list for the Storage location column, batch/serial-tracked SKUs only. */
+function pickedLocations(sku: string): string[] {
+  const bins = new Set<string>()
+  if (isBatchTrackedSku(sku)) {
+    for (const b of batchLinesBySku.value[sku] ?? []) if ((b.counted ?? 0) > 0 && b.location) bins.add(b.location)
+  } else if (isSerialTrackedSku(sku)) {
+    for (const s of serialLinesBySku.value[sku] ?? []) if (s.location) bins.add(s.location)
+  }
+  return [...bins]
+}
+
+/** Qty to pick for a row — batch/serial-tracked SKUs source it from their drawer
+ *  selections, capped at the row's own target (the qty-to-pick input): lowering that
+ *  target without reopening the drawer must still shrink what's actually picked,
+ *  not silently keep whatever was reserved/allocated before. Plain SKUs use the
+ *  manual qty input directly. */
+function qtyToPick(row: { key: string; sku: string }): number {
+  if (!isSelected(row.key)) return 0
+  if (isBatchTrackedSku(row.sku)) return Math.min(batchPickedQty(row.sku), targetQtyForSku(row.sku))
+  if (isSerialTrackedSku(row.sku)) return Math.min(serialPickedQty(row.sku), targetQtyForSku(row.sku))
+  return stockOf(row.key).toPick
+}
+
+/** Max qty pickable for a SKU (stock cap) — used as the drawer's targetCount ceiling. */
+function capForSku(sku: string): number {
+  const row = pickRows.value.find(r => r.sku === sku)
+  return row ? stockOf(row.key).cap : 0
 }
 
 // Select-all across the merged rows
@@ -211,9 +427,13 @@ function toggleAllLines() {
   excludedKeys.value = s
 }
 
-const selectedRows = computed(() => pickRows.value.filter(g => isSelected(g.key)))
-const totalSkus   = computed(() => selectedRows.value.length)
-const totalToPick = computed(() => selectedRows.value.reduce((a, g) => a + stockOf(g.key).toPick, 0))
+const selectedRows    = computed(() => pickRows.value.filter(g => isSelected(g.key)))
+const totalSkus       = computed(() => selectedRows.value.length)
+const totalToPick     = computed(() => selectedRows.value.reduce((a, g) => a + qtyToPick(g), 0))
+const totalOrderQty   = computed(() => selectedRows.value.reduce((a, g) => a + (g.orderQty - g.pickedQty), 0))
+const isPartialPick   = computed(() => totalToPick.value < totalOrderQty.value)
+
+const showPartialConfirm = ref(false)
 
 // ─── Progressive loading — 10 rows, lazy-load past that; border only when > 10 ────
 const PAGE_SIZE = 10
@@ -290,47 +510,110 @@ watch(selectedOrders, () => nextTick(() => { checkStageOverflow(); checkItemsOve
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
-function goPicking() {
-  router.push({ path: '/barang-keluar', query: { tab: 'Picking' } })
+function goBack() {
+  const from = route.query.from as string | undefined
+  if (from?.startsWith('order:')) {
+    router.push(`/outbound-delivery/${from.slice(6)}`)
+  } else {
+    router.push('/outbound-delivery?tab=Requests')
+  }
 }
 
-function handleCreate() {
+async function handleCreate() {
   let valid = true
   if (!warehouseId.value) { warehouseError.value = true; valid = false }
   if (!assigneeId.value)  { assigneeError.value  = true; valid = false }
   if (!selectedOrders.value.length) valid = false
-  if (!valid) return
+  if (!valid) { scrollToFirstError(); return }
+  if (isPartialPick.value) { showPartialConfirm.value = true; return }
+  await doCreate()
+}
+
+async function doCreate() {
+  showPartialConfirm.value = false
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
   // Build the planned pick lines from the merged SKU rows. The picking list is shown
   // merged, but downstream packing sorts back per sales order — so each SKU's To-pick
   // qty is split across its member orders (filled order-by-order up to each demand).
+  // Batch/serial-tracked SKUs also carry their chosen batch(es)/serial(s) along for
+  // the ride, consumed from the same pool in the same order the qty is allocated.
   const lines: PickingLine[] = []
+  const batchPicks: Record<string, PickingBatchPick[]> = {}
+  const serialPicks: Record<string, PickingSerialPick[]> = {}
   for (const g of pickRows.value) {
     if (!isSelected(g.key)) continue
-    let remaining = stockOf(g.key).toPick
+    let remaining = qtyToPick(g)
     if (remaining <= 0) continue
+
+    const batchChunks = (batchLinesBySku.value[g.sku] ?? [])
+      .filter(b => (b.counted ?? 0) > 0)
+      .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, unit: b.unit, location: b.location ?? '', qty: b.counted ?? 0 }))
+    let batchIdx = 0
+    const serialQueue = serialLinesBySku.value[g.sku] ?? []
+    let serialIdx = 0
+
     for (const m of g.members) {
       const alloc = Math.min(m.qty, remaining)
       if (alloc <= 0) continue
       remaining -= alloc
+      const lineKey = `${m.orderId}::${g.sku}`
       lines.push({
-        key: `${m.orderId}::${g.sku}`, orderId: m.orderId, salesNo: m.salesNo,
+        key: lineKey, orderId: m.orderId, salesNo: m.salesNo,
         sku: g.sku, product: g.product, desc: g.desc, img: g.img,
         unit: g.unit, bin: g.bin, qty: alloc,
       })
+
+      if (batchChunks.length) {
+        let need = alloc
+        const picks: PickingBatchPick[] = []
+        while (need > 0 && batchIdx < batchChunks.length) {
+          const chunk = batchChunks[batchIdx]!
+          const take = Math.min(need, chunk.qty)
+          if (take > 0) {
+            picks.push({ batchNo: chunk.batchNo, expiryDate: chunk.expiryDate, desc: chunk.desc, unit: chunk.unit, location: chunk.location, qty: take })
+            chunk.qty -= take
+            need -= take
+          }
+          if (chunk.qty <= 0) batchIdx++
+        }
+        if (picks.length) batchPicks[lineKey] = picks
+      }
+
+      if (serialQueue.length) {
+        const take = serialQueue.slice(serialIdx, serialIdx + alloc)
+        serialIdx += take.length
+        if (take.length) serialPicks[lineKey] = take
+      }
     }
   }
 
-  addPickingTask({
+  // Only SKUs the operator actually touched in the drawer re-pin their order's
+  // reservation — untouched lines keep whatever was already reserved at order creation.
+  const skuOf = (lineKey: string) => lineKey.slice(lineKey.indexOf('::') + 2)
+  const overrideBatchPicks: Record<string, PickingBatchPick[]> = {}
+  const overrideSerialPicks: Record<string, PickingSerialPick[]> = {}
+  for (const [lineKey, picks] of Object.entries(batchPicks)) {
+    if (manuallyEditedBatchSkus.has(skuOf(lineKey))) overrideBatchPicks[lineKey] = picks
+  }
+  for (const [lineKey, picks] of Object.entries(serialPicks)) {
+    if (manuallyEditedSerialSkus.has(skuOf(lineKey))) overrideSerialPicks[lineKey] = picks
+  }
+
+  const task = addPickingTask({
     salesOrderIds: selectedOrders.value.map(o => o.id),
     salesNos:      selectedOrders.value.map(o => o.salesNo),
     warehouseId:   warehouseId.value,
     warehouseName: warehouseName.value,
     assignee:      assigneeLabel.value,
     lines,
+    ...(Object.keys(overrideBatchPicks).length || Object.keys(overrideSerialPicks).length
+      ? { overrides: { batchPicks: overrideBatchPicks, serialPicks: overrideSerialPicks } }
+      : {}),
   })
 
-  router.push({ path: '/barang-keluar', query: { tab: 'Picking', saved: '1' } })
+  router.push(`/picking/${task.id}`)
 }
 </script>
 
@@ -341,7 +624,7 @@ function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPicking">Picking</button>
+          <button class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? 'Order details' : 'Picking' }}</button>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New picking list</h1>
@@ -368,7 +651,7 @@ function handleCreate() {
             :is-disabled="isWarehouseLocked"
             :is-invalid="warehouseError"
           />
-          <MpFormErrorMessage>You must select a warehouse</MpFormErrorMessage>
+          <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
         </MpFormControl>
 
         <MpFormControl id="pk-assignee" is-required :is-invalid="assigneeError" :class="css({ gridColumn: 'span 3' })">
@@ -393,7 +676,7 @@ function handleCreate() {
               </div>
             </template>
           </MpAutocomplete>
-          <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+          <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
         </MpFormControl>
       </div>
 
@@ -412,34 +695,58 @@ function handleCreate() {
             <span class="pk-stat-val">{{ formatNum(totalSkus) }}</span>
           </div>
           <div class="pk-stat">
-            <span class="pk-stat-label">To pick qty</span>
+            <span class="pk-stat-label">Qty to pick</span>
             <span class="pk-stat-val">{{ formatNum(totalToPick) }}</span>
           </div>
         </div>
 
         <section class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pk-items-scroll">
-            <table class="pk-items">
+            <table class="pk-items pk-items--split">
+              <colgroup>
+                <col /><!-- Product (+ checkbox) -->
+                <col /><!-- SKU -->
+                <col v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" style="width: 170px" /><!-- Storage location -->
+                <col /><!-- Order qty -->
+                <col v-if="hasPriorPicks" /><!-- Picked qty -->
+                <col /><!-- Qty to pick -->
+                <col style="width: 100px" /><!-- Unit -->
+                <col v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" style="width: 48px" /><!-- Action -->
+              </colgroup>
               <thead>
                 <tr>
-                  <th class="pk-th pk-th--check">
-                    <span @click.stop>
-                      <MpCheckbox
-                        id="pk-all-lines"
-                        :is-checked="allLinesSelected"
-                        :is-indeterminate="someLinesSelected"
-                        :is-disabled="allLinesLocked"
-                        @change="toggleAllLines"
-                      />
-                    </span>
+                  <th class="pk-th pk-th--product-check">
+                    <div class="pk-check-wrap">
+                      <MpTooltip
+                        v-if="allLinesLocked"
+                        id="pk-lock-all-tt"
+                        :label="partialPickingLockedMsg"
+                        placement="top"
+                        use-portal
+                      >
+                        <span @click.stop>
+                          <MpCheckbox id="pk-all-lines" :is-checked="true" :is-disabled="true" />
+                        </span>
+                      </MpTooltip>
+                      <span v-else @click.stop>
+                        <MpCheckbox
+                          id="pk-all-lines"
+                          :is-checked="allLinesSelected"
+                          :is-indeterminate="someLinesSelected"
+                          :is-disabled="allLinesLocked"
+                          @change="toggleAllLines"
+                        />
+                      </span>
+                      <span>Product</span>
+                    </div>
                   </th>
-                  <th class="pk-th">Product</th>
                   <th class="pk-th">SKU</th>
-                  <th class="pk-th">Storage location</th>
+                  <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th">Storage location</th>
                   <th class="pk-th pk-th--num">Order qty</th>
                   <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
                   <th class="pk-th pk-th--num">Qty to pick</th>
                   <th class="pk-th">Unit</th>
+                  <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th pk-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -450,32 +757,106 @@ function handleCreate() {
                   :class="{ 'pk-item-row--off': !isSelected(row.key) }"
                 >
                   <td class="pk-td">
-                    <span @click.stop>
-                      <MpCheckbox
-                        :id="`pk-line-${row.key}`"
-                        :is-checked="isSelected(row.key)"
-                        :is-disabled="isLocked(row.key)"
-                        @change="toggleLine(row.key)"
-                      />
-                    </span>
-                  </td>
-                  <td class="pk-td">
-                    <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
+                    <div class="pk-check-wrap">
+                      <MpTooltip
+                        v-if="isLocked(row.key)"
+                        :id="`pk-lock-${row.key}`"
+                        :label="partialPickingLockedMsg"
+                        placement="top"
+                        use-portal
+                      >
+                        <span @click.stop>
+                          <MpCheckbox :id="`pk-line-${row.key}`" :is-checked="true" :is-disabled="true" />
+                        </span>
+                      </MpTooltip>
+                      <span v-else @click.stop>
+                        <MpCheckbox
+                          :id="`pk-line-${row.key}`"
+                          :is-checked="isSelected(row.key)"
+                          :is-disabled="isLocked(row.key)"
+                          @change="toggleLine(row.key)"
+                        />
+                      </span>
+                      <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
+                    </div>
                   </td>
                   <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
-                  <td class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
+
+                  <!-- Storage location: shown as -- for batch/serial-tracked SKUs
+                       (their location is managed inside the drawer, per batch/serial unit). -->
+                  <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
+                    <td v-if="isBatchTrackedSku(row.sku)" class="pk-td">
+                      <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage batch" placement="top" use-portal>
+                        <span class="pk-loc-text">—</span>
+                      </MpTooltip>
+                    </td>
+                    <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td">
+                      <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage serial numbers" placement="top" use-portal>
+                        <span class="pk-loc-text">—</span>
+                      </MpTooltip>
+                    </td>
+                    <td v-else class="pk-td"><span class="pk-loc-text">{{ row.bin }}</span></td>
+                  </template>
+
                   <td class="pk-td pk-td--num">{{ formatNum(row.orderQty) }}</td>
                   <td v-if="hasPriorPicks" class="pk-td pk-td--num">{{ formatNum(row.pickedQty) }}</td>
-                  <td class="pk-td pk-td--input">
+
+                  <!-- Qty to pick: editable input for batch/serial/plain SKUs. For
+                       batch and serial, this is the target fed to the drawer; the
+                       actual allocation per batch/serial is managed inside the drawer. -->
+                  <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--input">
+                    <input
+                      type="number" min="0" :max="stockOf(row.key).cap" class="pk-batch-qty-input"
+                      :value="targetQtyForSku(row.sku)"
+                      :disabled="!isSelected(row.key) || isLocked(row.key)"
+                      :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
+                      :aria-label="`Qty to pick for ${row.product}`"
+                      @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
+                      @click.stop
+                    />
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--input">
+                    <input
+                      type="number" min="0" :max="stockOf(row.key).cap" class="pk-batch-qty-input"
+                      :value="targetQtyForSku(row.sku)"
+                      :disabled="!isSelected(row.key) || isLocked(row.key)"
+                      :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
+                      :aria-label="`Qty to pick for ${row.product}`"
+                      @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
+                      @click.stop
+                    />
+                  </td>
+                  <td v-else class="pk-td pk-td--input">
                     <input
                       type="number" min="0" :max="stockOf(row.key).cap" class="pk-qty-input"
                       :value="stockOf(row.key).toPick"
                       :disabled="!isSelected(row.key) || isLocked(row.key)"
+                      :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
                       @input="setQty(row.key, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
                       @click.stop
                     />
                   </td>
+
                   <td class="pk-td">{{ row.unit }}</td>
+
+                  <!-- Action column: icon button for batch / serial management -->
+                  <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
+                    <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
+                      <MpTooltip :id="`tt-batch-${row.sku}`" label="Manage batch" placement="top" use-portal>
+                        <button class="pk-manage-icon-btn" type="button" @click.stop="openBatchDrawer(row.sku)">
+                          <MpIcon name="competencies" size="md" />
+                        </button>
+                      </MpTooltip>
+                    </td>
+                    <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--action">
+                      <MpTooltip :id="`tt-serial-${row.sku}`" label="Manage serial numbers" placement="top" use-portal>
+                        <button class="pk-manage-icon-btn" type="button" @click.stop="openSerialDrawer(row.sku)">
+                          <MpIcon name="competencies" size="md" />
+                        </button>
+                      </MpTooltip>
+                    </td>
+                    <td v-else class="pk-td pk-td--action"></td>
+                  </template>
                 </tr>
               </tbody>
             </table>
@@ -483,9 +864,9 @@ function handleCreate() {
             <div v-if="loadingMore" class="pk-loading pk-items-loading">
               <MpSpinner size="sm" /> Loading SKUs…
             </div>
-          </div>
-          <div class="pk-items-count">
-            <span>Showing {{ visibleRows.length }} of {{ pickRows.length }} SKUs</span>
+            <div class="pk-items-count">
+              <span>Showing {{ visibleRows.length }} of {{ pickRows.length }} SKUs</span>
+            </div>
           </div>
         </section>
       </div>
@@ -493,11 +874,61 @@ function handleCreate() {
     </div><!-- /detail-stage -->
 
     <!-- ── Sticky footer ── -->
-    <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goPicking">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleCreate">Save</MpButton>
+    <footer class="detail-footer" :class="{ 'detail-footer--floating': itemsOverflowing }">
+      <MpButton variant="ghost" is-rounded @click="goBack">Cancel</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
+
+  <ManageBatchDrawer
+    v-if="batchDrawerSku"
+    :open="batchDrawerOpen"
+    :sku="batchDrawerSku"
+    :warehouse-id="warehouseId"
+    kind="picking"
+    :origin-location-paths="locationOptions"
+    :target-count="targetQtyForSku(batchDrawerSku)"
+    :order-qty="batchDrawerOrderQty"
+    :max-count="capForSku(batchDrawerSku)"
+    :model-value="batchLinesBySku[batchDrawerSku] ?? []"
+    @update:open="batchDrawerOpen = $event"
+    @save="saveBatchLines"
+  />
+  <ManageSerialDrawer
+    v-if="serialDrawerSku"
+    :open="true"
+    :sku="serialDrawerSku"
+    :warehouse-id="warehouseId"
+    kind="picking"
+    :target-count="targetQtyForSku(serialDrawerSku)"
+    :order-qty="serialDrawerOrderQty"
+    :origin-location-paths="locationOptions"
+    :model-value="(serialLinesBySku[serialDrawerSku] ?? []).map(s => ({ serial: s.serial }))"
+    @update:open="serialDrawerOpen = $event"
+    @save="saveSerialLines"
+  />
+
+  <!-- Partial pick confirmation -->
+  <MpModal id="pk-partial-confirm" :is-open="showPartialConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showPartialConfirm = false">
+    <MpModalOverlay />
+    <MpModalContent>
+      <MpModalHeader>
+        <span>Confirm partial pick</span>
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <p style="margin:0;font-size:var(--mp-font-sizes-md);color:var(--mp-text-default)">
+          Total qty to pick (<strong>{{ totalToPick }}</strong>) is less than total order qty
+          (<strong>{{ totalOrderQty }}</strong>). The remaining items will not be picked in this task.
+          Are you sure you want to continue?
+        </p>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButton variant="ghost" is-rounded @click="showPartialConfirm = false">Cancel</MpButton>
+        <MpButton variant="primary" is-rounded @click="doCreate">Continue</MpButton>
+      </MpModalFooter>
+    </MpModalContent>
+  </MpModal>
 </template>
 
 <style scoped>
@@ -522,9 +953,10 @@ function handleCreate() {
   color: var(--mp-text-default);
 }
 .detail-stage {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  flex: 1; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column;
   background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
-  padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
+  padding: 0 var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
 }
 .detail-footer {
@@ -537,7 +969,7 @@ function handleCreate() {
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 /* ── Section / form grid ─────────────────────────────────────────────────────── */
-.pk-section { margin-bottom: var(--mp-spacing-6); }
+.pk-section { margin-bottom: var(--mp-spacing-6); flex-shrink: 0; }
 .pk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--mp-spacing-4); max-width: 558px; }
 .pk-assignee-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .pk-assignee-avatar {
@@ -564,7 +996,7 @@ function handleCreate() {
 
 /* ── Sections ────────────────────────────────────────────────────────────────── */
 .pk-tasks-section { margin-bottom: var(--mp-spacing-6); }
-.pk-sku-section { margin-bottom: var(--mp-spacing-6); }
+.pk-sku-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .pk-tasks-error {
   margin: 0 0 var(--mp-spacing-3) 0;
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c0392b);
@@ -590,10 +1022,9 @@ function handleCreate() {
 
 /* ── Rows ────────────────────────────────────────────────────────────────────── */
 .pk-td {
-  height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .pk-task-row { cursor: pointer; transition: background 80ms; }
 .pk-task-row:hover .pk-td { background: var(--mp-background-neutral-subtle); }
@@ -619,12 +1050,12 @@ function handleCreate() {
 .pk-short { color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-semi-bold); }
 
 /* ── Picking list table ──────────────────────────────────────────────────────── */
-.pk-items-section { display: flex; flex-direction: column; }
+.pk-items-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .pk-items-section--bordered {
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-lg); overflow: hidden;
 }
-.pk-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.pk-items-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; }
 .pk-items-sentinel { height: 1px; }
 .pk-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
 .pk-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
@@ -632,14 +1063,19 @@ function handleCreate() {
   display: flex; align-items: center; margin: 0;
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-  border-top: 1px solid var(--mp-border-default);
+
 }
 .pk-items { width: 100%; table-layout: auto; border-collapse: collapse; }
 .pk-items thead .pk-th { position: sticky; top: 0; z-index: 1; }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pk-loc-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pk-th--check { width: var(--mp-sizes-12, 48px); }
+.pk-check-wrap { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .pk-item-row--off { opacity: 0.45; }
+
+/* Once any row splits its Qty to pick cell (batch/serial-tracked SKU present), every
+   column gets left/right borders — no double border, no outer border on the ends. */
+.pk-items--split .pk-td { border-right: 1px solid var(--mp-border-default); }
+.pk-items--split .pk-td:last-child { border-right: none; }
 
 /* Form-table look: grey read-only cells, white editable cell */
 .pk-items .pk-td {
@@ -649,12 +1085,41 @@ function handleCreate() {
 .pk-items .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
 .pk-items .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .pk-qty-input {
-  width: 100%; text-align: right;
-  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
+  display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box; text-align: right;
+  padding: 0 var(--mp-spacing-2);
   border: none; background: transparent; color: var(--mp-text-default);
   font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none;
 }
 .pk-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
+
+/* Storage location — read-only bin list for batch/serial-tracked SKUs. The flex
+   layout lives on an inner wrapper div, not the <td> itself — display:flex directly
+   on a <td> breaks the browser's native table-row height stretch. */
+.pk-td--location-summary { padding: 0; color: var(--mp-text-default); background: var(--mp-background-neutral-subtle); vertical-align: top; }
+.pk-location-summary-wrap { display: flex; flex-direction: column; height: 100%; }
+.pk-location-summary-item { display: flex; align-items: center; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
+.pk-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
+
+.pk-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pk-batch-qty-input {
+  display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box;
+  padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+.pk-batch-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; }
+
+.pk-td--action { padding: 4px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.pk-th--action { position: sticky; right: 0; z-index: 2; }
+.pk-td--action { position: sticky; right: 0; z-index: 1; }
+.pk-manage-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
+  background: none; border: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary); padding: 0;
+}
+.pk-manage-icon-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 /* ── Empty state ─────────────────────────────────────────────────────────────── */
 .pk-empty {

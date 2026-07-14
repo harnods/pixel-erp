@@ -13,7 +13,7 @@ import { levelDefaultType } from './storageLevels'
  */
 export type LocType = 'Organizational' | 'Storage'
 export interface LocNode {
-  id: string; level: string; code: string; name: string; type: LocType
+  id: string; level: string; name: string; type: LocType
   description?: string
   /** distinct SKUs stored at (or, for a branch, across) this location */
   skuQty: number
@@ -28,31 +28,6 @@ export function defaultTypeForLevel(level: string): LocType {
   return levelDefaultType(level)
 }
 
-/** Spreadsheet-style column letters (1→A … 26→Z, 27→AA …) so codes never overflow. */
-function toCol(n: number): string {
-  let s = ''
-  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26) }
-  return s || 'A'
-}
-
-/**
- * Short storage code for the i-th location of a level.
- * Floor→L1, Zone→ZA, Aisle→A01, Row→R01, Rack→RK01, Shelf→SA, Bin→B001.
- */
-export function locCodeFor(level: string, i: number): string {
-  const p2 = String(i).padStart(2, '0')
-  const p3 = String(i).padStart(3, '0')
-  switch (level) {
-    case 'Floor': return `L${i}`
-    case 'Zone':  return `Z${toCol(i)}`
-    case 'Aisle': return `A${p2}`
-    case 'Row':   return `R${p2}`
-    case 'Rack':  return `RK${p2}`
-    case 'Shelf': return `S${toCol(i)}`
-    case 'Bin':   return `B${p3}`
-    default:      return `${level.slice(0, 2).toUpperCase()}${i}`
-  }
-}
 
 /** The level labels (master data). Also used to populate the level picker. */
 export const STORAGE_LEVELS = ['Floor', 'Zone', 'Aisle', 'Row', 'Rack', 'Shelf', 'Bin']
@@ -78,6 +53,9 @@ interface WhStorageProfile {
   levels: string[]
   /** Which stock indices (0-based) have more than one location, and how many */
   multiLoc: MultiLocEntry[]
+  /** Digits to zero-pad auto-generated Bin names to (default 3, e.g. "Bin 001").
+   *  A flat, single-level (Bin-only) warehouse reads better with fewer digits. */
+  binPad?: number
 }
 
 export const WH_STORAGE_PROFILES: Record<string, WhStorageProfile> = {
@@ -116,10 +94,11 @@ export const WH_STORAGE_PROFILES: Record<string, WhStorageProfile> = {
     levels: ['Aisle', 'Rack', 'Bin'],
     multiLoc: [],
   },
-  // ── Small, 9 SKUs — 2-level (Rack/Bin); no multi-loc ──
+  // ── Small, 9 SKUs — flat single-level (Bin only, "Bin 01" 2-digit); no multi-loc ──
   'wh-006': {
-    levels: ['Rack', 'Bin'],
+    levels: ['Bin'],
     multiLoc: [],
+    binPad: 2,
   },
   // ── Small archived, 8 SKUs — single-level (Bin only); no multi-loc ──
   'wh-007': {
@@ -153,7 +132,7 @@ export function getMultiLocConfig(warehouseId: string): MultiLocEntry[] {
 
 function seedFrom(id: string): number { return Number(id.replace(/\D/g, '')) || 1 }
 
-function buildTree(seed: number, skuTotal: number, levels: string[]): LocNode[] {
+function buildTree(seed: number, skuTotal: number, levels: string[], binPad = 3): LocNode[] {
   if (levels.length === 0) return []
   let s = (seed * 2654435761) >>> 0
   s ^= s >>> 15; s = (s * 2246822519) >>> 0; s ^= s >>> 13; s = s >>> 0
@@ -170,13 +149,12 @@ function buildTree(seed: number, skuTotal: number, levels: string[]): LocNode[] 
     const nodes: LocNode[] = []
     for (let i = 1; i <= count; i++) {
       const seq = (levelSeq[level] = (levelSeq[level] ?? 0) + 1)
-      const code = locCodeFor(level, seq)
       const pool = NAME_POOLS[level]
       const name = level === 'Bin'
-        ? `Bin ${String(seq).padStart(3, '0')}`
+        ? `Bin ${String(seq).padStart(binPad, '0')}`
         : (pool ?? [level])[(seq - 1) % (pool?.length ?? 1)]!
       nodes.push({
-        id: nid(), level, code, name,
+        id: nid(), level, name,
         type: defaultTypeForLevel(level),
         skuQty: 0, skuStart: 0,
         children: isLeaf ? [] : makeLevel(depth + 1),
@@ -246,12 +224,12 @@ function removeNode(nodes: LocNode[], id: string): boolean {
 export function getStorageTree(warehouseId: string): LocNode[] {
   if (!store[warehouseId]) {
     const wh = warehouses.find(w => w.id === warehouseId)
-    if (wh?.isDefault || !wh?.skuTotal) {
+    if (wh?.isDefault || !wh?.skuTotal || wh?.hasStorageLocations === false) {
       store[warehouseId] = []
     } else {
       const profile = WH_STORAGE_PROFILES[warehouseId]
       const levels = profile?.levels ?? STORAGE_LEVELS  // fallback: full 7-level
-      store[warehouseId] = buildTree(seedFrom(warehouseId), wh.skuTotal, levels)
+      store[warehouseId] = buildTree(seedFrom(warehouseId), wh.skuTotal, levels, profile?.binPad)
     }
   }
   return store[warehouseId]!
@@ -277,6 +255,26 @@ export function stockLocationPaths(warehouseId: string): string[] {
   return paths
 }
 
+export interface StorageLeaf { id: string; path: string; type: LocType }
+
+/**
+ * Every LEAF location in a warehouse's tree (root → name path included) — the
+ * candidate set for reservation priority (auto-selection only ranks Storage-type
+ * leaves; Organizational nodes like Floor/Zone never hold stock directly).
+ */
+export function getStorageLeaves(warehouseId: string): StorageLeaf[] {
+  const out: StorageLeaf[] = []
+  const walk = (nodes: LocNode[], trail: string[]) => {
+    for (const n of nodes) {
+      const here = [...trail, n.name]
+      if (n.children.length) walk(n.children, here)
+      else out.push({ id: n.id, path: here.join(' / '), type: n.type })
+    }
+  }
+  walk(getStorageTree(warehouseId), [])
+  return out
+}
+
 /** A location node + its ancestor path (root → node), for the detail page. */
 export function findLocation(warehouseId: string, locId: string): { node: LocNode; path: LocNode[] } | undefined {
   const walk = (nodes: LocNode[], trail: LocNode[]): { node: LocNode; path: LocNode[] } | undefined => {
@@ -291,33 +289,22 @@ export function findLocation(warehouseId: string, locId: string): { node: LocNod
   return walk(getStorageTree(warehouseId), [])
 }
 
-interface NewLoc { level: string; name: string; code: string; type: LocType }
+interface NewLoc { level: string; name: string; type: LocType }
 export function addRootLocation(warehouseId: string, data: NewLoc): void {
-  getStorageTree(warehouseId).push({ id: newId(), level: data.level, code: data.code, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
+  getStorageTree(warehouseId).push({ id: newId(), level: data.level, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
   persist()
 }
 export function addSubLocation(warehouseId: string, parentId: string, data: NewLoc): void {
   const parent = findNode(getStorageTree(warehouseId), parentId)
-  if (parent) parent.children.push({ id: newId(), level: data.level, code: data.code, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
+  if (parent) parent.children.push({ id: newId(), level: data.level, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
   persist()
 }
-/** Edit an existing location's level, name, type and description (keeps its code + children). */
+/** Edit an existing location's level, name, type and description. */
 export function updateLocation(warehouseId: string, id: string, data: { level: string; name: string; type: LocType; description?: string }): void {
   const node = findNode(getStorageTree(warehouseId), id)
   if (node) { node.level = data.level; node.name = data.name; node.type = data.type; node.description = data.description ?? ''; persist() }
 }
-/** Suggested next code for a level — warehouse-wide unique. */
-export function suggestCode(warehouseId: string, _parentId: string | null, level: string): string {
-  const tree = getStorageTree(warehouseId)
-  const used = new Set<string>()
-  let levelCount = 0
-  const walk = (ns: LocNode[]) => ns.forEach(n => { used.add(n.code); if (n.level === level) levelCount++; walk(n.children) })
-  walk(tree)
-  let seq = levelCount + 1
-  let code = locCodeFor(level, seq)
-  while (used.has(code)) code = locCodeFor(level, ++seq)
-  return code
-}
+
 export function deleteLocation(warehouseId: string, id: string): void {
   removeNode(getStorageTree(warehouseId), id)
   persist()

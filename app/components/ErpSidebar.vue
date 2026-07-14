@@ -142,7 +142,19 @@ interface ActivePanel {
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
-const isExpanded = ref(false)
+// Rail expand/collapse is a user preference — persist it so a refresh doesn't
+// silently collapse a rail the user explicitly expanded.
+const SIDEBAR_EXPANDED_KEY = 'erp-sidebar-expanded'
+function loadSidebarExpanded(): boolean {
+  if (!import.meta.client) return false
+  try { return localStorage.getItem(SIDEBAR_EXPANDED_KEY) === '1' } catch { return false }
+}
+function saveSidebarExpanded(v: boolean): void {
+  if (!import.meta.client) return
+  try { localStorage.setItem(SIDEBAR_EXPANDED_KEY, v ? '1' : '0') } catch { /* ignore */ }
+}
+
+const isExpanded = ref(loadSidebarExpanded())
 const isPanelVisible = ref(true)
 const activeItem = ref('Home')
 const activePanel = ref<ActivePanel | null>(null)
@@ -314,8 +326,8 @@ const erpNavGroups: NavItem[][] = [
         [
           { label: 'Overview' },
           { label: 'Warehouses' },
-          { label: 'Barang keluar' },
-          { label: 'Barang masuk' },
+          { label: 'Outbound delivery' },
+          { label: 'Inbound delivery' },
           { label: 'Warehouse transfers' },
           { label: 'Stock adjustments' },
         ],
@@ -400,7 +412,7 @@ const erpNavGroups: NavItem[][] = [
 
 // Shared WMS nav items (reused across WMS scenarios).
 const barangKeluarNav: NavItem = {
-  name: 'Barang keluar', icon: 'sales',
+  name: 'Outbound delivery', icon: 'sales',
   panelSubmenu: [[
     { label: 'Orders', count: 8 },
     { label: 'Picking', count: 6 },
@@ -422,7 +434,7 @@ function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean):
   items.push({ label: 'Partial reception', count: c['Partial reception'] })
   items.push({ label: 'Completed', to: 'Inbound completed' })
   items.push({ label: 'Canceled' })
-  return { name: 'Barang masuk', icon: 'cart', panelSubmenu: [items] }
+  return { name: 'Inbound delivery', icon: 'cart', panelSubmenu: [items] }
 }
 const stockCountNav: NavItem[] = [
   { name: 'Stock count', icon: 'table-view-list' },
@@ -446,10 +458,18 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Warehouses', icon: 'warehouse' },
   ],
   [
-    { name: 'Barang keluar', icon: 'sales' },
-    { name: 'Barang masuk', icon: 'cart' },
+    { name: 'Outbound delivery', icon: 'sales' },
+    { name: 'Inbound delivery', icon: 'cart' },
   ],
-  stockCountNav,
+  [
+    {
+      name: 'Stock adjustments', icon: 'table-view-list',
+      panelSubmenu: [[
+        { label: 'Cycle counts' },
+        { label: 'Stock counts' },
+      ]],
+    },
+  ],
   [
     { name: 'Settings', icon: 'settings', panelSubmenu: wmsSettingsPanelSubmenu },
   ],
@@ -461,8 +481,8 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
 const wmsOpsNavGroups = computed<NavItem[][]>(() => {
   const flows = activeWarehouse.value?.flows ?? ['out']
   const fulfillment: NavItem[] = []
-  if (flows.includes('out')) fulfillment.push({ name: 'Barang keluar', icon: 'sales' })
-  if (flows.includes('in')) fulfillment.push({ name: 'Barang masuk', icon: 'cart' })
+  if (flows.includes('out')) fulfillment.push({ name: 'Outbound delivery', icon: 'sales' })
+  if (flows.includes('in')) fulfillment.push({ name: 'Inbound delivery', icon: 'cart' })
   return [
     [{ name: 'Home', icon: 'home' }],
     [{ name: 'Warehouses', icon: 'warehouse', path: `/warehouses/${activeWarehouse.value?.id ?? 'wh-001'}` }],
@@ -500,7 +520,13 @@ function resolveActive(pageKey: string): {
       // slug-based match so names with caps/slashes (e.g. 'Stock in/out') still
       // resolve through the URL round-trip
       if (labelToPath(item.name) === labelToPath(pageKey)) {
-        return { nav: item.name, sub: null, panel: null }
+        // If the matched nav item owns a level-2 panel, return it so the panel
+        // stays open on refresh of a detail page (e.g. /stock-adjustments/wsa-001
+        // resolves to 'Stock adjustments', which has a panelSubmenu).
+        const panel = item.panelSubmenu
+          ? { title: item.name, groups: item.panelSubmenu, parentNavName: item.name }
+          : null
+        return { nav: item.name, sub: null, panel }
       }
       for (const subGroup of item.submenu ?? []) {
         for (const sub of subGroup) {
@@ -545,8 +571,11 @@ function resolveActive(pageKey: string): {
 // detail pages (e.g. receiving task detail in ERP scenario) don't snap the
 // sidebar away from the relevant section.
 const SECTION_PARENT: Record<string, string> = {
-  Receiving: 'Barang masuk',
-  'Put away': 'Barang masuk',
+  Picking: 'Outbound delivery',
+  Packing: 'Outbound delivery',
+  Delivery: 'Outbound delivery',
+  Receiving: 'Inbound delivery',
+  'Put away': 'Inbound delivery',
 }
 
 watch(currentPageKey, (key) => {
@@ -558,15 +587,36 @@ watch(currentPageKey, (key) => {
     if (parentKey) ({ nav, sub, panel } = resolveActive(parentKey))
   }
   activeItem.value = nav
-  activePanelSubItem.value = sub
-  // Page title always mirrors the active menu name — the deepest active label
-  // (panel sub-item if any, otherwise the nav item).
-  setActiveMenuLabel(sub ?? nav)
+  // On a detail route the first URL segment matches the parent nav item directly
+  // (sub === null). Keep the last active sub-item so the level-2 panel highlight
+  // doesn't disappear while the user is inside a detail page of that section.
+  // On a hard refresh sub is null, so we restore from localStorage (keyed per
+  // nav section). If nothing is stored yet, fall back to the first panel item.
+  const sameSection = activePanel.value?.parentNavName === nav || panel?.parentNavName === nav
+  if (sub !== null) {
+    activePanelSubItem.value = sub
+    setActiveMenuLabel(sub)
+    try { localStorage.setItem(`erp-panel-sub:${nav}`, sub) } catch { /* ignore */ }
+  } else if (sameSection) {
+    let restored: string | null = null
+    try { restored = localStorage.getItem(`erp-panel-sub:${nav}`) } catch { /* ignore */ }
+    const fallback = panel?.groups?.[0]?.[0]?.label ?? null
+    const chosen = restored ?? fallback
+    if (chosen) {
+      activePanelSubItem.value = chosen
+      setActiveMenuLabel(chosen)
+    }
+  } else {
+    activePanelSubItem.value = null
+    setActiveMenuLabel(nav)
+  }
   // Keep the level-2 panel in sync with the URL so it survives a refresh.
   if (panel) {
     activePanel.value = panel
     isPanelVisible.value = true
     isExpanded.value = false
+  } else if (sameSection) {
+    isPanelVisible.value = true
   } else {
     activePanel.value = null
   }
@@ -598,6 +648,7 @@ function handleToggle() {
     isPanelVisible.value = !isPanelVisible.value
   } else {
     isExpanded.value = !isExpanded.value
+    saveSidebarExpanded(isExpanded.value)
   }
 }
 
@@ -767,7 +818,7 @@ function cancelClose() {
 
 .nav-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 .nav-item:hover img { filter: brightness(0) saturate(100%) invert(26%) sepia(60%) saturate(600%) hue-rotate(185deg) brightness(85%) contrast(95%); }
-.nav-item:hover .nav-label { color: var(--mp-text-selected); }
+.nav-item:hover .nav-label { color: var(--mp-text-link, #165082); }
 
 .nav-item.active { background-color: var(--mp-background-neutral-pressed); }
 .nav-item.active .nav-icon-line { display: none; }
@@ -776,7 +827,7 @@ function cancelClose() {
   display: block;
   filter: brightness(0) saturate(100%) invert(35%) sepia(55%) saturate(700%) hue-rotate(120deg) brightness(90%) contrast(100%);
 }
-.nav-item.active .nav-label { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-selected); }
+.nav-item.active .nav-label { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link, #165082); }
 
 .nav-item img {
   width: var(--mp-sizes-5);
@@ -863,9 +914,9 @@ function cancelClose() {
 .panel-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 
 .panel-item.active {
-  background-color: var(--mp-background-nav-stack-hovered);
+  background-color: #E2E8F0;
   font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-selected);
+  color: var(--mp-text-link, #165082);
 }
 
 .panel-item-icon {

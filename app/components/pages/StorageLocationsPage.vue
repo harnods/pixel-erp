@@ -59,6 +59,7 @@ const editingKey = ref<string | null>(null)
 const editName = ref('')
 const editDesc = ref('')
 const editType = ref<'Organizational' | 'Storage'>('Organizational')
+const isSaving = ref(false)
 
 function openEdit(lvl: LevelRow) {
   editingKey.value = lvl.key
@@ -67,10 +68,13 @@ function openEdit(lvl: LevelRow) {
   editType.value = lvl.defaultType
   editOpen.value = true
 }
-function saveEdit() {
+async function saveEdit() {
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   if (editingKey.value) {
     updateStorageLevel(editingKey.value, { name: editName.value, defaultType: editType.value, description: editDesc.value })
   }
+  isSaving.value = false
   editOpen.value = false
 }
 </script>
@@ -85,6 +89,11 @@ function saveEdit() {
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </ErpFilterBar>
@@ -168,7 +177,7 @@ function saveEdit() {
         <MpModalFooter>
           <div class="sl-modal-btns">
             <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="saveEdit">Save changes</button>
+            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">{{ isSaving ? 'Saving…' : 'Save changes' }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -196,6 +205,14 @@ function saveEdit() {
   color: var(--mp-text-default); min-width: 0;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* fixed, equal column widths — table hugs content (no stretch to the right edge);
    ≤10 rows → no outside border, just header + row dividers */

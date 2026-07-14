@@ -39,9 +39,9 @@ function countDescendants(n: LocNode): number {
 }
 const subLocationCount = computed(() => (node.value ? countDescendants(node.value) : 0))
 const isStorage = computed(() => node.value?.type === 'Storage')
-// Show the product tabs when the location holds stock directly: any Storage-typed
-// location, or any leaf (a leaf is where stock physically lives, whatever its level).
-const showStockTabs = computed(() => !!node.value && (isStorage.value || !hasChildren.value))
+// Stock physically lives only at leaf nodes (no children) — branch nodes just aggregate
+// their children's ranges. Only show product tabs for leaves.
+const showStockTabs = computed(() => !!node.value && !hasChildren.value)
 // Stock at this location — its own slice of the warehouse stock [skuStart, +skuQty).
 const locStock = computed(() => {
   const n = node.value
@@ -190,6 +190,7 @@ function confirmDeleteLocation() {
       <StockTables
         v-if="showStockTabs"
         :stock="locStock"
+        :warehouse-id="warehouseId"
         :subject="node.name"
         extra-label="Storage location"
         :exclude-columns="['minStock', 'locations', 'location']"
@@ -226,7 +227,7 @@ function confirmDeleteLocation() {
     <MpModal
       id="sld-delete-modal"
       :is-open="deleteConfirmOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"

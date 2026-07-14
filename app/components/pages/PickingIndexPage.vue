@@ -2,14 +2,14 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
-import { pickingTasksFor, pickingTaskAgingDays, isPickingFinished, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
-import { getPackingForOrder } from '~/data/packingTasks'
+import { pickingTasksFor, pickingTaskAgingDays, isPickingReadyToPack, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
+import { getPackingForOrder, pickingTaskHasPacking } from '~/data/packingTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 
@@ -28,7 +28,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Picking task saved' })
+    toast.notify({ variant: 'success', title: 'Picking task saved' , maxWidth: 'max-content'})
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })
@@ -52,6 +52,7 @@ const columns: TableColumn[] = [
   { key: 'toPickQty',     label: 'To pick',      width: '100px', align: 'right', sortType: 'number' },
   { key: 'pickedQty',     label: 'Picked qty',   width: '100px', align: 'right', sortType: 'number' },
   { key: 'status',        label: 'Status',       width: '140px', sortType: 'text' },
+  { key: 'icons',         label: '',             width: '48px',  align: 'center', noHeader: true },
   { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
   { key: 'endDate',       label: 'End date',     width: '190px', sortType: 'date' },
 ]
@@ -59,11 +60,11 @@ const columns: TableColumn[] = [
 // the ColumnSettings menu turns them back on.
 const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
-const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — max 2 quick filters: Status + Warehouse (hidden when scoped) ───
-const warehouseFilter = ref('')
+const warehouseFilter = ref<string[]>([])
 const statusFilter = ref('')
 
 const baseTasks = computed<PickingTask[]>(() =>
@@ -85,7 +86,17 @@ const statusOptions = [
   { label: 'Completed',       value: 'completed' },
   { label: 'Canceled',        value: 'canceled' },
 ]
-const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
 const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
 
 const {
@@ -98,15 +109,15 @@ const {
       || row.taskNo.toLowerCase().includes(s)
       || row.salesNos.some(n => n.toLowerCase().includes(s))
       || row.warehouseName.toLowerCase().includes(s)
-    const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
+    const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
     return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
 watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = ''; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || !!statusFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = '' }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -125,17 +136,20 @@ const router = useRouter()
 function viewDetails(row: PickingTask) { router.push(`/picking/${row.id}`) }
 // A completed picking task can spawn packing tasks (one per sales order).
 function createPacking(row: PickingTask) {
-  router.push({ path: '/barang-keluar/packing/create', query: { pickingId: row.id } })
+  router.push({ path: '/outbound-delivery/packing/create', query: { pickingId: row.id } })
 }
 
 // ─── Bulk → create packing tasks for several finished picking lists at once ───────
 function selectedPickingsOf(sel: Set<number>): PickingTask[] {
   return [...sel].map(i => paginated.value[i]).filter(Boolean) as PickingTask[]
 }
-// A picking list can spawn packing tasks when it's finished (completed / partially
-// picked) and has ≥1 packable order not already on a packing task.
+// A picking list can spawn packing tasks when its status allows it (open,
+// partially picked, or completed) and has ≥1 packable order not already on a
+// packing task — an open list is only actually eligible if another picking list
+// already picked something for one of its orders, so this stays correctly hidden
+// for a genuinely untouched open list.
 function pickingEligibleForPacking(t: PickingTask): boolean {
-  return isPickingFinished(t) && packableOrderIds(t).some(id => getPackingForOrder(id).length === 0)
+  return isPickingReadyToPack(t) && packableOrderIds(t).some(id => getPackingForOrder(id).length === 0)
 }
 // Show "Create packing" only when EVERY selected list is the SAME warehouse and ≥1 is
 // eligible (a packing batch is single-warehouse). Mixed warehouses ⇒ hidden.
@@ -150,7 +164,7 @@ function bulkPackable(sel: Set<number>): boolean {
 function bulkCreatePacking(sel: Set<number>, deselectAll: () => void) {
   const eligible = selectedPickingsOf(sel).filter(pickingEligibleForPacking)
   if (!eligible.length) return
-  router.push({ path: '/barang-keluar/packing/create', query: { pickingIds: eligible.map(t => t.id).join(',') } })
+  router.push({ path: '/outbound-delivery/packing/create', query: { pickingIds: eligible.map(t => t.id).join(',') } })
   deselectAll()
 }
 
@@ -191,22 +205,28 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover v-if="!isScoped" id="pick-wh-filter" is-close-on-select>
+        <MpPopover v-if="!isScoped" id="pick-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="pick-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = ''"
+              id="pick-wh-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
-              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`pick-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
@@ -232,7 +252,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="pick-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pick-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -241,6 +260,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="pick-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pick-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -250,6 +270,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -286,9 +311,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </span>
     </template>
 
-    <!-- ── Warehouse ── -->
-    <template #cell-warehouseName="{ value }">
-      <span class="pick-warehouse">{{ value }}</span>
+    <!-- ── Warehouse — View details chip on hover ── -->
+    <template #cell-warehouseName="{ value, row }">
+      <div class="cell-with-action">
+        <span class="pick-warehouse">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as PickingTask).warehouseId}`)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
     </template>
 
     <!-- ── Numeric cells ── -->
@@ -298,6 +332,33 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Status ── -->
     <template #cell-status="{ value }"><ErpStatusBadge :status="value as string" /></template>
+
+    <!-- ── Icon indicators — packing task created ── -->
+    <template #cell-icons="{ row }">
+      <div class="pick-icons-cell">
+        <MpTooltip
+          v-if="pickingTaskHasPacking((row as unknown as PickingTask).id)"
+          :id="`tt-packtask-${row.id}`"
+          label="Packing task created"
+          placement="top"
+          use-portal
+        >
+          <span class="pick-icon-indicator" aria-label="Packing task created">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <g clip-path="url(#pt-clip)">
+                <path d="M2.40711 7.72822C2.75157 6.54028 3.29326 5.44152 3.82046 4.37214C4.08056 3.84458 4.33712 3.32416 4.56474 2.8037C4.76946 2.33564 5.20689 1.99844 5.72079 1.95301C7.1385 1.82768 8.30968 1.74107 9.99988 1.74107C11.6747 1.74107 12.8399 1.8261 14.2403 1.94959C14.7739 1.99665 15.2218 2.35856 15.4226 2.84938C15.6759 3.46852 15.9734 4.06607 16.2769 4.67586C16.7475 5.62099 17.2326 6.5955 17.5907 7.72528" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9.99985 6.71288V1.74129" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M2.21244 16.7277C2.31101 17.3507 2.83008 17.8309 3.46628 17.8795C5.556 18.0392 7.74502 18.2588 9.99998 18.2588C12.2549 18.2588 14.444 18.0392 16.5337 17.8795C17.1698 17.8309 17.689 17.3507 17.7874 16.7277C18.003 15.3658 18.2589 13.9456 18.2589 12.4858C18.2589 11.026 18.003 9.60578 17.7874 8.24392C17.689 7.62086 17.1698 7.14058 16.5337 7.09199C14.444 6.93242 12.2549 6.71272 9.99998 6.71272C7.74502 6.71272 5.556 6.93242 3.46628 7.09199C2.83008 7.14058 2.31101 7.62086 2.21244 8.24392C1.99701 9.60578 1.74107 11.026 1.74107 12.4858C1.74107 13.9456 1.99701 15.3658 2.21244 16.7277Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M12.2367 14.7236H14.907" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </g>
+              <defs>
+                <clipPath id="pt-clip"><rect width="20" height="20" fill="white"/></clipPath>
+              </defs>
+            </svg>
+          </span>
+        </MpTooltip>
+      </div>
+    </template>
 
     <!-- ── Start / End date + aging ── -->
     <template #cell-startDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
@@ -361,6 +422,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 <style scoped>
 .filter-left  { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Warehouse multi-select list */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -381,6 +451,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Number cell — View details chip on hover */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
@@ -412,6 +490,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .pick-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
+
+/* Icon indicators cell — packing task created */
+.pick-icons-cell { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
+.pick-icon-indicator { display: inline-flex; align-items: center; justify-content: center; color: var(--mp-text-subtle); }
 
 /* Start/End date + aging badge */
 .pick-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }

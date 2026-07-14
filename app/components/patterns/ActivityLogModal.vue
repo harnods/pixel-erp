@@ -212,6 +212,5 @@ function formatWhen(iso: string) {
   display: flex; align-items: center;
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-  border-top: 1px solid var(--mp-border-default);
 }
 </style>

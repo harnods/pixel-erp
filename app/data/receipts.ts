@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
-import { TODAY } from './master'
+import { TODAY, VENDORS } from './master'
 
 /** An inbound goods receipt (Inbound delivery → Receipt). */
 export interface Receipt {
@@ -110,6 +110,11 @@ function hash100(i: number): number {
   return (x >>> 0) % 100;
 }
 
+// Same hash as receiptDetails.ts so vendor name is consistent across index and detail.
+function hashId(id: string): number {
+  return id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+}
+
 // Future arrival windows for not-yet-arrived (on the way) POs — spread so each
 // arrival-date preset (today / tomorrow / next 7 days / this month / beyond) hits some.
 const FUTURE_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7, 9, 12, 18, 23, 27, 34, 40];
@@ -147,8 +152,9 @@ function generateReceipts(count = 42): Receipt[] {
     const purchaseNo = fromDesty
       ? `#PO${String(60 + i).padStart(3, "0")}`
       : `Purchase Order #${10090 + i}`;
+    const id = `rcv-${String(i + 1).padStart(3, "0")}`
     out.push({
-      id: `rcv-${String(i + 1).padStart(3, "0")}`,
+      id,
       number: `RCV-2026-${String(i + 1).padStart(4, "0")}`,
       purchaseNo,
       warehouseId: wh.id,
@@ -162,9 +168,36 @@ function generateReceipts(count = 42): Receipt[] {
       estimatedArrival: isoOffset(offset),
       memo: generateMemo(i, isoOffset(offset)),
       trackingNos: generateTrackingNos(i),
+      vendor: VENDORS[hashId(id) % VENDORS.length],
     });
   }
   return out;
+}
+
+/**
+ * Hand-crafted demo receipt exercising all three stock-tracking modes at once — a
+ * batch-tracked SKU, a serial-tracked SKU, and a plain (untracked) SKU — at Gudang
+ * Makassar Selatan (wh-006), so receiving + put-away can be walked through end to
+ * end (including partial receiving across two receiving-task passes) with a known,
+ * reproducible SKU mix. Exact line items live in receiptLineItems.ts (DEMO_RECEIPT_ID).
+ */
+function generateDemoInbound(): Receipt[] {
+  const id = 'rcv-demo-001'
+  return [{
+    id,
+    number: 'RCV-2026-0700',
+    purchaseNo: 'Purchase Order #10500',
+    warehouseId: 'wh-006',
+    warehouseName: 'Gudang Makassar Selatan',
+    skuQty: 3,
+    purchaseQty: 6,
+    receivedQty: 0,
+    status: 'on the way',
+    estimatedArrival: isoOffset(2),
+    memo: 'Demo PO: 1 batch-tracked, 1 serial-tracked, 1 plain SKU (qty 2 each) — for partial receiving test',
+    trackingNos: [],
+    vendor: VENDORS[hashId(id) % VENDORS.length],
+  }]
 }
 
 const CANCEL_REASONS = [
@@ -188,8 +221,9 @@ function generateCanceled(count = 7): Receipt[] {
     const purchaseNo = fromDesty
       ? `#PO${String(180 + k).padStart(3, "0")}`
       : `Purchase Order #${10210 + k}`;
+    const id = `rcv-cx-${String(k + 1).padStart(3, "0")}`
     out.push({
-      id: `rcv-cx-${String(k + 1).padStart(3, "0")}`,
+      id,
       number: `RCV-2026-${String(900 + k).padStart(4, "0")}`,
       purchaseNo,
       warehouseId: wh.id,
@@ -204,6 +238,7 @@ function generateCanceled(count = 7): Receipt[] {
       estimatedArrival: isoOffset(-((k % 12) + 3)),
       memo: generateMemo(i, isoOffset(0)),
       trackingNos: [],
+      vendor: VENDORS[hashId(id) % VENDORS.length],
     });
   }
   return out;
@@ -213,17 +248,33 @@ function generateCanceled(count = 7): Receipt[] {
 // full snapshot so seed records mutated by the flow (status derivation, received
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
-const receiptSnapshot = loadSnapshot<Receipt>("receipts");
-export const receipts = reactive<Receipt[]>(
-  receiptSnapshot ?? [...generateReceipts(), ...generateCanceled()],
-);
+const receiptSnapshot = loadSnapshot<Receipt>("receipts-v2");
+const initialReceipts = receiptSnapshot ?? [...generateDemoInbound(), ...generateReceipts(), ...generateCanceled()];
+// Keep the demo inbound PO pinned at the very top of the list, regardless of
+// where a persisted snapshot from an earlier session happened to leave it.
+const demoIdx = initialReceipts.findIndex((r) => r.id === "rcv-demo-001");
+if (demoIdx > 0) {
+  const [demo] = initialReceipts.splice(demoIdx, 1);
+  initialReceipts.unshift(demo!);
+}
+export const receipts = reactive<Receipt[]>(initialReceipts);
 
 /** Persist the receipts snapshot (call after any mutation). */
 export function persistReceipts(): void {
-  saveSnapshot("receipts", receipts);
+  saveSnapshot("receipts-v2", receipts);
 }
 
 let receiptAddSeq = receipts.filter((r) => r.id.startsWith("rcv-new-")).length;
+
+const RCV_PREFIX_RE = /^Receipt #(\d+)$/;
+export function nextReceiptNo(): string {
+  let max = 0;
+  for (const r of receipts) {
+    const m = r.purchaseNo.match(RCV_PREFIX_RE);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return `Receipt #${String(max + 1).padStart(5, "0")}`;
+}
 
 /** Create a new inbound receipt (PO) from the New receipt form — persists + clickable. */
 export function addReceipt(
@@ -250,6 +301,31 @@ export function closeReceipt(id: string): void {
   if (!r) return;
   r.status = "completed";
   r.receivedDate = new Date(RECEIPT_TODAY).toISOString().slice(0, 10);
+  persistReceipts();
+}
+
+/** Cancel a receipt (PO) — terminal state; no further receiving/put-away can happen. */
+export function cancelReceipt(id: string): void {
+  const r = receipts.find((x) => x.id === id);
+  if (!r) return;
+  r.status = "canceled";
+  r.canceledDate = new Date(RECEIPT_TODAY).toISOString().slice(0, 10);
+  persistReceipts();
+}
+
+/**
+ * Manually-created receipts (New receipt form) have no real PO behind them, so they
+ * can be deleted outright. Seed/PO-derived receipts must go through Cancel instead.
+ */
+export function isManualReceipt(r: Receipt): boolean {
+  return r.id.startsWith("rcv-new-");
+}
+
+/** Delete a manually-created receipt entirely — only valid for isManualReceipt(). */
+export function deleteReceipt(id: string): void {
+  const i = receipts.findIndex((x) => x.id === id);
+  if (i === -1 || !isManualReceipt(receipts[i]!)) return;
+  receipts.splice(i, 1);
   persistReceipts();
 }
 

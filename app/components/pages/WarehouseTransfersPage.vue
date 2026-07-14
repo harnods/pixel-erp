@@ -94,7 +94,8 @@ const destLabel = computed(() => whOptions.value.find(o => o.value === destFilte
 const baseRows = computed<WarehouseTransfer[]>(() => {
   if (demoState.value === 'empty') return []
   let list = [...warehouseTransfers]
-  if (isAwaiting.value) list = list.filter(t => t.status === 'awaiting approval')
+  if (isAwaiting.value) list = list.filter(t => t.status === 'draft')
+  else list = list.filter(t => t.status !== 'draft')
   if (originFilter.value) list = list.filter(t => t.originId === originFilter.value)
   if (destFilter.value) list = list.filter(t => t.destinationId === destFilter.value)
   return list
@@ -126,7 +127,7 @@ function duplicate(row: WarehouseTransfer) {
 }
 function approve(row: WarehouseTransfer) {
   approveTransfer(row.id)
-  toast.notify({ variant: 'success', title: `${row.number} approved` })
+  toast.notify({ variant: 'success', title: `${row.number} approved` , maxWidth: 'max-content'})
 }
 
 // ─── Approval log (single shared modal, keyed to whichever row's icon was clicked) ──
@@ -147,7 +148,7 @@ function bulkApprove(sel: Set<number>, deselectAll: () => void) {
   const rows = selectedTransfersOf(sel)
   for (const row of rows) approveTransfer(row.id)
   deselectAll()
-  toast.notify({ variant: 'success', title: `${rows.length} transfer${rows.length > 1 ? 's' : ''} approved` })
+  toast.notify({ variant: 'success', title: `${rows.length} transfer${rows.length > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
 }
 
 // ─── Bulk delete ─────────────────────────────────────────────────────────────────
@@ -167,7 +168,7 @@ function askBulkDelete(sel: Set<number>, deselectAll: () => void) {
 // Keep the button clickable (no disabled buttons) — validate on click, show inline error.
 function confirmBulkDelete() {
   if (!deleteReason.value.trim()) {
-    deleteError.value = 'Enter a reason for deleting'
+    deleteError.value = 'You must fill in reason for deleting'
     return
   }
   deleteTransfers(bulkDeleteIds.value)
@@ -252,7 +253,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="wt-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-wt-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -261,6 +261,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="wt-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-wt-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -270,6 +271,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -564,6 +570,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Cell hover chip */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }

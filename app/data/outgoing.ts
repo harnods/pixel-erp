@@ -2,6 +2,17 @@ import { reactive } from "vue";
 import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY } from './master'
+import { getWarehouseConfig } from './warehouseConfig'
+import { orderSkuLines } from './inventory'
+import {
+  getWarehouseDetail,
+  autoSelectLocationBins,
+  autoSelectBatches,
+  autoSelectSerials,
+  reserveStock,
+  releaseReservationsForTask,
+  getReservationsForOrder,
+} from './warehouseDetails'
 
 /** Outbound order status. */
 export type OutgoingStatus =
@@ -48,6 +59,21 @@ export interface OutgoingOrder {
   memo?: string;
   /** customer — set on user-created orders; seed orders derive it by hash. */
   customer?: string;
+  /** ISO date the order was created (user-created orders only). */
+  transactionDate?: string;
+  /** Full ISO timestamp of creation — set on user-created orders for accurate audit display. */
+  createdAt?: string;
+  /** Actual line items — stored for user-created orders; seed orders derive via orderSkuLines(). */
+  lines?: StoredOrderLine[];
+}
+
+export interface StoredOrderLine {
+  sku: string;
+  productName: string;
+  desc: string;
+  img: string;
+  unit: string;
+  qty: number;
 }
 
 // Anchor "today" so the due-date presets line up with the mock data.
@@ -124,7 +150,7 @@ export function skuLineQty(seed: number, i: number): number {
 }
 
 // Desty omnichannel marketplaces + the seller's store name shown as the source.
-const MARKETPLACES = ['Shopee', 'Tokopedia', 'Lazada', 'TikTok Shop', 'Blibli']
+const MARKETPLACES = ['Shopee', 'Shopee', 'Lazada', 'TikTok Shop', 'Blibli']
 const STORE_NAME = 'Central Perk'
 
 /**
@@ -297,14 +323,150 @@ function generateCanceled(count = 7): OutgoingOrder[] {
   return out;
 }
 
+/**
+ * Reserve this order's batch/serial-tracked SKU lines against the warehouse's
+ * *current* selection rules (batch/serial/location, from Settings) — the moment an
+ * order becomes reservable (bootstrap below for already-open seed orders, or
+ * addOutgoing() for a live-created one). Idempotent PER (order, sku), and
+ * quantity-aware, not just existence-based: a line whose already-reserved qty
+ * already meets its demand is left untouched (non-retroactive — whatever rule was
+ * live when it first reserved stays locked in), but a line that's still SHORT (fully
+ * unreserved, or only partially reserved from an earlier pass that ran out of stock,
+ * or from an older build with a gap) gets topped up for exactly the shortfall, every
+ * call — so safe to call unconditionally on every load rather than gating the whole
+ * order or trusting "any reservation exists" as "fully reserved". Plain (non-batch/
+ * non-serial) SKUs are left unreserved — same pre-existing boundary as picking-time
+ * reservation had.
+ */
+function reserveOrder(order: OutgoingOrder): void {
+  const wh = getWarehouseDetail(order.warehouseId);
+  if (!wh) return;
+  const picks: { sku: string; batchNo?: string; qty: number; serials?: string[] }[] = [];
+  for (const line of orderSkuLines(order)) {
+    const item = wh.stock.find((s) => s.sku === line.sku);
+    if (!item) continue;
+    // Only count a reservation record toward "already covered" if it still points at
+    // a batch/serial that actually exists on this item — a record left dangling by an
+    // earlier data shape (renamed/renumbered batch, re-seeded serials, etc.) would
+    // otherwise silently block this line from ever getting a real reservation, while
+    // never showing up as reserved anywhere (Warehouse Details included).
+    const already = getReservationsForOrder(order.id, line.sku).reduce((sum, r) => {
+      if (r.batchNo) return item.batches?.some((b) => b.batchNo === r.batchNo) ? sum + r.qty : sum;
+      if (r.serials?.length) {
+        const valid = r.serials.filter((sn) =>
+          item.serials?.available.some((u) => u.serial === sn) || item.serials?.reserved.some((u) => u.serial === sn));
+        return sum + valid.length;
+      }
+      // Plain SKU — a bare qty reservation, nothing to validate it against.
+      return sum + r.qty;
+    }, 0);
+    const remaining = line.qty - already;
+    if (remaining <= 0) continue;
+    const preferredLocations = autoSelectLocationBins(order.warehouseId, line.sku, remaining).map((b) => b.location);
+    if (item.batches?.length) {
+      for (const b of autoSelectBatches(order.warehouseId, line.sku, remaining, preferredLocations)) {
+        picks.push({ sku: line.sku, batchNo: b.batchNo, qty: b.take });
+      }
+    } else if (item.serials) {
+      const serials = autoSelectSerials(order.warehouseId, line.sku, remaining, preferredLocations);
+      if (serials.length) picks.push({ sku: line.sku, qty: serials.length, serials });
+    } else {
+      // Plain SKU — no lot/unit to pin, just hold the qty against oversell.
+      picks.push({ sku: line.sku, qty: remaining });
+    }
+  }
+  if (picks.length) reserveStock(order.id, order.warehouseId, picks);
+}
+
+/**
+ * Demo scenario: an open order at Gudang Makassar Selatan (wh-006, whose storage
+ * locations are a flat single-level "Bin 01"/"Bin 02"… tree) covering all three
+ * tracking modes in one order — a batch-tracked SKU that happens to sit in 2
+ * distinct batches there, a serial-tracked SKU, and a plain (untracked) SKU.
+ * Explicit `lines` pin the exact SKUs (orderSkuLines() would otherwise derive
+ * them deterministically from skuQty, with no control over which land here).
+ */
+function generateTrackingScenario(): OutgoingOrder[] {
+  return [
+    {
+      id: "out-demo-001",
+      number: "OUT-2026-0700",
+      salesNo: "Sales Order #10199",
+      source: "Sales Order",
+      warehouseId: "wh-006",
+      warehouseName: "Gudang Makassar Selatan",
+      skuQty: 3,
+      orderQty: 9,
+      shippedQty: 0,
+      status: "open",
+      dueDate: isoOffset(7),
+      memo: "For demo 001",
+      customer: "Anomali Coffee",
+      lines: [
+        {
+          sku: "1003",
+          productName: "Green Beans Arabica Toraja Sapan",
+          desc: "Sulawesi 1,600 masl, semi-washed, 60 kg sack",
+          img: "https://cdn.shopify.com/s/files/1/0801/9439/files/image_Beans_Single_Rwanda-Mbilima-Soil-Project-Lot.0704-2026.jpg?v=1779845863",
+          unit: "Sack",
+          qty: 3,
+        },
+        {
+          sku: "2004",
+          productName: "Espresso Machine Lever Manual 1-Group",
+          desc: "Spring-lever, chrome body, commercial",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/files/La-Marzocco-Linea-Mini-Espresso-Machine-White-Hero-KO-by-Clive-Coffee.jpg?v=1711570888",
+          unit: "Unit",
+          qty: 2,
+        },
+        {
+          sku: "3004",
+          productName: "Coffee Scale 2kg / 0.1g",
+          desc: "Built-in brew timer, USB-C rechargeable",
+          img: "https://cdn.shopify.com/s/files/1/0831/7573/5603/files/ACAIALUNAR2021SMARTESPRESSOSCALEnew.jpg?v=1711084594",
+          unit: "Unit",
+          qty: 4,
+        },
+      ],
+    },
+  ];
+}
+
 // The outbound graph (orders + picking + packing + delivery) is persisted as a
 // full snapshot so seed records mutated by the flow (status derivation, shipped
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
 const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
-  outgoingSnapshot ?? [...generateOrders(), ...generateShipped(3), ...generateCanceled()],
+  outgoingSnapshot ?? [...generateTrackingScenario(), ...generateOrders(), ...generateShipped(3), ...generateCanceled()],
 );
+
+// Open / in-process / partially-shipped orders are pickable. (A partially shipped
+// order flips to that status the moment ANY of it ships — even if most of it was
+// never picked at all — so it still needs to allow further pick lists for whatever
+// SKU/qty remains uncovered; the per-SKU/qty check lives in pickingTasks.canPickOrder.
+// "completed" is excluded on purpose: shippedTotal >= orderQty there, so nothing
+// can possibly be left to pick.)
+const PICKABLE_STATUSES = ["open", "in progress", "partially shipped"];
+
+/**
+ * Reserve every currently pickable (open / in-process) order — stands in for
+ * "reserve when the SO enters Requests" since there's no live SO-creation flow yet
+ * (addOutgoing() below covers that path). Idempotent (reserveOrder() is itself a
+ * per-(order,sku) no-op once fully reserved), so safe to call repeatedly — not just
+ * once at module load. This matters because a seed order's status isn't fully
+ * settled until syncOutboundOrderStatuses() runs (it can flip a "completed" seed
+ * label with no real task chain back to "open") — calling this again after that
+ * sync catches any order that just became pickable, instead of only ever seeing
+ * whatever status it had at the very first module evaluation.
+ */
+export function reserveAllPickableOrders(): void {
+  for (const o of outgoingOrders) {
+    if (PICKABLE_STATUSES.includes(o.status)) reserveOrder(o);
+  }
+}
+
+reserveAllPickableOrders();
 
 /** Orders with a pre-wired shipped chain — consumed by the task seeds. `partial`
  *  short-picks the last SKU so the order lands on "partially shipped". */
@@ -320,6 +482,16 @@ export function persistOutgoing(): void {
 
 let outgoingAddSeq = outgoingOrders.filter((o) => o.id.startsWith("out-new-")).length;
 
+const DO_PREFIX_RE = /^Delivery Order #(\d+)$/;
+export function nextDeliveryOrderNo(): string {
+  let max = 0;
+  for (const o of outgoingOrders) {
+    const m = o.salesNo.match(DO_PREFIX_RE);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return `Delivery Order #${String(max + 1).padStart(5, "0")}`;
+}
+
 /** Create a new outbound order from the New order form — persists + clickable. */
 export function addOutgoing(
   data: Omit<OutgoingOrder, "id" | "number">,
@@ -331,8 +503,21 @@ export function addOutgoing(
     number: `OUT-2026-${String(5000 + n).padStart(4, "0")}`,
   };
   outgoingOrders.unshift(order);
+  if (PICKABLE_STATUSES.includes(order.status)) reserveOrder(order);
   persistOutgoing();
   return order;
+}
+
+/** Cancel an order — releases whatever it had reserved, per canCancelOrder's gating. */
+export function cancelOutgoingOrder(orderId: string, reason?: string, canceledBy = "Rizal Candra"): void {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  order.status = "canceled";
+  order.canceledDate = isoOffset(0);
+  if (reason) order.canceledReason = reason;
+  order.canceledBy = canceledBy;
+  releaseReservationsForTask(orderId);
+  persistOutgoing();
 }
 
 // status → stage label (used by tabs / sidebar panel)
@@ -398,14 +583,9 @@ export function outgoingOpenCount(warehouseIds?: string[]): number {
     .reduce((sum, [, n]) => sum + n, 0);
 }
 
-// Only open / in-process orders are pickable. (An in-process order can still spawn
-// additional pick lists for SKUs not yet on any list — the per-SKU check lives in
-// pickingTasks.canPickOrder.)
-const PICKABLE_STATUSES = ["open", "in progress"];
-
 /** Can a new picking list still be created for this order? */
 export function canCreatePicking(o: OutgoingOrder): boolean {
-  return PICKABLE_STATUSES.includes(o.status);
+  return PICKABLE_STATUSES.includes(o.status) && getWarehouseConfig(o.warehouseId).pickingEnabled;
 }
 
 /** Orders eligible to be picked (used to seed picking tasks + the create form). */
