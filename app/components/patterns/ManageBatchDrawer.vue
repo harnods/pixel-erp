@@ -208,6 +208,10 @@ const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
 // Picking shows Available qty (like transfer) but has no "new on hand" concept —
 // stock only actually leaves once the pick is fulfilled, not at drawer-save time.
 const showAfterStats = computed(() => !hideStockStats.value && !isPicking.value)
+// Picking still computes/uses available qty internally (cap, reservations, etc.)
+// — this only hides the redundant per-row table column; the info-bar stat above
+// the table still shows it.
+const showOnHandColumn = computed(() => !hideStockStats.value && !isPicking.value)
 const qtyLabel = computed(() => {
   if (props.kind === 'transfer') return 'Transfer qty'
   if (props.kind === 'receiving' || props.kind === 'put-away') return 'Received qty'
@@ -599,7 +603,7 @@ function diffLabel(row: WorkRow): string {
 
 // Trailing-row colspan = every data column except the leading "select batch" cell:
 // expiry, desc, (location if picking), (on hand + after if stats shown), counted, unit.
-const trailingColspan = computed(() => 5 + (isPicking.value ? 1 : 0) + (hideStockStats.value ? 0 : 1) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
+const trailingColspan = computed(() => 5 + (isPicking.value ? 1 : 0) + (showOnHandColumn.value ? 1 : 0) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
 
 // ── Footer actions ────────────────────────────────────────────────────────────────
 const isSaving = ref(false)
@@ -904,7 +908,7 @@ function fmtNum(n: number | null): string {
               <col class="mbd-col-expiry" />
               <col class="mbd-col-desc" />
               <col v-if="isPicking" class="mbd-col-location" />
-              <col v-if="!hideStockStats" class="mbd-col-num" />
+              <col v-if="showOnHandColumn" class="mbd-col-num" />
               <col v-if="showPlannedQty" class="mbd-col-num" />
               <col class="mbd-col-counted" />
               <col v-if="showAfterStats" class="mbd-col-after" />
@@ -917,7 +921,7 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Expiry date</th>
                 <th class="mbd-th">Description</th>
                 <th v-if="isPicking" class="mbd-th">Location</th>
-                <th v-if="!hideStockStats" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
+                <th v-if="showOnHandColumn" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
                 <th v-if="showPlannedQty" class="mbd-th mbd-th--num mbd-th--planned">Qty to pick</th>
                 <th class="mbd-th mbd-th--num">{{ isPicking ? (executionMode ? 'Picked qty' : 'Qty to pick') : (isInOut ? qtyLabel : 'Counted qty') }}</th>
                 <th v-if="showAfterStats" class="mbd-th mbd-th--num">{{ afterLabel }}</th>
@@ -969,7 +973,7 @@ function fmtNum(n: number | null): string {
                 <td v-if="isPicking" class="mbd-td mbd-td--muted">{{ row.location || '—' }}</td>
 
                 <!-- ON HAND -->
-                <td v-if="!hideStockStats" class="mbd-td mbd-td--num mbd-td--muted">{{ row.onHand.toLocaleString('id-ID') }}</td>
+                <td v-if="showOnHandColumn" class="mbd-td mbd-td--num mbd-td--muted">{{ row.onHand.toLocaleString('id-ID') }}</td>
 
                 <!-- QTY TO PICK (picking + executionMode only) — this batch's original plan -->
                 <td v-if="showPlannedQty" class="mbd-td mbd-td--num mbd-td--planned">{{ (plannedQtyByBatch.get(row.batchNo) ?? 0).toLocaleString('id-ID') }}</td>
