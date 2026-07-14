@@ -10,7 +10,7 @@ import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/Ma
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { pickableOrders, type OutgoingOrder } from '~/data/outgoing'
 import {
-  addPickingTask, pickedQtyForOrderSku, type PickingLine,
+  addPickingTask, pickedQtyForOrderSku, pickedKeysForOrder, type PickingLine,
   type PickingBatchPick, type PickingSerialPick,
 } from '~/data/pickingTasks'
 import { orderSkuLines, productBySku } from '~/data/inventory'
@@ -128,9 +128,13 @@ function orderLines(o: OutgoingOrder): SkuLine[] {
   // SKUs + qty come from the product DB (drawn from what this warehouse stocks), so
   // each line maps to a real bin — same source picking/packing use downstream.
   // `qty` = the FULL order demand; `picked` = what's already been picked for this
-  // order+SKU on earlier lists. SKUs already fully picked are dropped (nothing left).
+  // order+SKU on earlier lists. A SKU already covered — either fully picked, or still
+  // sitting on another UNFINISHED (open/in progress) picking task — is dropped, so the
+  // same SKU can't be double-committed to two picking tasks at once.
+  const covered = pickedKeysForOrder(o.id)
   const lines: SkuLine[] = []
   for (const l of orderSkuLines(o)) {
+    if (covered.has(`${o.id}::${l.sku}`)) continue
     const picked = pickedQtyForOrderSku(o.id, l.sku)
     if (l.qty - picked <= 0) continue
     lines.push({
