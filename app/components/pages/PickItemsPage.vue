@@ -12,7 +12,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
-import { getPickingLineItems, type PickLineItem } from '~/data/pickingTaskDetails'
+import { getPickingLineItems, getPickingGroupedItems, type PickLineItem, type PickGroupItem } from '~/data/pickingTaskDetails'
 import {
   getPickingTask, savePickingDraft, endPicking, packableOrderIds,
   orderPickedTotal, orderPickedQtyInTask, orderDemand,
@@ -32,6 +32,60 @@ const router = useRouter()
 const task = computed(() => getPickingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPickingLineItems(task.value) : [])
 const itemByKey = computed(() => new Map(lineItems.value.map(it => [it.key, it])))
+// One row per SKU, merged across every order that contributed it — a task
+// bundling the same SKU from 2 orders is one thing for the picker to take, not
+// two independent asks. The underlying per-order lines (memberKeys) still drive
+// qty entry/scanning/batch-serial assignment, filled order-by-order in sequence.
+const groupedItems = computed(() => task.value ? getPickingGroupedItems(task.value) : [])
+function firstOpenMemberKey(group: PickGroupItem): string | null {
+  for (const key of group.memberKeys) {
+    const item = itemByKey.value.get(key)
+    if (item && effectivePickedQty(item) < item.expectedQty) return key
+  }
+  return group.memberKeys[group.memberKeys.length - 1] ?? null
+}
+function pickedLocationsForGroup(group: PickGroupItem): string[] {
+  const bins = new Set<string>()
+  for (const key of group.memberKeys) for (const loc of pickedLocations(key)) bins.add(loc)
+  return [...bins]
+}
+function groupBatchPickedQty(group: PickGroupItem): number {
+  return group.memberKeys.reduce((s, k) => s + batchPickedQty(k), 0)
+}
+function groupSerialPickedQty(group: PickGroupItem): number {
+  return group.memberKeys.reduce((s, k) => s + serialPickedQty(k), 0)
+}
+function groupDraftQty(group: PickGroupItem): number {
+  return group.memberKeys.reduce((s, k) => s + (draftQty.value[k] ?? 0), 0)
+}
+function effectiveGroupPickedQty(group: PickGroupItem): number {
+  if (isBatchTrackedSku(group.skuCode)) return groupBatchPickedQty(group)
+  if (isSerialTrackedSku(group.skuCode)) return groupSerialPickedQty(group)
+  return groupDraftQty(group)
+}
+/** Distribute a combined qty entry across the group's member lines, filling the
+ *  first order's line to its own expected qty before spilling into the next —
+ *  same fill order the barcode scanner already uses for this exact scenario. */
+function distributeGroupQty(group: PickGroupItem, total: number) {
+  let remaining = total
+  const updates: Record<string, number> = {}
+  for (const key of group.memberKeys) {
+    const member = itemByKey.value.get(key)
+    if (!member) continue
+    const take = Math.min(remaining, member.expectedQty)
+    updates[key] = take
+    remaining -= take
+  }
+  draftQty.value = { ...draftQty.value, ...updates }
+}
+function onGroupQtyInput(group: PickGroupItem, e: Event) {
+  let n = Math.floor(Number((e.target as HTMLInputElement).value))
+  if (!Number.isFinite(n) || n < 0) n = 0
+  if (n > group.expectedQty) n = group.expectedQty
+  distributeGroupQty(group, n)
+  if (showQtyErrors.value) showQtyErrors.value = false
+  if (finishError.value) finishError.value = ''
+}
 // stockLocationPaths() repeats a bin once per unit of capacity — dedupe before use as
 // a dropdown's option list (same fix as PutAwayItemsPage.vue).
 const locationOptions = computed(() => {
@@ -250,14 +304,14 @@ function handleScan(rawValue: string) {
   if (resolved.kind === 'batch') {
     if (addOrIncrementBatch(item, resolved.batchNo!)) {
       playScanSuccessSound()
-      flashRow(item.key)
+      flashRow(item.skuCode)
     }
     return
   }
   if (resolved.kind === 'serial') {
     if (addSerialPick(item, resolved.serial!)) {
       playScanSuccessSound()
-      flashRow(item.key)
+      flashRow(item.skuCode)
     }
     return
   }
@@ -275,7 +329,7 @@ function handleScan(rawValue: string) {
   if (showQtyErrors.value) showQtyErrors.value = false
   if (finishError.value) finishError.value = ''
   playScanSuccessSound()
-  flashRow(item.key)
+  flashRow(item.skuCode)
 }
 
 /** Read-only bin list for the Storage location column, batch/serial-tracked SKUs only. */
@@ -359,12 +413,12 @@ function resetProgress() {
 const toPickTotal = computed(() => lineItems.value.reduce((s, it) => s + it.expectedQty, 0))
 const draftPickedTotal = computed(() => lineItems.value.reduce((s, it) => s + effectivePickedQty(it), 0))
 const draftOutstanding = computed(() => Math.max(0, toPickTotal.value - draftPickedTotal.value))
-const shortItemsCount = computed(() => lineItems.value.filter(it => effectivePickedQty(it) < it.expectedQty).length)
+const shortItemsCount = computed(() => groupedItems.value.filter(g => effectiveGroupPickedQty(g) < g.expectedQty).length)
 
 const filteredItems = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return lineItems.value
-  return lineItems.value.filter(it => it.productName.toLowerCase().includes(q) || it.skuCode.toLowerCase().includes(q))
+  if (!q) return groupedItems.value
+  return groupedItems.value.filter(g => g.productName.toLowerCase().includes(q) || g.skuCode.toLowerCase().includes(q))
 })
 
 // ── Progressive pagination ────────────────────────────────────────────────────
@@ -539,7 +593,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
       </div>
 
       <div class="pik-summary">
-        <div class="pik-stat"><span class="pik-stat-label">SKU qty</span><span class="pik-stat-val">{{ fmt(lineItems.length) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">SKU qty</span><span class="pik-stat-val">{{ fmt(groupedItems.length) }}</span></div>
         <div class="pik-stat"><span class="pik-stat-label">Qty to pick</span><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span></div>
         <div class="pik-stat"><span class="pik-stat-label">Picked qty</span><span class="pik-stat-val">{{ fmt(draftPickedTotal) }}</span></div>
         <div class="pik-stat"><span class="pik-stat-label">Outstanding qty</span><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span></div>
@@ -601,8 +655,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                        sits); plain SKUs keep the static bin text. -->
                   <td v-if="isBatchTrackedSku(item.skuCode) || isSerialTrackedSku(item.skuCode)" class="pik-td pik-td--location-summary">
                     <div class="pik-location-summary-wrap">
-                      <template v-if="pickedLocations(item.key).length">
-                        <span v-for="loc in pickedLocations(item.key)" :key="loc" class="pik-location-summary-item">{{ loc }}</span>
+                      <template v-if="pickedLocationsForGroup(item).length">
+                        <span v-for="loc in pickedLocationsForGroup(item)" :key="loc" class="pik-location-summary-item">{{ loc }}</span>
                       </template>
                       <MpTooltip
                         v-else
@@ -621,45 +675,49 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
                   <!-- Picked qty: plain value for batch/serial-tracked SKUs (total from
                        drawer, filled by scanning — never manually typed), input for
-                       plain SKUs. -->
+                       plain SKUs. A SKU spanning 2+ orders is still ONE input — entering
+                       a combined qty distributes it order-by-order (first order filled
+                       first), same fill order the barcode scanner already uses. -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--num">
-                    <span class="pik-batch-val">{{ fmt(batchPickedQty(item.key)) }}</span>
+                    <span class="pik-batch-val">{{ fmt(groupBatchPickedQty(item)) }}</span>
                   </td>
                   <td v-else-if="isSerialTrackedSku(item.skuCode)" class="pik-td pik-td--num">
-                    <span class="pik-batch-val">{{ fmt(serialPickedQty(item.key)) }}</span>
+                    <span class="pik-batch-val">{{ fmt(groupSerialPickedQty(item)) }}</span>
                   </td>
                   <td
                     v-else
                     class="pik-td pik-td--input"
-                    :class="{ 'pik-td--input--error': showQtyErrors && !(draftQty[item.key] ?? 0) }"
+                    :class="{ 'pik-td--input--error': showQtyErrors && !groupDraftQty(item) }"
                   >
                     <input
                       class="pik-qty-input"
                       type="number" min="0" :max="item.expectedQty"
-                      :value="draftQty[item.key] ?? 0"
+                      :value="groupDraftQty(item)"
                       :aria-label="`Picked qty for ${item.productName}`"
-                      @input="onQtyInput(item.key, item.expectedQty, $event)"
+                      @input="onGroupQtyInput(item, $event)"
                     />
                   </td>
                   <td class="pik-td pik-td--num">
-                    <span :class="item.expectedQty - effectivePickedQty(item) > 0 ? 'pik-outstanding' : 'pik-qty--full'">
-                      {{ fmt(item.expectedQty - effectivePickedQty(item)) }}
+                    <span :class="item.expectedQty - effectiveGroupPickedQty(item) > 0 ? 'pik-outstanding' : 'pik-qty--full'">
+                      {{ fmt(item.expectedQty - effectiveGroupPickedQty(item)) }}
                     </span>
                   </td>
 
                   <td class="pik-td">{{ item.unit }}</td>
 
-                  <!-- Action column: Manage batch / Manage serial numbers icon -->
+                  <!-- Action column: Manage batch / Manage serial numbers icon — targets
+                       whichever underlying order-line still has room, same "first order
+                       first" fill order as scanning/qty entry. -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--action">
                     <MpTooltip :id="`pik-tt-batch-${item.key}`" label="Manage batch" placement="top" use-portal>
-                      <button class="pik-manage-icon-btn" type="button" @click="openBatchDrawer(item.key)">
+                      <button class="pik-manage-icon-btn" type="button" @click="openBatchDrawer(firstOpenMemberKey(item)!)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
                   </td>
                   <td v-else-if="isSerialTrackedSku(item.skuCode)" class="pik-td pik-td--action">
                     <MpTooltip :id="`pik-tt-serial-${item.key}`" label="Manage serial numbers" placement="top" use-portal>
-                      <button class="pik-manage-icon-btn" type="button" @click="openSerialDrawer(item.key)">
+                      <button class="pik-manage-icon-btn" type="button" @click="openSerialDrawer(firstOpenMemberKey(item)!)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>

@@ -412,7 +412,9 @@ export function addPickingTask(opts: {
     warehouseId: opts.warehouseId,
     warehouseName: opts.warehouseName,
     assignee: opts.assignee,
-    skuQty: opts.skuQty ?? lines.length,
+    // Distinct SKU count — a SKU spanning 2+ orders is still ONE line (row) worth
+    // of stock to pick, even though it's stored as separate per-order PickingLines.
+    skuQty: opts.skuQty ?? new Set(lines.map((l) => l.sku)).size,
     toPickQty: opts.toPickQty ?? lines.reduce((s, l) => s + l.qty, 0),
     pickedQty: 0, // newly created → nothing picked yet
     status: "open",
@@ -487,7 +489,7 @@ export function getPickingForOrder(orderId: string): PickingTask[] {
  * progress, so no duplicate list), or it has been FULLY picked. The un-picked remainder
  * of a finished "partially picked" task is NOT covered → it can go on a new picking list.
  */
-function pickedKeysForOrder(orderId: string): Set<string> {
+export function pickedKeysForOrder(orderId: string): Set<string> {
   const order = outgoingOrders.find((o) => o.id === orderId);
   const demand = new Map<string, number>(); // planned qty per SKU line
   if (order) for (const l of buildPickingLines([orderId], [order.salesNo])) demand.set(l.key, l.qty);
