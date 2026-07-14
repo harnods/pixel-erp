@@ -8,10 +8,13 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { putAwayTasks, startPutAway as startPutAwayTask } from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
 import { formatDate, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { generatePutAwaySlipPdf } from '~/utils/putAwaySlipPdf'
+import type jsPDF from 'jspdf'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -149,6 +152,16 @@ function editTask() {
 }
 function deleteTask() {
   toast.notify({ variant: 'greeting', title: 'Delete — coming soon' , maxWidth: 'max-content'})
+}
+
+const pdfPreviewOpen = ref(false)
+const pdfPreviewDoc = ref<jsPDF | null>(null)
+const pdfPreviewFilename = ref('')
+async function printPutAwaySlip() {
+  if (!task.value) return
+  pdfPreviewDoc.value = await generatePutAwaySlipPdf(task.value, lineItems.value)
+  pdfPreviewFilename.value = `Put-Away Slip - ${task.value.taskNo}.pdf`
+  pdfPreviewOpen.value = true
 }
 
 function goBack() { router.push('/inbound-delivery?tab=Put-away') }
@@ -375,22 +388,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
     <!-- ── Footer action bar ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpPopover id="pad-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            Print
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>Print put-away slip</MpPopoverListItem>
-            <MpPopoverListItem>Print location label</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <button class="detail-btn detail-btn--secondary" @click="printPutAwaySlip">Print put-away slip</button>
 
       <template v-if="task.status === 'completed' || task.status === 'canceled'">
         <MpPopover id="pad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
@@ -433,6 +431,14 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         </div>
       </template>
     </footer>
+
+    <PdfPreviewModal
+      :open="pdfPreviewOpen"
+      :doc="pdfPreviewDoc"
+      :filename="pdfPreviewFilename"
+      title="Put-away slip preview"
+      @close="pdfPreviewOpen = false"
+    />
 
   </div>
 

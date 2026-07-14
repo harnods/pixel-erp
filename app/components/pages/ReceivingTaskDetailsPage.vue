@@ -8,11 +8,14 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask } from '~/data/receivingTaskDetails'
 import { taskAgingDays, startReceiving, receivingTasksForReceipt, type ReceivingTask } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
+import { generateReceivingSlipPdf } from '~/utils/receivingSlipPdf'
+import type jsPDF from 'jspdf'
 
 type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed'
 
@@ -114,6 +117,16 @@ function createPutAway() {
 function startReceivingAndNavigate() {
   startReceiving(props.orderId)
   router.push(`/receiving/${props.orderId}/receive`)
+}
+
+const pdfPreviewOpen = ref(false)
+const pdfPreviewDoc = ref<jsPDF | null>(null)
+const pdfPreviewFilename = ref('')
+async function printReceivingSlip() {
+  if (!task.value) return
+  pdfPreviewDoc.value = await generateReceivingSlipPdf(task.value, lineItems.value)
+  pdfPreviewFilename.value = `Receiving Slip - ${task.value.taskNo}.pdf`
+  pdfPreviewOpen.value = true
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -533,22 +546,7 @@ function goBack() {
 
     <!-- ── Sticky footer — Print + Start/Continue (open & in-progress only) ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpPopover id="rcvgd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            Print
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>Print receiving slip</MpPopoverListItem>
-            <MpPopoverListItem>Print label</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">Print receiving slip</button>
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">
         Start receiving
       </button>
@@ -559,6 +557,14 @@ function goBack() {
         Create put-away
       </button>
     </footer>
+
+    <PdfPreviewModal
+      :open="pdfPreviewOpen"
+      :doc="pdfPreviewDoc"
+      :filename="pdfPreviewFilename"
+      title="Receiving slip preview"
+      @close="pdfPreviewOpen = false"
+    />
 
   </div>
 
