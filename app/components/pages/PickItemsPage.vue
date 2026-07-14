@@ -37,12 +37,8 @@ const itemByKey = computed(() => new Map(lineItems.value.map(it => [it.key, it])
 // two independent asks. The underlying per-order lines (memberKeys) still drive
 // qty entry/scanning/batch-serial assignment, filled order-by-order in sequence.
 const groupedItems = computed(() => task.value ? getPickingGroupedItems(task.value) : [])
-function firstOpenMemberKey(group: PickGroupItem): string | null {
-  for (const key of group.memberKeys) {
-    const item = itemByKey.value.get(key)
-    if (item && effectivePickedQty(item) < item.expectedQty) return key
-  }
-  return group.memberKeys[group.memberKeys.length - 1] ?? null
+function groupBySkuCode(skuCode: string): PickGroupItem | null {
+  return groupedItems.value.find(g => g.skuCode === skuCode) ?? null
 }
 function pickedLocationsForGroup(group: PickGroupItem): string[] {
   const bins = new Set<string>()
@@ -124,11 +120,13 @@ function locationForSerial(sku: string, serial: string): string {
     ?? ''
 }
 
-// ── Manage batch / Manage serial number — pick FROM existing batches/serials,
-// keyed by picking line key (orderId::sku), matching the table's existing per-line
-// granularity (a task bundling 2 orders for the same SKU already shows 2 independent
-// rows today). Storage location is derived from wherever the chosen batch/serial
-// already sits — never chosen manually, unlike put-away's destination picker. ────
+// ── Manage batch / Manage serial number — pick FROM existing batches/serials.
+// Stored keyed by picking LINE (orderId::sku) — a task bundling 2 orders for the
+// same SKU still owns 2 independent reservations, needed for packing attribution —
+// but the drawer itself operates on the merged GROUP (see activeBatchGroup/
+// activeSerialGroup below), matching the one row the table shows the picker.
+// Storage location is derived from wherever the chosen batch/serial already sits —
+// never chosen manually, unlike put-away's destination picker. ────
 //
 // task.batchPicks/serialPicks is the RESERVATION PLAN decided when the picking list
 // was created — it's what to suggest, not proof the operator has actually picked it.
@@ -172,8 +170,6 @@ const planBatchByKey = computed(() => {
   }
   return map
 })
-const planSerialByKey = taskSerialByKey
-
 const batchLinesByKey  = ref<Record<string, CommittedBatch[]>>({})
 const serialLinesByKey = ref<Record<string, PickingSerialPick[]>>({})
 
@@ -187,19 +183,75 @@ function seedConfirmedLines() {
 }
 watch([() => props.orderId, task], seedConfirmedLines, { immediate: true })
 
+// batchDrawerKey/serialDrawerKey hold the GROUP's skuCode (not a line key) — the
+// drawer always operates on the whole merged SKU, matching what the row shows the
+// picker, not one order's slice of it. Opening it for "whichever member line still
+// has room" (the previous, per-line design) meant that once order 1's line filled
+// up, the SAME "Manage batch" button silently jumped to order 2's line next — which
+// starts uncounted, reading as "my picks just vanished, back to 0" even though
+// order 1's picks were never lost. Distributing back onto the member lines on save
+// (below) is what keeps the per-order data model intact for packing attribution.
 const batchDrawerKey = ref<string | null>(null)
 const batchDrawerOpen = computed({
   get: () => batchDrawerKey.value !== null,
   set: (v: boolean) => { if (!v) batchDrawerKey.value = null },
 })
-function openBatchDrawer(key: string) { batchDrawerKey.value = key }
+const activeBatchGroup = computed(() => batchDrawerKey.value ? groupBySkuCode(batchDrawerKey.value) : null)
+function openBatchDrawer(group: PickGroupItem) { batchDrawerKey.value = group.skuCode }
 function batchPickedQty(key: string): number {
   return (batchLinesByKey.value[key] ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
 }
+// Merge every member line's batch rows into one per-batchNo list. counted sums
+// across members; stays null only when EVERY contributing row is still uncounted
+// (so the drawer still shows "—", not a false "0").
+function mergeCommittedBatches(rowSets: CommittedBatch[][]): CommittedBatch[] {
+  const map = new Map<string, CommittedBatch>()
+  for (const rows of rowSets) {
+    for (const b of rows) {
+      const existing = map.get(b.batchNo)
+      if (!existing) { map.set(b.batchNo, { ...b }); continue }
+      if (existing.counted === null && b.counted === null) continue
+      existing.counted = (existing.counted ?? 0) + (b.counted ?? 0)
+      existing.reservedQty = (existing.reservedQty ?? 0) + (b.reservedQty ?? 0)
+    }
+  }
+  return [...map.values()]
+}
+function groupBatchRows(group: PickGroupItem): CommittedBatch[] {
+  const anyTouched = group.memberKeys.some(k => batchLinesByKey.value[k] !== undefined)
+  const rowSets = group.memberKeys.map(k => (anyTouched ? batchLinesByKey.value[k] : planBatchByKey.value[k]) ?? [])
+  return mergeCommittedBatches(rowSets)
+}
 function saveBatchLines(batches: CommittedBatch[]) {
-  const key = batchDrawerKey.value
-  if (!key) return
-  batchLinesByKey.value = { ...batchLinesByKey.value, [key]: batches }
+  const group = batchDrawerKey.value ? groupBySkuCode(batchDrawerKey.value) : null
+  if (!group) return
+  // Distribute each batch's combined counted qty across the group's member lines
+  // in fill order — first order's line filled to its own expected qty before
+  // spilling into the next, same rule as plain qty entry (distributeGroupQty) and
+  // the barcode scanner.
+  const remaining = new Map(batches.map(b => [b.batchNo, b.counted ?? 0]))
+  const updates: Record<string, CommittedBatch[]> = {}
+  for (const key of group.memberKeys) {
+    const item = itemByKey.value.get(key)
+    if (!item) continue
+    let budget = item.expectedQty
+    const rows: CommittedBatch[] = []
+    for (const b of batches) {
+      if (budget <= 0) break
+      const left = remaining.get(b.batchNo) ?? 0
+      if (left <= 0) continue
+      const take = Math.min(left, budget)
+      // Keep THIS line's own original reservation for this batch (not the
+      // group-merged total) — otherwise re-merging on the next open would sum the
+      // same inflated value across every member line, growing on each save.
+      const ownReserved = taskBatchByKey.value[key]?.find(r => r.batchNo === b.batchNo)?.reservedQty ?? 0
+      rows.push({ ...b, counted: take, reservedQty: ownReserved })
+      remaining.set(b.batchNo, left - take)
+      budget -= take
+    }
+    updates[key] = rows
+  }
+  batchLinesByKey.value = { ...batchLinesByKey.value, ...updates }
 }
 
 const serialDrawerKey = ref<string | null>(null)
@@ -207,19 +259,37 @@ const serialDrawerOpen = computed({
   get: () => serialDrawerKey.value !== null,
   set: (v: boolean) => { if (!v) serialDrawerKey.value = null },
 })
-function openSerialDrawer(key: string) { serialDrawerKey.value = key }
+const activeSerialGroup = computed(() => serialDrawerKey.value ? groupBySkuCode(serialDrawerKey.value) : null)
+function openSerialDrawer(group: PickGroupItem) { serialDrawerKey.value = group.skuCode }
 function serialPickedQty(key: string): number {
   return (serialLinesByKey.value[key] ?? []).length
 }
-function saveSerialLines(serials: CommittedSerial[]) {
-  const key = serialDrawerKey.value
-  if (!key) return
-  const item = itemByKey.value.get(key)
-  if (!item) return
-  serialLinesByKey.value = {
-    ...serialLinesByKey.value,
-    [key]: serials.map(s => ({ serial: s.serial, location: locationForSerial(item.skuCode, s.serial) })),
+// No "uncounted plan" fallback here (unlike groupBatchRows) — a serial only ever
+// counts as picked once actually confirmed; matches the drawer's own modelValue
+// contract, where the suggested plan is shown separately via plannedSerials.
+function groupSerialRows(group: PickGroupItem): PickingSerialPick[] {
+  const seen = new Set<string>()
+  const rows: PickingSerialPick[] = []
+  for (const key of group.memberKeys) {
+    for (const s of serialLinesByKey.value[key] ?? []) if (!seen.has(s.serial)) { seen.add(s.serial); rows.push(s) }
   }
+  return rows
+}
+function saveSerialLines(serials: CommittedSerial[]) {
+  const group = serialDrawerKey.value ? groupBySkuCode(serialDrawerKey.value) : null
+  if (!group) return
+  // Same fill-order distribution as saveBatchLines — first order's line filled
+  // to its own expected qty before spilling into the next.
+  let idx = 0
+  const updates: Record<string, PickingSerialPick[]> = {}
+  for (const key of group.memberKeys) {
+    const item = itemByKey.value.get(key)
+    if (!item) continue
+    const take = serials.slice(idx, idx + item.expectedQty)
+    idx += take.length
+    updates[key] = take.map(s => ({ serial: s.serial, location: locationForSerial(item.skuCode, s.serial) }))
+  }
+  serialLinesByKey.value = { ...serialLinesByKey.value, ...updates }
 }
 
 // ── Page-level scan bar ─────────────────────────────────────────────────────────
@@ -317,8 +387,10 @@ function handleScan(rawValue: string) {
   }
   // Plain SKU scan
   if (isBatchTrackedSku(item.skuCode)) {
+    const group = groupBySkuCode(item.skuCode)
+    if (!group) return
     playScanSuccessSound()
-    openBatchDrawer(item.key)
+    openBatchDrawer(group)
     return
   }
   if (isSerialTrackedSku(item.skuCode)) {
@@ -720,19 +792,19 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
                   <td class="pik-td">{{ item.unit }}</td>
 
-                  <!-- Action column: Manage batch / Manage serial numbers icon — targets
-                       whichever underlying order-line still has room, same "first order
-                       first" fill order as scanning/qty entry. -->
+                  <!-- Action column: Manage batch / Manage serial numbers icon — operates
+                       on the whole merged SKU (all underlying order-lines together), same
+                       "first order first" fill order as scanning/qty entry. -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="pik-td pik-td--action">
                     <MpTooltip :id="`pik-tt-batch-${item.key}`" label="Manage batch" placement="top" use-portal>
-                      <button class="pik-manage-icon-btn" type="button" @click="openBatchDrawer(firstOpenMemberKey(item)!)">
+                      <button class="pik-manage-icon-btn" type="button" @click="openBatchDrawer(item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
                   </td>
                   <td v-else-if="isSerialTrackedSku(item.skuCode)" class="pik-td pik-td--action">
                     <MpTooltip :id="`pik-tt-serial-${item.key}`" label="Manage serial numbers" placement="top" use-portal>
-                      <button class="pik-manage-icon-btn" type="button" @click="openSerialDrawer(firstOpenMemberKey(item)!)">
+                      <button class="pik-manage-icon-btn" type="button" @click="openSerialDrawer(item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -802,30 +874,30 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   </MpModal>
 
   <ManageBatchDrawer
-    v-if="batchDrawerKey"
+    v-if="activeBatchGroup"
     :open="batchDrawerOpen"
-    :sku="itemByKey.get(batchDrawerKey)?.skuCode ?? ''"
+    :sku="activeBatchGroup.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="picking"
     :origin-location-paths="locationOptions"
-    :target-count="itemByKey.get(batchDrawerKey)?.expectedQty ?? 0"
+    :target-count="activeBatchGroup.expectedQty"
     :execution-mode="true"
-    :planned-batches="itemByKey.get(batchDrawerKey)?.plannedBatchPicks?.map(b => ({ batchNo: b.batchNo, qty: b.qty }))"
-    :model-value="batchLinesByKey[batchDrawerKey] ?? planBatchByKey[batchDrawerKey] ?? []"
+    :planned-batches="activeBatchGroup.plannedBatchPicks?.map(b => ({ batchNo: b.batchNo, qty: b.qty }))"
+    :model-value="groupBatchRows(activeBatchGroup)"
     @update:open="batchDrawerOpen = $event"
     @save="saveBatchLines"
   />
   <ManageSerialDrawer
-    v-if="serialDrawerKey"
+    v-if="activeSerialGroup"
     :open="true"
-    :sku="itemByKey.get(serialDrawerKey)?.skuCode ?? ''"
+    :sku="activeSerialGroup.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="picking"
-    :target-count="itemByKey.get(serialDrawerKey)?.expectedQty ?? 0"
+    :target-count="activeSerialGroup.expectedQty"
     :execution-mode="true"
     :origin-location-paths="locationOptions"
-    :model-value="(serialLinesByKey[serialDrawerKey] ?? []).map(s => ({ serial: s.serial }))"
-    :planned-serials="(planSerialByKey[serialDrawerKey] ?? []).map(s => s.serial)"
+    :model-value="groupSerialRows(activeSerialGroup).map(s => ({ serial: s.serial }))"
+    :planned-serials="(activeSerialGroup.plannedSerialPicks ?? []).map(s => s.serial)"
     @update:open="serialDrawerOpen = $event"
     @save="saveSerialLines"
   />
