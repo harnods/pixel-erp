@@ -922,7 +922,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
    on a <td> breaks the browser's native table-row height stretch. */
 .pik-td--location-summary { padding: 0; color: var(--mp-text-default); background: var(--mp-background-neutral-hovered); vertical-align: top; }
 .pik-location-summary-wrap { display: flex; flex-direction: column; height: 100%; }
-.pik-location-summary-item { display: flex; align-items: center; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); flex-shrink: 0; }
+.pik-location-summary-item {
+  display: flex; align-items: center; min-height: var(--mp-sizes-10, 40px);
+  padding: 0 var(--mp-spacing-2); flex-shrink: 0;
+  white-space: normal; word-break: break-word; line-height: var(--mp-line-heights-md);
+}
 .pik-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
 
 .pik-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
