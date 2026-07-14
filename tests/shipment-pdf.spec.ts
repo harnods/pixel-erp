@@ -1,10 +1,10 @@
 /**
  * generateShipmentPdf() builds a real, downloadable PDF document (jsPDF +
- * jspdf-autotable) — one row per delivery the shipment doc covers. These tests
+ * jspdf-autotable) — one row per delivery the shipment doc covers. Printed at
+ * dispatch time (before the courier/customer confirms receipt), so it never
+ * shows a "Date received"/"Received by" — those aren't known yet. These tests
  * can't practically inspect the rendered PDF's pixel content, so they verify the
- * thing actually at risk of breaking: the function runs without throwing across
- * an open shipment, a completed shipment (with received-by/date), and an empty
- * row set.
+ * thing actually at risk of breaking: the function runs without throwing.
  */
 import { describe, it, expect } from 'vitest'
 import { generateShipmentPdf, type ShipmentPdfInfo, type ShipmentPdfRow } from '~/utils/shipmentPdf'
@@ -13,8 +13,6 @@ const BASE_SHIPMENT: ShipmentPdfInfo = {
   shipmentNo: 'Shipment #70001',
   warehouseName: 'Gudang Makassar Selatan',
   assignee: 'Test Operator',
-  transactionDate: '2026-07-13T10:00:00',
-  status: 'open',
   courier: 'JNE',
 }
 
@@ -24,15 +22,8 @@ const ROWS: ShipmentPdfRow[] = [
 ]
 
 describe('generateShipmentPdf', () => {
-  it('generates a PDF for an open shipment without throwing', () => {
+  it('generates a PDF for a shipment without throwing', () => {
     expect(() => generateShipmentPdf(BASE_SHIPMENT, ROWS)).not.toThrow()
-  })
-
-  it('generates a PDF for a completed shipment, including received-by/date', () => {
-    expect(() => generateShipmentPdf(
-      { ...BASE_SHIPMENT, status: 'completed', receivedBy: 'Andi Wijaya', receivedDate: '2026-07-13' },
-      ROWS,
-    )).not.toThrow()
   })
 
   it('does not throw for a shipment with no delivery rows', () => {

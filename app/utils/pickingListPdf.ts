@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable'
 import type { PickingTask } from '~/data/pickingTasks'
 import type { PickLineItem } from '~/data/pickingTaskDetails'
 import { formatDateTimeLong } from './date'
+import { loadImagesByUrl } from './pdfImage'
 
 /** One printable line — a plain SKU is one row; a batch/serial-tracked SKU expands
  *  to one row per batch/serial actually assigned to it, so the operator knows
@@ -11,15 +12,16 @@ interface PickingListRow {
   no: number
   sku: string
   product: string
+  img: string
   batchOrSerial: string
   bin: string
   qty: number
   unit: string
 }
 
-function capitalize(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
-}
+const PHOTO_COL_WIDTH = 48
+const PHOTO_SIZE = 38
+const PHOTO_ROW_HEIGHT = 46
 
 function buildRows(lineItems: PickLineItem[]): PickingListRow[] {
   const rows: PickingListRow[] = []
@@ -29,25 +31,26 @@ function buildRows(lineItems: PickLineItem[]): PickingListRow[] {
     const serials = item.plannedSerialPicks?.length ? item.plannedSerialPicks : item.serialPicks
     if (batches?.length) {
       for (const b of batches) {
-        rows.push({ no: no++, sku: item.skuCode, product: item.productName, batchOrSerial: b.batchNo, bin: b.location || '-', qty: b.qty, unit: b.unit || item.unit })
+        rows.push({ no: no++, sku: item.skuCode, product: item.productName, img: item.image, batchOrSerial: b.batchNo, bin: b.location || '-', qty: b.qty, unit: b.unit || item.unit })
       }
     } else if (serials?.length) {
       for (const s of serials) {
-        rows.push({ no: no++, sku: item.skuCode, product: item.productName, batchOrSerial: s.serial, bin: s.location || '-', qty: 1, unit: item.unit })
+        rows.push({ no: no++, sku: item.skuCode, product: item.productName, img: item.image, batchOrSerial: s.serial, bin: s.location || '-', qty: 1, unit: item.unit })
       }
     } else {
-      rows.push({ no: no++, sku: item.skuCode, product: item.productName, batchOrSerial: '-', bin: item.binLocation || '-', qty: item.expectedQty, unit: item.unit })
+      rows.push({ no: no++, sku: item.skuCode, product: item.productName, img: item.image, batchOrSerial: '-', bin: item.binLocation || '-', qty: item.expectedQty, unit: item.unit })
     }
   }
   return rows
 }
 
 /**
- * Generates and downloads a printable warehouse picking-list document — a real
- * document layout (title, task header, a batch/serial-expanded pick table,
- * totals, signature lines), not a screenshot/copy of the on-screen page.
+ * Builds a printable warehouse picking-list document — a real document layout
+ * (title, task header, a batch/serial-expanded pick table, totals, signature
+ * lines), not a screenshot/copy of the on-screen page. Returns the jsPDF instance
+ * for the caller to preview/save (doesn't save it itself).
  */
-export function generatePickingListPdf(task: PickingTask, lineItems: PickLineItem[]): void {
+export async function generatePickingListPdf(task: PickingTask, lineItems: PickLineItem[]): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
@@ -73,8 +76,6 @@ export function generatePickingListPdf(task: PickingTask, lineItems: PickLineIte
     ['Sales order(s)', task.salesNos.join(', ') || '-'],
   ]
   const rightInfo: [string, string][] = [
-    ['Status', capitalize(task.status)],
-    ['Start date', formatDateTimeLong(task.startDate)],
     ['Printed on', formatDateTimeLong(new Date().toISOString())],
   ]
 
@@ -95,20 +96,31 @@ export function generatePickingListPdf(task: PickingTask, lineItems: PickLineIte
   y = Math.max(ly, ry) + 12
 
   const rows = buildRows(lineItems)
+  const imagesByUrl = await loadImagesByUrl(rows.map((r) => r.img))
   autoTable(doc, {
     startY: y,
-    head: [['No.', 'SKU', 'Product', 'Batch/Serial no.', 'Bin location', 'Qty to pick', 'Unit']],
-    body: rows.map((r) => [r.no, r.sku, r.product, r.batchOrSerial, r.bin, r.qty, r.unit]),
+    theme: 'grid',
+    head: [['No.', 'Photo', 'SKU', 'Product', 'Batch/Serial no.', 'Bin location', 'Qty to pick', 'Unit']],
+    body: rows.map((r) => [r.no, '', r.sku, r.product, r.batchOrSerial, r.bin, r.qty, r.unit]),
     styles: { fontSize: 9, cellPadding: 5, lineColor: [220, 220, 220], lineWidth: 0.5 },
     headStyles: { fillColor: [235, 235, 235], textColor: 20, fontStyle: 'bold' },
     columnStyles: {
       0: { cellWidth: 28, halign: 'center' },
-      1: { cellWidth: 60 },
-      3: { cellWidth: 90 },
-      5: { cellWidth: 60, halign: 'right' },
-      6: { cellWidth: 50 },
+      1: { cellWidth: PHOTO_COL_WIDTH, minCellHeight: PHOTO_ROW_HEIGHT },
+      2: { cellWidth: 60 },
+      4: { cellWidth: 90 },
+      6: { cellWidth: 60, halign: 'right' },
+      7: { cellWidth: 50 },
     },
     margin: { left: marginX, right: marginX },
+    didDrawCell: (data) => {
+      if (data.section !== 'body' || data.column.index !== 1) return
+      const loaded = imagesByUrl.get(rows[data.row.index]?.img ?? '')
+      if (!loaded) return
+      const px = data.cell.x + (data.cell.width - PHOTO_SIZE) / 2
+      const py = data.cell.y + (data.cell.height - PHOTO_SIZE) / 2
+      doc.addImage(loaded.dataUrl, loaded.format, px, py, PHOTO_SIZE, PHOTO_SIZE)
+    },
   })
 
   const totalQty = lineItems.reduce((s, it) => s + it.expectedQty, 0)
@@ -133,5 +145,5 @@ export function generatePickingListPdf(task: PickingTask, lineItems: PickLineIte
   doc.line(pageWidth - marginX - sigWidth, sigY, pageWidth - marginX, sigY)
   doc.text('Checked by', pageWidth - marginX - sigWidth, sigY + 14)
 
-  doc.save(`Picking List - ${task.taskNo}.pdf`)
+  return doc
 }

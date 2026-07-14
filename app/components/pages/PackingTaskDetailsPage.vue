@@ -11,13 +11,15 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import type jsPDF from 'jspdf'
 import {
   getPackingLineItems, allPackingTasksFlat, getDeliveryForPackingTask, type PackLineItem,
 } from '~/data/packingTaskDetails'
 import { getPackingTask, startPacking, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { getShipment, marketplaceShipping, type ShipmentSummary } from '~/data/deliveryTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePackingListPdf } from '~/utils/packingListPdf'
 import { productBySku } from '~/data/inventory'
@@ -114,16 +116,20 @@ function startPackingAndNavigate() {
   startPacking(props.orderId)
   router.push(`/packing/${props.orderId}/pack`)
 }
+const pdfPreviewOpen = ref(false)
+const pdfPreviewDoc = ref<jsPDF | null>(null)
+const pdfPreviewFilename = ref('')
 async function printPackingList() {
   if (!task.value) return
-  await generatePackingListPdf(task.value, lineItems.value, {
+  pdfPreviewDoc.value = await generatePackingListPdf(task.value, lineItems.value, {
     salesNo: linkedOrder.value?.salesNo,
     customer: linkedOrder.value?.customer,
     source: linkedOrder.value?.source,
-    dueDate: linkedOrder.value?.dueDate,
     courier: courier.value,
     trackingNo: trackingNo.value,
   })
+  pdfPreviewFilename.value = `Packing List - ${task.value.taskNo}.pdf`
+  pdfPreviewOpen.value = true
 }
 // Finishing packing auto-creates the delivery (see PackItemsPage.vue) — a
 // completed task always has one to jump to.
@@ -487,7 +493,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="printPackingList">Print packing list</MpPopoverListItem>
-            <MpPopoverListItem>Print shipping label</MpPopoverListItem>
+            <MpPopoverListItem v-if="isMarketplaceOrder(linkedOrder)">Print shipping label</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -532,6 +538,14 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     :product-name="viewSerialItem.productName"
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"
+  />
+
+  <PdfPreviewModal
+    :open="pdfPreviewOpen"
+    :doc="pdfPreviewDoc"
+    :filename="pdfPreviewFilename"
+    title="Packing list preview"
+    @close="pdfPreviewOpen = false"
   />
 </template>
 

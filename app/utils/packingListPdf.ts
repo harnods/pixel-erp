@@ -4,6 +4,7 @@ import type { PackingTask } from '~/data/packingTasks'
 import type { PackLineItem } from '~/data/packingTaskDetails'
 import { formatDateTimeLong } from './date'
 import { generateBarcodeDataUrl } from './barcode'
+import { loadImagesByUrl } from './pdfImage'
 
 /** One printable line — a plain SKU is one row; a batch/serial-tracked SKU expands
  *  to one row per batch/serial actually picked FOR THIS ORDER, so the operator
@@ -13,14 +14,15 @@ interface PackingListRow {
   no: number
   sku: string
   product: string
+  img: string
   batchOrSerial: string
   qty: number
   unit: string
 }
 
-function capitalize(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
-}
+const PHOTO_COL_WIDTH = 48
+const PHOTO_SIZE = 38
+const PHOTO_ROW_HEIGHT = 46
 
 function buildRows(lineItems: PackLineItem[]): PackingListRow[] {
   const rows: PackingListRow[] = []
@@ -28,31 +30,32 @@ function buildRows(lineItems: PackLineItem[]): PackingListRow[] {
   for (const item of lineItems) {
     if (item.batchPicks?.length) {
       for (const b of item.batchPicks) {
-        rows.push({ no: no++, sku: item.skuCode, product: item.productName, batchOrSerial: b.batchNo, qty: b.qty, unit: b.unit || item.unit })
+        rows.push({ no: no++, sku: item.skuCode, product: item.productName, img: item.image, batchOrSerial: b.batchNo, qty: b.qty, unit: b.unit || item.unit })
       }
     } else if (item.serialPicks?.length) {
       for (const s of item.serialPicks) {
-        rows.push({ no: no++, sku: item.skuCode, product: item.productName, batchOrSerial: s.serial, qty: 1, unit: item.unit })
+        rows.push({ no: no++, sku: item.skuCode, product: item.productName, img: item.image, batchOrSerial: s.serial, qty: 1, unit: item.unit })
       }
     } else {
-      rows.push({ no: no++, sku: item.skuCode, product: item.productName, batchOrSerial: '-', qty: item.pickedQty, unit: item.unit })
+      rows.push({ no: no++, sku: item.skuCode, product: item.productName, img: item.image, batchOrSerial: '-', qty: item.pickedQty, unit: item.unit })
     }
   }
   return rows
 }
 
 /**
- * Generates and downloads a printable packing-list document for ONE order (a
- * packing task is always scoped to a single sales order) — the sorting reference
- * for "Match order": which SKU/batch/serial, and how much of it, belongs to THIS
- * order out of the picking task's (possibly multi-order) mixed picked pile. Not a
- * screenshot/copy of the on-screen packing details page.
+ * Builds a printable packing-list document for ONE order (a packing task is
+ * always scoped to a single sales order) — the sorting reference for "Match
+ * order": which SKU/batch/serial, and how much of it, belongs to THIS order out
+ * of the picking task's (possibly multi-order) mixed picked pile. Not a
+ * screenshot/copy of the on-screen packing details page. Returns the jsPDF
+ * instance for the caller to preview/save (doesn't save it itself).
  */
 export async function generatePackingListPdf(
   task: PackingTask,
   lineItems: PackLineItem[],
-  order?: { salesNo?: string; customer?: string; source?: string; dueDate?: string; courier?: string; trackingNo?: string },
-): Promise<void> {
+  order?: { salesNo?: string; customer?: string; source?: string; courier?: string; trackingNo?: string },
+): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
@@ -84,13 +87,10 @@ export async function generatePackingListPdf(
     ['Assignee', task.assignee || '-'],
   ]
   if (order?.courier) leftInfo.push(['Courier', order.courier])
+  if (order?.trackingNo) leftInfo.push(['Tracking no.', order.trackingNo])
   const rightInfo: [string, string][] = [
-    ['Status', capitalize(task.status)],
-    ['Due date', order?.dueDate ? formatDateTimeLong(order.dueDate) : '-'],
-    ['Start date', formatDateTimeLong(task.startDate)],
     ['Printed on', formatDateTimeLong(new Date().toISOString())],
   ]
-  if (order?.trackingNo) rightInfo.push(['Tracking no.', order.trackingNo])
 
   doc.setFontSize(10)
   const rightX = pageWidth / 2 + 20
@@ -109,20 +109,31 @@ export async function generatePackingListPdf(
   y = Math.max(ly, ry) + 12
 
   const rows = buildRows(lineItems)
+  const imagesByUrl = await loadImagesByUrl(rows.map((r) => r.img))
   autoTable(doc, {
     startY: y,
-    head: [['No.', 'SKU', 'Product', 'Batch/Serial no.', 'Qty to pack', 'Unit']],
-    body: rows.map((r) => [r.no, r.sku, r.product, r.batchOrSerial, r.qty, r.unit]),
+    theme: 'grid',
+    head: [['No.', 'Photo', 'SKU', 'Product', 'Batch/Serial no.', 'Qty to pack', 'Unit']],
+    body: rows.map((r) => [r.no, '', r.sku, r.product, r.batchOrSerial, r.qty, r.unit]),
     styles: { fontSize: 9, cellPadding: 5, lineColor: [220, 220, 220], lineWidth: 0.5 },
     headStyles: { fillColor: [235, 235, 235], textColor: 20, fontStyle: 'bold' },
     columnStyles: {
       0: { cellWidth: 28, halign: 'center' },
-      1: { cellWidth: 60 },
-      3: { cellWidth: 100 },
-      4: { cellWidth: 70, halign: 'right' },
-      5: { cellWidth: 50 },
+      1: { cellWidth: PHOTO_COL_WIDTH, minCellHeight: PHOTO_ROW_HEIGHT },
+      2: { cellWidth: 60 },
+      4: { cellWidth: 100 },
+      5: { cellWidth: 70, halign: 'right' },
+      6: { cellWidth: 50 },
     },
     margin: { left: marginX, right: marginX },
+    didDrawCell: (data) => {
+      if (data.section !== 'body' || data.column.index !== 1) return
+      const loaded = imagesByUrl.get(rows[data.row.index]?.img ?? '')
+      if (!loaded) return
+      const px = data.cell.x + (data.cell.width - PHOTO_SIZE) / 2
+      const py = data.cell.y + (data.cell.height - PHOTO_SIZE) / 2
+      doc.addImage(loaded.dataUrl, loaded.format, px, py, PHOTO_SIZE, PHOTO_SIZE)
+    },
   })
 
   const totalQty = lineItems.reduce((s, it) => s + it.pickedQty, 0)
@@ -147,5 +158,5 @@ export async function generatePackingListPdf(
   doc.line(pageWidth - marginX - sigWidth, sigY, pageWidth - marginX, sigY)
   doc.text('Checked by', pageWidth - marginX - sigWidth, sigY + 14)
 
-  doc.save(`Packing List - ${task.taskNo}.pdf`)
+  return doc
 }

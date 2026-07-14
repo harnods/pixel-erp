@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpDatePicker, MpIcon, toast,
@@ -11,6 +12,7 @@ import { getShipment, completeShipment } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateShipmentPdf } from '~/utils/shipmentPdf'
+import type jsPDF from 'jspdf'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -48,9 +50,12 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Shipped' } }) }
 function viewSalesOrder(row: Row) { router.push(`/outbound-delivery/${row.salesOrderId}`) }
 function viewPacking(row: Row) { router.push(`/packing/${row.packingTaskId}`) }
+const pdfPreviewOpen = ref(false)
+const pdfPreviewDoc = ref<jsPDF | null>(null)
+const pdfPreviewFilename = ref('')
 function printPdf() {
   if (!shipment.value) return
-  generateShipmentPdf(
+  pdfPreviewDoc.value = generateShipmentPdf(
     { ...shipment.value, courier: rows.value[0]?.courier ?? '-' },
     rows.value.map((r) => ({
       salesNo: r.salesNo,
@@ -61,6 +66,8 @@ function printPdf() {
       shippedQty: r.shippedQty,
     })),
   )
+  pdfPreviewFilename.value = `Shipment - ${shipment.value.shipmentNo}.pdf`
+  pdfPreviewOpen.value = true
 }
 
 /** File-type → Pixel document icon for an attachment (mirrors Sales/Outgoing order detail). */
@@ -291,6 +298,14 @@ function confirmComplete() {
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
+
+    <PdfPreviewModal
+      :open="pdfPreviewOpen"
+      :doc="pdfPreviewDoc"
+      :filename="pdfPreviewFilename"
+      title="Shipment preview"
+      @close="pdfPreviewOpen = false"
+    />
 
   </div>
 

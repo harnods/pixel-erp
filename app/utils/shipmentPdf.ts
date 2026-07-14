@@ -16,26 +16,19 @@ export interface ShipmentPdfInfo {
   shipmentNo: string
   warehouseName: string
   assignee: string
-  transactionDate: string
-  status: 'open' | 'completed'
   /** a shipment doc is per courier (a batch is split into one shipment per courier) —
    *  shown as its own header above the table, not repeated on every row. */
   courier: string
-  receivedBy?: string
-  receivedDate?: string
-}
-
-function capitalize(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
 }
 
 /**
- * Generates and downloads a printable shipment document — every delivery the
- * shipment doc covers (all handed to the same courier in one batch), for the
- * driver/courier to carry alongside the goods. Not a screenshot/copy of the
- * on-screen shipment details page.
+ * Builds a printable shipment document — every delivery the shipment doc covers
+ * (all handed to the same courier in one batch), for the driver/courier to carry
+ * alongside the goods. Not a screenshot/copy of the on-screen shipment details
+ * page. Returns the jsPDF instance for the caller to preview/save (doesn't save
+ * it itself).
  */
-export function generateShipmentPdf(shipment: ShipmentPdfInfo, rows: ShipmentPdfRow[]): void {
+export function generateShipmentPdf(shipment: ShipmentPdfInfo, rows: ShipmentPdfRow[]): jsPDF {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
@@ -59,13 +52,9 @@ export function generateShipmentPdf(shipment: ShipmentPdfInfo, rows: ShipmentPdf
     ['Warehouse', shipment.warehouseName || '-'],
     ['Assignee', shipment.assignee || '-'],
   ]
-  if (shipment.receivedBy) leftInfo.push(['Received by', shipment.receivedBy])
   const rightInfo: [string, string][] = [
-    ['Status', capitalize(shipment.status)],
-    ['Transaction date', shipment.transactionDate ? formatDateTimeLong(shipment.transactionDate) : '-'],
     ['Printed on', formatDateTimeLong(new Date().toISOString())],
   ]
-  if (shipment.receivedDate) rightInfo.push(['Date received', formatDateTimeLong(shipment.receivedDate)])
 
   doc.setFontSize(10)
   const rightX = pageWidth / 2 + 20
@@ -90,6 +79,7 @@ export function generateShipmentPdf(shipment: ShipmentPdfInfo, rows: ShipmentPdf
 
   autoTable(doc, {
     startY: y,
+    theme: 'grid',
     head: [['No.', 'Sales order no.', 'Packing no.', 'Tracking no.', 'SKU qty', 'Order qty']],
     body: rows.map((r, i) => [i + 1, r.salesNo, r.packingTaskNo, r.trackingNo, r.skuQty, r.orderQty]),
     styles: { fontSize: 9, cellPadding: 5, lineColor: [220, 220, 220], lineWidth: 0.5 },
@@ -124,5 +114,5 @@ export function generateShipmentPdf(shipment: ShipmentPdfInfo, rows: ShipmentPdf
   doc.line(pageWidth - marginX - sigWidth, sigY, pageWidth - marginX, sigY)
   doc.text('Received by', pageWidth - marginX - sigWidth, sigY + 14)
 
-  doc.save(`Shipment - ${shipment.shipmentNo}.pdf`)
+  return doc
 }

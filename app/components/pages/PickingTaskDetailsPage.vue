@@ -11,6 +11,7 @@ import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import {
   getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask, type PickLineItem,
 } from '~/data/pickingTaskDetails'
@@ -22,6 +23,7 @@ import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePickingListPdf } from '~/utils/pickingListPdf'
 import { toast } from '@mekari/pixel3'
+import type jsPDF from 'jspdf'
 
 type TaskStatus = 'open' | 'in progress' | 'partially picked' | 'completed' | 'canceled'
 
@@ -125,9 +127,14 @@ function startPickingAndNavigate() {
   startPicking(props.orderId)
   router.push(`/picking/${props.orderId}/pick`)
 }
-function printPickingList() {
+const pdfPreviewOpen = ref(false)
+const pdfPreviewDoc = ref<jsPDF | null>(null)
+const pdfPreviewFilename = ref('')
+async function printPickingList() {
   if (!task.value) return
-  generatePickingListPdf(task.value, lineItems.value)
+  pdfPreviewDoc.value = await generatePickingListPdf(task.value, lineItems.value)
+  pdfPreviewFilename.value = `Picking List - ${task.value.taskNo}.pdf`
+  pdfPreviewOpen.value = true
 }
 const cantPackModalOpen = ref(false)
 function createPacking() {
@@ -536,22 +543,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpPopover id="pkd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            Print
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem @click="printPickingList">Print picking list</MpPopoverListItem>
-            <MpPopoverListItem>Print label</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <button class="detail-btn detail-btn--secondary" @click="printPickingList">Print picking list</button>
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">
         Start picking
       </button>
@@ -604,6 +596,14 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     :product-name="viewSerialItem.productName"
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"
+  />
+
+  <PdfPreviewModal
+    :open="pdfPreviewOpen"
+    :doc="pdfPreviewDoc"
+    :filename="pdfPreviewFilename"
+    title="Picking list preview"
+    @close="pdfPreviewOpen = false"
   />
 
   <!-- Nothing can be packed yet — marketplace order(s) not fully picked -->
