@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButton,
@@ -16,7 +16,18 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ close: [] }>()
 
-const previewUrl = computed(() => props.doc ? props.doc.output('datauristring') : '')
+// A blob URL scales to however large the doc gets (product-photo-heavy, multi-page
+// docs) — a data: URI can silently fail to render in an <iframe> once it gets big.
+const previewUrl = ref('')
+let currentBlobUrl: string | null = null
+function revokeCurrent() {
+  if (currentBlobUrl) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null }
+}
+watch(() => props.doc, (doc) => {
+  revokeCurrent()
+  previewUrl.value = doc ? (currentBlobUrl = URL.createObjectURL(doc.output('blob'))) : ''
+}, { immediate: true })
+onUnmounted(revokeCurrent)
 
 function confirmPrint() {
   props.doc?.save(props.filename)

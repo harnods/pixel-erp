@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -77,7 +77,7 @@ const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disable
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — Warehouse (hidden when scoped), Status ───
-const warehouseFilter = ref('')
+const warehouseFilter = ref<string[]>([])
 const statusFilter = ref('')
 
 const warehouseOptions = computed(() => {
@@ -86,7 +86,17 @@ const warehouseOptions = computed(() => {
     : warehouses.filter(w => !w.isDefault && w.status === 'active')
   return src.map(w => ({ label: w.name, value: w.id }))
 })
-const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
 const statusOptions = [
   { label: 'Open',      value: 'open' },
   { label: 'Completed', value: 'completed' },
@@ -103,15 +113,15 @@ const {
       || row.shipmentNo.toLowerCase().includes(s)
       || row.assignee.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
-    const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
+    const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     const matchesStatus = !statusFilter.value || row.status === statusFilter.value
     return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
 watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = ''; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || !!statusFilter.value)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = '' }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -145,22 +155,28 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover v-if="!isScoped" id="shp-wh-filter" is-close-on-select>
+        <MpPopover v-if="!isScoped" id="shp-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="shp-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = ''"
+              id="shp-wh-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
-              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`shp-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
@@ -299,6 +315,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 <style scoped>
 .filter-left  { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Warehouse multi-select list */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
