@@ -188,6 +188,54 @@
   display: none;
 }
 
+/* MpPopover dropdown/menu (autocomplete, select, kebab, filter menus) — the
+   teleported content panel keeps its position/z-index inline styles, but the
+   list + items render UNSTYLED in this Pixel build: `.mp-popover-list-item`
+   collapses to `display:inline-block; padding:0`, so an opened dropdown shows as
+   a 1-line sliver with the options mashed together. Restore the list/item layout
+   here (the panel's open/close is toggled via inline `display`, untouched). */
+.mp-popover--isUnstyled_false {
+  border-radius: var(--mp-radii-lg, 8px);
+  overflow: auto;
+}
+.mp-popover-list {
+  display: flex;
+  flex-direction: column;
+  padding: var(--mp-spacing-1, 4px);
+  gap: 1px;
+}
+.mp-popover-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: var(--mp-sizes-9, 36px);
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px);
+  border: none;
+  background: transparent;
+  border-radius: var(--mp-radii-md, 6px);
+  font-size: var(--mp-font-sizes-md, 14px);
+  line-height: var(--mp-line-heights-md, 20px);
+  color: var(--mp-text-default);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mp-popover-list-item:hover,
+.mp-popover-list-item[data-active="true"] {
+  background: var(--mp-background-neutral-hovered);
+}
+/* inner label/value wrapper (label + trailing selected-check) — the atomic
+   `mp-d_flex mp-ai_center mp-jc_space-between mp-w_full` utilities may be absent. */
+.mp-popover-list-item > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-2, 8px);
+  width: 100%;
+}
+
 /* MpBadge (status chips) — pill shape + per-type fill/text colour, resolved from
    --mp-colors-* tokens (the badge's own mp-bg-c_* atomics aren't generated).
    Covers both `for_tableStatus` (table rows) and `for_additionalInformation`

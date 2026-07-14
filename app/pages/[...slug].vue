@@ -42,6 +42,7 @@ const pageRegistry: Record<string, Component> = {
   'Inbound completed': defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
   'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
   'Work orders':        defineAsyncComponent(() => import('~/components/pages/WorkOrdersIndexPage.vue')),
+  'Bill of materials':  defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsIndexPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
@@ -88,6 +89,8 @@ const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages
 const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateWorkOrderPage.vue'))
 const WorkOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
+const BillOfMaterialsDetailsPage = defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
+const CreateBillOfMaterialsPage = defineAsyncComponent(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
 const ProductionRequestIndexPage = defineAsyncComponent(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
 const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 const StockAdjustmentsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue'))
@@ -106,6 +109,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {
     return { component: WorkOrderDetailsPage, id: segs[1] }
+  }
+  // /bill-of-materials/new → create form; /:id → BOM detail.
+  // The bare index falls through to the registry.
+  if (segs.length >= 2 && segs[0] === 'bill-of-materials') {
+    if (segs[1] === 'new') return { component: CreateBillOfMaterialsPage, id: 'new' }
+    return { component: BillOfMaterialsDetailsPage, id: segs[1]! }
   }
   // /warehouse-transfers/new → create form; /:id/edit → edit form; /:id → detail.
   // The bare index falls through to the registry.
@@ -755,6 +764,14 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New work order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Bill of materials'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/bill-of-materials/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New bill of materials
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Inbound delivery'" class="page-title-actions">
