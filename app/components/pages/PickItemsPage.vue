@@ -360,6 +360,21 @@ const marketplaceOrderIds = computed(
   () => new Set((task.value?.salesOrderIds ?? []).filter(id => isMarketplaceOrder(outgoingOrders.find(o => o.id === id)))),
 )
 const hasMarketplaceOrder = computed(() => marketplaceOrderIds.value.size > 0)
+// Copy varies by whether EVERY order on this task is a marketplace order (whether
+// that's just 1 order total, or several that all happen to be marketplace), vs
+// a MIX of marketplace + non-marketplace orders on the same task — and singular
+// vs plural within each of those, since "This sales order" would be wrong
+// grammar once 2+ marketplace orders are involved.
+const marketplaceWarningText = computed(() => {
+  const total = task.value?.salesOrderIds.length ?? 0
+  const count = marketplaceOrderIds.value.size
+  if (count === 0) return ''
+  const suffix = 'must be fully picked before a packing task can be created — pick the remaining items later on a new picking list.'
+  if (count === total) {
+    return count > 1 ? `These sales orders ${suffix}` : `This sales order ${suffix}`
+  }
+  return count > 1 ? `There are sales orders in this picking list that ${suffix}` : `There is a sales order in this picking list that ${suffix}`
+})
 
 // This task's own outstanding qty is NOT enough to decide whether packing can be
 // created — an order can span several picking lists, so "fully picked" has to be
@@ -764,8 +779,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
           across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'item' : 'items' }}.
           This picking will be saved as <strong>partially picked</strong>.
           <template v-if="hasMarketplaceOrder">
-            A marketplace order here must be fully picked before a packing task can be created —
-            pick the remaining items later on a new picking list.
+            {{ marketplaceWarningText }}
           </template>
         </template>
         <template v-else>

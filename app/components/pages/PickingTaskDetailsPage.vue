@@ -21,7 +21,7 @@ import {
   type PickingTask,
 } from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
@@ -173,6 +173,22 @@ async function printPickingList() {
   pdfPreviewOpen.value = true
 }
 const cantPackModalOpen = ref(false)
+// Copy varies by whether EVERY order on this task is a marketplace order (1, or
+// several that all happen to be marketplace) vs a MIX of marketplace + non-marketplace
+// — same branching as PickItemsPage.vue's marketplaceWarningText, kept for defensive
+// consistency even though packableOrderIds() means this modal only ever fires for an
+// all-marketplace list in practice (a mixed list would already have a packable order).
+const cantPackText = computed(() => {
+  const t = task.value
+  const total = t?.salesOrderIds.length ?? 0
+  const count = (t?.salesOrderIds ?? []).filter(id => isMarketplaceOrder(outgoingOrders.find(o => o.id === id))).length
+  const suffix = 'must be picked in full — across every picking list that covers it — before a packing task can be created. Finish picking the remaining items, then come back here to create packing.'
+  const suffixPlural = suffix.replace('covers it', 'covers them')
+  if (count === total) {
+    return count > 1 ? `These sales orders ${suffixPlural}` : `This sales order ${suffix}`
+  }
+  return count > 1 ? `There are sales orders in this picking list that ${suffixPlural}` : `There is a sales order in this picking list that ${suffix}`
+})
 function createPacking() {
   // Packability is judged at the ORDER level across all picking lists, and an order
   // that already has a packing task created FROM THIS picking task is excluded —
@@ -651,9 +667,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       </MpModalHeader>
       <MpModalBody>
         <p style="margin:0;font-size:var(--mp-font-sizes-md);color:var(--mp-text-default)">
-          Marketplace orders must be picked in full — across every picking list that
-          covers them — before a packing task can be created. Finish picking the
-          remaining items, then come back here to create packing.
+          {{ cantPackText }}
         </p>
       </MpModalBody>
       <MpModalFooter>
