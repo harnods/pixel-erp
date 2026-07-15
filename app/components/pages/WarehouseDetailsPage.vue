@@ -554,6 +554,13 @@ const filteredSerialProducts = computed(() => {
 })
 function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' : 'serial numbers'}` }
 const hasBatchMergedRows = computed(() => filteredBatchProducts.value.length > 0)
+// Min. stock and Unit are rowspan'd across a group's batch rows, so a child row never
+// gets its own cell for them — its actual last <td> is only the table's true right edge
+// (safe to drop border-right) when nothing rowspan'd trails it: either Last updated is
+// visible (it always renders its own per-row cell) or both Min. stock and Unit are hidden.
+const batchChildRowEndsAtEdge = computed(() =>
+  batchColVisibility.lastUpdated || (!batchColVisibility.minStock && !batchColVisibility.unit)
+)
 const hasMultiLocProduct = computed(() => filteredStock.value.some((s: any) => (s.locations?.length ?? 0) > 1))
 const hasBatchTab  = computed(() => batchProducts.value.length > 0)
 const hasSerialTab = computed(() => serialProducts.value.length > 0)
@@ -1036,7 +1043,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
             <!-- custom table: Product & SKU are merged (rowspan) across each group's batch rows -->
             <div v-if="filteredBatchProducts.length" class="wh-batch-scroll">
-              <table :class="['wh-batch-table', { 'wh-batch-table--bordered': hasBatchMergedRows }]">
+              <table :class="['wh-batch-table', { 'wh-batch-table--bordered': hasBatchMergedRows, 'wh-batch-table--child-edge': batchChildRowEndsAtEdge }]">
                 <colgroup>
                   <col style="width: 320px" />
                   <col v-if="batchColVisibility.sku" style="width: 200px" />
@@ -2339,14 +2346,23 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
    No border-left on first col, no border-right on last col. */
 .wh-batch-table--bordered .wh-btd,
 .wh-batch-table--bordered .wh-bth { border-right: 1px solid var(--mp-border-default); }
-.wh-batch-table--bordered .wh-btd:last-child,
-.wh-batch-table--bordered .wh-bth:last-child { border-right: none; }
+.wh-batch-table--bordered .wh-bth:last-child,
+.wh-batch-table--bordered .wh-batch-group-row .wh-btd:last-child { border-right: none; }
+/* Min. stock/Unit are rowspan'd past the group row, so a child row's own last <td> is
+   only ever the true table edge (safe to drop the border) when nothing rowspan'd trails
+   it — see batchChildRowEndsAtEdge. Otherwise it must keep its border-right, since a
+   rowspan'd column still visually continues to its right in that row. */
+.wh-batch-table--bordered.wh-batch-table--child-edge .wh-batch-child-row .wh-btd:last-child { border-right: none; }
 /* last group has no trailing border (panel border closes it) */
 .wh-batch-table tbody tr:hover .wh-btd { background: var(--mp-background-neutral-hovered); }
 .wh-batch-group-row { cursor: pointer; }
 /* summary cells (Batch/Serial count, qty) align to the top so they line up with the
    first line of the tall product cell — including before the row is expanded */
 .wh-batch-group-row .wh-btd { vertical-align: top; }
+/* expanded batch child-row cells (batch no./location/expiry/qty/unit) also top-align, so
+   a taller sibling cell (e.g. a wrapped location) never pushes shorter ones down into a
+   visually-centered position within the same row */
+.wh-batch-child-row .wh-btd { vertical-align: top; }
 
 /* ── PIC tag chips (warehouse info) ── */
 .wh-pic-tags { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
