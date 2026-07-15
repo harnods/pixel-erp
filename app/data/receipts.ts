@@ -304,10 +304,16 @@ export function closeReceipt(id: string): void {
   persistReceipts();
 }
 
+/** A receipt can only be canceled while not yet completed/already-canceled — once
+ *  fully received, it's a permanent record of what actually came in. */
+export function canCancelReceipt(r: Receipt): boolean {
+  return r.status !== "completed" && r.status !== "canceled";
+}
+
 /** Cancel a receipt (PO) — terminal state; no further receiving/put-away can happen. */
 export function cancelReceipt(id: string): void {
   const r = receipts.find((x) => x.id === id);
-  if (!r) return;
+  if (!r || !canCancelReceipt(r)) return;
   r.status = "canceled";
   r.canceledDate = new Date(RECEIPT_TODAY).toISOString().slice(0, 10);
   persistReceipts();

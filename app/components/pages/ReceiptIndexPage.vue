@@ -11,7 +11,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { receiptsForStages, receiptStage, cancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
+import { receiptsForStages, receiptStage, cancelReceipt, canCancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 
@@ -268,11 +268,20 @@ function bulkEditTracking(selectedRows: Set<number>, deselectAll: () => void) {
 }
 
 // Cancel confirmation — shared by the single-row action and the bulk action.
+// Only receipts not yet completed/canceled are eligible — once fully received,
+// the PO is a permanent record.
+function cancelableSelection(selectedRows: Set<number>): Receipt[] {
+  const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as Receipt[]
+  return rows.filter(canCancelReceipt)
+}
+function bulkCancelable(selectedRows: Set<number>): boolean {
+  return cancelableSelection(selectedRows).length > 0
+}
 const cancelModalOpen = ref(false)
 const receiptsToCancel = ref<Receipt[]>([])
 function openCancelModal(row: Receipt) { receiptsToCancel.value = [row]; cancelModalOpen.value = true }
 function openBulkCancelModal(selectedRows: Set<number>, deselectAll: () => void) {
-  const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as Receipt[]
+  const rows = cancelableSelection(selectedRows)
   if (rows.length) { receiptsToCancel.value = rows; cancelModalOpen.value = true }
   deselectAll()
 }
@@ -333,6 +342,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="bulkEditTracking(selectedRows as Set<number>, deselectAll)">Edit tracking no.</MpPopoverListItem>
             <MpPopoverListItem
+              v-if="bulkCancelable(selectedRows as Set<number>)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openBulkCancelModal(selectedRows as Set<number>, deselectAll)"
             >Cancel receipt</MpPopoverListItem>
@@ -562,7 +572,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               @click="openDeleteModal(row as unknown as Receipt)"
             >Delete</MpPopoverListItem>
             <MpPopoverListItem
-              v-else
+              v-else-if="canCancelReceipt(row as unknown as Receipt)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as Receipt)"
             >Cancel receipt</MpPopoverListItem>
