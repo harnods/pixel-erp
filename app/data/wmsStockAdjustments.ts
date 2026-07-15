@@ -132,11 +132,22 @@ export function wmsAdjustmentWarehouseOptions(): { value: string; label: string 
   return [...seen.entries()].map(([value, label]) => ({ value, label }))
 }
 
-export function deleteWmsAdjustments(ids: string[]): void {
-  const set = new Set(ids)
-  for (let i = wmsStockAdjustments.length - 1; i >= 0; i--) {
-    if (set.has(wmsStockAdjustments[i]!.id)) wmsStockAdjustments.splice(i, 1)
-  }
+/** A WMS Stock In/Out record is completed the instant it's created (stock applies
+ *  immediately, no draft window) — nothing is ever cancelable there. A Cycle Count
+ *  task is cancelable while not yet started or still being counted; once finished,
+ *  applyStockCount has already run and the record is a permanent one. */
+export function canCancelWmsAdjustment(a: StockAdjustment): boolean {
+  return a.kind === 'count' && (a.status === 'not_started' || a.status === 'in_progress')
+}
+
+/** Cancel a not-yet-finished cycle count — it never gets counted/applied. Terminal
+ *  state; the record itself is kept (never deleted) so it stays in the audit trail. */
+export function cancelWmsAdjustment(id: string, reason?: string): void {
+  const a = wmsStockAdjustments.find((x) => x.id === id)
+  if (!a || !canCancelWmsAdjustment(a)) return
+  a.status = 'canceled'
+  a.canceledDate = new Date().toISOString()
+  if (reason) a.canceledReason = reason
   persist()
 }
 
