@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpDatePicker, MpCheckbox,
@@ -91,6 +91,12 @@ const statusIsDefault = computed(() =>
 function resetStatus() { statusFilter.value = [...DEFAULT_STATUSES] }
 
 const warehouseFilter = ref<string[]>([])
+// Mirror into the shared singleton so the tab bar's count badges (Receipts (N),
+// Receiving (N), Put-away (N)) scope to whatever warehouse this table is
+// actually filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
 const arrivalPreset = ref('') // '' | today | tomorrow | next7 | thismonth | custom
 const customFrom = ref('')    // DD/MM/YYYY
 const customTo = ref('')
@@ -226,17 +232,6 @@ function viewDetails(row: Receipt) { router.push(`/inbound-delivery/${row.id}`) 
 
 function purchaseReceiving(row: Receipt) { router.push(`/inbound-delivery/${row.id}/receive`) }
 
-// Bulk actions (stubs) — clear the selection after acting.
-function bulkPurchaseReceiving(deselectAll: () => void) { deselectAll() }
-
-// A purchase receiving task is scoped to one warehouse, so bulk-creating one across
-// receipts from different warehouses isn't valid. Once the selection spans more than
-// one warehouse, every bulk action except Cancel is hidden (Cancel is warehouse-agnostic).
-function selectionSpansWarehouses(selectedRows: Set<number>): boolean {
-  const ids = new Set([...selectedRows].map(i => paginated.value[i]?.warehouseId).filter(Boolean))
-  return ids.size > 1
-}
-
 // ─── Edit tracking no. modal (single row, or bulk grouped by PO) ────────────────
 interface TrackingGroup { receipt: Receipt; nos: string[] }
 const trackingModalOpen = ref(false)
@@ -321,16 +316,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @clear-filters="clearFilters"
   >
     <!-- ── Bulk actions ── -->
-    <!-- Purchase receiving is per-warehouse, so it's hidden for a mixed-warehouse selection.
-         Edit tracking no. / Cancel don't care about warehouse. -->
+    <!-- Purchase receiving is only ever created per-PO (its own form walks the
+         operator through picking SKUs/assignee for that one receipt) — no bulk
+         "create from multiple POs" action here, just Edit tracking no. / Cancel. -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
-      <button
-        v-if="!selectionSpansWarehouses(selectedRows as Set<number>)"
-        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-        @click="bulkPurchaseReceiving(deselectAll)"
-      >
-        Purchase receiving
-      </button>
       <MpPopover id="rcv-bulk-actions" is-close-on-select placement="bottom-start" use-portal>
         <MpPopoverTrigger>
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-after">
@@ -788,7 +777,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* Tracking no. — one or more, stacked; edit icon sits right next to the text (row hover) */
-.rcv-track-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; }
+.rcv-track-cell { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }
 .rcv-tracking { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .rcv-tracking__no { color: var(--mp-text-default); white-space: nowrap; }
 .rcv-tracking__empty { color: var(--mp-text-secondary); }

@@ -31,6 +31,12 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Filters ───────────────────────────────────────────────────────────────────
 const search = ref('')
 const warehouseFilter = ref<string[]>([])
+// Mirror into the shared singleton so the tab bar's count badges (Receipts (N),
+// Receiving (N), Put-away (N)) scope to whatever warehouse this table is
+// actually filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
 const assigneeFilter = ref('')
 const statusFilter = ref('') // '' | open | completed
 
