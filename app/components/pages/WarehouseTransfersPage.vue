@@ -5,7 +5,6 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
-import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
@@ -35,7 +34,6 @@ const columns: TableColumn[] = [
   { key: 'date',            label: 'Date',        width: '130px', sortable: true, sortType: 'date' },
   { key: 'originName',      label: 'Origin',      width: '220px', sortType: 'text' },
   { key: 'destinationName', label: 'Destination', width: '220px', sortType: 'text' },
-  { key: 'tags',            label: 'Tags',        width: '220px' },
   { key: 'lastUpdated',     label: 'Last updated', width: '220px' },
 ]
 
@@ -345,8 +343,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </button>
       </div>
     </template>
-
-    <template #cell-tags="{ value }"><ErpTagList :tags="(value as string[])" /></template>
 
     <!-- ── Last updated — timestamp + who (opt-in column) ── -->
     <template #cell-lastUpdated="{ row }">
