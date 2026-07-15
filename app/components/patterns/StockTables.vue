@@ -717,6 +717,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-btd { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; white-space: nowrap; background: var(--mp-background-neutral); }
 .wh-btd--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .wh-btd--product, .wh-btd--sku { vertical-align: top; white-space: normal; }
+/* Expanded batch child rows — batch no./location/expiry/qty/unit all top-align,
+   so a taller sibling cell (e.g. a wrapped location) never pushes shorter ones
+   into a visually-centered position within the same row. */
+.wh-batch-child-row .wh-btd { vertical-align: top; }
 /* All-column borders when merged rows are present. border-collapse merges adjacent rights → no doubling.
    No border-left on first col (table edge), no border-right on last col (table edge). */
 .wh-batch-table--bordered .wh-btd,
