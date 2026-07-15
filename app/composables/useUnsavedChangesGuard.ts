@@ -1,0 +1,80 @@
+import { ref, shallowRef, computed, onMounted, onUnmounted } from 'vue'
+
+/**
+ * Warns before unsaved form data is lost — refresh/close-tab via the browser's
+ * own beforeunload prompt (native, can't be customized — no way to offer
+ * "Save as draft" there, browsers block that by design), and in-app navigation
+ * (link clicks, Cancel buttons, the browser Back/Forward buttons) via a global
+ * router guard that blocks the navigation until the operator picks
+ * Cancel / Leave / Save as draft in a modal rendered at the app root.
+ *
+ * This app has exactly one real Vue Router route (app/pages/[...slug].vue, a
+ * catch-all) — every "page" is a component swapped in via <component :is>
+ * inside it, not a distinct route. So onBeforeRouteLeave/onBeforeRouteUpdate
+ * never fire (the matched route never changes, only its internal dispatch
+ * does). A global router.beforeEach (registered once, see
+ * plugins/unsaved-changes-guard.client.ts) intercepts every navigation attempt
+ * regardless of route-matching semantics, so it works here where the
+ * component-level guards can't.
+ */
+export interface UnsavedChangesGuardOptions {
+  /** Called at the moment of navigating away — return true while there's
+   *  something that would be lost. */
+  hasUnsavedChanges: () => boolean
+  /** Omit for forms with no draft concept — the modal then offers only Leave/Cancel. */
+  saveDraft?: () => void | Promise<void>
+}
+
+type Choice = 'leave' | 'draft' | 'cancel'
+
+// Shared singleton — the form page currently mounted "claims" this slot for its
+// lifetime; only one form is ever on screen at a time in this SPA. shallowRef,
+// not ref: a plain ref() deep-wraps whatever's assigned to it in a reactive()
+// proxy, so `activeGuard.value === options` in onUnmounted below would compare
+// a proxy against the raw object and never match — the slot would never
+// actually clear. shallowRef keeps the assigned value exactly as given.
+const activeGuard = shallowRef<UnsavedChangesGuardOptions | null>(null)
+const isOpen = ref(false)
+let resolveChoice: ((choice: Choice) => void) | null = null
+
+/** Called once, by the global plugin's router.beforeEach — not by page components. */
+export async function resolveNavigationAttempt(): Promise<boolean> {
+  const guard = activeGuard.value
+  if (!guard || !guard.hasUnsavedChanges()) return true
+  isOpen.value = true
+  const choice = await new Promise<Choice>((resolve) => { resolveChoice = resolve })
+  isOpen.value = false
+  if (choice === 'cancel') return false
+  if (choice === 'draft') await guard.saveDraft?.()
+  return true
+}
+
+/** Root-level modal state — rendered exactly once, in [...slug].vue, since it
+ *  must survive whichever virtual page is currently mounted. */
+export function useUnsavedChangesModalState() {
+  return {
+    isOpen,
+    hasSaveDraft: computed(() => !!activeGuard.value?.saveDraft),
+    chooseLeave: () => resolveChoice?.('leave'),
+    chooseDraft: () => resolveChoice?.('draft'),
+    chooseCancel: () => resolveChoice?.('cancel'),
+  }
+}
+
+/** Called by each form page — registers/unregisters itself as "the form with
+ *  something to lose" for the lifetime of that page. */
+export function useUnsavedChangesGuard(options: UnsavedChangesGuardOptions) {
+  function handleBeforeUnload(e: BeforeUnloadEvent) {
+    if (!options.hasUnsavedChanges()) return
+    e.preventDefault()
+    e.returnValue = ''
+  }
+  onMounted(() => {
+    activeGuard.value = options
+    window.addEventListener('beforeunload', handleBeforeUnload)
+  })
+  onUnmounted(() => {
+    if (activeGuard.value === options) activeGuard.value = null
+    window.removeEventListener('beforeunload', handleBeforeUnload)
+  })
+}

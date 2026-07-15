@@ -22,10 +22,16 @@ import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
+import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
 const router = useRouter()
+
+// Unsaved-changes confirmation modal — lives here (not in each form page) since
+// this is the one component that survives every virtual page swap.
+const unsavedChangesModal = useUnsavedChangesModalState()
 
 // Browser tab title: "Mekari ERP | <module>"
 useHead({
@@ -1223,6 +1229,14 @@ function startResize(e: MouseEvent) {
     </Transition>
 
   </div>
+
+  <UnsavedChangesModal
+    :is-open="unsavedChangesModal.isOpen.value"
+    :has-save-draft="unsavedChangesModal.hasSaveDraft.value"
+    @leave="unsavedChangesModal.chooseLeave"
+    @draft="unsavedChangesModal.chooseDraft"
+    @cancel="unsavedChangesModal.chooseCancel"
+  />
 </template>
 
 <style scoped>

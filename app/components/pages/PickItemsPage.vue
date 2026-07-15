@@ -12,6 +12,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 import { getPickingLineItems, getPickingGroupedItems, type PickLineItem, type PickGroupItem } from '~/data/pickingTaskDetails'
 import {
   getPickingTask, savePickingDraft, endPicking, packableOrderIds,
@@ -626,6 +627,19 @@ function saveDraft() {
 }
 function goBack() { router.push(`/picking/${props.orderId}`) }
 function goPicking() { router.push('/outbound-delivery?tab=Picking') }
+
+// ── Warn before losing unsaved picks — refresh/close-tab (native prompt) and
+// in-app navigation/Back button (modal rendered once at the app root, see
+// [...slug].vue — this app has a single catch-all route, so a per-page modal/
+// onBeforeRouteLeave never fires). "Unsaved" = anything picked at all (plain
+// qty, batch, or serial), same effectivePickedQty() already used above. ──────
+useUnsavedChangesGuard({
+  hasUnsavedChanges: () => draftPickedTotal.value > 0,
+  saveDraft: () => {
+    savePickingDraft(props.orderId, buildPickedMap(), buildAssignments())
+    toast.notify({ variant: 'success', title: 'Picking draft saved', maxWidth: 'max-content' })
+  },
+})
 
 // ── Footer divider ────────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)
