@@ -1,6 +1,8 @@
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
 export type InvoiceStatus    = 'paid' | 'open' | 'overdue'
+export type BillStatus       = 'open' | 'paid' | 'unpaid' | 'overdue' | 'draft'
+export type FileClassification = 'bill' | 'receipt' | 'unclassified'
 export type SalesOrderStatus = 'open' | 'partially processed' | 'closed' | 'voided'
 export type SalesQuoteStatus = 'open' | 'closed' | 'declined'
 export type ProductStatus    = 'active' | 'inactive'
@@ -73,6 +75,30 @@ export interface PurchaseInvoice {
   itemCount: number
   hasAttachment?: boolean
   tags?: string[]
+}
+
+export interface Bill {
+  id: string
+  number: number                            // rendered as "Expense #00001"
+  beneficiary: { id: string; name: string } // customer or vendor
+  category: string
+  date: string
+  dueDate: string
+  total: number         // bill total IDR
+  balanceDue: number    // remaining unpaid amount IDR (0 when fully paid)
+  status: BillStatus
+  tags?: string[]
+}
+
+export interface ReviewFile {
+  id: string
+  file: string                               // uploaded filename
+  number: number                             // rendered as "Expense #00001"
+  beneficiary: { id: string; name: string }  // customer or vendor
+  confidence: number                         // AI extraction confidence, 0-100
+  classification: FileClassification
+  date: string
+  amount: number
 }
 
 export interface SalesOrderItem {

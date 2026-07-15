@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, type Component, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { MpBadge } from '@mekari/pixel3'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
@@ -12,6 +13,8 @@ syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
+import { bills } from '~/data/bills'
+import { reviewFiles } from '~/data/reviewFiles'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
@@ -49,6 +52,9 @@ const NewWarehousePage = defineAsyncComponent(() => import('~/components/pages/N
 const WarehouseDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const StorageLocationDetailsPage = defineAsyncComponent(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
+const BillsIndexPage = defineAsyncComponent(() => import('~/components/pages/BillsIndexPage.vue'))
+const BillsAwaitingApprovalPage = defineAsyncComponent(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
+const BillsReviewFilesPage = defineAsyncComponent(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const ReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceiptDetailsPage.vue'))
 const PartialReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
@@ -193,6 +199,7 @@ const pageTabs: Record<string, string[]> = {
   'Barang keluar': ['Outgoing', 'Picking', 'Packing', 'Delivery'],
   'Barang masuk': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
+  'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -227,6 +234,12 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Warehouse transfers') {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Expenses') {
+    const out: Record<string, number> = {}
+    if (bills.length) out['Awaiting Approval'] = bills.length
+    if (reviewFiles.length) out['Review files'] = reviewFiles.length
+    return out
   }
   return {}
 })
@@ -267,6 +280,11 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,
     'Awaiting approval': WarehouseTransfersPage,
+  },
+  'Expenses': {
+    'Bills': BillsIndexPage,
+    'Awaiting Approval': BillsAwaitingApprovalPage,
+    'Review files': BillsReviewFilesPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -761,6 +779,65 @@ function startResize(e: MouseEvent) {
             New purchase invoice
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Expenses'" class="page-title-actions">
+          <!-- Import button + dropdown -->
+          <div ref="importBtnWrapEl" class="import-wrap">
+            <button
+              class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
+              :class="{ 'btn-enterprise--active': importDropdownOpen }"
+              @click.stop="importDropdownOpen = !importDropdownOpen"
+            >
+              Import
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
+              >
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+            <!-- Dropdown -->
+            <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
+
+              <!-- Group 1: spreadsheet + upload bills -->
+              <div class="import-group import-group--bordered">
+                <button class="import-item">Import from spreadsheet</button>
+                <button class="import-item import-item--ai">
+                  <span>Upload bills</span>
+                  <span class="ai-badge">
+                    <img
+                      src="https://www.figma.com/api/mcp/asset/b87bbbb6-b7ca-46be-a6a9-755ab81fefe6"
+                      width="12" height="12" alt="" class="ai-badge__icon"
+                    />
+                    <span class="ai-badge__label">AI</span>
+                  </span>
+                </button>
+              </div>
+
+              <!-- Group 2: Forward bills to -->
+              <div class="import-group">
+                <div class="import-forward">
+                  <div class="import-forward__labels">
+                    <span class="import-forward__title">Forward bills to</span>
+                    <span class="import-forward__email">dropbox.680128@jurnal.id</span>
+                  </div>
+                  <a class="import-forward__copy" @click.prevent>Copy address</a>
+                  <p class="import-forward__desc">
+                    Any bill or receipt attachment forwarded to this email will be automatically recorded as a draft.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New expense
+          </button>
+        </div>
         <div v-else-if="showNewPurchaseOrder" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
             Import
@@ -794,7 +871,14 @@ function startResize(e: MouseEvent) {
           @click="selectTab(tab)"
         >
           {{ tab }}
-          <span v-if="currentTabCounts[tab] != null" class="page-tab-count">{{ currentTabCounts[tab] }}</span>
+          <MpBadge
+            v-if="currentTabCounts[tab] != null"
+            for="additionalInformation"
+            type="warning"
+            class="page-tab-count"
+          >
+            {{ currentTabCounts[tab] }}
+          </MpBadge>
         </button>
       </div>
 
@@ -1270,19 +1354,7 @@ function startResize(e: MouseEvent) {
 
 /* Count badge on a tab */
 .page-tab-count {
-  min-width: var(--mp-sizes-5);
-  padding: 0 var(--mp-spacing-1\.5);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral-pressed);
-  font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg, 24px);
-  color: var(--mp-text-secondary);
-  text-align: center;
-}
-.page-tab--active .page-tab-count {
-  background: var(--mp-background-brand, var(--mp-text-selected));
-  color: var(--mp-text-inverse, #fff);
+  margin-left: var(--mp-spacing-1);
 }
 
 .page-tab:not(.page-tab--active):hover {

@@ -43,11 +43,12 @@ const statusConfig: Record<string, StatusConfig> = {
   invoiced:   { type: 'completed',    label: 'Invoiced'   },
   received:   { type: 'completed',    label: 'Received'   },
   shipped:    { type: 'completed',    label: 'Shipped'    },
+  high:       { type: 'completed',    label: 'High'       },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
+  unpaid:     { type: 'warning',      label: 'Unpaid'     },
   pending:    { type: 'warning',      label: 'Pending'    },
-  draft:      { type: 'warning',      label: 'Draft'      },
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
   receiving:  { type: 'warning',      label: 'Receiving'  },
@@ -59,6 +60,7 @@ const statusConfig: Record<string, StatusConfig> = {
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
+  medium:     { type: 'warning',      label: 'Medium'     },
 
   // ── critical — red ────────────────────────────────
   overdue:    { type: 'critical',     label: 'Overdue'    },
@@ -67,8 +69,10 @@ const statusConfig: Record<string, StatusConfig> = {
   expired:    { type: 'critical',     label: 'Expired'    },
   error:      { type: 'critical',     label: 'Error'      },
   declined:   { type: 'critical',     label: 'Declined'   },
+  low:        { type: 'critical',     label: 'Low'        },
 
   // ── announcement — GRAY (neutral / final / inactive) ──
+  draft:      { type: 'announcement', label: 'Draft'      },
   closed:     { type: 'announcement', label: 'Closed'     },
   voided:     { type: 'announcement', label: 'Voided'     },
   inactive:   { type: 'announcement', label: 'Inactive'   },
@@ -78,8 +82,11 @@ const statusConfig: Record<string, StatusConfig> = {
   'not started':{ type: 'announcement', label: 'Not started' },
   'to do':    { type: 'announcement', label: 'To do'      },
   direct:     { type: 'announcement', label: 'Direct'     },
+  unclassified:{ type: 'announcement', label: 'Unclassified' },
 
   // ── information — blue ────────────────────────────
+  bill:       { type: 'information',  label: 'Bill'       },
+  receipt:    { type: 'information',  label: 'Receipt'    },
   'partially processed': { type: 'information', label: 'Partially processed' },
   'partially received': { type: 'information', label: 'Partially received' },
   'partial reception': { type: 'information', label: 'Partial reception' },
