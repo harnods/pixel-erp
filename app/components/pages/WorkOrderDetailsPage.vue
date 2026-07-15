@@ -18,12 +18,14 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
+import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const route = useRoute()
 
 const wo = computed<WorkOrder | undefined>(() => workOrders.find(w => w.id === props.orderId))
+const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
 
 function goList() { router.push('/work-orders') }
 
@@ -49,11 +51,8 @@ function formatIDR(n: number) {
 }
 const num = (n: number) => n.toLocaleString('id-ID')
 
-// BOM no. derived from the work order number's running suffix (e.g. WO-2026-0006 → #10006)
-const bomNo = computed(() => {
-  const suffix = Number(wo.value?.number.split('-').pop() ?? 0)
-  return `Bill of Materials #${10000 + suffix}`
-})
+// BOM no. — the real BOM this work order was raised from.
+const bomNo = computed(() => bom.value?.number ?? '—')
 const planRange = computed(() => wo.value ? `${formatDate(wo.value.planStartDate)} - ${formatDate(wo.value.planEndDate)}` : '—')
 
 // ── Header status → primary action ──────────────────────────────────────────────
@@ -80,9 +79,8 @@ const actionItems = computed(() => {
 
 // ── Attachments (representative) ────────────────────────────────────────────────
 const attachments = [
-  { name: 'applying paint to skateboard wood tutorial.pdf' },
-  { name: 'detail & finishing skateboard.pdf' },
-  { name: 'basic skateboard building guide.pdf' },
+  { name: 'production guide.pdf' },
+  { name: 'quality checklist.pdf' },
 ]
 
 // ── Collapsible sections ──────────────────────────────────────────────────────
@@ -111,48 +109,58 @@ function consumedFor(needed: number) {
 const showStart = computed(() => !['not started', 'canceled'].includes(wo.value?.status ?? ''))
 const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].includes(wo.value?.status ?? ''))
 
-// ── Mock line-item data (consistent with the Figma reference) ───────────────────
-// `adjusted` = needed qty after the "adjust work order" action (differs from needed
-// on rows that were adjusted).
-const rawMaterials = [
-  { product: 'Board',  sku: 'SKU ID10011', purchaseCost: 100_000, warehouse: 'Production Jakarta', needed: 10, adjusted: 12, unit: 'Pcs' },
-  { product: 'Screws', sku: 'SKU ID10040', purchaseCost: 2_000,   warehouse: 'Production Jakarta', needed: 80, adjusted: 80, unit: 'Pcs' },
-  { product: 'Wheels', sku: 'SKU ID10271', purchaseCost: 30_000,  warehouse: 'Production Jakarta', needed: 40, adjusted: 40, unit: 'Pcs' },
-  { product: 'Trucks', sku: 'SKU ID10012', purchaseCost: 50_000,  warehouse: 'Production Jakarta', needed: 20, adjusted: 22, unit: 'Pcs' },
-]
+// ── Line-item data — sourced from the real BOM this work order was raised from ──
+// `adjusted` = needed qty after the "adjust work order" action; the BOM template
+// doesn't track an execution warehouse, so a representative default is used.
+const EXECUTION_WAREHOUSE = 'Production Jakarta'
+const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
+  const p = catalogProduct(r.productId)
+  return { product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, adjusted: r.needed, unit: r.unit }
+}))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
-const rawSubtotal = computed(() => rawMaterials.reduce((s, r) => s + rawEst(r), 0))
+const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
 
-const productionCost = [
-  { group: 'Labor cost',    account: 'Worker',      driver: 'Person', unitCost: 100_000, multiplier: 1 },
-  { group: 'Overhead cost', account: 'Electricity', driver: 'Kwh',    unitCost: 1_000,   multiplier: 50 },
-  { group: 'Other costs',   account: '',            driver: '',       unitCost: 0,       multiplier: 0 },
-]
+const PRODUCTION_COST_GROUPS = ['Labor', 'Overhead', 'Other'] as const
+const productionCost = computed(() => PRODUCTION_COST_GROUPS.map(g => {
+  const row = (bom.value?.productionCost ?? []).find(c => c.group === g)
+  return { group: `${g} cost`, account: row?.account ?? '', driver: row?.costDriver ?? '', unitCost: row?.amount ?? 0, multiplier: row ? 1 : 0 }
+}))
 const costAmount = (c: { unitCost: number; multiplier: number }) => c.unitCost * c.multiplier
-const productionCostSubtotal = computed(() => productionCost.reduce((s, c) => s + costAmount(c), 0))
+const productionCostSubtotal = computed(() => productionCost.value.reduce((s, c) => s + costAmount(c), 0))
 
-const routing = [
-  { process: 'Fitting',   description: 'Check every components before start assembling', mapping: 'Routing cost', planStart: '2026-03-01', planEnd: '2026-03-01', amount: 25_000 },
-  { process: 'Assembly',  description: 'Follow the instruction guide to assembly',       mapping: 'Routing cost', planStart: '2026-03-01', planEnd: '2026-03-09', amount: 25_000 },
-  { process: 'Finishing', description: 'Apply paint and coating',                        mapping: 'Routing cost', planStart: '2026-03-09', planEnd: '2026-03-10', amount: 25_000 },
-]
-const routingSubtotal = computed(() => routing.reduce((s, r) => s + r.amount, 0))
+const routing = computed(() => (bom.value?.routing ?? []).map(r => ({
+  process: r.process, description: r.description, mapping: r.accountMapping,
+  planStart: wo.value?.planStartDate ?? '', planEnd: wo.value?.planEndDate ?? '', amount: r.amount,
+})))
+const routingSubtotal = computed(() => routing.value.reduce((s, r) => s + r.amount, 0))
 const totalProductionCost = computed(() => rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value)
 
-const mainOutput = computed(() => ({
-  product: wo.value?.bomName ?? '—', sku: 'SB-001', qty: wo.value?.producedQty ?? 0, unit: 'Pcs', percentage: 90,
-  estCost: Math.round(totalProductionCost.value * 0.9),
+const otherOutputs = computed(() => (bom.value?.otherOutputs ?? []).map(o => {
+  const p = catalogProduct(o.productId)
+  return { product: p?.name ?? '—', sku: p?.sku ?? '—', qty: o.qty, unit: o.unit, percentage: o.percentage, estCost: o.estCost }
 }))
-const otherOutputs = computed(() => ([
-  { product: 'Sawdust', sku: 'SK-492', qty: 50, unit: 'g', percentage: 5, estCost: Math.round(totalProductionCost.value * 0.05) },
-]))
-const productionWaste = computed(() => ([
-  { mapping: 'Production waste', method: 'Percentage', percentage: 5, amount: Math.round(totalProductionCost.value * 0.05) },
-]))
-const mainOutputSubtotal = computed(() => mainOutput.value.estCost)
 const otherOutputsSubtotal = computed(() => otherOutputs.value.reduce((s, r) => s + r.estCost, 0))
+
+const productionWaste = computed(() => (bom.value?.productionWaste ?? []).map(w => ({
+  mapping: w.accountMapping, method: w.allocationMethod, percentage: w.percentage, amount: w.amount,
+})))
 const wasteSubtotal = computed(() => productionWaste.value.reduce((s, r) => s + r.amount, 0))
-const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutputsSubtotal.value)
+
+// Main output absorbs whatever production cost isn't allocated to other outputs/waste.
+const mainOutput = computed(() => {
+  const fg = bom.value ? catalogProduct(bom.value.finishedGoodId) : undefined
+  const estCost = Math.max(0, totalProductionCost.value - otherOutputsSubtotal.value - wasteSubtotal.value)
+  return {
+    product: fg?.name ?? wo.value?.bomName ?? '—',
+    sku: fg?.sku ?? '—',
+    qty: wo.value?.producedQty || bom.value?.finishedGoodQty || 0,
+    unit: bom.value?.finishedGoodUnit ?? 'Pcs',
+    percentage: bom.value?.finishedGoodPercentage ?? 100,
+    estCost,
+  }
+})
+const mainOutputSubtotal = computed(() => mainOutput.value.estCost)
+const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutputsSubtotal.value + wasteSubtotal.value)
 </script>
 
 <template>

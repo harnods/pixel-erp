@@ -5,11 +5,13 @@
  */
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
-import { billOfMaterials, type BillOfMaterials } from '~/data/billOfMaterials'
+import BillOfMaterialsFiltersDrawer, { type BomFiltersValue } from '~/components/patterns/BillOfMaterialsFiltersDrawer.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { billOfMaterials, catalogProduct, persistBillOfMaterials, type BillOfMaterials } from '~/data/billOfMaterials'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -40,10 +42,41 @@ const COSTING_OPTIONS: { label: string; value: BillOfMaterials['costingReference
 const costingFilter = ref('')
 const costingLabel = computed(() => COSTING_OPTIONS.find(o => o.value === costingFilter.value)?.label ?? '')
 
+// Finished goods — every registered product actually used as a BOM's main output.
+const finishedGoodOptions = computed(() => {
+  const seen = new Map<string, string>()
+  for (const b of billOfMaterials) {
+    if (!seen.has(b.finishedGoodId)) seen.set(b.finishedGoodId, catalogProduct(b.finishedGoodId)?.name ?? b.finishedGoodId)
+  }
+  return [...seen].map(([id, name]) => ({ id, name }))
+})
+const finishedGoodFilter = ref('')
+const showArchived = ref(false)
+
+// ─── All filters drawer ─────────────────────────────────────────────────────────
+const isFiltersDrawerOpen = ref(false)
+const drawerCategoryOptions = computed(() => CATEGORY_OPTIONS.map(o => ({ id: o.value, name: o.label })))
+const drawerCostingOptions = computed(() => COSTING_OPTIONS.map(o => ({ id: o.value, name: o.label })))
+const drawerValue = computed<BomFiltersValue>(() => ({
+  keyword: search.value,
+  category: categoryFilter.value,
+  costingReference: costingFilter.value,
+  finishedGoodId: finishedGoodFilter.value,
+  showArchived: showArchived.value,
+}))
+function applyDrawerFilters(v: BomFiltersValue) {
+  search.value = v.keyword
+  categoryFilter.value = v.category
+  costingFilter.value = v.costingReference
+  finishedGoodFilter.value = v.finishedGoodId
+  showArchived.value = v.showArchived
+}
+
 // ─── Rows / table state ─────────────────────────────────────────────────────────
 // Prototype preview toggle (FAB, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
 const rows = computed<BillOfMaterials[]>(() => (previewMode.value === 'empty' ? [] : billOfMaterials))
+function finishedGoodName(row: BillOfMaterials) { return catalogProduct(row.finishedGoodId)?.name ?? '—' }
 
 const {
   search, currentPage, paginated, total, perPage,
@@ -54,22 +87,53 @@ const {
     const matchesSearch = !s
       || row.number.toLowerCase().includes(s)
       || row.name.toLowerCase().includes(s)
-      || row.finishedGood.toLowerCase().includes(s)
+      || finishedGoodName(row).toLowerCase().includes(s)
       || row.description.toLowerCase().includes(s)
     const matchesCategory = !categoryFilter.value || row.category === categoryFilter.value
     const matchesCosting = !costingFilter.value || row.costingReference === costingFilter.value
-    return matchesSearch && matchesCategory && matchesCosting
+    const matchesFinishedGood = !finishedGoodFilter.value || row.finishedGoodId === finishedGoodFilter.value
+    const matchesArchived = showArchived.value || !row.archived
+    return matchesSearch && matchesCategory && matchesCosting && matchesFinishedGood && matchesArchived
   },
 })
+// Newest first by default.
+sortKey.value = 'number'
+sortDir.value = 'desc'
 
 // Reset to page 1 when the extra (non-built-in) filters change
-watch([categoryFilter, costingFilter], () => setPage(1))
+watch([categoryFilter, costingFilter, finishedGoodFilter, showArchived], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!categoryFilter.value || !!costingFilter.value)
+const hasActiveFilter = computed(() =>
+  !!search.value || !!categoryFilter.value || !!costingFilter.value || !!finishedGoodFilter.value || showArchived.value,
+)
 function clearFilters() {
   search.value = ''
   categoryFilter.value = ''
   costingFilter.value = ''
+  finishedGoodFilter.value = ''
+  showArchived.value = false
+}
+
+function archiveBom(row: BillOfMaterials) {
+  row.archived = true
+  persistBillOfMaterials()
+  toast.notify({ variant: 'success', title: 'Bill of materials deleted' })
+}
+
+// ─── Delete confirmation ────────────────────────────────────────────────────────
+const isDeleteModalOpen = ref(false)
+const bomToDelete = ref<BillOfMaterials | null>(null)
+function openDeleteModal(row: BillOfMaterials) {
+  bomToDelete.value = row
+  isDeleteModalOpen.value = true
+}
+function confirmDelete() {
+  if (bomToDelete.value) archiveBom(bomToDelete.value)
+  bomToDelete.value = null
+}
+
+function duplicateBom(row: BillOfMaterials) {
+  router.push(`/bill-of-materials/new?duplicate=${encodeURIComponent(row.id)}`)
 }
 
 // ─── Column show/hide ───────────────────────────────────────────────────────────
@@ -164,7 +228,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="filter-all-btn">
+        <button class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
           <MpIcon name="filter" size="sm" />
           All filters
         </button>
@@ -217,6 +281,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <span class="bom-name">{{ value }}</span>
     </template>
 
+    <!-- ── Finished good — resolved from the registered product ── -->
+    <template #cell-finishedGood="{ row }">
+      <span class="bom-finished-good">{{ finishedGoodName(row as unknown as BillOfMaterials) }}</span>
+    </template>
+
     <!-- ── Description — em dash when empty, wraps to multiple lines ── -->
     <template #cell-description="{ value }">
       <span v-if="value" class="bom-description">{{ value }}</span>
@@ -236,8 +305,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as BillOfMaterials)">View details</MpPopoverListItem>
-            <MpPopoverListItem>Duplicate</MpPopoverListItem>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Delete</MpPopoverListItem>
+            <MpPopoverListItem @click="duplicateBom(row as unknown as BillOfMaterials)">Duplicate</MpPopoverListItem>
+            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal(row as unknown as BillOfMaterials)">Delete</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -263,6 +332,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
+
+  <!-- ── Delete confirmation ── -->
+  <ConfirmModal
+    v-model:is-open="isDeleteModalOpen"
+    title="Delete bill of materials?"
+    :description="`${bomToDelete?.number ?? ''} will be removed from the list. You can still find it via the Show archived BOM filter.`"
+    @confirm="confirmDelete"
+  />
+
+  <!-- ── All filters drawer ── -->
+  <BillOfMaterialsFiltersDrawer
+    v-model:is-open="isFiltersDrawerOpen"
+    :model-value="drawerValue"
+    :category-options="drawerCategoryOptions"
+    :costing-options="drawerCostingOptions"
+    :finished-good-options="finishedGoodOptions"
+    @apply="applyDrawerFilters"
+  />
 
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="bom-demo-fab" is-close-on-select use-portal placement="top-end">
@@ -326,6 +413,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .bom-muted { color: var(--mp-text-secondary); }
 /* Name & description wrap to multiple lines (row auto-switches to top-aligned) */
 .bom-name { white-space: normal; }
+.bom-finished-good { white-space: normal; }
 .bom-description { white-space: normal; }
 
 /* Number cell hover chip */

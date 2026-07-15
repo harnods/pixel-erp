@@ -227,6 +227,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
+    <!-- ── BOM name — wraps to multiple lines (real BOM names can be long) ── -->
+    <template #cell-bomName="{ value }">
+      <span class="wo-bom-name">{{ value }}</span>
+    </template>
+
     <!-- ── Track routing — Yes / No ── -->
     <template #cell-trackRouting="{ value }">{{ value ? 'Yes' : 'No' }}</template>
 
@@ -358,6 +363,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* ── Cells ──────────────────────────────────────────────────────────────── */
 .wo-muted { color: var(--mp-text-secondary); }
+.wo-bom-name { white-space: normal; }
 
 /* Number cell hover chip */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }

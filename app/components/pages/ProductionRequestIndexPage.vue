@@ -7,12 +7,16 @@ import {
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import ColumnSettingsMenu, { type ColumnSettingItem } from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
+import AdvanceDateFilter from '~/components/patterns/AdvanceDateFilter.vue'
 import WorkOrderPreviewDrawer, { type PreviewCtx } from '~/components/WorkOrderPreviewDrawer.vue'
 import CreateWorkOrderModal from '~/components/CreateWorkOrderModal.vue'
+import RejectProductionRequestModal, { type RejectContext } from '~/components/RejectProductionRequestModal.vue'
 import { formatDate } from '~/utils/date'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
+import { dateFilterMatches, toIso, type DateFilterValue } from '~/utils/dateFilter'
 import {
   productionRequestsByStatus, prRequestsOf, prAggregate, prChildRemaining, prEarliestDue,
+  rejectProductionRequest,
   type PrProduct, type PrRequest, type PrSource, type PrStatus,
 } from '~/data/productionRequests'
 
@@ -96,33 +100,21 @@ const visibleValueColumns = computed(() => valueColumns.value.filter(c => column
 // ─── Filters ────────────────────────────────────────────────────────────────────
 const search = ref('')
 
-// Due date filter (Pending tab only) — a placeholder that opens a popover of ranges.
-type DueFilter = '' | 'today' | 'tomorrow' | 'next7' | 'month' | 'custom'
-const dueFilter = ref<DueFilter>('')
-const dueFilterOptions: { label: string; value: Exclude<DueFilter, ''> }[] = [
-  { label: 'Today',             value: 'today' },
-  { label: 'Tomorrow',          value: 'tomorrow' },
-  { label: 'Next 7 days',       value: 'next7' },
-  { label: 'This month',        value: 'month' },
-  { label: 'Custom date range', value: 'custom' },
-]
-const dueFilterLabel = computed(() => dueFilterOptions.find(o => o.value === dueFilter.value)?.label ?? '')
+// Date filter — the advanced date popover (Time range presets + Per day/week/
+// month/quarter/year/Custom). Filters against the tab's own date field:
+// Pending → dueDate, Completed → completeDate, Rejected → rejectDate.
+// Pending starts unset (placeholder "Due date"); Completed/Rejected default to
+// "Last 30 days" per the design.
+const dateFieldForTab: Record<PrStatus, 'dueDate' | 'completeDate' | 'rejectDate'> = {
+  pending: 'dueDate', completed: 'completeDate', rejected: 'rejectDate',
+}
+const dateFilterPlaceholder: Record<PrStatus, string> = {
+  pending: 'Due date', completed: 'Complete date', rejected: 'Reject date',
+}
+const dateFilter = ref<DateFilterValue | null>(props.tab === 'pending' ? null : { mode: 'last30' })
 
 // Reference "today" is anchored to the mock's timeline so the ranges hit real rows.
 const TODAY = new Date('2026-07-06T00:00:00')
-function startOfDay(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
-function dueInRange(iso?: string): boolean {
-  if (!iso) return false
-  const d = startOfDay(new Date(iso))
-  const t = startOfDay(TODAY)
-  switch (dueFilter.value) {
-    case 'today':    return d.getTime() === t.getTime()
-    case 'tomorrow': return d.getTime() === t.getTime() + 86_400_000
-    case 'next7':    return d.getTime() >= t.getTime() && d.getTime() <= t.getTime() + 7 * 86_400_000
-    case 'month':    return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth()
-    default:         return true // '' or 'custom' → no date filtering in the prototype
-  }
-}
 
 const baseProducts = computed<PrProduct[]>(() =>
   demoState.value === 'data' ? productionRequestsByStatus(props.tab) : [],
@@ -130,7 +122,7 @@ const baseProducts = computed<PrProduct[]>(() =>
 
 const filteredProducts = computed<PrProduct[]>(() => {
   const s = search.value.toLowerCase().trim()
-  const applyDue = props.tab === 'pending' && dueFilter.value !== '' && dueFilter.value !== 'custom'
+  const field = dateFieldForTab[props.tab]
   const rows = baseProducts.value.filter((p) => {
     const matchesSearch = !s
       || p.productName.toLowerCase().includes(s)
@@ -138,16 +130,16 @@ const filteredProducts = computed<PrProduct[]>(() => {
       || p.sources.some(src =>
         src.sourceNo.toLowerCase().includes(s)
         || src.requests.some(r => r.requestNo.toLowerCase().includes(s) || (r.memo?.toLowerCase().includes(s) ?? false)))
-    const matchesDue = !applyDue || prRequestsOf(p).some(r => dueInRange(r.dueDate))
-    return matchesSearch && matchesDue
+    const matchesDate = prRequestsOf(p).some(r => dateFilterMatches(r[field], dateFilter.value, TODAY))
+    return matchesSearch && matchesDate
   })
   // Stable ordering: Pending sorts by earliest due date.
   if (props.tab !== 'pending') return rows
   return [...rows].sort((a, b) => prEarliestDue(a).localeCompare(prEarliestDue(b)))
 })
 
-const hasActiveFilter = computed(() => !!search.value || !!dueFilter.value)
-function clearFilters() { search.value = ''; dueFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || !!dateFilter.value)
+function clearFilters() { search.value = ''; dateFilter.value = null }
 
 // ─── Pagination ─────────────────────────────────────────────────────────────────
 const currentPage = ref(1)
@@ -157,7 +149,7 @@ const pagedProducts = computed(() => {
   const start = (currentPage.value - 1) * perPage.value
   return filteredProducts.value.slice(start, start + perPage.value)
 })
-watch([search, dueFilter, () => props.tab, perPage], () => { currentPage.value = 1 })
+watch([search, dateFilter, () => props.tab, perPage], () => { currentPage.value = 1 })
 
 // ─── Accordion expand — all products start collapsed ────────────────────────────
 const openRows = ref(new Set<string>())
@@ -208,8 +200,32 @@ function notifySoon(label: string) {
 // Row actions (kebab) — Pending tab only.
 const hasActions = computed(() => props.tab === 'pending')
 
-function rejectRow(label: string) {
-  toast.notify({ variant: 'information', title: `${label} rejected` })
+// ─── Reject production request ───────────────────────────────────────────────
+// Only ever launched from a production REQUEST (child) row — the product (parent)
+// row has no reject option, since there's no single request/qty to reject there.
+const rejectModalOpen = ref(false)
+const rejectContext = ref<RejectContext | null>(null)
+const rejectTarget = ref<{ productId: string; sourceNo: string; requestNo: string } | null>(null)
+
+function openRejectModal(p: PrProduct, src: PrSource, r: PrRequest) {
+  rejectTarget.value = { productId: p.id, sourceNo: src.sourceNo, requestNo: r.requestNo }
+  rejectContext.value = {
+    productName: p.productName, sku: p.sku,
+    requestNo: r.requestNo, sourceNo: src.sourceNo,
+    maxQty: prChildRemaining(r), unit: p.unit,
+  }
+  rejectModalOpen.value = true
+}
+
+function confirmReject({ rejectedQty, reason }: { rejectedQty: number; reason: string }) {
+  const target = rejectTarget.value
+  if (!target) return
+  rejectProductionRequest({
+    ...target, rejectedQty, reason,
+    rejectDate: toIso(TODAY),
+  })
+  rejectModalOpen.value = false
+  toast.notify({ variant: 'success', title: 'Production request rejected' })
 }
 
 // ─── Work order preview drawer ──────────────────────────────────────────────────
@@ -233,7 +249,7 @@ function createBulkWorkOrder(p: PrProduct) {
 }
 function createWorkOrder(p: PrProduct, src: PrSource, r: PrRequest) {
   bulkProduct.value = p
-  bulkSources.value = [{ sourceNo: src.sourceNo, requests: [r] }]
+  bulkSources.value = [{ sourceNo: src.sourceNo, sourceId: src.sourceId, requests: [r] }]
   bulkModalOpen.value = true
 }
 
@@ -277,32 +293,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar ── -->
     <div class="filter-bar">
       <div class="filter-left">
-        <!-- Due date filter — Pending tab only. Placeholder "Due date"; opens a
-             popover of date ranges (Today / Tomorrow / Next 7 days / …). -->
-        <MpPopover v-if="tab === 'pending'" id="pr-due-filter" is-close-on-select use-portal>
-          <MpPopoverTrigger>
-            <button class="pr-filter-select" :class="{ 'pr-filter-select--placeholder': !dueFilter }" type="button">
-              <span>{{ dueFilter ? dueFilterLabel : 'Due date' }}</span>
-              <svg
-                v-if="dueFilter" class="pr-filter-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                aria-label="Clear" @click.stop="dueFilter = ''"
-              >
-                <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
-              <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in dueFilterOptions" :key="opt.value"
-                :is-active="opt.value === dueFilter" @click="dueFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <!-- Advanced date filter — Time range presets + Per day/week/month/quarter/
+             year/Custom, filtered against the tab's own date column. Pending starts
+             unset ("Due date" placeholder); Completed/Rejected default to Last 30 days. -->
+        <AdvanceDateFilter
+          id="pr-date-filter"
+          v-model="dateFilter"
+          :today="TODAY"
+          :placeholder="dateFilterPlaceholder[tab]"
+        />
       </div>
 
       <div class="filter-right">
@@ -431,8 +430,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                       <MpPopoverList>
+                        <!-- No Reject here — rejecting only makes sense against a single
+                             production request (child row), never the whole product. -->
                         <MpPopoverListItem @click="createBulkWorkOrder(p)">Create bulk work order</MpPopoverListItem>
-                        <MpPopoverListItem @click="rejectRow(p.productName)">Reject</MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
@@ -508,7 +508,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
                             <MpPopoverListItem @click="createWorkOrder(p, src, r)">Create work order</MpPopoverListItem>
-                            <MpPopoverListItem @click="rejectRow(r.requestNo)">Reject</MpPopoverListItem>
+                            <MpPopoverListItem v-if="prChildRemaining(r) > 0" @click="openRejectModal(p, src, r)">Reject</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>
                       </MpPopover>
@@ -563,6 +563,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sources="bulkSources"
     @close="bulkModalOpen = false"
   />
+
+  <!-- ── Reject production request modal (child row only) ── -->
+  <RejectProductionRequestModal
+    :open="rejectModalOpen"
+    :context="rejectContext"
+    @close="rejectModalOpen = false"
+    @confirm="confirmReject"
+  />
 </template>
 
 <style scoped>
@@ -592,21 +600,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
-
-/* Due date filter — custom trigger (Pixel MpSelect ships no structural CSS here) */
-.pr-filter-select {
-  display: inline-flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  min-width: 160px; height: var(--mp-sizes-9, 36px);
-  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral); color: var(--mp-text-default);
-  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); cursor: pointer;
-}
-.pr-filter-select:hover { border-color: var(--mp-border-bold); }
-.pr-filter-select svg { color: var(--mp-icon-default, var(--mp-text-secondary)); flex-shrink: 0; }
-.pr-filter-select--placeholder { color: var(--mp-text-placeholder); }
-.pr-filter-clear { cursor: pointer; border-radius: var(--mp-radii-sm); }
-.pr-filter-clear:hover { color: var(--mp-text-default); }
 
 /* Custom tooltip (Pixel MpTooltip ships no structural CSS in this build) */
 .pr-tt { position: relative; display: inline-flex; }

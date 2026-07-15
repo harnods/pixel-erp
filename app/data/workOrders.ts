@@ -1,15 +1,21 @@
+import { reactive } from 'vue'
 import { TODAY } from './master'
+import { billOfMaterials } from './billOfMaterials'
+import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
  * A manufacturing work order (Production → Work orders). Produces (Assembly) or
- * breaks down (Disassembly) a BOM's output. Child work orders reference a parent
- * via `parentNumber`.
+ * breaks down (Disassembly) a BOM's output. Every work order references a real
+ * {@link BillOfMaterials} record via `bomId` — a work order cannot exist without
+ * an already-created BOM. Child work orders reference a parent via `parentNumber`.
  */
 export interface WorkOrder {
   id: string
   /** work order number, e.g. WO-2026-0001 */
   number: string
-  /** bill of materials this WO builds/breaks down */
+  /** the bill of materials this WO builds/breaks down */
+  bomId: string
+  /** bill of materials name — denormalized for display/sort, mirrors billOfMaterials.find(bomId).name */
   bomName: string
   /** Standard = made-to-stock · Order = made-to-order (tied to a sales order) */
   category: 'Standard' | 'Order'
@@ -33,6 +39,8 @@ export interface WorkOrder {
   startDate?: string
   /** ISO actual end/close date (present once the WO is closed or canceled) */
   endDate?: string
+  /** production request this WO was raised from, if any (Create work order from PR) */
+  sourceProductionRequestNo?: string
 }
 
 export type WorkOrderStatus =
@@ -49,64 +57,94 @@ function isoOffset(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-const BOMS = [
-  'Espresso Blend 1kg',
-  'Cold Brew Concentrate',
-  'Gift Box - Signature',
-  'Drip Bag Pack (10s)',
-  'House Roast 250g',
-  'Caramel Syrup 750ml',
-  'Ceramic Mug Set',
-  'Nitro Cold Brew Keg',
-  'Single Origin Sampler',
-  'Decaf Blend 1kg',
-  'Seasonal Spice Mix',
-  'Barista Starter Kit',
-]
+/** BOM id for seed row i — cycles through the real BOM catalog (never a fake name). */
+function seedBomId(i: number): string {
+  return billOfMaterials[i % billOfMaterials.length]!.id
+}
+function seedBomName(i: number): string {
+  return billOfMaterials[i % billOfMaterials.length]!.name
+}
 
 // Seed rows: 4 per status so every badge + column rule is represented.
 // startDate is hidden by the page for "not started" / "canceled";
 // endDate is hidden for "not started" / "in progress" / "partially produced".
-const SEED: Array<Omit<WorkOrder, 'id' | 'number'>> = [
+const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bomIndex: number }> = [
   // ── not started ──────────────────────────────────────────────────────────
-  { bomName: BOMS[0], category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'not started', producedQty: 0,   plannedQty: 500, planStartDate: isoOffset(2),  planEndDate: isoOffset(6) },
-  { bomName: BOMS[1], category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'not started', producedQty: 0,   plannedQty: 120, planStartDate: isoOffset(3),  planEndDate: isoOffset(5) },
-  { bomName: BOMS[2], category: 'Order',    type: 'Assembly',    trackRouting: true,  status: 'not started', producedQty: 0,   plannedQty: 80,  planStartDate: isoOffset(1),  planEndDate: isoOffset(4), parentNumber: 'WO-2026-0001' },
-  { bomName: BOMS[3], category: 'Standard', type: 'Disassembly', trackRouting: false, status: 'not started', producedQty: 0,   plannedQty: 300, planStartDate: isoOffset(5),  planEndDate: isoOffset(9) },
+  { bomIndex: 0, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'not started', producedQty: 0,   plannedQty: 500, planStartDate: isoOffset(2),  planEndDate: isoOffset(6) },
+  { bomIndex: 1, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'not started', producedQty: 0,   plannedQty: 120, planStartDate: isoOffset(3),  planEndDate: isoOffset(5) },
+  { bomIndex: 2, category: 'Order',    type: 'Assembly',    trackRouting: true,  status: 'not started', producedQty: 0,   plannedQty: 80,  planStartDate: isoOffset(1),  planEndDate: isoOffset(4), parentNumber: 'WO-2026-0001' },
+  { bomIndex: 3, category: 'Standard', type: 'Disassembly', trackRouting: false, status: 'not started', producedQty: 0,   plannedQty: 300, planStartDate: isoOffset(5),  planEndDate: isoOffset(9) },
 
   // ── in progress ──────────────────────────────────────────────────────────
-  { bomName: BOMS[4], category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'in progress', producedQty: 140, plannedQty: 400, planStartDate: isoOffset(-2), planEndDate: isoOffset(3),  startDate: isoOffset(-2) },
-  { bomName: BOMS[5], category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'in progress', producedQty: 60,  plannedQty: 200, planStartDate: isoOffset(-1), planEndDate: isoOffset(4),  startDate: isoOffset(-1) },
-  { bomName: BOMS[6], category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'in progress', producedQty: 25,  plannedQty: 150, planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  startDate: isoOffset(-3), parentNumber: 'WO-2026-0005' },
-  { bomName: BOMS[7], category: 'Order',    type: 'Disassembly', trackRouting: false, status: 'in progress', producedQty: 8,   plannedQty: 40,  planStartDate: isoOffset(0),  planEndDate: isoOffset(5),  startDate: isoOffset(0) },
+  { bomIndex: 4, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'in progress', producedQty: 140, plannedQty: 400, planStartDate: isoOffset(-2), planEndDate: isoOffset(3),  startDate: isoOffset(-2) },
+  { bomIndex: 5, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'in progress', producedQty: 60,  plannedQty: 200, planStartDate: isoOffset(-1), planEndDate: isoOffset(4),  startDate: isoOffset(-1) },
+  { bomIndex: 6, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'in progress', producedQty: 25,  plannedQty: 150, planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  startDate: isoOffset(-3), parentNumber: 'WO-2026-0005' },
+  { bomIndex: 7, category: 'Order',    type: 'Disassembly', trackRouting: false, status: 'in progress', producedQty: 8,   plannedQty: 40,  planStartDate: isoOffset(0),  planEndDate: isoOffset(5),  startDate: isoOffset(0) },
 
   // ── partially produced ───────────────────────────────────────────────────
-  { bomName: BOMS[8], category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'partially produced', producedQty: 220, plannedQty: 350, planStartDate: isoOffset(-5), planEndDate: isoOffset(1),  startDate: isoOffset(-5) },
-  { bomName: BOMS[9], category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'partially produced', producedQty: 90,  plannedQty: 160, planStartDate: isoOffset(-4), planEndDate: isoOffset(0),  startDate: isoOffset(-4) },
-  { bomName: BOMS[10], category: 'Standard', type: 'Assembly',   trackRouting: true,  status: 'partially produced', producedQty: 45,  plannedQty: 100, planStartDate: isoOffset(-6), planEndDate: isoOffset(-1), startDate: isoOffset(-6), parentNumber: 'WO-2026-0009' },
-  { bomName: BOMS[11], category: 'Order',   type: 'Disassembly', trackRouting: false, status: 'partially produced', producedQty: 18,  plannedQty: 60,  planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  startDate: isoOffset(-3) },
+  { bomIndex: 8, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'partially produced', producedQty: 220, plannedQty: 350, planStartDate: isoOffset(-5), planEndDate: isoOffset(1),  startDate: isoOffset(-5) },
+  { bomIndex: 9, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'partially produced', producedQty: 90,  plannedQty: 160, planStartDate: isoOffset(-4), planEndDate: isoOffset(0),  startDate: isoOffset(-4) },
+  { bomIndex: 0, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'partially produced', producedQty: 45,  plannedQty: 100, planStartDate: isoOffset(-6), planEndDate: isoOffset(-1), startDate: isoOffset(-6), parentNumber: 'WO-2026-0009' },
+  { bomIndex: 1, category: 'Order',    type: 'Disassembly', trackRouting: false, status: 'partially produced', producedQty: 18,  plannedQty: 60,  planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  startDate: isoOffset(-3) },
 
   // ── partially completed ──────────────────────────────────────────────────
-  { bomName: BOMS[0], category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'partially completed', producedQty: 470, plannedQty: 500, planStartDate: isoOffset(-9), planEndDate: isoOffset(-2), startDate: isoOffset(-9), endDate: isoOffset(-1) },
-  { bomName: BOMS[2], category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'partially completed', producedQty: 74,  plannedQty: 80,  planStartDate: isoOffset(-8), planEndDate: isoOffset(-3), startDate: isoOffset(-8), endDate: isoOffset(-2) },
-  { bomName: BOMS[4], category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'partially completed', producedQty: 380, plannedQty: 400, planStartDate: isoOffset(-10), planEndDate: isoOffset(-4), startDate: isoOffset(-10), endDate: isoOffset(-3), parentNumber: 'WO-2026-0013' },
-  { bomName: BOMS[6], category: 'Order',    type: 'Disassembly', trackRouting: false, status: 'partially completed', producedQty: 130, plannedQty: 150, planStartDate: isoOffset(-7), planEndDate: isoOffset(-2), startDate: isoOffset(-7), endDate: isoOffset(-1) },
+  { bomIndex: 0, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'partially completed', producedQty: 470, plannedQty: 500, planStartDate: isoOffset(-9), planEndDate: isoOffset(-2), startDate: isoOffset(-9), endDate: isoOffset(-1) },
+  { bomIndex: 2, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'partially completed', producedQty: 74,  plannedQty: 80,  planStartDate: isoOffset(-8), planEndDate: isoOffset(-3), startDate: isoOffset(-8), endDate: isoOffset(-2) },
+  { bomIndex: 4, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'partially completed', producedQty: 380, plannedQty: 400, planStartDate: isoOffset(-10), planEndDate: isoOffset(-4), startDate: isoOffset(-10), endDate: isoOffset(-3), parentNumber: 'WO-2026-0013' },
+  { bomIndex: 6, category: 'Order',    type: 'Disassembly', trackRouting: false, status: 'partially completed', producedQty: 130, plannedQty: 150, planStartDate: isoOffset(-7), planEndDate: isoOffset(-2), startDate: isoOffset(-7), endDate: isoOffset(-1) },
 
   // ── completed ────────────────────────────────────────────────────────────
-  { bomName: BOMS[1], category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'completed', producedQty: 120, plannedQty: 120, planStartDate: isoOffset(-14), planEndDate: isoOffset(-9),  startDate: isoOffset(-14), endDate: isoOffset(-9) },
-  { bomName: BOMS[3], category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'completed', producedQty: 300, plannedQty: 300, planStartDate: isoOffset(-16), planEndDate: isoOffset(-11), startDate: isoOffset(-16), endDate: isoOffset(-10) },
-  { bomName: BOMS[5], category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'completed', producedQty: 200, plannedQty: 200, planStartDate: isoOffset(-13), planEndDate: isoOffset(-8),  startDate: isoOffset(-13), endDate: isoOffset(-8), parentNumber: 'WO-2026-0017' },
-  { bomName: BOMS[7], category: 'Order',    type: 'Disassembly', trackRouting: false, status: 'completed', producedQty: 40,  plannedQty: 40,  planStartDate: isoOffset(-12), planEndDate: isoOffset(-7),  startDate: isoOffset(-12), endDate: isoOffset(-7) },
+  { bomIndex: 1, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'completed', producedQty: 120, plannedQty: 120, planStartDate: isoOffset(-14), planEndDate: isoOffset(-9),  startDate: isoOffset(-14), endDate: isoOffset(-9) },
+  { bomIndex: 3, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'completed', producedQty: 300, plannedQty: 300, planStartDate: isoOffset(-16), planEndDate: isoOffset(-11), startDate: isoOffset(-16), endDate: isoOffset(-10) },
+  { bomIndex: 5, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'completed', producedQty: 200, plannedQty: 200, planStartDate: isoOffset(-13), planEndDate: isoOffset(-8),  startDate: isoOffset(-13), endDate: isoOffset(-8), parentNumber: 'WO-2026-0017' },
+  { bomIndex: 7, category: 'Order',    type: 'Disassembly', trackRouting: false, status: 'completed', producedQty: 40,  plannedQty: 40,  planStartDate: isoOffset(-12), planEndDate: isoOffset(-7),  startDate: isoOffset(-12), endDate: isoOffset(-7) },
 
   // ── canceled ─────────────────────────────────────────────────────────────
-  { bomName: BOMS[8], category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'canceled', producedQty: 0, plannedQty: 350, planStartDate: isoOffset(-6), planEndDate: isoOffset(-1), endDate: isoOffset(-4) },
-  { bomName: BOMS[10], category: 'Order',   type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 100, planStartDate: isoOffset(-5), planEndDate: isoOffset(0),  endDate: isoOffset(-3) },
-  { bomName: BOMS[11], category: 'Standard', type: 'Disassembly', trackRouting: true, status: 'canceled', producedQty: 0, plannedQty: 60,  planStartDate: isoOffset(-4), planEndDate: isoOffset(1),  endDate: isoOffset(-2), parentNumber: 'WO-2026-0021' },
-  { bomName: BOMS[9], category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 160, planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  endDate: isoOffset(-1) },
+  { bomIndex: 8, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'canceled', producedQty: 0, plannedQty: 350, planStartDate: isoOffset(-6), planEndDate: isoOffset(-1), endDate: isoOffset(-4) },
+  { bomIndex: 0, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 100, planStartDate: isoOffset(-5), planEndDate: isoOffset(0),  endDate: isoOffset(-3) },
+  { bomIndex: 1, category: 'Standard', type: 'Disassembly', trackRouting: true, status: 'canceled', producedQty: 0, plannedQty: 60,  planStartDate: isoOffset(-4), planEndDate: isoOffset(1),  endDate: isoOffset(-2), parentNumber: 'WO-2026-0021' },
+  { bomIndex: 9, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 160, planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  endDate: isoOffset(-1) },
 ]
 
-export const workOrders: WorkOrder[] = SEED.map((wo, i) => ({
-  ...wo,
-  id: `wo-${i + 1}`,
-  number: `WO-2026-${String(i + 1).padStart(4, '0')}`,
-}))
+function buildSeed(): WorkOrder[] {
+  return SEED.map(({ bomIndex, ...wo }, i) => ({
+    ...wo,
+    id: `wo-${i + 1}`,
+    number: `WO-2026-${String(i + 1).padStart(4, '0')}`,
+    bomId: seedBomId(bomIndex),
+    bomName: seedBomName(bomIndex),
+  }))
+}
+
+// Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts.
+const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders')
+export const workOrders = reactive<WorkOrder[]>(workOrderSnapshot ?? buildSeed())
+
+/** Persist the work-order snapshot (call after any mutation). */
+export function persistWorkOrders(): void {
+  saveSnapshot('workOrders', workOrders)
+}
+
+let woAddSeq = workOrders.length
+const WO_NO_RE = /^WO-2026-(\d+)$/
+function nextWorkOrderNumber(): string {
+  let max = 0
+  for (const wo of workOrders) {
+    const m = wo.number.match(WO_NO_RE)
+    if (m) max = Math.max(max, parseInt(m[1]!, 10))
+  }
+  return `WO-2026-${String(max + 1).padStart(4, '0')}`
+}
+
+/** Create a new work order from the New work order form — must reference an existing BOM. */
+export function addWorkOrder(data: Omit<WorkOrder, 'id' | 'number'>): WorkOrder {
+  const n = woAddSeq++
+  const wo: WorkOrder = {
+    ...data,
+    id: `wo-new-${n}`,
+    number: nextWorkOrderNumber(),
+  }
+  workOrders.unshift(wo)
+  persistWorkOrders()
+  return wo
+}

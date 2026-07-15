@@ -16,13 +16,26 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpAutocomplete, MpInput, MpInputGroup, MpInputRightAddon, MpTextarea,
+  MpAutocomplete, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpTextarea,
   MpButton, MpIcon, MpCheckbox, toast,
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
+import {
+  addBillOfMaterials, updateBillOfMaterials, billOfMaterials, catalogProduct,
+  type BillOfMaterials, type BomRawMaterial, type BomProductionCost,
+  type BomRoutingStep, type BomOtherOutput, type BomProductionWaste,
+} from '~/data/billOfMaterials'
 
 const router = useRouter()
+const route = useRoute()
 function goList() { router.push('/bill-of-materials') }
+
+// ── Edit / duplicate — prefill every section from an existing BOM ──────────────
+const editingId = (route.query.edit as string) || ''
+const duplicateFromId = (route.query.duplicate as string) || ''
+const isEditMode = computed(() => !!editingId)
+const editingNumber = ref('')
+const editingArchived = ref(false)
 
 // ── Option lists ──────────────────────────────────────────────────────────────
 const CATEGORY_OPTIONS = [
@@ -63,7 +76,7 @@ const ACCOUNT_MAPPING_OPTIONS = [
 ]
 const ALLOCATION_METHOD_OPTIONS = [
   { id: 'percentage', name: 'Percentage' },
-  { id: 'quantity', name: 'Quantity' },
+  { id: 'amount', name: 'Amount' },
 ]
 
 // ── BOM info ────────────────────────────────────────────────────────────────────
@@ -76,7 +89,6 @@ const categoryError = ref(false)
 const costingReference = ref('')
 const costingError = ref(false)
 const description = ref('')
-const descriptionError = ref(false)
 const allowBomAdjustment = ref(false)
 
 // ── Attachment ──────────────────────────────────────────────────────────────────
@@ -127,6 +139,31 @@ function onRawProduct(row: RawRow, id: string) {
 const rawEstimated = (r: RawRow) => num(r.needed) * r.purchaseCost
 const rawSubtotal = computed(() => rawRows.value.reduce((s, r) => s + rawEstimated(r), 0))
 
+// ── Raw materials row reorder (drag the grip column) ───────────────────────────────
+const rawDragSrc = ref<number | null>(null)
+const rawDragOver = ref<number | null>(null)
+function onRawDragStart(i: number, e: DragEvent) {
+  rawDragSrc.value = i
+  e.dataTransfer!.effectAllowed = 'move'
+}
+function onRawDragOver(i: number, e: DragEvent) {
+  if (rawDragSrc.value === null) return
+  e.preventDefault()
+  e.dataTransfer!.dropEffect = 'move'
+  rawDragOver.value = i
+}
+function onRawDrop(i: number, e: DragEvent) {
+  e.preventDefault()
+  if (rawDragSrc.value === null || rawDragSrc.value === i) { rawDragOver.value = null; return }
+  const r = [...rawRows.value]
+  const [moved] = r.splice(rawDragSrc.value, 1)
+  r.splice(i, 0, moved!)
+  rawRows.value = r
+  rawDragSrc.value = null
+  rawDragOver.value = null
+}
+function onRawDragEnd() { rawDragSrc.value = null; rawDragOver.value = null }
+
 // ── Production cost — three fixed groups (Labor / Overhead / Other) ───────────────
 interface CostRow { id: number; account: string; costDriver: string; amount: string }
 let costSeq = 0
@@ -161,10 +198,13 @@ const routingSubtotal = computed(() => routeRows.value.reduce((s, r) => s + num(
 const totalProductionCost = computed(() => rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value)
 
 // ── Finished goods: main output / other outputs ──────────────────────────────────
-interface OutputRow { id: number; productId: string; sku: string; producedQty: string; unit: string; percentage: string; estCost: string }
+// Estimated cost is never typed in directly — it's always derived from the row's
+// percentage share of the total production cost (see totalProductionCost above),
+// so the finished-goods total always reconciles exactly to it.
+interface OutputRow { id: number; productId: string; sku: string; producedQty: string; unit: string; percentage: string }
 let mainSeq = 0, otherSeq = 0
-const makeMain = (): OutputRow => ({ id: mainSeq++, productId: '', sku: '', producedQty: '', unit: '', percentage: '', estCost: '' })
-const makeOther = (): OutputRow => ({ id: otherSeq++, productId: '', sku: '', producedQty: '', unit: '', percentage: '', estCost: '' })
+const makeMain = (): OutputRow => ({ id: mainSeq++, productId: '', sku: '', producedQty: '', unit: '', percentage: '' })
+const makeOther = (): OutputRow => ({ id: otherSeq++, productId: '', sku: '', producedQty: '', unit: '', percentage: '' })
 // Main output is a single row (the BOM's primary output).
 const mainRow = ref<OutputRow>(makeMain())
 function onMainProduct(id: string) {
@@ -177,37 +217,203 @@ function onOtherProduct(row: OutputRow, id: string) {
   if (p) { row.sku = p.sku; if (!row.unit) row.unit = p.unit }
   appendIfLast(otherRows, row.id, makeOther)
 }
-const mainOutputSubtotal = computed(() => num(mainRow.value.estCost))
-const otherOutputsSubtotal = computed(() => otherRows.value.reduce((s, r) => s + num(r.estCost), 0))
+function otherEstCost(row: OutputRow) { return totalProductionCost.value * num(row.percentage) / 100 }
+const otherOutputsSubtotal = computed(() =>
+  otherRows.value.filter(r => r.productId).reduce((s, r) => s + otherEstCost(r), 0),
+)
 
 // ── Finished goods: production waste ─────────────────────────────────────────────
+// Allocation method decides which of percentage/amount is user-editable — the
+// other one is derived and shown disabled: "Percentage" drives amount from the
+// total production cost; "Amount" drives percentage back from that same total.
 interface WasteRow { id: number; accountMapping: string; allocationMethod: string; percentage: string; amount: string }
 let wasteSeq = 0
 const makeWaste = (): WasteRow => ({ id: wasteSeq++, accountMapping: '', allocationMethod: '', percentage: '', amount: '' })
 const wasteRows = ref<WasteRow[]>([makeWaste()])
 function onWasteMapping(row: WasteRow) { appendIfLast(wasteRows, row.id, makeWaste) }
-const wasteSubtotal = computed(() => wasteRows.value.reduce((s, r) => s + num(r.amount), 0))
-// Finished goods total mirrors the total production cost — every rupiah is
-// allocated across the outputs and waste.
+function isWasteByAmount(row: WasteRow) { return row.allocationMethod === 'amount' }
+function wastePercentage(row: WasteRow) {
+  if (!isWasteByAmount(row)) return num(row.percentage)
+  return totalProductionCost.value > 0 ? (num(row.amount) / totalProductionCost.value) * 100 : 0
+}
+function wasteAmount(row: WasteRow) {
+  if (isWasteByAmount(row)) return num(row.amount)
+  return totalProductionCost.value * num(row.percentage) / 100
+}
+const wasteSubtotal = computed(() =>
+  wasteRows.value.filter(r => r.accountMapping).reduce((s, r) => s + wasteAmount(r), 0),
+)
+
+// Main output's percentage is never typed in — it auto-allocates whatever the
+// other outputs + production waste haven't claimed (100% when neither has any
+// percentage entered yet), and its estimated cost absorbs whatever production
+// cost is left over. That makes the three subtotals always sum to EXACTLY the
+// total production cost, regardless of rounding in the other rows.
+const otherPercentageTotal = computed(() =>
+  otherRows.value.filter(r => r.productId).reduce((s, r) => s + num(r.percentage), 0),
+)
+const wastePercentageTotal = computed(() =>
+  wasteRows.value.filter(r => r.accountMapping).reduce((s, r) => s + wastePercentage(r), 0),
+)
+const mainPercentage = computed(() => Math.max(0, 100 - otherPercentageTotal.value - wastePercentageTotal.value))
+const mainOutputSubtotal = computed(() =>
+  Math.max(0, totalProductionCost.value - otherOutputsSubtotal.value - wasteSubtotal.value),
+)
+// Finished goods total always equals the total production cost by construction.
 const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutputsSubtotal.value + wasteSubtotal.value)
 
 // ── Save ──────────────────────────────────────────────────────────────────────────
+const mainProductError = ref(false)
 function validate() {
   let ok = true
   if (!bomName.value.trim()) { bomNameError.value = true; ok = false }
   if (!category.value) { categoryError.value = true; ok = false }
   if (!costingReference.value) { costingError.value = true; ok = false }
-  if (!description.value.trim()) { descriptionError.value = true; ok = false }
+  if (!mainRow.value.productId) { mainProductError.value = true; ok = false }
   return ok
+}
+
+const optionLabel = (options: { id: string; name: string }[], id: string) => options.find(o => o.id === id)?.name ?? id
+const optionId = (options: { id: string; name: string }[], label: string) => options.find(o => o.name === label)?.id ?? ''
+
+// Load every section of the form from an existing BOM record — shared by Edit
+// (same record, saved back in place) and Duplicate (prefills a new record).
+function prefillFrom(bom: BillOfMaterials) {
+  bomName.value = bom.name
+  category.value = bom.category
+  costingReference.value = bom.costingReference
+  description.value = bom.description
+  allowBomAdjustment.value = bom.allowBomAdjustment
+
+  rawRows.value = bom.rawMaterials.map(r => ({
+    id: rawSeq++, productId: r.productId, sku: catalogProduct(r.productId)?.sku ?? '',
+    needed: String(r.needed), unit: r.unit, purchaseCost: r.purchaseCost,
+  }))
+  rawRows.value.push(makeRaw())
+
+  const grouped: Record<string, BomProductionCost[]> = { Labor: [], Overhead: [], Other: [] }
+  for (const c of bom.productionCost) grouped[c.group]?.push(c)
+  costGroups.value = costGroups.value.map((g) => {
+    const key = g.label.replace(' cost', '')
+    const rows = (grouped[key] ?? []).map(c => ({
+      id: costSeq++, account: optionId(COST_ACCOUNT_OPTIONS, c.account),
+      costDriver: optionId(COST_DRIVER_OPTIONS, c.costDriver), amount: String(c.amount),
+    }))
+    rows.push(makeCost())
+    return { ...g, rows }
+  })
+
+  routeRows.value = bom.routing.map(r => ({
+    id: routeSeq++, process: optionId(PROCESS_OPTIONS, r.process), description: r.description,
+    accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, r.accountMapping), amount: String(r.amount),
+  }))
+  routeRows.value.push(makeRoute())
+
+  const fg = catalogProduct(bom.finishedGoodId)
+  mainRow.value = {
+    id: mainSeq++, productId: bom.finishedGoodId, sku: fg?.sku ?? '',
+    producedQty: String(bom.finishedGoodQty), unit: bom.finishedGoodUnit, percentage: '',
+  }
+
+  otherRows.value = bom.otherOutputs.map((o) => {
+    const p = catalogProduct(o.productId)
+    return {
+      id: otherSeq++, productId: o.productId, sku: p?.sku ?? '',
+      producedQty: String(o.qty), unit: o.unit, percentage: String(o.percentage),
+    }
+  })
+  otherRows.value.push(makeOther())
+
+  wasteRows.value = bom.productionWaste.map(w => ({
+    id: wasteSeq++,
+    accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, w.accountMapping),
+    allocationMethod: w.allocationMethod === 'Amount' ? 'amount' : 'percentage',
+    percentage: String(w.percentage), amount: String(w.amount),
+  }))
+  wasteRows.value.push(makeWaste())
+}
+
+if (editingId) {
+  const src = billOfMaterials.find(b => b.id === editingId)
+  if (src) { prefillFrom(src); editingNumber.value = src.number; editingArchived.value = src.archived }
+} else if (duplicateFromId) {
+  const src = billOfMaterials.find(b => b.id === duplicateFromId)
+  if (src) prefillFrom(src)
+}
+
+// Build the persisted BOM record from the form's line-item rows — every product
+// reference is a real registered product id (rows without one are in-progress/blank
+// and dropped).
+function buildBomPayload() {
+  const rawMaterials: BomRawMaterial[] = rawRows.value
+    .filter(r => r.productId)
+    .map(r => ({ productId: r.productId, needed: num(r.needed) || 1, unit: r.unit, purchaseCost: r.purchaseCost }))
+
+  const productionCost: BomProductionCost[] = costGroups.value.flatMap(g =>
+    g.rows.filter(r => r.account).map(r => ({
+      group: (g.label.replace(' cost', '') as BomProductionCost['group']),
+      account: optionLabel(COST_ACCOUNT_OPTIONS, r.account),
+      costDriver: optionLabel(COST_DRIVER_OPTIONS, r.costDriver),
+      amount: num(r.amount),
+    })),
+  )
+
+  const routing: BomRoutingStep[] = routeRows.value
+    .filter(r => r.process)
+    .map(r => ({
+      process: optionLabel(PROCESS_OPTIONS, r.process),
+      description: r.description,
+      accountMapping: optionLabel(ACCOUNT_MAPPING_OPTIONS, r.accountMapping),
+      amount: num(r.amount),
+    }))
+
+  const otherOutputs: BomOtherOutput[] = otherRows.value
+    .filter(r => r.productId)
+    .map(r => ({ productId: r.productId, qty: num(r.producedQty), unit: r.unit, percentage: num(r.percentage), estCost: otherEstCost(r) }))
+
+  const productionWaste: BomProductionWaste[] = wasteRows.value
+    .filter(r => r.accountMapping)
+    .map(r => ({
+      accountMapping: optionLabel(ACCOUNT_MAPPING_OPTIONS, r.accountMapping),
+      allocationMethod: (optionLabel(ALLOCATION_METHOD_OPTIONS, r.allocationMethod) as BomProductionWaste['allocationMethod']),
+      percentage: wastePercentage(r),
+      amount: wasteAmount(r),
+    }))
+
+  return {
+    name: bomName.value.trim(),
+    category: category.value as 'Standard' | 'Custom',
+    costingReference: costingReference.value as 'Actual cost' | 'Standard cost',
+    finishedGoodId: mainRow.value.productId,
+    finishedGoodQty: num(mainRow.value.producedQty) || 1,
+    finishedGoodUnit: mainRow.value.unit,
+    finishedGoodPercentage: mainPercentage.value,
+    description: description.value.trim(),
+    allowBomAdjustment: allowBomAdjustment.value,
+    archived: editingArchived.value,
+    rawMaterials,
+    productionCost,
+    routing,
+    otherOutputs,
+    productionWaste,
+  }
+}
+
+function saveBom() {
+  return isEditMode.value
+    ? updateBillOfMaterials(editingId, buildBomPayload())
+    : addBillOfMaterials(buildBomPayload())
 }
 function handleSave() {
   if (!validate()) return
-  toast.notify({ variant: 'success', title: 'Bill of materials saved' })
-  goList()
+  const bom = saveBom()
+  toast.notify({ variant: 'success', title: isEditMode.value ? 'Bill of materials updated' : 'Bill of materials saved' })
+  router.push(`/bill-of-materials/${bom.id}`)
 }
 function handleSaveDraft() {
-  toast.notify({ variant: 'success', title: 'Bill of materials saved as draft' })
-  goList()
+  const bom = saveBom()
+  toast.notify({ variant: 'success', title: isEditMode.value ? 'Bill of materials updated' : 'Bill of materials saved as draft' })
+  router.push(`/bill-of-materials/${bom.id}`)
 }
 
 // ── Sticky footer float ────────────────────────────────────────────────────────────
@@ -240,7 +446,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <button class="detail-breadcrumb" @click="goList">Bill of materials</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New bill of materials</h1>
+          <h1 class="detail-title">{{ isEditMode ? 'Edit bill of materials' : 'New bill of materials' }}</h1>
         </div>
       </div>
     </header>
@@ -260,7 +466,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <MpFormLabel>BOM no.</MpFormLabel>
                 <span class="bf-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
               </div>
-              <MpInput id="bf-no-input" model-value="" placeholder="[Auto]" is-full-width is-disabled />
+              <MpInput id="bf-no-input" :model-value="editingNumber" placeholder="[Auto]" is-full-width is-disabled />
             </MpFormControl>
           </div>
 
@@ -305,19 +511,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </MpFormControl>
           </div>
 
-          <!-- Description (with counter) -->
+          <!-- Description (optional, with counter) -->
           <div class="bf-field bf-field--lg bf-field--mt">
-            <MpFormControl id="bf-desc" is-required :is-invalid="descriptionError">
+            <MpFormControl id="bf-desc">
               <div class="bf-label-row bf-label-row--between">
                 <MpFormLabel>Description</MpFormLabel>
                 <span class="bf-counter">{{ description.length }} / {{ DESC_MAX }}</span>
               </div>
               <MpTextarea
                 id="bf-desc-textarea" v-model="description" :maxlength="DESC_MAX" :rows="3"
-                placeholder="Describe this bill of materials" is-full-width :is-invalid="descriptionError"
-                @update:model-value="descriptionError = false"
+                placeholder="Describe this bill of materials" is-full-width
               />
-              <MpFormErrorMessage>Please enter a description</MpFormErrorMessage>
             </MpFormControl>
           </div>
 
@@ -380,7 +584,21 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in rawRows" :key="row.id" class="bf-tr">
+                <tr
+                  v-for="(row, rawIdx) in rawRows"
+                  :key="row.id"
+                  class="bf-tr"
+                  :class="{
+                    'bf-tr--dragging': rawDragSrc === rawIdx,
+                    'bf-tr--over-above': rawDragOver === rawIdx && rawDragSrc !== null && rawDragSrc > rawIdx,
+                    'bf-tr--over-below': rawDragOver === rawIdx && rawDragSrc !== null && rawDragSrc < rawIdx,
+                  }"
+                  :draggable="!!row.productId"
+                  @dragstart="onRawDragStart(rawIdx, $event)"
+                  @dragover="onRawDragOver(rawIdx, $event)"
+                  @drop="onRawDrop(rawIdx, $event)"
+                  @dragend="onRawDragEnd"
+                >
                   <td class="bf-td bf-td--grip">
                     <MpIcon v-if="row.productId" name="drag" size="sm" />
                   </td>
@@ -432,7 +650,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete v-if="row.account" :id="`cost-drv-${group.key}-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="bf-td bf-td--spacer" />
-                  <td class="bf-td bf-td--input bf-td--num-input"><MpInput v-if="row.account" :id="`cost-amt-${group.key}-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
+                  <td class="bf-td bf-td--input bf-td--num-input">
+                    <MpInputGroup v-if="row.account" :id="`cost-amt-group-${group.key}-${row.id}`" is-full-width>
+                      <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                      <MpInput :id="`cost-amt-${group.key}-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width />
+                    </MpInputGroup>
+                  </td>
                   <td class="bf-td bf-td--del">
                     <button v-if="row.account" class="bf-del-btn" type="button" @click="removeCostRow(group, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
@@ -470,7 +693,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="bf-td bf-td--input">
                     <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
                   </td>
-                  <td class="bf-td bf-td--input bf-td--num-input"><MpInput v-if="row.process" :id="`route-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
+                  <td class="bf-td bf-td--input bf-td--num-input">
+                    <MpInputGroup v-if="row.process" :id="`route-amt-group-${row.id}`" is-full-width>
+                      <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                      <MpInput :id="`route-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width />
+                    </MpInputGroup>
+                  </td>
                   <td class="bf-td bf-td--del">
                     <button v-if="row.process" class="bf-del-btn" type="button" @click="removeRow(routeRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
@@ -513,7 +741,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <tbody>
                 <tr class="bf-tr">
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete id="main-prod" v-model="mainRow.productId" :data="productOptions" label-prop="name" value-prop="id" placeholder="Select product" is-searchable is-clearable use-portal is-full-width @update:model-value="onMainProduct" />
+                    <MpAutocomplete id="main-prod" v-model="mainRow.productId" :data="productOptions" label-prop="name" value-prop="id" placeholder="Select product" is-searchable is-clearable use-portal is-full-width :is-invalid="mainProductError" @update:model-value="(v: string) => { onMainProduct(v); mainProductError = false }" />
                   </td>
                   <td class="bf-td"><template v-if="mainRow.productId">{{ mainRow.sku || '—' }}</template></td>
                   <td class="bf-td bf-td--input"><MpInput v-if="mainRow.productId" id="main-qty" v-model="mainRow.producedQty" type="number" placeholder="0" is-full-width /></td>
@@ -522,12 +750,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="bf-td bf-td--input bf-td--pct">
                     <MpInputGroup v-if="mainRow.productId" id="main-pct-group" is-full-width>
-                      <MpInput id="main-pct" v-model="mainRow.percentage" type="number" placeholder="0" is-full-width />
+                      <MpInput id="main-pct" :model-value="String(mainPercentage)" type="number" is-full-width is-disabled />
                       <MpInputRightAddon>%</MpInputRightAddon>
                     </MpInputGroup>
                   </td>
                   <td class="bf-td bf-td--spacer" />
-                  <td class="bf-td bf-td--input bf-td--num-input"><MpInput v-if="mainRow.productId" id="main-cost" v-model="mainRow.estCost" type="number" placeholder="0" is-full-width /></td>
+                  <td class="bf-td bf-td--num bf-td--right"><template v-if="mainRow.productId">{{ formatIDR(mainOutputSubtotal) }}</template></td>
                   <td class="bf-td bf-td--del" />
                 </tr>
               </tbody>
@@ -569,7 +797,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     </MpInputGroup>
                   </td>
                   <td class="bf-td bf-td--spacer" />
-                  <td class="bf-td bf-td--input bf-td--num-input"><MpInput v-if="row.productId" :id="`other-cost-${row.id}`" v-model="row.estCost" type="number" placeholder="0" is-full-width /></td>
+                  <td class="bf-td bf-td--num bf-td--right"><template v-if="row.productId">{{ formatIDR(otherEstCost(row)) }}</template></td>
                   <td class="bf-td bf-td--del">
                     <button v-if="row.productId" class="bf-del-btn" type="button" @click="removeRow(otherRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
@@ -606,13 +834,23 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="bf-td bf-td--input bf-td--pct">
-                    <MpInputGroup v-if="row.accountMapping" :id="`waste-pct-group-${row.id}`" is-full-width>
+                    <MpInputGroup v-if="row.accountMapping && isWasteByAmount(row)" :id="`waste-pct-group-${row.id}`" is-full-width>
+                      <MpInput :id="`waste-pct-${row.id}`" :model-value="wastePercentage(row).toFixed(2)" type="number" is-full-width is-disabled />
+                      <MpInputRightAddon>%</MpInputRightAddon>
+                    </MpInputGroup>
+                    <MpInputGroup v-else-if="row.accountMapping" :id="`waste-pct-group-${row.id}`" is-full-width>
                       <MpInput :id="`waste-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width />
                       <MpInputRightAddon>%</MpInputRightAddon>
                     </MpInputGroup>
                   </td>
                   <td class="bf-td bf-td--spacer" />
-                  <td class="bf-td bf-td--input bf-td--num-input"><MpInput v-if="row.accountMapping" :id="`waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
+                  <td class="bf-td" :class="isWasteByAmount(row) ? 'bf-td--input bf-td--num-input' : 'bf-td--num bf-td--right'">
+                    <MpInputGroup v-if="row.accountMapping && isWasteByAmount(row)" :id="`waste-amt-group-${row.id}`" is-full-width>
+                      <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                      <MpInput :id="`waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width />
+                    </MpInputGroup>
+                    <template v-else-if="row.accountMapping">{{ formatIDR(wasteAmount(row)) }}</template>
+                  </td>
                   <td class="bf-td bf-td--del">
                     <button v-if="row.accountMapping" class="bf-del-btn" type="button" @click="removeRow(wasteRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
@@ -749,18 +987,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
-.bf-th:last-child { border-right: none; }
 .bf-th--right { text-align: right; }
 .bf-th--grip { padding: 0; }
-/* Production cost groups repeat a header row inside <tbody>; give those a top border. */
-.bf-table tbody + tbody .bf-th { border-top: 1px solid var(--mp-border-default); }
 .bf-th.bf-th--del, .bf-td.bf-td--del {
   position: sticky; right: 0; z-index: 2; width: 44px; min-width: 44px; padding: 0; text-align: center;
   box-shadow: inset 1px 0 var(--mp-border-default);
 }
-.bf-th:nth-last-child(2), .bf-td:nth-last-child(2) { border-right: none; }
+.bf-td:nth-last-child(2) { border-right: none; }
 .bf-th--del { background: var(--mp-background-neutral-subtle); }
 .bf-td--del { background: var(--mp-background-neutral); }
 .bf-td {
@@ -773,6 +1008,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .bf-td--num { font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
 .bf-td--right { text-align: right; }
 .bf-td--grip { padding: 0; text-align: center; color: var(--mp-text-disabled); cursor: grab; }
+.bf-tr--dragging { opacity: 0.4; }
+.bf-tr--over-above .bf-td { border-top: 2px solid var(--mp-border-selected, #2563eb); }
+.bf-tr--over-below .bf-td { border-bottom: 2px solid var(--mp-border-selected, #2563eb); }
 .bf-td--input { padding: 0; vertical-align: middle; }
 .bf-td--num-input { padding: 0; }
 .bf-td--num-input :deep(input) { text-align: right; }

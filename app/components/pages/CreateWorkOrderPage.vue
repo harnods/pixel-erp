@@ -19,6 +19,8 @@ import { CATALOG } from '~/data/catalog'
 import { warehouses } from '~/data/warehouses'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { formatDate } from '~/utils/date'
+import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
+import { addWorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 
 const router = useRouter()
 const route = useRoute()
@@ -43,13 +45,21 @@ const WO_TYPE_OPTIONS = [
   { id: 'Assembly', name: 'Assembly' },
   { id: 'Disassembly', name: 'Disassembly' },
 ]
-const BOM_OPTIONS = [
-  { id: 'bom-10006', name: 'Skateboard',           no: 'Bill of Materials #10006', type: 'Assembly' },
-  { id: 'bom-10007', name: 'Espresso Blend 1kg',   no: 'Bill of Materials #10007', type: 'Assembly' },
-  { id: 'bom-10008', name: 'Cold Brew Concentrate', no: 'Bill of Materials #10008', type: 'Assembly' },
-  { id: 'bom-10009', name: 'Gift Box - Signature', no: 'Bill of Materials #10009', type: 'Assembly' },
-  { id: 'bom-10010', name: 'Drip Bag Pack (10s)',  no: 'Bill of Materials #10010', type: 'Disassembly' },
-]
+// Work orders can only be raised from an already-created BOM — the dropdown lists
+// the real (persisted) BOM catalog, newest first.
+const BOM_OPTIONS = computed(() => billOfMaterials.map(b => ({ id: b.id, name: b.name, no: b.number })))
+function findBom(id: string): BillOfMaterials | undefined { return billOfMaterials.find(b => b.id === id) }
+
+// A BOM's own option vocabulary (account/cost-driver/process/mapping labels) may not
+// match this form's fixed option ids — synthesize a matching option (id = slug of the
+// label) so the in-cell autocomplete always displays the real BOM value correctly.
+function ensureOption(options: { id: string; name: string }[], label: string): string {
+  const existing = options.find(o => o.name === label)
+  if (existing) return existing.id
+  const id = `bom-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+  options.push({ id, name: label })
+  return id
+}
 const productOptions = CATALOG.map(p => ({ id: p.id, name: p.name, unit: p.unit, price: p.price, sku: p.sku }))
 const warehouseOptions = warehouses
   .filter(w => !w.isDefault && w.status === 'active')
@@ -90,12 +100,13 @@ const bomError = ref(false)
 const workOrderType = ref('')
 const workOrderTypeError = ref(false)
 const trackRouting = ref<'yes' | 'no'>('yes')
-const planDates = ref('') // "DD/MM/YYYY - DD/MM/YYYY"
+const planDates = ref<string | string[]>('') // "DD/MM/YYYY - DD/MM/YYYY", or [start, end] depending on the picker's emitted shape
 const planDatesError = ref(false)
 const producedQty = ref('')
 const createAsSubAssembly = ref(false)
 
-const bomNo = computed(() => BOM_OPTIONS.find(b => b.id === bomId.value)?.no ?? '')
+const bomNo = computed(() => BOM_OPTIONS.value.find(b => b.id === bomId.value)?.no ?? '')
+const bomAllowsAdjustment = computed(() => findBom(bomId.value)?.allowBomAdjustment ?? false)
 
 // The line-item sections (raw materials → finished goods) only exist once a BOM is
 // chosen — that BOM defines them. While its data "loads", the sections render with
@@ -105,16 +116,14 @@ const bomLoading = ref(false)
 let bomTimer: ReturnType<typeof setTimeout> | null = null
 
 function onBomSelect(id: string) {
-  const bom = BOM_OPTIONS.find(b => b.id === id)
   bomError.value = false
-  if (bom && !workOrderType.value) workOrderType.value = bom.type
   if (bomTimer) { clearTimeout(bomTimer); bomTimer = null }
   if (id) {
     bomLoading.value = true
     bomTimer = setTimeout(() => {
-      fillDummyData()
+      fillFromBom(id)
       bomLoading.value = false
-    }, 1200)
+    }, 600)
   } else {
     resetLineItems()
     bomLoading.value = false
@@ -122,16 +131,14 @@ function onBomSelect(id: string) {
 }
 onUnmounted(() => { if (bomTimer) clearTimeout(bomTimer) })
 
-// Prefill from the "Create bulk work order" modal — the chosen BOM arrives via
-// ?bom=<name>. Add it as a selectable option, preselect it, and load its line items.
-const presetBomName = route.query.bom as string | undefined
-if (presetBomName) {
-  const presetBom = { id: 'bom-preset', name: presetBomName, no: 'Bill of Materials #10006', type: 'Assembly' }
-  if (!BOM_OPTIONS.some(b => b.id === presetBom.id)) BOM_OPTIONS.unshift(presetBom)
+// Prefill from the "Create work order" entry points that already know which BOM to
+// use — the Production Request bulk modal and the BOM detail page's own
+// "Create work order" button both arrive via ?bomId=<real BOM id>.
+const presetBomId = route.query.bomId as string | undefined
+if (presetBomId && findBom(presetBomId)) {
   if (!category.value) category.value = 'Standard'
-  bomId.value = presetBom.id
-  workOrderType.value = presetBom.type
-  onBomSelect(presetBom.id)
+  bomId.value = presetBomId
+  onBomSelect(presetBomId)
 }
 
 // ── Attachment ───────────────────────────────────────────────────────────────
@@ -228,59 +235,75 @@ function removeRow<T extends { id: number }>(rowsRef: { value: T[] }, id: number
   rowsRef.value = rowsRef.value.filter(r => r.id !== id)
 }
 
-// ── Dummy BOM data ─────────────────────────────────────────────────────────────
-// When a BOM finishes "loading", its materials / cost / routing / outputs are
-// populated with representative dummy rows (Figma: filled variant). Option ids come
-// from the real data lists so the in-cell autocompletes display their labels.
-function fillDummyData() {
+// ── Fill from the selected BOM ──────────────────────────────────────────────────
+// A work order can only be created from an already-created BOM — every line-item
+// section below is populated from that BOM's OWN stored raw materials / production
+// cost / routing / finished goods (see app/data/billOfMaterials.ts), not a dummy
+// example. Option ids come from this form's fixed lists where they match, else a
+// matching option is synthesized (ensureOption) so the BOM's real values display.
+function todayDDMMYYYY(): string {
+  const d = new Date()
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+function fillFromBom(id: string) {
+  const bom = findBom(id)
+  if (!bom) { resetLineItems(); return }
   const wh = warehouseOptions[0]?.id ?? ''
-  const reqDate = '01/03/2026'
-  // purchase cost + needed mirror the Figma reference (tidy subtotal), product ids
-  // come from the catalog so the in-cell autocompletes show a real product name.
-  const rawSpec = [
-    { cost: 100_000, needed: '10' },
-    { cost: 2_000,   needed: '80' },
-    { cost: 30_000,  needed: '40' },
-    { cost: 50_000,  needed: '20' },
-  ]
-  rawRows.value = CATALOG.slice(0, 4).map((p, i) => ({
-    id: rawSeq++, productId: p.id, purchaseCost: rawSpec[i]!.cost, warehouseId: wh,
-    needed: rawSpec[i]!.needed, unit: p.unit, requiredDate: reqDate,
+  const reqDate = todayDDMMYYYY()
+
+  rawRows.value = bom.rawMaterials.map(r => ({
+    id: rawSeq++, productId: r.productId, purchaseCost: r.purchaseCost, warehouseId: wh,
+    needed: String(r.needed), unit: r.unit, requiredDate: reqDate,
   }))
-  rawRows.value.push(makeRaw())
+  if (bom.allowBomAdjustment) rawRows.value.push(makeRaw())
 
-  costRows.value = [
-    { id: costSeq++, account: 'labour',   costDriver: 'labour-hour',  estUnitCost: '100000', multiplier: '1' },
-    { id: costSeq++, account: 'overhead', costDriver: 'machine-hour', estUnitCost: '1000',   multiplier: '50' },
-    makeCost(),
-  ]
+  costRows.value = bom.productionCost.map(c => ({
+    id: costSeq++,
+    account: ensureOption(COST_ACCOUNT_OPTIONS, c.account),
+    costDriver: ensureOption(COST_DRIVER_OPTIONS, c.costDriver),
+    estUnitCost: String(c.amount),
+    multiplier: '1',
+  }))
+  costRows.value.push(makeCost())
 
-  routeRows.value = [
-    { id: routeSeq++, process: 'assembly',  description: 'Check every components before start assembling', accountMapping: 'routing-cost', amount: '25000' },
-    { id: routeSeq++, process: 'painting',  description: 'Follow the instruction guide to assembly',       accountMapping: 'routing-cost', amount: '25000' },
-    { id: routeSeq++, process: 'finishing', description: 'Apply paint and coating',                        accountMapping: 'routing-cost', amount: '25000' },
-    makeRoute(),
-  ]
+  routeRows.value = bom.routing.map(r => ({
+    id: routeSeq++,
+    process: ensureOption(PROCESS_OPTIONS, r.process),
+    description: r.description,
+    accountMapping: ensureOption(ACCOUNT_MAPPING_OPTIONS, r.accountMapping),
+    amount: String(r.amount),
+  }))
+  routeRows.value.push(makeRoute())
 
   // Main output is a single row defined by the BOM — no trailing/empty row (it can't
   // be added to, changed, or removed; only the produced qty is editable).
-  const mainProduct = CATALOG[10] ?? CATALOG[0]!
+  const fg = catalogProduct(bom.finishedGoodId)
+  const rawSubtotal = bom.rawMaterials.reduce((s, r) => s + r.needed * r.purchaseCost, 0)
+  const productionCostSubtotal = bom.productionCost.reduce((s, c) => s + c.amount, 0)
+  const routingSubtotal = bom.routing.reduce((s, r) => s + r.amount, 0)
+  const otherOutputsSubtotal = bom.otherOutputs.reduce((s, o) => s + o.estCost, 0)
+  const wasteSubtotalBom = bom.productionWaste.reduce((s, w) => s + w.amount, 0)
+  const totalCost = rawSubtotal + productionCostSubtotal + routingSubtotal
+  const mainEstCost = Math.max(0, totalCost - otherOutputsSubtotal - wasteSubtotalBom)
   mainRows.value = [
-    { id: mainSeq++, productId: mainProduct.id, sku: mainProduct.sku, producedQty: '10', unit: mainProduct.unit, percentage: '90', estCost: '3204000' },
+    { id: mainSeq++, productId: bom.finishedGoodId, sku: fg?.sku ?? '', producedQty: String(bom.finishedGoodQty), unit: bom.finishedGoodUnit, percentage: String(bom.finishedGoodPercentage), estCost: String(Math.round(mainEstCost)) },
   ]
-  const otherProduct = CATALOG[5] ?? CATALOG[1]!
-  otherRows.value = [
-    { id: otherSeq++, productId: otherProduct.id, sku: otherProduct.sku, producedQty: '50', unit: otherProduct.unit, percentage: '5', estCost: '178000' },
-    makeOutput(() => otherSeq++),
-  ]
-  wasteRows.value = [
-    { id: wasteSeq++, accountMapping: 'waste', allocationMethod: 'percentage', percentage: '5', amount: '178000' },
-    makeWaste(),
-  ]
+  otherRows.value = bom.otherOutputs.map(o => {
+    const p = catalogProduct(o.productId)
+    return { id: otherSeq++, productId: o.productId, sku: p?.sku ?? '', producedQty: String(o.qty), unit: o.unit, percentage: String(o.percentage), estCost: String(o.estCost) }
+  })
+  otherRows.value.push(makeOutput(() => otherSeq++))
+  wasteRows.value = bom.productionWaste.map(w => ({
+    id: wasteSeq++,
+    accountMapping: ensureOption(ACCOUNT_MAPPING_OPTIONS, w.accountMapping),
+    allocationMethod: ensureOption(ALLOCATION_METHOD_OPTIONS, w.allocationMethod),
+    percentage: String(w.percentage),
+    amount: String(w.amount),
+  }))
+  wasteRows.value.push(makeWaste())
 
   // Complete the header for a filled-form look (only where the user hasn't typed).
-  if (!producedQty.value) producedQty.value = '10'
-  if (!planDates.value) planDates.value = '01/03/2026 - 10/03/2026'
+  if (!producedQty.value) producedQty.value = String(bom.finishedGoodQty)
 }
 
 // Clearing the BOM removes its (BOM-derived) line items.
@@ -299,23 +322,53 @@ function validate() {
   if (!category.value) { categoryError.value = true; ok = false }
   if (!bomId.value) { bomError.value = true; ok = false }
   if (!workOrderType.value) { workOrderTypeError.value = true; ok = false }
-  if (!planDates.value) { planDatesError.value = true; ok = false }
+  if (!planDates.value.length) { planDatesError.value = true; ok = false }
   return ok
 }
-// After saving, open the created work order's detail page (prototype: the first
-// "not started" record stands in for the new WO). The from-PR flag is preserved so
+// "DD/MM/YYYY - DD/MM/YYYY" → ISO start/end (planDates is validated non-empty before this runs).
+function parseDateRange(v: string | string[]): { start: string; end: string } {
+  const [s, e] = Array.isArray(v) ? v : v.split(' - ').map(x => x?.trim())
+  const toIso = (d?: string) => {
+    const [dd, mm, yyyy] = (d ?? '').split('/')
+    return dd && mm && yyyy ? `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}` : undefined
+  }
+  const today = new Date().toISOString().slice(0, 10)
+  const start = toIso(s) ?? today
+  return { start, end: toIso(e) ?? start }
+}
+
+// Save persists a real WorkOrder (linked to the chosen BOM) and opens its actual
+// detail page — there is no distinct "draft" status yet, so both actions save the
+// same "not started" record. The from-PR flag (+ its request no.) is preserved so
 // the detail shows its Linked transactions tab.
-function goDetail() {
-  router.push(`/work-orders/wo-1${fromProductionRequest.value ? '?source=pr' : ''}`)
+function saveWorkOrder() {
+  const bom = findBom(bomId.value)!
+  const { start, end } = parseDateRange(planDates.value)
+  return addWorkOrder({
+    bomId: bomId.value,
+    bomName: bom.name,
+    category: category.value as 'Standard' | 'Order',
+    type: workOrderType.value as 'Assembly' | 'Disassembly',
+    trackRouting: trackRouting.value === 'yes',
+    status: 'not started' as WorkOrderStatus,
+    producedQty: 0,
+    plannedQty: num(producedQty.value) || bom.finishedGoodQty,
+    planStartDate: start,
+    planEndDate: end,
+    sourceProductionRequestNo: fromProductionRequest.value ? (route.query.prNumber as string | undefined) : undefined,
+  })
 }
 function handleSave() {
   if (!validate()) return
+  const wo = saveWorkOrder()
   toast.notify({ variant: 'success', title: 'Work order saved' })
-  goDetail()
+  router.push(`/work-orders/${wo.id}${fromProductionRequest.value ? '?source=pr' : ''}`)
 }
 function handleSaveDraft() {
+  if (!validate()) return
+  const wo = saveWorkOrder()
   toast.notify({ variant: 'success', title: 'Work order saved as draft' })
-  goDetail()
+  router.push(`/work-orders/${wo.id}${fromProductionRequest.value ? '?source=pr' : ''}`)
 }
 
 // ── Sticky footer float ──────────────────────────────────────────────────────
@@ -525,7 +578,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td wo-td--num wo-td--right"><template v-if="row.productId">{{ formatIDR(rawEstimated(row)) }}</template></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.productId" class="wo-del-btn" type="button" @click="removeRow(rawRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <button v-if="row.productId && (!hasBom || bomAllowsAdjustment)" class="wo-del-btn" type="button" @click="removeRow(rawRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
                   </td>
                 </tr>
               </tbody>

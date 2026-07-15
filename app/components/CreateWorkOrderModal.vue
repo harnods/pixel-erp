@@ -13,6 +13,7 @@ import {
 } from '@mekari/pixel3'
 import { formatDate } from '~/utils/date'
 import type { PrProduct, PrSource } from '~/data/productionRequests'
+import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 
 const props = defineProps<{ open: boolean; product: PrProduct | null; sources: PrSource[] | null }>()
 const emit = defineEmits<{ close: [] }>()
@@ -24,11 +25,17 @@ const title = computed(() => (isBulk.value ? 'Create bulk work order' : 'Create 
 const shownSources = computed<PrSource[]>(() => props.sources ?? props.product?.sources ?? [])
 const allRequests = computed(() => shownSources.value.flatMap(s => s.requests))
 
-// Bill of materials — a single mock revision per product.
-const bomOptions = computed(() =>
-  props.product ? [`${props.product.productName} v1`, `${props.product.productName} v2`] : [],
-)
+// Bill of materials — a work order can only be raised from an already-created BOM.
+// Prefer BOMs that actually produce this product (matched by SKU); if none exist yet
+// (this product has no BOM), fall back to the full BOM catalog so the flow never
+// dead-ends — the user picks whichever BOM is the closest fit.
+const bomOptions = computed(() => {
+  const sku = props.product?.sku
+  const matching = sku ? billOfMaterials.filter(b => catalogProduct(b.finishedGoodId)?.sku === sku) : []
+  return (matching.length ? matching : billOfMaterials).map(b => ({ id: b.id, name: b.name }))
+})
 const bom = ref('')
+const bomLabel = computed(() => bomOptions.value.find(o => o.id === bom.value)?.name ?? '')
 
 // Per-request selection + per-request "qty to produce".
 const selected = ref<Set<string>>(new Set())
@@ -36,7 +43,7 @@ const qtyToProduce = ref<Record<string, number>>({})
 
 watch(() => props.open, (o) => {
   if (!o) return
-  bom.value = bomOptions.value[0] ?? ''
+  bom.value = bomOptions.value[0]?.id ?? ''
   selected.value = new Set(allRequests.value.map(r => r.requestNo))
   const q: Record<string, number> = {}
   for (const r of allRequests.value) q[r.requestNo] = r.requestedQty
@@ -69,7 +76,7 @@ const totalQty = computed(() =>
   allRequests.value.reduce((t, r) =>
     selected.value.has(r.requestNo) ? t + (Number(qtyToProduce.value[r.requestNo]) || 0) : t, 0),
 )
-const canContinue = computed(() => selected.value.size > 0 && totalQty.value > 0)
+const canContinue = computed(() => selected.value.size > 0 && totalQty.value > 0 && !!bom.value)
 
 function onEsc(e: KeyboardEvent) { if (e.key === 'Escape' && props.open) emit('close') }
 onMounted(() => window.addEventListener('keydown', onEsc))
@@ -78,9 +85,11 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 const router = useRouter()
 function handleContinue() {
   // Continue into the work order creation form, pre-set to the production-request
-  // flow with the chosen Bill of Materials prefilled.
+  // flow with the chosen (real, already-created) Bill of Materials prefilled.
   emit('close')
-  router.push(`/work-orders/new?source=pr&bom=${encodeURIComponent(bom.value)}`)
+  const prNumber = allRequests.value.find(r => selected.value.has(r.requestNo))?.requestNo
+  const prQuery = prNumber ? `&prNumber=${encodeURIComponent(prNumber)}` : ''
+  router.push(`/work-orders/new?source=pr&bomId=${encodeURIComponent(bom.value)}${prQuery}`)
 }
 </script>
 
@@ -107,15 +116,15 @@ function handleContinue() {
               <MpPopover id="cwo-bom" is-close-on-select>
                 <MpPopoverTrigger>
                   <MpSelect id="cwo-bom-select" :model-value="bom" is-full-width @mousedown.prevent>
-                    <option :value="bom">{{ bom }}</option>
+                    <option :value="bom">{{ bomLabel }}</option>
                   </MpSelect>
                 </MpPopoverTrigger>
                 <MpPopoverContent>
                   <MpPopoverList>
                     <MpPopoverListItem
-                      v-for="opt in bomOptions" :key="opt"
-                      :is-active="opt === bom" @click="bom = opt"
-                    >{{ opt }}</MpPopoverListItem>
+                      v-for="opt in bomOptions" :key="opt.id"
+                      :is-active="opt.id === bom" @click="bom = opt.id"
+                    >{{ opt.name }}</MpPopoverListItem>
                   </MpPopoverList>
                 </MpPopoverContent>
               </MpPopover>
