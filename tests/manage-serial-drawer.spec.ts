@@ -251,4 +251,67 @@ describe('ManageSerialDrawer — scan bar available in every mode, with correct 
     expect(wrapper.text()).toContain('PRIOR-TASK-SN-001') // real baseline data survives reset
     wrapper.unmount()
   })
+
+  // Regression: seedRows() had a kind-agnostic "modelValue.length > 0" branch that
+  // padded the row list with the SKU's entire existing warehouse serial pool
+  // (available + reserved units from unrelated already-in-stock units), marked
+  // "not counted". Harmless for count/in-out (a real pool genuinely exists there),
+  // but wrong for receiving — brand-new units have no existing pool. It only
+  // surfaced once modelValue stopped being empty: reopening the drawer again after
+  // an earlier scan+save within the same task (not just across a "continue draft").
+  it('receiving mode: reopening with a non-empty modelValue shows ONLY what was scanned, never the SKU\'s unrelated existing warehouse stock', async () => {
+    const reserved = reservedSerials()
+    expect(reserved.length).toBeGreaterThan(0) // sanity: seed data must have real unrelated stock to assert against
+
+    const wrapper = mountDrawer({
+      kind: 'receiving',
+      targetCount: 5,
+      modelValue: [{ serial: 'MY-SCANNED-SN-001' }],
+    })
+    await flushPromises()
+
+    expect(rowCount(wrapper)).toBe(1)
+    expect(wrapper.text()).toContain('MY-SCANNED-SN-001')
+    expect(wrapper.text()).not.toContain(reserved[0])
+    wrapper.unmount()
+  })
+})
+
+describe('ManageSerialDrawer — barcode scan threshold gates the bulk-paste textarea (receiving only)', () => {
+  it('targetCount at the default threshold (50): the textarea is disabled and "Add to list" is blocked', async () => {
+    const wrapper = mountDrawer({ kind: 'receiving', targetCount: 50, modelValue: [] })
+    await flushPromises()
+
+    const textarea = wrapper.find('textarea.msn-textarea')
+    expect(textarea.exists()).toBe(true)
+    expect(textarea.attributes('disabled')).toBeDefined()
+
+    const before = rowCount(wrapper)
+    // "Add to list" stays clickable (no disabled action buttons in this codebase) —
+    // clicking it while blocked must be a no-op, not add anything.
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add to list')!
+    expect(addBtn.attributes('disabled')).toBeUndefined()
+    await addBtn.trigger('click')
+    await flushPromises()
+
+    expect(rowCount(wrapper)).toBe(before)
+    wrapper.unmount()
+  })
+
+  it('targetCount above the threshold (51): the textarea stays enabled and "Add to list" works normally', async () => {
+    const wrapper = mountDrawer({ kind: 'receiving', targetCount: 51, modelValue: [] })
+    await flushPromises()
+
+    const textarea = wrapper.find('textarea.msn-textarea')
+    expect(textarea.exists()).toBe(true)
+    expect(textarea.attributes('disabled')).toBeUndefined()
+
+    await textarea.setValue('FAKE-NEW-TEXTAREA-001')
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add to list')!
+    await addBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('FAKE-NEW-TEXTAREA-001')
+    wrapper.unmount()
+  })
 })

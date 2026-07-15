@@ -37,7 +37,7 @@ export const IN_OUT_CATEGORIES: AdjustmentCategory[] = [
   'Production output', 'Waste/damaged', 'General', 'Opening balance',
 ]
 
-export type AdjustmentStatus = 'draft' | 'completed' | 'not_started' | 'in_progress'
+export type AdjustmentStatus = 'draft' | 'completed' | 'not_started' | 'in_progress' | 'canceled'
 
 // Offsetting GL account shown per row — derived from the category.
 const ACCOUNT_BY_CATEGORY: Record<AdjustmentCategory, string> = {
@@ -102,6 +102,8 @@ export interface StockAdjustment {
   endDate?: string
   /** ERP Stock Count only — ID of the originating WMS Cycle Count task */
   linkedCycleCountId?: string
+  canceledDate?: string
+  canceledReason?: string
 }
 
 // Adjustments apply to real (non-default, active) warehouses — the default warehouse
@@ -392,12 +394,21 @@ export function awaitingAdjustmentCount(kind?: AdjustmentKind): number {
   return stockAdjustments.filter((a) => a.status === 'draft' && (!kind || a.kind === kind)).length
 }
 
-/** Delete adjustments by id (row kebab + bulk delete). */
-export function deleteAdjustments(ids: string[]): void {
-  const set = new Set(ids)
-  for (let i = stockAdjustments.length - 1; i >= 0; i--) {
-    if (set.has(stockAdjustments[i]!.id)) stockAdjustments.splice(i, 1)
-  }
+/** An ERP adjustment can only be canceled while still a draft — once approved,
+ *  stock has already been applied (approveAdjustment runs at approval time), so
+ *  there's nothing left to safely void; the record stays a permanent record. */
+export function canCancelAdjustment(a: StockAdjustment): boolean {
+  return a.status === 'draft'
+}
+
+/** Cancel a draft adjustment — it never gets approved/applied. Terminal state;
+ *  the record itself is kept (never deleted) so it stays in the audit trail. */
+export function cancelAdjustment(id: string, reason?: string): void {
+  const a = stockAdjustments.find((x) => x.id === id)
+  if (!a || !canCancelAdjustment(a)) return
+  a.status = 'canceled'
+  a.canceledDate = new Date().toISOString()
+  if (reason) a.canceledReason = reason
   persistAdjustments()
 }
 

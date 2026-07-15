@@ -16,7 +16,7 @@ import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
 import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -30,6 +30,13 @@ const lineItems = computed(() => task.value ? getTaskLineItems(task.value) : [])
 // Put-away disabled for this task's warehouse → receiving finishes on its own,
 // no "create put-away" option to offer.
 const putAwayEnabledForTask = computed(() => getWarehouseConfig(po.value?.warehouseId ?? '').putAwayEnabled)
+// Below the warehouse's scan threshold, manual qty entry is disabled — the
+// operator must scan the barcode once per unit instead (scan handlers already
+// only ever +1, so they need no changes; only the manual input is gated).
+const warehouseConfig = computed(() => getWarehouseConfig(po.value?.warehouseId ?? ''))
+function qtyScanRequired(qty: number): boolean {
+  return scanRequiredForQty(warehouseConfig.value, qty)
+}
 
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
@@ -147,6 +154,24 @@ function saveSerialLines(serials: CommittedSerial[]) {
   draftQty.value = { ...draftQty.value, [sku]: serials.length }
   if (showQtyErrors.value) showQtyErrors.value = false
 }
+
+// Hydrate from whatever's already persisted on the task (e.g. resuming a saved
+// draft) — mirrors draftQty's watcher above; without this, continuing a draft
+// with existing batch/serial progress reopens both drawers blank.
+watch([() => props.orderId, lineItems], () => {
+  const nextBatch: Record<string, CommittedBatch[]> = {}
+  const nextSerial: Record<string, string[]> = {}
+  for (const it of lineItems.value) {
+    if (it.batchLines?.length) {
+      nextBatch[it.skuCode] = it.batchLines.map(b => ({
+        key: b.batchNo, batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, onHand: 0, counted: b.qty, unit: b.unit,
+      }))
+    }
+    if (it.serialNumbers?.length) nextSerial[it.skuCode] = it.serialNumbers
+  }
+  batchLinesBySku.value = nextBatch
+  serialLinesBySku.value = nextSerial
+}, { immediate: true })
 
 // SNs already received in prior tasks for the same receipt (block duplicates in drawer)
 const priorReceivedSerialsBySku = computed<Record<string, string[]>>(() => {
@@ -486,7 +511,24 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                     class="ri-td ri-td--input"
                     :class="{ 'ri-td--input--error': showQtyErrors && !(draftQty[item.skuCode] ?? 0) }"
                   >
+                    <MpTooltip
+                      v-if="qtyScanRequired(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0))"
+                      :id="`ri-tt-scan-${item.skuCode}`"
+                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      placement="top"
+                      use-portal
+                    >
+                      <input
+                        class="ri-qty-input"
+                        type="number" min="0"
+                        :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
+                        :value="draftQty[item.skuCode] ?? 0"
+                        :aria-label="`Received qty for ${item.productName}`"
+                        disabled
+                      />
+                    </MpTooltip>
                     <input
+                      v-else
                       class="ri-qty-input"
                       type="number" min="0"
                       :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"

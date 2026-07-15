@@ -9,7 +9,10 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { formatDateTime } from '~/utils/date'
-import { receivingPOsFor, taskAgingDays, type ReceivingPO, type ReceivingTask } from '~/data/receivingTasks'
+import {
+  receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask,
+  type ReceivingPO, type ReceivingTask,
+} from '~/data/receivingTasks'
 import { putAwayTasksFor } from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
 
@@ -31,6 +34,12 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Filters ───────────────────────────────────────────────────────────────────
 const search = ref('')
 const warehouseFilter = ref<string[]>([])
+// Mirror into the shared singleton so the tab bar's count badges (Receipts (N),
+// Receiving (N), Put-away (N)) scope to whatever warehouse this table is
+// actually filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
 const assigneeFilter = ref('')
 const statusFilter = ref('') // '' | open | completed
 
@@ -59,6 +68,7 @@ const statusOptions = [
   { label: 'In process',      value: 'in progress' },
   { label: 'Pending put-away', value: 'pending put-away' },
   { label: 'Completed',        value: 'completed' },
+  { label: 'Canceled',        value: 'canceled' },
 ]
 const warehouseLabel = computed(() => {
   const n = warehouseFilter.value.length
@@ -117,7 +127,9 @@ function hasPutAwayTask(taskId: string): boolean {
 
 // ─── Bulk select (tasks) ───────────────────────────────────────────────────────
 // Any task can be selected. The available bulk action depends on the selection:
-//   all "pending put-away" → Create put-away · anything else (incl. mixed) → Delete only.
+//   all "pending put-away" → Create put-away · anything not yet finished (open/in
+//   progress) → Cancel. Pending put-away / completed / already-canceled tasks are
+//   never cancelable — receiving on them is already done (or was never started).
 const selectedTasks = ref(new Set<string>())
 const allTaskIds = computed(() => pagedTasks.value.map(t => t.id))
 const allSelected = computed(() => allTaskIds.value.length > 0 && allTaskIds.value.every(id => selectedTasks.value.has(id)))
@@ -154,12 +166,15 @@ function bulkCreatePutAway() {
     query: { warehouseId: wh, taskIds: [...selectedTasks.value].join(',') },
   })
 }
-// Bulk delete — confirmation alert before removing.
-const bulkDeleteOpen = ref(false)
-function confirmBulkDelete() {
-  const n = selectedTasks.value.size
-  bulkDeleteOpen.value = false
-  toast.notify({ variant: 'success', title: `${n} ${n === 1 ? 'task' : 'tasks'} deleted` , maxWidth: 'max-content'})
+// Bulk cancel — confirmation alert, only for not-yet-finished tasks in the selection.
+const cancelableTaskObjs = computed(() => selectedTaskObjs.value.filter(canCancelReceivingTask))
+const bulkCancelable = computed(() => cancelableTaskObjs.value.length > 0)
+const bulkCancelOpen = ref(false)
+function confirmBulkCancel() {
+  const ids = cancelableTaskObjs.value.map(t => t.id)
+  for (const id of ids) cancelReceivingTask(id)
+  bulkCancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${ids.length} ${ids.length === 1 ? 'task' : 'tasks'} canceled` , maxWidth: 'max-content'})
   deselectAll()
 }
 function onEsc(e: KeyboardEvent) { if (e.key === 'Escape' && selectedTasks.value.size) deselectAll() }
@@ -185,10 +200,16 @@ function viewDetails(t: ReceivingTask) { router.push(`/receiving/${t.id}`) }
 function createPutAway(t: ReceivingTask) {
   router.push({ path: '/inbound-delivery/put-away/create', query: { warehouseId: t.warehouseId, taskId: t.id } })
 }
-const deleteModalOpen = ref(false)
-const taskToDelete = ref<ReceivingTask | null>(null)
-function openDeleteModal(t: ReceivingTask) { taskToDelete.value = t; deleteModalOpen.value = true }
-function closeDeleteModal() { deleteModalOpen.value = false; taskToDelete.value = null }
+const cancelModalOpen = ref(false)
+const taskToCancel = ref<ReceivingTask | null>(null)
+function openCancelModal(t: ReceivingTask) { taskToCancel.value = t; cancelModalOpen.value = true }
+function closeCancelModal() { cancelModalOpen.value = false; taskToCancel.value = null }
+function confirmCancelTask() {
+  if (!taskToCancel.value) return
+  cancelReceivingTask(taskToCancel.value.id)
+  toast.notify({ variant: 'success', title: `${taskToCancel.value.taskNo} canceled`, maxWidth: 'max-content' })
+  closeCancelModal()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -307,7 +328,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <MpCheckbox id="rcvg-bulk-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
                   <span class="rcvg-bulk-bar__count">{{ bulkCountLabel }}</span>
                   <button v-if="canCreatePutAway" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="bulkCreatePutAway">Create put-away</button>
-                  <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="bulkDeleteOpen = true">Delete</button>
+                  <button
+                    v-if="bulkCancelable"
+                    class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                    :class="css({ color: 'var(--mp-text-critical)' })"
+                    @click="bulkCancelOpen = true"
+                  >Cancel</button>
                 </div>
                 <div class="rcvg-bulk-bar__right">
                   <span>Press</span><kbd class="rcvg-bulk-bar__kbd">Esc</kbd><span>to deselect</span>
@@ -423,7 +449,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                     <MpPopoverList>
                       <MpPopoverListItem @click="viewDetails(t)">View details</MpPopoverListItem>
                       <MpPopoverListItem v-if="t.status === 'pending put-away'" @click="createPutAway(t)">Create put-away</MpPopoverListItem>
-                      <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal(t)">Delete</MpPopoverListItem>
+                      <MpPopoverListItem
+                        v-if="canCancelReceivingTask(t)"
+                        :class="css({ color: 'var(--mp-text-critical)' })"
+                        @click="openCancelModal(t)"
+                      >Cancel</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
@@ -449,42 +479,36 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </div>
   </div>
 
-  <!-- ── Delete confirmation modal ── -->
-  <MpModal id="rcvg-delete-modal" :is-open="deleteModalOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal">
+  <!-- ── Cancel confirmation modal ── -->
+  <MpModal id="rcvg-cancel-modal" :is-open="cancelModalOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
     <MpModalContent>
-      <MpModalHeader>Delete {{ taskToDelete?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <template v-if="taskToDelete && taskToDelete.receivedQty > 0">
-          This task has {{ fmt(taskToDelete.receivedQty) }} units recorded.
-          Deleting it will return those units to the purchase order.
-        </template>
-        <template v-else>
-          This receiving task will be permanently deleted.
-        </template>
+        This receiving task will be canceled and can no longer be continued. This can't be undone.
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Keep task</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="closeDeleteModal">Delete task</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep task</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">Cancel task</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
 
-  <!-- ── Bulk delete confirmation modal ── -->
-  <MpModal id="rcvg-bulk-delete-modal" :is-open="bulkDeleteOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkDeleteOpen = false">
+  <!-- ── Bulk cancel confirmation modal ── -->
+  <MpModal id="rcvg-bulk-cancel-modal" :is-open="bulkCancelOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkCancelOpen = false">
     <MpModalContent>
-      <MpModalHeader>Delete {{ selectedTasks.size }} {{ selectedTasks.size === 1 ? 'task' : 'tasks' }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Cancel {{ cancelableTaskObjs.length }} {{ cancelableTaskObjs.length === 1 ? 'task' : 'tasks' }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        The selected receiving tasks will be permanently deleted. This can't be undone.
+        The selected receiving tasks will be canceled and can no longer be continued. This can't be undone.
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkDeleteOpen = false">Keep tasks</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">Delete tasks</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkCancelOpen = false">Keep tasks</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkCancel">Cancel tasks</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

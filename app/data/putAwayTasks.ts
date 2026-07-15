@@ -246,9 +246,16 @@ export function endPutAway(
   persistPutAways();
 }
 
+/** A put-away task can only be canceled while not yet completed — endPutAway()
+ *  is what actually commits stock to its final bin/batch/serial location, so a
+ *  completed task has already taken real effect and must stay a permanent record. */
+export function canCancelPutAway(t: PutAwayTask): boolean {
+  return t.status === 'open' || t.status === 'in progress';
+}
+
 export function cancelPutAway(taskId: string, reason?: string): void {
   const t = getPutAwayTask(taskId);
-  if (!t) return;
+  if (!t || !canCancelPutAway(t)) return;
   t.status = 'canceled';
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;

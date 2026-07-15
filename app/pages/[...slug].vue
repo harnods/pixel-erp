@@ -276,30 +276,37 @@ const pageTabs: Record<string, string[]> = {
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
 // Partial reception (Completed / Canceled are terminal, hidden by default).
+//
+// Scoped to whatever warehouse(s) the currently-visible tab's own "Warehouse"
+// filter is set to (activeWarehouseFilter, mirrored up by each index page) —
+// every sibling badge in the same section follows it too, since only one tab's
+// page is ever mounted at a time and filtering one is filtering the section.
+const activeWarehouseFilter = useActiveWarehouseFilter()
 const currentTabCounts = computed<Record<string, number>>(() => {
+  const wh = activeWarehouseFilter.value
   if (currentPageKey.value === 'Inbound delivery') {
-    const counts = receiptCountsByStage() // ERP = all warehouses
+    const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
     const receipts = (counts['On the way'] ?? 0) + (counts['Partial reception'] ?? 0)
     if (receipts) out['Receipts'] = receipts
     // Receiving / Put-away are task-based (a different dataset than the PO stages)
-    const recv = receivingOpenCount()
+    const recv = receivingOpenCount(wh)
     if (recv) out['Receiving'] = recv
-    const putaway = putAwayOpenCount()
+    const putaway = putAwayOpenCount(wh)
     if (putaway) out['Put-away'] = putaway
     return out
   }
   if (currentPageKey.value === 'Outbound delivery') {
     const out: Record<string, number> = {}
     // Outgoing badges the actionable orders: everything not yet Completed/Canceled.
-    const outgoing = outgoingOpenCount() // ERP = all warehouses
+    const outgoing = outgoingOpenCount(wh)
     if (outgoing) out['Requests'] = outgoing
     // Picking / Packing / Ready to ship are task-based (a different dataset than the orders)
-    const picking = pickingOpenCount()
+    const picking = pickingOpenCount(wh)
     if (picking) out['Picking'] = picking
-    const packing = packingOpenCount()
+    const packing = packingOpenCount(wh)
     if (packing) out['Packing'] = packing
-    const delivery = deliveryOpenCount()
+    const delivery = deliveryOpenCount(wh)
     if (delivery) out['Ready to ship'] = delivery
     return out
   }
@@ -943,6 +950,9 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="showNewWarehouseTransfer" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+          </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newWarehouseTransfer">
             <MpIcon name="add" size="md" color="icon.inverse" />
             New warehouse transfer

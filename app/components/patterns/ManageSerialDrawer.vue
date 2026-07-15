@@ -4,6 +4,7 @@ import { MpIcon, MpBadge, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverConte
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { resolveScan, notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -142,6 +143,11 @@ function seedRows(): void {
       counted: true,
       destLocId: cs.destLocationId ?? '',
     }))
+  } else if (props.kind === 'receiving') {
+    // Receiving has no pre-existing warehouse serial pool to pick from — these are
+    // brand-new units. Show only what's actually been scanned/entered so far (this
+    // task's own modelValue); never mix in unrelated already-in-stock serials.
+    rows.value = props.modelValue.map(cs => ({ serial: cs.serial, counted: true }))
   } else if (props.modelValue.length > 0) {
     const countedSet = new Set(props.modelValue.map(cs => cs.serial))
     const seen = new Set<string>()
@@ -205,6 +211,14 @@ const isReceiving = computed(() => props.kind === 'receiving')
 const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
 const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
+// Below the warehouse's scan threshold, the bulk-paste textarea is disabled —
+// otherwise it'd let someone type in real serial numbers by hand without ever
+// physically scanning them, defeating the point of a low-qty scan requirement.
+// Receiving only: it's the only kind in scope (picking/put-away/transfer never
+// show this textarea in the first place; count/in-out are a different feature).
+const scanRequiredForLine = computed(() =>
+  isReceiving.value && scanRequiredForQty(getWarehouseConfig(props.warehouseId), props.targetCount ?? 0),
+)
 // Modes where a genuinely unrecognized scanned serial is a NEW one worth adding
 // (matching the textarea's "Add to list" behavior) rather than an error — receiving
 // and stock in/out both exist to register serials the system doesn't know yet;
@@ -239,6 +253,10 @@ function parseInput(): string[] {
 }
 
 function addToList() {
+  if (scanRequiredForLine.value) {
+    notifyScanError('Qty at or below the scan threshold — scan each serial’s barcode instead of typing')
+    return
+  }
   const parsed = parseInput()
   if (!parsed.length) return
   if (!props.kind || props.kind === 'count') {
@@ -527,7 +545,21 @@ async function handleSave() {
           <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins. -->
           <template v-if="!isPutAway">
             <label class="msn-form-label">Serial number</label>
+            <MpTooltip
+              v-if="scanRequiredForLine"
+              id="msn-tt-scan-textarea"
+              label="Qty at or below the scan threshold — scan each serial's barcode instead of typing"
+              placement="top"
+              use-portal
+            >
+              <textarea
+                class="msn-textarea"
+                placeholder="Scan barcodes below to add serial numbers."
+                disabled
+              />
+            </MpTooltip>
             <textarea
+              v-else
               v-model="inputText"
               class="msn-textarea"
               placeholder="Paste or type serial numbers here. Supports comma-separated or one per line."
@@ -540,15 +572,6 @@ async function handleSave() {
           <p v-if="saveError" class="msn-save-error">{{ saveError }}</p>
         </div>
 
-        <template v-if="rows.length === 0">
-          <div class="msn-empty">
-            <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
-            <p class="msn-empty-title">No serial numbers yet</p>
-            <p class="msn-empty-desc">Add serial numbers using the input above.</p>
-          </div>
-        </template>
-
-        <template v-else>
         <div class="msn-filter-bar">
           <div class="msn-search">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -563,10 +586,13 @@ async function handleSave() {
           </div>
         </div>
 
-        <!-- Scan bar — every mode, same position as outbound (picking). Reset
-             re-seeds from props (not a blanket counted=false), so it's safe in
-             every mode — it undoes scans/toggles without touching real baseline
-             state (in-out/receiving's existing-stock rows, put-away's fixed set). -->
+        <!-- Scan bar — every mode, same position as outbound (picking), and always
+             rendered even when rows.length is 0 — that's the normal starting state
+             for receiving/in-out (nothing scanned yet), not an edge case, so scanning
+             must work from the very first serial. Reset re-seeds from props (not a
+             blanket counted=false), so it's safe in every mode — it undoes scans/toggles
+             without touching real baseline state (in-out/receiving's existing-stock
+             rows, put-away's fixed set). -->
         <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
           <button
             class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
@@ -575,6 +601,15 @@ async function handleSave() {
           >Reset count</button>
         </ScanBar>
 
+        <template v-if="rows.length === 0">
+          <div class="msn-empty">
+            <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
+            <p class="msn-empty-title">No serial numbers yet</p>
+            <p class="msn-empty-desc">Add serial numbers using the input above, or scan a barcode.</p>
+          </div>
+        </template>
+
+        <template v-else>
         <div class="msn-table-wrap">
           <table class="msn-table" :class="{ 'msn-table--locs': hasOriginLoc || hasDestLoc, 'msn-table--form': hasDestLoc }">
             <colgroup>

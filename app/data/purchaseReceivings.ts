@@ -22,7 +22,7 @@ export interface PurchaseReceiving {
   purchaseQty: number
   receivedQty: number
   skuCount: number
-  status: 'open' | 'in progress' | 'pending put-away' | 'completed'
+  status: 'open' | 'in progress' | 'pending put-away' | 'completed' | 'canceled'
   startDate?: string
   endDate?: string
 }

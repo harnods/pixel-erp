@@ -26,11 +26,11 @@ function formatAging(startIso?: string, endIso?: string): string {
 }
 import {
   stockAdjustments, adjustmentWarehouseOptions, adjustmentMemo, adjustmentUpdatedBy, adjustmentUpdatedAt,
-  adjustmentApprovalLog, deleteAdjustments, approveAdjustment, ADJUSTMENT_CATEGORIES,
+  adjustmentApprovalLog, canCancelAdjustment, cancelAdjustment, approveAdjustment, ADJUSTMENT_CATEGORIES,
   type StockAdjustment, type ApprovalLog,
 } from '~/data/stockAdjustments'
 import {
-  wmsStockAdjustments, wmsAdjustmentWarehouseOptions, deleteWmsAdjustments,
+  wmsStockAdjustments, wmsAdjustmentWarehouseOptions, canCancelWmsAdjustment, cancelWmsAdjustment,
 } from '~/data/wmsStockAdjustments'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -53,7 +53,11 @@ const isWmsPage  = computed(() => currentPageKey.value === 'Cycle counts' || cur
 const isErpStockCounts = computed(() => currentPageKey.value === 'Stock counts')
 const activeList    = computed(() => isWmsPage.value ? wmsStockAdjustments : stockAdjustments)
 const activeWhOpts  = computed(() => isWmsPage.value ? wmsAdjustmentWarehouseOptions() : adjustmentWarehouseOptions())
-function activeDelete(ids: string[]) { isWmsPage.value ? deleteWmsAdjustments(ids) : deleteAdjustments(ids) }
+function canCancel(a: StockAdjustment): boolean { return isWmsPage.value ? canCancelWmsAdjustment(a) : canCancelAdjustment(a) }
+function activeCancel(ids: string[]): void {
+  const fn = isWmsPage.value ? cancelWmsAdjustment : cancelAdjustment
+  for (const id of ids) fn(id)
+}
 
 // ─── Approval view — demo toggle: "As user" (no Approve) vs "As manager" ──────
 const { viewAs, setViewAs } = useApprovalViewAs()
@@ -223,35 +227,35 @@ function bulkApprove(sel: Set<number>, deselectAll: () => void) {
   toast.notify({ variant: 'success', title: `${rows.length} adjustment${rows.length > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
 }
 
-// ─── Delete (row kebab + bulk) → confirmation modal ────────────────────────────────
-const deleteOpen = ref(false)
-const deleteIds = ref<string[]>([])
-const deleteReason = ref('')
-const deleteError = ref('')
-const REASON_MAX = 256
+// ─── Cancel (row kebab + bulk) → confirmation modal ────────────────────────────────
+// Only draft (ERP) / not-started-or-in-progress cycle counts (WMS) are cancelable —
+// once approved/finished, real stock has already been applied (approveAdjustment /
+// finishWmsCount), so there's nothing left to safely void.
+function cancelableSelection(sel: Set<number>): StockAdjustment[] {
+  return selectedAdjustmentsOf(sel).filter(canCancel)
+}
+function bulkCancelable(sel: Set<number>): boolean {
+  return cancelableSelection(sel).length > 0
+}
+const cancelOpen = ref(false)
+const cancelIds = ref<string[]>([])
 let _bulkDeselect: (() => void) | null = null
-function resetDelete() { deleteReason.value = ''; deleteError.value = '' }
-function askDeleteRow(row: StockAdjustment) {
-  deleteIds.value = [row.id]
+function askCancelRow(row: StockAdjustment) {
+  cancelIds.value = [row.id]
   _bulkDeselect = null
-  resetDelete()
-  deleteOpen.value = true
+  cancelOpen.value = true
 }
-function askBulkDelete(sel: Set<number>, deselectAll: () => void) {
-  deleteIds.value = selectedAdjustmentsOf(sel).map(a => a.id)
+function askBulkCancel(sel: Set<number>, deselectAll: () => void) {
+  cancelIds.value = cancelableSelection(sel).map(a => a.id)
   _bulkDeselect = deselectAll
-  resetDelete()
-  deleteOpen.value = true
+  cancelOpen.value = true
 }
-// Keep the button clickable (no disabled buttons) — validate on click, show inline error.
-function confirmDelete() {
-  if (!deleteReason.value.trim()) {
-    deleteError.value = 'You must fill in reason for deleting'
-    return
-  }
-  activeDelete(deleteIds.value)
+function confirmCancel() {
+  const n = cancelIds.value.length
+  activeCancel(cancelIds.value)
   _bulkDeselect?.()
-  deleteOpen.value = false
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${n} adjustment${n > 1 ? 's' : ''} canceled`, maxWidth: 'max-content' })
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
@@ -390,7 +394,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Bulk bar → approve (manager, awaiting tab) + delete ── -->
+    <!-- ── Bulk bar → approve (manager, awaiting tab) + cancel ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <button
         v-if="isAwaiting && viewAs === 'manager'"
@@ -400,11 +404,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         Approve
       </button>
       <button
+        v-if="bulkCancelable(selectedRows as Set<number>)"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         :class="css({ color: 'var(--mp-text-critical)' })"
-        @click="askBulkDelete(selectedRows as Set<number>, deselectAll)"
+        @click="askBulkCancel(selectedRows as Set<number>, deselectAll)"
       >
-        Delete
+        Cancel
       </button>
     </template>
 
@@ -495,7 +500,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem @click="viewDetails(row as unknown as StockAdjustment)">View details</MpPopoverListItem>
-              <MpPopoverListItem @click="editAdjustment(row as unknown as StockAdjustment)">Edit</MpPopoverListItem>
+              <MpPopoverListItem v-if="canCancel(row as unknown as StockAdjustment)" @click="editAdjustment(row as unknown as StockAdjustment)">Edit</MpPopoverListItem>
+              <MpPopoverListItem
+                v-if="canCancel(row as unknown as StockAdjustment)"
+                :class="css({ color: 'var(--mp-text-critical)' })"
+                @click="askCancelRow(row as unknown as StockAdjustment)"
+              >Cancel</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -533,8 +543,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as StockAdjustment)">View details</MpPopoverListItem>
-            <MpPopoverListItem @click="editAdjustment(row as unknown as StockAdjustment)">Edit</MpPopoverListItem>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askDeleteRow(row as unknown as StockAdjustment)">Delete</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCancel(row as unknown as StockAdjustment)" @click="editAdjustment(row as unknown as StockAdjustment)">Edit</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancel(row as unknown as StockAdjustment)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="askCancelRow(row as unknown as StockAdjustment)"
+            >Cancel</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -580,36 +594,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
   </ErpTablePage>
 
-  <!-- ── Delete confirmation ── -->
+  <!-- ── Cancel confirmation ── -->
   <MpModal
-    id="sa-delete" :is-open="deleteOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteOpen = false"
+    id="sa-cancel" :is-open="cancelOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
   >
     <MpModalContent>
-      <MpModalHeader>Delete {{ deleteIds.length > 1 ? deleteIds.length + ' stock adjustments' : 'stock adjustment' }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Cancel {{ cancelIds.length > 1 ? cancelIds.length + ' stock adjustments' : 'stock adjustment' }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <p class="sa-del-intro">This action cannot be undone. Deleting {{ deleteIds.length > 1 ? 'these adjustments' : 'this adjustment' }} will:</p>
-        <ul class="sa-del-list">
-          <li>Remove the related journal entry</li>
-          <li>Trigger recalculation that may affect COGS and product stock quantity</li>
-        </ul>
-        <div class="sa-del-field">
-          <div class="sa-del-label-row">
-            <label class="sa-del-label" for="sa-del-reason">Reason for deleting<span class="sa-del-req">*</span></label>
-            <span class="sa-del-count">{{ deleteReason.length }} / {{ REASON_MAX }}</span>
-          </div>
-          <textarea
-            id="sa-del-reason" class="sa-del-textarea" :class="{ 'sa-del-textarea--error': deleteError }"
-            :maxlength="REASON_MAX" v-model="deleteReason" rows="3"
-            @input="deleteError = ''"
-          ></textarea>
-          <p v-if="deleteError" class="sa-del-error">{{ deleteError }}</p>
-        </div>
+        <p>{{ cancelIds.length > 1 ? 'These adjustments' : 'This adjustment' }} will be canceled and can no longer be approved. This can't be undone.</p>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="deleteOpen = false">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">Keep {{ cancelIds.length > 1 ? 'adjustments' : 'adjustment' }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel {{ cancelIds.length > 1 ? 'adjustments' : 'adjustment' }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -759,28 +757,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* Modal footer */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
-
-/* Delete modal */
-.sa-del-intro { color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.sa-del-list {
-  margin: var(--mp-spacing-2) 0 0; padding-left: 21px; list-style: disc;
-  color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px);
-}
-.sa-del-field { margin-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.sa-del-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; }
-.sa-del-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.sa-del-req { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
-.sa-del-count { margin-left: auto; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.sa-del-textarea {
-  width: 100%; min-height: 80px; resize: vertical;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
-  font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-}
-.sa-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
-.sa-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
-.sa-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
 /* Awaiting approval row actions */
 .sa-approval-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }

@@ -8,6 +8,7 @@ import {
 } from '@mekari/pixel3'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { resolveScan, notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -203,6 +204,14 @@ const isTransfer = computed(() => props.kind === 'transfer')
 const isReceiving = computed(() => props.kind === 'receiving')
 const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
+// Below the warehouse's scan threshold, manual qty entry is disabled — the
+// operator must scan the batch barcode once per unit instead (handleDrawerScan
+// already only ever +1s an existing row, so it needs no changes). Picking/
+// receiving only — put-away's batch step has no scan bar at all (it's bin
+// allocation of an already-known qty, not a count), so it's out of scope.
+const scanRequiredForLine = computed(() =>
+  (isPicking.value || isReceiving.value) && scanRequiredForQty(getWarehouseConfig(props.warehouseId), props.targetCount ?? 0),
+)
 // receiving/put-away have no meaningful on-hand/new-on-hand concept — hide those stats/columns.
 const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
 // Picking shows Available qty (like transfer) but has no "new on hand" concept —
@@ -473,6 +482,15 @@ function paRemoveLocRow(row: WorkRow, lr: LocRow) {
   if (!row.destLocRows.length) row.destLocRows = [makeLocRow()]
 }
 
+// Put-away: a qty entered without a storage location would otherwise be silently
+// dropped on Save (handleSave only keeps rows with BOTH locationId and qty > 0).
+// Surfaced only after an attempted Save — clears itself per-row the moment that
+// row's own qty/location combo becomes valid, no separate reset wiring needed.
+const showPaLocErrors = ref(false)
+function paLocMissing(lr: LocRow): boolean {
+  return showPaLocErrors.value && Number(lr.qty) > 0 && !lr.locationId
+}
+
 // helper: does this row have any location assignments saved?
 function batchLocIsSet(row: WorkRow): boolean {
   return row.originLocRows.some(r => r.locationId && Number(r.qty) > 0)
@@ -615,6 +633,11 @@ function handleCancel() {
 
 async function handleSave() {
   if (pickOverLimit.value) return
+  if (isPutAway.value && rows.value.some(r => r.destLocRows.some(l => Number(l.qty) > 0 && !l.locationId))) {
+    showPaLocErrors.value = true
+    return
+  }
+  showPaLocErrors.value = false
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   const committed: CommittedBatch[] = rows.value.map(r => {
@@ -821,7 +844,7 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Expiry date</th>
                 <th class="mbd-th">Description</th>
                 <th class="mbd-th">Storage location</th>
-                <th class="mbd-th mbd-th--num">Received qty</th>
+                <th class="mbd-th mbd-th--num">Put away qty</th>
                 <th class="mbd-th">Unit</th>
                 <th class="mbd-th mbd-th--del" />
               </tr>
@@ -833,9 +856,33 @@ function fmtNum(n: number | null): string {
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ isoToDisplay(row.expiryDate) }}</td>
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc }}</td>
                   <!-- Storage location picker -->
-                  <td class="mbd-td mbd-td--input mbd-td--pa-loc">
+                  <td class="mbd-td mbd-td--input mbd-td--pa-loc" :class="{ 'mbd-td--pa-loc-error': paLocMissing(lr) }">
                     <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select>
-                      <MpPopoverTrigger>
+                      <MpTooltip
+                        v-if="paLocMissing(lr)"
+                        :id="`mbd-pa-loc-tooltip-${lr.id}`"
+                        label="Select a storage location for the qty entered"
+                        placement="top"
+                        use-portal
+                      >
+                        <MpPopoverTrigger>
+                          <div class="mbd-pa-loc-trigger">
+                            <input
+                              class="mbd-pa-loc-input"
+                              type="text"
+                              autocomplete="off"
+                              :value="locActiveKey === `pa-${lr.id}` ? (locSearches[`pa-${lr.id}`] ?? '') : lr.locationId"
+                              placeholder="Select storage location"
+                              @focus="locActiveKey = `pa-${lr.id}`; locSearches[`pa-${lr.id}`] = ''"
+                              @input="locActiveKey = `pa-${lr.id}`; locSearches[`pa-${lr.id}`] = ($event.target as HTMLInputElement).value"
+                            />
+                            <svg class="mbd-pa-loc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                          </div>
+                        </MpPopoverTrigger>
+                      </MpTooltip>
+                      <MpPopoverTrigger v-else>
                         <div class="mbd-pa-loc-trigger">
                           <input
                             class="mbd-pa-loc-input"
@@ -992,7 +1039,24 @@ function fmtNum(n: number | null): string {
                 </td>
                 <td v-else class="mbd-td mbd-td--input mbd-td--counted" :class="{ 'mbd-td--counted-error': pickOverLimit }">
                   <MpTooltip
-                    v-if="pickOverLimit"
+                    v-if="scanRequiredForLine"
+                    :id="`mbd-qty-tooltip-scan-${row.key}`"
+                    label="Qty at or below the scan threshold — scan the batch barcode instead of typing"
+                    placement="top"
+                    use-portal
+                    class="mbd-qty-tooltip-wrap"
+                  >
+                    <input
+                      class="mbd-qty-input"
+                      type="number"
+                      min="0"
+                      :value="row.counted ?? ''"
+                      placeholder="0"
+                      disabled
+                    />
+                  </MpTooltip>
+                  <MpTooltip
+                    v-else-if="pickOverLimit"
                     :id="`mbd-qty-tooltip-${row.key}`"
                     :label="pickOverLimitMsg"
                     placement="top"
@@ -1488,6 +1552,12 @@ function fmtNum(n: number | null): string {
 .mbd-td--counted-error { background: #FCEEED; border-bottom-color: #E2483D; }
 .mbd-td--counted-error .mbd-qty-input { background: transparent; }
 .mbd-qty-tooltip-wrap { display: block; width: 100%; }
+
+/* Put-away: qty entered without a storage location. Must come after the base
+   .mbd-td / .mbd-td--pa-loc rules — same specificity, so declaration order
+   decides which background/shadow wins. */
+.mbd-td--pa-loc-error { background: #FCEEED; }
+.mbd-td--pa-loc-error:focus-within { box-shadow: inset 0 0 0 1px #E2483D; }
 
 .mbd-cell-input {
   width: 100%; height: var(--mp-sizes-10, 40px);

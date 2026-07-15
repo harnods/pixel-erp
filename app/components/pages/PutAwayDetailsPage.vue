@@ -3,13 +3,14 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpSpinner, toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
-import { putAwayTasks, startPutAway as startPutAwayTask } from '~/data/putAwayTasks'
+import { putAwayTasks, startPutAway as startPutAwayTask, canCancelPutAway, cancelPutAway } from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
 import { formatDate, formatDateTime, formatDateTimeLong } from '~/utils/date'
@@ -147,11 +148,17 @@ function startPutAway() {
   if (task.value?.status === 'open') startPutAwayTask(props.orderId)
   router.push(`/put-away/${props.orderId}/store`)
 }
-function editTask() {
-  toast.notify({ variant: 'greeting', title: 'Edit — coming soon' , maxWidth: 'max-content'})
-}
-function deleteTask() {
-  toast.notify({ variant: 'greeting', title: 'Delete — coming soon' , maxWidth: 'max-content'})
+// Cancel — only while not yet completed. endPutAway() is what actually commits
+// stock to its final location, so a completed task has already taken real effect.
+const canCancel = computed(() => !!task.value && canCancelPutAway(task.value))
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  if (!task.value) return
+  cancelPutAway(task.value.id)
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
+  goBack()
 }
 
 const pdfPreviewOpen = ref(false)
@@ -390,25 +397,9 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary" @click="printPutAwaySlip">Print put-away slip</button>
 
-      <template v-if="task.status === 'completed' || task.status === 'canceled'">
-        <MpPopover id="pad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--primary">
-              Actions
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="editTask">Edit</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteTask">Delete</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-      </template>
-      <template v-else>
+      <!-- Completed / canceled: stock already committed to its final location
+           (or nothing left to cancel) — no actions left, terminal record. -->
+      <template v-if="task.status === 'open' || task.status === 'in progress'">
         <div class="detail-split">
           <button class="detail-btn detail-btn--primary detail-split-main" @click="startPutAway">
             {{ task.status === 'in progress' ? 'Continue put-away' : 'Start put-away' }}
@@ -423,8 +414,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem @click="editTask">Edit</MpPopoverListItem>
-                <MpPopoverListItem @click="deleteTask">Delete</MpPopoverListItem>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -439,6 +429,24 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       title="Put-away slip preview"
       @close="pdfPreviewOpen = false"
     />
+
+    <!-- ── Cancel confirmation ── -->
+    <MpModal id="pad-cancel" :is-open="cancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Cancel {{ task.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          This put-away task will be canceled and can no longer be continued. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
   </div>
 
@@ -620,6 +628,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   border-top: 1px solid transparent;
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
 
 .detail-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);

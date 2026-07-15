@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
@@ -65,6 +65,12 @@ function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — max 2 quick filters: Status + Warehouse (hidden when scoped) ───
 const warehouseFilter = ref<string[]>([])
+// Mirror into the shared singleton so the tab bar's count badges (Requests (N),
+// Picking (N), etc.) scope to whatever warehouse this table is actually
+// filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
 const statusFilter = ref('')
 
 const baseTasks = computed<PickingTask[]>(() =>
@@ -160,11 +166,14 @@ function bulkPackable(sel: Set<number>): boolean {
   if (!rows.every(t => t.warehouseId === wh)) return false
   return rows.some(pickingEligibleForPacking)
 }
-// Open the multi-picking Create packing form for the eligible lists (one warehouse).
+// Open the multi-picking Create packing form for EVERY selected list, not just the
+// eligible ones — the form itself shows a not-packable list with its reason instead
+// of silently dropping it, so the operator can see why (button still only appears
+// when ≥1 selected list is actually eligible, via bulkPackable above).
 function bulkCreatePacking(sel: Set<number>, deselectAll: () => void) {
-  const eligible = selectedPickingsOf(sel).filter(pickingEligibleForPacking)
-  if (!eligible.length) return
-  router.push({ path: '/outbound-delivery/packing/create', query: { pickingIds: eligible.map(t => t.id).join(',') } })
+  const rows = selectedPickingsOf(sel)
+  if (!rows.length) return
+  router.push({ path: '/outbound-delivery/packing/create', query: { pickingIds: rows.map(t => t.id).join(',') } })
   deselectAll()
 }
 

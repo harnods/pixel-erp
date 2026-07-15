@@ -3,7 +3,7 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon,
-  MpInputTag, MpDatePicker,
+  MpDatePicker,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpBanner, MpBannerDescription,
   toast, css,
@@ -11,6 +11,8 @@ import {
 } from '@mekari/pixel3'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
+import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
+import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -39,14 +41,13 @@ const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
 const warehouseOptions = computed(() =>
   warehouses.filter(w => w.status === 'active').map(w => ({ id: w.id, name: w.name })),
 )
-const realWarehouses = warehouses.filter(w => w.status === 'active' && !w.isDefault)
 function warehouseName(id: string) { return warehouseOptions.value.find(w => w.id === id)?.name ?? '' }
 
 // ── Form state ───────────────────────────────────────────────────────────────────
 const transactionDate = ref(todayDisplay)
 const transactionDateError = ref(false)
-const originId = ref(realWarehouses[0]?.id ?? '')
-const destId = ref(realWarehouses[1]?.id ?? '')
+const originId = ref('')
+const destId = ref('')
 const originError = ref(false)
 const destError = ref(false)
 const tags = ref<DataInterface[]>([])
@@ -61,12 +62,6 @@ const productOptions = computed(() => originStock.value.map(s => {
   const p = productBySku(s.sku)
   return { id: s.sku, name: s.name, desc: p?.desc ?? '', img: p?.img ?? s.photo, unit: s.unit }
 }))
-// Product picker: `activeRow` is the row whose picker is open (its trigger shows the
-// search field); `prodSearch` is that field's text. Only one is open at a time.
-const prodSearch = ref('')
-const activeRow = ref<number | null>(null)
-function closePicker(row: { id: number }) { if (activeRow.value === row.id) activeRow.value = null }
-
 function availableFor(sku: string): number { return originStockMap.value.get(sku)?.available ?? 0 }
 function onHandFor(sku: string): number | undefined { return destStockMap.value.get(sku)?.onHand }
 
@@ -90,25 +85,25 @@ function isSerialTrackedSku(sku: string): boolean {
 interface LocationQty { locationId: string; qty: string }
 interface LineRow { id: number; sku: string; productName: string; desc: string; img: string; unit: string; qty: string; qtyError: boolean; batchLines?: CommittedBatch[]; serialLines?: CommittedSerial[]; originLocations?: LocationQty[]; destLocations?: LocationQty[] }
 let rowSeq = 0
-function makeRow(): LineRow { return { id: rowSeq++, sku: '', productName: '', desc: '', img: '', unit: '', qty: '0', qtyError: false } }
-const rows = ref<LineRow[]>([makeRow()])
-
-function onProductSelect(row: LineRow, sku: string) {
+function makeRow(sku: string): LineRow {
   const p = productBySku(sku)
-  if (!p) { row.productName = ''; row.desc = ''; row.img = ''; row.unit = ''; return }
-  row.sku = sku
-  row.productName = p.name
-  row.desc = p.desc
-  row.img = p.img
-  row.unit = p.unit
-  activeRow.value = null
-  prodSearch.value = ''
-  // Auto-append an empty row when the last row gets a product.
-  const last = rows.value[rows.value.length - 1]
-  if (last && last.id === row.id) rows.value.push(makeRow())
+  return { id: rowSeq++, sku, productName: p?.name ?? '', desc: p?.desc ?? '', img: p?.img ?? '', unit: p?.unit ?? '', qty: '0', qtyError: false }
+}
+const rows = ref<LineRow[]>([])
+
+// ── Select product drawer — picks which SKUs (from the origin's own stock) are on
+// this transfer. Existing rows keep their qty/batch/serial/location state when the
+// selection changes; only newly-added SKUs get a fresh row. ──────────────────────
+const drawerOpen = ref(false)
+const pickerProducts = computed<PickerProduct[]>(() =>
+  productOptions.value.map(o => ({ sku: o.id, name: o.name, img: o.img, desc: o.desc })),
+)
+const selectedSkus = computed(() => rows.value.map(r => r.sku))
+function applyPicker(skus: string[]) {
+  const existing = new Map(rows.value.map(r => [r.sku, r]))
+  rows.value = skus.map(sku => existing.get(sku) ?? makeRow(sku))
 }
 function removeRow(id: number) {
-  if (rows.value.length === 1) return
   rows.value = rows.value.filter(r => r.id !== id)
 }
 // Origin stock left after this transfer — shown as a second line in the Available cell.
@@ -270,29 +265,18 @@ function setQty(row: LineRow, val: string) {
   row.qtyError = false
 }
 
-// A product already chosen in another row is hidden from a row's picker.
-const usedSkus = computed(() => new Set(rows.value.filter(r => r.sku).map(r => r.sku)))
-function optionsForRow(row: LineRow) {
-  const q = prodSearch.value.trim().toLowerCase()
-  return productOptions.value.filter(o => {
-    if (o.id !== row.sku && usedSkus.value.has(o.id)) return false
-    return !q || o.name.toLowerCase().includes(q) || o.id.toLowerCase().includes(q)
-  })
-}
-
-const filledRows = computed(() => rows.value.filter(r => r.sku))
-
-// ── Search over added products (add-row always stays) ───────────────────────────────
+// ── Search over added products ───────────────────────────────────────────────────────
 const search = ref('')
 const displayRows = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return rows.value
-  return rows.value.filter(r => !r.sku || r.productName.toLowerCase().includes(q))
+  return rows.value.filter(r => r.productName.toLowerCase().includes(q))
 })
 function importProducts() { /* bulk import — not built in this prototype */ }
 
-// ── Tags ─────────────────────────────────────────────────────────────────────────
-function onTagsChange(data: DataInterface[]) { tags.value = data }
+// ── Tags — no UI (Warehouse transfer doesn't use tags), but an existing transfer's
+// tags are still prefilled + resent unchanged on save so editing one never wipes
+// them out (the Details page still displays tags on already-tagged transfers). ──
 function tagStrings(): string[] {
   return tags.value.map(t => String(t.text ?? t.value ?? '')).map(s => s.trim()).filter(Boolean)
 }
@@ -319,9 +303,7 @@ function prefill() {
   memo.value = transferMemo(t)
   tags.value = t.tags.map(tag => ({ text: tag, id: `tag-${tag}`, value: tag }))
   const lines = transferLineItems(t)
-  rows.value = lines.length
-    ? [...lines.map(l => ({ id: rowSeq++, sku: l.sku, productName: l.product.name, desc: l.product.desc, img: l.product.img, unit: l.unit, qty: String(l.qty), qtyError: false })), makeRow()]
-    : [makeRow()]
+  rows.value = lines.map(l => ({ id: rowSeq++, sku: l.sku, productName: l.product.name, desc: l.product.desc, img: l.product.img, unit: l.unit, qty: String(l.qty), qtyError: false }))
 }
 onMounted(() => { if (isEdit.value) prefill() })
 
@@ -343,7 +325,7 @@ async function handleSave() {
     destError.value = true; valid = false
     formError.value = 'Origin and destination warehouse must be different'
   }
-  const filled = filledRows.value
+  const filled = rows.value
   if (!filled.length) { formError.value = formError.value || 'You must add at least one product to transfer'; valid = false }
   for (const row of filled) {
     if (isBatchTrackedSku(row.sku)) {
@@ -446,18 +428,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpInput id="wtf-transno-input" model-value="" placeholder="[Auto]" is-full-width is-disabled />
           </MpFormControl>
 
-          <MpFormControl id="wtf-tags" class="wtf-f-tags">
-            <MpFormLabel>Tags</MpFormLabel>
-            <MpInputTag
-              id="wtf-tags-input" placeholder="Select tag" :data="tags"
-              :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange"
-            />
-          </MpFormControl>
-
           <MpFormControl id="wtf-origin" class="wtf-f-origin" is-required :is-invalid="originError">
             <MpFormLabel>Origin warehouse</MpFormLabel>
             <MpAutocomplete
               id="wtf-origin-ac" v-model="originId" :data="warehouseOptions" label-prop="name" value-prop="id"
+              placeholder="Select warehouse"
               is-searchable use-portal is-full-width :is-invalid="originError"
               @update:model-value="originError = false"
             />
@@ -468,6 +443,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpFormLabel>Destination warehouse</MpFormLabel>
             <MpAutocomplete
               id="wtf-dest-ac" v-model="destId" :data="warehouseOptions" label-prop="name" value-prop="id"
+              placeholder="Select warehouse"
               is-searchable use-portal is-full-width :is-invalid="destError"
               @update:model-value="destError = false"
             />
@@ -523,107 +499,75 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </thead>
               <tbody>
                 <tr v-for="row in displayRows" :key="row.id" class="wtf-tr">
-                  <td class="wtf-td wtf-td--prod">
-                    <MpPopover :id="`wtf-prod-${row.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closePicker(row)">
-                      <MpPopoverTrigger>
-                        <div class="wtf-prod-trigger">
-                          <img v-if="row.sku" class="wtf-prod-thumb" :src="row.img" :alt="row.productName" loading="lazy" />
-                          <span class="wtf-prod-field">
-                            <input
-                              :id="`wtf-prod-input-${row.id}`" class="wtf-prod-input" type="text" autocomplete="off"
-                              :value="activeRow === row.id ? prodSearch : row.productName"
-                              :placeholder="row.sku ? 'Search product…' : 'Select product'"
-                              @focus="activeRow = row.id; prodSearch = ''"
-                              @input="activeRow = row.id; prodSearch = ($event.target as HTMLInputElement).value"
-                            />
-                            <span v-if="row.sku && activeRow !== row.id" class="wtf-prod-desc">{{ row.desc }}</span>
-                          </span>
-                          <svg class="wtf-prod-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                        </div>
-                      </MpPopoverTrigger>
-                      <MpPopoverContent :class="css({ width: '360px', maxHeight: '360px', overflowY: 'auto', padding: '0' })">
-                        <MpPopoverList>
-                          <MpPopoverListItem
-                            v-for="opt in optionsForRow(row)" :key="opt.id"
-                            :is-active="opt.id === row.sku" @click="onProductSelect(row, opt.id)"
-                          >
-                            <span class="wtf-prod-opt">
-                              <img class="wtf-prod-thumb" :src="opt.img" :alt="opt.name" loading="lazy" />
-                              <span class="wtf-prod-info">
-                                <span class="wtf-prod-name">{{ opt.name }}</span>
-                                <span class="wtf-prod-desc wtf-prod-desc--one">{{ opt.desc }}</span>
-                              </span>
-                            </span>
-                          </MpPopoverListItem>
-                          <p v-if="!optionsForRow(row).length" class="wtf-prod-none">No products found.</p>
-                        </MpPopoverList>
-                      </MpPopoverContent>
-                    </MpPopover>
+                  <td class="wtf-td">
+                    <ProductCell :name="row.productName" :desc="row.desc" :image="row.img" />
                   </td>
-                  <!-- Chosen product → full set of columns. Empty add-row → one filler
-                       cell spanning to the right edge (product column keeps its width). -->
-                  <template v-if="row.sku">
-                    <td class="wtf-td wtf-td--muted">{{ row.sku }}</td>
-                    <td class="wtf-td wtf-td--num">
-                      <span class="wtf-avail">
-                        <span>{{ availableFor(row.sku).toLocaleString('id-ID') }}</span>
-                        <span v-if="isBatchTrackedSku(row.sku) ? batchHasCounts(row) : Number(row.qty) > 0" class="wtf-avail-after" title="Available after transfer">→ {{ originAfter(row).toLocaleString('id-ID') }}</span>
-                      </span>
-                    </td>
-                    <!-- Transfer qty: batch — value + Manage batch stacked as 2 lines in the same cell -->
-                    <td v-if="isBatchTrackedSku(row.sku)" class="wtf-td wtf-td--num">
-                      <span class="wtf-qty-stack">
-                        <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
-                        <span v-else class="wtf-batch-empty">—</span>
-                        <button class="wtf-manage-btn" type="button" @click="openBatchDrawer(row)">Manage batch</button>
-                      </span>
-                    </td>
-                    <!-- Transfer qty: serial — input + Manage serial numbers stacked as 2 lines in the same cell -->
-                    <td v-else-if="isSerialTrackedSku(row.sku)" class="wtf-td wtf-td--input wtf-td--input-stacked">
-                      <div class="wtf-qty-stack-input">
-                        <input
-                          :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
-                          :value="row.qty"
-                          @input="setQty(row, ($event.target as HTMLInputElement).value)"
-                        />
-                        <button class="wtf-manage-btn wtf-manage-btn--under-input" type="button" @click="openSerialDrawer(row)">Manage serial numbers</button>
-                      </div>
-                    </td>
-                    <!-- Transfer qty: regular with storage location -->
-                    <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--num">
-                      <span class="wtf-qty-stack">
-                        <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
-                        <span v-else class="wtf-batch-empty">—</span>
-                        <button class="wtf-manage-btn" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">Manage storage location</button>
-                      </span>
-                    </td>
-                    <!-- Transfer qty: regular plain -->
-                    <td v-else class="wtf-td wtf-td--input">
+                  <td class="wtf-td wtf-td--muted">{{ row.sku }}</td>
+                  <td class="wtf-td wtf-td--num">
+                    <span class="wtf-avail">
+                      <span>{{ availableFor(row.sku).toLocaleString('id-ID') }}</span>
+                      <span v-if="isBatchTrackedSku(row.sku) ? batchHasCounts(row) : Number(row.qty) > 0" class="wtf-avail-after" title="Available after transfer">→ {{ originAfter(row).toLocaleString('id-ID') }}</span>
+                    </span>
+                  </td>
+                  <!-- Transfer qty: batch — value + Manage batch stacked as 2 lines in the same cell -->
+                  <td v-if="isBatchTrackedSku(row.sku)" class="wtf-td wtf-td--num">
+                    <span class="wtf-qty-stack">
+                      <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
+                      <span v-else class="wtf-batch-empty">—</span>
+                      <button class="wtf-manage-btn" type="button" @click="openBatchDrawer(row)">Manage batch</button>
+                    </span>
+                  </td>
+                  <!-- Transfer qty: serial — input + Manage serial numbers stacked as 2 lines in the same cell -->
+                  <td v-else-if="isSerialTrackedSku(row.sku)" class="wtf-td wtf-td--input wtf-td--input-stacked">
+                    <div class="wtf-qty-stack-input">
                       <input
                         :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
                         :value="row.qty"
                         @input="setQty(row, ($event.target as HTMLInputElement).value)"
                       />
-                    </td>
-                    <td class="wtf-td wtf-td--num">
-                      {{ onHandFor(row.sku) === undefined ? '—' : onHandFor(row.sku)!.toLocaleString('id-ID') }}
-                    </td>
-                    <td class="wtf-td wtf-td--num">{{ afterTransfer(row).toLocaleString('id-ID') }}</td>
-                    <td class="wtf-td wtf-td--muted">{{ row.unit }}</td>
-                    <td class="wtf-td wtf-td--del">
-                      <button class="wtf-del-btn" type="button" @click="removeRow(row.id)">
-                        <MpIcon name="minus-circular" size="sm" />
-                      </button>
-                    </td>
-                  </template>
-                  <td v-else class="wtf-td wtf-td--empty" colspan="7" />
+                      <button class="wtf-manage-btn wtf-manage-btn--under-input" type="button" @click="openSerialDrawer(row)">Manage serial numbers</button>
+                    </div>
+                  </td>
+                  <!-- Transfer qty: regular with storage location -->
+                  <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--num">
+                    <span class="wtf-qty-stack">
+                      <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
+                      <span v-else class="wtf-batch-empty">—</span>
+                      <button class="wtf-manage-btn" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">Manage storage location</button>
+                    </span>
+                  </td>
+                  <!-- Transfer qty: regular plain -->
+                  <td v-else class="wtf-td wtf-td--input">
+                    <input
+                      :id="`wtf-qty-${row.id}`" class="wtf-qty-input" type="number" min="0" :max="availableFor(row.sku)"
+                      :value="row.qty"
+                      @input="setQty(row, ($event.target as HTMLInputElement).value)"
+                    />
+                  </td>
+                  <td class="wtf-td wtf-td--num">
+                    {{ onHandFor(row.sku) === undefined ? '—' : onHandFor(row.sku)!.toLocaleString('id-ID') }}
+                  </td>
+                  <td class="wtf-td wtf-td--num">{{ afterTransfer(row).toLocaleString('id-ID') }}</td>
+                  <td class="wtf-td wtf-td--muted">{{ row.unit }}</td>
+                  <td class="wtf-td wtf-td--del">
+                    <button class="wtf-del-btn" type="button" @click="removeRow(row.id)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </button>
+                  </td>
+                </tr>
+                <tr class="wtf-tr">
+                  <td class="wtf-td wtf-td--prod">
+                    <button class="wtf-prod-trigger" type="button" @click="drawerOpen = true">
+                      <span class="wtf-prod-placeholder">Select product</span>
+                      <svg class="wtf-prod-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                  </td>
+                  <td class="wtf-td wtf-td--empty" colspan="7" />
                 </tr>
               </tbody>
             </table>
           </div>
-          <div class="wtf-count">Showing {{ filledRows.length }} of {{ filledRows.length }} products</div>
+          <div class="wtf-count">Showing {{ displayRows.length }} of {{ rows.length }} products</div>
           <p v-if="formError" class="wtf-form-error">{{ formError }}</p>
         </div>
 
@@ -662,6 +606,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
       </div>
     </div>
 
+    <SelectProductDrawer
+      v-model:open="drawerOpen"
+      :products="pickerProducts"
+      :model-value="selectedSkus"
+      @save="applyPicker"
+    />
     <ManageBatchDrawer
       :open="batchDrawerOpen"
       :sku="batchDrawerRow?.sku ?? ''"
@@ -872,9 +822,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 .wtf-f-date    { grid-column: 1; grid-row: 1; }
 .wtf-f-transno { grid-column: 2; grid-row: 1; }
-.wtf-f-tags    { grid-column: 3; grid-row: 1; }
 .wtf-f-origin  { grid-column: 1; grid-row: 2; }
-.wtf-f-dest    { grid-column: 1; grid-row: 3; }
+.wtf-f-dest    { grid-column: 2; grid-row: 2; }
 .wtf-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .wtf-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 .wtf-datepicker { width: 100%; }
@@ -961,33 +910,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-qty-stack-input .wtf-qty-input { height: 32px; }
 .wtf-manage-btn--under-input { padding: 0 var(--mp-spacing-2); }
 
-/* Product cell — a changeable combobox: rich trigger [photo | name/desc | chevron]. */
-.wtf-td--prod { padding: 0; background: var(--mp-background-neutral, #fff); vertical-align: top; }
-.wtf-td--prod:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+/* Add-product row — Product cell looks like a closed MpSelect; click opens SelectProductDrawer */
+.wtf-td--prod { padding: 0; vertical-align: top; background: var(--mp-background-neutral, #fff); }
 .wtf-prod-trigger {
-  display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%;
-  min-height: var(--mp-sizes-10, 40px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: none; border: none; cursor: text; text-align: left;
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
+  border: none; background: none; cursor: pointer; font-family: inherit;
 }
-.wtf-prod-field { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); flex: 1; min-width: 0; }
-.wtf-prod-input {
-  width: 100%; border: none; outline: none; background: none; padding: 0;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  overflow: hidden; text-overflow: ellipsis;
-}
-.wtf-prod-input::placeholder { color: var(--mp-text-placeholder); }
+.wtf-prod-placeholder { font-size: var(--mp-font-sizes-md); color: var(--mp-text-placeholder); }
 .wtf-prod-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
-.wtf-prod-thumb { width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px); border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral); }
-.wtf-prod-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
-.wtf-prod-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wtf-prod-desc {
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.wtf-prod-desc--one { -webkit-line-clamp: 1; }
-/* Dropdown list */
-.wtf-prod-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
-.wtf-prod-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
 .wtf-td--del { padding: 0; text-align: center; }
 .wtf-del-btn { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 40px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
 .wtf-del-btn:hover { background: var(--mp-background-neutral); color: var(--mp-text-danger, #dc2626); }

@@ -13,11 +13,15 @@ import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import {
-  getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask, type PickLineItem,
+  getPickingLineItems, getPickingGroupedItems, allPickingTasksFlat, getPackingForPickingTask,
+  type PickLineItem, type PickGroupItem,
 } from '~/data/pickingTaskDetails'
-import { getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
+import {
+  getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds,
+  type PickingTask,
+} from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
@@ -32,6 +36,17 @@ const router = useRouter()
 
 const task = computed(() => getPickingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPickingLineItems(task.value) : [])
+const itemByKey = computed(() => new Map(lineItems.value.map(it => [it.key, it])))
+// One row per SKU, merged across every order that contributed it — same fix as
+// PickItemsPage.vue: a task bundling the same SKU from 2 orders is one thing for
+// the picker to take, not two independent-looking rows.
+const groupedItems = computed(() => task.value ? getPickingGroupedItems(task.value) : [])
+function rowPickedForGroup(group: PickGroupItem): number {
+  return group.memberKeys.reduce((s, k) => {
+    const m = itemByKey.value.get(k)
+    return s + (m ? rowPicked(k, m.pickedQty) : 0)
+  }, 0)
+}
 
 // ── Local state mirror (mock data isn't deeply reactive) ─────────────────────
 const localStatus = ref<TaskStatus>('open')
@@ -56,12 +71,6 @@ function rowPicked(key: string, fallback: number): number {
   return localPicked.value[key] ?? fallback
 }
 
-// Batch/serial-tracked lines show "—" (location detail lives in the View batch /
-// View serial number drawer instead) rather than the static binLocation.
-function isTrackedItem(item: { batchPicks?: unknown[]; serialPicks?: unknown[] }): boolean {
-  return !!(item.batchPicks?.length || item.serialPicks?.length)
-}
-
 // ── Batch / serial helpers (same heuristic as receiving / put-away / packing) ───
 const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
 const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
@@ -83,11 +92,38 @@ function isSerialTrackedSku(sku: string): boolean {
 }
 
 // ── View batch / View serial number — read-only, which batch/SN is reserved for
-// this line (to be picked, or already picked). ──────────────────────────────────
+// this line (to be picked, or already picked). A merged group's members may span
+// 2+ orders, so this rebuilds a single synthetic line summing qty and combining
+// every member's batch/serial picks (merged the same way a single line's own
+// repeat picks already are) before handing it to the read-only drawer. ─────────
 const viewBatchItem = ref<PickLineItem | null>(null)
 const viewSerialItem = ref<PickLineItem | null>(null)
-function openViewBatch(item: PickLineItem) { viewBatchItem.value = item }
-function openViewSerial(item: PickLineItem) { viewSerialItem.value = item }
+// getPickingGroupedItems() already merges batch/serial picks across every member
+// line — this just fills in the one thing it can't know: live local edits to
+// picked qty (rowPickedForGroup), plus the orderId/salesNo fields the drawer
+// itself never reads but PickLineItem's type still requires.
+function mergedGroupItem(group: PickGroupItem): PickLineItem {
+  const first = itemByKey.value.get(group.memberKeys[0] ?? '')
+  return {
+    key: group.key,
+    orderId: first?.orderId ?? '',
+    salesNo: first?.salesNo ?? '',
+    productName: group.productName,
+    productDesc: group.productDesc,
+    skuCode: group.skuCode,
+    image: group.image,
+    binLocation: group.binLocation,
+    unit: group.unit,
+    expectedQty: group.expectedQty,
+    pickedQty: rowPickedForGroup(group),
+    batchPicks: group.batchPicks,
+    serialPicks: group.serialPicks,
+    plannedBatchPicks: group.plannedBatchPicks,
+    plannedSerialPicks: group.plannedSerialPicks,
+  }
+}
+function openViewBatch(group: PickGroupItem) { viewBatchItem.value = mergedGroupItem(group) }
+function openViewSerial(group: PickGroupItem) { viewSerialItem.value = mergedGroupItem(group) }
 
 // Linked sales orders + packing tasks
 const linkedOrders = computed(() =>
@@ -132,11 +168,27 @@ const pdfPreviewDoc = ref<jsPDF | null>(null)
 const pdfPreviewFilename = ref('')
 async function printPickingList() {
   if (!task.value) return
-  pdfPreviewDoc.value = await generatePickingListPdf(task.value, lineItems.value)
+  pdfPreviewDoc.value = await generatePickingListPdf(task.value, groupedItems.value)
   pdfPreviewFilename.value = `Picking List - ${task.value.taskNo}.pdf`
   pdfPreviewOpen.value = true
 }
 const cantPackModalOpen = ref(false)
+// Copy varies by whether EVERY order on this task is a marketplace order (1, or
+// several that all happen to be marketplace) vs a MIX of marketplace + non-marketplace
+// — same branching as PickItemsPage.vue's marketplaceWarningText, kept for defensive
+// consistency even though packableOrderIds() means this modal only ever fires for an
+// all-marketplace list in practice (a mixed list would already have a packable order).
+const cantPackText = computed(() => {
+  const t = task.value
+  const total = t?.salesOrderIds.length ?? 0
+  const count = (t?.salesOrderIds ?? []).filter(id => isMarketplaceOrder(outgoingOrders.find(o => o.id === id))).length
+  const suffix = 'must be picked in full — across every picking list that covers it — before a packing task can be created. Finish picking the remaining items, then come back here to create packing.'
+  const suffixPlural = suffix.replace('covers it', 'covers them')
+  if (count === total) {
+    return count > 1 ? `These sales orders ${suffixPlural}` : `This sales order ${suffix}`
+  }
+  return count > 1 ? `There are sales orders in this picking list that ${suffixPlural}` : `There is a sales order in this picking list that ${suffix}`
+})
 function createPacking() {
   // Packability is judged at the ORDER level across all picking lists, and an order
   // that already has a packing task created FROM THIS picking task is excluded —
@@ -189,8 +241,8 @@ function paAging(p: { startDate?: string; endDate?: string }): number {
 const itemSearch = ref('')
 const filteredItems = computed(() => {
   const q = itemSearch.value.trim().toLowerCase()
-  if (!q) return lineItems.value
-  return lineItems.value.filter(it => it.productName.toLowerCase().includes(q) || it.skuCode.toLowerCase().includes(q))
+  if (!q) return groupedItems.value
+  return groupedItems.value.filter(it => it.productName.toLowerCase().includes(q) || it.skuCode.toLowerCase().includes(q))
 })
 const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
@@ -401,7 +453,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                     <!-- Batch/serial-tracked: location detail now lives in the View
                          batch / View serial number drawer, not duplicated here. -->
                     <MpTooltip
-                      v-if="isTrackedItem(item)"
+                      v-if="isBatchTrackedSku(item.skuCode) || isSerialTrackedSku(item.skuCode)"
                       :id="`pkd-tt-loc-${item.key}`"
                       :label="isBatchTrackedSku(item.skuCode) ? 'View via View batch' : 'View via View serial number'"
                       placement="top"
@@ -413,13 +465,13 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                   </td>
                   <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
                   <td class="detail-td detail-td--num">
-                    <span :class="isInProgress ? '' : (rowPicked(item.key, item.pickedQty) === item.expectedQty ? 'pkd-qty--full' : rowPicked(item.key, item.pickedQty) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
-                      {{ fmt(rowPicked(item.key, item.pickedQty)) }}
+                    <span :class="isInProgress ? '' : (rowPickedForGroup(item) === item.expectedQty ? 'pkd-qty--full' : rowPickedForGroup(item) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
+                      {{ fmt(rowPickedForGroup(item)) }}
                     </span>
                   </td>
                   <td class="detail-td detail-td--num">
-                    <span :class="item.expectedQty - rowPicked(item.key, item.pickedQty) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
-                      {{ fmt(item.expectedQty - rowPicked(item.key, item.pickedQty)) }}
+                    <span :class="item.expectedQty - rowPickedForGroup(item) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
+                      {{ fmt(item.expectedQty - rowPickedForGroup(item)) }}
                     </span>
                   </td>
                   <td class="detail-td">{{ item.unit }}</td>
@@ -615,9 +667,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       </MpModalHeader>
       <MpModalBody>
         <p style="margin:0;font-size:var(--mp-font-sizes-md);color:var(--mp-text-default)">
-          Marketplace orders must be picked in full — across every picking list that
-          covers them — before a packing task can be created. Finish picking the
-          remaining items, then come back here to create packing.
+          {{ cantPackText }}
         </p>
       </MpModalBody>
       <MpModalFooter>
@@ -763,7 +813,14 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 .detail-td--location { min-width: 160px; max-width: 200px; }
 .pkd-location-item { display: block; white-space: normal; word-break: break-word; }
 .detail-td--action { text-align: center; white-space: nowrap; }
-/* Sticky action column — stays visible when the table scrolls wider than the stage */
+/* Sticky action column — stays visible when the table scrolls wider than the stage.
+   `.detail-items thead .detail-th` (z-index: 1) outranks the plain
+   `.detail-th--action` class on specificity alone, so its z-index silently won
+   here and tied the header's sticky corner cell with the body's — letting
+   scrolled-past rows paint over the header at the top-right intersection.
+   Match that selector's specificity (and go higher) so the header corner
+   always wins. */
+.detail-items thead .detail-th--action { z-index: 3; }
 .detail-th--action { position: sticky; right: 0; z-index: 2; }
 .detail-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
 .pkd-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }

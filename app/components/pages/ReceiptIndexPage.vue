@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpDatePicker, MpCheckbox,
@@ -11,7 +11,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { receiptsForStages, receiptStage, cancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
+import { receiptsForStages, receiptStage, cancelReceipt, canCancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 
@@ -91,6 +91,12 @@ const statusIsDefault = computed(() =>
 function resetStatus() { statusFilter.value = [...DEFAULT_STATUSES] }
 
 const warehouseFilter = ref<string[]>([])
+// Mirror into the shared singleton so the tab bar's count badges (Receipts (N),
+// Receiving (N), Put-away (N)) scope to whatever warehouse this table is
+// actually filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
 const arrivalPreset = ref('') // '' | today | tomorrow | next7 | thismonth | custom
 const customFrom = ref('')    // DD/MM/YYYY
 const customTo = ref('')
@@ -226,17 +232,6 @@ function viewDetails(row: Receipt) { router.push(`/inbound-delivery/${row.id}`) 
 
 function purchaseReceiving(row: Receipt) { router.push(`/inbound-delivery/${row.id}/receive`) }
 
-// Bulk actions (stubs) — clear the selection after acting.
-function bulkPurchaseReceiving(deselectAll: () => void) { deselectAll() }
-
-// A purchase receiving task is scoped to one warehouse, so bulk-creating one across
-// receipts from different warehouses isn't valid. Once the selection spans more than
-// one warehouse, every bulk action except Cancel is hidden (Cancel is warehouse-agnostic).
-function selectionSpansWarehouses(selectedRows: Set<number>): boolean {
-  const ids = new Set([...selectedRows].map(i => paginated.value[i]?.warehouseId).filter(Boolean))
-  return ids.size > 1
-}
-
 // ─── Edit tracking no. modal (single row, or bulk grouped by PO) ────────────────
 interface TrackingGroup { receipt: Receipt; nos: string[] }
 const trackingModalOpen = ref(false)
@@ -273,11 +268,20 @@ function bulkEditTracking(selectedRows: Set<number>, deselectAll: () => void) {
 }
 
 // Cancel confirmation — shared by the single-row action and the bulk action.
+// Only receipts not yet completed/canceled are eligible — once fully received,
+// the PO is a permanent record.
+function cancelableSelection(selectedRows: Set<number>): Receipt[] {
+  const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as Receipt[]
+  return rows.filter(canCancelReceipt)
+}
+function bulkCancelable(selectedRows: Set<number>): boolean {
+  return cancelableSelection(selectedRows).length > 0
+}
 const cancelModalOpen = ref(false)
 const receiptsToCancel = ref<Receipt[]>([])
 function openCancelModal(row: Receipt) { receiptsToCancel.value = [row]; cancelModalOpen.value = true }
 function openBulkCancelModal(selectedRows: Set<number>, deselectAll: () => void) {
-  const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as Receipt[]
+  const rows = cancelableSelection(selectedRows)
   if (rows.length) { receiptsToCancel.value = rows; cancelModalOpen.value = true }
   deselectAll()
 }
@@ -321,16 +325,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @clear-filters="clearFilters"
   >
     <!-- ── Bulk actions ── -->
-    <!-- Purchase receiving is per-warehouse, so it's hidden for a mixed-warehouse selection.
-         Edit tracking no. / Cancel don't care about warehouse. -->
+    <!-- Purchase receiving is only ever created per-PO (its own form walks the
+         operator through picking SKUs/assignee for that one receipt) — no bulk
+         "create from multiple POs" action here, just Edit tracking no. / Cancel. -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
-      <button
-        v-if="!selectionSpansWarehouses(selectedRows as Set<number>)"
-        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-        @click="bulkPurchaseReceiving(deselectAll)"
-      >
-        Purchase receiving
-      </button>
       <MpPopover id="rcv-bulk-actions" is-close-on-select placement="bottom-start" use-portal>
         <MpPopoverTrigger>
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-after">
@@ -344,6 +342,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="bulkEditTracking(selectedRows as Set<number>, deselectAll)">Edit tracking no.</MpPopoverListItem>
             <MpPopoverListItem
+              v-if="bulkCancelable(selectedRows as Set<number>)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openBulkCancelModal(selectedRows as Set<number>, deselectAll)"
             >Cancel receipt</MpPopoverListItem>
@@ -573,7 +572,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               @click="openDeleteModal(row as unknown as Receipt)"
             >Delete</MpPopoverListItem>
             <MpPopoverListItem
-              v-else
+              v-else-if="canCancelReceipt(row as unknown as Receipt)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as Receipt)"
             >Cancel receipt</MpPopoverListItem>
@@ -788,7 +787,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* Tracking no. — one or more, stacked; edit icon sits right next to the text (row hover) */
-.rcv-track-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; }
+.rcv-track-cell { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }
 .rcv-tracking { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .rcv-tracking__no { color: var(--mp-text-default); white-space: nowrap; }
 .rcv-tracking__empty { color: var(--mp-text-secondary); }

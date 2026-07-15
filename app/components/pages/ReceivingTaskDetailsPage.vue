@@ -3,21 +3,25 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
-  css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask } from '~/data/receivingTaskDetails'
-import { taskAgingDays, startReceiving, receivingTasksForReceipt, type ReceivingTask } from '~/data/receivingTasks'
+import {
+  taskAgingDays, startReceiving, receivingTasksForReceipt, canCancelReceivingTask, cancelReceivingTask,
+  type ReceivingTask,
+} from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generateReceivingSlipPdf } from '~/utils/receivingSlipPdf'
 import type jsPDF from 'jspdf'
 
-type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed'
+type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed' | 'canceled'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -117,6 +121,20 @@ function createPutAway() {
 function startReceivingAndNavigate() {
   startReceiving(props.orderId)
   router.push(`/receiving/${props.orderId}/receive`)
+}
+
+// Cancel — only while receiving hasn't finished yet (open/in progress). Once
+// pending put-away/completed, receiving is already done and the task becomes a
+// permanent record.
+const canCancel = computed(() => !!task.value && canCancelReceivingTask({ ...task.value, status: localStatus.value }))
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  if (!task.value) return
+  cancelReceivingTask(task.value.id)
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
+  goBack()
 }
 
 const pdfPreviewOpen = ref(false)
@@ -547,6 +565,9 @@ function goBack() {
     <!-- ── Sticky footer — Print + Start/Continue (open & in-progress only) ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">Print receiving slip</button>
+      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
+        Cancel
+      </button>
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">
         Start receiving
       </button>
@@ -557,6 +578,24 @@ function goBack() {
         Create put-away
       </button>
     </footer>
+
+    <!-- ── Cancel confirmation ── -->
+    <MpModal id="rcvgd-cancel" :is-open="cancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Cancel {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          This receiving task will be canceled and can no longer be continued. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
     <PdfPreviewModal
       :open="pdfPreviewOpen"
@@ -818,6 +857,7 @@ function goBack() {
   border-top: 1px solid transparent;
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
 .detail-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px);

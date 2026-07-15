@@ -1,9 +1,25 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import type { PickingTask } from '~/data/pickingTasks'
-import type { PickLineItem } from '~/data/pickingTaskDetails'
+import type { PickingTask, PickingBatchPick, PickingSerialPick } from '~/data/pickingTasks'
 import { formatDateTimeLong } from './date'
 import { loadImagesByUrl } from './pdfImage'
+
+/** Minimal shape this module actually needs — satisfied by both a raw per-order
+ *  PickLineItem and a SKU-merged PickGroupItem, so a caller printing a task that
+ *  bundles the same SKU across 2+ orders can pass the merged rows (one SKU, one
+ *  combined qty) instead of duplicate-looking per-order rows. */
+export interface PickingListPrintItem {
+  skuCode: string
+  productName: string
+  image: string
+  binLocation: string
+  expectedQty: number
+  unit: string
+  batchPicks?: PickingBatchPick[]
+  serialPicks?: PickingSerialPick[]
+  plannedBatchPicks?: PickingBatchPick[]
+  plannedSerialPicks?: PickingSerialPick[]
+}
 
 /** One printable line — a plain SKU is one row; a batch/serial-tracked SKU expands
  *  to one row per batch/serial actually assigned to it, so the operator knows
@@ -23,7 +39,7 @@ const PHOTO_COL_WIDTH = 48
 const PHOTO_SIZE = 38
 const PHOTO_ROW_HEIGHT = 46
 
-function buildRows(lineItems: PickLineItem[]): PickingListRow[] {
+function buildRows(lineItems: PickingListPrintItem[]): PickingListRow[] {
   const rows: PickingListRow[] = []
   let no = 1
   for (const item of lineItems) {
@@ -50,7 +66,7 @@ function buildRows(lineItems: PickLineItem[]): PickingListRow[] {
  * lines), not a screenshot/copy of the on-screen page. Returns the jsPDF instance
  * for the caller to preview/save (doesn't save it itself).
  */
-export async function generatePickingListPdf(task: PickingTask, lineItems: PickLineItem[]): Promise<jsPDF> {
+export async function generatePickingListPdf(task: PickingTask, lineItems: PickingListPrintItem[]): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
