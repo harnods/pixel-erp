@@ -745,19 +745,14 @@ export function cancelPickingTask(taskId: string, reason?: string): void {
 }
 
 /**
- * Picking just got disabled for this warehouse (see ConfigureWarehousePage.vue) —
- * void every open/in-progress picking task there. Already-`completed`/`partially
- * picked` tasks are untouched (they already fed, or remain eligible for, a packing
- * task). Returns a count so the caller can summarize the effect before committing.
+ * Picking just got disabled for this warehouse (see ConfigureWarehousePage.vue).
+ * Existing open/in-progress picking tasks are left untouched — users must be able
+ * to finish work already underway. Only new outbound orders created after this
+ * config change skip picking entirely (see canPickOrder/outgoing.ts, which reads
+ * pickingEnabled live and doesn't depend on this function at all).
  */
-export function disablePickingForWarehouse(warehouseId: string): { canceledPickings: number } {
-  let canceledPickings = 0;
-  for (const t of pickingTasksFor([warehouseId])) {
-    if (t.status !== "open" && t.status !== "in progress") continue;
-    cancelPickingTask(t.id, 'Picking was turned off for this warehouse.');
-    canceledPickings++;
-  }
-  return { canceledPickings };
+export function disablePickingForWarehouse(_warehouseId: string): { canceledPickings: number } {
+  return { canceledPickings: 0 };
 }
 
 /** Read-only preview of disablePickingForWarehouse's effect, for the confirmation dialog. */

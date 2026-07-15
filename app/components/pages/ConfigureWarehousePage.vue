@@ -215,7 +215,7 @@ const toggleConfirmItems = computed((): string[] => {
   }
   const { openPickings } = previewDisablePicking(props.orderId)
   const pickingNote = openPickings > 0
-    ? `${openPickings} in-progress picking task${openPickings === 1 ? '' : 's'} will be canceled immediately.`
+    ? `There ${openPickings === 1 ? 'is' : 'are'} ${openPickings} picking task${openPickings === 1 ? '' : 's'} in progress — ${openPickings === 1 ? 'it' : 'they'} can still be completed normally.`
     : 'No picking tasks are currently in progress.'
   return [
     'New outbound orders will skip picking and go straight to packing.',
