@@ -4,6 +4,7 @@ import { MpIcon, MpBadge, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverConte
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { resolveScan, notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -210,6 +211,14 @@ const isReceiving = computed(() => props.kind === 'receiving')
 const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
 const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
+// Below the warehouse's scan threshold, the bulk-paste textarea is disabled —
+// otherwise it'd let someone type in real serial numbers by hand without ever
+// physically scanning them, defeating the point of a low-qty scan requirement.
+// Receiving only: it's the only kind in scope (picking/put-away/transfer never
+// show this textarea in the first place; count/in-out are a different feature).
+const scanRequiredForLine = computed(() =>
+  isReceiving.value && scanRequiredForQty(getWarehouseConfig(props.warehouseId), props.targetCount ?? 0),
+)
 // Modes where a genuinely unrecognized scanned serial is a NEW one worth adding
 // (matching the textarea's "Add to list" behavior) rather than an error — receiving
 // and stock in/out both exist to register serials the system doesn't know yet;
@@ -244,6 +253,10 @@ function parseInput(): string[] {
 }
 
 function addToList() {
+  if (scanRequiredForLine.value) {
+    notifyScanError('Qty at or below the scan threshold — scan each serial’s barcode instead of typing')
+    return
+  }
   const parsed = parseInput()
   if (!parsed.length) return
   if (!props.kind || props.kind === 'count') {
@@ -532,7 +545,21 @@ async function handleSave() {
           <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins. -->
           <template v-if="!isPutAway">
             <label class="msn-form-label">Serial number</label>
+            <MpTooltip
+              v-if="scanRequiredForLine"
+              id="msn-tt-scan-textarea"
+              label="Qty at or below the scan threshold — scan each serial's barcode instead of typing"
+              placement="top"
+              use-portal
+            >
+              <textarea
+                class="msn-textarea"
+                placeholder="Scan barcodes below to add serial numbers."
+                disabled
+              />
+            </MpTooltip>
             <textarea
+              v-else
               v-model="inputText"
               class="msn-textarea"
               placeholder="Paste or type serial numbers here. Supports comma-separated or one per line."

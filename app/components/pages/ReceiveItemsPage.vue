@@ -16,7 +16,7 @@ import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
 import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -30,6 +30,13 @@ const lineItems = computed(() => task.value ? getTaskLineItems(task.value) : [])
 // Put-away disabled for this task's warehouse → receiving finishes on its own,
 // no "create put-away" option to offer.
 const putAwayEnabledForTask = computed(() => getWarehouseConfig(po.value?.warehouseId ?? '').putAwayEnabled)
+// Below the warehouse's scan threshold, manual qty entry is disabled — the
+// operator must scan the barcode once per unit instead (scan handlers already
+// only ever +1, so they need no changes; only the manual input is gated).
+const warehouseConfig = computed(() => getWarehouseConfig(po.value?.warehouseId ?? ''))
+function qtyScanRequired(qty: number): boolean {
+  return scanRequiredForQty(warehouseConfig.value, qty)
+}
 
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
@@ -504,7 +511,24 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                     class="ri-td ri-td--input"
                     :class="{ 'ri-td--input--error': showQtyErrors && !(draftQty[item.skuCode] ?? 0) }"
                   >
+                    <MpTooltip
+                      v-if="qtyScanRequired(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0))"
+                      :id="`ri-tt-scan-${item.skuCode}`"
+                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      placement="top"
+                      use-portal
+                    >
+                      <input
+                        class="ri-qty-input"
+                        type="number" min="0"
+                        :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
+                        :value="draftQty[item.skuCode] ?? 0"
+                        :aria-label="`Received qty for ${item.productName}`"
+                        disabled
+                      />
+                    </MpTooltip>
                     <input
+                      v-else
                       class="ri-qty-input"
                       type="number" min="0"
                       :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"

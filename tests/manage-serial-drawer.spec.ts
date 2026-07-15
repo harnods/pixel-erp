@@ -276,3 +276,42 @@ describe('ManageSerialDrawer — scan bar available in every mode, with correct 
     wrapper.unmount()
   })
 })
+
+describe('ManageSerialDrawer — barcode scan threshold gates the bulk-paste textarea (receiving only)', () => {
+  it('targetCount at the default threshold (50): the textarea is disabled and "Add to list" is blocked', async () => {
+    const wrapper = mountDrawer({ kind: 'receiving', targetCount: 50, modelValue: [] })
+    await flushPromises()
+
+    const textarea = wrapper.find('textarea.msn-textarea')
+    expect(textarea.exists()).toBe(true)
+    expect(textarea.attributes('disabled')).toBeDefined()
+
+    const before = rowCount(wrapper)
+    // "Add to list" stays clickable (no disabled action buttons in this codebase) —
+    // clicking it while blocked must be a no-op, not add anything.
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add to list')!
+    expect(addBtn.attributes('disabled')).toBeUndefined()
+    await addBtn.trigger('click')
+    await flushPromises()
+
+    expect(rowCount(wrapper)).toBe(before)
+    wrapper.unmount()
+  })
+
+  it('targetCount above the threshold (51): the textarea stays enabled and "Add to list" works normally', async () => {
+    const wrapper = mountDrawer({ kind: 'receiving', targetCount: 51, modelValue: [] })
+    await flushPromises()
+
+    const textarea = wrapper.find('textarea.msn-textarea')
+    expect(textarea.exists()).toBe(true)
+    expect(textarea.attributes('disabled')).toBeUndefined()
+
+    await textarea.setValue('FAKE-NEW-TEXTAREA-001')
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add to list')!
+    await addBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('FAKE-NEW-TEXTAREA-001')
+    wrapper.unmount()
+  })
+})

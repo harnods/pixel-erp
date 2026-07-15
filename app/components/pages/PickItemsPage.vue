@@ -23,6 +23,7 @@ import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { resolveScan, notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -30,6 +31,13 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
 const task = computed(() => getPickingTask(props.orderId))
+// Below the warehouse's scan threshold, manual qty entry is disabled — the
+// operator must scan the barcode once per unit instead (scan handlers already
+// only ever +1, so they need no changes; only the manual input is gated).
+const warehouseConfig = computed(() => getWarehouseConfig(task.value?.warehouseId ?? ''))
+function qtyScanRequired(qty: number): boolean {
+  return scanRequiredForQty(warehouseConfig.value, qty)
+}
 const lineItems = computed(() => task.value ? getPickingLineItems(task.value) : [])
 const itemByKey = computed(() => new Map(lineItems.value.map(it => [it.key, it])))
 // One row per SKU, merged across every order that contributed it — a task
@@ -776,7 +784,23 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                     class="pik-td pik-td--input"
                     :class="{ 'pik-td--input--error': showQtyErrors && !groupDraftQty(item) }"
                   >
+                    <MpTooltip
+                      v-if="qtyScanRequired(item.expectedQty)"
+                      :id="`pik-tt-scan-${item.key}`"
+                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      placement="top"
+                      use-portal
+                    >
+                      <input
+                        class="pik-qty-input"
+                        type="number" min="0" :max="item.expectedQty"
+                        :value="groupDraftQty(item)"
+                        :aria-label="`Picked qty for ${item.productName}`"
+                        disabled
+                      />
+                    </MpTooltip>
                     <input
+                      v-else
                       class="pik-qty-input"
                       type="number" min="0" :max="item.expectedQty"
                       :value="groupDraftQty(item)"

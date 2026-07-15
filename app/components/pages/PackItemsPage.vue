@@ -18,6 +18,7 @@ import { getPackingTask, savePackingDraft, endPacking } from '~/data/packingTask
 import { addDeliveryTaskFromPackingTasks, marketplaceShipping } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { productBySku } from '~/data/inventory'
 import { resolveScan, notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
@@ -26,6 +27,13 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
 const task = computed(() => getPackingTask(props.orderId))
+// Below the warehouse's scan threshold, manual qty entry is disabled — the
+// operator must scan the barcode once per unit instead (scan handlers already
+// only ever +1, so they need no changes; only the manual input is gated).
+const warehouseConfig = computed(() => getWarehouseConfig(task.value?.warehouseId ?? ''))
+function qtyScanRequired(qty: number): boolean {
+  return scanRequiredForQty(warehouseConfig.value, qty)
+}
 const lineItems = computed(() => task.value ? getPackingLineItems(task.value) : [])
 
 // Marketplace orders must be fulfilled in full — every picked unit has to be packed
@@ -329,7 +337,23 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                     :class="{ 'pak-td--input--error': isShortForMarketplace(item) || (showQtyErrors && !(draftQty[item.key] ?? 0)) }"
                   >
                     <MpTooltip
-                      v-if="isShortForMarketplace(item)"
+                      v-if="qtyScanRequired(item.pickedQty)"
+                      :id="`pak-tt-scan-${item.key}`"
+                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      placement="top"
+                      use-portal
+                      class="pak-qty-tooltip-wrap"
+                    >
+                      <input
+                        class="pak-qty-input"
+                        type="number" min="0" :max="item.pickedQty"
+                        :value="draftQty[item.key] ?? 0"
+                        :aria-label="`Packed qty for ${item.productName}`"
+                        disabled
+                      />
+                    </MpTooltip>
+                    <MpTooltip
+                      v-else-if="isShortForMarketplace(item)"
                       :id="`pak-tt-short-${item.key}`"
                       :label="MARKETPLACE_SHORT_MSG"
                       placement="top"

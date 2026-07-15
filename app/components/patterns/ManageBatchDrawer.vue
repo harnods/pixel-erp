@@ -8,6 +8,7 @@ import {
 } from '@mekari/pixel3'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { resolveScan, notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -203,6 +204,14 @@ const isTransfer = computed(() => props.kind === 'transfer')
 const isReceiving = computed(() => props.kind === 'receiving')
 const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
+// Below the warehouse's scan threshold, manual qty entry is disabled — the
+// operator must scan the batch barcode once per unit instead (handleDrawerScan
+// already only ever +1s an existing row, so it needs no changes). Picking/
+// receiving only — put-away's batch step has no scan bar at all (it's bin
+// allocation of an already-known qty, not a count), so it's out of scope.
+const scanRequiredForLine = computed(() =>
+  (isPicking.value || isReceiving.value) && scanRequiredForQty(getWarehouseConfig(props.warehouseId), props.targetCount ?? 0),
+)
 // receiving/put-away have no meaningful on-hand/new-on-hand concept — hide those stats/columns.
 const hideStockStats = computed(() => isReceiving.value || isPutAway.value)
 // Picking shows Available qty (like transfer) but has no "new on hand" concept —
@@ -1030,7 +1039,24 @@ function fmtNum(n: number | null): string {
                 </td>
                 <td v-else class="mbd-td mbd-td--input mbd-td--counted" :class="{ 'mbd-td--counted-error': pickOverLimit }">
                   <MpTooltip
-                    v-if="pickOverLimit"
+                    v-if="scanRequiredForLine"
+                    :id="`mbd-qty-tooltip-scan-${row.key}`"
+                    label="Qty at or below the scan threshold — scan the batch barcode instead of typing"
+                    placement="top"
+                    use-portal
+                    class="mbd-qty-tooltip-wrap"
+                  >
+                    <input
+                      class="mbd-qty-input"
+                      type="number"
+                      min="0"
+                      :value="row.counted ?? ''"
+                      placeholder="0"
+                      disabled
+                    />
+                  </MpTooltip>
+                  <MpTooltip
+                    v-else-if="pickOverLimit"
                     :id="`mbd-qty-tooltip-${row.key}`"
                     :label="pickOverLimitMsg"
                     placement="top"

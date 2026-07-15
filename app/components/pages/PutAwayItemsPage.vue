@@ -19,6 +19,7 @@ import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -26,6 +27,13 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
 const task            = computed(() => getPutAwayTask(props.orderId))
+// Below the warehouse's scan threshold, manual qty entry is disabled — the
+// operator must scan the barcode once per unit instead (scan handlers already
+// only ever +1, so they need no changes; only the manual input is gated).
+const warehouseConfig = computed(() => getWarehouseConfig(task.value?.warehouseId ?? ''))
+function qtyScanRequired(qty: number): boolean {
+  return scanRequiredForQty(warehouseConfig.value, qty)
+}
 const lineItems       = computed(() => task.value ? getPutAwayLineItems(props.orderId) : [])
 // stockLocationPaths() is a sparse array with one entry per storage-capacity slot
 // (a bin repeats once per unit of its capacity) — dedupe before using it as a
@@ -736,7 +744,23 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                     <span class="pi-batch-val">{{ fmt(serialAssignedQty(row.skuCode)) }}</span>
                   </td>
                   <td v-else class="pi-td pi-td--input">
+                    <MpTooltip
+                      v-if="qtyScanRequired(remainingQtyFor(row))"
+                      :id="`pi-tt-scan-${row.id}`"
+                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      placement="top"
+                      use-portal
+                    >
+                      <input
+                        class="pi-qty-input"
+                        type="number" min="0" :max="remainingQtyFor(row)"
+                        :value="row.qty"
+                        :aria-label="`Put away qty for ${itemBySkuCode.get(row.skuCode)?.productName}`"
+                        disabled
+                      />
+                    </MpTooltip>
                     <input
+                      v-else
                       class="pi-qty-input"
                       type="number" min="0" :max="remainingQtyFor(row)"
                       :value="row.qty"

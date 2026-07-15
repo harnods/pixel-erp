@@ -201,3 +201,62 @@ describe('ManageBatchDrawer — put-away: "Put away qty" header and storage-loca
     wrapper.unmount()
   })
 })
+
+describe('ManageBatchDrawer — barcode scan threshold gates manual qty entry (picking/receiving only)', () => {
+  it('picking mode: targetCount at the default threshold (50) disables the counted-qty input', async () => {
+    const { sku, batch } = firstBatchTrackedStock()
+    const wrapper = mountDrawer({
+      sku, kind: 'picking', targetCount: 50,
+      modelValue: [committedRowFor(batch)],
+    })
+    await flushPromises()
+
+    const input = wrapper.find('td.mbd-td--counted input.mbd-qty-input')
+    expect(input.exists()).toBe(true)
+    expect(input.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('picking mode: targetCount above the threshold (51) keeps the counted-qty input enabled', async () => {
+    const { sku, batch } = firstBatchTrackedStock()
+    const wrapper = mountDrawer({
+      sku, kind: 'picking', targetCount: 51,
+      modelValue: [committedRowFor(batch)],
+    })
+    await flushPromises()
+
+    const input = wrapper.find('td.mbd-td--counted input.mbd-qty-input')
+    expect(input.exists()).toBe(true)
+    expect(input.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('receiving mode: targetCount at the threshold (50) disables the counted-qty input', async () => {
+    const { sku, batch } = firstBatchTrackedStock()
+    const wrapper = mountDrawer({
+      sku, kind: 'receiving', targetCount: 50,
+      modelValue: [committedRowFor(batch)],
+    })
+    await flushPromises()
+
+    const input = wrapper.find('td.mbd-td--counted input.mbd-qty-input')
+    expect(input.exists()).toBe(true)
+    expect(input.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('put-away mode is out of scope: the destination-bin qty input is never disabled by the threshold, regardless of qty', async () => {
+    const { sku, batch } = firstBatchTrackedStock()
+    const wrapper = mountDrawer({
+      sku, kind: 'put-away', targetCount: 1, // well below the threshold
+      modelValue: [{ ...committedRowFor(batch), counted: batch.onHand }],
+      destLocationPaths: ['A-01-01'],
+    })
+    await flushPromises()
+
+    const input = wrapper.find('td.mbd-td--pa-qty input.mbd-qty-input')
+    expect(input.exists()).toBe(true)
+    expect(input.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+})

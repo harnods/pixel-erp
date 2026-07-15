@@ -19,6 +19,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import PickItemsPage from '~/components/pages/PickItemsPage.vue'
 import { addOutgoing, type OutgoingOrder } from '~/data/outgoing'
 import { addPickingTask } from '~/data/pickingTasks'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
 
 vi.stubGlobal('useRouter', () => ({ push: vi.fn() }))
 class FakeObserver {
@@ -44,9 +45,17 @@ function makeOrder(salesNo: string, sku: string, qty: number): OutgoingOrder {
   })
 }
 
-async function saveManageDrawer(wrapper: ReturnType<typeof mount>, qty: string) {
-  const input = wrapper.find('input.mbd-qty-input, input[type="number"].mbd-qty-input')
-  if (input.exists()) await input.setValue(qty)
+/** Scan the batch barcode `count` times (+1 counted per scan) — this test's qty (3)
+ *  is below the default barcode-scan threshold (50), so manual typing into the
+ *  drawer is disabled by that unrelated feature; scanning is the sanctioned path. */
+async function scanBatchAndSave(wrapper: ReturnType<typeof mount>, batchNo: string, count: number) {
+  // Scoped to the drawer specifically — the page behind it has its own ScanBar too.
+  const scanInput = wrapper.find('.mbd-panel .scan-bar-input')
+  for (let i = 0; i < count; i++) {
+    await scanInput.setValue(batchNo)
+    await scanInput.trigger('keydown.enter')
+  }
+  await flushPromises()
   const saveBtn = wrapper.find('button.btn-enterprise--primary')
   await saveBtn.trigger('click')
   await new Promise((r) => setTimeout(r, 700))
@@ -76,8 +85,10 @@ describe('Picking task spanning 2 orders — Manage batch on the merged row', ()
     expect(statsBefore[1]).toBe('3') // Qty to pick = group total
     expect(statsBefore[2]).toBe('0') // Picked qty = 0
 
-    // Pick 2 of the batch and save.
-    await saveManageDrawer(wrapper, '2')
+    // Pick 2 of the batch (by scanning — qty is below the scan threshold, so
+    // manual typing is disabled) and save.
+    const batchNo = getWarehouseDetail(WAREHOUSE_ID)!.stock.find((s) => s.sku === SKU_BATCH)!.batches![0]!.batchNo
+    await scanBatchAndSave(wrapper, batchNo, 2)
 
     // Page-level header must reflect 2 picked.
     expect(wrapper.text()).toContain('2')
