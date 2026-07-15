@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
-  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon,
+  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon, MpBadge,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
 } from '@mekari/pixel3'
@@ -155,7 +155,10 @@ const blockedTables = computed(() => orderTables.value.filter(t => !t.packable &
 const packedTables = computed(() => orderTables.value.filter(t => t.alreadyPacked))
 // Every picking list that contributed to the packable orders (an order split across
 // several still-unpacked lists shows them all, not just the one this form was
-// opened from) — scoped the same way as orderTables above.
+// opened from) — scoped the same way as orderTables above. ALSO always includes
+// every picking list the user explicitly selected, even when its order isn't
+// packable yet — never silently hide a selected list, show it with a reason
+// instead (see pickingListBlockReasons below).
 const sourcePickingLists = computed<PickingTask[]>(() => {
   const seen = new Map<string, PickingTask>()
   for (const t of packableTables.value) {
@@ -164,8 +167,25 @@ const sourcePickingLists = computed<PickingTask[]>(() => {
       if (pt) seen.set(pt.id, pt)
     }
   }
+  for (const pt of picks.value) seen.set(pt.id, pt)
   return [...seen.values()]
 })
+
+// Why a given picking list's order(s) can't be packed yet — empty when every
+// order it touches is packable. A picking list can bundle multiple sales
+// orders, so this can report more than one blocking reason.
+function pickingListBlockReasons(pt: PickingTask): string[] {
+  const byOrderId = new Map(orderTables.value.map(t => [t.orderId, t]))
+  const reasons: string[] = []
+  for (const orderId of pt.salesOrderIds) {
+    const t = byOrderId.get(orderId)
+    if (!t || t.packable) continue
+    if (t.alreadyPacked) reasons.push(`${t.salesNo} already has a packing task`)
+    else if (t.isMarketplace) reasons.push(`${t.salesNo} (marketplace) isn't fully picked yet across its picking lists`)
+    else reasons.push(`${t.salesNo} has nothing picked yet`)
+  }
+  return reasons
+}
 
 // ─── Batch / serial numbers actually picked — read-only "View batch" / "View
 // serial number" per line, same heuristic as picking/receiving/put-away. An order
@@ -477,6 +497,7 @@ async function handleCreate() {
                     <th class="pk-th">Assignee</th>
                     <th class="pk-th pk-th--num">SKU qty</th>
                     <th class="pk-th pk-th--num">Picked qty</th>
+                    <th class="pk-th">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -496,6 +517,19 @@ async function handleCreate() {
                     <td class="pk-td">{{ pt.assignee }}</td>
                     <td class="pk-td pk-td--num">{{ formatNum(pt.skuQty) }}</td>
                     <td class="pk-td pk-td--num">{{ formatNum(pt.pickedQty) }}</td>
+                    <td class="pk-td">
+                      <template v-if="pickingListBlockReasons(pt).length">
+                        <MpTooltip
+                          :id="`pk-tt-block-${pt.id}`"
+                          :label="pickingListBlockReasons(pt).join('; ')"
+                          placement="top"
+                          use-portal
+                        >
+                          <MpBadge type="warning">Not packable</MpBadge>
+                        </MpTooltip>
+                      </template>
+                      <MpBadge v-else type="completed">Ready to pack</MpBadge>
+                    </td>
                   </tr>
                 </tbody>
               </table>

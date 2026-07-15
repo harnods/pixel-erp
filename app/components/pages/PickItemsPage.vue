@@ -612,7 +612,7 @@ function commitPicking(createPacking = false) {
     })
   } else {
     toast.notify({
-      variant: complete ? 'success' : 'error',
+      variant: 'success',
       title: complete ? 'Picking finished, ready to pack' : 'Picking finished (partially picked)',
       maxWidth: 'max-content',
     })

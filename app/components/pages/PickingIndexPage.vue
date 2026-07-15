@@ -166,11 +166,14 @@ function bulkPackable(sel: Set<number>): boolean {
   if (!rows.every(t => t.warehouseId === wh)) return false
   return rows.some(pickingEligibleForPacking)
 }
-// Open the multi-picking Create packing form for the eligible lists (one warehouse).
+// Open the multi-picking Create packing form for EVERY selected list, not just the
+// eligible ones — the form itself shows a not-packable list with its reason instead
+// of silently dropping it, so the operator can see why (button still only appears
+// when ≥1 selected list is actually eligible, via bulkPackable above).
 function bulkCreatePacking(sel: Set<number>, deselectAll: () => void) {
-  const eligible = selectedPickingsOf(sel).filter(pickingEligibleForPacking)
-  if (!eligible.length) return
-  router.push({ path: '/outbound-delivery/packing/create', query: { pickingIds: eligible.map(t => t.id).join(',') } })
+  const rows = selectedPickingsOf(sel)
+  if (!rows.length) return
+  router.push({ path: '/outbound-delivery/packing/create', query: { pickingIds: rows.map(t => t.id).join(',') } })
   deselectAll()
 }
 
