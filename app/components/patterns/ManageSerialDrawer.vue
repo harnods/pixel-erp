@@ -142,6 +142,11 @@ function seedRows(): void {
       counted: true,
       destLocId: cs.destLocationId ?? '',
     }))
+  } else if (props.kind === 'receiving') {
+    // Receiving has no pre-existing warehouse serial pool to pick from — these are
+    // brand-new units. Show only what's actually been scanned/entered so far (this
+    // task's own modelValue); never mix in unrelated already-in-stock serials.
+    rows.value = props.modelValue.map(cs => ({ serial: cs.serial, counted: true }))
   } else if (props.modelValue.length > 0) {
     const countedSet = new Set(props.modelValue.map(cs => cs.serial))
     const seen = new Set<string>()
@@ -540,15 +545,6 @@ async function handleSave() {
           <p v-if="saveError" class="msn-save-error">{{ saveError }}</p>
         </div>
 
-        <template v-if="rows.length === 0">
-          <div class="msn-empty">
-            <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
-            <p class="msn-empty-title">No serial numbers yet</p>
-            <p class="msn-empty-desc">Add serial numbers using the input above.</p>
-          </div>
-        </template>
-
-        <template v-else>
         <div class="msn-filter-bar">
           <div class="msn-search">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -563,10 +559,13 @@ async function handleSave() {
           </div>
         </div>
 
-        <!-- Scan bar — every mode, same position as outbound (picking). Reset
-             re-seeds from props (not a blanket counted=false), so it's safe in
-             every mode — it undoes scans/toggles without touching real baseline
-             state (in-out/receiving's existing-stock rows, put-away's fixed set). -->
+        <!-- Scan bar — every mode, same position as outbound (picking), and always
+             rendered even when rows.length is 0 — that's the normal starting state
+             for receiving/in-out (nothing scanned yet), not an edge case, so scanning
+             must work from the very first serial. Reset re-seeds from props (not a
+             blanket counted=false), so it's safe in every mode — it undoes scans/toggles
+             without touching real baseline state (in-out/receiving's existing-stock
+             rows, put-away's fixed set). -->
         <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
           <button
             class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
@@ -575,6 +574,15 @@ async function handleSave() {
           >Reset count</button>
         </ScanBar>
 
+        <template v-if="rows.length === 0">
+          <div class="msn-empty">
+            <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
+            <p class="msn-empty-title">No serial numbers yet</p>
+            <p class="msn-empty-desc">Add serial numbers using the input above, or scan a barcode.</p>
+          </div>
+        </template>
+
+        <template v-else>
         <div class="msn-table-wrap">
           <table class="msn-table" :class="{ 'msn-table--locs': hasOriginLoc || hasDestLoc, 'msn-table--form': hasDestLoc }">
             <colgroup>

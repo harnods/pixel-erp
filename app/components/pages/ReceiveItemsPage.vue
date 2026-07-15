@@ -148,6 +148,24 @@ function saveSerialLines(serials: CommittedSerial[]) {
   if (showQtyErrors.value) showQtyErrors.value = false
 }
 
+// Hydrate from whatever's already persisted on the task (e.g. resuming a saved
+// draft) — mirrors draftQty's watcher above; without this, continuing a draft
+// with existing batch/serial progress reopens both drawers blank.
+watch([() => props.orderId, lineItems], () => {
+  const nextBatch: Record<string, CommittedBatch[]> = {}
+  const nextSerial: Record<string, string[]> = {}
+  for (const it of lineItems.value) {
+    if (it.batchLines?.length) {
+      nextBatch[it.skuCode] = it.batchLines.map(b => ({
+        key: b.batchNo, batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, onHand: 0, counted: b.qty, unit: b.unit,
+      }))
+    }
+    if (it.serialNumbers?.length) nextSerial[it.skuCode] = it.serialNumbers
+  }
+  batchLinesBySku.value = nextBatch
+  serialLinesBySku.value = nextSerial
+}, { immediate: true })
+
 // SNs already received in prior tasks for the same receipt (block duplicates in drawer)
 const priorReceivedSerialsBySku = computed<Record<string, string[]>>(() => {
   const receiptId = task.value?.receiptId

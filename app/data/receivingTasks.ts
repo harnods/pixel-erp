@@ -9,10 +9,14 @@ import { CATALOG } from "./catalog";
 import { getWarehouseConfig } from "./warehouseConfig";
 
 const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment']);
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans']);
 const SKU_CATEGORY = new Map(CATALOG.map((p) => [p.sku, p.category]));
 
 function isSerialSku(sku: string): boolean {
   return SERIAL_CATS.has(SKU_CATEGORY.get(sku) ?? '');
+}
+function isBatchSku(sku: string): boolean {
+  return BATCH_CATS.has(SKU_CATEGORY.get(sku) ?? '');
 }
 
 /** Generate deterministic serial numbers for seed receiving data. */
@@ -21,6 +25,19 @@ function seedSerials(sku: string, count: number, base: number): string[] {
   return Array.from({ length: count }, (_, k) =>
     `${prefix}${String(80000 + base + k).padStart(5, '0')}`,
   );
+}
+
+/** Generate a deterministic single-batch breakdown for seed receiving data. */
+function seedBatchLines(unit: string, qty: number, base: number): ReceivingBatchLine[] {
+  const exp = new Date(TODAY.getTime());
+  exp.setMonth(exp.getMonth() + 2 + (base % 12));
+  return [{
+    batchNo: `Batch #${String(10000 + base).padStart(5, '0')}`,
+    expiryDate: exp.toISOString().slice(0, 10),
+    desc: '',
+    qty,
+    unit,
+  }];
 }
 
 /**
@@ -84,8 +101,9 @@ export interface ReceivingTask {
   /** units recorded so far — derived (Σ receivedQty) */
   receivedQty: number;
   /** open = not started · in progress = receiving · pending put-away = received,
-   *  awaiting put-away · completed = put away / done */
-  status: "open" | "in progress" | "pending put-away" | "completed";
+   *  awaiting put-away · completed = put away / done · canceled = voided before
+   *  receiving finished */
+  status: "open" | "in progress" | "pending put-away" | "completed" | "canceled";
   /** ISO timestamp the task was created/assigned (shown as "Date" on the PO) */
   createdDate?: string;
   /** ISO timestamp receiving started — set on Start receiving */
@@ -94,6 +112,8 @@ export interface ReceivingTask {
   endDate?: string;
   /** the put-away task that consumed this receiving task (→ status completed) */
   putAwayTaskId?: string;
+  canceledDate?: string;
+  canceledReason?: string;
 }
 
 /** A PO with its receiving task(s) — a grouping view derived from the flat store. */
@@ -176,6 +196,8 @@ function buildItems(
     };
     if (receivedQty > 0 && isSerialSku(l.sku)) {
       item.serialNumbers = seedSerials(l.sku, receivedQty, seed * 100 + taskSeq * 50 + i * 10);
+    } else if (receivedQty > 0 && isBatchSku(l.sku)) {
+      item.batchLines = seedBatchLines(l.unit, receivedQty, seed * 100 + taskSeq * 50 + i * 10);
     }
     return item;
   });
@@ -255,24 +277,31 @@ function seedTasks(): ReceivingTask[] {
 const SEED_ID_RE = /^rtask-1\d{4}$/;
 
 /**
- * Migration: patch a loaded snapshot so that seed tasks (rtask-1XXXX) that are
- * ended and have serial-tracked items with receivedQty > 0 but no serialNumbers
- * get deterministic SNs added. User-created tasks are never touched.
+ * Migration: patch a loaded snapshot so that seed tasks (rtask-1XXXX, any status
+ * including in-progress drafts) with receivedQty > 0 but no batch/serial breakdown
+ * for batch- or serial-tracked SKUs get deterministic detail backfilled. User-created
+ * tasks are never touched.
  */
 function patchSnapshotSerials(snap: ReceivingTask[]): ReceivingTask[] {
   return snap.map((t) => {
     if (!SEED_ID_RE.test(t.id)) return t; // user-created — never modify
-    if (t.status !== "pending put-away" && t.status !== "completed") return t;
     const needsPatch = t.items.some(
-      (it) => isSerialSku(it.sku) && it.receivedQty > 0 && !it.serialNumbers?.length,
+      (it) =>
+        (isSerialSku(it.sku) && it.receivedQty > 0 && !it.serialNumbers?.length) ||
+        (isBatchSku(it.sku) && it.receivedQty > 0 && !it.batchLines?.length),
     );
     if (!needsPatch) return t;
     const h = hash(t.id);
     return {
       ...t,
       items: t.items.map((it, i) => {
-        if (!isSerialSku(it.sku) || it.receivedQty === 0 || it.serialNumbers?.length) return it;
-        return { ...it, serialNumbers: seedSerials(it.sku, it.receivedQty, h * 3 + i * 10) };
+        if (isSerialSku(it.sku) && it.receivedQty > 0 && !it.serialNumbers?.length) {
+          return { ...it, serialNumbers: seedSerials(it.sku, it.receivedQty, h * 3 + i * 10) };
+        }
+        if (isBatchSku(it.sku) && it.receivedQty > 0 && !it.batchLines?.length) {
+          return { ...it, batchLines: seedBatchLines(it.unit, it.receivedQty, h * 3 + i * 10) };
+        }
+        return it;
       }),
     };
   });
@@ -488,6 +517,29 @@ export function startReceiving(taskId: string): void {
   persistTasks();
 }
 
+/** A receiving task can only be canceled while receiving hasn't finished yet —
+ *  "pending put-away"/"completed" mean the PO's outstanding qty already counts
+ *  this task's receivedQty (see recomputeReceiptStatus/uncoveredLineItems), so
+ *  canceling it at that point would silently make received stock unaccounted
+ *  for. The task itself never touches real on-hand stock directly (that only
+ *  happens downstream at put-away), so canceling here has nothing to revert. */
+export function canCancelReceivingTask(t: ReceivingTask): boolean {
+  return t.status === "open" || t.status === "in progress";
+}
+
+/** Cancel a not-yet-finished receiving task — its SKUs simply become uncovered
+ *  again (uncoveredLineItems only excludes open/in-progress tasks), so a new
+ *  receiving task can be created for them. Terminal state; the record itself is
+ *  kept (never deleted) so it stays in the audit trail. */
+export function cancelReceivingTask(taskId: string, reason?: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || !canCancelReceivingTask(t)) return;
+  t.status = "canceled";
+  t.canceledDate = nowIso();
+  if (reason) t.canceledReason = reason;
+  persistTasks();
+}
+
 function applyReceivingDetail(
   t: ReceivingTask,
   received: Record<string, number>,
@@ -595,7 +647,7 @@ export function receivingQueuePOs(warehouseIds?: string[]): ReceivingPO[] {
 export function receivingOpenCount(warehouseIds?: string[]): number {
   return receivingPOsFor(warehouseIds)
     .flatMap((po) => po.tasks)
-    .filter((t) => t.status !== "completed").length;
+    .filter((t) => t.status !== "completed" && t.status !== "canceled").length;
 }
 
 /** Receiving tasks for a receipt (used by the receipt detail "Purchase receiving" tab). */

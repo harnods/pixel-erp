@@ -251,4 +251,28 @@ describe('ManageSerialDrawer — scan bar available in every mode, with correct 
     expect(wrapper.text()).toContain('PRIOR-TASK-SN-001') // real baseline data survives reset
     wrapper.unmount()
   })
+
+  // Regression: seedRows() had a kind-agnostic "modelValue.length > 0" branch that
+  // padded the row list with the SKU's entire existing warehouse serial pool
+  // (available + reserved units from unrelated already-in-stock units), marked
+  // "not counted". Harmless for count/in-out (a real pool genuinely exists there),
+  // but wrong for receiving — brand-new units have no existing pool. It only
+  // surfaced once modelValue stopped being empty: reopening the drawer again after
+  // an earlier scan+save within the same task (not just across a "continue draft").
+  it('receiving mode: reopening with a non-empty modelValue shows ONLY what was scanned, never the SKU\'s unrelated existing warehouse stock', async () => {
+    const reserved = reservedSerials()
+    expect(reserved.length).toBeGreaterThan(0) // sanity: seed data must have real unrelated stock to assert against
+
+    const wrapper = mountDrawer({
+      kind: 'receiving',
+      targetCount: 5,
+      modelValue: [{ serial: 'MY-SCANNED-SN-001' }],
+    })
+    await flushPromises()
+
+    expect(rowCount(wrapper)).toBe(1)
+    expect(wrapper.text()).toContain('MY-SCANNED-SN-001')
+    expect(wrapper.text()).not.toContain(reserved[0])
+    wrapper.unmount()
+  })
 })
