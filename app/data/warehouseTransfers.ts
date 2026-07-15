@@ -17,6 +17,7 @@ export type TransferStatus =
   | 'in transit'
   | 'completed'
   | 'rejected'
+  | 'canceled'
 
 export interface WarehouseTransfer {
   id: string
@@ -36,6 +37,8 @@ export interface WarehouseTransfer {
   lines?: { sku: string; qty: number; serials?: string[] }[]
   /** Audit trail (chronological) — created/edited events from the form. */
   activity?: TransferActivity[]
+  canceledDate?: string
+  canceledReason?: string
 }
 
 export interface TransferActivity {
@@ -317,12 +320,31 @@ export function approveTransfer(id: string): WarehouseTransfer | undefined {
   return t
 }
 
-/** Delete transfers by id (bulk delete). */
-export function deleteTransfers(ids: string[]): void {
-  const set = new Set(ids)
-  for (let i = warehouseTransfers.length - 1; i >= 0; i--) {
-    if (set.has(warehouseTransfers[i]!.id)) warehouseTransfers.splice(i, 1)
+/** A transfer can only be canceled while still a draft — once approved, stock has
+ *  already moved (applyTransfer runs at approval time), so there's nothing left to
+ *  safely void; the record must stay as a permanent record of what happened. */
+export function canCancelTransfer(t: WarehouseTransfer): boolean {
+  return t.status === 'draft'
+}
+
+/** Cancel a draft transfer — it never gets approved/applied. Terminal state; the
+ *  record itself is kept (never deleted) so it stays visible in the audit trail. */
+export function cancelTransfer(id: string, reason?: string): void {
+  const t = warehouseTransfers.find((x) => x.id === id)
+  if (!t || !canCancelTransfer(t)) return
+  if (!t.activity?.length) {
+    t.activity = [{
+      date: derivedUpdatedAt(t), user: derivedUpdatedBy(t), activity: 'Created',
+      details: [
+        { label: 'Origin warehouse', value: t.originName },
+        { label: 'Destination warehouse', value: t.destinationName },
+      ],
+    }]
   }
+  t.activity.push({ date: new Date().toISOString(), user: ACTOR, activity: 'Canceled', details: [{ label: 'Status', value: 'Draft → Canceled' }] })
+  t.status = 'canceled'
+  t.canceledDate = new Date().toISOString()
+  if (reason) t.canceledReason = reason
   persistTransfers()
 }
 

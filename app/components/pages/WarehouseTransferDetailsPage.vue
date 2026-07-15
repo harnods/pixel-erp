@@ -15,7 +15,7 @@ import { formatDateLong } from '~/utils/date'
 import {
   warehouseTransfers, getTransfer, transferLineItems, transferMemo, transferAttachments,
   transferUpdatedBy, transferUpdatedAt, transferActivityEntries, transferApprovalLog,
-  deleteTransfers, duplicateTransfer, approveTransfer,
+  canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer,
 } from '~/data/warehouseTransfers'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -127,16 +127,16 @@ function duplicate() {
   if (copy) router.push(`/warehouse-transfers/${copy.id}/edit`)
 }
 
-// ── Delete (single) — same alert as the index bulk delete ──────────────────────
-const deleteOpen = ref(false)
-const deleteReason = ref('')
-const deleteError = ref('')
-const REASON_MAX = 256
-function askDelete() { deleteReason.value = ''; deleteError.value = ''; deleteOpen.value = true }
-function confirmDelete() {
-  if (!deleteReason.value.trim()) { deleteError.value = 'You must fill in reason for deleting'; return }
-  deleteTransfers([props.orderId])
-  deleteOpen.value = false
+// ── Cancel (single) — only while still a draft; once approved, stock has already
+// moved (applyTransfer runs at approval time) so there's nothing left to void —
+// the transfer is a permanent record from that point on, never deletable. ──────
+const canCancel = computed(() => !!transfer.value && canCancelTransfer(transfer.value))
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  cancelTransfer(props.orderId)
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${transfer.value?.number} canceled`, maxWidth: 'max-content' })
   router.push('/warehouse-transfers')
 }
 
@@ -162,8 +162,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ transfer.number }}</h1>
           <ErpStatusBadge
-            v-if="transfer.status === 'draft'"
-            status="draft" badge-for="additionalInformation" size="md"
+            v-if="transfer.status === 'draft' || transfer.status === 'canceled'"
+            :status="transfer.status" badge-for="additionalInformation" size="md"
           />
           <MpPopover id="wtd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
@@ -298,9 +298,13 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           <MpPopoverList>
             <MpPopoverListItem @click="preview">Preview</MpPopoverListItem>
             <div class="wtd-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
-            <MpPopoverListItem @click="editTransfer">Edit</MpPopoverListItem>
+            <MpPopoverListItem v-if="transfer.status === 'draft'" @click="editTransfer">Edit</MpPopoverListItem>
             <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>
-            <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancel"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="askCancel"
+            >Cancel</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -322,35 +326,20 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       @close="approvalLogOpen = false"
     />
 
-    <!-- Delete warehouse transfer -->
+    <!-- Cancel warehouse transfer -->
     <MpModal
-      id="wtd-delete" :is-open="deleteOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteOpen = false"
+      id="wtd-cancel" :is-open="cancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
     >
       <MpModalContent>
-        <MpModalHeader>Delete warehouse transfer?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>Cancel warehouse transfer?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="wt-del-intro">This action cannot be undone. Deleting this transfer will:</p>
-          <ul class="wt-del-list">
-            <li>Remove the related journal entry</li>
-            <li>Trigger recalculation that may affect COGS and product stock quantity</li>
-          </ul>
-          <div class="wt-del-field">
-            <div class="wt-del-label-row">
-              <label class="wt-del-label" for="wtd-del-reason">Reason for deleting<span class="wt-del-req">*</span></label>
-              <span class="wt-del-count">{{ deleteReason.length }} / {{ REASON_MAX }}</span>
-            </div>
-            <textarea
-              id="wtd-del-reason" class="wt-del-textarea" :class="{ 'wt-del-textarea--error': deleteError }"
-              :maxlength="REASON_MAX" v-model="deleteReason" rows="3" @input="deleteError = ''"
-            ></textarea>
-            <p v-if="deleteError" class="wt-del-error">{{ deleteError }}</p>
-          </div>
+          <p>This transfer will be canceled and can no longer be approved. This can't be undone.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">Keep transfer</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel transfer</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -463,19 +452,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
    portaled popover list, where a 0-height border can get reset away). */
 .wtd-menu-divider { display: block; height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
 
-/* Delete modal (matches index bulk-delete alert) */
+/* Cancel modal */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
-.wt-del-intro { color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.wt-del-list { margin: var(--mp-spacing-2) 0 0; padding-left: 21px; list-style: disc; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.wt-del-field { margin-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.wt-del-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; }
-.wt-del-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.wt-del-req { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
-.wt-del-count { margin-left: auto; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.wt-del-textarea { width: 100%; min-height: 80px; resize: vertical; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral, #fff); color: var(--mp-text-default); font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
-.wt-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
-.wt-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
-.wt-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
 /* Demo scenario FAB (matches the index page) */
 .demo-fab {
