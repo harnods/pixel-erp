@@ -473,6 +473,15 @@ function paRemoveLocRow(row: WorkRow, lr: LocRow) {
   if (!row.destLocRows.length) row.destLocRows = [makeLocRow()]
 }
 
+// Put-away: a qty entered without a storage location would otherwise be silently
+// dropped on Save (handleSave only keeps rows with BOTH locationId and qty > 0).
+// Surfaced only after an attempted Save — clears itself per-row the moment that
+// row's own qty/location combo becomes valid, no separate reset wiring needed.
+const showPaLocErrors = ref(false)
+function paLocMissing(lr: LocRow): boolean {
+  return showPaLocErrors.value && Number(lr.qty) > 0 && !lr.locationId
+}
+
 // helper: does this row have any location assignments saved?
 function batchLocIsSet(row: WorkRow): boolean {
   return row.originLocRows.some(r => r.locationId && Number(r.qty) > 0)
@@ -615,6 +624,11 @@ function handleCancel() {
 
 async function handleSave() {
   if (pickOverLimit.value) return
+  if (isPutAway.value && rows.value.some(r => r.destLocRows.some(l => Number(l.qty) > 0 && !l.locationId))) {
+    showPaLocErrors.value = true
+    return
+  }
+  showPaLocErrors.value = false
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   const committed: CommittedBatch[] = rows.value.map(r => {
@@ -821,7 +835,7 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Expiry date</th>
                 <th class="mbd-th">Description</th>
                 <th class="mbd-th">Storage location</th>
-                <th class="mbd-th mbd-th--num">Received qty</th>
+                <th class="mbd-th mbd-th--num">Put away qty</th>
                 <th class="mbd-th">Unit</th>
                 <th class="mbd-th mbd-th--del" />
               </tr>
@@ -833,9 +847,33 @@ function fmtNum(n: number | null): string {
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ isoToDisplay(row.expiryDate) }}</td>
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc }}</td>
                   <!-- Storage location picker -->
-                  <td class="mbd-td mbd-td--input mbd-td--pa-loc">
+                  <td class="mbd-td mbd-td--input mbd-td--pa-loc" :class="{ 'mbd-td--pa-loc-error': paLocMissing(lr) }">
                     <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select>
-                      <MpPopoverTrigger>
+                      <MpTooltip
+                        v-if="paLocMissing(lr)"
+                        :id="`mbd-pa-loc-tooltip-${lr.id}`"
+                        label="Select a storage location for the qty entered"
+                        placement="top"
+                        use-portal
+                      >
+                        <MpPopoverTrigger>
+                          <div class="mbd-pa-loc-trigger">
+                            <input
+                              class="mbd-pa-loc-input"
+                              type="text"
+                              autocomplete="off"
+                              :value="locActiveKey === `pa-${lr.id}` ? (locSearches[`pa-${lr.id}`] ?? '') : lr.locationId"
+                              placeholder="Select storage location"
+                              @focus="locActiveKey = `pa-${lr.id}`; locSearches[`pa-${lr.id}`] = ''"
+                              @input="locActiveKey = `pa-${lr.id}`; locSearches[`pa-${lr.id}`] = ($event.target as HTMLInputElement).value"
+                            />
+                            <svg class="mbd-pa-loc-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                          </div>
+                        </MpPopoverTrigger>
+                      </MpTooltip>
+                      <MpPopoverTrigger v-else>
                         <div class="mbd-pa-loc-trigger">
                           <input
                             class="mbd-pa-loc-input"
@@ -1488,6 +1526,12 @@ function fmtNum(n: number | null): string {
 .mbd-td--counted-error { background: #FCEEED; border-bottom-color: #E2483D; }
 .mbd-td--counted-error .mbd-qty-input { background: transparent; }
 .mbd-qty-tooltip-wrap { display: block; width: 100%; }
+
+/* Put-away: qty entered without a storage location. Must come after the base
+   .mbd-td / .mbd-td--pa-loc rules — same specificity, so declaration order
+   decides which background/shadow wins. */
+.mbd-td--pa-loc-error { background: #FCEEED; }
+.mbd-td--pa-loc-error:focus-within { box-shadow: inset 0 0 0 1px #E2483D; }
 
 .mbd-cell-input {
   width: 100%; height: var(--mp-sizes-10, 40px);
