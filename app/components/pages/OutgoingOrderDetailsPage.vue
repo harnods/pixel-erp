@@ -647,7 +647,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .ood-linked .detail-td--number { position: relative; }
 .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: var(--mp-spacing-2); top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);

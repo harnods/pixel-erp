@@ -812,7 +812,7 @@ function goBack() {
 .rcvgd-linked .detail-td--number { position: relative; }
 .rcvgd-linked .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .rcvgd-linked .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: var(--mp-spacing-2); top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);

@@ -681,7 +681,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 /* Product cell */
 .cell-with-action { position: relative; display: flex; align-items: flex-start; width: 100%; min-width: 0; }
 .wh-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); min-width: 0; }
-.row-hover-btn { position: absolute; right: var(--mp-spacing-4); top: 50%; transform: translateY(-50%); display: none; align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
+.row-hover-btn { position: absolute; right: var(--mp-spacing-4); top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none; align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
 .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
 .cell-with-action:hover .row-hover-btn { display: flex; }
 :global(.erp-tr:hover .row-hover-btn) { display: flex; }

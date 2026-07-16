@@ -3,12 +3,15 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
+  MpModalOverlay, MpModalCloseButton,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpDatePicker, MpInput, MpTextarea, MpButton,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { useTableState } from '~/composables/useTableState'
-import { listShipments } from '~/data/deliveryTasks'
+import { listShipments, completeShipment } from '~/data/deliveryTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 
@@ -136,6 +139,57 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 const router = useRouter()
 function viewDetails(row: Row) { router.push(`/outbound-delivery/shipment/${row.shipmentSeq}`) }
 function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
+
+// ─── Complete shipment — courier/customer has signed for the goods ────────────
+function toDisplayDate(iso: string) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+function toISODate(display: string) {
+  const [d, m, y] = display.split('/')
+  return `${y}-${m}-${d}`
+}
+const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
+
+const completeOpen = ref(false)
+const shipmentToComplete = ref<Row | null>(null)
+const receivedDate = ref(todayDisplay)
+const receivedBy = ref('')
+const receivedByError = ref('')
+const note = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
+const attachedFiles = ref<File[]>([])
+
+function onFileChange(ev: Event) {
+  const files = (ev.target as HTMLInputElement).files
+  for (const f of Array.from(files ?? [])) {
+    if (!attachedFiles.value.some(x => x.name === f.name)) attachedFiles.value.push(f)
+  }
+  if (fileInput.value) fileInput.value.value = ''
+}
+function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
+
+function openComplete(row: Row) {
+  shipmentToComplete.value = row
+  receivedDate.value = todayDisplay
+  receivedBy.value = ''
+  receivedByError.value = ''
+  note.value = ''
+  attachedFiles.value = []
+  completeOpen.value = true
+}
+function confirmComplete() {
+  if (!shipmentToComplete.value) return
+  if (!receivedBy.value.trim()) { receivedByError.value = 'You must fill in received by'; return }
+  completeShipment(shipmentToComplete.value.shipmentSeq, {
+    receivedDate: toISODate(receivedDate.value),
+    receivedBy: receivedBy.value.trim(),
+    note: note.value.trim() || undefined,
+    proofFile: attachedFiles.value[0]?.name,
+  })
+  toast.notify({ variant: 'success', title: 'Shipment completed', maxWidth: 'max-content' })
+  completeOpen.value = false
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -286,6 +340,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as Row)">View details</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as unknown as Row).status === 'open'"
+              @click="openComplete(row as unknown as Row)"
+            >Complete shipment</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -300,6 +358,62 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
+
+  <!-- ── Complete shipment ── -->
+  <MpModal
+    id="shp-complete" :is-open="completeOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="completeOpen = false"
+  >
+    <MpModalContent>
+      <MpModalHeader>Complete shipment<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <MpFormControl id="shp-received-date" is-required class="shp-complete-field">
+          <MpFormLabel>Date received</MpFormLabel>
+          <div class="shp-datepicker">
+            <MpDatePicker id="shp-received-date-dp" v-model="receivedDate" format="DD/MM/YYYY" value-type="format" use-portal />
+          </div>
+        </MpFormControl>
+
+        <MpFormControl id="shp-received-by" is-required :is-invalid="!!receivedByError" class="shp-complete-field">
+          <MpFormLabel>Received by</MpFormLabel>
+          <MpInput
+            id="shp-received-by-input" v-model="receivedBy" placeholder="Recipient name"
+            @update:model-value="receivedByError = ''"
+          />
+          <MpFormErrorMessage>{{ receivedByError }}</MpFormErrorMessage>
+        </MpFormControl>
+
+        <MpFormControl id="shp-note" class="shp-complete-field">
+          <MpFormLabel>Note</MpFormLabel>
+          <MpTextarea id="shp-note-textarea" v-model="note" is-full-width :rows="3" />
+        </MpFormControl>
+
+        <MpFormControl id="shp-attachment" class="shp-complete-field">
+          <MpFormLabel>Attachment</MpFormLabel>
+          <div class="shp-attachment">
+            <input ref="fileInput" type="file" accept=".pdf,.jpg,.jpeg,.png" class="shp-file-hidden" @change="onFileChange" />
+            <div class="shp-attachment-row">
+              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
+              <span class="shp-attach-or">or drag and drop here</span>
+            </div>
+            <ul v-if="attachedFiles.length" class="shp-file-list">
+              <li v-for="f in attachedFiles" :key="f.name" class="shp-file-item">
+                <span class="shp-file-name">{{ f.name }}</span>
+                <button class="shp-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
+              </li>
+            </ul>
+          </div>
+        </MpFormControl>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="shp-modal-footer">
+          <MpButton variant="ghost" is-rounded @click="completeOpen = false">Cancel</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmComplete">Complete shipment</MpButton>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="shp-demo-fab" is-close-on-select use-portal placement="top-end">
@@ -364,7 +478,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .shp-no { color: var(--mp-text-default); }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -381,12 +495,26 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+
+/* Complete shipment modal */
+.shp-complete-field { margin-bottom: var(--mp-spacing-4); }
+.shp-datepicker :deep(.mp-date-picker) { width: 100%; }
+.shp-attachment { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.shp-file-hidden { display: none; }
+.shp-attachment-row { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.shp-attach-or { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.shp-file-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.shp-file-item { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.shp-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shp-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
+.shp-file-remove:hover { color: var(--mp-text-default); }
+.shp-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }

@@ -10,7 +10,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { formatDateTime } from '~/utils/date'
 import {
-  receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask,
+  receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask, startReceiving,
   type ReceivingPO, type ReceivingTask,
 } from '~/data/receivingTasks'
 import { putAwayTasksFor } from '~/data/putAwayTasks'
@@ -197,6 +197,11 @@ function aging(t: ReceivingTask) {
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(t: ReceivingTask) { router.push(`/receiving/${t.id}`) }
+function startReceivingAndNavigate(t: ReceivingTask) {
+  startReceiving(t.id)
+  router.push(`/receiving/${t.id}/receive`)
+}
+function continueReceiving(t: ReceivingTask) { router.push(`/receiving/${t.id}/receive`) }
 function createPutAway(t: ReceivingTask) {
   router.push({ path: '/inbound-delivery/put-away/create', query: { warehouseId: t.warehouseId, taskId: t.id } })
 }
@@ -448,6 +453,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
                       <MpPopoverListItem @click="viewDetails(t)">View details</MpPopoverListItem>
+                      <MpPopoverListItem v-if="t.status === 'open'" @click="startReceivingAndNavigate(t)">Start receiving</MpPopoverListItem>
+                      <MpPopoverListItem v-else-if="t.status === 'in progress'" @click="continueReceiving(t)">Continue receiving</MpPopoverListItem>
                       <MpPopoverListItem v-if="t.status === 'pending put-away'" @click="createPutAway(t)">Create put-away</MpPopoverListItem>
                       <MpPopoverListItem
                         v-if="canCancelReceivingTask(t)"
@@ -682,12 +689,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-task-row:hover .row-hover-btn { display: flex; }
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 /* Empty state */
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }

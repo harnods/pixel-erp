@@ -900,7 +900,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   padding-bottom: var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.pi-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
+.pi-header :deep(.content-list) { padding-top: 0; flex: 0 0 318px; width: 318px; }
+.pi-header :deep(.content-list__value) { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 
 /* ── Summary stats ───────────────────────────────────────────────────────────── */
 .pi-summary { display: flex; gap: var(--mp-spacing-10); align-self: flex-start; }

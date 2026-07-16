@@ -10,8 +10,9 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { useTableState } from '~/composables/useTableState'
-import { packingTasksFor, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
+import { packingTasksFor, packingTaskAgingDays, startPacking, type PackingTask } from '~/data/packingTasks'
 import { packingTaskHasShipment } from '~/data/deliveryTasks'
+import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
 import { outgoingOrders } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
@@ -146,6 +147,16 @@ function agingDays(t: PackingTask) { return packingTaskAgingDays(t) }
 const router = useRouter()
 function viewDetails(row: PackingTask) { router.push(`/packing/${row.id}`) }
 function viewSalesOrder(row: PackingTask) { router.push(`/outbound-delivery/${row.salesOrderId}`) }
+function startPackingAndNavigate(row: PackingTask) {
+  startPacking(row.id)
+  router.push(`/packing/${row.id}/pack`)
+}
+function continuePacking(row: PackingTask) { router.push(`/packing/${row.id}/pack`) }
+// Finishing packing auto-creates the delivery — a completed task always has one to jump to.
+function viewDelivery(row: PackingTask) {
+  const d = getDeliveryForPackingTask(row.id)[0]
+  if (d) router.push(`/delivery/${d.id}`)
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -340,6 +351,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as PackingTask)">View details</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as unknown as PackingTask).status === 'open'"
+              @click="startPackingAndNavigate(row as unknown as PackingTask)"
+            >Start packing</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else-if="(row as unknown as PackingTask).status === 'in progress'"
+              @click="continuePacking(row as unknown as PackingTask)"
+            >Continue packing</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else-if="(row as unknown as PackingTask).status === 'completed' && getDeliveryForPackingTask((row as unknown as PackingTask).id).length"
+              @click="viewDelivery(row as unknown as PackingTask)"
+            >View delivery</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -419,7 +442,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .pack-no { color: var(--mp-text-default); }
 .pack-so { color: var(--mp-text-default); }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -454,12 +477,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }

@@ -2139,7 +2139,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .row-hover-btn {
   position: absolute;
   right: var(--mp-spacing-4);   /* 16px gap from the cell's right edge */
-  top: 50%;
+  top: var(--mp-spacing-2\.5, 10px);
   transform: translateY(-50%);
   display: none;
   align-items: center;

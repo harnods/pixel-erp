@@ -2,13 +2,18 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
+  MpModalOverlay, MpModalCloseButton, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
-import { putAwayTasksFor, type PutAwayTask } from '~/data/putAwayTasks'
+import {
+  putAwayTasksFor, startPutAway as startPutAwayTask, canCancelPutAway, cancelPutAway,
+  type PutAwayTask,
+} from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -132,6 +137,21 @@ function toggleExpand(id: string) {
 const router = useRouter()
 function viewDetails(row: PutAwayTask) { router.push(`/put-away/${row.id}`) }
 function viewReceivingTask(taskId: string) { router.push(`/receiving/${taskId}`) }
+function startPutAwayAndNavigate(row: PutAwayTask) {
+  if (row.status === 'open') startPutAwayTask(row.id)
+  router.push(`/put-away/${row.id}/store`)
+}
+
+const cancelModalOpen = ref(false)
+const taskToCancel = ref<PutAwayTask | null>(null)
+function openCancelModal(t: PutAwayTask) { taskToCancel.value = t; cancelModalOpen.value = true }
+function closeCancelModal() { cancelModalOpen.value = false; taskToCancel.value = null }
+function confirmCancelTask() {
+  if (!taskToCancel.value) return
+  cancelPutAway(taskToCancel.value.id)
+  toast.notify({ variant: 'success', title: `${taskToCancel.value.taskNo} canceled`, maxWidth: 'max-content' })
+  closeCancelModal()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -315,6 +335,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as PutAwayTask)">View details</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as unknown as PutAwayTask).status === 'open'"
+              @click="startPutAwayAndNavigate(row as unknown as PutAwayTask)"
+            >Start put-away</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else-if="(row as unknown as PutAwayTask).status === 'in progress'"
+              @click="startPutAwayAndNavigate(row as unknown as PutAwayTask)"
+            >Continue put-away</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancelPutAway(row as unknown as PutAwayTask)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="openCancelModal(row as unknown as PutAwayTask)"
+            >Cancel</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -329,6 +362,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
+
+  <!-- ── Cancel confirmation modal ── -->
+  <MpModal id="pa-cancel-modal" :is-open="cancelModalOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
+    <MpModalContent>
+      <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        This put-away task will be canceled and can no longer be continued. This can't be undone.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep task</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">Cancel task</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="pa-demo-fab" is-close-on-select use-portal placement="top-end">
@@ -393,7 +444,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pa-no { color: var(--mp-text-default); }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -420,12 +471,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }

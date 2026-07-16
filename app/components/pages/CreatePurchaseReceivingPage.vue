@@ -187,7 +187,10 @@ function goReceipts() {
 function handleCreate() {
   // Button is always active — validate on submit and surface the error inline.
   if (!assigneeId.value) { assigneeError.value = true; scrollToFirstError(); return }
-  if (!keptItems.value.length) return
+  if (!keptItems.value.length) {
+    toast.notify({ variant: 'error', title: 'You must include at least one SKU to receive', maxWidth: 'max-content' })
+    return
+  }
   if (receipt.value) {
     // Create an Open receiving task covering the kept (included) SKUs. The operator
     // does the actual receiving; PO status stays Open until a task is ended.

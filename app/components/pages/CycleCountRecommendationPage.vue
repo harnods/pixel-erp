@@ -408,7 +408,7 @@ function reasonBadgeType(reason: string): string {
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);

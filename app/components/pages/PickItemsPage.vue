@@ -975,7 +975,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 .pik-header { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
-.pik-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
+.pik-header :deep(.content-list) { padding-top: 0; flex: 0 0 318px; width: 318px; }
+.pik-header :deep(.content-list__value) { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 .pik-summary { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pik-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
 .pik-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }

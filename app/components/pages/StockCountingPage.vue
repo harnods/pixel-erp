@@ -971,6 +971,8 @@ onUnmounted(() => {
   padding: var(--mp-spacing-4) var(--mp-spacing-6);
   border-bottom: 1px solid var(--mp-border-default);
 }
+.sc-header :deep(.content-list) { flex: 0 0 318px; width: 318px; }
+.sc-header :deep(.content-list__value) { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 
 /* ── Summary stats ───────────────────────────────────────────────────────────── */
 .sc-summary {
