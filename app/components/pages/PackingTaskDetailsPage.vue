@@ -3,7 +3,8 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpTooltip, MpIcon,
-  css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -16,7 +17,10 @@ import type jsPDF from 'jspdf'
 import {
   getPackingLineItems, allPackingTasksFlat, getDeliveryForPackingTask, type PackLineItem,
 } from '~/data/packingTaskDetails'
-import { getPackingTask, startPacking, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
+import {
+  getPackingTask, startPacking, packingTaskAgingDays, canCancelPackingTask, cancelPackingTask,
+  type PackingTask,
+} from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { getShipment, marketplaceShipping, type ShipmentSummary } from '~/data/deliveryTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
@@ -116,6 +120,20 @@ function startPackingAndNavigate() {
   startPacking(props.orderId)
   router.push(`/packing/${props.orderId}/pack`)
 }
+
+// Cancel — only while packing hasn't finished yet (open/in progress). Once
+// completed, packing is already done and the task becomes a permanent record.
+const canCancel = computed(() => !!task.value && canCancelPackingTask({ ...task.value, status: localStatus.value }))
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  if (!task.value) return
+  cancelPackingTask(task.value.id)
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
+  goBack()
+}
+
 const pdfPreviewOpen = ref(false)
 const pdfPreviewDoc = ref<jsPDF | null>(null)
 const pdfPreviewFilename = ref('')
@@ -276,7 +294,11 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         </div>
         <div class="content-list-col">
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
-          <ContentList label="End date">
+          <template v-if="localStatus === 'canceled'">
+            <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+          </template>
+          <ContentList v-else label="End date">
             <span class="pck-end-cell">
               <span>{{ localEndDate ? formatDateTimeLong(localEndDate) : '—' }}</span>
               <span v-if="agingLabel()" class="pck-aging">{{ agingLabel() }}</span>
@@ -497,6 +519,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
+      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
+        Cancel
+      </button>
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startPackingAndNavigate">
         Match order
       </button>
@@ -507,6 +532,24 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         View delivery
       </button>
     </footer>
+
+    <!-- ── Cancel confirmation ── -->
+    <MpModal id="pck-cancel" :is-open="cancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Cancel {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          This packing task will be canceled and can no longer be continued. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
   </div>
 
@@ -657,6 +700,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 .detail-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; }
 .detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-secondary); }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }

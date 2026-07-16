@@ -18,6 +18,7 @@ import {
 } from '~/data/pickingTaskDetails'
 import {
   getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds,
+  canCancelPickingTask, cancelPickingTask,
   type PickingTask,
 } from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
@@ -163,6 +164,21 @@ function startPickingAndNavigate() {
   startPicking(props.orderId)
   router.push(`/picking/${props.orderId}/pick`)
 }
+
+// Cancel — only while picking hasn't finished yet (open/in progress). Once
+// partially picked/completed, picking is already done and the task becomes a
+// permanent record.
+const canCancel = computed(() => !!task.value && canCancelPickingTask({ ...task.value, status: localStatus.value }))
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  if (!task.value) return
+  cancelPickingTask(task.value.id)
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
+  goBack()
+}
+
 const pdfPreviewOpen = ref(false)
 const pdfPreviewDoc = ref<jsPDF | null>(null)
 const pdfPreviewFilename = ref('')
@@ -596,6 +612,9 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary" @click="printPickingList">Print picking list</button>
+      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
+        Cancel
+      </button>
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">
         Start picking
       </button>
@@ -610,6 +629,24 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         Create packing
       </button>
     </footer>
+
+    <!-- ── Cancel confirmation ── -->
+    <MpModal id="pkd-cancel" :is-open="cancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Cancel {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          This picking task will be canceled and can no longer be continued. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
   </div>
 
@@ -861,6 +898,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent;
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 .detail-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px);

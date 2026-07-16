@@ -2,13 +2,18 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
+  MpModalOverlay, MpModalCloseButton, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
-import { pickingTasksFor, pickingTaskAgingDays, isPickingReadyToPack, packableOrderIds, startPicking, type PickingTask } from '~/data/pickingTasks'
+import {
+  pickingTasksFor, pickingTaskAgingDays, isPickingReadyToPack, packableOrderIds, startPicking,
+  canCancelPickingTask, cancelPickingTask, type PickingTask,
+} from '~/data/pickingTasks'
 import { getPackingForOrder, pickingTaskHasPacking } from '~/data/packingTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
@@ -148,6 +153,17 @@ function continuePicking(row: PickingTask) { router.push(`/picking/${row.id}/pic
 // A completed picking task can spawn packing tasks (one per sales order).
 function createPacking(row: PickingTask) {
   router.push({ path: '/outbound-delivery/packing/create', query: { pickingId: row.id } })
+}
+
+const cancelModalOpen = ref(false)
+const taskToCancel = ref<PickingTask | null>(null)
+function openCancelModal(t: PickingTask) { taskToCancel.value = t; cancelModalOpen.value = true }
+function closeCancelModal() { cancelModalOpen.value = false; taskToCancel.value = null }
+function confirmCancelTask() {
+  if (!taskToCancel.value) return
+  cancelPickingTask(taskToCancel.value.id)
+  toast.notify({ variant: 'success', title: `${taskToCancel.value.taskNo} canceled`, maxWidth: 'max-content' })
+  closeCancelModal()
 }
 
 // ─── Bulk → create packing tasks for several finished picking lists at once ───────
@@ -409,6 +425,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               v-if="pickingEligibleForPacking(row as unknown as PickingTask)"
               @click="createPacking(row as unknown as PickingTask)"
             >Create packing</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancelPickingTask(row as unknown as PickingTask)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="openCancelModal(row as unknown as PickingTask)"
+            >Cancel</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -423,6 +444,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
+
+  <!-- ── Cancel confirmation modal ── -->
+  <MpModal id="pick-cancel-modal" :is-open="cancelModalOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
+    <MpModalContent>
+      <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        This picking task will be canceled and can no longer be continued. This can't be undone.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep task</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">Cancel task</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="pick-demo-fab" is-close-on-select use-portal placement="top-end">
@@ -534,6 +573,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }

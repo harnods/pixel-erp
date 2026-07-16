@@ -733,11 +733,21 @@ export function endPicking(
   persistPicking();
 }
 
-/** Cancel a picking task — the order(s) it covered keep their reservation (they
- *  still need picking, just via a different list later). */
+/** A picking task can only be canceled while picking hasn't finished yet —
+ *  "partially picked"/"completed" mean endPicking() already committed real
+ *  effects (batch/serial pins, reservation re-pinning), so canceling at that
+ *  point would silently make picked stock unaccounted for. */
+export function canCancelPickingTask(t: PickingTask): boolean {
+  return t.status === "open" || t.status === "in progress";
+}
+
+/** Cancel a not-yet-finished picking task — the order(s) it covered keep their
+ *  reservation (they still need picking, just via a different list later).
+ *  Terminal state; the record itself is kept (never deleted) so it stays in
+ *  the audit trail. */
 export function cancelPickingTask(taskId: string, reason?: string): void {
   const t = getPickingTask(taskId);
-  if (!t) return;
+  if (!t || !canCancelPickingTask(t)) return;
   t.status = "canceled";
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;
