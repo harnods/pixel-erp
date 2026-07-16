@@ -273,7 +273,8 @@ function handleScan(rawValue: string) {
     return
   }
   if (isSerialTrackedSku(v)) {
-    notifyScanError(`${v}: use Manage serial numbers to add serials`)
+    playScanSuccessSound()
+    openSerialDrawer(v)
     return
   }
   const current = draftQty.value[v] ?? 0

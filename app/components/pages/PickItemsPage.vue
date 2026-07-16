@@ -403,7 +403,10 @@ function handleScan(rawValue: string) {
     return
   }
   if (isSerialTrackedSku(item.skuCode)) {
-    notifyScanError(`${v}: use Manage serial numbers to add serials`)
+    const group = groupBySkuCode(item.skuCode)
+    if (!group) return
+    playScanSuccessSound()
+    openSerialDrawer(group)
     return
   }
   draftQty.value = { ...draftQty.value, [item.key]: (draftQty.value[item.key] ?? 0) + 1 }
