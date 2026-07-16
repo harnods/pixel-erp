@@ -923,6 +923,11 @@ const bulkCountLabel = computed(() => {
 .erp-tr--align-top .erp-td {
   vertical-align: top;
 }
+/* ...except the actions cell — a single kebab/button reads oddly pinned to the top
+   of a tall row, so it stays vertically centred regardless of row height. */
+.erp-tr--align-top .erp-td--actions {
+  vertical-align: middle;
+}
 
 /* Right-aligned cells — flip padding */
 .erp-td--right {

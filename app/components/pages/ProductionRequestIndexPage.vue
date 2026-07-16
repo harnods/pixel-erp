@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpSkeleton, css, toast,
 } from '@mekari/pixel3'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import ColumnSettingsMenu, { type ColumnSettingItem } from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -37,7 +37,7 @@ const loading = ref(true)
 let loadTimer: ReturnType<typeof setTimeout> | null = null
 onMounted(() => {
   loading.value = true
-  loadTimer = setTimeout(() => { loading.value = false }, 900)
+  loadTimer = setTimeout(() => { loading.value = false }, 1200)
 })
 onUnmounted(() => { if (loadTimer) clearTimeout(loadTimer) })
 
@@ -301,6 +301,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           v-model="dateFilter"
           :today="TODAY"
           :placeholder="dateFilterPlaceholder[tab]"
+          :clearable="tab === 'pending'"
         />
       </div>
 
@@ -363,25 +364,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </tr>
           </thead>
           <tbody>
-            <!-- ── Loading skeleton rows ── -->
+            <!-- ── Loading skeleton rows — matches the standard ErpTablePage pattern:
+                 3 rows, one solid (no shimmer) MpSkeleton bar per column. ── -->
             <template v-if="loading">
-              <tr v-for="n in 6" :key="`sk-${n}`" class="pr-parent pr-parent--skeleton">
+              <tr v-for="n in 3" :key="`sk-${n}`" class="pr-parent pr-parent--skeleton">
                 <td class="pr-td pr-parent-cell" colspan="2">
-                  <div class="pr-product">
-                    <span class="pr-skel pr-skel--thumb" />
-                    <div class="pr-product-body">
-                      <span class="pr-skel pr-skel--name" />
-                      <span class="pr-skel pr-skel--sku" />
-                    </div>
-                  </div>
+                  <MpSkeleton class="pr-skel" height="14px" rounded="sm" duration="0s" width="72px" />
                 </td>
-                <td v-if="salesOrderVisible" class="pr-td"><span class="pr-skel" /></td>
+                <td v-if="salesOrderVisible" class="pr-td">
+                  <MpSkeleton class="pr-skel" height="14px" rounded="sm" duration="0s" width="72px" />
+                </td>
                 <td
                   v-for="col in visibleValueColumns"
                   :key="col.key"
                   class="pr-td"
                   :class="{ 'pr-td--right': col.align === 'right' }"
-                ><span class="pr-skel" :class="{ 'pr-skel--sm': col.align === 'right' }" /></td>
+                >
+                  <MpSkeleton class="pr-skel" height="14px" rounded="sm" duration="0s" :width="col.align === 'right' ? '56px' : '72px'" />
+                </td>
                 <td v-if="hasActions" class="pr-td pr-td--actions" />
               </tr>
             </template>
@@ -614,18 +614,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .pr-tt:hover::after { opacity: 1; }
 .pr-tt--top::after { top: auto; bottom: 100%; transform: translateX(-50%) translateY(-6px); }
 
-/* Loading skeleton */
+/* Loading skeleton — solid (no shimmer gradient, no animation), matches the
+   standard ErpTablePage skeleton used across every other index page. */
 .pr-parent--skeleton .pr-td { background: var(--mp-background-neutral); }
 .pr-skel {
-  display: inline-block; height: 12px; width: 72px; border-radius: var(--mp-radii-sm, 4px);
-  background: linear-gradient(90deg, var(--mp-border-default) 25%, var(--mp-background-neutral-subtle) 37%, var(--mp-border-default) 63%);
-  background-size: 400% 100%; animation: pr-skel-shimmer 1.4s ease infinite;
+  display: inline-block;
+  vertical-align: middle;
+  background-image: none !important;
+  background-color: var(--mp-border-default) !important;
+  animation: none !important;
 }
-.pr-skel--sm { width: 48px; }
-.pr-skel--thumb { width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px); border-radius: var(--mp-radii-md); flex-shrink: 0; }
-.pr-skel--name { width: 160px; height: 14px; }
-.pr-skel--sku { width: 90px; height: 12px; margin-top: var(--mp-spacing-1); }
-@keyframes pr-skel-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
 /* Table */
 .pr-table-section { display: flex; flex-direction: column; }

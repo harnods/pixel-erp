@@ -15,6 +15,7 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components/patterns/WorkOrderFiltersDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 
@@ -26,7 +27,7 @@ const columns: TableColumn[] = [
   { key: 'bomName',         label: 'BOM name',             width: '200px', sortable: true  },
   { key: 'category',        label: 'Category',             width: '120px'                  },
   { key: 'type',            label: 'Type',                 width: '140px'                  },
-  { key: 'trackRouting',    label: 'Track routing',        width: '130px', align: 'center' },
+  { key: 'trackRouting',    label: 'Track routing',        width: '130px'                  },
   { key: 'status',          label: 'Status',               width: '170px'                  },
   { key: 'parentNumber',    label: 'Parent work order',    width: '170px'                  },
   { key: 'producedQty',     label: 'Produced qty',         width: '130px', align: 'right'  },
@@ -56,6 +57,37 @@ const STATUS_OPTIONS: { label: string; value: WorkOrderStatus }[] = [
 const statusFilter = ref('')
 const statusLabel = computed(() => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '')
 
+// Start date / End date — exact-day match against the work order's actual start/end
+// date (the same fields the Start date / End date columns show). Cleared by default.
+const startDateFilter = ref('')   // DD/MM/YYYY
+const endDateFilter = ref('')     // DD/MM/YYYY
+
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+function parseDMY(s: string): Date | null {
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!m) return null
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]))
+}
+
+// ─── All filters drawer ─────────────────────────────────────────────────────────
+const isFiltersDrawerOpen = ref(false)
+const drawerTypeOptions = computed(() => TYPE_OPTIONS.map(o => ({ id: o.value, name: o.label })))
+const drawerStatusOptions = computed(() => STATUS_OPTIONS.map(o => ({ id: o.value, name: o.label })))
+const drawerValue = computed<WorkOrderFiltersValue>(() => ({
+  keyword: search.value,
+  type: typeFilter.value,
+  status: statusFilter.value,
+  startDate: startDateFilter.value,
+  endDate: endDateFilter.value,
+}))
+function applyDrawerFilters(v: WorkOrderFiltersValue) {
+  search.value = v.keyword
+  typeFilter.value = v.type
+  statusFilter.value = v.status
+  startDateFilter.value = v.startDate
+  endDateFilter.value = v.endDate
+}
+
 // ─── Rows / table state ─────────────────────────────────────────────────────────
 // Prototype preview toggle (FAB, bottom-right): data vs empty-state view
 const previewMode = ref<'data' | 'empty'>('data')
@@ -73,18 +105,28 @@ const {
       || (row.parentNumber?.toLowerCase().includes(s) ?? false)
     const matchesType = !typeFilter.value || row.type === typeFilter.value
     const matchesStatus = !statusFilter.value || row.status === statusFilter.value
-    return matchesSearch && matchesType && matchesStatus
+    const startFilterDate = parseDMY(startDateFilter.value)
+    const matchesStart = !startFilterDate
+      || (!!row.startDate && dayStart(new Date(row.startDate)).getTime() === dayStart(startFilterDate).getTime())
+    const endFilterDate = parseDMY(endDateFilter.value)
+    const matchesEnd = !endFilterDate
+      || (!!row.endDate && dayStart(new Date(row.endDate)).getTime() === dayStart(endFilterDate).getTime())
+    return matchesSearch && matchesType && matchesStatus && matchesStart && matchesEnd
   },
 })
 
 // Reset to page 1 when the extra (non-built-in) filters change
-watch([typeFilter, statusFilter], () => setPage(1))
+watch([typeFilter, statusFilter, startDateFilter, endDateFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!typeFilter.value || !!statusFilter.value)
+const hasActiveFilter = computed(() =>
+  !!search.value || !!typeFilter.value || !!statusFilter.value || !!startDateFilter.value || !!endDateFilter.value,
+)
 function clearFilters() {
   search.value = ''
   typeFilter.value = ''
   statusFilter.value = ''
+  startDateFilter.value = ''
+  endDateFilter.value = ''
 }
 
 // ─── Column show/hide ───────────────────────────────────────────────────────────
@@ -187,7 +229,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="filter-all-btn">
+        <button class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
           <MpIcon name="filter" size="sm" />
           All filters
         </button>
@@ -304,6 +346,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
   </ErpTablePage>
 
+  <!-- ── All filters drawer ── -->
+  <WorkOrderFiltersDrawer
+    v-model:is-open="isFiltersDrawerOpen"
+    :model-value="drawerValue"
+    :type-options="drawerTypeOptions"
+    :status-options="drawerStatusOptions"
+    @apply="applyDrawerFilters"
+  />
+
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="wo-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
@@ -385,7 +436,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .row-kebab {
   display: flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);
-  margin-left: auto; border: none; background: none; border-radius: var(--mp-radii-md);
+  margin: 0 auto; border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }

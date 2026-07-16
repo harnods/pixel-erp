@@ -26,9 +26,12 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   /** Reference "today" — the mock's fixed timeline, not the real clock. */
   today?: Date
+  /** Whether the trigger shows a clear ("x") to reset back to no filter. */
+  clearable?: boolean
 }>(), {
   placeholder: 'Select date',
   today: () => new Date(),
+  clearable: true,
 })
 
 const emit = defineEmits<{ 'update:modelValue': [DateFilterValue | null] }>()
@@ -166,7 +169,7 @@ function onDayClick(cell: Cell) {
       <button class="adf-trigger" :class="{ 'adf-trigger--placeholder': !modelValue }" type="button">
         <span class="adf-trigger-label">{{ modelValue ? label : placeholder }}</span>
         <svg
-          v-if="modelValue" class="adf-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
+          v-if="modelValue && clearable" class="adf-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
           aria-label="Clear" @click="clear"
         >
           <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
