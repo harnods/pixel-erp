@@ -404,6 +404,13 @@ function handleDrawerScan(rawValue: string) {
     }
   }
 
+  // Picking only ever takes batches that already exist in stock — never lets an
+  // unrecognized scan register a brand-new one (that's a receiving/count concern).
+  if (isPicking.value) {
+    notifyScanError(`Batch number not found: "${v}"`)
+    return
+  }
+
   // Genuinely unrecognized code — fall back to a blank row the operator fills in
   // manually (e.g. count mode cataloguing a batch not yet in the system).
   newCounter++
@@ -1141,7 +1148,7 @@ function fmtNum(n: number | null): string {
                         <MpPopoverListItem v-if="!availableBatches.length" disabled>
                           All batches added
                         </MpPopoverListItem>
-                        <template v-if="props.kind !== 'transfer'">
+                        <template v-if="props.kind !== 'transfer' && !isPicking">
                           <div class="mbd-popover-divider" />
                           <MpPopoverListItem @click="addNewBatch">
                             <span class="mbd-popover-add-row"><MpIcon name="add" size="sm" />Add new batch</span>
