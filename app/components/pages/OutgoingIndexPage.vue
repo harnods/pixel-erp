@@ -309,6 +309,12 @@ function bulkPickable(selectedRows: Set<number>): boolean {
   if (!rows.every(o => o.warehouseId === wh)) return false
   return rows.some(canPickOrder)
 }
+// Explains why "Create picking list" is missing when it's specifically the
+// multi-warehouse rule that's blocking it (as opposed to none being pickable).
+function selectionSpansMultipleWarehouses(selectedRows: Set<number>): boolean {
+  const whs = new Set(selectedOrdersOf(selectedRows).map(o => o.warehouseId))
+  return whs.size > 1
+}
 // Bulk → create one picking list from the pickable orders in that (single) warehouse.
 function bulkCreatePicking(selectedRows: Set<number>, deselectAll: () => void) {
   if (!bulkPickable(selectedRows)) return
@@ -390,6 +396,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       >
         Create picking list
       </button>
+      <span v-else-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="out-bulk-hint">
+        Select orders from a single warehouse to create a picking list
+      </span>
       <button
         v-if="bulkCancelable(selectedRows as Set<number>)"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
@@ -868,6 +877,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   justify-content: center;
   color: var(--mp-text-subtle);
 }
+
+/* Bulk-bar hint — explains why the create action is missing */
+.out-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 
 /* Source */
 .out-source {

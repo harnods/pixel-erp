@@ -149,6 +149,12 @@ const selectedPutAwayWarehouseId = computed<string | null>(() => {
   return whs.size === 1 ? [...whs][0]! : null
 })
 const canCreatePutAway = computed(() => selectedPutAwayWarehouseId.value !== null)
+// Explains why "Create put-away" is missing when it's specifically the
+// multi-warehouse rule that's blocking it (as opposed to none being pending put-away).
+const selectedTasksSpanMultipleWarehouses = computed(() => {
+  const whs = new Set(selectedTaskObjs.value.map(t => t.warehouseId))
+  return whs.size > 1
+})
 function toggleTask(id: string) {
   const s = new Set(selectedTasks.value)
   s.has(id) ? s.delete(id) : s.add(id)
@@ -333,6 +339,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <MpCheckbox id="rcvg-bulk-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
                   <span class="rcvg-bulk-bar__count">{{ bulkCountLabel }}</span>
                   <button v-if="canCreatePutAway" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="bulkCreatePutAway">Create put-away</button>
+                  <span v-else-if="selectedTasksSpanMultipleWarehouses" class="rcvg-bulk-bar__hint">
+                    Select tasks from a single warehouse to create put-away
+                  </span>
                   <button
                     v-if="bulkCancelable"
                     class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
@@ -608,6 +617,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-bulk-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); height: var(--mp-sizes-7, 28px); }
 .rcvg-bulk-bar__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .rcvg-bulk-bar__count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap; }
+.rcvg-bulk-bar__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .rcvg-bulk-bar__right { display: flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .rcvg-bulk-bar__kbd {
   display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5);

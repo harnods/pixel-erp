@@ -187,6 +187,12 @@ function bulkPackable(sel: Set<number>): boolean {
   if (!rows.every(t => t.warehouseId === wh)) return false
   return rows.some(pickingEligibleForPacking)
 }
+// Explains why "Create packing" is missing when it's specifically the
+// multi-warehouse rule that's blocking it (as opposed to none being eligible).
+function selectionSpansMultipleWarehouses(sel: Set<number>): boolean {
+  const whs = new Set(selectedPickingsOf(sel).map(t => t.warehouseId))
+  return whs.size > 1
+}
 // Open the multi-picking Create packing form for EVERY selected list, not just the
 // eligible ones — the form itself shows a not-packable list with its reason instead
 // of silently dropping it, so the operator can see why (button still only appears
@@ -230,6 +236,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       >
         Create packing
       </button>
+      <span v-else-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="pick-bulk-hint">
+        Select picking lists from a single warehouse to create packing
+      </span>
     </template>
 
     <!-- ── Filter bar ── -->
@@ -525,6 +534,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pick-no { color: var(--mp-text-default); }
+.pick-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .row-hover-btn {
   position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
