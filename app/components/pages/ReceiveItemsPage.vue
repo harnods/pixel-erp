@@ -68,19 +68,25 @@ const priorReceivedPerSku = computed<Record<string, number>>(() => {
   }
   return map
 })
+// Outstanding is against Expected qty (this task's own target), not Purchase
+// qty (the whole-PO ceiling) — floored per line at 0, since receiving more
+// than expected is allowed and shouldn't read as a negative outstanding.
+// targetQty is already THIS task's own remaining target (createReceivingTask
+// nets it against prior ended tasks at creation time) — unlike expectedQty
+// (Purchase qty, the whole-PO ceiling, unchanged since before this task
+// existed), it must NOT be subtracted against priorReceivedPerSku again here.
 const draftOutstanding = computed(() =>
   lineItems.value.reduce((sum, it) => {
-    const prior = priorReceivedPerSku.value[it.skuCode] ?? 0
     const draft = draftQty.value[it.skuCode] ?? 0
-    return sum + Math.max(0, it.expectedQty - prior - draft)
+    return sum + Math.max(0, it.targetQty - draft)
   }, 0),
 )
 const shortItemsCount = computed(
-  () => lineItems.value.filter(it => {
-    const prior = priorReceivedPerSku.value[it.skuCode] ?? 0
-    return (draftQty.value[it.skuCode] ?? 0) + prior < it.expectedQty
-  }).length,
+  () => lineItems.value.filter(it => (draftQty.value[it.skuCode] ?? 0) < it.targetQty).length,
 )
+// Σ Expected qty — what "no outstanding" / "complete" means for THIS task,
+// distinct from purchaseTotal (Σ Purchase qty, the whole-PO ceiling).
+const targetTotal = computed(() => lineItems.value.reduce((s, it) => s + it.targetQty, 0))
 
 const filteredItems = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -332,7 +338,9 @@ function buildReceivingDetail(): Record<string, { batchLines?: ReceivingBatchLin
 function commitReceiving(createPutAway = false) {
   showConfirm.value = false
   const received = { ...draftQty.value }
-  const complete = draftReceivedTotal.value >= purchaseTotal.value
+  // Against Expected qty, not Purchase qty — matches draftOutstanding above, so
+  // the confirm modal ("no outstanding") and this toast never contradict each other.
+  const complete = draftReceivedTotal.value >= targetTotal.value
   endReceivingTask(props.orderId, received, buildReceivingDetail())
   if (createPutAway) {
     router.push({
@@ -433,7 +441,17 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <span class="ri-stat-val">{{ fmt(draftReceivedTotal) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-label">Outstanding qty</span>
+          <span class="ri-stat-label">
+            Outstanding qty
+            <MpTooltip
+              id="ri-tt-outstanding"
+              label="Against Expected qty, floored at 0 — receiving more than expected (up to Purchase qty) never shows as a negative outstanding."
+              placement="top"
+              use-portal
+            >
+              <span class="ri-stat-info"><MpIcon name="info" size="sm" /></span>
+            </MpTooltip>
+          </span>
           <span class="ri-stat-val">{{ fmt(draftOutstanding) }}</span>
         </div>
       </div>
@@ -474,12 +492,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <col />
                 <col />
                 <col />
+                <col />
               </colgroup>
               <thead>
                 <tr>
                   <th class="ri-th">Product</th>
                   <th class="ri-th">SKU</th>
                   <th class="ri-th ri-th--num">Purchase qty</th>
+                  <th class="ri-th ri-th--num">Expected qty</th>
                   <th class="ri-th ri-th--num">Received qty</th>
                   <th class="ri-th ri-th--num">Outstanding qty</th>
                   <th class="ri-th">Unit</th>
@@ -493,6 +513,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <td class="ri-td">{{ item.skuCode }}</td>
                   <td class="ri-td ri-td--num">{{ fmt(item.expectedQty) }}</td>
+                  <td class="ri-td ri-td--num">{{ fmt(item.targetQty) }}</td>
                   <!-- Received qty -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--num">
                     <span v-if="batchHasCounts(item.skuCode)" class="ri-batch-val">{{ fmt(batchTotal(item.skuCode)) }}</span>
@@ -512,7 +533,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                     :class="{ 'ri-td--input--error': showQtyErrors && !(draftQty[item.skuCode] ?? 0) }"
                   >
                     <MpTooltip
-                      v-if="qtyScanRequired(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0))"
+                      v-if="qtyScanRequired(item.targetQty)"
                       :id="`ri-tt-scan-${item.skuCode}`"
                       label="Qty at or below the scan threshold — scan the barcode instead of typing"
                       placement="top"
@@ -561,7 +582,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <td v-else class="ri-td ri-td--action"></td>
                 </tr>
                 <tr v-if="!filteredItems.length">
-                  <td class="ri-td ri-empty" colspan="7">No products match your search.</td>
+                  <td class="ri-td ri-empty" colspan="8">No products match your search.</td>
                 </tr>
               </tbody>
             </table>
@@ -609,11 +630,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       </MpModalHeader>
       <MpModalBody>
         <template v-if="draftOutstanding > 0">
-          {{ fmt(draftOutstanding) }} of {{ fmt(purchaseTotal) }} purchase qty still outstanding
+          {{ fmt(draftOutstanding) }} of {{ fmt(targetTotal) }} expected qty still outstanding
           across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'SKU' : 'SKUs' }}.
         </template>
         <template v-else>
-          All {{ fmt(purchaseTotal) }} units have been received.
+          All {{ fmt(targetTotal) }} expected units have been received.
         </template>
       </MpModalBody>
       <MpModalFooter>
@@ -637,7 +658,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :sku="batchDrawerSku"
     :warehouse-id="po?.warehouseId ?? ''"
     kind="receiving"
-    :target-count="lineItems.find(i => i.skuCode === batchDrawerSku)?.expectedQty ?? 0"
+    :target-count="lineItems.find(i => i.skuCode === batchDrawerSku)?.targetQty ?? 0"
+    :max-count="Math.max(0, (lineItems.find(i => i.skuCode === batchDrawerSku)?.expectedQty ?? 0) - (priorReceivedPerSku[batchDrawerSku] ?? 0))"
     :model-value="batchLinesBySku[batchDrawerSku] ?? []"
     @update:open="batchDrawerOpen = $event"
     @save="saveBatchLines"
@@ -648,8 +670,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :sku="serialDrawerSku"
     :warehouse-id="po?.warehouseId ?? ''"
     kind="receiving"
-    :delta="lineItems.find(i => i.skuCode === serialDrawerSku)?.expectedQty ?? 0"
-    :target-count="lineItems.find(i => i.skuCode === serialDrawerSku)?.expectedQty ?? 0"
+    :delta="lineItems.find(i => i.skuCode === serialDrawerSku)?.targetQty ?? 0"
+    :target-count="lineItems.find(i => i.skuCode === serialDrawerSku)?.targetQty ?? 0"
+    :max-count="Math.max(0, (lineItems.find(i => i.skuCode === serialDrawerSku)?.expectedQty ?? 0) - (priorReceivedPerSku[serialDrawerSku] ?? 0))"
     :location-on-hand="0"
     :model-value="(serialLinesBySku[serialDrawerSku] ?? []).map(s => ({ serial: s }))"
     :blocked-serials="priorReceivedSerialsBySku[serialDrawerSku] ?? []"
@@ -704,7 +727,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   padding-bottom: var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.ri-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
+.ri-header :deep(.content-list) { padding-top: 0; flex: 0 0 318px; width: 318px; }
+.ri-header :deep(.content-list__value) { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 
 /* ── Summary stats ───────────────────────────────────────────────────────────── */
 .ri-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
@@ -713,7 +737,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); font-variant-numeric: tabular-nums;
 }
-.ri-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ri-stat-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ri-stat-info { display: inline-flex; align-items: center; color: var(--mp-icon-default, var(--mp-text-secondary)); cursor: default; }
 
 /* ── SKU section (filter bar + table) ───────────────────────────────────────── */
 .ri-sku-section { display: flex; flex-direction: column; }

@@ -11,6 +11,8 @@ export interface TaskLineItem {
   colorHue:    number
   binLocation: string
   expectedQty: number
+  /** "Expected qty" shown in the UI — see ReceivingItem.targetQty. */
+  targetQty: number
   receivedQty: number
   unit:        string
   /** Per-batch breakdown already recorded for this line (batch-tracked SKUs only). */
@@ -41,6 +43,7 @@ export function getTaskLineItems(task: ReceivingTask): TaskLineItem[] {
       colorHue:    p?.hue ?? 200,
       binLocation: binForSku(task.warehouseId, it.sku),
       expectedQty: it.expectedQty,
+      targetQty:   it.targetQty,
       receivedQty: it.receivedQty,
       unit:        it.unit || p?.unit || 'Unit',
       batchLines:    it.batchLines,

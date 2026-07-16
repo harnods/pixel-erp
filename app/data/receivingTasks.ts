@@ -62,8 +62,15 @@ export interface ReceivingItem {
   sku: string;
   productName: string;
   unit: string;
-  /** units expected for this SKU in this task (from the PO line) */
+  /** Purchase qty — units ordered for this SKU on the PO line. The hard ceiling:
+   *  receivedQty may exceed targetQty but never this. */
   expectedQty: number;
+  /** "Expected qty" shown in the UI — how much is realistically expected to
+   *  arrive in THIS receiving task. Defaults to expectedQty at creation, but can
+   *  be set lower (never higher — see createReceivingTask). Drives the
+   *  Outstanding qty display and the barcode-scan-threshold check; does NOT cap
+   *  receivedQty (expectedQty/Purchase qty still does). */
+  targetQty: number;
   /** units the operator has recorded as received */
   receivedQty: number;
   /** Per-batch breakdown of receivedQty, recorded via Manage batch (batch-tracked SKUs only). */
@@ -187,11 +194,16 @@ function buildItems(
     else if (mode === "partial")
       received = (seed + i) % 3 === 0 ? 0 : Math.round(l.purchaseQty * (0.4 + ((seed + i) % 3) * 0.2));
     const receivedQty = Math.min(l.purchaseQty, received);
+    // Demo variety: ~1 in 4 lines expects a partial shipment this task (Expected
+    // qty < Purchase qty) — everything else defaults to the full Purchase qty,
+    // same as before this field existed.
+    const targetQty = (seed + i) % 4 === 0 ? Math.max(0, Math.round(l.purchaseQty * 0.7)) : l.purchaseQty;
     const item: ReceivingItem = {
       sku: l.sku,
       productName: l.productName,
       unit: l.unit,
       expectedQty: l.purchaseQty,
+      targetQty,
       receivedQty,
     };
     if (receivedQty > 0 && isSerialSku(l.sku)) {
@@ -307,8 +319,22 @@ function patchSnapshotSerials(snap: ReceivingTask[]): ReceivingTask[] {
   });
 }
 
+/**
+ * Migration: backfill targetQty on any snapshot saved before this field existed
+ * (both seed AND user-created tasks — this is a structural-field default, not a
+ * business-data backfill, so it isn't scoped to SEED_ID_RE like the one above).
+ * Defaults to expectedQty (Purchase qty), matching every task's actual behavior
+ * before "Expected qty" existed as its own concept.
+ */
+function patchMissingTargetQty(snap: ReceivingTask[]): ReceivingTask[] {
+  return snap.map((t) => {
+    if (t.items.every((it) => it.targetQty !== undefined)) return t;
+    return { ...t, items: t.items.map((it) => ({ ...it, targetQty: it.targetQty ?? it.expectedQty })) };
+  });
+}
+
 const _snap = loadSnapshot<ReceivingTask>("receiving");
-const snapshot = _snap ? patchSnapshotSerials(_snap) : null;
+const snapshot = _snap ? patchMissingTargetQty(patchSnapshotSerials(_snap)) : null;
 export const receivingTasks = reactive<ReceivingTask[]>(snapshot ?? seedTasks());
 
 /** PO grouping used by the Receiving index — derived from the flat task store. */
@@ -460,6 +486,12 @@ export function createReceivingTask(opts: {
   receiptId: string;
   assignee: string;
   skus: string[];
+  /** Per-SKU "Expected qty" from the Create Purchase Receiving form — how much
+   *  is realistically expected THIS task, distinct from (and never above) the
+   *  SKU's outstanding qty (Purchase qty minus whatever prior ended tasks on
+   *  this same receipt already received). Any SKU left out, or given a value
+   *  above its own outstanding qty, just defaults to the outstanding qty. */
+  targetQtyBySku?: Record<string, number>;
 }): ReceivingTask | null {
   const r = receipts.find((x) => x.id === opts.receiptId);
   if (!r) return null;
@@ -484,13 +516,18 @@ export function createReceivingTask(opts: {
     warehouseId: r.warehouseId,
     warehouseName: r.warehouseName,
     assignee: opts.assignee || operatorForWarehouse(r.warehouseId, 0),
-    items: chosen.map((l) => ({
-      sku: l.sku,
-      productName: l.productName,
-      unit: l.unit,
-      expectedQty: l.purchaseQty,
-      receivedQty: 0,
-    })),
+    items: chosen.map((l) => {
+      const outstanding = Math.max(0, l.purchaseQty - (priorReceived[l.sku] ?? 0));
+      const target = opts.targetQtyBySku?.[l.sku];
+      return {
+        sku: l.sku,
+        productName: l.productName,
+        unit: l.unit,
+        expectedQty: l.purchaseQty,
+        targetQty: target === undefined ? outstanding : Math.min(Math.max(0, target), outstanding),
+        receivedQty: 0,
+      };
+    }),
     skuScope: "",
     skuCount: 0,
     purchaseQty: 0,

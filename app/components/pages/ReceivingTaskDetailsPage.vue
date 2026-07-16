@@ -395,12 +395,14 @@ function goBack() {
               <col />
               <col />
               <col />
+              <col />
             </colgroup>
             <thead>
               <tr>
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
                 <th class="detail-th detail-th--num">Purchase qty</th>
+                <th class="detail-th detail-th--num">Expected qty</th>
                 <th class="detail-th detail-th--num">Received qty</th>
                 <th class="detail-th detail-th--num">Outstanding qty</th>
                 <th class="detail-th">Unit</th>
@@ -413,6 +415,7 @@ function goBack() {
                 </td>
                 <td class="detail-td">{{ item.skuCode }}</td>
                 <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
+                <td class="detail-td detail-td--num">{{ fmt(item.targetQty) }}</td>
                 <td class="detail-td detail-td--num">
                   <span
                     :class="isInProgress ? '' : (rowReceived(item.skuCode, item.receivedQty) === item.expectedQty ? 'rcvgd-qty--full' : rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-qty--partial' : 'rcvgd-qty--zero')"

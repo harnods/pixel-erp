@@ -68,6 +68,25 @@ const receivedPerSku = computed<Record<string, number>>(() => {
   }
   return map
 })
+// What's actually still owed on this SKU — Purchase qty minus whatever prior
+// ended tasks on this same receipt already received. This, not the full
+// Purchase qty, is the real ceiling for a new task's Expected qty: a 2nd task
+// covering the remainder can't realistically expect the whole original qty
+// again once part of it has already arrived.
+function outstandingQty(it: { sku: string; purchaseQty: number }): number {
+  return Math.max(0, it.purchaseQty - (receivedPerSku.value[it.sku] ?? 0))
+}
+
+// "Expected qty" — how much is realistically expected this task, defaults to
+// (and can never exceed) the outstanding qty. Keyed by SKU, since that's what
+// createReceivingTask ultimately takes.
+const targetQtyBySku = ref<Record<string, number>>({})
+function onTargetQtyInput(sku: string, ceiling: number, e: Event) {
+  let n = Math.floor(Number((e.target as HTMLInputElement).value))
+  if (!Number.isFinite(n) || n < 0) n = 0
+  if (n > ceiling) n = ceiling
+  targetQtyBySku.value = { ...targetQtyBySku.value, [sku]: n }
+}
 
 // ─── Progressive pagination — auto lazy-load on scroll ────────────────────────
 const PAGE_SIZE   = 10
@@ -128,6 +147,7 @@ watch(() => props.orderId, () => {
   assigneeId.value = ''
   removed.value = new Set()
   search.value = ''
+  targetQtyBySku.value = Object.fromEntries(lineItems.value.map((it) => [it.sku, outstandingQty(it)]))
 }, { immediate: true })
 
 // ─── Footer divider — only show the top border once the stage scrolls ──────────
@@ -175,6 +195,7 @@ function handleCreate() {
       receiptId: receipt.value.id,
       assignee: assigneeLabel.value,
       skus: keptItems.value.map((i) => i.sku),
+      targetQtyBySku: targetQtyBySku.value,
     })
     toast.notify({ variant: 'success', title: 'Receiving task created' , maxWidth: 'max-content'})
     router.push(task ? `/receiving/${task.id}` : `/inbound-delivery/${props.orderId}`)
@@ -278,6 +299,7 @@ function handleCreate() {
                 <col />
                 <col />
                 <col class="pr-col--num" />
+                <col class="pr-col--num" />
                 <col v-if="isPartialReceipt" class="pr-col--num" />
                 <col v-if="isPartialReceipt" class="pr-col--num" />
                 <col />
@@ -288,6 +310,7 @@ function handleCreate() {
                   <th class="pr-th">Product</th>
                   <th class="pr-th">SKU</th>
                   <th class="pr-th pr-th--num">Purchase qty</th>
+                  <th class="pr-th pr-th--num">Expected qty</th>
                   <th v-if="isPartialReceipt" class="pr-th pr-th--num">Received qty</th>
                   <th v-if="isPartialReceipt" class="pr-th pr-th--num">Outstanding qty</th>
                   <th class="pr-th">Unit</th>
@@ -301,8 +324,17 @@ function handleCreate() {
                   </td>
                   <td class="pr-td"><span class="pr-sku-text">{{ it.sku }}</span></td>
                   <td class="pr-td pr-td--num">{{ formatNum(it.purchaseQty) }}</td>
+                  <td class="pr-td pr-td--input">
+                    <input
+                      class="pr-qty-input"
+                      type="number" min="0" :max="outstandingQty(it)"
+                      :value="targetQtyBySku[it.sku] ?? outstandingQty(it)"
+                      :aria-label="`Expected qty for ${it.productName}`"
+                      @input="onTargetQtyInput(it.sku, outstandingQty(it), $event)"
+                    />
+                  </td>
                   <td v-if="isPartialReceipt" class="pr-td pr-td--num">{{ formatNum(receivedPerSku[it.sku] ?? 0) }}</td>
-                  <td v-if="isPartialReceipt" class="pr-td pr-td--num pr-td--outstanding">{{ formatNum(it.purchaseQty - (receivedPerSku[it.sku] ?? 0)) }}</td>
+                  <td v-if="isPartialReceipt" class="pr-td pr-td--num pr-td--outstanding">{{ formatNum(outstandingQty(it)) }}</td>
                   <td class="pr-td">{{ it.unit }}</td>
                   <td class="pr-td pr-td--action">
                     <template v-if="removed.has(it.productId)">
@@ -397,18 +429,19 @@ function handleCreate() {
 
 /* ── PO content list (header) — flush, no side padding, border-bottom divider ── */
 .pr-header {
-  display: flex; gap: var(--mp-spacing-10);
+  display: flex; flex-wrap: wrap; gap: var(--mp-spacing-10);
   padding: 0 0 var(--mp-spacing-4) 0;
   margin-bottom: var(--mp-spacing-6);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.pr-header :deep(.content-list) { padding-top: 0; }
+.pr-header :deep(.content-list) { padding-top: 0; flex: 0 0 318px; width: 318px; }
 .pr-header :deep(.content-list__label) {
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-lg, 20px);
   font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-default);
 }
+.pr-header :deep(.content-list__value) { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 
 /* ── Section / form grid — 6 columns over the 558px form width (per Form.md) ── */
 .pr-section { margin-bottom: var(--mp-spacing-6); }
@@ -471,7 +504,7 @@ function handleCreate() {
 .pr-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
@@ -487,11 +520,24 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
+  background: var(--mp-background-neutral-subtle);
 }
 .pr-col--num { width: 110px; }
 .pr-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
+}
+/* Expected qty — the one editable column, so it's white with an inset focus
+   ring, per this codebase's form-table convention (everything else stays gray). */
+.pr-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
+.pr-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.pr-qty-input {
+  display: block; width: 100%; box-sizing: border-box;
+  padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
+  border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  text-align: right; font-variant-numeric: tabular-nums;
+  line-height: var(--mp-line-heights-lg, 20px);
 }
 .pr-td--outstanding { color: var(--mp-text-warning, #b45309); font-weight: var(--mp-font-weights-semi-bold); }
 .pr-td--action { text-align: right; padding-block: 2px; padding-right: var(--mp-spacing-2); }

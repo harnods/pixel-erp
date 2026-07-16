@@ -253,9 +253,11 @@ const totalDifference = computed(() => {
 const totalPickCount = computed(() => rows.value.reduce((s, r) => s + (r.counted ?? 0), 0))
 const pickMaxCount = computed(() => props.maxCount ?? props.targetCount ?? Infinity)
 const pickOverLimit = computed(() =>
-  isPicking.value && Number.isFinite(pickMaxCount.value) && totalPickCount.value > pickMaxCount.value,
+  (isPicking.value || isReceiving.value) && Number.isFinite(pickMaxCount.value) && totalPickCount.value > pickMaxCount.value,
 )
-const pickOverLimitMsg = computed(() => `Qty to pick (${totalPickCount.value}) exceeds the order qty (${pickMaxCount.value})`)
+const pickOverLimitMsg = computed(() => isReceiving.value
+  ? `Received qty (${totalPickCount.value}) exceeds the purchase qty (${pickMaxCount.value})`
+  : `Qty to pick (${totalPickCount.value}) exceeds the order qty (${pickMaxCount.value})`)
 const totalNewOnHand = computed(() => {
   if (totalCounted.value === null) return null
   return isTransfer.value
@@ -720,6 +722,10 @@ function fmtNum(n: number | null): string {
             <template v-else>
               <div v-if="isReceiving" class="mbd-stat">
                 <span class="mbd-stat-label">Purchase qty</span>
+                <span class="mbd-stat-value">{{ pickMaxCount.toLocaleString('id-ID') }}</span>
+              </div>
+              <div v-if="isReceiving" class="mbd-stat">
+                <span class="mbd-stat-label">Expected qty</span>
                 <span class="mbd-stat-value">{{ (props.targetCount ?? 0).toLocaleString('id-ID') }}</span>
               </div>
               <div v-if="isPicking && props.orderQty !== undefined" class="mbd-stat">

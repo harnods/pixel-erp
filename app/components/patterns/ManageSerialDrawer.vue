@@ -48,6 +48,11 @@ const props = defineProps<{
   destLocationPaths?: string[]
   /** SNs already received in prior tasks for the same PO — cannot be added again. */
   blockedSerials?: string[]
+  /** Receiving only — the real ceiling (Purchase qty) a scan/paste may not
+   *  exceed, which may be HIGHER than targetCount (targetCount is now "Expected
+   *  qty" — a softer target, not a hard cap). Falls back to targetCount when
+   *  not given, so every other kind is unaffected. */
+  maxCount?: number
   /** Picking only — the sales order's full demand for this SKU, shown as a stat
    *  alongside Qty to pick (only when passed, so other kinds are unaffected). */
   orderQty?: number
@@ -227,11 +232,13 @@ const scanRequiredForLine = computed(() =>
 const acceptsNewSerials = computed(() => isCountMode.value || isReceiving.value || props.kind === 'in-out')
 const qtyLabel = computed(() => {
   if (props.kind === 'transfer') return 'Transfer qty'
-  if (props.kind === 'receiving') return 'Purchase qty'
+  if (props.kind === 'receiving') return 'Expected qty'
   if (props.kind === 'put-away') return 'Received qty'
   if (props.kind === 'picking') return 'Picked qty'
   return 'Stock in/out qty'
 })
+// Receiving only — the real ceiling a scan/paste may not exceed.
+const receivingMaxCount = computed(() => props.maxCount ?? props.targetCount)
 const signedDelta = computed(() => props.delta ?? 0)
 const newOnHand = computed(() => onHandCount.value + signedDelta.value)
 // for in-out/receiving, target = new on-hand (e.g. 20 ± delta); validation counts checked rows
@@ -277,11 +284,24 @@ function addToList() {
     const blocked = new Set(props.blockedSerials ?? [])
     const dupes = parsed.filter(s => existing.has(s))
     const alreadyReceived = parsed.filter(s => !existing.has(s) && blocked.has(s))
-    const newOnes = parsed.filter(s => !existing.has(s) && !blocked.has(s))
+    let newOnes = parsed.filter(s => !existing.has(s) && !blocked.has(s))
+    // Receiving only: never let a paste push the total past Purchase qty — add
+    // as many as still fit (same "add what's valid, report what's skipped"
+    // pattern as the dupes/already-received cases below), not a hard all-or-nothing block.
+    let overLimit: string[] = []
+    if (isReceiving.value) {
+      const budget = Math.max(0, receivingMaxCount.value - existing.size)
+      if (newOnes.length > budget) {
+        overLimit = newOnes.slice(budget)
+        newOnes = newOnes.slice(0, budget)
+      }
+    }
     if (alreadyReceived.length) {
       addError.value = `Already received in a prior task: ${alreadyReceived.join(', ')}`
     } else if (dupes.length) {
       addError.value = `Already in list: ${dupes.join(', ')}`
+    } else if (overLimit.length) {
+      addError.value = `Exceeds purchase qty, not added: ${overLimit.join(', ')}`
     } else {
       addError.value = ''
     }
@@ -292,7 +312,12 @@ function addToList() {
   saveError.value = ''
 }
 
-watch(inputText, () => { addError.value = '' })
+// Only clears on the user actually typing something new — addToList() itself
+// resets inputText to '' after a successful add, which must NOT wipe out the
+// "added what fit, skipped the rest" message it just set (e.g. an over-limit
+// paste in receiving mode: some serials add, the skipped ones still need to
+// stay visible instead of vanishing the instant the textarea clears).
+watch(inputText, (val) => { if (val) addError.value = '' })
 
 function toggleRow(row: SerialRow) {
   if (row.reserved) return
@@ -338,6 +363,10 @@ function handleDrawerScan(rawValue: string) {
       const blocked = new Set(props.blockedSerials ?? [])
       if (isReceiving.value && blocked.has(v)) {
         notifyScanError(`"${v}" was already received in a prior task`)
+        return
+      }
+      if (isReceiving.value && rows.value.length >= receivingMaxCount.value) {
+        notifyScanError(`"${v}": purchase qty already fully received`)
         return
       }
       rows.value.push({ serial: v, counted: true })
@@ -477,6 +506,10 @@ async function handleSave() {
             </div>
             <!-- receiving / put-away stats -->
             <template v-if="hideStockStats">
+              <div v-if="isReceiving" class="msn-stat">
+                <span class="msn-stat-label">Purchase qty</span>
+                <span class="msn-stat-value">{{ fmtSerial(receivingMaxCount) }}</span>
+              </div>
               <div class="msn-stat">
                 <span class="msn-stat-label">{{ qtyLabel }}</span>
                 <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
