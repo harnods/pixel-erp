@@ -435,7 +435,6 @@ function handleSave(mode: 'close' | 'new') {
             <MpCheckbox id="ex-paid" :is-checked="iHavePaid" @change="iHavePaid = !iHavePaid" />
             <span>I have paid this bill</span>
           </div>
-          <div class="ex-row-1-spacer" aria-hidden="true" />
         </div>
 
         <!-- Transaction date -> Transaction no. -> Due date -> Reference no. -> Tag -->
@@ -479,7 +478,7 @@ function handleSave(mode: 'close' | 'new') {
         <!-- Line items -->
         <div class="ex-table-section">
           <div class="ex-table-scroll">
-            <table class="ex-table">
+            <table class="ex-table ex-lineitems-table">
               <colgroup>
                 <col class="ex-col-drag" />
                 <col class="ex-col-account" />
@@ -494,7 +493,7 @@ function handleSave(mode: 'close' | 'new') {
                   <th class="ex-th">Account</th>
                   <th class="ex-th">Description</th>
                   <th class="ex-th">Tax</th>
-                  <th class="ex-th ex-th--num">Amount</th>
+                  <th class="ex-th">Amount</th>
                   <th class="ex-th ex-th--del" />
                 </tr>
               </thead>
@@ -506,7 +505,7 @@ function handleSave(mode: 'close' | 'new') {
                   @dragstart="onDragStart($event, idx)" @dragover="onDragOver($event, idx)" @drop="onDrop($event, idx)" @dragend="onDragEnd"
                 >
                   <td class="ex-td ex-td--drag"><MpIcon name="drag" size="sm" /></td>
-                  <td class="ex-td ex-td--input">
+                  <td class="ex-td ex-td--input ex-td--border">
                     <MpAutocomplete
                       :id="`ex-account-${row.id}`" v-model="row.accountId" :data="ACCOUNT_OPTIONS"
                       label-prop="name" value-prop="id" is-searchable is-clearable use-portal is-full-width
@@ -514,27 +513,32 @@ function handleSave(mode: 'close' | 'new') {
                       @update:model-value="onAccountSelect(row)"
                     />
                   </td>
-                  <td class="ex-td ex-td--input">
-                    <MpInput :id="`ex-desc-${row.id}`" v-model="row.description" is-full-width />
-                  </td>
-                  <td class="ex-td ex-td--input">
-                    <MpAutocomplete
-                      :id="`ex-tax-${row.id}`" v-model="row.taxId" :data="TAX_OPTIONS"
-                      label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-                      placeholder="Select tax"
-                    />
-                  </td>
-                  <td class="ex-td ex-td--input">
-                    <MpInput
-                      :id="`ex-amount-${row.id}`" v-model="row.amount" type="number" is-full-width
-                      :is-invalid="row.amountError" @update:model-value="row.amountError = false"
-                    />
-                  </td>
-                  <td class="ex-td ex-td--del">
-                    <button v-if="!(rows.length === 1 && !row.accountId)" class="ex-del-btn" type="button" @click="removeRow(row.id)">
-                      <MpIcon name="minus-circular" size="sm" />
-                    </button>
-                  </td>
+                  <template v-if="row.accountId">
+                    <td class="ex-td ex-td--input ex-td--border">
+                      <MpInput :id="`ex-desc-${row.id}`" v-model="row.description" is-full-width />
+                    </td>
+                    <td class="ex-td ex-td--input ex-td--border">
+                      <MpAutocomplete
+                        :id="`ex-tax-${row.id}`" v-model="row.taxId" :data="TAX_OPTIONS"
+                        label-prop="name" value-prop="id" is-searchable use-portal is-full-width
+                        placeholder="Select tax"
+                      />
+                    </td>
+                    <td class="ex-td ex-td--input ex-td--border ex-td--amount">
+                      <div class="ex-amount-cell">
+                        <span class="ex-amount-prefix">Rp</span>
+                        <MpInput
+                          :id="`ex-amount-${row.id}`" v-model="row.amount" type="number" is-full-width class="ex-amount-input"
+                          :is-invalid="row.amountError" @update:model-value="row.amountError = false"
+                        />
+                      </div>
+                    </td>
+                    <td class="ex-td ex-td--del">
+                      <button class="ex-del-btn" type="button" @click="removeRow(row.id)">
+                        <MpIcon name="minus-circular" size="sm" />
+                      </button>
+                    </td>
+                  </template>
                 </tr>
               </tbody>
             </table>
@@ -818,39 +822,38 @@ function handleSave(mode: 'close' | 'new') {
   container-type: inline-size;
 }
 
-/* Beneficiary is capped at a 3-column-equivalent width via flex-grow ratio (3 vs. the trailing spacer's 2),
-   instead of a calc() that has to be kept in sync with the field grid below — a plain flex-grow split
-   can't drift out of sync the way a duplicated calc() formula can. */
-.ex-field-flex { flex: 3 1 0; min-width: 0; }
-.ex-row-1-spacer { flex: 2 1 0; }
-.ex-row-1 { display: flex; align-items: flex-end; gap: 24px; }
-.ex-paid-check { display: flex; align-items: center; gap: var(--mp-spacing-2); padding-bottom: 8px; white-space: nowrap; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); flex: 0 0 auto; }
+/* Beneficiary row shares the exact same grid column tracks as the field grid below, so its 1-column
+   width always matches a single field (e.g. Transaction date) pixel-for-pixel — no calc()/ratio guesswork. */
+.ex-row-1, .ex-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
+.ex-row-1 { align-items: flex-end; max-width: 620px; }
+.ex-field-flex { grid-column: span 1; min-width: 0; }
+.ex-paid-check { grid-column: span 1; display: flex; align-items: center; gap: var(--mp-spacing-2); padding-bottom: 8px; white-space: nowrap; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 /* Narrow (default): 2 equal columns, natural field order flows top-to-bottom */
-.ex-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; padding: 20px 0; max-width: 620px; }
+.ex-grid-2 { padding: 20px 0; max-width: 620px; }
 .ex-section-divider { border-bottom: 1px dashed var(--mp-border-default); }
 
 /* Wide panel: all 5 fields inline in one row */
 @container (min-width: 860px) {
-  .ex-grid-2 { grid-template-columns: repeat(5, 1fr); max-width: none; }
+  .ex-row-1, .ex-grid-2 { grid-template-columns: repeat(5, 1fr); max-width: none; }
 }
 .ex-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .ex-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 .ex-datepicker { width: 100%; }
 .ex-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
-.ex-price-includes { display: flex; align-items: center; gap: var(--mp-spacing-2); justify-content: flex-end; margin-bottom: 12px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ex-price-includes { display: flex; align-items: center; gap: var(--mp-spacing-2); justify-content: flex-end; padding-top: 20px; margin-bottom: 12px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Line items table ─────────────────────────────────────────────────────── */
 .ex-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
 .ex-table-scroll { overflow-x: auto; }
-.ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
-.ex-col-drag { width: 40px; }
+.ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
+.ex-col-drag { width: 44px; }
 .ex-col-account { width: 200px; }
 .ex-col-desc { width: 220px; }
 .ex-col-tax { width: 140px; }
 .ex-col-amount { width: 160px; }
-.ex-col-del { width: 48px; }
+.ex-col-del { width: 44px; }
 
 /* Matches the ERP index table's .erp-th pattern: uppercase, semi-bold, no vertical dividers. */
 .ex-th {
@@ -863,7 +866,6 @@ function handleSave(mode: 'close' | 'new') {
   white-space: nowrap;
 }
 .ex-th--drag, .ex-th--del { padding: 0; }
-.ex-th--num { text-align: right; }
 
 .ex-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
@@ -881,6 +883,27 @@ function handleSave(mode: 'close' | 'new') {
 .ex-td--input .ex-datepicker { width: 100%; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .ex-td--del { padding: 0; text-align: center; vertical-align: middle; }
+
+/* Line items table: left-aligned container, right-side-only column dividers
+   instead of row-separator borders. */
+.ex-lineitems-table { margin-right: auto; }
+.ex-lineitems-table .ex-td {
+  height: 52px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.ex-lineitems-table .ex-td--border { border-right: 1px solid var(--mp-border-default); }
+.ex-lineitems-table .ex-td--amount { padding: 0; }
+
+.ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: 52px; }
+.ex-amount-prefix {
+  flex-shrink: 0; display: flex; justify-content: center;
+  padding: 16px var(--mp-spacing-2) 0;
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); border-radius: 0;
+}
+.ex-amount-input { flex: 1; min-width: 0; }
 
 .ex-del-btn {
   display: inline-flex; align-items: center; justify-content: center;
