@@ -416,10 +416,16 @@ function resetPicked() {
   seedRows()
 }
 
+// Foreign-reserved (picking/transfer) units are never selectable — hidden from
+// the table entirely rather than shown as a "Not available" row the operator
+// can never act on. Kept in rows.value itself (never filtered there), so
+// scanning one still resolves to it and gets the real rejection message
+// ("already reserved for another order") instead of a misleading "not found".
+const selectableRows = computed(() => rows.value.filter(r => !r.reserved))
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return rows.value
-  return rows.value.filter(r => r.serial.toLowerCase().includes(q))
+  if (!q) return selectableRows.value
+  return selectableRows.value.filter(r => r.serial.toLowerCase().includes(q))
 })
 
 const displayRows = computed(() => filtered.value.slice(0, page.value * PAGE_SIZE))
@@ -639,6 +645,17 @@ async function handleSave() {
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
             <p class="msn-empty-title">No serial numbers yet</p>
             <p class="msn-empty-desc">Add serial numbers using the input above, or scan a barcode.</p>
+          </div>
+        </template>
+
+        <!-- Every unit for this SKU exists, but all of it is reserved by other
+             orders — distinct from "no search results", which suggests
+             adjusting the search when that's not actually the problem here. -->
+        <template v-else-if="selectableRows.length === 0 && !search.trim()">
+          <div class="msn-empty">
+            <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
+            <p class="msn-empty-title">No serial numbers available</p>
+            <p class="msn-empty-desc">Every serial number for this SKU is already reserved by other orders.</p>
           </div>
         </template>
 
