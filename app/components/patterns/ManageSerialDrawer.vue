@@ -24,6 +24,11 @@ interface SerialRow {
   originLocation?: string
   destLocId?: string
   fromPriorTask?: boolean
+  /** Put-away only — explicitly removed from the visible list (via the row's
+   *  (-) button or Reset count), pending the operator scanning its barcode
+   *  again. The serial itself is never actually deleted — it's still a real
+   *  received unit that must eventually get a bin — only hidden meanwhile. */
+  removed?: boolean
 }
 
 const props = defineProps<{
@@ -66,6 +71,10 @@ const props = defineProps<{
    *  modelValue, being here does NOT count them as picked; only actually scanning
    *  (or toggling) one moves it into modelValue / counted. */
   plannedSerials?: string[]
+  /** Put-away only — the bin currently active on the page-level scan bar, if any,
+   *  inherited as this drawer's own active bin when it opens, so the operator
+   *  doesn't have to rescan a bin they already scanned on the page. */
+  initialActiveBin?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -83,6 +92,11 @@ const page = ref(1)
 const saveError = ref('')
 const isSaving = ref(false)
 
+// Put-away only — the bin scanned most recently, which subsequent serial scans
+// assign to. Declared here (before seedRows() is first invoked by the props.open
+// watcher below) since seedRows() seeds it from props.initialActiveBin on every open.
+const activeBin = ref<string | null>(null)
+
 const locActiveKey = ref<string | null>(null)
 const locSearches = reactive<Record<string, string>>({})
 const hasOriginLoc = computed(() => (props.originLocationPaths?.length ?? 0) > 0)
@@ -93,6 +107,7 @@ const hasDestLoc = computed(() => (props.destLocationPaths?.length ?? 0) > 0)
 // touching props). Kept as its own function so both callers share one source of
 // truth for what "the starting point" is, per mode.
 function seedRows(): void {
+  activeBin.value = props.initialActiveBin ?? null
   const wh = getWarehouseDetail(props.warehouseId)
   const sr = wh?.stock.find(s => s.sku === props.sku)?.serials
   const availableUnits = sr?.available ?? []
@@ -147,6 +162,7 @@ function seedRows(): void {
       serial: cs.serial,
       counted: true,
       destLocId: cs.destLocationId ?? '',
+      removed: false,
     }))
   } else if (props.kind === 'receiving') {
     // Receiving has no pre-existing warehouse serial pool to pick from — these are
@@ -344,13 +360,18 @@ async function flashScanned(key: string) {
 }
 
 // Scanning a serial inside the drawer selects it the same way clicking its toggle
-// button would (picking/transfer), confirms it (count), registers it as a new one
-// if it's genuinely unrecognized (count/receiving/in-out — same as "Add to list"),
-// or just flashes it to help the operator find the row (put-away, whose serials
-// are a fixed, already-known set with nothing left to "select").
+// button would (picking/transfer), confirms it (count), or registers it as a new
+// one if it's genuinely unrecognized (count/receiving/in-out — same as "Add to list").
+// Put-away has its own dedicated active-bin scan model (handlePutAwayScan).
 function handleDrawerScan(rawValue: string) {
   const v = rawValue.trim()
   if (!v) return
+
+  if (isPutAway.value) {
+    handlePutAwayScan(v)
+    return
+  }
+
   const row = rows.value.find(r => r.serial === v)
 
   if (!row) {
@@ -384,16 +405,6 @@ function handleDrawerScan(rawValue: string) {
     return
   }
 
-  // Put-away: every row is a fixed, already-known fact (counted stays true) — there's
-  // nothing to "select". Scanning just confirms/flashes the row so the operator can
-  // find it and assign its destination bin, instead of always erroring.
-  if (isPutAway.value) {
-    saveError.value = ''
-    playScanSuccessSound()
-    flashScanned(row.serial)
-    return
-  }
-
   if (row.counted) {
     notifyScanError(`"${v}" is already selected`)
     return
@@ -408,12 +419,69 @@ function handleDrawerScan(rawValue: string) {
   flashScanned(row.serial)
 }
 
+// Put-away: scan a bin barcode to make it "active", then scan a serial barcode to
+// assign that serial to the active bin (also bringing it back if it was removed
+// from the list) — same active-bin model as ManageBatchDrawer / the page-level
+// scan bar in PutAwayItemsPage. Serials are a fixed, already-known set — never
+// registers an unrecognized code as new.
+function handlePutAwayScan(v: string) {
+  if ((props.destLocationPaths ?? []).includes(v)) {
+    activeBin.value = v
+    playScanSuccessSound()
+    return
+  }
+
+  const row = rows.value.find(r => r.serial === v)
+  if (!row) {
+    const resolved = resolveScan(props.warehouseId, v)
+    if (resolved && resolved.sku !== props.sku) {
+      notifyScanError(`"${v}" belongs to SKU ${resolved.sku}, not ${props.sku}`)
+      return
+    }
+    notifyScanError(`Serial number not found: "${v}"`)
+    return
+  }
+  if (!activeBin.value) {
+    notifyScanError('Scan a bin first before scanning serial numbers')
+    return
+  }
+  row.removed = false
+  row.destLocId = activeBin.value
+  saveError.value = ''
+  playScanSuccessSound()
+  flashScanned(row.serial)
+}
+
 // Undo every scan/toggle by re-seeding from props — correct for every mode, unlike
 // blanket-clearing `counted`, which would wipe real baseline state that isn't
 // scan-driven (in-out/receiving's existing-stock rows start counted=true;
 // put-away's rows are fixed facts, not a count at all).
+//
+// Put-away is the one exception: seedRows() re-derives destLocId from
+// props.modelValue, which is whatever was already SAVED — re-seeding from it
+// would just restore the same assignments, making Reset a no-op. The serial
+// list itself is a fixed, already-received fact and never changes; instead,
+// Reset removes every row from view (same as clicking (-) on each one), so
+// the operator re-scans every serial from scratch.
 function resetPicked() {
+  if (isPutAway.value) {
+    rows.value = rows.value.map(r => ({ ...r, destLocId: '', removed: true }))
+    // Restore the inherited page-level bin, not null it out — the operator's
+    // physical location hasn't changed just because assignments are being redone.
+    activeBin.value = props.initialActiveBin ?? null
+    saveError.value = ''
+    return
+  }
   seedRows()
+}
+
+/** Put-away only — remove this serial from the visible list (its bin
+ *  assignment clears too) until the operator scans its barcode again to
+ *  bring it back, without touching any other row. */
+function removeSerialRow(row: SerialRow) {
+  row.removed = true
+  row.destLocId = ''
+  saveError.value = ''
 }
 
 // Foreign-reserved (picking/transfer) units are never selectable — hidden from
@@ -421,7 +489,7 @@ function resetPicked() {
 // can never act on. Kept in rows.value itself (never filtered there), so
 // scanning one still resolves to it and gets the real rejection message
 // ("already reserved for another order") instead of a misleading "not found".
-const selectableRows = computed(() => rows.value.filter(r => !r.reserved))
+const selectableRows = computed(() => rows.value.filter(r => !r.reserved && !r.removed))
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return selectableRows.value
@@ -447,7 +515,7 @@ function setDestLoc(row: SerialRow, locId: string) {
   locActiveKey.value = null
 }
 const colspanCount = computed(() =>
-  (isPutAway.value ? 2 : 3) + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0),
+  3 + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0),
 )
 
 function handleCancel() {
@@ -465,7 +533,10 @@ async function handleSave() {
     return
   }
   if (hasDestLoc.value) {
-    const missing = rows.value.filter(r => r.counted && !r.destLocId)
+    // Put-away rows the operator explicitly removed (via (-) or Reset count) are
+    // deliberately deferred, not an oversight — they shouldn't block Save/close;
+    // the operator can always reopen this drawer later and rescan to finish them.
+    const missing = rows.value.filter(r => r.counted && !r.removed && !r.destLocId)
     if (missing.length > 0) {
       saveError.value = `${missing.length} selected serial number${missing.length !== 1 ? 's' : ''} don't have a destination bin assigned.`
       return
@@ -629,10 +700,23 @@ async function handleSave() {
              rendered even when rows.length is 0 — that's the normal starting state
              for receiving/in-out (nothing scanned yet), not an edge case, so scanning
              must work from the very first serial. Reset re-seeds from props (not a
-             blanket counted=false), so it's safe in every mode — it undoes scans/toggles
+             blanket counted=false) for every OTHER mode — it undoes scans/toggles
              without touching real baseline state (in-out/receiving's existing-stock
-             rows, put-away's fixed set). -->
+             rows). Put-away instead uses an active-bin scan model: scan a bin barcode
+             to make it active, then scan a serial barcode to assign it to that bin —
+             same model as ManageBatchDrawer / the page-level scan bar. -->
         <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
+          <div v-if="isPutAway && activeBin" class="msn-active-bin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>{{ activeBin }}</span>
+            <button class="msn-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
           <button
             class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
             type="button"
@@ -648,14 +732,21 @@ async function handleSave() {
           </div>
         </template>
 
-        <!-- Every unit for this SKU exists, but all of it is reserved by other
-             orders — distinct from "no search results", which suggests
-             adjusting the search when that's not actually the problem here. -->
+        <!-- Every unit for this SKU exists, but all of it is either reserved by
+             other orders (picking/transfer) or removed from the list pending a
+             rescan (put-away) — distinct from "no search results", which
+             suggests adjusting the search when that's not actually the problem. -->
         <template v-else-if="selectableRows.length === 0 && !search.trim()">
           <div class="msn-empty">
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
-            <p class="msn-empty-title">No serial numbers available</p>
-            <p class="msn-empty-desc">Every serial number for this SKU is already reserved by other orders.</p>
+            <template v-if="isPutAway">
+              <p class="msn-empty-title">No serial numbers to assign</p>
+              <p class="msn-empty-desc">Every serial number was removed from the list. Scan a barcode to bring one back.</p>
+            </template>
+            <template v-else>
+              <p class="msn-empty-title">No serial numbers available</p>
+              <p class="msn-empty-desc">Every serial number for this SKU is already reserved by other orders.</p>
+            </template>
           </div>
         </template>
 
@@ -667,7 +758,7 @@ async function handleSave() {
               <col v-if="hasOriginLoc" class="msn-col-from-bin" />
               <col v-if="hasDestLoc" class="msn-col-to-bin" />
               <col class="msn-col-status" />
-              <col v-if="!isPutAway" class="msn-col-toggle" />
+              <col class="msn-col-toggle" />
             </colgroup>
             <thead>
               <tr>
@@ -675,7 +766,7 @@ async function handleSave() {
                 <th v-if="hasOriginLoc" class="msn-th">ORIGIN LOCATION</th>
                 <th v-if="hasDestLoc" class="msn-th">STORAGE LOCATION</th>
                 <th class="msn-th">STATUS</th>
-                <th v-if="!isPutAway" class="msn-th msn-th--del" />
+                <th class="msn-th msn-th--del" />
               </tr>
             </thead>
             <tbody>
@@ -774,7 +865,17 @@ async function handleSave() {
                     <MpBadge v-else type="danger">Not counted</MpBadge>
                   </template>
                 </td>
-                <td v-if="!isPutAway" class="msn-td msn-td--del">
+                <td v-if="isPutAway" class="msn-td msn-td--del">
+                  <button
+                    class="msn-toggle-btn msn-toggle-btn--remove"
+                    type="button"
+                    aria-label="Remove from list"
+                    @click="removeSerialRow(row)"
+                  >
+                    <MpIcon name="minus-circular" size="sm" />
+                  </button>
+                </td>
+                <td v-else class="msn-td msn-td--del">
                   <button
                     v-if="!row.fromPriorTask"
                     class="msn-toggle-btn"
@@ -982,6 +1083,20 @@ async function handleSave() {
   100% { background: var(--mp-background-neutral, #fff); }
 }
 .msn-tr--scanned .msn-td { animation: msn-scan-flash 1s ease-out forwards; }
+
+.msn-active-bin {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
+  background: #e6f7ef; border: 1px solid #029861;
+  border-radius: var(--mp-radii-full); white-space: nowrap;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: #027a4e; flex-shrink: 0;
+}
+.msn-active-bin-clear {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
+}
+.msn-active-bin-clear:hover { opacity: 1; }
 
 /* Form-table rules — only when INTO LOCATION is a real editable picker (transfer/
    put-away's destination bin). Read-only location display (picking) stays plain:

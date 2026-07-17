@@ -282,12 +282,34 @@ function handleScan(rawValue: string) {
     notifyScanError(`${v}: purchase qty already fully received`)
     return
   }
-  draftQty.value = { ...draftQty.value, [v]: current + 1 }
+  // Past Expected qty but still within Purchase qty — confirm before counting
+  // it, rather than silently accepting an over-expected unit.
+  if (current >= item.targetQty) {
+    exceedTargetConfirm.value = { sku: v, productName: item.productName, targetQty: item.targetQty }
+    return
+  }
+  incrementDraftQty(v)
+}
+
+function incrementDraftQty(sku: string) {
+  const current = draftQty.value[sku] ?? 0
+  draftQty.value = { ...draftQty.value, [sku]: current + 1 }
   if (showQtyErrors.value) showQtyErrors.value = false
   playScanSuccessSound()
-  flashRowId.value = v
+  flashRowId.value = sku
   if (flashTimer) clearTimeout(flashTimer)
   flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+}
+
+// ── Confirm counting a scan past Expected qty (still within Purchase qty) ──────
+const exceedTargetConfirm = ref<{ sku: string; productName: string; targetQty: number } | null>(null)
+function confirmExceedTarget() {
+  if (!exceedTargetConfirm.value) return
+  incrementDraftQty(exceedTargetConfirm.value.sku)
+  exceedTargetConfirm.value = null
+}
+function cancelExceedTarget() {
+  exceedTargetConfirm.value = null
 }
 
 const showQtyErrors = ref(false)
@@ -647,6 +669,34 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
             @click="commitReceiving(false)"
           >{{ draftOutstanding > 0 ? 'Finish as incomplete' : 'Save' }}</button>
           <button v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" @click="commitReceiving(true)">Save &amp; create put-away</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Confirm counting a scan past Expected qty ── -->
+  <MpModal
+    id="ri-exceed-target"
+    :is-open="!!exceedTargetConfirm"
+    size="md"
+    is-close-on-esc
+    :is-keep-alive="false"
+    @close="cancelExceedTarget"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        Count this unit anyway?
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        {{ exceedTargetConfirm?.productName }} ({{ exceedTargetConfirm?.sku }}) has an expected qty of
+        {{ fmt(exceedTargetConfirm?.targetQty ?? 0) }}. This unit is beyond that — count it as received anyway?
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="ri-modal-footer">
+          <button class="ri-btn ri-btn--ghost" @click="cancelExceedTarget">Cancel</button>
+          <button class="ri-btn ri-btn--primary" @click="confirmExceedTarget">Count it</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

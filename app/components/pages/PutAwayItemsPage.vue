@@ -841,6 +841,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     kind="put-away"
     :dest-location-paths="locationOptions"
     :model-value="batchLinesBySku[batchDrawerSku] ?? []"
+    :initial-active-bin="activeBin"
     @update:open="batchDrawerOpen = $event"
     @save="saveBatchLines"
   />
@@ -853,6 +854,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :target-count="(serialLinesBySku[serialDrawerSku] ?? []).length"
     :dest-location-paths="locationOptions"
     :model-value="serialLinesBySku[serialDrawerSku] ?? []"
+    :initial-active-bin="activeBin"
     @update:open="serialDrawerOpen = $event"
     @save="saveSerialLines"
   />

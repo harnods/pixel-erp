@@ -74,6 +74,10 @@ const props = defineProps<{
    *  "Qty to pick" column next to Available qty, so the operator knows how much of
    *  THIS specific batch to take, distinct from how much is physically on hand. */
   plannedBatches?: { batchNo: string; qty: number }[]
+  /** Put-away only — the bin currently active on the page-level scan bar, if any,
+   *  inherited as this drawer's own active bin when it opens, so the operator
+   *  doesn't have to rescan a bin they already scanned on the page. */
+  initialActiveBin?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -119,11 +123,17 @@ function displayToIso(display: string): string {
 
 const rows = ref<WorkRow[]>([])
 
+// Put-away only — the bin scanned most recently, which subsequent batch scans
+// assign to. Declared here (before seedRows() is first invoked by the props.open
+// watcher below) since seedRows() seeds it from props.initialActiveBin on every open.
+const activeBin = ref<string | null>(null)
+
 // Builds rows from scratch, straight off props — the drawer's initial state on
 // open, and also what "Reset" restores back to (undoing every scan/manual edit
 // without touching props). Kept as its own function so both callers share one
 // source of truth for what "the starting point" is, per mode.
 function seedRows(): void {
+  activeBin.value = props.initialActiveBin ?? null
   if (props.modelValue.length > 0) {
     rows.value = props.modelValue.map((b, i) => ({
       ...b,
@@ -363,6 +373,12 @@ async function flashScanned(key: string) {
 function handleDrawerScan(rawValue: string) {
   const v = rawValue.trim()
   if (!v) return
+
+  if (isPutAway.value) {
+    handlePutAwayScan(v)
+    return
+  }
+
   const existing = rows.value.find(r => r.batchNo === v)
   if (existing) {
     existing.counted = (existing.counted ?? 0) + 1
@@ -433,10 +449,74 @@ function handleDrawerScan(rawValue: string) {
   flashScanned(key)
 }
 
+// Put-away: scan a bin barcode to make it "active", then scan a batch barcode to
+// assign 1 unit of that batch to the active bin — same two-step model as the
+// page-level scan bar in PutAwayItemsPage. Batches are a fixed, already-known set
+// (never registers an unrecognized code as new, unlike count/receiving/in-out).
+function handlePutAwayScan(v: string) {
+  if ((props.destLocationPaths ?? []).includes(v)) {
+    activeBin.value = v
+    playScanSuccessSound()
+    return
+  }
+
+  const row = rows.value.find(r => r.batchNo === v)
+  if (!row) {
+    const resolved = resolveScan(props.warehouseId, v)
+    if (resolved && resolved.sku !== props.sku) {
+      notifyScanError(`"${v}" belongs to SKU ${resolved.sku}, not ${props.sku}`)
+      return
+    }
+    notifyScanError(`Batch number not found: "${v}"`)
+    return
+  }
+  if (!activeBin.value) {
+    notifyScanError('Scan a bin first before scanning batch numbers')
+    return
+  }
+  const totalAssigned = row.destLocRows.reduce((s, l) => s + (Number(l.qty) || 0), 0)
+  if (totalAssigned >= row.onHand) {
+    notifyScanError(`${v}: batch qty fully assigned`)
+    return
+  }
+  assignScannedBatchToActiveBin(row, activeBin.value)
+  playScanSuccessSound()
+  flashScanned(row.key)
+}
+
+// Mirrors paSelectLoc's invariant: destLocRows always ends with one blank row
+// for manual entry — fill an existing bin's qty (+1) if already assigned here,
+// otherwise fill the trailing blank row and push a fresh one behind it.
+function assignScannedBatchToActiveBin(row: WorkRow, bin: string) {
+  const existing = row.destLocRows.find(l => l.locationId === bin)
+  if (existing) {
+    existing.qty = String((Number(existing.qty) || 0) + 1)
+    return
+  }
+  const last = row.destLocRows[row.destLocRows.length - 1]!
+  last.locationId = bin
+  last.qty = '1'
+  row.destLocRows.push(makeLocRow())
+}
+
 // Undo every scan/manual edit (including any locally-added new/scanned rows) by
 // re-seeding from props — correct for every mode, unlike blanket-clearing
 // `counted`, which would wipe real baseline state that isn't scan-driven.
+//
+// Put-away is the one exception: seedRows() re-derives destLocRows from
+// props.modelValue, which is whatever was already SAVED — re-seeding from it
+// would just restore the same assignments, making Reset a no-op (the same bug
+// fixed in ManageSerialDrawer). The batch list itself is a fixed, already-
+// received fact and never changes; only the bin ASSIGNMENT progress resets.
 function resetPickedCount() {
+  if (isPutAway.value) {
+    rows.value = rows.value.map(r => ({ ...r, destLocRows: [makeLocRow()] }))
+    // Restore the inherited page-level bin, not null it out — the operator's
+    // physical location hasn't changed just because assignments are being redone.
+    activeBin.value = props.initialActiveBin ?? null
+    showPaLocErrors.value = false
+    return
+  }
   seedRows()
 }
 
@@ -822,13 +902,24 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
-        <!-- Scan bar — every mode, same position as outbound (picking). Not put-away:
-             its table splits qty per destination bin (destLocRows), never row.counted
-             (which is what a scan increments), so scanning here would silently do
-             nothing the operator could see — put-away keeps its dedicated storage-
-             location picker instead. Reset re-seeds from props (not a blanket
-             counted=null), so it's safe in every mode. -->
-        <ScanBar v-if="!isPutAway" placeholder="Scan barcode..." @scan="handleDrawerScan">
+        <!-- Scan bar — every mode, including put-away: scan a bin barcode to make it
+             the "active bin", then scan a batch barcode to assign 1 unit of that
+             batch to the active bin (creating/incrementing its destLocRows entry) —
+             same active-bin model as the page-level scan bar in PutAwayItemsPage.
+             Reset count clears every row's destLocRows back to a single blank entry
+             (and drops the active bin), so it's safe to use in every mode. -->
+        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
+          <div v-if="isPutAway && activeBin" class="mbd-active-bin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>{{ activeBin }}</span>
+            <button class="mbd-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
           <button
             class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
             type="button"
@@ -864,7 +955,7 @@ function fmtNum(n: number | null): string {
             </thead>
             <tbody>
               <template v-for="row in displayRows" :key="row.key">
-                <tr v-for="(lr, lrIdx) in row.destLocRows" :key="lr.id" class="mbd-tr">
+                <tr v-for="(lr, lrIdx) in row.destLocRows" :key="lr.id" class="mbd-tr" :class="{ 'mbd-tr--scanned': lastScannedKey === row.key }">
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.batchNo }}</td>
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ isoToDisplay(row.expiryDate) }}</td>
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc }}</td>
@@ -1540,6 +1631,20 @@ function fmtNum(n: number | null): string {
   100% { background: var(--mp-background-neutral-subtle); }
 }
 .mbd-tr--scanned .mbd-td { animation: mbd-scan-flash 1s ease-out forwards; }
+
+.mbd-active-bin {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
+  background: #e6f7ef; border: 1px solid #029861;
+  border-radius: var(--mp-radii-full); white-space: nowrap;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: #027a4e; flex-shrink: 0;
+}
+.mbd-active-bin-clear {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
+}
+.mbd-active-bin-clear:hover { opacity: 1; }
 .mbd-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 
 /* White editable cells — focus ring via ::after (box-shadow: inset is painted
