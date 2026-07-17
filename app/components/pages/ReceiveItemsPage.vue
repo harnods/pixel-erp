@@ -19,6 +19,7 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -365,6 +366,9 @@ function commitReceiving(createPutAway = false) {
   // the confirm modal ("no outstanding") and this toast never contradict each other.
   const complete = draftReceivedTotal.value >= targetTotal.value
   endReceivingTask(props.orderId, received, buildReceivingDetail())
+  // Already committed — the router.push below is this function's own doing,
+  // not the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   if (createPutAway) {
     router.push({
       path: '/inbound-delivery/put-away/create',
@@ -384,8 +388,26 @@ function commitReceiving(createPutAway = false) {
 function saveDraft() {
   saveReceivingDraft(props.orderId, { ...draftQty.value }, buildReceivingDetail())
   toast.notify({ variant: 'success', title: 'Receiving draft saved' , maxWidth: 'max-content'})
+  disableUnsavedChangesGuard()
   router.push(`/receiving/${props.orderId}`)
 }
+
+// ── Warn before losing unsaved receiving progress — refresh/close-tab (native
+// prompt) and in-app navigation/Back button (modal rendered once at the app
+// root, see [...slug].vue — this app has a single catch-all route, so a
+// per-page modal/onBeforeRouteLeave never fires). "Unsaved" = anything
+// received at all. disableUnsavedChangesGuard() is called by
+// commitReceiving()/saveDraft() right before their own router.push —
+// otherwise hasUnsavedChanges() would still read true (nothing else resets
+// the received qty after commit) and the "Leave without saving?" modal would
+// fire right after the operator's own intentional Finish/Save action. ───────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => draftReceivedTotal.value > 0,
+  saveDraft: () => {
+    saveReceivingDraft(props.orderId, { ...draftQty.value }, buildReceivingDetail())
+    toast.notify({ variant: 'success', title: 'Receiving draft saved', maxWidth: 'max-content' })
+  },
+})
 
 function goBack()      { router.push(`/receiving/${props.orderId}`) }
 function goReceiving() { router.push('/inbound-delivery?tab=Receiving') }

@@ -62,19 +62,34 @@ export function useUnsavedChangesModalState() {
 }
 
 /** Called by each form page — registers/unregisters itself as "the form with
- *  something to lose" for the lifetime of that page. */
+ *  something to lose" for the lifetime of that page. Returns `disableGuard()` —
+ *  call it right before a Save/Finish handler's own `router.push`, so the
+ *  navigation it deliberately triggers isn't misread as "leaving unsaved work
+ *  behind" (the operator just saved/finished; hasUnsavedChanges() would
+ *  otherwise still read true, since nothing else clears the underlying draft
+ *  state before that push). Once disabled it stays disabled for this page
+ *  instance's remaining lifetime — there's no scenario where a page that just
+ *  committed and navigated away would need the guard back on. */
 export function useUnsavedChangesGuard(options: UnsavedChangesGuardOptions) {
+  const disabled = ref(false)
+  const wrapped: UnsavedChangesGuardOptions = {
+    hasUnsavedChanges: () => !disabled.value && options.hasUnsavedChanges(),
+    saveDraft: options.saveDraft,
+  }
   function handleBeforeUnload(e: BeforeUnloadEvent) {
-    if (!options.hasUnsavedChanges()) return
+    if (!wrapped.hasUnsavedChanges()) return
     e.preventDefault()
     e.returnValue = ''
   }
   onMounted(() => {
-    activeGuard.value = options
+    activeGuard.value = wrapped
     window.addEventListener('beforeunload', handleBeforeUnload)
   })
   onUnmounted(() => {
-    if (activeGuard.value === options) activeGuard.value = null
+    if (activeGuard.value === wrapped) activeGuard.value = null
     window.removeEventListener('beforeunload', handleBeforeUnload)
   })
+  return {
+    disableGuard: () => { disabled.value = true },
+  }
 }

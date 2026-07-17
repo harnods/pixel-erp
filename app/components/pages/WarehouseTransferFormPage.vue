@@ -19,6 +19,7 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo } from '~/data/warehouseTransfers'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { scrollToFirstError } from '~/utils/form'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 // The catch-all route binds the id via the generic `orderId` prop. 'new' → create mode.
 const props = defineProps<{ orderId: string }>()
@@ -367,6 +368,9 @@ async function handleSave() {
     })),
   }
 
+  // Already saved — the router.push below is this function's own doing, not
+  // the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   if (isEdit.value) {
     updateTransfer(props.orderId, input)
     toast.notify({ variant: 'success', title: 'Warehouse transfer updated' , maxWidth: 'max-content'})
@@ -377,6 +381,20 @@ async function handleSave() {
     router.push('/warehouse-transfers')
   }
 }
+
+// ── Warn before losing an in-progress transfer form — refresh/close-tab
+// (native prompt) and in-app navigation/Back button (modal rendered once at
+// the app root, see [...slug].vue — this app has a single catch-all route, so
+// a per-page modal/onBeforeRouteLeave never fires). "Unsaved" = at least one
+// product line added. No saveDraft option — this is a one-shot form, so the
+// modal offers only Leave/Cancel. disableUnsavedChangesGuard() is called by
+// handleSave() right before its own router.push — otherwise
+// hasUnsavedChanges() would still read true (nothing else clears the added
+// lines after save) and the "Leave without saving?" modal would fire right
+// after the operator's own intentional Save action. ─────────────────────────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => rows.value.length > 0,
+})
 
 // ── Sticky footer divider ────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)

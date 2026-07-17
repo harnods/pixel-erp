@@ -20,6 +20,7 @@ import { PRODUCTS } from '~/data/inventory'
 import { formatDateTimeLong } from '~/utils/date'
 import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
 import { getStorageLeaves, getStorageTree, type LocNode } from '~/data/storageLocations'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -406,8 +407,26 @@ function buildLines(): { sku: string; qty: number; location?: string }[] {
 function saveDraft() {
   saveWmsCountDraft(props.orderId, buildLines())
   toast.notify({ variant: 'success', title: 'Draft saved' , maxWidth: 'max-content'})
+  disableUnsavedChangesGuard()
   router.push(`/stock-adjustments/${props.orderId}`)
 }
+
+// ── Warn before losing unsaved counting progress — refresh/close-tab (native
+// prompt) and in-app navigation/Back button (modal rendered once at the app
+// root, see [...slug].vue — this app has a single catch-all route, so a
+// per-page modal/onBeforeRouteLeave never fires). "Unsaved" = anything
+// counted at all. disableUnsavedChangesGuard() is called by
+// commitFinish()/saveDraft() right before their own router.push — otherwise
+// hasUnsavedChanges() would still read true (nothing else resets the counted
+// qty after commit) and the "Leave without saving?" modal would fire right
+// after the operator's own intentional Finish/Save action. ──────────────────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => countedTotal.value > 0,
+  saveDraft: () => {
+    saveWmsCountDraft(props.orderId, buildLines())
+    toast.notify({ variant: 'success', title: 'Draft saved', maxWidth: 'max-content' })
+  },
+})
 
 // ── Footer: Finish counting ───────────────────────────────────────────────────
 const showConfirm = ref(false)
@@ -469,6 +488,9 @@ function commitFinish() {
     })
   }
   toast.notify({ variant: 'success', title: 'Cycle count completed', maxWidth: 'max-content' })
+  // Already committed — the router.push below is this function's own doing,
+  // not the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   router.push('/cycle-counts')
 }
 

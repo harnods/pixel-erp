@@ -594,6 +594,9 @@ function commitPicking(createPacking = false) {
   showConfirm.value = false
   const complete = draftPickedTotal.value >= toPickTotal.value
   endPicking(props.orderId, buildPickedMap(), buildAssignments())
+  // Already committed — the router.push below is this function's own doing,
+  // not the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   // Re-check packability at the ORDER level (across every picking list for that
   // order), same as the picking detail page's own "Create packing" guard — this
   // task alone being fully picked doesn't mean the order is, if it spans more lists.
@@ -626,6 +629,7 @@ function commitPicking(createPacking = false) {
 function saveDraft() {
   savePickingDraft(props.orderId, buildPickedMap(), buildAssignments())
   toast.notify({ variant: 'success', title: 'Picking draft saved' , maxWidth: 'max-content'})
+  disableUnsavedChangesGuard()
   router.push(`/picking/${props.orderId}`)
 }
 function goBack() { router.push(`/picking/${props.orderId}`) }
@@ -635,8 +639,13 @@ function goPicking() { router.push('/outbound-delivery?tab=Picking') }
 // in-app navigation/Back button (modal rendered once at the app root, see
 // [...slug].vue — this app has a single catch-all route, so a per-page modal/
 // onBeforeRouteLeave never fires). "Unsaved" = anything picked at all (plain
-// qty, batch, or serial), same effectivePickedQty() already used above. ──────
-useUnsavedChangesGuard({
+// qty, batch, or serial), same effectivePickedQty() already used above.
+// disableUnsavedChangesGuard() is called by commitPicking()/saveDraft() right
+// before their own router.push — otherwise hasUnsavedChanges() would still
+// read true (nothing else resets the picked state after commit) and the
+// "Leave without saving?" modal would fire right after the operator's own
+// intentional Finish/Save action. ────────────────────────────────────────────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
   hasUnsavedChanges: () => draftPickedTotal.value > 0,
   saveDraft: () => {
     savePickingDraft(props.orderId, buildPickedMap(), buildAssignments())

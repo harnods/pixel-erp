@@ -22,6 +22,7 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -530,6 +531,9 @@ function postPutAway() {
   const { items, assignments } = buildItemsAndAssignments()
   endPutAwayTask(props.orderId, items, assignments)
   toast.notify({ variant: 'success', title: 'Put-away finished' , maxWidth: 'max-content'})
+  // Already committed — the router.push below is this function's own doing,
+  // not the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   router.push(`/put-away/${props.orderId}`)
 }
 
@@ -537,8 +541,27 @@ function saveDraft() {
   const { items, assignments } = buildItemsAndAssignments()
   savePutAwayDraft(props.orderId, items, assignments)
   toast.notify({ variant: 'success', title: 'Put-away draft saved' , maxWidth: 'max-content'})
+  disableUnsavedChangesGuard()
   router.push(`/put-away/${props.orderId}`)
 }
+
+// ── Warn before losing unsaved put-away progress — refresh/close-tab (native
+// prompt) and in-app navigation/Back button (modal rendered once at the app
+// root, see [...slug].vue — this app has a single catch-all route, so a
+// per-page modal/onBeforeRouteLeave never fires). "Unsaved" = anything
+// assigned a bin at all. disableUnsavedChangesGuard() is called by
+// postPutAway()/saveDraft() right before their own router.push — otherwise
+// hasUnsavedChanges() would still read true (nothing else resets the
+// assignment state after commit) and the "Leave without saving?" modal would
+// fire right after the operator's own intentional Finish/Save action. ───────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => draftHandled.value > 0,
+  saveDraft: () => {
+    const { items, assignments } = buildItemsAndAssignments()
+    savePutAwayDraft(props.orderId, items, assignments)
+    toast.notify({ variant: 'success', title: 'Put-away draft saved', maxWidth: 'max-content' })
+  },
+})
 
 function goBack()    { router.push(`/put-away/${props.orderId}`) }
 function goPutAway() { router.push('/inbound-delivery?tab=Put-away') }

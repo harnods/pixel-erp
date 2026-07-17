@@ -22,6 +22,7 @@ import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { productBySku } from '~/data/inventory'
 import { resolveScan, notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -222,13 +223,35 @@ function commit() {
     trackingNo: info?.trackingNo,
   })
   toast.notify({ variant: 'success', title: 'Packing finished, delivery ready to ship' , maxWidth: 'max-content'})
+  // Already committed — the router.push below is this function's own doing,
+  // not the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   router.push(`/packing/${props.orderId}`)
 }
 function saveDraft() {
   savePackingDraft(props.orderId, { ...draftQty.value })
   toast.notify({ variant: 'success', title: 'Packing draft saved' , maxWidth: 'max-content'})
+  disableUnsavedChangesGuard()
   router.push(`/packing/${props.orderId}`)
 }
+
+// ── Warn before losing unsaved packing progress — refresh/close-tab (native
+// prompt) and in-app navigation/Back button (modal rendered once at the app
+// root, see [...slug].vue — this app has a single catch-all route, so a
+// per-page modal/onBeforeRouteLeave never fires). "Unsaved" = anything packed
+// at all. disableUnsavedChangesGuard() is called by commit()/saveDraft()
+// right before their own router.push — otherwise hasUnsavedChanges() would
+// still read true (nothing else resets the packed qty after commit) and the
+// "Leave without saving?" modal would fire right after the operator's own
+// intentional Finish/Save action. ────────────────────────────────────────────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => draftPackedTotal.value > 0,
+  saveDraft: () => {
+    savePackingDraft(props.orderId, { ...draftQty.value })
+    toast.notify({ variant: 'success', title: 'Packing draft saved', maxWidth: 'max-content' })
+  },
+})
+
 function goBack() { router.push(`/packing/${props.orderId}`) }
 function goPacking() { router.push('/outbound-delivery?tab=Packing') }
 
