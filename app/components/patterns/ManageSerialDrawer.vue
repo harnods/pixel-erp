@@ -136,6 +136,11 @@ function seedRows(): void {
         serial: u.serial,
         counted: selectedSet.has(u.serial),
         reserved: false as const,
+        // Picking only — an available (non-reserved) unit is hidden until the
+        // operator scans that specific unit's barcode: the table should default
+        // to just the pre-reserved plan, and scanning a substitute reveals it as
+        // Picked. Already-confirmed picks from a prior save stay visible on reopen.
+        removed: props.kind === 'picking' ? !selectedSet.has(u.serial) : false,
         originLocation: hasOriginLoc.value ? u.location : undefined,
         destLocId: selectedDestLoc.get(u.serial) ?? '',
       })),
@@ -414,6 +419,7 @@ function handleDrawerScan(rawValue: string) {
     return
   }
   row.counted = true
+  row.removed = false
   saveError.value = ''
   playScanSuccessSound()
   flashScanned(row.serial)
@@ -490,6 +496,11 @@ function removeSerialRow(row: SerialRow) {
 // scanning one still resolves to it and gets the real rejection message
 // ("already reserved for another order") instead of a misleading "not found".
 const selectableRows = computed(() => rows.value.filter(r => !r.reserved && !r.removed))
+// Picking only — true when at least one available (non-reserved) unit is
+// hidden pending a scan, as opposed to genuinely zero stock being left at all
+// (every existing unit already reserved by other orders) — the empty state
+// needs different copy for these two cases.
+const hasHiddenAvailablePicks = computed(() => isPicking.value && rows.value.some(r => r.removed && !r.reserved))
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return selectableRows.value
@@ -733,15 +744,20 @@ async function handleSave() {
         </template>
 
         <!-- Every unit for this SKU exists, but all of it is either reserved by
-             other orders (picking/transfer) or removed from the list pending a
-             rescan (put-away) — distinct from "no search results", which
-             suggests adjusting the search when that's not actually the problem. -->
+             other orders (transfer), removed from the list pending a rescan
+             (put-away), or a not-yet-scanned available substitute (picking) —
+             distinct from "no search results", which suggests adjusting the
+             search when that's not actually the problem. -->
         <template v-else-if="selectableRows.length === 0 && !search.trim()">
           <div class="msn-empty">
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
             <template v-if="isPutAway">
               <p class="msn-empty-title">No serial numbers to assign</p>
               <p class="msn-empty-desc">Every serial number was removed from the list. Scan a barcode to bring one back.</p>
+            </template>
+            <template v-else-if="hasHiddenAvailablePicks">
+              <p class="msn-empty-title">No serial numbers picked yet</p>
+              <p class="msn-empty-desc">Scan a barcode to pick one — available units only appear here once scanned.</p>
             </template>
             <template v-else>
               <p class="msn-empty-title">No serial numbers available</p>
