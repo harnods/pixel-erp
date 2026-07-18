@@ -286,7 +286,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem @click="bulkEditTracking(selectedRows as Set<number>, deselectAll)">Edit tracking no.</MpPopoverListItem>
             <MpPopoverListItem @click="bulkAction('set-arrival', deselectAll)">Set estimated arrival time</MpPopoverListItem>
             <MpPopoverListItem
-              :class="css({ color: 'var(--mp-text-critical)' })"
+              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="bulkAction('cancel', deselectAll)"
             >Cancel</MpPopoverListItem>
           </MpPopoverList>
@@ -462,7 +462,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem @click="viewDetails(row as unknown as Receipt)">View details</MpPopoverListItem>
             <MpPopoverListItem @click="purchaseReceiving(row as unknown as Receipt)">Purchase receiving</MpPopoverListItem>
             <MpPopoverListItem
-              :class="css({ color: 'var(--mp-text-critical)' })"
+              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="openCancelModal(row as unknown as Receipt)"
             >Cancel</MpPopoverListItem>
           </MpPopoverList>
@@ -651,7 +651,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary);
 }
-.track-modal__remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical); }
+.track-modal__remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical, var(--mp-text-danger)); }
 .track-modal__add {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
   margin-top: var(--mp-spacing-3); padding: 0;

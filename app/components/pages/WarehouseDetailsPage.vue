@@ -442,7 +442,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             </MpPopoverListItem>
             <MpPopoverListItem
               v-if="canDelete"
-              :class="css({ color: 'var(--mp-text-critical)' })"
+              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="deleteModalOpen = true"
             >
               Delete
@@ -980,7 +980,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
                             <MpPopoverListItem @click="addSubLoc(row.node)">Add sub-location</MpPopoverListItem>
-                            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="deleteLoc(row.node)">Delete</MpPopoverListItem>
+                            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="deleteLoc(row.node)">Delete</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>
                       </MpPopover>
@@ -1298,7 +1298,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--mp-icon-default);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .wh-tool-btn:hover { background: var(--mp-background-neutral-hovered); }
 .wh-tool-btn--airene { color: var(--mp-airene-default, #651fff); }
@@ -1391,7 +1391,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: none;
   cursor: pointer;
   border-radius: var(--mp-radii-sm);
-  color: var(--mp-icon-default);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .wh-expand-btn:hover { background: var(--mp-background-neutral-hovered); }
 .wh-expand-chevron { transition: transform 0.15s ease; }
@@ -1452,7 +1452,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--mp-icon-default);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { MpIcon } from '@mekari/pixel3'
+import {
+  MpIcon,
+} from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
@@ -44,20 +46,12 @@ const rows = computed<Row[]>(() =>
 // ─── Table state ──────────────────────────────────────────────────────────────
 
 const {
-  search, statusFilter, currentPage, paginated, total, perPage,
+  search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState(rows, {
-  filterFn: (row: Row, s, status) =>
-    (String(row.number).includes(s) || row.beneficiaryName.toLowerCase().includes(s)) &&
-    (!status || row.status === status),
+  filterFn: (row: Row, s) =>
+    String(row.number).includes(s) || row.beneficiaryName.toLowerCase().includes(s),
 })
-
-// ─── Filter options ───────────────────────────────────────────────────────────
-
-const statusOptions = [
-  { label: 'All status', value: ''      },
-  { label: 'Draft',      value: 'draft' },
-]
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -97,8 +91,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    has-ai-chat
-    :context-label="(row) => `Expense #${String(row.number).padStart(5, '0')}`"
+    actions-width="200px"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -108,24 +101,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
     <!-- ── Filter bar ── -->
     <template #filters>
-      <!-- Left: Status select + All filters -->
+      <!-- Left: All filters -->
       <div class="filter-left">
-        <div class="filter-select-wrap">
-          <select class="filter-select" v-model="statusFilter">
-            <option value="">Status</option>
-            <option v-for="opt in statusOptions.slice(1)" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
-          <svg class="filter-select-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-
         <button class="filter-all-btn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M3 6h18M7 12h10M11 18h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <MpIcon name="filter" size="sm" />
           All filters
         </button>
       </div>
@@ -220,13 +199,17 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
     <!-- ── Actions ── -->
     <template #actions>
-      <button class="row-kebab" aria-label="More actions">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="12" cy="5" r="2" />
-          <circle cx="12" cy="12" r="2" />
-          <circle cx="12" cy="19" r="2" />
-        </svg>
-      </button>
+      <div class="row-actions">
+        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click.stop>Approve</button>
+        <div class="row-actions__icons">
+          <button class="row-icon-btn" aria-label="Create task" @click.stop>
+            <MpIcon name="task-todo" size="md" />
+          </button>
+          <button class="row-icon-btn" aria-label="Add comment" @click.stop>
+            <MpIcon name="comment" size="md" />
+          </button>
+        </div>
+      </div>
     </template>
 
     <template #cell-lastUpdated="{ row }">
@@ -318,8 +301,20 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   white-space: nowrap;
 }
 
-/* Row action kebab button */
-.row-kebab {
+/* Row actions: Approve button + icon button group */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-6);
+}
+
+.row-actions__icons {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+}
+
+.row-icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -330,7 +325,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   border-radius: var(--mp-radii-sm);
   color: var(--mp-text-subtle);
 }
-.row-kebab:hover {
+.row-icon-btn:hover {
   background: var(--mp-background-neutral-hovered);
   color: var(--mp-text-default);
 }
@@ -347,40 +342,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-3);
-}
-
-.filter-select-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 160px;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-}
-
-.filter-select {
-  appearance: none;
-  background: transparent;
-  border: none;
-  outline: none;
-  width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-9) var(--mp-spacing-2) var(--mp-spacing-3);
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-placeholder);
-  cursor: pointer;
-}
-
-.filter-select:focus { outline: none; }
-
-.filter-select-chevron {
-  position: absolute;
-  right: var(--mp-spacing-2);
-  pointer-events: none;
-  color: var(--mp-text-default);
-  width: var(--mp-sizes-5, 20px);
-  height: var(--mp-sizes-5, 20px);
 }
 
 .filter-all-btn {

@@ -86,11 +86,21 @@ const CreateReceiptPage = defineAsyncComponent(() => import('~/components/pages/
 const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
+const NewExpensePage = defineAsyncComponent(() => import('~/components/pages/NewExpensePage.vue'))
+const BillDetailsPage = defineAsyncComponent(() => import('~/components/pages/BillDetailsPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /expenses/new → New expense form (full page, brings its own title bar)
+  if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
+    return { component: NewExpensePage, id: 'new' }
+  }
+  // /expenses/:id → bill/expense detail page
+  if (segs.length >= 2 && segs[0] === 'expenses') {
+    return { component: BillDetailsPage, id: segs[1]! }
+  }
   // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
   // forms (not built yet → placeholder). The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
@@ -307,6 +317,7 @@ const showNewWarehouseTransfer = computed(() =>
   activeScenario.value === 'ERP' && currentPageKey.value === 'Warehouse transfers',
 )
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
+function newExpense() { router.push('/expenses/new') }
 
 // ── Airene panel open/close ───────────────────────────────────────────────
 const aireneOpen = ref(false)
@@ -831,7 +842,7 @@ function startResize(e: MouseEvent) {
             </div>
           </div>
 
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newExpense">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -1517,7 +1528,7 @@ function startResize(e: MouseEvent) {
   border: none;
   cursor: pointer;
   font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-medium);
+  font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default);
   text-align: left;
   border-radius: var(--mp-radii-md);

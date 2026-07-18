@@ -128,7 +128,7 @@ function confirmDeleteLocation() {
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="editOpen = true">Edit location</MpPopoverListItem>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="deleteConfirmOpen = true">
+            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="deleteConfirmOpen = true">
               Delete location
             </MpPopoverListItem>
           </MpPopoverList>

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import {
-  MpButton, MpCheckbox, MpInput, MpTextarea, MpAutocomplete, MpDatePicker,
-  MpInputTag, MpIcon, MpSpinner, toast,
+  MpButton, MpCheckbox, MpInput, MpInputGroup, MpInputLeftAddon, MpTextarea, MpAutocomplete, MpDatePicker,
+  MpInputTag, MpIcon, MpUpload, MpUploadList, MpDropzone, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
   type DataInterface,
 } from '@mekari/pixel3'
 import { VENDORS } from '~/data/master'
@@ -126,7 +127,9 @@ function formatIDR(amount: number) {
 }
 
 const subtotal = computed(() => rows.value.reduce((s, r) => s + (Number(r.amount) || 0), 0))
-const ppnAmount = computed(() => (priceIncludesTax.value ? 0 : Math.round(subtotal.value * 0.1)))
+const taxableSubtotal = computed(() => rows.value.filter((r) => r.taxId === 'ppn10').reduce((s, r) => s + (Number(r.amount) || 0), 0))
+const hasPpnTax = computed(() => taxableSubtotal.value > 0)
+const ppnAmount = computed(() => (priceIncludesTax.value ? 0 : Math.round(taxableSubtotal.value * 0.1)))
 const total = computed(() => subtotal.value + ppnAmount.value)
 
 // ── Withholding ──────────────────────────────────────────────────────────────
@@ -134,11 +137,12 @@ interface WithholdingRow {
   id: number
   name: string
   amount: string
+  unit: 'Rp' | '%'
   accountId: string
 }
 let whSeq = 0
 function makeWithholdingRow(): WithholdingRow {
-  return { id: whSeq++, name: whSeq === 1 ? 'Withholding tax' : '', amount: '', accountId: '' }
+  return { id: whSeq++, name: whSeq === 1 ? 'Withholding tax' : '', amount: '', unit: 'Rp', accountId: '' }
 }
 const lessWithholding = ref(false)
 const withholdingRows = ref<WithholdingRow[]>([makeWithholdingRow()])
@@ -148,32 +152,57 @@ function removeWithholdingRow(id: number) {
   withholdingRows.value = withholdingRows.value.filter((r) => r.id !== id)
 }
 const withholdingTotal = computed(() =>
-  lessWithholding.value ? withholdingRows.value.reduce((s, r) => s + (Number(r.amount) || 0), 0) : 0,
+  lessWithholding.value
+    ? withholdingRows.value.reduce((s, r) => {
+        const amt = Number(r.amount) || 0
+        return s + (r.unit === '%' ? Math.round((amt / 100) * total.value) : amt)
+      }, 0)
+    : 0,
 )
 const finalTotal = computed(() => total.value - withholdingTotal.value)
 
 // ── Memo + Attachment (form-level, separate from the receipt dropzone) ──────
 const memo = ref('')
-const formFileInput = ref<HTMLInputElement | null>(null)
 const formAttachedFiles = ref<File[]>([])
+function addFormFiles(files: FileList | null) {
+  if (!files) return
+  for (const f of Array.from(files)) {
+    if (!formAttachedFiles.value.some((x) => x.name === f.name)) formAttachedFiles.value.push(f)
+  }
+}
 function onFormFileChange(ev: Event) {
   const input = ev.target as HTMLInputElement
-  if (input.files) {
-    for (const f of Array.from(input.files)) {
-      if (!formAttachedFiles.value.some((x) => x.name === f.name)) formAttachedFiles.value.push(f)
-    }
-  }
-  if (formFileInput.value) formFileInput.value.value = ''
+  addFormFiles(input.files)
+  input.value = ''
+}
+const formDragOver = ref(false)
+function onFormFileDrop(ev: DragEvent) {
+  formDragOver.value = false
+  addFormFiles(ev.dataTransfer?.files ?? null)
 }
 function removeFormFile(name: string) {
   formAttachedFiles.value = formAttachedFiles.value.filter((f) => f.name !== name)
+}
+function fileIconName(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'pdf') return 'pdf-document'
+  if (ext === 'doc' || ext === 'docx') return 'word-document'
+  if (ext === 'xls' || ext === 'xlsx') return 'excel-document'
+  if (['jpg', 'jpeg', 'png'].includes(ext)) return 'image-document'
+  if (ext === 'zip') return 'zip'
+  return 'doc'
 }
 
 // ── Payment (shown only when "I have paid this bill" is checked) ───────────
 const paymentAccountId = ref('')
 const paymentDate = ref(todayDisplay)
 const paymentReference = ref('')
-const amountPaid = computed(() => finalTotal.value)
+// Prefilled from the total, editable — stops auto-syncing once the user types their own value.
+const amountPaid = ref(finalTotal.value)
+const amountPaidTouched = ref(false)
+watch(finalTotal, (v) => {
+  if (!amountPaidTouched.value) amountPaid.value = v
+})
 
 // ── Left panel resize (drag the divider — same pattern as the Airene panel) ─
 const LEFT_PANEL_MIN = 320
@@ -202,11 +231,12 @@ function startPanelResize(e: MouseEvent) {
 
 // ── Receipt dropzone (left panel) ───────────────────────────────────────────
 const leftPanelOpen = ref(true)
+// Narrow icon rail shown after a close the user didn't permanently suppress —
+// keeps a one-click way back into the receipt panel instead of hiding it outright.
+const leftPanelDocked = ref(false)
 const uploadedFile = ref<File | null>(null)
 const uploadedFileUrl = ref('')
-const dragOver = ref(false)
 const processingFile = ref(false)
-const dropzoneFileInput = ref<HTMLInputElement | null>(null)
 
 function ingestFile(file: File) {
   processingFile.value = true
@@ -218,16 +248,10 @@ function ingestFile(file: File) {
     processingFile.value = false
   }, 900)
 }
-function onDropzoneDrop(ev: DragEvent) {
-  dragOver.value = false
-  const file = ev.dataTransfer?.files?.[0]
+// MpDropzone emits "change" with the FileList for both the file-input path and drag/drop.
+function onDropzoneFileChange(files: FileList | null) {
+  const file = files?.[0]
   if (file) ingestFile(file)
-}
-function onDropzoneFileChange(ev: Event) {
-  const input = ev.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (file) ingestFile(file)
-  if (dropzoneFileInput.value) dropzoneFileInput.value.value = ''
 }
 function clearUploadedFile() {
   if (uploadedFileUrl.value) URL.revokeObjectURL(uploadedFileUrl.value)
@@ -239,22 +263,39 @@ onBeforeUnmount(() => {
 })
 
 // Close the left panel — confirms first unless the user opted out of the prompt.
+// The inline "Try autofill instead" link (next to the Attachment label) only appears
+// once the user has opted out via the checkbox — it's the replacement affordance for
+// reopening the panel once the confirm dialog stops showing.
 const HIDE_CLOSE_CONFIRM_KEY = 'erp-hide-expense-panel-close-confirm'
 const showCloseConfirm = ref(false)
 const dontShowCloseConfirmAgain = ref(false)
+const closeConfirmSuppressed = ref(false)
+onMounted(() => {
+  closeConfirmSuppressed.value = localStorage.getItem(HIDE_CLOSE_CONFIRM_KEY) === '1'
+})
 function requestClosePanel() {
-  if (import.meta.client && localStorage.getItem(HIDE_CLOSE_CONFIRM_KEY) === '1') {
+  if (closeConfirmSuppressed.value) {
     leftPanelOpen.value = false
     return
   }
   showCloseConfirm.value = true
 }
 function confirmClosePanel() {
-  if (dontShowCloseConfirmAgain.value && import.meta.client) {
-    localStorage.setItem(HIDE_CLOSE_CONFIRM_KEY, '1')
+  if (dontShowCloseConfirmAgain.value) {
+    closeConfirmSuppressed.value = true
+    if (import.meta.client) localStorage.setItem(HIDE_CLOSE_CONFIRM_KEY, '1')
+    leftPanelDocked.value = false
+  } else {
+    // Left unchecked — dock a narrow icon rail instead of hiding the panel outright,
+    // since the confirm dialog will keep interrupting the user on every future close.
+    leftPanelDocked.value = true
   }
   showCloseConfirm.value = false
   leftPanelOpen.value = false
+}
+function undockPanel() {
+  leftPanelDocked.value = false
+  leftPanelOpen.value = true
 }
 
 // ── Save ─────────────────────────────────────────────────────────────────────
@@ -339,6 +380,13 @@ function handleSave(mode: 'close' | 'new') {
     <!-- ── Two-panel stage ── -->
     <div class="ex-stage">
 
+      <!-- ── Docked rail — shown after a close that wasn't permanently suppressed ── -->
+      <div v-if="leftPanelDocked" class="ex-docked-rail">
+        <button type="button" class="ex-docked-btn" aria-label="Open receipt autofill" @click="undockPanel">
+          <MpIcon name="airene-brand" size="md" />
+        </button>
+      </div>
+
       <!-- ── Left panel: receipt dropzone / preview ── -->
       <div v-show="leftPanelOpen" class="ex-left" :style="{ width: leftWidth + 'px' }">
         <div class="ex-left-header">
@@ -361,28 +409,22 @@ function handleSave(mode: 'close' | 'new') {
         </div>
 
         <!-- Empty state — Dropzone component (idle / focused / processing) -->
-        <div
+        <MpDropzone
           v-if="!uploadedFile"
+          id="ex-receipt-dropzone"
           class="ex-dropzone"
-          :class="{ 'ex-dropzone--focused': dragOver }"
-          @dragover.prevent="dragOver = true"
-          @dragleave.prevent="dragOver = false"
-          @drop.prevent="onDropzoneDrop"
-          @click="!processingFile && dropzoneFileInput?.click()"
+          accept=".pdf,.png,.jpg,.jpeg"
+          is-enable-input-file
+          :is-loading="processingFile"
+          loading-text="Processing..."
+          @change="onDropzoneFileChange"
         >
-          <input
-            ref="dropzoneFileInput" type="file" class="ex-file-hidden"
-            accept=".pdf,.png,.jpg,.jpeg" @change="onDropzoneFileChange" @click.stop
-          />
-          <template v-if="processingFile">
-            <div class="ex-processing-badge"><MpSpinner size="md" /></div>
-            <p class="ex-processing-label">Processing...</p>
-          </template>
-          <template v-else>
+          <template #idle="{ handleClickInput }">
             <img src="/illustrations/receipt-dropzone.png" alt="" class="ex-dropzone-thumb-img" />
             <p class="ex-dropzone-title">
               <MpIcon name="airene-brand" size="sm" />
-              Drop your receipt file here to autofill fields
+              Drop your receipt here to autofill fields or
+              <button type="button" class="ex-dropzone-browse" @click.stop="handleClickInput">browse</button>
             </p>
             <p class="ex-dropzone-desc">
               This feature will reduce your monthly AI token usage.
@@ -390,7 +432,7 @@ function handleSave(mode: 'close' | 'new') {
               Maximum file size 10 MB.
             </p>
           </template>
-        </div>
+        </MpDropzone>
 
         <!-- Uploaded state — real file rendered as an image -->
         <div v-else class="ex-preview">
@@ -400,11 +442,6 @@ function handleSave(mode: 'close' | 'new') {
 
       <!-- Resize divider — drag to resize the left panel (right panel absorbs the rest) -->
       <div v-if="leftPanelOpen" class="ex-divider" aria-label="Resize panel" @mousedown="startPanelResize" />
-
-      <!-- Restore affordance when the left panel has been closed -->
-      <button v-if="!leftPanelOpen" class="ex-restore-btn" aria-label="Show receipt panel" @click="leftPanelOpen = true">
-        <MpIcon name="sidebar-show" size="sm" />
-      </button>
 
       <!-- ── Right panel: bill fields ── -->
       <div class="ex-right">
@@ -504,7 +541,7 @@ function handleSave(mode: 'close' | 'new') {
                   draggable="true"
                   @dragstart="onDragStart($event, idx)" @dragover="onDragOver($event, idx)" @drop="onDrop($event, idx)" @dragend="onDragEnd"
                 >
-                  <td class="ex-td ex-td--drag"><MpIcon name="drag" size="sm" /></td>
+                  <td class="ex-td ex-td--drag ex-td--border"><MpIcon name="drag" size="sm" /></td>
                   <td class="ex-td ex-td--input ex-td--border">
                     <MpAutocomplete
                       :id="`ex-account-${row.id}`" v-model="row.accountId" :data="ACCOUNT_OPTIONS"
@@ -545,98 +582,133 @@ function handleSave(mode: 'close' | 'new') {
           </div>
         </div>
 
-        <!-- Totals -->
-        <div class="ex-totals">
-          <div class="ex-total-row">
-            <span class="ex-total-label">Subtotal</span>
-            <span class="ex-total-amt">{{ formatIDR(subtotal) }}</span>
-          </div>
-          <div class="ex-total-row">
-            <span class="ex-total-label">PPN 10%</span>
-            <span class="ex-total-amt">{{ formatIDR(ppnAmount) }}</span>
-          </div>
-          <div class="ex-total-rule" />
-          <div class="ex-total-row">
-            <span class="ex-total-label ex-total-label--strong">Total</span>
-            <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(total) }}</span>
+        <!-- Memo/Attachment + Totals — inline when the panel is wide enough, stacked otherwise
+             (same container-query rule as BillDetailsPage's .detail-notes) -->
+        <div class="ex-notes">
+          <div class="ex-notes-left">
+            <!-- Memo -->
+            <div class="ex-section ex-memo-section">
+              <MpFormControl id="ex-memo">
+                <MpFormLabel>Memo</MpFormLabel>
+                <MpTextarea id="ex-memo-textarea" v-model="memo" is-full-width :rows="4" />
+              </MpFormControl>
+              <p class="ex-helper-text">Only visible to you and your team</p>
+            </div>
+
+            <!-- Attachment -->
+            <div class="ex-section ex-attachment-section">
+              <div class="ex-section-label-row">
+                <div class="ex-section-label">Attachment</div>
+                <MpButton v-if="!leftPanelOpen && closeConfirmSuppressed" variant="textLink" size="sm" left-icon="airene-brand" @click="leftPanelOpen = true">
+                  Try autofill instead
+                </MpButton>
+              </div>
+              <div class="ex-attachment">
+                <MpUpload
+                  id="ex-attachment-upload"
+                  class="ex-attachment-upload"
+                  :class="{ 'ex-attachment-upload--dragover': formDragOver }"
+                  accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
+                  is-multiple is-full-width
+                  placeholder="or drag and drop here"
+                  button-text="Browse file"
+                  @change="onFormFileChange"
+                  @dragover.prevent="formDragOver = true"
+                  @dragleave.prevent="formDragOver = false"
+                  @drop.prevent="onFormFileDrop"
+                />
+                <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
+                <MpUploadList
+                  v-for="f in formAttachedFiles" :key="f.name"
+                  :id="`ex-attachment-file-${f.name}`"
+                  :title="f.name" status="success" subtitle="Uploaded"
+                  :icon-name="fileIconName(f.name)"
+                  is-show-remove-button
+                  @remove="removeFormFile(f.name)"
+                />
+              </div>
+            </div>
           </div>
 
-          <div class="ex-withholding-check">
-            <MpCheckbox id="ex-less-wht" :is-checked="lessWithholding" @change="lessWithholding = !lessWithholding" />
-            <span>Less: Withholding</span>
-          </div>
+          <!-- Totals -->
+          <div class="ex-totals">
+            <div class="ex-total-row">
+              <span class="ex-total-label">Subtotal</span>
+              <span class="ex-total-amt">{{ formatIDR(subtotal) }}</span>
+            </div>
+            <div v-if="hasPpnTax" class="ex-total-row">
+              <span class="ex-total-label">PPN 10%</span>
+              <span class="ex-total-amt">{{ formatIDR(ppnAmount) }}</span>
+            </div>
+            <div class="ex-total-rule" />
+            <div class="ex-total-row">
+              <span class="ex-total-label ex-total-label--strong">Total</span>
+              <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(total) }}</span>
+            </div>
 
-          <!-- Withholding detail rows — only when checked -->
-          <div v-if="lessWithholding" class="ex-withholding-rows">
-            <div v-for="(wh, idx) in withholdingRows" :key="wh.id" class="ex-withholding-row">
-              <MpFormControl :id="`ex-wh-name-${wh.id}`" is-required>
-                <MpFormLabel>Name</MpFormLabel>
-                <MpInput :id="`ex-wh-name-input-${wh.id}`" v-model="wh.name" is-full-width />
-              </MpFormControl>
-              <MpFormControl :id="`ex-wh-amount-${wh.id}`" is-required>
-                <MpFormLabel>Amount</MpFormLabel>
-                <MpInput :id="`ex-wh-amount-input-${wh.id}`" v-model="wh.amount" type="number" is-full-width placeholder="Rp" />
-              </MpFormControl>
-              <MpFormControl :id="`ex-wh-account-${wh.id}`" is-required class="ex-wh-account">
-                <MpFormLabel>Account</MpFormLabel>
-                <div class="ex-wh-account-row">
-                  <MpAutocomplete
-                    :id="`ex-wh-account-ac-${wh.id}`" v-model="wh.accountId" :data="BANK_ACCOUNT_OPTIONS"
-                    label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-                  />
-                  <button v-if="withholdingRows.length > 1" class="ex-del-btn" type="button" @click="removeWithholdingRow(wh.id)">
-                    <MpIcon name="minus-circular" size="sm" />
-                  </button>
+            <div class="ex-withholding-check">
+              <MpCheckbox id="ex-less-wht" :is-checked="lessWithholding" @change="lessWithholding = !lessWithholding" />
+              <span>Less: Withholding</span>
+            </div>
+
+            <!-- Withholding detail rows — only when checked -->
+            <div v-if="lessWithholding" class="ex-withholding-rows">
+              <div v-for="(wh, idx) in withholdingRows" :key="wh.id" class="ex-withholding-row">
+                <div class="ex-withholding-toprow">
+                  <MpFormControl :id="`ex-wh-name-${wh.id}`" is-required>
+                    <MpFormLabel>Name</MpFormLabel>
+                    <MpInput :id="`ex-wh-name-input-${wh.id}`" v-model="wh.name" is-full-width />
+                  </MpFormControl>
+                  <MpFormControl :id="`ex-wh-amount-${wh.id}`" is-required>
+                    <MpFormLabel>Amount</MpFormLabel>
+                    <MpInputGroup :id="`ex-wh-amount-group-${wh.id}`">
+                      <MpInputLeftAddon has-background class="ex-wh-unit-addon">
+                        <MpPopover :id="`ex-wh-unit-${wh.id}`" is-close-on-select placement="bottom-start" use-portal :is-keep-alive="false">
+                          <MpPopoverTrigger>
+                            <button type="button" class="ex-wh-unit-trigger">
+                              <span>{{ wh.unit }}</span>
+                              <MpIcon name="chevrons-down" size="sm" />
+                            </button>
+                          </MpPopoverTrigger>
+                          <MpPopoverContent :class="css({ minWidth: '64px', width: 'max-content' })">
+                            <MpPopoverList>
+                              <MpPopoverListItem :is-active="wh.unit === 'Rp'" @click="wh.unit = 'Rp'">Rp</MpPopoverListItem>
+                              <MpPopoverListItem :is-active="wh.unit === '%'" @click="wh.unit = '%'">%</MpPopoverListItem>
+                            </MpPopoverList>
+                          </MpPopoverContent>
+                        </MpPopover>
+                      </MpInputLeftAddon>
+                      <MpInput :id="`ex-wh-amount-input-${wh.id}`" v-model="wh.amount" type="number" is-full-width />
+                    </MpInputGroup>
+                  </MpFormControl>
                 </div>
-              </MpFormControl>
+                <MpFormControl :id="`ex-wh-account-${wh.id}`" is-required class="ex-wh-account">
+                  <MpFormLabel>Account</MpFormLabel>
+                  <div class="ex-wh-account-row">
+                    <MpAutocomplete
+                      :id="`ex-wh-account-ac-${wh.id}`" v-model="wh.accountId" :data="BANK_ACCOUNT_OPTIONS"
+                      label-prop="name" value-prop="id" is-searchable use-portal is-full-width
+                    />
+                    <button v-if="withholdingRows.length > 1" class="ex-del-btn" type="button" @click="removeWithholdingRow(wh.id)">
+                      <MpIcon name="minus-circular" size="sm" />
+                    </button>
+                  </div>
+                </MpFormControl>
+              </div>
+              <MpButton variant="textLink" size="sm" left-icon="add" @click="addWithholdingRow">Add withholding</MpButton>
             </div>
-            <MpButton variant="textLink" size="sm" left-icon="add" @click="addWithholdingRow">Add withholding</MpButton>
-          </div>
 
-          <div v-if="lessWithholding" class="ex-total-rule" />
-          <div v-if="lessWithholding" class="ex-total-row">
-            <span class="ex-total-label ex-total-label--strong">Total</span>
-            <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(finalTotal) }}</span>
-          </div>
-        </div>
-
-        <!-- Memo -->
-        <div class="ex-section ex-section--gap-top">
-          <MpFormControl id="ex-memo">
-            <MpFormLabel>Memo</MpFormLabel>
-            <MpTextarea id="ex-memo-textarea" v-model="memo" is-full-width :rows="4" />
-          </MpFormControl>
-          <p class="ex-helper-text">Only visible to you and your team</p>
-        </div>
-
-        <!-- Attachment -->
-        <div class="ex-section">
-          <div class="ex-section-label">Attachment</div>
-          <div class="ex-attachment">
-            <input
-              ref="formFileInput" type="file" multiple
-              accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
-              class="ex-file-hidden" @change="onFormFileChange"
-            />
-            <div class="ex-attachment-row">
-              <MpButton variant="secondary" size="sm" is-rounded @click="formFileInput?.click()">Choose file</MpButton>
-              <span class="ex-attach-or">or drag and drop here</span>
+            <div v-if="lessWithholding" class="ex-total-rule" />
+            <div v-if="lessWithholding" class="ex-total-row">
+              <span class="ex-total-label ex-total-label--strong">Total</span>
+              <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(finalTotal) }}</span>
             </div>
-            <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
-            <ul v-if="formAttachedFiles.length" class="ex-file-list">
-              <li v-for="f in formAttachedFiles" :key="f.name" class="ex-file-item">
-                <span class="ex-file-name-text">{{ f.name }}</span>
-                <button class="ex-file-remove" type="button" @click="removeFormFile(f.name)">
-                  <MpIcon name="close" size="xs" />
-                </button>
-              </li>
-            </ul>
           </div>
         </div>
 
         <!-- Payment — only when the bill is marked as paid -->
         <div v-if="iHavePaid" class="ex-section ex-payment-section">
-          <MpTabs id="ex-payment-tabs" :default-value="0" variant-color="green">
+          <MpTabs id="ex-payment-tabs" :default-value="0" variant-color="blue">
             <MpTabList>
               <MpTab value="payment">Payment</MpTab>
             </MpTabList>
@@ -661,17 +733,23 @@ function handleSave(mode: 'close' | 'new') {
                       </thead>
                       <tbody>
                         <tr class="ex-tr">
-                          <td class="ex-td ex-td--input">
+                          <td class="ex-td ex-td--input ex-td--border">
                             <MpAutocomplete
                               id="ex-pay-account-ac" v-model="paymentAccountId" :data="BANK_ACCOUNT_OPTIONS"
                               label-prop="name" value-prop="id" is-searchable use-portal is-full-width
                               placeholder="Select account"
                             />
                           </td>
-                          <td class="ex-td ex-td--input">
-                            <MpInput id="ex-pay-amount-input" :model-value="String(amountPaid)" is-full-width is-disabled />
+                          <td class="ex-td ex-td--input ex-td--border ex-td--amount">
+                            <div class="ex-amount-cell">
+                              <span class="ex-amount-prefix">Rp</span>
+                              <MpInput
+                                id="ex-pay-amount-input" v-model="amountPaid" type="number" is-full-width class="ex-amount-input"
+                                @update:model-value="amountPaidTouched = true"
+                              />
+                            </div>
                           </td>
-                          <td class="ex-td ex-td--input">
+                          <td class="ex-td ex-td--input ex-td--border">
                             <div class="ex-datepicker">
                               <MpDatePicker id="ex-pay-date-dp" v-model="paymentDate" format="DD/MM/YYYY" value-type="format" use-portal />
                             </div>
@@ -750,14 +828,28 @@ function handleSave(mode: 'close' | 'new') {
   background: #EFF1F1; border-radius: 12px 12px 0 0; overflow: hidden;
 }
 
-/* ── Left panel — no background, 24px side / 12px top-bottom padding, full height ── */
+/* ── Left panel — no background, 24px left / 12px right (divider gap) / 12px top-bottom padding, full height ── */
 .ex-left {
   flex-shrink: 0;
-  padding: 12px 24px;
+  padding: 12px 12px 12px 24px;
   display: flex; flex-direction: column; min-height: 0;
 }
 .ex-left-header { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 32px; margin-bottom: 8px; }
 .ex-icon-btn--end { margin-left: auto; }
+
+/* ── Docked rail — narrow icon-only strip replacing the panel after a non-suppressed close ── */
+.ex-docked-rail {
+  flex-shrink: 0; width: fit-content; align-self: stretch;
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: var(--mp-spacing-2, 8px); padding: 12px 12px 24px;
+}
+.ex-docked-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: var(--mp-spacing-2, 8px);
+  border: none; background: none; border-radius: var(--mp-radii-md, 6px);
+  cursor: pointer;
+}
+.ex-docked-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Resize divider — drag to resize the left panel ── */
 .ex-divider {
@@ -777,41 +869,47 @@ function handleSave(mode: 'close' | 'new') {
 
 .ex-dropzone {
   flex: 1; min-height: 0; cursor: pointer;
+}
+/* MpDropzone draws its own border/background on the inner wrapper — style that
+   instead of the root, so there's only one dashed outline and no default white fill.
+   40px padding keeps the content clear of the dashed line on every side. */
+.ex-dropzone :deep(.mp-dropzone__wrapper) {
   border: 1px dashed var(--mp-border-bold, #758195);
   border-radius: var(--mp-radii-md, 6px);
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: var(--mp-spacing-3); padding: var(--mp-spacing-5);
-  transition: background 0.1s, border-color 0.1s;
+  background: transparent;
+  padding: 40px;
+  gap: var(--mp-spacing-3);
+  transition: border-color 0.1s, box-shadow 0.1s;
 }
-.ex-dropzone--focused { background: var(--mp-background-neutral-hovered, #f7f8f9); border-color: var(--mp-border-focused, #7586e5); }
-.ex-file-hidden { display: none; }
-
+/* Our static border above wins over Pixel's own hover/focus state rules (higher
+   specificity from the scoped attribute), so restate them here using the same
+   neutral-slate focus convention as every other Pixel field in erp.css. */
+.ex-dropzone :deep(.mp-dropzone__wrapper:hover) {
+  border-color: var(--mp-colors-gray-600, #626b79);
+}
+.ex-dropzone :deep(.mp-dropzone__wrapper:focus) {
+  border-color: #8c9596;
+  box-shadow: 0 0 0 1px #8c9596;
+  outline: none;
+}
 .ex-dropzone-thumb-img { width: 125px; height: auto; }
 
 .ex-dropzone-title {
-  margin: 0; display: flex; align-items: center; gap: 4px;
+  margin: 0;
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); text-align: center;
 }
+.ex-dropzone-title .mp-icon { vertical-align: -3px; margin-right: 4px; }
 .ex-dropzone-desc { margin: 0; max-width: 320px; text-align: center; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-
-.ex-processing-badge {
-  width: 80px; height: 80px; border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral-subtle, #f0f1f3);
-  display: flex; align-items: center; justify-content: center;
+.ex-dropzone-browse {
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; font-weight: inherit;
+  color: var(--mp-text-link, #2563eb);
 }
-.ex-processing-label { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ex-dropzone-browse:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .ex-preview { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; }
 .ex-preview-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--mp-radii-md); }
-
-.ex-restore-btn {
-  position: absolute; top: 12px; left: 24px; z-index: 1;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border: none; border-radius: var(--mp-radii-sm);
-  background: var(--mp-background-neutral); color: var(--mp-text-secondary); cursor: pointer;
-}
-.ex-restore-btn:hover { color: var(--mp-text-default); }
 
 /* ── Right panel — rounded left corners, neutral bg, 24px padding, scrollable ── */
 .ex-right {
@@ -850,7 +948,7 @@ function handleSave(mode: 'close' | 'new') {
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
 .ex-col-drag { width: 44px; }
 .ex-col-account { width: 200px; }
-.ex-col-desc { width: 220px; }
+.ex-col-desc { width: auto; }
 .ex-col-tax { width: 140px; }
 .ex-col-amount { width: 160px; }
 .ex-col-del { width: 44px; }
@@ -883,16 +981,16 @@ function handleSave(mode: 'close' | 'new') {
 .ex-td--input .ex-datepicker { width: 100%; }
 .ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .ex-td--del { padding: 0; text-align: center; vertical-align: middle; }
+.ex-td--border { border-right: 1px solid var(--mp-border-default); }
 
 /* Line items table: left-aligned container, right-side-only column dividers
    instead of row-separator borders. */
-.ex-lineitems-table { margin-right: auto; }
+.ex-lineitems-table { min-width: 764px; margin-right: auto; }
 .ex-lineitems-table .ex-td {
   height: 52px;
   vertical-align: middle;
   border-bottom: 1px solid var(--mp-border-default);
 }
-.ex-lineitems-table .ex-td--border { border-right: 1px solid var(--mp-border-default); }
 .ex-lineitems-table .ex-td--amount { padding: 0; }
 
 .ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: 52px; }
@@ -912,8 +1010,32 @@ function handleSave(mode: 'close' | 'new') {
 }
 .ex-del-btn:hover { background: var(--mp-background-neutral); color: var(--mp-text-danger, #dc2626); }
 
+/* ── Memo/Attachment + Totals — inline when the panel is wide enough, stacked otherwise.
+   Widths are spec'd at a 1440px screen (Memo 432px, Attachment matches the Beneficiary
+   field's existing width, Totals 428px) and made fluid via `cqw` (relative to .ex-right's
+   own container-type: inline-size) so they scale down proportionally on a narrower panel
+   instead of staying pinned to those px values. 1440px reference right-panel content width
+   measured at ~1321px, so 432px = 32.7cqw and 428px = 32.4cqw. ── */
+.ex-notes { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+/* Stacked: Totals on top, Memo/Attachment below (order flips DOM order without changing tab order) */
+.ex-notes-left { display: flex; flex-direction: column; flex-shrink: 0; order: 2; }
+.ex-memo-section { width: min(432px, 32.7cqw); flex-shrink: 0; }
+.ex-attachment-section { width: 318px; flex-shrink: 0; }
+/* .ex-section (below) sets gap: spacing-2 with equal specificity but later source order,
+   so it would win over a plain .ex-attachment-section override — combine both classes instead. */
+.ex-section.ex-attachment-section { gap: var(--mp-spacing-1, 4px); }
+.ex-attachment-section .ex-section-label-row { margin-bottom: 0; }
+.ex-totals { order: 1; }
+@container (min-width: 650px) {
+  /* Inline: Memo/Attachment flush left, Totals flush right — neither block stretches,
+     the leftover container space becomes the gap between them. */
+  .ex-notes { flex-direction: row; justify-content: space-between; align-items: flex-start; }
+  .ex-notes-left { order: 1; }
+  .ex-totals { order: 2; }
+}
+
 /* ── Totals ───────────────────────────────────────────────────────────────── */
-.ex-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) 0; max-width: 620px; align-self: flex-end; width: 100%; }
+.ex-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding: var(--mp-spacing-4) 0; width: min(428px, 32.4cqw); }
 .ex-total-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-4); }
 .ex-total-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .ex-total-amt { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
@@ -923,27 +1045,60 @@ function handleSave(mode: 'close' | 'new') {
 .ex-withholding-check { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
 .ex-withholding-rows { display: flex; flex-direction: column; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; }
-.ex-withholding-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.ex-withholding-row { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.ex-withholding-toprow { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .ex-wh-account-row { display: flex; align-items: center; gap: 4px; }
 .ex-wh-account { min-width: 0; }
+.ex-wh-unit-addon :deep(.mp-input-addon__root) { padding: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-md); }
+.ex-wh-unit-trigger {
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  border-radius: var(--mp-radii-md);
+}
+.ex-wh-unit-trigger:hover { background: var(--mp-background-neutral-hovered); }
+.ex-wh-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
+:deep([id^='ex-wh-amount-group-'] .mp-input__control) { padding: 2px; }
 
 /* ── Memo / Attachment ────────────────────────────────────────────────────── */
 .ex-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); max-width: 440px; padding: var(--mp-spacing-4) 0; }
-.ex-section--gap-top { padding-top: var(--mp-spacing-6); }
-.ex-section-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-1); }
+.ex-section-label-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-1); }
+.ex-section-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ex-helper-text { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm); }
 
 .ex-attachment { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.ex-attachment-row { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.ex-attach-or { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.ex-file-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.ex-file-item { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.ex-file-name-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ex-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
-.ex-file-remove:hover { color: var(--mp-text-default); }
+/* Empty-state label ("or drag and drop here") is colored via an inline --mp-text-color
+   custom property set by MpText itself, which only an !important author rule can beat. */
+.ex-attachment-upload :deep(p[data-pixel-component="MpText"]) {
+  color: var(--mp-text-placeholder, #6e7a7c) !important;
+}
+/* --mp-colors-border-focused is the real (Enterprise-theme-aware) focus token —
+   resolves to green (#41C6A0) in this app's theme. The shorthand alias
+   --mp-border-focused used elsewhere in this file doesn't actually exist/resolve,
+   so any fallback hardcoded on it (e.g. blue) silently wins instead. */
+.ex-attachment-upload--dragover { border-color: var(--mp-colors-border-focused, #41c6a0) !important; }
 
 /* ── Payment ──────────────────────────────────────────────────────────────── */
 .ex-payment-section { max-width: none; padding-top: var(--mp-spacing-6); }
+/* MpTabList ships a fixed 24px margin-bottom below the tab row — trim to the 20px spec. */
+.ex-payment-section :deep(.mp-tab-list__list) { margin-bottom: 20px; }
+/* Our build's static Panda scan never emitted MpTabSelectedBorder's base position/size
+   rule, nor its nextTheme:mp-bg_border.selected color utility (unlike the parent MpTab's
+   own text-color utility, which did get emitted) — so the selected-tab underline renders
+   0x0 and transparent. Values match Pixel's own documented CSS and the same
+   --mp-colors-border-selected token the tab's variant-color="blue" already resolves to. */
+.ex-payment-section :deep(.mp-tab-selected-border) {
+  position: absolute;
+  bottom: -2px;
+  width: calc(100% - 8px);
+  height: var(--mp-sizes-0\.5, 2px);
+  background: var(--mp-colors-border-selected, #029861);
+}
 
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 .ex-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding-top: var(--mp-spacing-6); }

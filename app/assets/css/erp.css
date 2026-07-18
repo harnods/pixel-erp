@@ -15,11 +15,11 @@
   border: 1px solid transparent;
 }
 
-/* Secondary (ERP) — black border, black text on a neutral fill. */
+/* Secondary (ERP) — default border, secondary text on a neutral fill. */
 .btn-enterprise--secondary {
   background: var(--mp-background-neutral);
-  border-color: var(--mp-text-default);
-  color: var(--mp-text-default);
+  border-color: var(--mp-border-default);
+  color: var(--mp-text-secondary);
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -61,7 +61,7 @@
 
 /* ── Button size: sm ──────────────────────────────────────────────────────────── */
 .btn-enterprise--sm {
-  padding: var(--mp-spacing-1) var(--mp-spacing-3);
+  padding: var(--mp-spacing-1) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm);
 }

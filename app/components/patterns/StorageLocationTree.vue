@@ -175,7 +175,7 @@ function onSaved(pid: string | null) {
                   <MpPopoverList>
                     <MpPopoverListItem @click="editLoc(row.node)">Edit</MpPopoverListItem>
                     <MpPopoverListItem @click="addSub(row.node)">Add sub-location</MpPopoverListItem>
-                    <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askDelete(row.node)">Delete</MpPopoverListItem>
+                    <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="askDelete(row.node)">Delete</MpPopoverListItem>
                   </MpPopoverList>
                 </MpPopoverContent>
               </MpPopover>
@@ -262,7 +262,7 @@ function onSaved(pid: string | null) {
 .wh-loc-row:hover .wh-loc-view { visibility: visible; }
 .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
 .wh-loc-table .wh-loc-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
-.row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 .wh-loc-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
 .slt-modal-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }

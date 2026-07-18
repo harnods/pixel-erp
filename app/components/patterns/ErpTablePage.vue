@@ -73,6 +73,8 @@ const props = withDefaults(defineProps<{
   rowDisabled?: (row: Record<string, unknown>, index: number) => boolean
   /** Singular noun shown in the bulk bar count, e.g. "warehouse" → "2 warehouses selected" */
   bulkLabel?: string
+  /** Width of the sticky actions (kebab) column. Default 44px. */
+  actionsWidth?: string
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -84,6 +86,7 @@ const props = withDefaults(defineProps<{
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
+  actionsWidth: '44px',
 })
 
 const emit = defineEmits<{
@@ -362,7 +365,7 @@ const bulkCountLabel = computed(() => {
             :key="col.key"
             :style="col.width ? { width: col.width, minWidth: col.width } : {}"
           />
-          <col v-if="$slots.actions" style="width: 44px; min-width: 44px" />
+          <col v-if="$slots.actions" :style="{ width: actionsWidth, minWidth: actionsWidth }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
 
@@ -467,6 +470,7 @@ const bulkCountLabel = computed(() => {
             <th
               v-if="$slots.actions && !loading"
               class="erp-th erp-th--actions erp-th--fixed"
+              :style="{ width: actionsWidth, minWidth: actionsWidth }"
             />
 
             <!-- AI chat th — outermost sticky right, 28px (hidden only on first-load skeleton) -->
@@ -523,6 +527,7 @@ const bulkCountLabel = computed(() => {
               <td
                 v-if="$slots.actions"
                 class="erp-td erp-td--actions erp-td--fixed"
+                :style="{ width: actionsWidth, minWidth: actionsWidth }"
               >
                 <slot name="actions" :row="row" />
               </td>
@@ -573,7 +578,11 @@ const bulkCountLabel = computed(() => {
                 />
               </td>
               <!-- match data-row columns during pagination; hidden on first load -->
-              <td v-if="$slots.actions && !loading" class="erp-td erp-td--actions erp-td--fixed" />
+              <td
+                v-if="$slots.actions && !loading"
+                class="erp-td erp-td--actions erp-td--fixed"
+                :style="{ width: actionsWidth, minWidth: actionsWidth }"
+              />
               <td v-if="hasAiChat && !loading" class="erp-td erp-td--ai" />
             </tr>
           </template>

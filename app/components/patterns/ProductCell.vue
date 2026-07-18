@@ -61,7 +61,7 @@ onMounted(() => {
   flex-shrink: 0;
   object-fit: cover;
   background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-subtle);
+  border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .pc-info {
   display: flex;
@@ -71,7 +71,7 @@ onMounted(() => {
 }
 .pc-name {
   font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-medium);
+  font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default);
   white-space: nowrap;
   overflow: hidden;

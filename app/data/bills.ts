@@ -1,12 +1,13 @@
+import { reactive } from 'vue'
 import type { Bill } from './types'
 
 // "Today" for demo purposes is 2026-07-15 — due dates before that are overdue,
 // due dates after that are upcoming (still shown as unpaid, not overdue).
-export const bills: Bill[] = [
-  { id: 'BILL001', number: 1, beneficiary: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  category: 'Office supplies', date: '2026-06-20', dueDate: '2026-07-04', total: 12_500_000, balanceDue: 0,           status: 'paid',   tags: ['Supplies']     },
+export const bills = reactive<Bill[]>([
+  { id: 'BILL001', number: 1, beneficiary: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  category: 'Office supplies', date: '2026-06-20', dueDate: '2026-07-04', total: 12_500_000, balanceDue: 0,           status: 'paid',   tags: ['Supplies'], reconciled: true },
   { id: 'BILL002', number: 2, beneficiary: { id: 'V002', name: 'CV Abadi Jaya Teknik' },        category: 'Equipment',       date: '2026-06-21', dueDate: '2026-07-25', total: 34_000_000, balanceDue: 34_000_000, status: 'unpaid'                          },
   { id: 'BILL003', number: 3, beneficiary: { id: 'V003', name: 'PT Mitra Global Solusi' },      category: 'Utilities',       date: '2026-06-22', dueDate: '2026-07-01', total: 8_200_000,  balanceDue: 8_200_000,  status: 'unpaid'                          },
-  { id: 'BILL004', number: 4, beneficiary: { id: 'V004', name: 'PT Karya Cipta Mandiri' },      category: 'Software',        date: '2026-06-23', dueDate: '2026-07-30', total: 15_800_000, balanceDue: 0,           status: 'paid'                            },
+  { id: 'BILL004', number: 4, beneficiary: { id: 'V004', name: 'PT Karya Cipta Mandiri' },      category: 'Software',        date: '2026-06-23', dueDate: '2026-07-30', total: 15_800_000, balanceDue: 0,           status: 'paid', reconciled: true },
   { id: 'BILL005', number: 5, beneficiary: { id: 'V005', name: 'CV Berkah Utama Indonesia' },   category: 'Travel',          date: '2026-06-24', dueDate: '2026-06-30', total: 6_750_000,  balanceDue: 6_750_000,  status: 'unpaid', tags: ['Travel']       },
   { id: 'BILL006', number: 6, beneficiary: { id: 'V006', name: 'PT Teknindo Nusantara' },       category: 'Utilities',       date: '2026-06-25', dueDate: '2026-07-02', total: 21_000_000, balanceDue: 21_000_000, status: 'unpaid'                          },
   { id: 'BILL007', number: 7, beneficiary: { id: 'V007', name: 'PT Solusi Pratama Abadi' },     category: 'Marketing',       date: '2026-06-26', dueDate: '2026-07-28', total: 9_300_000,  balanceDue: 0,           status: 'paid',   tags: ['B2B']          },
@@ -27,4 +28,14 @@ export const bills: Bill[] = [
   { id: 'BILL022', number: 22, beneficiary: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  category: 'Equipment',       date: '2026-07-11', dueDate: '2026-08-03', total: 5_100_000,  balanceDue: 0,           status: 'paid'                            },
   { id: 'BILL023', number: 23, beneficiary: { id: 'V006', name: 'PT Teknindo Nusantara' },       category: 'Maintenance',     date: '2026-07-12', dueDate: '2026-07-03', total: 17_800_000, balanceDue: 17_800_000, status: 'unpaid', tags: ['Retail']       },
   { id: 'BILL024', number: 24, beneficiary: { id: 'V004', name: 'PT Karya Cipta Mandiri' },      category: 'Office supplies', date: '2026-07-13', dueDate: '2026-08-04', total: 2_900_000,  balanceDue: 2_900_000,  status: 'unpaid'                          },
-]
+])
+
+let billAddSeq = bills.length
+
+/** Create a new expense/bill from the New expense form — prepends to the Bills list. */
+export function addBill(data: Omit<Bill, 'id' | 'number'>): Bill {
+  const n = ++billAddSeq
+  const bill: Bill = { ...data, id: `BILL-NEW-${n}`, number: n }
+  bills.unshift(bill)
+  return bill
+}

@@ -371,8 +371,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
 .pik-filter-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .pik-editing-hint { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pik-finish-error { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
-.pik-link-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-link); }
+.pik-finish-error { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium, 500); }
+.pik-link-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-link); }
 .pik-link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .pik-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
@@ -420,8 +420,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   text-align: right; font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md);
 }
-.pik-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
-.pik-outstanding { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium); }
+.pik-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }
+.pik-outstanding { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium, 500); }
 .pik-sentinel { height: 1px; }
 .pik-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
 .pik-loading--inline { justify-content: center; padding: var(--mp-spacing-3); }

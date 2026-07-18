@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { type Ref } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import {
+  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpPopoverList, MpPopoverListItem, MpIcon, css,
+} from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
@@ -8,6 +11,9 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { bills } from '~/data'
 import type { Bill, BillStatus } from '~/data'
+
+const router = useRouter()
+function goDetail(id: string) { router.push(`/expenses/${id}`) }
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const aireneOpen = inject<Ref<boolean>>('aireneOpen')
@@ -72,11 +78,14 @@ const {
 // ─── Filter options ───────────────────────────────────────────────────────────
 
 const statusOptions = [
-  { label: 'All status', value: ''       },
-  { label: 'Open',       value: 'open'   },
-  { label: 'Paid',       value: 'paid'   },
-  { label: 'Unpaid',     value: 'unpaid' },
+  { label: 'Open',   value: 'open'   },
+  { label: 'Paid',   value: 'paid'   },
+  { label: 'Unpaid', value: 'unpaid' },
 ]
+
+const statusLabel = computed(
+  () => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '',
+)
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -126,8 +135,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    has-ai-chat
-    :context-label="(row) => `Expense #${String(row.number).padStart(5, '0')}`"
+    actions-width="52px"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -194,24 +202,42 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
     <!-- ── Filter bar ── -->
     <template #filters>
-      <!-- Left: Status select + All filters -->
+      <!-- Left: status select (MpSelect + MpPopover) + All filters -->
       <div class="filter-left">
-        <div class="filter-select-wrap">
-          <select class="filter-select" v-model="statusFilter">
-            <option value="">Status</option>
-            <option v-for="opt in statusOptions.slice(1)" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
-          <svg class="filter-select-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
+        <MpPopover id="bills-status-filter" is-close-on-select>
+          <!-- placeholder = filter name ("Status"); is-clearable shows (x) when a
+               value is picked → @clear resets to show-all. -->
+          <MpPopoverTrigger>
+            <MpSelect
+              id="bills-status-select"
+              placeholder="Status"
+              :model-value="statusFilter"
+              is-clearable
+              :class="css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
+              @mousedown.prevent
+              @clear="statusFilter = ''"
+            >
+              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <!-- min-width = MpSelect width (160px) so the dropdown matches the select;
+               width:max-content lets it hug/grow when an option is longer. -->
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
+            <MpPopoverList>
+              <MpPopoverListItem
+                v-for="opt in statusOptions"
+                :key="opt.value"
+                :is-active="opt.value === statusFilter"
+                @click="statusFilter = opt.value"
+              >
+                {{ opt.label }}
+              </MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
 
         <button class="filter-all-btn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M3 6h18M7 12h10M11 18h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <MpIcon name="filter" size="sm" />
           All filters
         </button>
       </div>
@@ -255,10 +281,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     </template>
 
     <!-- ── Cell: Number ── -->
-    <template #cell-number="{ value }">
+    <template #cell-number="{ value, row }">
       <div class="cell-with-action">
         <span class="cell-text">{{ formatNumber(value as number) }}</span>
-        <button class="row-hover-btn" @click.stop>
+        <button class="row-hover-btn" @click.stop="goDetail((row as Row).id)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -396,7 +422,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 .stat-card--upsell {
   position: relative;
   gap: var(--mp-spacing-2);
-  padding-right: var(--mp-spacing-9);
+  padding-right: var(--mp-spacing-10);
 }
 
 .upsell-dismiss {
@@ -573,40 +599,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-3);
-}
-
-.filter-select-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 160px;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-}
-
-.filter-select {
-  appearance: none;
-  background: transparent;
-  border: none;
-  outline: none;
-  width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-9) var(--mp-spacing-2) var(--mp-spacing-3);
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-placeholder);
-  cursor: pointer;
-}
-
-.filter-select:focus { outline: none; }
-
-.filter-select-chevron {
-  position: absolute;
-  right: var(--mp-spacing-2);
-  pointer-events: none;
-  color: var(--mp-text-default);
-  width: var(--mp-sizes-5, 20px);
-  height: var(--mp-sizes-5, 20px);
 }
 
 .filter-all-btn {

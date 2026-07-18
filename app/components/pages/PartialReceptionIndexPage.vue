@@ -215,7 +215,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem @click="viewDetails(row as unknown as Receipt)">View details</MpPopoverListItem>
             <MpPopoverListItem @click="createPurchaseReceiving(row as unknown as Receipt)">Purchase receiving</MpPopoverListItem>
             <MpPopoverListItem
-              :class="css({ color: 'var(--mp-text-critical)' })"
+              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="openCloseModal(row as unknown as Receipt)"
             >Close</MpPopoverListItem>
           </MpPopoverList>

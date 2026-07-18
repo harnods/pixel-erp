@@ -787,11 +787,11 @@ function handleCreate() {
   width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-md); flex-shrink: 0;
   object-fit: cover; background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-subtle);
+  border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .pa-product-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .pa-product-name {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pa-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }

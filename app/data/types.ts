@@ -77,6 +77,29 @@ export interface PurchaseInvoice {
   tags?: string[]
 }
 
+export interface BillAttachment {
+  name: string
+  sizeKB: number
+  /** object URL — only valid for the current session (not persisted) */
+  url?: string
+}
+
+export interface BillLineItem {
+  account: string
+  description: string
+  tax: string
+  amount: number
+}
+
+/** Recorded when a bill is created already marked "I have paid this bill" —
+ * a bill created unpaid has no payment until one is added later. */
+export interface BillPayment {
+  paymentAccount: string
+  amountPaid: number
+  paymentDate: string
+  reference?: string
+}
+
 export interface Bill {
   id: string
   number: number                            // rendered as "Expense #00001"
@@ -88,6 +111,15 @@ export interface Bill {
   balanceDue: number    // remaining unpaid amount IDR (0 when fully paid)
   status: BillStatus
   tags?: string[]
+  memo?: string
+  attachments?: BillAttachment[]
+  lineItems?: BillLineItem[]
+  subtotal?: number
+  taxAmount?: number
+  /** only set when the bill was created (or later marked) as paid */
+  payment?: BillPayment
+  /** true once the payment has been matched against a bank transaction */
+  reconciled?: boolean
 }
 
 export interface ReviewFile {

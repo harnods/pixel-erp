@@ -222,7 +222,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <button
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-        :class="css({ color: 'var(--mp-text-critical)' })"
+        :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
         @click="askBulkDelete(selectedRows as Set<number>, deselectAll)"
       >
         Delete
@@ -377,7 +377,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .filter-select {
   appearance: none; background: transparent; border: none; outline: none; width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-9) var(--mp-spacing-2) var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) var(--mp-spacing-10) var(--mp-spacing-2) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
   color: var(--mp-text-placeholder); cursor: pointer;
 }

@@ -566,8 +566,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 }
 
 /* ── Quantity colouring ── */
-.pad-qty--full     { color: var(--mp-text-success); }
-.pad-qty--partial  { color: var(--mp-text-warning); }
+.pad-qty--full     { color: var(--mp-text-success, #15803d); }
+.pad-qty--partial  { color: var(--mp-text-warning, #854d0e); }
 .pad-qty--zero     { color: var(--mp-text-placeholder); }
 .pad-outstanding   { color: var(--mp-text-default); }
 

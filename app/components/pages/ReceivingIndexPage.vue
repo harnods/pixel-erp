@@ -375,7 +375,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                     <MpPopoverList>
                       <MpPopoverListItem @click="viewDetails(t)">View details</MpPopoverListItem>
                       <MpPopoverListItem v-if="t.status === 'pending put-away'" @click="createPutAway(t, po)">Create put-away</MpPopoverListItem>
-                      <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal(t)">Delete</MpPopoverListItem>
+                      <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="openDeleteModal(t)">Delete</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { MpIcon, MpAvatar } from '@mekari/pixel3'
+import {
+  MpIcon, MpAvatar, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
@@ -62,11 +65,14 @@ const {
 // ─── Filter options ───────────────────────────────────────────────────────────
 
 const classificationOptions: { label: string; value: FileClassification | '' }[] = [
-  { label: 'All classification', value: ''              },
-  { label: 'Bill',                value: 'bill'          },
-  { label: 'Receipt',             value: 'receipt'       },
-  { label: 'Unclassified',        value: 'unclassified'  },
+  { label: 'Bill',         value: 'bill'         },
+  { label: 'Receipt',      value: 'receipt'      },
+  { label: 'Unclassified', value: 'unclassified' },
 ]
+
+const classificationLabel = computed(
+  () => classificationOptions.find(o => o.value === statusFilter.value)?.label ?? '',
+)
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -117,8 +123,7 @@ function openFilePicker() { fileInputEl.value?.click() }
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    has-ai-chat
-    :context-label="(row) => `Expense #${String(row.number).padStart(5, '0')}`"
+    actions-width="52px"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -153,7 +158,7 @@ function openFilePicker() { fileInputEl.value?.click() }
         </button>
 
         <!-- Card 3: Forward from email -->
-        <button type="button" class="upload-card upload-card--option upload-card--wide">
+        <button type="button" class="upload-card upload-card--option">
           <MpAvatar variant="circle" size="xl" variant-color="gray" icon="envelope" icon-variant="outline" />
           <span class="upload-card__copy">
             <span class="upload-card__title upload-card__title--center">Forward from email</span>
@@ -166,24 +171,42 @@ function openFilePicker() { fileInputEl.value?.click() }
 
     <!-- ── Filter bar ── -->
     <template #filters>
-      <!-- Left: Classification select + All filters -->
+      <!-- Left: classification select (MpSelect + MpPopover) + All filters -->
       <div class="filter-left">
-        <div class="filter-select-wrap">
-          <select class="filter-select" v-model="statusFilter">
-            <option value="">Classification</option>
-            <option v-for="opt in classificationOptions.slice(1)" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
-          <svg class="filter-select-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
+        <MpPopover id="rf-classification-filter" is-close-on-select>
+          <!-- placeholder = filter name ("Classification"); is-clearable shows (x) when a
+               value is picked → @clear resets to show-all. -->
+          <MpPopoverTrigger>
+            <MpSelect
+              id="rf-classification-select"
+              placeholder="Classification"
+              :model-value="statusFilter"
+              is-clearable
+              :class="css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
+              @mousedown.prevent
+              @clear="statusFilter = ''"
+            >
+              <option v-if="statusFilter" :value="statusFilter">{{ classificationLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <!-- min-width = MpSelect width (160px) so the dropdown matches the select;
+               width:max-content lets it hug/grow when an option is longer. -->
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
+            <MpPopoverList>
+              <MpPopoverListItem
+                v-for="opt in classificationOptions"
+                :key="opt.value"
+                :is-active="opt.value === statusFilter"
+                @click="statusFilter = opt.value"
+              >
+                {{ opt.label }}
+              </MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
 
         <button class="filter-all-btn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M3 6h18M7 12h10M11 18h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <MpIcon name="filter" size="sm" />
           All filters
         </button>
       </div>
@@ -311,10 +334,6 @@ function openFilePicker() { fileInputEl.value?.click() }
   cursor: default;
 }
 
-.upload-card--wide {
-  flex: 0 0 431px;
-}
-
 .upload-card__input {
   position: absolute;
   inset: 0;
@@ -401,40 +420,6 @@ function openFilePicker() { fileInputEl.value?.click() }
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-3);
-}
-
-.filter-select-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 180px;
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-}
-
-.filter-select {
-  appearance: none;
-  background: transparent;
-  border: none;
-  outline: none;
-  width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-9) var(--mp-spacing-2) var(--mp-spacing-3);
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-placeholder);
-  cursor: pointer;
-}
-
-.filter-select:focus { outline: none; }
-
-.filter-select-chevron {
-  position: absolute;
-  right: var(--mp-spacing-2);
-  pointer-events: none;
-  color: var(--mp-text-default);
-  width: var(--mp-sizes-5, 20px);
-  height: var(--mp-sizes-5, 20px);
 }
 
 .filter-all-btn {
