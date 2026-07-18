@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import {
   MpButton, MpCheckbox, MpInput, MpInputGroup, MpInputLeftAddon, MpTextarea, MpAutocomplete, MpDatePicker,
-  MpInputTag, MpIcon, MpUpload, MpUploadList, MpDropzone, toast,
+  MpInputTag, MpIcon, MpUpload, MpUploadList, MpDropzone, MpSpinner, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
@@ -238,6 +238,23 @@ const uploadedFile = ref<File | null>(null)
 const uploadedFileUrl = ref('')
 const processingFile = ref(false)
 
+// ── Dropzone validation ──────────────────────────────────────────────────────
+const DROPZONE_MAX_SIZE = 10 * 1024 * 1024
+const DROPZONE_ACCEPTED_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
+const DROPZONE_ACCEPTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg']
+const dropzoneError = ref('')
+
+function validateDropzoneFile(file: File): string {
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+  if (!DROPZONE_ACCEPTED_TYPES.includes(file.type) && !DROPZONE_ACCEPTED_EXTENSIONS.includes(ext)) {
+    return 'File type not supported. Please upload a PDF, PNG, or JPG file.'
+  }
+  if (file.size > DROPZONE_MAX_SIZE) {
+    return 'File size exceeds the 10 MB limit.'
+  }
+  return ''
+}
+
 function ingestFile(file: File) {
   processingFile.value = true
   // Simulated AI-autofill pass — swaps to the uploaded/preview variant once "done".
@@ -249,53 +266,101 @@ function ingestFile(file: File) {
   }, 900)
 }
 // MpDropzone emits "change" with the FileList for both the file-input path and drag/drop.
+// Validate here rather than relying on `accept` — drag-and-drop ignores that attribute.
 function onDropzoneFileChange(files: FileList | null) {
-  const file = files?.[0]
-  if (file) ingestFile(file)
+  if (!files || files.length === 0) return
+  if (files.length > 1) {
+    dropzoneError.value = 'Please upload only 1 file at a time.'
+    return
+  }
+  const error = validateDropzoneFile(files[0])
+  if (error) {
+    dropzoneError.value = error
+    return
+  }
+  dropzoneError.value = ''
+  ingestFile(files[0])
 }
+// The dropzone's built-in minus-circle emits "clear" — drop our copy of the file too.
 function clearUploadedFile() {
   if (uploadedFileUrl.value) URL.revokeObjectURL(uploadedFileUrl.value)
   uploadedFile.value = null
   uploadedFileUrl.value = ''
+  dropzoneError.value = ''
+  zoomMode.value = 'fit'
+  autofillFeedback.value = null
 }
 onBeforeUnmount(() => {
   if (uploadedFileUrl.value) URL.revokeObjectURL(uploadedFileUrl.value)
 })
 
-// Close the left panel — confirms first unless the user opted out of the prompt.
-// The inline "Try autofill instead" link (next to the Attachment label) only appears
-// once the user has opted out via the checkbox — it's the replacement affordance for
+// File-type icon — mirrors the mapping in BillsReviewFilesPage.vue's review-files table.
+function iconForFile(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'pdf') return 'pdf-document'
+  if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') return 'image-document'
+  return 'attachment'
+}
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+// Preview zoom toggle (visual-only placeholder, like the earlier zoom buttons).
+const zoomMode = ref<'fit' | '100'>('fit')
+// Airene autofill feedback — mutually exclusive thumbs, no backend yet.
+const autofillFeedback = ref<'up' | 'down' | null>(null)
+function setAutofillFeedback(vote: 'up' | 'down') {
+  autofillFeedback.value = autofillFeedback.value === vote ? null : vote
+}
+
+// Close the left panel — confirms only the first time it's closed this session.
+// The inline "Try autofill" link (next to the Attachment label) only appears once
+// autofill has been permanently turned off — it's the replacement affordance for
 // reopening the panel once the confirm dialog stops showing.
-const HIDE_CLOSE_CONFIRM_KEY = 'erp-hide-expense-panel-close-confirm'
 const showCloseConfirm = ref(false)
-const dontShowCloseConfirmAgain = ref(false)
-const closeConfirmSuppressed = ref(false)
-onMounted(() => {
-  closeConfirmSuppressed.value = localStorage.getItem(HIDE_CLOSE_CONFIRM_KEY) === '1'
-})
+const showTurnOffConfirm = ref(false)
+const closeConfirmShown = ref(false) // has the close-confirm modal been shown at least once this session
+const autofillOff = ref(false) // permanently dismissed for this session — no more docked rail, no more confirm modal
+
+function closePanel() {
+  leftPanelOpen.value = false
+  leftPanelDocked.value = !autofillOff.value
+}
 function requestClosePanel() {
-  if (closeConfirmSuppressed.value) {
-    leftPanelOpen.value = false
+  if (closeConfirmShown.value) {
+    closePanel()
     return
   }
   showCloseConfirm.value = true
 }
-function confirmClosePanel() {
-  if (dontShowCloseConfirmAgain.value) {
-    closeConfirmSuppressed.value = true
-    if (import.meta.client) localStorage.setItem(HIDE_CLOSE_CONFIRM_KEY, '1')
-    leftPanelDocked.value = false
-  } else {
-    // Left unchecked — dock a narrow icon rail instead of hiding the panel outright,
-    // since the confirm dialog will keep interrupting the user on every future close.
-    leftPanelDocked.value = true
-  }
+function closePanelKeepAsking() {
+  closeConfirmShown.value = true
   showCloseConfirm.value = false
-  leftPanelOpen.value = false
+  closePanel()
+}
+function closePanelDontShowAgain() {
+  closeConfirmShown.value = true
+  autofillOff.value = true
+  showCloseConfirm.value = false
+  closePanel()
+}
+function requestTurnOffAutofill() {
+  showTurnOffConfirm.value = true
+}
+function confirmTurnOffAutofill() {
+  closeConfirmShown.value = true
+  autofillOff.value = true
+  showTurnOffConfirm.value = false
+  closePanel()
 }
 function undockPanel() {
   leftPanelDocked.value = false
   leftPanelOpen.value = true
+}
+function reopenAutofillPanel() {
+  leftPanelOpen.value = true
+  leftPanelDocked.value = false
 }
 
 // ── Save ─────────────────────────────────────────────────────────────────────
@@ -391,39 +456,63 @@ function handleSave(mode: 'close' | 'new') {
       <div v-show="leftPanelOpen" class="ex-left" :style="{ width: leftWidth + 'px' }">
         <div class="ex-left-header">
           <template v-if="!uploadedFile">
-            <button class="ex-icon-btn ex-icon-btn--end" aria-label="Close receipt panel" @click="requestClosePanel">
+            <div class="ex-left-header-title">
+              <MpIcon name="airene-brand" size="md" />
+              <h2 class="ex-left-header-heading">Autofill fields</h2>
+            </div>
+            <button class="ex-icon-btn" aria-label="Close receipt panel" @click="requestClosePanel">
               <MpIcon name="close" size="sm" />
             </button>
           </template>
           <template v-else>
-            <span class="ex-file-name">{{ uploadedFile.name }}</span>
+            <div class="ex-file-meta">
+              <MpIcon :name="iconForFile(uploadedFile.name)" size="sm" class="ex-file-meta-icon" />
+              <div class="ex-file-meta-text">
+                <span class="ex-file-name">{{ uploadedFile.name }}</span>
+                <span class="ex-file-size">{{ formatFileSize(uploadedFile.size) }}</span>
+              </div>
+            </div>
             <div class="ex-file-controls">
-              <button class="ex-icon-btn" aria-label="Zoom in"><MpIcon name="zoom-in" size="sm" /></button>
-              <button class="ex-icon-btn" aria-label="Zoom out"><MpIcon name="zoom-out" size="sm" /></button>
-              <button class="ex-icon-btn" aria-label="Fit to screen"><MpIcon name="fit-screen" size="sm" /></button>
-              <button class="ex-icon-btn" aria-label="Remove receipt" @click="clearUploadedFile">
+              <div class="ex-zoom-toggle" role="group" aria-label="Zoom">
+                <button
+                  type="button"
+                  class="ex-zoom-part"
+                  :class="{ 'ex-zoom-part--active': zoomMode === 'fit' }"
+                  @click="zoomMode = 'fit'"
+                >Fit</button>
+                <button
+                  type="button"
+                  class="ex-zoom-part"
+                  :class="{ 'ex-zoom-part--active': zoomMode === '100' }"
+                  @click="zoomMode = '100'"
+                >100%</button>
+              </div>
+              <button class="ex-icon-btn" aria-label="Close receipt panel" @click="requestClosePanel">
                 <MpIcon name="close" size="sm" />
               </button>
             </div>
           </template>
         </div>
 
-        <!-- Empty state — Dropzone component (idle / focused / processing) -->
+        <!-- Idle / loading / uploaded-preview states are all handled by MpDropzone itself
+             (isShowPreview defaults to true) — the built-in preview gives us the hover
+             "Replace your file here" overlay and the minus-circle clear button for free. -->
         <MpDropzone
-          v-if="!uploadedFile"
           id="ex-receipt-dropzone"
           class="ex-dropzone"
+          :class="{ 'ex-dropzone--filled': uploadedFile }"
           accept=".pdf,.png,.jpg,.jpeg"
           is-enable-input-file
           :is-loading="processingFile"
-          loading-text="Processing..."
+          :is-invalid="!!dropzoneError"
+          button-text="Replace your file here"
           @change="onDropzoneFileChange"
+          @clear="clearUploadedFile"
         >
           <template #idle="{ handleClickInput }">
             <img src="/illustrations/receipt-dropzone.png" alt="" class="ex-dropzone-thumb-img" />
             <p class="ex-dropzone-title">
-              <MpIcon name="airene-brand" size="sm" />
-              Drop your receipt here to autofill fields or
+              Drop your receipt file here or
               <button type="button" class="ex-dropzone-browse" @click.stop="handleClickInput">browse</button>
             </p>
             <p class="ex-dropzone-desc">
@@ -432,11 +521,40 @@ function handleSave(mode: 'close' | 'new') {
               Maximum file size 10 MB.
             </p>
           </template>
+          <template #loading>
+            <div class="ex-dropzone-loading">
+              <div class="ex-dropzone-loader"><MpSpinner /></div>
+              <h2 class="ex-dropzone-loading-title">Processing autofill...</h2>
+            </div>
+          </template>
         </MpDropzone>
 
-        <!-- Uploaded state — real file rendered as an image -->
-        <div v-else class="ex-preview">
-          <img :src="uploadedFileUrl" class="ex-preview-img" alt="Uploaded receipt" />
+        <p v-if="dropzoneError" class="ex-dropzone-error">{{ dropzoneError }}</p>
+
+        <button v-if="!uploadedFile" type="button" class="ex-turn-off-link" @click="requestTurnOffAutofill">
+          Turn off autofill option
+        </button>
+
+        <!-- Uploaded-state footer: Airene disclaimer + feedback thumbs -->
+        <div v-if="uploadedFile" class="ex-airene-disclaimer">
+          <p class="ex-airene-disclaimer-text">
+            Airene responses can be inaccurate or misleading.
+            <button type="button" class="ex-airene-learn-more">Learn more</button>
+          </p>
+          <div class="ex-airene-feedback">
+            <button
+              class="ex-icon-btn"
+              :class="{ 'ex-icon-btn--active': autofillFeedback === 'up' }"
+              aria-label="Good autofill result"
+              @click="setAutofillFeedback('up')"
+            ><MpIcon name="like" size="sm" /></button>
+            <button
+              class="ex-icon-btn"
+              :class="{ 'ex-icon-btn--active': autofillFeedback === 'down' }"
+              aria-label="Poor autofill result"
+              @click="setAutofillFeedback('down')"
+            ><MpIcon name="dislike" size="sm" /></button>
+          </div>
         </div>
       </div>
 
@@ -599,8 +717,8 @@ function handleSave(mode: 'close' | 'new') {
             <div class="ex-section ex-attachment-section">
               <div class="ex-section-label-row">
                 <div class="ex-section-label">Attachment</div>
-                <MpButton v-if="!leftPanelOpen && closeConfirmSuppressed" variant="textLink" size="sm" left-icon="airene-brand" @click="leftPanelOpen = true">
-                  Try autofill instead
+                <MpButton v-if="!leftPanelOpen && autofillOff" variant="textLink" size="sm" left-icon="airene-brand" @click="reopenAutofillPanel">
+                  Try autofill
                 </MpButton>
               </div>
               <div class="ex-attachment">
@@ -781,16 +899,30 @@ function handleSave(mode: 'close' | 'new') {
       <MpModalContent>
         <MpModalHeader>Close receipt panel?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="ex-modal-copy">You can bring it back anytime from the same spot.</p>
-          <div class="ex-modal-check">
-            <MpCheckbox id="ex-dont-show-again" :is-checked="dontShowCloseConfirmAgain" @change="dontShowCloseConfirmAgain = !dontShowCloseConfirmAgain" />
-            <span>Don't ask me again</span>
-          </div>
+          <p class="ex-modal-copy">You can turn it back on anytime from the same spot.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="ex-modal-footer-btns">
-            <MpButton variant="ghost" is-rounded @click="showCloseConfirm = false">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="confirmClosePanel">Close panel</MpButton>
+            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="showCloseConfirm = false">Cancel</button>
+            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="closePanelDontShowAgain">Close &amp; don't show again</button>
+            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="closePanelKeepAsking">Close</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- Turn-off-autofill confirmation -->
+    <MpModal :is-open="showTurnOffConfirm" @close="showTurnOffConfirm = false">
+      <MpModalContent>
+        <MpModalHeader>Turn off autofill option?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="ex-modal-copy">You can turn it back on anytime from the attachment field in expense form.</p>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="ex-modal-footer-btns">
+            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="showTurnOffConfirm = false">Cancel</button>
+            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmTurnOffAutofill">Turn off</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -831,11 +963,15 @@ function handleSave(mode: 'close' | 'new') {
 /* ── Left panel — no background, 24px left / 12px right (divider gap) / 12px top-bottom padding, full height ── */
 .ex-left {
   flex-shrink: 0;
-  padding: 12px 12px 12px 24px;
+  padding: 12px 12px 32px 24px;
   display: flex; flex-direction: column; min-height: 0;
 }
-.ex-left-header { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 32px; margin-bottom: 8px; }
-.ex-icon-btn--end { margin-left: auto; }
+.ex-left-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; margin-bottom: 8px; }
+.ex-left-header-title { display: flex; align-items: center; gap: 4px; }
+.ex-left-header-heading {
+  margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
 
 /* ── Docked rail — narrow icon-only strip replacing the panel after a non-suppressed close ── */
 .ex-docked-rail {
@@ -864,42 +1000,142 @@ function handleSave(mode: 'close' | 'new') {
   color: var(--mp-text-secondary); cursor: pointer;
 }
 .ex-icon-btn:hover { background: rgba(0, 0, 0, 0.06); color: var(--mp-text-default); }
-.ex-file-name { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }
-.ex-file-controls { display: flex; align-items: center; gap: 2px; }
+.ex-icon-btn--active,
+.ex-icon-btn--active:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-link, #2563eb); }
+.ex-file-controls { display: flex; align-items: center; gap: 8px; }
+
+/* Uploaded-state header: file-type icon + filename/size stack (mirrors OCR Figma header) */
+.ex-file-meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ex-file-meta-icon { flex-shrink: 0; color: var(--mp-text-subtle); }
+.ex-file-meta-text { display: flex; flex-direction: column; min-width: 0; }
+.ex-file-name {
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium, 500);
+  color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ex-file-size { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+/* Fit / 100% zoom pill (hand-rolled per the (E)/enterprise-token convention) */
+.ex-zoom-toggle {
+  display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+  padding: 4px; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff);
+  border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
+}
+.ex-zoom-part {
+  border: none; background: none; cursor: pointer;
+  padding: 4px 8px; border-radius: var(--mp-radii-full, 999px);
+  font: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px);
+  color: var(--mp-text-secondary);
+}
+.ex-zoom-part--active {
+  background: var(--mp-background-neutral-subtle-selected, #dcdfe4);
+  color: var(--mp-text-secondary-pressed, #4c5460);
+}
+
+/* Uploaded-state footer: Airene disclaimer + feedback thumbs (pinned to panel bottom) */
+.ex-airene-disclaimer {
+  flex-shrink: 0; margin-top: auto; padding-top: 16px;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.ex-airene-disclaimer-text {
+  flex: 1; min-width: 0; margin: 0;
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px);
+  color: var(--mp-text-secondary);
+}
+.ex-airene-learn-more {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; text-decoration: underline; text-underline-offset: 2px;
+  color: var(--mp-text-link, #2563eb);
+}
+.ex-airene-feedback { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 
 .ex-dropzone {
   flex: 1; min-height: 0; cursor: pointer;
 }
 /* MpDropzone draws its own border/background on the inner wrapper — style that
    instead of the root, so there's only one dashed outline and no default white fill.
-   40px padding keeps the content clear of the dashed line on every side. */
+   Default state: no fill, 1px dashed border-default. 40px padding keeps the content
+   clear of the dashed line on every side. */
 .ex-dropzone :deep(.mp-dropzone__wrapper) {
-  border: 1px dashed var(--mp-border-bold, #758195);
+  border: 1px dashed var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md, 6px);
   background: transparent;
   padding: 40px;
   gap: var(--mp-spacing-3);
-  transition: border-color 0.1s, box-shadow 0.1s;
+  transition: border-color 0.1s, background 0.1s;
 }
-/* Our static border above wins over Pixel's own hover/focus state rules (higher
-   specificity from the scoped attribute), so restate them here using the same
-   neutral-slate focus convention as every other Pixel field in erp.css. */
-.ex-dropzone :deep(.mp-dropzone__wrapper:hover) {
-  border-color: var(--mp-colors-gray-600, #626b79);
-}
-.ex-dropzone :deep(.mp-dropzone__wrapper:focus) {
-  border-color: #8c9596;
-  box-shadow: 0 0 0 1px #8c9596;
+/* Focus state (Figma merges hover + click/keyboard focus into one): pale hovered
+   fill + green selected border, matching the primary-action emerald. Our static
+   border above wins over Pixel's own state rules (scoped-attribute specificity),
+   so restate hover/focus here. */
+.ex-dropzone :deep(.mp-dropzone__wrapper:hover),
+.ex-dropzone :deep(.mp-dropzone__wrapper:focus),
+.ex-dropzone :deep(.mp-dropzone__wrapper:focus-within) {
+  border-color: var(--mp-border-selected, #029861);
+  background: var(--mp-background-neutral-hovered, #f8f9f9);
   outline: none;
 }
+/* Invalid state (too many files / wrong type / over 10 MB) — same red convention as
+   every other Pixel form field in erp.css. Comes after hover/focus so it wins. */
+.ex-dropzone :deep(.mp-dropzone__wrapper[data-invalid]) {
+  border-color: var(--mp-colors-red-400, #e2483d);
+  background: var(--mp-background-neutral, #fff);
+}
 .ex-dropzone-thumb-img { width: 125px; height: auto; }
+
+/* Uploading state — loader wrapped in a neutral-subtle circle, 24px above the title. */
+.ex-dropzone-loading { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.ex-dropzone-loader {
+  display: flex; align-items: center; justify-content: center;
+  width: 80px; height: 80px; padding: var(--mp-spacing-4, 16px);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  color: var(--mp-icon-default, #536062);
+}
+/* Size the whole spinner up (root + icon) so the built-in spin animation — which
+   runs on the MpSpinner root, not the icon — keeps pivoting from its own centre. */
+.ex-dropzone-loader :deep([data-pixel-component="MpSpinner"]),
+.ex-dropzone-loader :deep(.mp-icon) { width: 48px; height: 48px; }
+.ex-dropzone-loading-title {
+  margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+
+/* Uploaded/preview state (ex-dropzone--filled is bound once a file is set) — image
+   sits top-aligned, full width edge-to-edge, and the frame hugs the image height
+   (no dashed border, no white fill, no padding gap). */
+/* Pixel's .mp-dropzone__root is height:100% — override to auto so the root (not just
+   the wrapper) hugs the image, leaving room for the disclaimer to pin to the bottom. */
+.ex-dropzone--filled { flex: 0 0 auto; height: auto; }
+.ex-dropzone--filled :deep(.mp-dropzone__wrapper) {
+  border-style: solid;
+  background: transparent;
+  padding: 0;
+  overflow: visible;
+  height: auto;
+}
+/* Pixel's recipe stretches the preview to height:100%; override to auto so the frame
+   hugs the image instead of filling the panel. */
+.ex-dropzone--filled :deep(.mp-dropzone__preview) {
+  align-items: flex-start; justify-content: flex-start;
+  width: 100%; height: auto;
+}
+.ex-dropzone--filled :deep(.mp-dropzone__preview img) {
+  width: 100% !important;
+  height: auto !important;
+  object-fit: contain !important;
+}
+/* Hover overlay ("Replace your file here") uses the same scrim colour as a modal
+   overlay, not Pixel's dropzone default. */
+.ex-dropzone :deep(.mp-dropzone__overlayPreview) {
+  background: rgba(34, 34, 34, 0.8);
+}
 
 .ex-dropzone-title {
   margin: 0;
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); text-align: center;
 }
-.ex-dropzone-title .mp-icon { vertical-align: -3px; margin-right: 4px; }
 .ex-dropzone-desc { margin: 0; max-width: 320px; text-align: center; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .ex-dropzone-browse {
   background: none; border: none; padding: 0; margin: 0; cursor: pointer;
@@ -908,8 +1144,19 @@ function handleSave(mode: 'close' | 'new') {
 }
 .ex-dropzone-browse:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-.ex-preview { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; }
-.ex-preview-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--mp-radii-md); }
+.ex-turn-off-link {
+  flex-shrink: 0; align-self: center; margin-top: 24px;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-link, #2563eb);
+}
+.ex-turn-off-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Same red convention as MpFormErrorMessage elsewhere in this form. */
+.ex-dropzone-error {
+  flex-shrink: 0; margin: 8px 0 0; font-size: 12px;
+  color: var(--mp-text-danger, #a8352d);
+}
 
 /* ── Right panel — rounded left corners, neutral bg, 24px padding, scrollable ── */
 .ex-right {
@@ -1107,4 +1354,7 @@ function handleSave(mode: 'close' | 'new') {
 .ex-modal-copy { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .ex-modal-check { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ex-modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+/* Cancel here reads as a plain dismiss, not a bold action — regular weight, scoped
+   to this panel's modals so the app-wide .btn-enterprise--ghost stays untouched. */
+.ex-modal-footer-btns .btn-enterprise--ghost { font-weight: var(--mp-font-weights-regular); }
 </style>
