@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { MpButton, MpIcon, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel } from '@mekari/pixel3'
+import {
+  MpButton, MpIcon, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
+  MpBanner, MpBannerIcon, MpBannerDescription, MpTextlink,
+} from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { bills } from '~/data/bills'
+import { formatDate, formatDateLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -27,10 +31,7 @@ const displayStatus = computed(() => {
 const showPaymentTab = computed(() => bill.value?.status === 'paid' || !!bill.value?.payment)
 
 function formatIDR(amount: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount)
-}
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(iso))
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount).replace(/^(Rp)\s/, '$1')
 }
 function attachmentIcon(name: string): string {
   const ext = name.toLowerCase().split('.').pop() ?? ''
@@ -61,18 +62,20 @@ function goExpenses() {
       </div>
     </header>
 
+    <!-- ── Stage wrapper: rounded top corners tinted to match the active banner ── -->
+    <div class="detail-stage-wrapper" :style="{ background: showBanner ? 'var(--mp-background-information)' : 'var(--mp-background-stage)' }">
+
+    <!-- Info banner — full width, no border-radius, sits between header and stage -->
+    <MpBanner v-if="showBanner" id="bd-banner" variant="info" is-inline class="detail-info-banner">
+      <MpBannerIcon id="bd-banner-icon" />
+      <MpBannerDescription id="bd-banner-desc">
+        Transaction has been reconciled.
+        <MpTextlink id="bd-banner-link" as="a" @click.prevent>View details</MpTextlink>
+      </MpBannerDescription>
+    </MpBanner>
+
     <!-- ── Scrollable stage ── -->
     <div class="detail-stage">
-
-      <!-- Info banner (conditional) — temporarily hidden in the prototype -->
-      <div v-if="showBanner" class="detail-banner">
-        <svg class="detail-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-        <span class="detail-banner-text">Transaction has been reconciled.</span>
-        <a class="detail-banner-link" @click.prevent>View details</a>
-      </div>
 
       <!-- Beneficiary + Total — separated section, inline together -->
       <section class="bd-primary">
@@ -86,23 +89,44 @@ function goExpenses() {
 
       <!-- Meta grid: col 1 = 318px, col 2-4 fill equally -->
       <section class="bd-meta content-list-grid">
-        <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDate(bill.date)" />
-          <ContentList v-if="bill.status !== 'paid'" label="Due date" :value="formatDate(bill.dueDate)" />
-        </div>
-        <div class="content-list-col">
-          <ContentList label="Transaction no." :value="`Expense #${String(bill.number).padStart(5, '0')}`" />
-          <ContentList label="Reference no." value="—" />
-        </div>
-        <div class="content-list-col">
-          <ContentList label="Category" :value="bill.category" />
-        </div>
-        <div class="content-list-col">
-          <ContentList label="Tags">
-            <span v-if="bill.tags?.length">{{ bill.tags.join(', ') }}</span>
-            <template v-else>—</template>
-          </ContentList>
-        </div>
+        <!-- Has a due date: [trx date/due date] [trx no./reference no.] [category] [tags] -->
+        <template v-if="bill.status !== 'paid'">
+          <div class="content-list-col">
+            <ContentList label="Transaction date" :value="formatDateLong(bill.date)" />
+            <ContentList label="Due date" :value="formatDateLong(bill.dueDate)" />
+          </div>
+          <div class="content-list-col">
+            <ContentList label="Transaction no." :value="`Expense #${String(bill.number).padStart(5, '0')}`" />
+            <ContentList label="Reference no." value="—" />
+          </div>
+          <div class="content-list-col">
+            <ContentList label="Category" :value="bill.category" />
+          </div>
+          <div class="content-list-col">
+            <ContentList label="Tags">
+              <span v-if="bill.tags?.length">{{ bill.tags.join(', ') }}</span>
+              <template v-else>—</template>
+            </ContentList>
+          </div>
+        </template>
+
+        <!-- No due date: [trx date] [trx no.] [tags] / [category] [reference no.] -->
+        <template v-else>
+          <div class="content-list-col">
+            <ContentList label="Transaction date" :value="formatDateLong(bill.date)" />
+            <ContentList label="Category" :value="bill.category" />
+          </div>
+          <div class="content-list-col">
+            <ContentList label="Transaction no." :value="`Expense #${String(bill.number).padStart(5, '0')}`" />
+            <ContentList label="Reference no." value="—" />
+          </div>
+          <div class="content-list-col">
+            <ContentList label="Tags">
+              <span v-if="bill.tags?.length">{{ bill.tags.join(', ') }}</span>
+              <template v-else>—</template>
+            </ContentList>
+          </div>
+        </template>
       </section>
 
       <!-- ── Line items — canonical detail-page table pattern ── -->
@@ -172,8 +196,8 @@ function goExpenses() {
         </div>
       </section>
 
-      <!-- ── Payment tab — same spacing/style as the detail page's tab pattern ── -->
-      <MpTabs v-if="showPaymentTab" id="bd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
+      <!-- ── Payment tab — same tab-selected state (blue) as the creation page's payment tab ── -->
+      <MpTabs v-if="showPaymentTab" id="bd-tabs" :default-value="0" variant-color="blue" class="detail-tabs">
         <MpTabList>
           <MpTab id="bd-tab-payment" value="payment">Payment</MpTab>
         </MpTabList>
@@ -183,20 +207,22 @@ function goExpenses() {
             <table class="detail-payment">
               <thead>
                 <tr>
-                  <th class="detail-th">Payment account</th>
-                  <th class="detail-th detail-th--num">Amount paid</th>
-                  <th class="detail-th">Payment date</th>
-                  <th class="detail-th">Reference</th>
+                  <th class="detail-th">Date</th>
+                  <th class="detail-th">Number</th>
+                  <th class="detail-th">Pay from</th>
+                  <th class="detail-th detail-th--num">Amount</th>
+                  <th class="detail-th">Reference no.</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!bill.payment">
-                  <td class="detail-td detail-td--muted" colspan="4">No payment recorded.</td>
+                  <td class="detail-td detail-td--muted" colspan="5">No payment recorded.</td>
                 </tr>
                 <tr v-else class="detail-item-row">
+                  <td class="detail-td">{{ formatDate(bill.payment.paymentDate) }}</td>
+                  <td class="detail-td">Spend Money #{{ String(bill.number).padStart(5, '0') }}</td>
                   <td class="detail-td">{{ bill.payment.paymentAccount }}</td>
                   <td class="detail-td detail-td--num">{{ formatIDR(bill.payment.amountPaid) }}</td>
-                  <td class="detail-td">{{ formatDate(bill.payment.paymentDate) }}</td>
                   <td class="detail-td">{{ bill.payment.reference || '—' }}</td>
                 </tr>
               </tbody>
@@ -204,6 +230,7 @@ function goExpenses() {
           </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
+    </div>
     </div>
 
     <!-- ── Sticky footer ── -->
@@ -241,25 +268,25 @@ function goExpenses() {
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
 }
+/* ── Stage wrapper: provides rounded top corners tinted to match the active banner ── */
+.detail-stage-wrapper {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  border-radius: 12px 12px 0 0;
+  overflow: hidden;
+}
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  background: var(--mp-background-stage);
+  border-radius: 12px 12px 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex; flex-direction: column; gap: var(--mp-spacing-8);
   container-type: inline-size;
 }
 
-/* ── Info banner (same pattern as SalesOrderDetailsPage) ─────────────────── */
-.detail-banner {
-  display: flex; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-information, #e8f1ff);
-  border-radius: var(--mp-radii-md);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-}
-.detail-banner-icon { color: var(--mp-icon-information, #1d6fdc); flex-shrink: 0; }
-.detail-banner-text { flex: 1; }
+/* ── Info banner — full width, no border-radius, sits between header and stage ── */
+.detail-info-banner { border-radius: 0 !important; }
+.detail-info-banner :deep(#bd-banner-link) { margin-left: var(--mp-spacing-2); }
 .detail-banner-link { color: var(--mp-text-link); cursor: pointer; font-weight: var(--mp-font-weights-semi-bold); }
 .detail-banner-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
