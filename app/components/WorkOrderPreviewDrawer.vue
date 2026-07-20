@@ -36,6 +36,12 @@ const paged = computed(() => {
 })
 watch(() => props.ctx, () => { currentPage.value = 1 })
 
+const router = useRouter()
+function openDetails(wo: WorkOrder) {
+  router.push(`/work-orders/${wo.id}?source=pr`)
+  emit('close')
+}
+
 function onEsc(e: KeyboardEvent) { if (e.key === 'Escape' && props.open) emit('close') }
 onMounted(() => window.addEventListener('keydown', onEsc))
 onUnmounted(() => window.removeEventListener('keydown', onEsc))
@@ -43,7 +49,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 
 <template>
   <Teleport to="body">
-    <Transition name="wod-fade">
+    <Transition name="wod">
       <div v-if="open && ctx" class="wod-overlay" @click.self="emit('close')">
         <aside class="wod-panel" role="dialog" aria-label="Work order preview">
           <header class="wod-header">
@@ -80,6 +86,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
                 <col style="width: 130px" />
                 <col style="width: 80px" />
                 <col style="width: 140px" />
+                <col style="width: 48px" />
               </colgroup>
               <thead>
                 <tr>
@@ -89,6 +96,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
                   <th class="wod-th wod-th--right">Produced qty</th>
                   <th class="wod-th">Unit</th>
                   <th class="wod-th">Status</th>
+                  <th class="wod-th" />
                 </tr>
               </thead>
               <tbody>
@@ -99,6 +107,13 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
                   <td class="wod-td wod-td--right">{{ wo.producedQty }}</td>
                   <td class="wod-td">{{ wo.unit }}</td>
                   <td class="wod-td"><ErpStatusBadge :status="wo.status" /></td>
+                  <td class="wod-td wod-td--actions">
+                    <button class="wod-open-btn" aria-label="Open details" @click="openDetails(wo)">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M9 6h9v9M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -177,9 +192,23 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
   white-space: nowrap; vertical-align: middle;
 }
 .wod-td--right { text-align: right; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
+.wod-td--actions { text-align: center; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2); }
 .wod-tr:hover .wod-td { background: var(--mp-background-neutral-hovered); }
 
-/* Transition */
-.wod-fade-enter-active, .wod-fade-leave-active { transition: opacity 200ms ease; }
-.wod-fade-enter-from, .wod-fade-leave-to { opacity: 0; }
+.wod-open-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
+  border: none; border-radius: var(--mp-radii-md);
+  background: transparent; color: var(--mp-text-secondary); cursor: pointer;
+}
+.wod-open-btn:hover { color: var(--mp-text-default); background: var(--mp-background-neutral-hovered); }
+
+/* Transition — matches the pattern library: overlay fades, panel slides in from
+   the right (Drawer.md / ManageBatchDrawer). */
+.wod-enter-active, .wod-leave-active { transition: background-color 250ms ease; }
+.wod-enter-from, .wod-leave-to { background-color: transparent; }
+.wod-enter-active .wod-panel { transition: transform 350ms ease-out; }
+.wod-leave-active .wod-panel { transition: transform 250ms ease-in; }
+.wod-enter-from .wod-panel,
+.wod-leave-to .wod-panel { transform: translateX(calc(100% + 12px)); }
 </style>

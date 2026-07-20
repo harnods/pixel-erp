@@ -3,6 +3,7 @@ import { salesOrders } from './salesOrders'
 import type { SalesOrder } from './types'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { CATALOG } from './catalog'
+import { workOrders as realWorkOrders } from './workOrders'
 
 /**
  * Production requests — Production ▸ Production request. A production request is
@@ -303,6 +304,8 @@ export function rejectProductionRequest(input: RejectProductionRequestInput): vo
 
 // ─── Work orders (for the "Open preview" drawer) ─────────────────────────────
 export interface WorkOrder {
+  /** id of the real work order record this row links to (Open details) */
+  id: string
   number: string
   startDate: string   // ISO
   endDate: string     // ISO
@@ -332,7 +335,11 @@ export function workOrdersForRequest(requestNo: string): WorkOrder[] {
     const start = new Date(startBase + i * DAY * (1 + ((h >> i) & 1)))
     const end = new Date(start.getTime() + ((h >> (i + 2)) % 3) * DAY)
     const isLatest = i === count - 1
+    // Deterministically link each row to a real work order record so "Open
+    // details" always lands on a populated detail page.
+    const linkedId = realWorkOrders[(h + i) % realWorkOrders.length]!.id
     list.push({
+      id: linkedId,
       number: `Work Order #${base + i}`,
       startDate: start.toISOString().slice(0, 10),
       endDate: end.toISOString().slice(0, 10),
