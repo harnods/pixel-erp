@@ -55,7 +55,7 @@ function clearAll() {
         <div class="bf-filters-body">
           <MpFormControl id="bf-filters-keyword-fc">
             <MpFormLabel>Keyword</MpFormLabel>
-            <MpInput id="bf-filters-keyword" v-model="draft.keyword" placeholder="Search number, name, description" is-full-width />
+            <MpInput id="bf-filters-keyword" v-model="draft.keyword" placeholder="Search..." is-full-width />
           </MpFormControl>
 
           <MpFormControl id="bf-filters-category-fc">
