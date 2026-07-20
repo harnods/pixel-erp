@@ -276,7 +276,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
-  'Production request': ['Pending', 'Completed', 'Rejected'],
+  'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
@@ -326,7 +326,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Production request') {
     const pending = productionRequestPendingCount()
-    return pending ? { 'Pending': pending } : {}
+    return pending ? { 'Awaiting': pending } : {}
   }
   if (currentPageKey.value === 'Stock counts') {
     const awaiting = awaitingAdjustmentCount()
@@ -393,7 +393,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   },
   // One shared component drives all three tabs; the tab is passed as a prop.
   'Production request': {
-    'Pending':   () => h(ProductionRequestIndexPage, { tab: 'pending' }),
+    'Awaiting':  () => h(ProductionRequestIndexPage, { tab: 'pending' }),
     'Completed': () => h(ProductionRequestIndexPage, { tab: 'completed' }),
     'Rejected':  () => h(ProductionRequestIndexPage, { tab: 'rejected' }),
   },

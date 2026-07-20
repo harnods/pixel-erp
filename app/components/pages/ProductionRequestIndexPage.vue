@@ -63,12 +63,12 @@ const valueColumns = computed<ValCol[]>(() => {
       requested,
       { key: 'rejected', label: 'Rejected qty', width: '130px', align: 'right' },
       unit,
-      { key: 'rejectDate', label: 'Reject date', width: '140px', blankOnParent: true },
+      { key: 'rejectDate', label: 'Rejected date', width: '140px', blankOnParent: true },
       memo, lastUpdatedCol,
     ]
   }
   const dateCol: ValCol = props.tab === 'completed'
-    ? { key: 'completeDate', label: 'Complete date', width: '140px', blankOnParent: true }
+    ? { key: 'completeDate', label: 'Completed date', width: '140px', blankOnParent: true }
     : { key: 'dueDate', label: 'Due date', width: '140px', blankOnParent: true }
   return [
     requested,
@@ -109,7 +109,7 @@ const dateFieldForTab: Record<PrStatus, 'dueDate' | 'completeDate' | 'rejectDate
   pending: 'dueDate', completed: 'completeDate', rejected: 'rejectDate',
 }
 const dateFilterPlaceholder: Record<PrStatus, string> = {
-  pending: 'Due date', completed: 'Complete date', rejected: 'Reject date',
+  pending: 'Due date', completed: 'Completed date', rejected: 'Rejected date',
 }
 const dateFilter = ref<DateFilterValue | null>(props.tab === 'pending' ? null : { mode: 'last30' })
 
