@@ -278,6 +278,7 @@ const pageTabs: Record<string, string[]> = {
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
+  'Cycle counts':      ['Count task', 'Recommendations'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -400,6 +401,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Stock counts': {
     'All stock counts': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
+    'Recommendations': CycleCountRecommendationPage,
+  },
+  'Cycle counts': {
+    'Count task': StockAdjustmentsPage,
     'Recommendations': CycleCountRecommendationPage,
   },
 }
@@ -964,7 +969,7 @@ function startResize(e: MouseEvent) {
             New warehouse transfer
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Cycle counts'" class="page-title-actions">
+        <div v-else-if="currentPageKey === 'Cycle counts' && activeTab === 'Count task'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockCount">
             <MpIcon name="add" size="md" color="icon.inverse" />
             New stock count
