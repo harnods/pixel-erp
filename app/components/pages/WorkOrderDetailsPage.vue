@@ -170,7 +170,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
       <div class="detail-bar-left">
         <button class="detail-breadcrumb" @click="goList">Work orders</button>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Work order #{{ wo.number.split('-').pop() }}</h1>
+          <h1 class="detail-title">Work Order #{{ wo.number.split('-').pop() }}</h1>
           <ErpStatusBadge
             :status="wo.status"
             :label="wo.status === 'in progress' ? 'In progress' : undefined"
@@ -219,7 +219,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
           <div class="content-list-col">
             <ContentList label="BOM name" :value="wo.bomName" />
             <ContentList label="BOM no." :value="bomNo" />
-            <ContentList label="Work order no." :value="`Work order #${wo.number.split('-').pop()}`" />
+            <ContentList label="Work order no." :value="`Work Order #${wo.number.split('-').pop()}`" />
           </div>
           <div class="content-list-col">
             <ContentList label="Type" :value="wo.type" />
