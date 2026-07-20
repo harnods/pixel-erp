@@ -76,4 +76,11 @@ describe('generatePackingListPdf', () => {
     const doc = await generatePackingListPdf(task, [], { ...order, courier: 'JNE', trackingNo: 'TRK1234567890' })
     expect(typeof doc.output).toBe('function')
   })
+
+  it('draws the canceled ribbon without throwing when the task is canceled', async () => {
+    const { task, order } = makePackingTaskForSku('3004', 'Coffee Scale 2kg / 0.1g', 'Unit', 1)
+    const items = getPackingLineItems(getPackingTask(task.id)!)
+    const doc = await generatePackingListPdf({ ...task, status: 'canceled' }, items, order)
+    expect(typeof doc.output).toBe('function')
+  })
 })

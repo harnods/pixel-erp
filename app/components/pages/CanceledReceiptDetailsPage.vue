@@ -188,7 +188,18 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
           <ContentList label="Estimated arrival date" :value="formatDateLong(detail.estimatedArrival)" />
           <ContentList label="Ship via" :value="detail.shipVia" />
           <ContentList label="Tracking no." :value="trackingText(detail.trackingNos)" />
-          <ContentList label="Warehouse" :value="detail.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ detail.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${receipt?.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
         </div>
         <div class="content-list-col">
           <ContentList label="Canceled date" :value="receipt?.canceledDate ? `${formatDateLong(receipt.canceledDate)}, by ${receipt.canceledBy ?? '—'}` : '—'" />
@@ -440,4 +451,19 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 }
 .detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-secondary); }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
+
+/* Warehouse header field — hover chip to jump to the warehouse's own page */
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
+.row-hover-btn {
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.row-hover-btn__label {
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+}
 </style>

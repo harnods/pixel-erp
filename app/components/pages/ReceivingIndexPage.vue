@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
@@ -8,6 +8,7 @@ import {
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDateTime } from '~/utils/date'
 import {
   receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask, startReceiving,
@@ -30,6 +31,22 @@ const demoStates: { value: DemoState; label: string }[] = [
 const { assignedWarehouses } = useWarehouseContext()
 const scopedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.id))
 const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
+
+// ─── Columns ───────────────────────────────────────────────────────────────────
+const baseColumnItems = [
+  { key: 'taskNo', label: 'Receiving task no.', disabled: true },
+  { key: 'purchaseNo', label: 'Purchase order no.' },
+  { key: 'warehouseName', label: 'Warehouse' },
+  { key: 'assignee', label: 'Assignee' },
+  { key: 'skuCount', label: 'Sku qty' },
+  { key: 'expectedQty', label: 'Expected qty' },
+  { key: 'receivedQty', label: 'Received qty' },
+  { key: 'status', label: 'Status' },
+  { key: 'startDate', label: 'Start date' },
+  { key: 'endDate', label: 'End date' },
+]
+const columnItems = computed(() => isScoped.value ? baseColumnItems.filter(c => c.key !== 'assignee') : baseColumnItems)
+const colVis = reactive<Record<string, boolean>>(Object.fromEntries(baseColumnItems.map(c => [c.key, true])))
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
 const search = ref('')
@@ -116,9 +133,9 @@ const pagedTasks  = computed(() => {
 })
 watch([search, warehouseFilter, assigneeFilter, statusFilter, perPage], () => { currentPage.value = 1 })
 
-// Total columns (Assignee hidden for Ops) — for the bulk bar colspan.
-// PO no. + Task no. + Warehouse + Assignee? + SKU scope + Purch qty + Recv qty + Status + Icons + Start + End + Actions
-const colCount = computed(() => (isScoped.value ? 11 : 12))
+// Total columns currently rendered (toggleable columns still visible, plus the
+// always-on Task no./icons/actions columns) — for the bulk bar colspan.
+const colCount = computed(() => columnItems.value.filter(c => colVis[c.key]).length + 2)
 
 // ─── Icon indicator — put-away task badge ───────────────────────────────────
 function hasPutAwayTask(taskId: string): boolean {
@@ -194,6 +211,12 @@ onMounted(() => { window.addEventListener('keydown', onEsc) })
 onUnmounted(() => { window.removeEventListener('keydown', onEsc) })
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+// Expected qty (targetQty) summed across the task's own lines — more relevant
+// here than Purchase qty (t.purchaseQty, whole-PO scope): this list is about
+// what each task is actually going after, not the PO's total demand.
+function expectedQtyTotal(t: ReceivingTask): number {
+  return t.items.reduce((s, it) => s + it.targetQty, 0)
+}
 // Aging shows only when a task ran longer than a day.
 function aging(t: ReceivingTask) {
   const d = taskAgingDays(t)
@@ -294,6 +317,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="rcvg-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-rcvg-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -318,16 +342,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <table class="rcvg-table">
         <colgroup>
           <col style="width: 200px" />
-          <col style="width: 220px" />
-          <col style="width: 150px" />
-          <col v-if="!isScoped" style="width: 140px" />
+          <col v-if="colVis.purchaseNo" style="width: 220px" />
+          <col v-if="colVis.warehouseName" style="width: 150px" />
+          <col v-if="!isScoped && colVis.assignee" style="width: 140px" />
+          <col v-if="colVis.skuCount" style="width: 100px" />
+          <col v-if="colVis.expectedQty" style="width: 120px" />
+          <col v-if="colVis.receivedQty" style="width: 100px" />
+          <col v-if="colVis.status" style="width: 130px" />
           <col style="width: 100px" />
-          <col style="width: 120px" />
-          <col style="width: 100px" />
-          <col style="width: 130px" />
-          <col style="width: 100px" />
-          <col style="width: 180px" />
-          <col style="width: 200px" />
+          <col v-if="colVis.startDate" style="width: 180px" />
+          <col v-if="colVis.endDate" style="width: 200px" />
           <col style="width: 44px" />
         </colgroup>
         <thead>
@@ -347,7 +371,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                     class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                     :class="css({ color: 'var(--mp-text-critical)' })"
                     @click="bulkCancelOpen = true"
-                  >Cancel</button>
+                  >Cancel receiving task</button>
                 </div>
                 <div class="rcvg-bulk-bar__right">
                   <span>Press</span><kbd class="rcvg-bulk-bar__kbd">Esc</kbd><span>to deselect</span>
@@ -362,16 +386,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 <span>Receiving task no.</span>
               </div>
             </th>
-            <th class="rcvg-th">Purchase order no.</th>
-            <th class="rcvg-th">Warehouse</th>
-            <th v-if="!isScoped" class="rcvg-th">Assignee</th>
-            <th class="rcvg-th">Sku qty</th>
-            <th class="rcvg-th rcvg-th--right">Purchase qty</th>
-            <th class="rcvg-th rcvg-th--right">Received qty</th>
-            <th class="rcvg-th">Status</th>
+            <th v-if="colVis.purchaseNo" class="rcvg-th">Purchase order no.</th>
+            <th v-if="colVis.warehouseName" class="rcvg-th">Warehouse</th>
+            <th v-if="!isScoped && colVis.assignee" class="rcvg-th">Assignee</th>
+            <th v-if="colVis.skuCount" class="rcvg-th">Sku qty</th>
+            <th v-if="colVis.expectedQty" class="rcvg-th rcvg-th--right">Expected qty</th>
+            <th v-if="colVis.receivedQty" class="rcvg-th rcvg-th--right">Received qty</th>
+            <th v-if="colVis.status" class="rcvg-th">Status</th>
             <th class="rcvg-th" />
-            <th class="rcvg-th">Start date</th>
-            <th class="rcvg-th">End date</th>
+            <th v-if="colVis.startDate" class="rcvg-th">Start date</th>
+            <th v-if="colVis.endDate" class="rcvg-th">End date</th>
             <th class="rcvg-th rcvg-th--actions" />
           </tr>
         </thead>
@@ -398,7 +422,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </button>
               </div>
             </td>
-            <td class="rcvg-td rcvg-td--po">
+            <td v-if="colVis.purchaseNo" class="rcvg-td rcvg-td--po">
               <div class="rcvg-po-cell">
                 <span class="rcvg-po-no">{{ t.purchaseNo }}</span>
                 <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${t.receiptId}`)">
@@ -410,7 +434,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </button>
               </div>
             </td>
-            <td class="rcvg-td rcvg-td--warehouse">
+            <td v-if="colVis.warehouseName" class="rcvg-td rcvg-td--warehouse">
               <div class="rcvg-wh-cell">
                 <span>{{ t.warehouseName }}</span>
                 <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${t.warehouseId}`)">
@@ -422,11 +446,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </button>
               </div>
             </td>
-            <td v-if="!isScoped" class="rcvg-td rcvg-td--assignee">{{ t.assignee }}</td>
-            <td class="rcvg-td">{{ t.skuCount }}</td>
-            <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
-            <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
-            <td class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
+            <td v-if="!isScoped && colVis.assignee" class="rcvg-td rcvg-td--assignee">{{ t.assignee }}</td>
+            <td v-if="colVis.skuCount" class="rcvg-td">{{ t.skuCount }}</td>
+            <td v-if="colVis.expectedQty" class="rcvg-td rcvg-td--right">{{ fmt(expectedQtyTotal(t)) }}</td>
+            <td v-if="colVis.receivedQty" class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
+            <td v-if="colVis.status" class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
             <td class="rcvg-td">
               <div class="rcvg-icons-cell">
                 <MpTooltip
@@ -442,8 +466,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </MpTooltip>
               </div>
             </td>
-            <td class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
-              <td class="rcvg-td">
+            <td v-if="colVis.startDate" class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
+              <td v-if="colVis.endDate" class="rcvg-td">
                 <span class="rcvg-end">
                   <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
                   <span v-else class="rcvg-end__ongoing">—</span>
@@ -686,7 +710,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* Task number — View details chip on row hover */
 .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 10px; display: none;
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);

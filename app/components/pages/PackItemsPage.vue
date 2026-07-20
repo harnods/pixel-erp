@@ -117,7 +117,7 @@ function handleScan(rawValue: string) {
   if (!v || !task.value) return
   // Global resolver — maps Batch No. / Serial Number / SKU straight to its real SKU,
   // same as picking/receiving/put-away; packing itself has no batch/serial choice
-  // to make (that was already decided at picking), so any of the three just
+  // to make (that was already decided at picking), so a batch/serial scan just
   // increments this line's packed qty by 1.
   const resolved = resolveScan(task.value.warehouseId, v)
   if (!resolved) {
@@ -127,6 +127,16 @@ function handleScan(rawValue: string) {
   const item = lineItems.value.find(it => it.skuCode === resolved.sku)
   if (!item) {
     notifyScanError(`${v}: SKU ${resolved.sku} isn't on this packing task`)
+    return
+  }
+  // Scanning the SKU's own barcode (not a specific batch/serial) for a
+  // batch/serial-tracked line opens its View drawer directly, same as
+  // Receiving/Picking/Put-away — instead of ambiguously incrementing a
+  // count without saying which batch/serial it came from.
+  if (resolved.kind === 'sku' && (isBatchTrackedSku(item.skuCode) || isSerialTrackedSku(item.skuCode))) {
+    playScanSuccessSound()
+    if (isBatchTrackedSku(item.skuCode)) openViewBatch(item)
+    else openViewSerial(item)
     return
   }
   const current = draftQty.value[item.key] ?? 0

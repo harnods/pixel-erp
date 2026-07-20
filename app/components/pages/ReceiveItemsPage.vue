@@ -17,7 +17,7 @@ import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksFor
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
-import { notifyScanError } from '~/utils/scan'
+import { notifyScanError, sameCode } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
@@ -247,7 +247,7 @@ function handleScan(rawValue: string) {
 
   // Batch number scan — find across all already-saved batch lines
   for (const [skuCode, batches] of Object.entries(batchLinesBySku.value)) {
-    const bIdx = batches.findIndex(b => b.batchNo === v)
+    const bIdx = batches.findIndex(b => sameCode(b.batchNo, v))
     if (bIdx !== -1) {
       const newCounted = (batches[bIdx]!.counted ?? 0) + 1
       const updated = batches.map((b, i) => i === bIdx ? { ...b, counted: newCounted } : b)
@@ -263,33 +263,37 @@ function handleScan(rawValue: string) {
   }
 
   // SKU scan
-  const item = lineItems.value.find(it => it.skuCode === v)
+  const item = lineItems.value.find(it => sameCode(it.skuCode, v))
   if (!item) {
     notifyScanError(`Barcode not found: "${v}"`)
     return
   }
-  if (isBatchTrackedSku(v)) {
+  // Use the item's own canonical SKU casing from here on, not the raw scan —
+  // draftQty/etc. are keyed by the stored SKU code, so a scan in different
+  // case than what's stored must still land on the SAME key, not a new one.
+  const sku = item.skuCode
+  if (isBatchTrackedSku(sku)) {
     playScanSuccessSound()
-    openBatchDrawer(v)
+    openBatchDrawer(sku)
     return
   }
-  if (isSerialTrackedSku(v)) {
+  if (isSerialTrackedSku(sku)) {
     playScanSuccessSound()
-    openSerialDrawer(v)
+    openSerialDrawer(sku)
     return
   }
-  const current = draftQty.value[v] ?? 0
+  const current = draftQty.value[sku] ?? 0
   if (current >= item.expectedQty) {
-    notifyScanError(`${v}: purchase qty already fully received`)
+    notifyScanError(`${sku}: purchase qty already fully received`)
     return
   }
   // Past Expected qty but still within Purchase qty — confirm before counting
   // it, rather than silently accepting an over-expected unit.
   if (current >= item.targetQty) {
-    exceedTargetConfirm.value = { sku: v, productName: item.productName, targetQty: item.targetQty }
+    exceedTargetConfirm.value = { sku, productName: item.productName, targetQty: item.targetQty }
     return
   }
-  incrementDraftQty(v)
+  incrementDraftQty(sku)
 }
 
 function incrementDraftQty(sku: string) {

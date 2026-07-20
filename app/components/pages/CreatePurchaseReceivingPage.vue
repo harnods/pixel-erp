@@ -11,7 +11,7 @@ import { formatDateLong } from '~/utils/date'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { receipts, type Receipt } from '~/data/receipts'
 import { lineItemsForReceipt, type ReceiptLineItem } from '~/data/receiptLineItems'
-import { createReceivingTask, uncoveredLineItems, receivingTasksForReceipt } from '~/data/receivingTasks'
+import { createReceivingTask, uncoveredLineItems, receivingTasksForReceipt, claimedQtyBySku } from '~/data/receivingTasks'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 
 const props = defineProps<{ orderId: string }>()
@@ -60,6 +60,7 @@ const hasRemoved = computed(() => removed.value.size > 0)
 // ─── Partial reception context ────────────────────────────────────────────────
 const isPartialReceipt = computed(() => receipt.value?.status === 'partial reception')
 
+// "Received qty" column — literally what's arrived so far (ended tasks only).
 const receivedPerSku = computed<Record<string, number>>(() => {
   const map: Record<string, number> = {}
   for (const t of receivingTasksForReceipt(props.orderId)) {
@@ -68,13 +69,16 @@ const receivedPerSku = computed<Record<string, number>>(() => {
   }
   return map
 })
-// What's actually still owed on this SKU — Purchase qty minus whatever prior
-// ended tasks on this same receipt already received. This, not the full
-// Purchase qty, is the real ceiling for a new task's Expected qty: a 2nd task
-// covering the remainder can't realistically expect the whole original qty
-// again once part of it has already arrived.
+// What's still available to claim on this SKU — Purchase qty minus everything
+// already spoken for on this receipt, whether physically received by an ended
+// task OR merely targeted by a still-open/in-progress one. This, not just
+// "Purchase qty minus received", is the real ceiling for a new task's Expected
+// qty: a SKU already partly targeted by an open task (even one that hasn't
+// received anything yet) can't be re-offered its full original qty again, or
+// two concurrent tasks could jointly over-claim past the true Purchase qty.
+const claimedPerSku = computed<Record<string, number>>(() => claimedQtyBySku(props.orderId))
 function outstandingQty(it: { sku: string; purchaseQty: number }): number {
-  return Math.max(0, it.purchaseQty - (receivedPerSku.value[it.sku] ?? 0))
+  return Math.max(0, it.purchaseQty - (claimedPerSku.value[it.sku] ?? 0))
 }
 
 // "Expected qty" — how much is realistically expected this task, defaults to

@@ -5,7 +5,7 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
-import { resolveScan, notifyScanError } from '~/utils/scan'
+import { resolveScan, notifyScanError, sameCode, normalizeCode } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
 export interface CommittedSerial {
@@ -24,10 +24,11 @@ interface SerialRow {
   originLocation?: string
   destLocId?: string
   fromPriorTask?: boolean
-  /** Put-away only — explicitly removed from the visible list (via the row's
-   *  (-) button or Reset count), pending the operator scanning its barcode
-   *  again. The serial itself is never actually deleted — it's still a real
-   *  received unit that must eventually get a bin — only hidden meanwhile. */
+  /** Picking only — an available (non-reserved) unit not part of this order's
+   *  original plan, hidden from the table until the operator scans that
+   *  specific unit's barcode to bring it into view. Never set for put-away —
+   *  a received serial is a fixed fact and always stays visible there; put-away
+   *  only ever clears `destLocId` to undo a bin assignment, never hides a row. */
   removed?: boolean
 }
 
@@ -289,10 +290,10 @@ function addToList() {
   if (!parsed.length) return
   if (!props.kind || props.kind === 'count') {
     // Count mode: scan each SN — mark existing rows as counted, add unknown SNs as counted
-    const idxMap = new Map(rows.value.map((r, i) => [r.serial, i]))
+    const idxMap = new Map(rows.value.map((r, i) => [normalizeCode(r.serial), i]))
     const toAdd: SerialRow[] = []
     for (const sn of parsed) {
-      const idx = idxMap.get(sn)
+      const idx = idxMap.get(normalizeCode(sn))
       if (idx !== undefined) {
         rows.value[idx]!.counted = true
       } else {
@@ -301,11 +302,11 @@ function addToList() {
     }
     if (toAdd.length) rows.value.push(...toAdd)
   } else {
-    const existing = new Set(rows.value.map(r => r.serial))
-    const blocked = new Set(props.blockedSerials ?? [])
-    const dupes = parsed.filter(s => existing.has(s))
-    const alreadyReceived = parsed.filter(s => !existing.has(s) && blocked.has(s))
-    let newOnes = parsed.filter(s => !existing.has(s) && !blocked.has(s))
+    const existing = new Set(rows.value.map(r => normalizeCode(r.serial)))
+    const blocked = new Set((props.blockedSerials ?? []).map(normalizeCode))
+    const dupes = parsed.filter(s => existing.has(normalizeCode(s)))
+    const alreadyReceived = parsed.filter(s => !existing.has(normalizeCode(s)) && blocked.has(normalizeCode(s)))
+    let newOnes = parsed.filter(s => !existing.has(normalizeCode(s)) && !blocked.has(normalizeCode(s)))
     // Receiving only: never let a paste push the total past Purchase qty — add
     // as many as still fit (same "add what's valid, report what's skipped"
     // pattern as the dupes/already-received cases below), not a hard all-or-nothing block.
@@ -377,7 +378,7 @@ function handleDrawerScan(rawValue: string) {
     return
   }
 
-  const row = rows.value.find(r => r.serial === v)
+  const row = rows.value.find(r => sameCode(r.serial, v))
 
   if (!row) {
     const resolved = resolveScan(props.warehouseId, v)
@@ -386,8 +387,8 @@ function handleDrawerScan(rawValue: string) {
       return
     }
     if (acceptsNewSerials.value && !resolved) {
-      const blocked = new Set(props.blockedSerials ?? [])
-      if (isReceiving.value && blocked.has(v)) {
+      const blocked = new Set((props.blockedSerials ?? []).map(normalizeCode))
+      if (isReceiving.value && blocked.has(normalizeCode(v))) {
         notifyScanError(`"${v}" was already received in a prior task`)
         return
       }
@@ -431,13 +432,14 @@ function handleDrawerScan(rawValue: string) {
 // scan bar in PutAwayItemsPage. Serials are a fixed, already-known set — never
 // registers an unrecognized code as new.
 function handlePutAwayScan(v: string) {
-  if ((props.destLocationPaths ?? []).includes(v)) {
-    activeBin.value = v
+  const matchedBin = (props.destLocationPaths ?? []).find(p => sameCode(p, v))
+  if (matchedBin) {
+    activeBin.value = matchedBin
     playScanSuccessSound()
     return
   }
 
-  const row = rows.value.find(r => r.serial === v)
+  const row = rows.value.find(r => sameCode(r.serial, v))
   if (!row) {
     const resolved = resolveScan(props.warehouseId, v)
     if (resolved && resolved.sku !== props.sku) {
@@ -467,11 +469,12 @@ function handlePutAwayScan(v: string) {
 // props.modelValue, which is whatever was already SAVED — re-seeding from it
 // would just restore the same assignments, making Reset a no-op. The serial
 // list itself is a fixed, already-received fact and never changes; instead,
-// Reset removes every row from view (same as clicking (-) on each one), so
-// the operator re-scans every serial from scratch.
+// Reset just clears every row's bin assignment (same as clicking (-) on each
+// one) — every serial stays visible ("Received"), never hidden, since there's
+// no pool to re-select them from.
 function resetPicked() {
   if (isPutAway.value) {
-    rows.value = rows.value.map(r => ({ ...r, destLocId: '', removed: true }))
+    rows.value = rows.value.map(r => ({ ...r, destLocId: '' }))
     // Restore the inherited page-level bin, not null it out — the operator's
     // physical location hasn't changed just because assignments are being redone.
     activeBin.value = props.initialActiveBin ?? null
@@ -481,11 +484,13 @@ function resetPicked() {
   seedRows()
 }
 
-/** Put-away only — remove this serial from the visible list (its bin
- *  assignment clears too) until the operator scans its barcode again to
- *  bring it back, without touching any other row. */
+/** Put-away only — undo this serial's bin assignment, reverting its status
+ *  badge from "Assigned" back to "Received". Unlike picking/transfer (where
+ *  removing hides the row pending a rescan, since it's drawn from a shared
+ *  pool), a put-away serial is a fixed, already-received fact that must
+ *  always stay visible in the list — there's no pool to re-select it from,
+ *  it just still needs a bin. Never sets `removed`. */
 function removeSerialRow(row: SerialRow) {
-  row.removed = true
   row.destLocId = ''
   saveError.value = ''
 }
@@ -543,10 +548,12 @@ async function handleSave() {
     saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers specified. Add or remove serial numbers to match the counted quantity.`
     return
   }
-  if (hasDestLoc.value) {
-    // Put-away rows the operator explicitly removed (via (-) or Reset count) are
-    // deliberately deferred, not an oversight — they shouldn't block Save/close;
-    // the operator can always reopen this drawer later and rescan to finish them.
+  // Put-away: an operator can freely bounce between SKUs mid-task — scan this
+  // one, move to another, come back later — so Save here must never block on
+  // "every serial has a bin yet". That completeness check belongs at the task
+  // level (PutAwayItemsPage.vue's findIncompleteSku, enforced only on Finish
+  // put-away, never on Save draft) — not this drawer's own per-SKU Save.
+  if (hasDestLoc.value && !isPutAway.value) {
     const missing = rows.value.filter(r => r.counted && !r.removed && !r.destLocId)
     if (missing.length > 0) {
       saveError.value = `${missing.length} selected serial number${missing.length !== 1 ? 's' : ''} don't have a destination bin assigned.`
@@ -869,23 +876,23 @@ async function handleSave() {
                     >
                       <MpBadge for="tableStatus" type="announcement">Not available</MpBadge>
                     </MpTooltip>
-                    <MpBadge v-else-if="row.counted" type="success">{{ (isPicking && executionMode) ? 'Picked' : 'Reserved' }}</MpBadge>
+                    <MpBadge v-else-if="row.counted" for="tableStatus" type="success">{{ (isPicking && executionMode) ? 'Picked' : 'Reserved' }}</MpBadge>
                     <MpBadge v-else-if="row.plannedOwn" for="tableStatus" type="warning">Reserved</MpBadge>
                   </template>
                   <template v-else-if="isPutAway">
-                    <MpBadge v-if="row.destLocId" type="success">Assigned</MpBadge>
-                    <MpBadge v-else type="warning">Unassigned</MpBadge>
+                    <MpBadge v-if="row.destLocId" for="tableStatus" type="success">Assigned</MpBadge>
+                    <MpBadge v-else for="tableStatus" type="warning">Received</MpBadge>
                   </template>
                   <template v-else>
-                    <MpBadge v-if="row.counted" type="success">Counted</MpBadge>
-                    <MpBadge v-else type="danger">Not counted</MpBadge>
+                    <MpBadge v-if="row.counted" for="tableStatus" type="success">Counted</MpBadge>
+                    <MpBadge v-else for="tableStatus" type="danger">Not counted</MpBadge>
                   </template>
                 </td>
                 <td v-if="isPutAway" class="msn-td msn-td--del">
                   <button
                     class="msn-toggle-btn msn-toggle-btn--remove"
                     type="button"
-                    aria-label="Remove from list"
+                    aria-label="Remove storage location"
                     @click="removeSerialRow(row)"
                   >
                     <MpIcon name="minus-circular" size="sm" />

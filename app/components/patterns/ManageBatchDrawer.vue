@@ -9,7 +9,7 @@ import {
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
-import { resolveScan, notifyScanError } from '~/utils/scan'
+import { resolveScan, notifyScanError, sameCode } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
 // ── Public interface ─────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ function handleDrawerScan(rawValue: string) {
     return
   }
 
-  const existing = rows.value.find(r => r.batchNo === v)
+  const existing = rows.value.find(r => sameCode(r.batchNo, v))
   if (existing) {
     existing.counted = (existing.counted ?? 0) + 1
     playScanSuccessSound()
@@ -396,7 +396,7 @@ function handleDrawerScan(rawValue: string) {
     return
   }
   if (resolved?.kind === 'batch') {
-    const b = warehouseStock.value?.batches?.find(x => x.batchNo === v)
+    const b = warehouseStock.value?.batches?.find(x => sameCode(x.batchNo, v))
     if (b) {
       const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
       const idx = rows.value.length
@@ -454,13 +454,14 @@ function handleDrawerScan(rawValue: string) {
 // page-level scan bar in PutAwayItemsPage. Batches are a fixed, already-known set
 // (never registers an unrecognized code as new, unlike count/receiving/in-out).
 function handlePutAwayScan(v: string) {
-  if ((props.destLocationPaths ?? []).includes(v)) {
-    activeBin.value = v
+  const matchedBin = (props.destLocationPaths ?? []).find(p => sameCode(p, v))
+  if (matchedBin) {
+    activeBin.value = matchedBin
     playScanSuccessSound()
     return
   }
 
-  const row = rows.value.find(r => r.batchNo === v)
+  const row = rows.value.find(r => sameCode(r.batchNo, v))
   if (!row) {
     const resolved = resolveScan(props.warehouseId, v)
     if (resolved && resolved.sku !== props.sku) {
@@ -488,7 +489,7 @@ function handlePutAwayScan(v: string) {
 // for manual entry — fill an existing bin's qty (+1) if already assigned here,
 // otherwise fill the trailing blank row and push a fresh one behind it.
 function assignScannedBatchToActiveBin(row: WorkRow, bin: string) {
-  const existing = row.destLocRows.find(l => l.locationId === bin)
+  const existing = row.destLocRows.find(l => sameCode(l.locationId, bin))
   if (existing) {
     existing.qty = String((Number(existing.qty) || 0) + 1)
     return

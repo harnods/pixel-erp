@@ -20,6 +20,7 @@
   background: var(--mp-background-neutral);
   border-color: var(--mp-border-bold);
   color: var(--mp-text-default);
+  font-weight: var(--mp-font-weights-regular);
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
 

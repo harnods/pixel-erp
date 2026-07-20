@@ -59,4 +59,11 @@ describe('generatePickingListPdf', () => {
     const doc = await generatePickingListPdf(task, [])
     expect(typeof doc.output).toBe('function')
   })
+
+  it('draws the canceled ribbon without throwing when the task is canceled', async () => {
+    const task = makeTaskForSku('3004', 'Coffee Scale 2kg / 0.1g', 'Unit', 1)
+    const items = getPickingLineItems(getPickingTask(task.id)!)
+    const doc = await generatePickingListPdf({ ...task, status: 'canceled' }, items)
+    expect(typeof doc.output).toBe('function')
+  })
 })

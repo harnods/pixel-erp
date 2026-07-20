@@ -11,7 +11,16 @@ const DEMO_DESCS = [
   'Single origin, certified organic, lot #B12',
 ]
 
-export interface PickedBatchRow { batchNo: string; expiryDate: string; desc: string; qty: number; unit: string; location?: string }
+export interface PickedBatchRow {
+  batchNo: string; expiryDate: string; desc: string; qty: number; unit: string
+  location?: string
+  /** Put-away only — this batch's qty split across 2+ destination bins. When
+   *  given (and non-empty), the table shows ONE ROW PER BIN instead of a
+   *  single combined row (with `location`/`qty` above ignored in favor of
+   *  this) — packing/delivery/picking never split a batch across bins, so
+   *  they simply never pass this. */
+  destLocations?: { locationId: string; qty: number }[]
+}
 
 const props = defineProps<{
   open: boolean
@@ -67,6 +76,11 @@ const props = defineProps<{
    *  match Picked/Packed qty. Only rendered when > 0 — a normal, single-cycle
    *  shipment never shows this stat at all. */
   shippedQty?: number
+  /** Put-away only — shows the plannedQtyLabel ("Received qty") column BEFORE
+   *  Storage location instead of after. Picking/delivery keep their existing
+   *  order (Storage location, then their qty column) since their tests and
+   *  layout already depend on that order. */
+  qtyBeforeLocation?: boolean
   productName: string
   productImg: string
 }>()
@@ -100,11 +114,44 @@ interface BatchRow {
   expiryDate: string
   desc: string
   onHand: number
-  value: number        // counted qty (count mode), delta (in-out mode), OR picked qty (packing)
-  plannedValue: number // packing + plannedBatches only: this batch's original planned qty
+  value: number        // counted qty (count mode), delta (in-out mode), OR picked qty (packing) — THIS ROW's own bin, if split
+  plannedValue: number // packing + plannedBatches only: this batch's original planned qty (merges across a batch's own bin-rows)
   newOnHand: number    // only used in in-out mode
   unit: string
   location?: string
+  /** Put-away only — this row's own bin, when the batch's destination is
+   *  split across 2+ of them (one BatchRow per bin instead of one per
+   *  batch). Null for every other caller (single location or none at all). */
+  bin: string | null
+  /** Rowspan grouping for Batch/Expiry/Description/plannedValue/Unit, which
+   *  don't vary per bin — merged across a batch's own bin-rows. Always
+   *  groupSize 1 unless this batch's destination is actually split. */
+  groupIndex: number
+  groupSize: number
+}
+
+/** Expands one batch entry into one row per destination bin (Storage
+ *  location/Put-away qty split, everything else merged via groupIndex/
+ *  groupSize) — or a single row when there's nothing to split (no
+ *  destLocations, or just the one bin), so every other caller of this
+ *  component (packing/delivery/picking, none of which ever split a batch
+ *  across bins) renders exactly as before. */
+function expandByBin(
+  batchNo: string, expiryDate: string, desc: string, unit: string,
+  plannedValue: number, fallbackValue: number, fallbackLocation: string | undefined,
+  destLocations: { locationId: string; qty: number }[] | undefined,
+): BatchRow[] {
+  const bins = (destLocations ?? []).filter((d) => d.qty > 0)
+  if (!bins.length) {
+    return [{
+      batchNo, expiryDate, desc, onHand: 0, value: fallbackValue, plannedValue, newOnHand: 0,
+      unit, location: fallbackLocation, bin: fallbackLocation ?? null, groupIndex: 0, groupSize: 1,
+    }]
+  }
+  return bins.map((d, bIdx) => ({
+    batchNo, expiryDate, desc, onHand: 0, value: d.qty, plannedValue, newOnHand: 0,
+    unit, bin: d.locationId, groupIndex: bIdx, groupSize: bins.length,
+  }))
 }
 
 const rows = computed<BatchRow[]>(() => {
@@ -112,10 +159,10 @@ const rows = computed<BatchRow[]>(() => {
   // from live warehouse stock, no on-hand/new-on-hand concept.
   if (isPacking.value) {
     if (props.plannedBatches) {
-      // Two-column path: union of every batch that was ever planned or ever
-      // actually picked, keyed by batchNo — a re-pinned pick can name a batch
-      // that wasn't in the original plan (plannedValue 0), and a partial pick
-      // can leave a planned batch untouched (value 0).
+      // Union of every batch that was ever planned or ever actually picked,
+      // keyed by batchNo — a re-pinned pick can name a batch that wasn't in
+      // the original plan (plannedValue 0), and a partial pick can leave a
+      // planned batch untouched (value 0).
       //
       // pickedBatches only reflects the REAL result once the task has actually
       // been draft-saved/finished at least once (pickedQty > 0) — savePickingDraft/
@@ -130,21 +177,19 @@ const rows = computed<BatchRow[]>(() => {
       const plannedMap = new Map(props.plannedBatches.map(b => [b.batchNo, b]))
       const pickedMap = hasRealPicks ? new Map((props.pickedBatches ?? []).map(b => [b.batchNo, b])) : new Map<string, PickedBatchRow>()
       const batchNos = [...new Set([...plannedMap.keys(), ...pickedMap.keys()])]
-      return batchNos.map((batchNo, i) => {
+      return batchNos.flatMap((batchNo, i) => {
         const planned = plannedMap.get(batchNo)
         const picked = pickedMap.get(batchNo)
         const src = picked ?? planned!
-        return {
-          batchNo, expiryDate: src.expiryDate, desc: src.desc || DEMO_DESCS[i % DEMO_DESCS.length]!,
-          onHand: 0, value: picked?.qty ?? 0, plannedValue: planned?.qty ?? 0, newOnHand: 0,
-          unit: src.unit, location: src.location,
-        }
+        return expandByBin(
+          batchNo, src.expiryDate, src.desc || DEMO_DESCS[i % DEMO_DESCS.length]!, src.unit,
+          planned?.qty ?? 0, picked?.qty ?? 0, picked?.location, picked?.destLocations,
+        )
       })
     }
-    return (props.pickedBatches ?? []).map((b, i) => ({
-      batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!,
-      onHand: 0, value: b.qty, plannedValue: 0, newOnHand: 0, unit: b.unit, location: b.location,
-    }))
+    return (props.pickedBatches ?? []).flatMap((b, i) =>
+      expandByBin(b.batchNo, b.expiryDate, b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!, b.unit, 0, b.qty, b.location, b.destLocations),
+    )
   }
 
   const batches = warehouseStock.value?.batches ?? []
@@ -164,6 +209,7 @@ const rows = computed<BatchRow[]>(() => {
         plannedValue: 0,
         newOnHand: b.onHand + delta,
         unit,
+        bin: null, groupIndex: 0, groupSize: 1,
       }
     })
   }
@@ -179,6 +225,7 @@ const rows = computed<BatchRow[]>(() => {
     plannedValue: 0,
     newOnHand: 0,
     unit,
+    bin: null, groupIndex: 0, groupSize: 1,
   }))
 })
 
@@ -282,9 +329,15 @@ function close() { emit('update:open', false) }
               <col class="vbd-col-batch" />
               <col class="vbd-col-expiry" />
               <col class="vbd-col-desc" />
-              <col v-if="isPacking" class="vbd-col-loc" />
               <col v-if="!isPacking" class="vbd-col-num" />
-              <col v-if="hasPlanned" class="vbd-col-num" />
+              <template v-if="qtyBeforeLocation">
+                <col v-if="hasPlanned" class="vbd-col-num" />
+                <col v-if="isPacking" class="vbd-col-loc" />
+              </template>
+              <template v-else>
+                <col v-if="isPacking" class="vbd-col-loc" />
+                <col v-if="hasPlanned" class="vbd-col-num" />
+              </template>
               <col class="vbd-col-num" />
               <template v-if="isInOut"><col class="vbd-col-num" /></template>
               <col class="vbd-col-unit" />
@@ -294,26 +347,38 @@ function close() { emit('update:open', false) }
                 <th class="vbd-th">Batch</th>
                 <th class="vbd-th">Expiry date</th>
                 <th class="vbd-th">Description</th>
-                <th v-if="isPacking" class="vbd-th">Storage location</th>
                 <th v-if="!isPacking" class="vbd-th vbd-th--num">On hand qty</th>
-                <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
+                <template v-if="qtyBeforeLocation">
+                  <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
+                  <th v-if="isPacking" class="vbd-th">Storage location</th>
+                </template>
+                <template v-else>
+                  <th v-if="isPacking" class="vbd-th">Storage location</th>
+                  <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
+                </template>
                 <th v-if="isPacking" class="vbd-th vbd-th--num">{{ hasPlanned ? qtyLabel : tableQtyLabel }}</th>
                 <th v-if="!isPacking && !isInOut" class="vbd-th vbd-th--num">Counted qty</th>
                 <template v-if="!isPacking && isInOut">
                   <th class="vbd-th vbd-th--num">Stock in/out qty</th>
                   <th class="vbd-th vbd-th--num">New on hand qty</th>
                 </template>
-                <th class="vbd-th">Unit</th>
+                <th class="vbd-th vbd-th--unit">Unit</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in rows" :key="row.batchNo" class="vbd-tr">
-                <td class="vbd-td vbd-td--muted">{{ row.batchNo }}</td>
-                <td class="vbd-td vbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
-                <td class="vbd-td vbd-td--muted">{{ row.desc }}</td>
-                <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.location ?? '—' }}</td>
+              <tr v-for="row in rows" :key="`${row.batchNo}::${row.bin ?? ''}::${row.groupIndex}`" class="vbd-tr">
+                <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.batchNo }}</td>
+                <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
+                <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.desc }}</td>
                 <td v-if="!isPacking" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
-                <td v-if="hasPlanned" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
+                <template v-if="qtyBeforeLocation">
+                  <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
+                  <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                </template>
+                <template v-else>
+                  <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
+                </template>
                 <td v-if="isPacking || !isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
                 <template v-if="!isPacking && isInOut">
                   <td class="vbd-td vbd-td--num" :class="{ 'vbd-diff--pos': row.value > 0, 'vbd-diff--neg': row.value < 0 }">
@@ -321,7 +386,7 @@ function close() { emit('update:open', false) }
                   </td>
                   <td class="vbd-td vbd-td--num">{{ fmt(row.newOnHand) }}</td>
                 </template>
-                <td class="vbd-td vbd-td--muted">{{ row.unit }}</td>
+                <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted vbd-td--unit">{{ row.unit }}</td>
               </tr>
               <tr v-if="!rows.length" class="vbd-tr">
                 <td :colspan="isPacking ? (hasPlanned ? 7 : 6) : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">No batch data available.</td>
@@ -444,5 +509,17 @@ function close() { emit('update:open', false) }
 .vbd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
 .vbd-diff--pos { color: var(--mp-text-success, #18794e); }
 .vbd-diff--neg { color: var(--mp-text-danger, #a8352d); }
+
+/* Put-away only: a batch split across 2+ destination bins renders one row per
+   bin — every column gets a left/right border so the split rows read as one
+   grouped batch, not disconnected listings. Unit is always the true rightmost
+   column (rendered once per batch, rowspan-merged) — not using `:last-child`
+   for its border-right: none, since a groupIndex > 0 row renders fewer <td>s
+   than the header and its own last rendered cell isn't reliably the table's
+   true right edge. */
+.vbd-table .vbd-th,
+.vbd-table .vbd-td { border-right: 1px solid var(--mp-border-default); }
+.vbd-th--unit,
+.vbd-td--unit { border-right: none; }
 
 </style>

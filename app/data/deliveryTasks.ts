@@ -3,6 +3,7 @@ import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from "./outgoing";
 import { packingTasks, pickedLinesForPacking, type PackingTask } from "./packingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
+import { sameCode, includesCode } from "~/utils/scan";
 
 /**
  * A delivery — created once a packing task is COMPLETED. Like packing, delivery is
@@ -345,7 +346,7 @@ export function findReadyToShipByPackingNo(warehouseId: string, packingNo: strin
     (t) =>
       t.warehouseId === warehouseId &&
       t.status === "ready to ship" &&
-      (t.packingTaskNo === q || t.packingTaskNos?.includes(q)),
+      (sameCode(t.packingTaskNo, q) || (t.packingTaskNos && includesCode(t.packingTaskNos, q))),
   );
 }
 
@@ -357,7 +358,7 @@ export function findReadyToShipByPackingNoAnyWarehouse(packingNo: string): Deliv
   const q = packingNo.trim();
   if (!q) return undefined;
   return deliveryTasks.find(
-    (t) => t.status === "ready to ship" && (t.packingTaskNo === q || t.packingTaskNos?.includes(q)),
+    (t) => t.status === "ready to ship" && (sameCode(t.packingTaskNo, q) || (t.packingTaskNos && includesCode(t.packingTaskNos, q))),
   );
 }
 

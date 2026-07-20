@@ -169,7 +169,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <span class="cell-text rcv-po__no">{{ value }}</span>
           <span v-if="(row as unknown as Receipt).memo" class="rcv-po__memo">{{ (row as unknown as Receipt).memo }}</span>
         </span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as Receipt)">
+        <button
+          class="row-hover-btn"
+          :class="{ 'row-hover-btn--top': (row as unknown as Receipt).memo }"
+          @click.stop="viewDetails(row as unknown as Receipt)"
+        >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -291,6 +295,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
+/* Purchase no. cell grows to 2 lines when a memo is present — anchor near the
+   top line instead of centering across both lines. */
+.row-hover-btn--top { top: var(--mp-spacing-2\.5, 10px); transform: none; }
 :global(.erp-tr:hover .row-hover-btn) { display: flex; }
 .rcv-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;

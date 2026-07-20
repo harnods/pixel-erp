@@ -36,6 +36,11 @@ export interface Receipt {
   trackingNos: string[];
   /** supplier — set on user-created receipts; seed receipts derive it by hash. */
   vendor?: string;
+  /** The REAL products/qty entered on Create receipt — set on user-created
+   *  receipts. Seed/demo receipts leave this unset, so lineItemsForReceipt()
+   *  falls back to its hash-derived mix for those instead (skuQty/purchaseQty
+   *  alone can't reconstruct which actual products were on the PO). */
+  lineItems?: { productId: string; qty: number }[];
 }
 
 // Anchor "today" so the arrival-date presets line up with the mock data.

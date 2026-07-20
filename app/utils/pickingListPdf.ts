@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable'
 import type { PickingTask, PickingBatchPick, PickingSerialPick } from '~/data/pickingTasks'
 import { formatDateTimeLong } from './date'
 import { loadImagesByUrl } from './pdfImage'
+import { drawCanceledRibbon } from './pdfRibbon'
 
 /** Minimal shape this module actually needs — satisfied by both a raw per-order
  *  PickLineItem and a SKU-merged PickGroupItem, so a caller printing a task that
@@ -160,6 +161,8 @@ export async function generatePickingListPdf(task: PickingTask, lineItems: Picki
   doc.text('Picked by', marginX, sigY + 14)
   doc.line(pageWidth - marginX - sigWidth, sigY, pageWidth - marginX, sigY)
   doc.text('Checked by', pageWidth - marginX - sigWidth, sigY + 14)
+
+  if (task.status === 'canceled') drawCanceledRibbon(doc)
 
   return doc
 }

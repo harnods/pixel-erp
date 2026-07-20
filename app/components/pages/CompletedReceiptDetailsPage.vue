@@ -11,7 +11,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage } from '~/data/receipts'
+import { receiptsForStage, receipts } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 import { receivedSummaryForReceipt } from '~/data/receivingTasks'
@@ -20,6 +20,7 @@ const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
+const currentReceipt = computed(() => receipts.find(r => r.id === props.orderId))
 const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const d = detail.value
@@ -222,7 +223,18 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
           <ContentList label="Estimated arrival date" :value="formatDateLong(detail.estimatedArrival)" />
           <ContentList label="Ship via" :value="detail.shipVia" />
           <ContentList label="Tracking no." :value="trackingText(detail.trackingNos)" />
-          <ContentList label="Warehouse" :value="detail.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ detail.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${currentReceipt?.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
         </div>
       </section>
 
@@ -326,7 +338,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                     <th class="detail-th">Date</th>
                     <th class="detail-th">Assignee</th>
                     <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Purchase qty</th>
+                    <th class="detail-th detail-th--num">Expected qty</th>
                     <th class="detail-th detail-th--num">Received qty</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Start date</th>
@@ -350,7 +362,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                     <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
                     <td class="detail-td">{{ pr.assignee }}</td>
                     <td class="detail-td">{{ pr.skuScope }}</td>
-                    <td class="detail-td detail-td--num">{{ formatNum(pr.purchaseQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.expectedQty) }}</td>
                     <td class="detail-td detail-td--num">{{ formatNum(pr.receivedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pr.status" /></td>
                     <td class="detail-td">{{ pr.startDate ? formatDateTime(pr.startDate) : '—' }}</td>
@@ -599,7 +611,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -610,6 +622,8 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
 .detail-item-row:hover .row-hover-btn { display: flex; }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }

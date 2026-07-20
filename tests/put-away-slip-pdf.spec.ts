@@ -26,4 +26,11 @@ describe('generatePutAwaySlipPdf', () => {
     const doc = await generatePutAwaySlipPdf(task, [])
     expect(typeof doc.output).toBe('function')
   })
+
+  it('draws the canceled ribbon without throwing when the task is canceled', async () => {
+    const task = { ...putAwayTasks[0]!, status: 'canceled' as const }
+    const items = getPutAwayLineItems(putAwayTasks[0]!.id)
+    const doc = await generatePutAwaySlipPdf(task, items)
+    expect(typeof doc.output).toBe('function')
+  })
 })

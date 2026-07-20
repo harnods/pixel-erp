@@ -13,6 +13,22 @@ export interface ScanResolution {
   serial?: string
 }
 
+/** A physical barcode doesn't carry case — a scanner (or an operator typing
+ *  the code manually) must match a stored SKU/batch/serial/bin code
+ *  regardless of letter case or incidental leading/trailing whitespace. Every
+ *  scan-comparison site across the app should compare through this instead of
+ *  a raw `===`/`.includes()`. */
+export function normalizeCode(s: string): string {
+  return s.trim().toLowerCase()
+}
+export function sameCode(a: string, b: string): boolean {
+  return normalizeCode(a) === normalizeCode(b)
+}
+/** Case/whitespace-insensitive version of `array.includes(value)`. */
+export function includesCode(codes: readonly string[], value: string): boolean {
+  return codes.some(c => sameCode(c, value))
+}
+
 /**
  * Resolve a raw scanned code — Batch No., Serial Number, or SKU — against a
  * warehouse's real stock, independent of whatever a page/drawer already has
@@ -28,13 +44,16 @@ export function resolveScan(warehouseId: string, rawValue: string): ScanResoluti
   if (!wh) return null
 
   for (const item of wh.stock) {
-    if (item.batches?.some(b => b.batchNo === v)) return { kind: 'batch', sku: item.sku, batchNo: v }
+    const batch = item.batches?.find(b => sameCode(b.batchNo, v))
+    // Return the canonical stored casing, not the raw scan — so a caller that
+    // does its own downstream `===`/`.includes()` against stored data (not
+    // every one has been converted to sameCode()) still matches correctly.
+    if (batch) return { kind: 'batch', sku: item.sku, batchNo: batch.batchNo }
     const su = item.serials
-    if (su && (su.available.some(u => u.serial === v) || su.reserved.some(u => u.serial === v))) {
-      return { kind: 'serial', sku: item.sku, serial: v }
-    }
+    const serialUnit = su && (su.available.find(u => sameCode(u.serial, v)) ?? su.reserved.find(u => sameCode(u.serial, v)))
+    if (serialUnit) return { kind: 'serial', sku: item.sku, serial: serialUnit.serial }
   }
-  const bySku = wh.stock.find(item => item.sku === v)
+  const bySku = wh.stock.find(item => sameCode(item.sku, v))
   if (bySku) return { kind: 'sku', sku: bySku.sku }
   return null
 }

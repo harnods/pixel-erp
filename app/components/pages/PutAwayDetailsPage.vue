@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpTooltip, MpIcon,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpSpinner, toast, css,
 } from '@mekari/pixel3'
@@ -10,9 +10,13 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { putAwayTasks, startPutAway as startPutAwayTask, canCancelPutAway, cancelPutAway } from '~/data/putAwayTasks'
-import { getPutAwayLineItems, allPutAwayTasksFlat } from '~/data/putAwayTaskDetails'
+import { getPutAwayLineItems, allPutAwayTasksFlat, type PutAwayLineItem } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePutAwaySlipPdf } from '~/utils/putAwaySlipPdf'
 import type jsPDF from 'jspdf'
@@ -26,6 +30,63 @@ const lineItems = computed(() => task.value ? getPutAwayLineItems(props.orderId)
 
 // ── Progress stats ─────────────────────────────────────────────────────────
 const storedQty = computed(() => lineItems.value.reduce((a, it) => a + it.stored, 0))
+
+// ── Batch / serial helpers (same heuristic as receiving / picking / packing) ───
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
+/** Real destination bin(s) already assigned for this row's batches/serials —
+ *  shown directly in the Storage location column so the operator only needs
+ *  to open View batch/serial number when they specifically want the batch/
+ *  serial identities themselves. */
+function rowBins(row: PutAwayLineItem): string[] {
+  const bins = new Set<string>()
+  if (isBatchTrackedSku(row.skuCode)) {
+    for (const b of row.batchLines ?? []) for (const d of b.destLocations ?? []) if (d.qty > 0) bins.add(d.locationId)
+  } else if (isSerialTrackedSku(row.skuCode)) {
+    for (const s of row.serialAssignments ?? []) if (s.destLocationId) bins.add(s.destLocationId)
+  }
+  return [...bins]
+}
+
+/** Put-away qty PER bin, in the same order as rowBins — a batch (or a serial
+ *  run) can be split across more than one destination bin, so the aggregate
+ *  row.stored total isn't enough once Storage location itself is a list. */
+function rowQtyByBin(row: PutAwayLineItem): Map<string, number> {
+  const map = new Map<string, number>()
+  if (isBatchTrackedSku(row.skuCode)) {
+    for (const b of row.batchLines ?? []) for (const d of b.destLocations ?? []) if (d.qty > 0) map.set(d.locationId, (map.get(d.locationId) ?? 0) + d.qty)
+  } else if (isSerialTrackedSku(row.skuCode)) {
+    for (const s of row.serialAssignments ?? []) if (s.destLocationId) map.set(s.destLocationId, (map.get(s.destLocationId) ?? 0) + 1)
+  }
+  return map
+}
+
+// ── View batch / View serial number — read-only, which batch/serial is meant to
+// be stored (or already was). Unlike Storage location (genuinely undecided until
+// put-away happens), batch/serial identity is already a settled fact from
+// receiving — available even on an 'open' task, so this stays shown regardless
+// of status (only Storage location itself stays gated on task.status !== 'open').
+const viewBatchItem = ref<PutAwayLineItem | null>(null)
+const viewSerialItem = ref<PutAwayLineItem | null>(null)
+function openViewBatch(item: PutAwayLineItem) { viewBatchItem.value = item }
+function openViewSerial(item: PutAwayLineItem) { viewSerialItem.value = item }
 
 // ── Aging badge ────────────────────────────────────────────────────────────
 const AGING_REF = '2026-06-25'
@@ -87,6 +148,39 @@ const filteredItems = computed(() => {
 })
 const visibleItems = computed(() => filteredItems.value.slice(0, visibleCount.value))
 const isProgressive = computed(() => filteredItems.value.length > STEP)
+
+// A SKU bundled from 2+ receiving tasks is already ONE merged lineItem (see
+// getPutAwayLineItems) — put-away no longer tracks which specific receiving
+// task a unit came from. A batch/serial-tracked SKU split across 2+
+// destination bins gets one row PER BIN, same granularity a plain SKU's
+// "Split storage location" already gets on PutAwayItemsPage.vue, instead of
+// cramming every bin into one cell as a stacked mini-list. Product/SKU/
+// Receiving task/Received qty/Unit/Action merge across every bin-row (only
+// Storage location/Put-away qty stay one-per-bin).
+type PutAwayRowWithMeta = PutAwayLineItem & {
+  rowId: string
+  bin: string | null
+  binQty: number
+  groupIndex: number
+  groupSize: number
+}
+const rowsWithMeta = computed<PutAwayRowWithMeta[]>(() => {
+  const result: PutAwayRowWithMeta[] = []
+  for (const r of visibleItems.value) {
+    const bins = rowBins(r)
+    let expanded: Omit<PutAwayRowWithMeta, 'groupIndex' | 'groupSize'>[]
+    if (bins.length) {
+      const qtyByBin = rowQtyByBin(r)
+      expanded = bins.map((bin) => ({ ...r, rowId: `${r.skuCode}::${bin}`, bin, binQty: qtyByBin.get(bin) ?? 0 }))
+    } else {
+      const plainBin = !isBatchTrackedSku(r.skuCode) && !isSerialTrackedSku(r.skuCode) ? r.binLocation : null
+      expanded = [{ ...r, rowId: `${r.skuCode}::single`, bin: plainBin, binQty: r.stored }]
+    }
+    const groupSize = expanded.length
+    expanded.forEach((er, idx) => result.push({ ...er, groupIndex: idx, groupSize }))
+  }
+  return result
+})
 
 let io: IntersectionObserver | null = null
 watch([itemsSentinelEl, filteredItems], ([sentinel]) => {
@@ -223,7 +317,18 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       <!-- ── Summary grid (2 cols) ── -->
       <section class="pad-summary">
         <div class="content-list-col">
-          <ContentList label="Warehouse" :value="task.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ task.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
@@ -272,8 +377,9 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <colgroup>
-                <col /><col /><col /><col /><col /><col />
+                <col /><col /><col /><col />
                 <col v-if="task.status !== 'open'" />
+                <col /><col /><col />
               </colgroup>
               <thead>
                 <tr>
@@ -281,27 +387,41 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                   <th class="detail-th">SKU</th>
                   <th class="detail-th">Receiving task</th>
                   <th class="detail-th detail-th--num">Received qty</th>
+                  <th v-if="task.status !== 'open'" class="detail-th">Storage location</th>
                   <th class="detail-th detail-th--num">Put-away qty</th>
                   <th class="detail-th">Unit</th>
-                  <th v-if="task.status !== 'open'" class="detail-th">Storage location</th>
+                  <th class="detail-th detail-th--action"></th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in visibleItems" :key="item.skuCode" class="pad-product-row">
-                  <td class="detail-td">
-                    <ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" />
+                <tr v-for="row in rowsWithMeta" :key="row.rowId" class="pad-product-row">
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">
+                    <ProductCell :name="row.productName" :desc="row.productDesc" :image="row.image" />
                   </td>
-                  <td class="detail-td">{{ item.skuCode }}</td>
-                  <td class="detail-td">{{ item.receivingTaskNo }}</td>
-                  <td class="detail-td detail-td--num">{{ fmt(item.qty) }}</td>
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.skuCode }}</td>
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.receivingTaskNos.join(', ') }}</td>
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--num">{{ fmt(row.qty) }}</td>
+                  <td v-if="task.status !== 'open'" class="detail-td">
+                    <span v-if="row.bin" class="pad-bin">{{ row.bin }}</span>
+                    <span v-else class="pad-bin">—</span>
+                  </td>
                   <td class="detail-td detail-td--num">
-                    <span :class="item.stored === item.qty ? 'pad-qty--full' : item.stored > 0 ? 'pad-qty--partial' : 'pad-qty--zero'">
-                      {{ fmt(item.stored) }}
+                    <span :class="row.binQty === row.qty ? 'pad-qty--full' : row.binQty > 0 ? 'pad-qty--partial' : 'pad-qty--zero'">
+                      {{ fmt(row.binQty) }}
                     </span>
                   </td>
-                  <td class="detail-td detail-td--secondary">{{ item.unit }}</td>
-                  <td v-if="task.status !== 'open'" class="detail-td">
-                    <span class="pad-bin">{{ item.binLocation }}</span>
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--secondary">{{ row.unit }}</td>
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--action">
+                    <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pad-tt-batch-${row.rowId}`" label="View batch" placement="top" use-portal>
+                      <button class="pad-view-btn" type="button" aria-label="View batch" @click="openViewBatch(row)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pad-tt-serial-${row.rowId}`" label="View serial number" placement="top" use-portal>
+                      <button class="pad-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(row)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
                   </td>
                 </tr>
               </tbody>
@@ -454,6 +574,43 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   <div v-else class="pad-not-found">
     <p>Put-away task not found.</p>
   </div>
+
+  <ViewBatchDrawer
+    v-if="viewBatchItem"
+    :open="true"
+    :sku="viewBatchItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    qty-label="Put-away qty"
+    planned-qty-label="Received qty"
+    qty-before-location
+    :qty-to-pick="viewBatchItem.qty"
+    :picked-qty="viewBatchItem.stored"
+    :planned-batches="(viewBatchItem.batchLines ?? []).map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.qty, unit: b.unit }))"
+    :picked-batches="(viewBatchItem.batchLines ?? []).map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: (b.destLocations ?? []).reduce((s, d) => s + d.qty, 0), unit: b.unit, destLocations: b.destLocations }))"
+    :product-name="viewBatchItem.productName"
+    :product-img="viewBatchItem.image"
+    @update:open="viewBatchItem = null"
+  />
+  <ViewSerialDrawer
+    v-if="viewSerialItem"
+    :open="true"
+    :sku="viewSerialItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    qty-label="Put-away qty"
+    planned-qty-label="Received qty"
+    :counted-total="(viewSerialItem.serialAssignments ?? []).length"
+    :qty-to-pick="(viewSerialItem.serialAssignments ?? []).length"
+    :picked-qty="(viewSerialItem.serialAssignments ?? []).filter(s => s.destLocationId).length"
+    :planned-serials="(viewSerialItem.serialAssignments ?? []).map(s => ({ serial: s.serial, location: '' }))"
+    :picked-serials="(viewSerialItem.serialAssignments ?? []).filter(s => s.destLocationId).map(s => ({ serial: s.serial, location: s.destLocationId! }))"
+    status-planned-label="Received"
+    status-picked-label="Assigned"
+    :product-name="viewSerialItem.productName"
+    :product-img="viewSerialItem.image"
+    @update:open="viewSerialItem = null"
+  />
 </template>
 
 <style scoped>
@@ -571,6 +728,26 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 .detail-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-td--secondary { color: var(--mp-text-default); }
 .detail-td--number { position: relative; }
+.detail-td--action { text-align: center; white-space: nowrap; }
+
+/* Product/SKU/Unit merge across rows sharing a SKU (2+ bundled receiving tasks) —
+   every column gets a left/right border so the split rows read as one grouped
+   product, not disconnected listings. Not using `:last-child` to drop the outer
+   edge's border: a groupIndex>0 row renders fewer <td>s than the header (merged
+   columns are covered by an earlier row's rowspan instead), so its own last
+   rendered cell isn't reliably the table's true right edge. Action is always
+   rendered (never merged) and always the true rightmost column, so it's the one
+   given border-right: none below — not a generic `:last-child` rule. */
+.detail-items .detail-th,
+.detail-items .detail-td { border-right: 1px solid var(--mp-border-default); }
+/* Sticky action column — stays visible when the table scrolls wider than the stage.
+   See PickingTaskDetailsPage.vue for why the header corner needs a higher z-index
+   than the plain `.detail-th--action` class alone would give it. */
+.detail-items thead .detail-th--action { z-index: 3; }
+.detail-th--action { position: sticky; right: 0; z-index: 2; }
+.detail-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
+.pad-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.pad-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .detail-items-sentinel { height: 1px; }
 .detail-loading.detail-items-loading {
@@ -608,7 +785,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 .pad-wh-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-item-row:hover .detail-td--wh .row-hover-btn { display: flex; }
 .row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -618,6 +795,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
 :global(.detail-item-row:hover .row-hover-btn) { display: flex; }
 
 .detail-footer {

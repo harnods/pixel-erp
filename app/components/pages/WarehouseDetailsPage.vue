@@ -892,7 +892,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <ClampText class="wh-product-sub" :text="(row as any).subtitle" />
                     </span>
                   </div>
-                  <button class="row-hover-btn" @click.stop>
+                  <button class="row-hover-btn row-hover-btn--top" @click.stop>
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                       <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                       <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1126,7 +1126,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
                       <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
                         <span>{{ b.batchNo }}</span>
-                        <button class="row-hover-btn" @click.stop="openBatchReservations(p, b.batchNo)">
+                        <button class="row-hover-btn row-hover-btn--top" @click.stop="openBatchReservations(p, b.batchNo)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -2255,7 +2255,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-batch-cell:hover .row-hover-btn { display: flex; }
 /* the Product cell is a tall (rowspan) merged cell → anchor the chip near the
    top so it sits beside the product name, not the middle of the whole group */
-.row-hover-btn--top { top: var(--mp-spacing-2-5, 10px); transform: none; }
+.row-hover-btn--top { top: var(--mp-spacing-2\.5, 10px); transform: none; }
 .wh-batch-no { color: var(--mp-text-default); }
 .wh-expiry-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); white-space: nowrap; }
 .wh-expiry-cell--danger { color: var(--mp-text-danger, #a8352d); }

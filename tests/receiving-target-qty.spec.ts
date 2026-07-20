@@ -7,6 +7,13 @@
  * becomes the new basis for outstanding-qty display, the scan threshold, and
  * "is this task complete" — while Purchase qty stays the unchanged hard cap
  * for received qty and the batch/serial drawers.
+ *
+ * Each test that creates a receiving task without ending it uses its OWN SKU
+ * on rcv-004 — receivingTasks is a shared, persisted singleton across this
+ * file, and an un-ended (open/in-progress) task now correctly claims its own
+ * targetQty against the SKU's Purchase qty (see claimedQtyBySku), so reusing
+ * one SKU across tests would let an earlier test's claim eat into a later
+ * one's "outstanding" computation.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -20,12 +27,17 @@ class FakeObserver { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal('ResizeObserver', FakeObserver)
 vi.stubGlobal('IntersectionObserver', FakeObserver)
 
-// rcv-004 / SKU 3004: plain (untracked) accessory line with purchaseQty 57 —
-// comfortably above the default scan threshold (50), unlike the demo receipt's
-// lines (all qty 2), so a targetQty below 50 can straddle the threshold while
-// purchaseQty stays above it.
+// rcv-004: every SKU below is distinct, so no test's open (never-ended) task
+// claim leaks into another's outstanding-qty computation. Tests that mount
+// ReceiveItemsPage and scan/read the plain qty input specifically need an
+// Accessory-category (plain, untracked) SKU — rcv-004 only has 3 of those
+// with Purchase qty above the default scan threshold (50): 3001, 3004, 3007.
+// The other, non-UI (data-layer only) tests can use any SKU regardless of
+// category. Purchase qty 57 SKUs are used wherever a test hardcodes the exact
+// "57". Tests 8/9 need a 4th/5th plain qty>50 SKU, which rcv-004 doesn't have
+// spare — they use rcv-006 (3002/3005) instead.
 const BIG_RECEIPT_ID = 'rcv-004'
-const BIG_PLAIN_SKU = '3004'
+const BIG_PLAIN_SKU = '3004'    // Purchase qty 57 — used by the demo-receipt test only, never left open on rcv-004
 
 describe('createReceivingTask — targetQty ("Expected qty") clamping', () => {
   it('defaults every item\'s targetQty to its Purchase qty when no targetQtyBySku is given', () => {
@@ -36,33 +48,36 @@ describe('createReceivingTask — targetQty ("Expected qty") clamping', () => {
   })
 
   it('keeps an explicit targetQty below Purchase qty as given', () => {
+    const sku = '2002' // Purchase qty 57
     const receipt = receipts.find((r) => r.id === BIG_RECEIPT_ID)!
     const task = createReceivingTask({
-      receiptId: receipt.id, assignee: 'Test Operator', skus: [BIG_PLAIN_SKU],
-      targetQtyBySku: { [BIG_PLAIN_SKU]: 40 },
+      receiptId: receipt.id, assignee: 'Test Operator', skus: [sku],
+      targetQtyBySku: { [sku]: 40 },
     })!
-    const item = task.items.find((it) => it.sku === BIG_PLAIN_SKU)!
+    const item = task.items.find((it) => it.sku === sku)!
     expect(item.expectedQty).toBe(57)
     expect(item.targetQty).toBe(40)
   })
 
   it('clamps a targetQty above Purchase qty down to Purchase qty', () => {
+    const sku = '1005' // Purchase qty 57
     const receipt = receipts.find((r) => r.id === BIG_RECEIPT_ID)!
     const task = createReceivingTask({
-      receiptId: receipt.id, assignee: 'Test Operator', skus: [BIG_PLAIN_SKU],
-      targetQtyBySku: { [BIG_PLAIN_SKU]: 999 },
+      receiptId: receipt.id, assignee: 'Test Operator', skus: [sku],
+      targetQtyBySku: { [sku]: 999 },
     })!
-    const item = task.items.find((it) => it.sku === BIG_PLAIN_SKU)!
+    const item = task.items.find((it) => it.sku === sku)!
     expect(item.targetQty).toBe(item.expectedQty)
   })
 
   it('clamps a negative targetQty to 0', () => {
+    const sku = '1103' // Purchase qty 64 — exact qty doesn't matter for this assertion
     const receipt = receipts.find((r) => r.id === BIG_RECEIPT_ID)!
     const task = createReceivingTask({
-      receiptId: receipt.id, assignee: 'Test Operator', skus: [BIG_PLAIN_SKU],
-      targetQtyBySku: { [BIG_PLAIN_SKU]: -5 },
+      receiptId: receipt.id, assignee: 'Test Operator', skus: [sku],
+      targetQtyBySku: { [sku]: -5 },
     })!
-    const item = task.items.find((it) => it.sku === BIG_PLAIN_SKU)!
+    const item = task.items.find((it) => it.sku === sku)!
     expect(item.targetQty).toBe(0)
   })
 })
@@ -87,10 +102,11 @@ describe('Seed data — targetQty invariants', () => {
 
 describe('ReceiveItemsPage — scan threshold basis is Expected qty (targetQty), not Purchase qty', () => {
   it('a line with targetQty at/below the threshold requires scanning even though Purchase qty is above it', async () => {
+    const sku = '3001' // Purchase qty 57
     const receipt = receipts.find((r) => r.id === BIG_RECEIPT_ID)!
     const task = createReceivingTask({
-      receiptId: receipt.id, assignee: 'Test Operator', skus: [BIG_PLAIN_SKU],
-      targetQtyBySku: { [BIG_PLAIN_SKU]: 40 },
+      receiptId: receipt.id, assignee: 'Test Operator', skus: [sku],
+      targetQtyBySku: { [sku]: 40 },
     })!
     startReceiving(task.id)
 
@@ -106,8 +122,9 @@ describe('ReceiveItemsPage — scan threshold basis is Expected qty (targetQty),
   })
 
   it('a line whose targetQty defaults to a Purchase qty above the threshold does NOT require scanning', async () => {
+    const sku = '3007' // Purchase qty 64 — exact qty doesn't matter, just needs to clear the threshold
     const receipt = receipts.find((r) => r.id === BIG_RECEIPT_ID)!
-    const task = createReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator', skus: [BIG_PLAIN_SKU] })!
+    const task = createReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator', skus: [sku] })!
     startReceiving(task.id)
 
     const wrapper = mount(ReceiveItemsPage, { props: { orderId: task.id } })
@@ -122,10 +139,11 @@ describe('ReceiveItemsPage — scan threshold basis is Expected qty (targetQty),
 
 describe('ReceiveItemsPage — the items table shows an Expected qty column next to Purchase qty', () => {
   it('renders the "Expected qty" header and the line\'s targetQty value, distinct from Purchase qty', async () => {
+    const sku = '3004' // Purchase qty 57 — never left open elsewhere on rcv-004
     const receipt = receipts.find((r) => r.id === BIG_RECEIPT_ID)!
     const task = createReceivingTask({
-      receiptId: receipt.id, assignee: 'Test Operator', skus: [BIG_PLAIN_SKU],
-      targetQtyBySku: { [BIG_PLAIN_SKU]: 40 },
+      receiptId: receipt.id, assignee: 'Test Operator', skus: [sku],
+      targetQtyBySku: { [sku]: 40 },
     })!
     startReceiving(task.id)
 
@@ -158,17 +176,20 @@ async function scanSku(wrapper: ReturnType<typeof mount>, sku: string, times: nu
 
 describe('ReceiveItemsPage — Outstanding qty is floored at 0 against Expected qty, not Purchase qty', () => {
   it('receiving more than Expected qty (but not more than Purchase qty) shows 0 outstanding, never negative', async () => {
-    const receipt = receipts.find((r) => r.id === BIG_RECEIPT_ID)!
+    // rcv-004's own plain SKUs above the scan threshold are already spoken
+    // for by other tests in this file — rcv-007 has spare, fully-unclaimed ones.
+    const sku = '3001' // Plain (Accessory) SKU on rcv-007, Purchase qty 87
+    const receipt = receipts.find((r) => r.id === 'rcv-007')!
     const task = createReceivingTask({
-      receiptId: receipt.id, assignee: 'Test Operator', skus: [BIG_PLAIN_SKU],
-      targetQtyBySku: { [BIG_PLAIN_SKU]: 5 },
+      receiptId: receipt.id, assignee: 'Test Operator', skus: [sku],
+      targetQtyBySku: { [sku]: 5 },
     })!
     startReceiving(task.id)
 
     const wrapper = mount(ReceiveItemsPage, { props: { orderId: task.id } })
     await flushPromises()
 
-    await scanSku(wrapper, BIG_PLAIN_SKU, 8) // > targetQty (5), <= expectedQty/Purchase qty (57)
+    await scanSku(wrapper, sku, 8) // > targetQty (5), <= expectedQty/Purchase qty (87)
 
     const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Outstanding qty'))!
     expect(outstandingStat.find('.ri-stat-val').text()).toBe('0')
@@ -176,17 +197,18 @@ describe('ReceiveItemsPage — Outstanding qty is floored at 0 against Expected 
   })
 
   it('receiving less than Expected qty shows the real (positive) shortfall against Expected qty', async () => {
-    const receipt = receipts.find((r) => r.id === BIG_RECEIPT_ID)!
+    const sku = '3006' // Plain (Accessory) SKU on rcv-007, Purchase qty 66
+    const receipt = receipts.find((r) => r.id === 'rcv-007')!
     const task = createReceivingTask({
-      receiptId: receipt.id, assignee: 'Test Operator', skus: [BIG_PLAIN_SKU],
-      targetQtyBySku: { [BIG_PLAIN_SKU]: 5 },
+      receiptId: receipt.id, assignee: 'Test Operator', skus: [sku],
+      targetQtyBySku: { [sku]: 5 },
     })!
     startReceiving(task.id)
 
     const wrapper = mount(ReceiveItemsPage, { props: { orderId: task.id } })
     await flushPromises()
 
-    await scanSku(wrapper, BIG_PLAIN_SKU, 3) // < targetQty (5)
+    await scanSku(wrapper, sku, 3) // < targetQty (5)
 
     const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Outstanding qty'))!
     expect(outstandingStat.find('.ri-stat-val').text()).toBe('2')

@@ -98,8 +98,10 @@ describe('CreatePurchaseReceivingPage — Expected qty input for a second task d
 
 describe('ReceiveItemsPage — a second task\'s Outstanding qty is correct once, not double-subtracted', () => {
   it('shows the real outstanding remainder for the second task at the start (nothing received in it yet)', async () => {
-    const receiptId = 'rcv-006'
-    const sku = '3002' // Purchase qty 53 — distinct receipt, avoids any cross-test leakage
+    const receiptId = 'rcv-007'
+    const sku = '3007' // Purchase qty 98 — genuinely unclaimed by any seed task on this receipt (unlike
+    // rcv-006, whose seed data already has an existing receiving task touching nearly every SKU —
+    // claimedQtyBySku() now correctly counts that too, so reusing rcv-006 here would double-claim)
     partiallyReceiveFirstTask(receiptId, sku, 30)
     const receipt = receipts.find((r) => r.id === receiptId)!
     const task2 = createReceivingTask({ receiptId: receipt.id, assignee: 'Operator B', skus: [sku] })!
@@ -109,7 +111,7 @@ describe('ReceiveItemsPage — a second task\'s Outstanding qty is correct once,
     await flushPromises()
 
     const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Outstanding qty'))!
-    expect(outstandingStat.find('.ri-stat-val').text()).toBe('23') // 53 - 30, not 0 (double-subtracted) or 53 (unsubtracted)
+    expect(outstandingStat.find('.ri-stat-val').text()).toBe('68') // 98 - 30, not 0 (double-subtracted) or 98 (unsubtracted)
     wrapper.unmount()
   })
 })

@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpTooltip, MpIcon,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   css, toast,
 } from '@mekari/pixel3'
@@ -10,13 +10,17 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
-import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask } from '~/data/receivingTaskDetails'
+import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
+import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask, type TaskLineItem } from '~/data/receivingTaskDetails'
 import {
-  taskAgingDays, startReceiving, receivingTasksForReceipt, canCancelReceivingTask, cancelReceivingTask,
+  taskAgingDays, startReceiving, canCancelReceivingTask, cancelReceivingTask,
   type ReceivingTask,
 } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generateReceivingSlipPdf } from '~/utils/receivingSlipPdf'
 import type jsPDF from 'jspdf'
@@ -74,30 +78,52 @@ const poStatus = computed<string>(() => {
 const purchaseTotal      = computed(() => task.value?.purchaseQty ?? 0)
 const savedReceivedTotal = computed(() => Object.values(localReceived.value).reduce((a, b) => a + (b || 0), 0))
 
-// Qty received in other ended tasks for the same receipt, per SKU
-const priorReceivedPerSku = computed<Record<string, number>>(() => {
-  const receiptId = task.value?.receiptId
-  if (!receiptId) return {}
-  const map: Record<string, number> = {}
-  for (const t of receivingTasksForReceipt(receiptId)) {
-    if (t.id === props.orderId) continue
-    if (t.status !== 'pending put-away' && t.status !== 'completed') continue
-    for (const it of t.items) map[it.sku] = (map[it.sku] ?? 0) + it.receivedQty
-  }
-  return map
-})
+// Outstanding is against Expected qty (targetQty), not Purchase qty (expectedQty)
+// — targetQty is already net of whatever prior ended tasks on this same receipt
+// had received as of THIS task's creation, so subtracting them again here would
+// double-count. Floored at 0 — never negative even if more was received than
+// this task's own Expected qty (still within Purchase qty).
 const outstandingTotal = computed(() =>
   lineItems.value.reduce((sum, it) => {
-    const prior = priorReceivedPerSku.value[it.skuCode] ?? 0
     const saved = localReceived.value[it.skuCode] ?? 0
-    return sum + Math.max(0, it.expectedQty - prior - saved)
+    return sum + Math.max(0, it.targetQty - saved)
   }, 0),
 )
+// Matches the table's own "Expected qty" column (item.targetQty) summed across every line.
+const expectedTotal = computed(() => lineItems.value.reduce((sum, it) => sum + it.targetQty, 0))
 
 /** Saved received qty for a page-table row. */
 function rowReceived(skuCode: string, fallback: number): number {
   return localReceived.value[skuCode] ?? fallback
 }
+
+// ── Batch / serial helpers (same heuristic as picking / put-away / packing) ───
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
+// ── View batch / View serial number — read-only, what's actually been recorded
+// for this line. Only relevant once receiving has actually started — an 'open'
+// task hasn't recorded anything yet, so the action column stays hidden for it.
+const viewBatchItem = ref<TaskLineItem | null>(null)
+const viewSerialItem = ref<TaskLineItem | null>(null)
+function openViewBatch(item: TaskLineItem) { viewBatchItem.value = item }
+function openViewSerial(item: TaskLineItem) { viewSerialItem.value = item }
 
 // Derive a "last updated" from startDate + offset based on how much has been received.
 // Not a real field — for demo purposes the scan time advances as more items are scanned.
@@ -335,7 +361,18 @@ function goBack() {
       <section class="rcvgd-summary">
         <div class="content-list-col">
           <ContentList label="Purchase order" :value="po.purchaseNo" />
-          <ContentList label="Warehouse" :value="po.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ po.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
@@ -352,12 +389,16 @@ function goBack() {
       <!-- ── Progress stats ── -->
       <section class="rcvgd-progress">
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">SKUs</span>
+          <span class="rcvgd-progress-label">SKU qty</span>
           <span class="rcvgd-progress-val">{{ task.skuCount }}</span>
         </div>
         <div class="rcvgd-progress-stat">
           <span class="rcvgd-progress-label">Purchase qty</span>
           <span class="rcvgd-progress-val">{{ fmt(task.purchaseQty) }}</span>
+        </div>
+        <div class="rcvgd-progress-stat">
+          <span class="rcvgd-progress-label">Expected qty</span>
+          <span class="rcvgd-progress-val">{{ fmt(expectedTotal) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
           <span class="rcvgd-progress-label">Received qty</span>
@@ -396,6 +437,7 @@ function goBack() {
               <col />
               <col />
               <col />
+              <col />
             </colgroup>
             <thead>
               <tr>
@@ -406,6 +448,7 @@ function goBack() {
                 <th class="detail-th detail-th--num">Received qty</th>
                 <th class="detail-th detail-th--num">Outstanding qty</th>
                 <th class="detail-th">Unit</th>
+                <th class="detail-th detail-th--action"></th>
               </tr>
             </thead>
             <tbody>
@@ -418,17 +461,31 @@ function goBack() {
                 <td class="detail-td detail-td--num">{{ fmt(item.targetQty) }}</td>
                 <td class="detail-td detail-td--num">
                   <span
-                    :class="isInProgress ? '' : (rowReceived(item.skuCode, item.receivedQty) === item.expectedQty ? 'rcvgd-qty--full' : rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-qty--partial' : 'rcvgd-qty--zero')"
+                    :class="isInProgress ? '' : (rowReceived(item.skuCode, item.receivedQty) >= item.targetQty ? 'rcvgd-qty--full' : rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-qty--partial' : 'rcvgd-qty--zero')"
                   >
                     {{ fmt(rowReceived(item.skuCode, item.receivedQty)) }}
                   </span>
                 </td>
                 <td class="detail-td detail-td--num">
-                  <span :class="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-outstanding' : 'rcvgd-qty--full'">
-                    {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - rowReceived(item.skuCode, item.receivedQty)) }}
+                  <span :class="item.targetQty - rowReceived(item.skuCode, item.receivedQty) > 0 ? 'rcvgd-outstanding' : 'rcvgd-qty--full'">
+                    {{ fmt(Math.max(0, item.targetQty - rowReceived(item.skuCode, item.receivedQty))) }}
                   </span>
                 </td>
                 <td class="detail-td">{{ item.unit }}</td>
+                <td class="detail-td detail-td--action">
+                  <template v-if="localStatus !== 'open'">
+                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`rtd-tt-batch-${item.skuCode}`" label="View batch" placement="top" use-portal>
+                      <button class="rtd-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`rtd-tt-serial-${item.skuCode}`" label="View serial number" placement="top" use-portal>
+                      <button class="rtd-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </template>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -615,6 +672,32 @@ function goBack() {
     <p>Receiving task not found.</p>
     <button class="detail-breadcrumb" @click="goBack">Back to Receiving</button>
   </div>
+
+  <ViewBatchDrawer
+    v-if="viewBatchItem"
+    :open="true"
+    :sku="viewBatchItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    qty-label="Received qty"
+    :picked-batches="viewBatchItem.batchLines ?? []"
+    :product-name="viewBatchItem.productName"
+    :product-img="viewBatchItem.image"
+    @update:open="viewBatchItem = null"
+  />
+  <ViewSerialDrawer
+    v-if="viewSerialItem"
+    :open="true"
+    :sku="viewSerialItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    qty-label="Received qty"
+    :counted-total="(viewSerialItem.serialNumbers ?? []).length"
+    :picked-serials="(viewSerialItem.serialNumbers ?? []).map(serial => ({ serial, location: '' }))"
+    :product-name="viewSerialItem.productName"
+    :product-img="viewSerialItem.image"
+    @update:open="viewSerialItem = null"
+  />
 </template>
 
 <style scoped>
@@ -797,6 +880,19 @@ function goBack() {
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .detail-td--product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detail-td--secondary { color: var(--mp-text-secondary); }
+.detail-td--action { text-align: center; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage.
+   `.detail-items thead .detail-th` (z-index: 1) outranks the plain
+   `.detail-th--action` class on specificity alone, so its z-index silently won
+   here and tied the header's sticky corner cell with the body's — letting
+   scrolled-past rows paint over the header at the top-right intersection.
+   Match that selector's specificity (and go higher) so the header corner
+   always wins. */
+.detail-items thead .detail-th--action { z-index: 3; }
+.detail-th--action { position: sticky; right: 0; z-index: 2; }
+.detail-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
+.rtd-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.rtd-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 /* ── Linked transactions tab ─────────────────────────────────────────────── */
 .rcvgd-tabs { flex-shrink: 0; }
 .rcvgd-tabs :deep(.mp-tab--isSelected_true),
@@ -812,7 +908,7 @@ function goBack() {
 .rcvgd-linked .detail-td--number { position: relative; }
 .rcvgd-linked .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .rcvgd-linked .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -823,6 +919,19 @@ function goBack() {
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
 .rcvgd-linked .detail-item-row:hover .row-hover-btn { display: flex; }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap .row-hover-btn {
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.wh-link-wrap .row-hover-btn__label {
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+}
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }

@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable'
 import type { TaskLineItem } from '~/data/receivingTaskDetails'
 import { formatDateTimeLong } from './date'
 import { loadImagesByUrl } from './pdfImage'
+import { drawCanceledRibbon } from './pdfRibbon'
 
 /** One printable line — one row per SKU (receiving has no batch/serial detail yet
  *  at this stage; that's recorded during receiving itself, not decided up front). */
@@ -34,7 +35,7 @@ function buildRows(lineItems: TaskLineItem[]): ReceivingSlipRow[] {
  * the jsPDF instance for the caller to preview/save (doesn't save it itself).
  */
 export async function generateReceivingSlipPdf(
-  task: { taskNo: string; warehouseName: string; assignee: string; purchaseNo: string },
+  task: { taskNo: string; warehouseName: string; assignee: string; purchaseNo: string; status?: string },
   lineItems: TaskLineItem[],
 ): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
@@ -130,6 +131,8 @@ export async function generateReceivingSlipPdf(
   doc.text('Received by', marginX, sigY + 14)
   doc.line(pageWidth - marginX - sigWidth, sigY, pageWidth - marginX, sigY)
   doc.text('Checked by', pageWidth - marginX - sigWidth, sigY + 14)
+
+  if (task.status === 'canceled') drawCanceledRibbon(doc)
 
   return doc
 }
