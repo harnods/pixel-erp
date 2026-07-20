@@ -20,7 +20,7 @@ const emit = defineEmits<{ close: [] }>()
 
 // Bulk = launched from a product (all its sales orders); single = one request.
 const isBulk = computed(() => props.sources == null)
-const title = computed(() => (isBulk.value ? 'Create bulk work order' : 'Create work order'))
+const title = computed(() => (isBulk.value ? 'Bulk create work order' : 'Create work order'))
 
 const shownSources = computed<PrSource[]>(() => props.sources ?? props.product?.sources ?? [])
 const allRequests = computed(() => shownSources.value.flatMap(s => s.requests))
@@ -198,7 +198,7 @@ function handleContinue() {
 
           <footer class="cwo-footer">
             <MpButton variant="ghost" is-rounded @click="emit('close')">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded :is-disabled="!canContinue" @click="handleContinue">Continue</MpButton>
+            <MpButton variant="primary" is-rounded :is-disabled="!canContinue" @click="handleContinue">Proceed</MpButton>
           </footer>
         </div>
       </div>

@@ -432,7 +432,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                       <MpPopoverList>
                         <!-- No Reject here — rejecting only makes sense against a single
                              production request (child row), never the whole product. -->
-                        <MpPopoverListItem @click="createBulkWorkOrder(p)">Create bulk work order</MpPopoverListItem>
+                        <MpPopoverListItem @click="createBulkWorkOrder(p)">Bulk create work order</MpPopoverListItem>
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
