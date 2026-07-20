@@ -420,7 +420,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <MpFormLabel>Work order no.</MpFormLabel>
                 <span class="wo-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
               </div>
-              <MpInput id="wo-no-input" model-value="" placeholder="[Auto]" is-full-width is-disabled />
+              <MpInput id="wo-no-input" model-value="" placeholder="Auto" is-full-width is-disabled />
             </MpFormControl>
 
             <!-- Category -->
@@ -450,7 +450,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <!-- BOM no. (read-only, derived from the selected BOM) -->
             <MpFormControl id="wo-bomno">
               <MpFormLabel>BOM no.</MpFormLabel>
-              <MpInput id="wo-bomno-input" :model-value="bomNo" placeholder="[Auto]" is-full-width is-disabled />
+              <MpInput id="wo-bomno-input" :model-value="bomNo" placeholder="Auto" is-full-width is-disabled />
             </MpFormControl>
 
             <!-- Work order type -->
@@ -486,7 +486,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <div class="wo-datepicker">
                 <MpDatePicker
                   id="wo-plan-dp" v-model="planDates" is-range format="DD/MM/YYYY"
-                  value-type="format" range-separator=" - " placeholder="Start date - End date"
+                  value-type="format" range-separator=" - " placeholder="Select date range"
                   use-portal @update:model-value="planDatesError = false"
                 />
               </div>
@@ -567,11 +567,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td wo-td--num"><template v-if="row.productId">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</template></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" placeholder="Select warehouse" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`raw-need-${row.id}`" v-model="row.needed" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select unit" is-searchable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input">
                     <div v-if="row.productId" class="wo-datepicker"><MpDatePicker :id="`raw-date-${row.id}`" v-model="row.requiredDate" format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY" is-clearable use-portal /></div>
@@ -617,7 +617,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete :id="`cost-acc-${row.id}`" v-model="row.account" :data="COST_ACCOUNT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select cost account" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onCostAccount(row, v)" />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.account" :id="`cost-drv-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.account" :id="`cost-drv-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" placeholder="Select cost driver" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-unit-${row.id}`" v-model="row.estUnitCost" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-mult-${row.id}`" v-model="row.multiplier" type="number" placeholder="0" is-full-width /></td>
@@ -661,9 +661,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete :id="`route-proc-${row.id}`" v-model="row.process" :data="PROCESS_OPTIONS" label-prop="name" value-prop="id" placeholder="Select process" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRouteProcess(row, v)" />
                   </td>
-                  <td class="wo-td wo-td--input"><MpInput v-if="row.process" :id="`route-desc-${row.id}`" v-model="row.description" placeholder="Description" is-full-width /></td>
+                  <td class="wo-td wo-td--input"><MpInput v-if="row.process" :id="`route-desc-${row.id}`" v-model="row.description" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.process" :id="`route-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
@@ -758,7 +758,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td"><template v-if="row.productId">{{ row.sku || '—' }}</template></td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-qty-${row.id}`" v-model="row.producedQty" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select unit" is-searchable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.productId" :id="`other-cost-${row.id}`" v-model="row.estCost" type="number" placeholder="0" is-full-width /></td>
@@ -800,7 +800,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete :id="`waste-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onWasteMapping(row, v)" />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" placeholder="Select allocation method" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.accountMapping" :id="`waste-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.accountMapping" :id="`waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
