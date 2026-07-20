@@ -88,7 +88,7 @@ const warehouseFilter = ref<string[]>([])
 const activeWarehouseFilter = useActiveWarehouseFilter()
 watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
 onUnmounted(() => { activeWarehouseFilter.value = [] })
-const statusFilter = ref('')
+const statusFilter = ref<string[]>([])
 
 const baseTasks = computed<PackingRow[]>(() =>
   demoState.value === 'data'
@@ -120,7 +120,17 @@ function toggleWarehouse(id: string) {
   if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
   else warehouseFilter.value = [...warehouseFilter.value, id]
 }
-const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return statusOptions.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} statuses`
+})
+function toggleStatus(v: string) {
+  const idx = statusFilter.value.indexOf(v)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(x => x !== v)
+  else statusFilter.value = [...statusFilter.value, v]
+}
 
 const {
   search, currentPage, paginated, total, perPage,
@@ -134,14 +144,14 @@ const {
       || row.warehouseName.toLowerCase().includes(s)
       || row.source.toLowerCase().includes(s)
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
-    const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
+    const matchesStatus    = !statusFilter.value.length || statusFilter.value.includes(row.status)
     return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
 watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = [] }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -222,22 +232,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover id="pack-status-filter" is-close-on-select>
+        <MpPopover id="pack-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="pack-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''"
+              id="pack-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = []"
             >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+              <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in statusOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`pack-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
       </div>

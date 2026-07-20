@@ -58,7 +58,7 @@ const activeWarehouseFilter = useActiveWarehouseFilter()
 watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
 onUnmounted(() => { activeWarehouseFilter.value = [] })
 const assigneeFilter = ref('')
-const statusFilter = ref('') // '' | open | completed
+const statusFilter = ref<string[]>([])
 
 // Bumped after a bulk status mutation so the (plain-data) queue recomputes.
 const dataVersion = ref(0)
@@ -99,7 +99,17 @@ function toggleWarehouse(id: string) {
   else warehouseFilter.value = [...warehouseFilter.value, id]
 }
 const assigneeLabel = computed(() => assigneeOptions.value.find(o => o.value === assigneeFilter.value)?.label ?? '')
-const statusLabel = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return statusOptions.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} statuses`
+})
+function toggleStatus(v: string) {
+  const idx = statusFilter.value.indexOf(v)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(x => x !== v)
+  else statusFilter.value = [...statusFilter.value, v]
+}
 
 // Flat task list filtered by the active criteria.
 const filteredTasks = computed<ReceivingTask[]>(() => {
@@ -107,7 +117,7 @@ const filteredTasks = computed<ReceivingTask[]>(() => {
   return baseTasks.value
     .filter(t => !warehouseFilter.value.length || warehouseFilter.value.includes(t.warehouseId))
     .filter(t => !assigneeFilter.value || t.assignee === assigneeFilter.value)
-    .filter(t => !statusFilter.value || t.status === statusFilter.value)
+    .filter(t => !statusFilter.value.length || statusFilter.value.includes(t.status))
     .filter(t =>
       !s
       || t.purchaseNo.toLowerCase().includes(s)
@@ -117,10 +127,10 @@ const filteredTasks = computed<ReceivingTask[]>(() => {
 })
 
 const hasActiveFilter = computed(
-  () => !!search.value || !!statusFilter.value || warehouseFilter.value.length > 0 || !!assigneeFilter.value,
+  () => !!search.value || statusFilter.value.length > 0 || warehouseFilter.value.length > 0 || !!assigneeFilter.value,
 )
 function clearFilters() {
-  search.value = ''; statusFilter.value = ''; warehouseFilter.value = []; assigneeFilter.value = ''
+  search.value = ''; statusFilter.value = []; warehouseFilter.value = []; assigneeFilter.value = ''
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
@@ -291,18 +301,25 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover id="rcvg-status-filter" is-close-on-select>
+        <MpPopover id="rcvg-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <MpSelect id="rcvg-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''">
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+            <MpSelect id="rcvg-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = []">
+              <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem v-for="opt in statusOptions" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in statusOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`rcvg-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
       </div>

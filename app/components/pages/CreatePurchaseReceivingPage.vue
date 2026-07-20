@@ -58,7 +58,13 @@ const visibleItems = computed<ReceiptLineItem[]>(() => {
 const hasRemoved = computed(() => removed.value.size > 0)
 
 // ─── Partial reception context ────────────────────────────────────────────────
-const isPartialReceipt = computed(() => receipt.value?.status === 'partial reception')
+// Received qty / Outstanding qty columns matter as soon as ANY earlier receiving
+// task already exists for this receipt — not just once the receipt has been
+// formally marked "partial reception" (which only happens after a task ENDS).
+// A still-open/in-progress first task already claims qty per SKU (see
+// claimedPerSku below), so drafting a second task needs these columns visible
+// right away, or the user has no way to see how much of each SKU is left.
+const hasExistingReceivingTasks = computed(() => receivingTasksForReceipt(props.orderId).length > 0)
 
 // "Received qty" column — literally what's arrived so far (ended tasks only).
 const receivedPerSku = computed<Record<string, number>>(() => {
@@ -307,8 +313,8 @@ function handleCreate() {
                 <col />
                 <col class="pr-col--num" />
                 <col class="pr-col--num" />
-                <col v-if="isPartialReceipt" class="pr-col--num" />
-                <col v-if="isPartialReceipt" class="pr-col--num" />
+                <col v-if="hasExistingReceivingTasks" class="pr-col--num" />
+                <col v-if="hasExistingReceivingTasks" class="pr-col--num" />
                 <col />
                 <col />
               </colgroup>
@@ -318,8 +324,8 @@ function handleCreate() {
                   <th class="pr-th">SKU</th>
                   <th class="pr-th pr-th--num">Purchase qty</th>
                   <th class="pr-th pr-th--num">Expected qty</th>
-                  <th v-if="isPartialReceipt" class="pr-th pr-th--num">Received qty</th>
-                  <th v-if="isPartialReceipt" class="pr-th pr-th--num">Outstanding qty</th>
+                  <th v-if="hasExistingReceivingTasks" class="pr-th pr-th--num">Received qty</th>
+                  <th v-if="hasExistingReceivingTasks" class="pr-th pr-th--num">Outstanding qty</th>
                   <th class="pr-th">Unit</th>
                   <th class="pr-th pr-th--action" aria-hidden="true" />
                 </tr>
@@ -340,8 +346,8 @@ function handleCreate() {
                       @input="onTargetQtyInput(it.sku, outstandingQty(it), $event)"
                     />
                   </td>
-                  <td v-if="isPartialReceipt" class="pr-td pr-td--num">{{ formatNum(receivedPerSku[it.sku] ?? 0) }}</td>
-                  <td v-if="isPartialReceipt" class="pr-td pr-td--num pr-td--outstanding">{{ formatNum(outstandingQty(it)) }}</td>
+                  <td v-if="hasExistingReceivingTasks" class="pr-td pr-td--num">{{ formatNum(receivedPerSku[it.sku] ?? 0) }}</td>
+                  <td v-if="hasExistingReceivingTasks" class="pr-td pr-td--num">{{ formatNum(outstandingQty(it)) }}</td>
                   <td class="pr-td">{{ it.unit }}</td>
                   <td class="pr-td pr-td--action">
                     <template v-if="removed.has(it.productId)">
@@ -546,7 +552,6 @@ function handleCreate() {
   text-align: right; font-variant-numeric: tabular-nums;
   line-height: var(--mp-line-heights-lg, 20px);
 }
-.pr-td--outstanding { color: var(--mp-text-warning, #b45309); font-weight: var(--mp-font-weights-semi-bold); }
 .pr-td--action { text-align: right; padding-block: 2px; padding-right: var(--mp-spacing-2); }
 .pr-item-row--removed .pr-td { background: var(--mp-background-neutral-subtle); color: var(--mp-text-disabled); }
 .pr-item-row--removed :deep(.pc-name),
