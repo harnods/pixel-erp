@@ -15,12 +15,6 @@ export interface PutAwayLineItem {
   stored: number
   binLocation: string
   unit: string
-  /** Every bundled receiving task that contributed to this SKU's qty — a SKU
-   *  shared by 2+ bundled receiving tasks is ONE merged row, not split per
-   *  source, since put-away doesn't care which receiving task a unit came
-   *  from once it's all going into the same bin(s). Shown for traceability
-   *  only (e.g. "Receiving #30001, #30002"). */
-  receivingTaskNos: string[]
   /** Batch-tracked SKUs only — undefined if the SKU isn't batch-tracked. */
   batchLines?: PutAwayBatchAssignment[]
   /** Serial-tracked SKUs only — undefined if the SKU isn't serial-tracked. */
@@ -132,7 +126,6 @@ export function getPutAwayLineItems(taskId: string): PutAwayLineItem[] {
         stored,
         binLocation: ci.binLocation,
         unit: it?.unit || p?.unit || 'Unit',
-        receivingTaskNos: task.receivingTaskNos,
         batchLines,
         serialAssignments,
       }
@@ -179,7 +172,6 @@ export function getPutAwayLineItems(taskId: string): PutAwayLineItem[] {
       stored,
       binLocation: binForSku(task.warehouseId, sku),
       unit: it?.unit || p?.unit || 'Unit',
-      receivingTaskNos: task.receivingTaskNos,
       batchLines,
       serialAssignments,
     })

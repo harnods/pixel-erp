@@ -236,7 +236,7 @@ const isProgressive = computed(() => filteredRows.value.length > PAGE_SIZE)
 
 // Group consecutive rows by skuCode for rowspan merging — a plain SKU's
 // "Split storage location" can insert extra rows sharing the same SKU (to
-// distribute qty across different BINS); Product/SKU/Receiving task/Received
+// distribute qty across different BINS); Product/SKU/Received
 // qty/Unit/Action all merge across the whole group, since none of them vary
 // per bin. Only Storage location/Put away qty stay per-row, since splitting
 // into different bins is the whole point.
@@ -741,13 +741,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <col />
                 <col />
                 <col />
-                <col />
               </colgroup>
               <thead>
                 <tr>
                   <th class="pi-th">Product</th>
                   <th class="pi-th">SKU</th>
-                  <th class="pi-th">Receiving task</th>
                   <th class="pi-th pi-th--num">Received qty</th>
                   <th class="pi-th">Storage location</th>
                   <th class="pi-th pi-th--num">Put away qty</th>
@@ -767,11 +765,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <!-- SKU — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ row.skuCode }}</td>
-                  <!-- Receiving task — every bundled receiving task this SKU's qty came
-                       from, joined together (traceability only; put-away itself no
-                       longer cares which specific one a unit came from). Merged
-                       across the whole SKU group, same as Product/SKU/Unit. -->
-                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.receivingTaskNos.join(', ') }}</td>
                   <!-- Received qty — this SKU's total across every bundled receiving
                        task, merged the same way. -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(totalQtyByRowKey.get(rowKey(row)) ?? 0) }}</td>
@@ -910,7 +903,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                 </tr>
                 <tr v-if="!filteredRows.length">
-                  <td class="pi-td pi-empty" colspan="8">No products match your search.</td>
+                  <td class="pi-td pi-empty" colspan="7">No products match your search.</td>
                 </tr>
               </tbody>
             </table>

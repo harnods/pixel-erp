@@ -62,53 +62,51 @@ function bundleTwoReceivingTasksSharingSku(sku: string, qtyA: number, qtyB: numb
 }
 
 describe('Put-away — same SKU bundled from 2+ receiving tasks is ONE merged row everywhere', () => {
-  it('data layer: getPutAwayLineItems returns ONE row per SKU, qty summed, both receiving tasks listed', () => {
+  it('data layer: getPutAwayLineItems returns ONE row per SKU, qty summed', () => {
     const receiptA = freshFullCatalogReceipt('data-A')
     const sku = lineItemsForReceipt(receiptA)[0]!.sku
-    const { pa, rtA, rtB } = bundleTwoReceivingTasksSharingSku(sku, 12, 7)
+    const { pa } = bundleTwoReceivingTasksSharingSku(sku, 12, 7)
 
     const lineItems = getPutAwayLineItems(pa.id)
     const rowsForSku = lineItems.filter(it => it.skuCode === sku)
     expect(rowsForSku).toHaveLength(1)
     expect(rowsForSku[0]!.qty).toBe(19) // 12 + 7
-    expect(rowsForSku[0]!.receivingTaskNos).toEqual([rtA.taskNo, rtB.taskNo])
   })
 
-  it('execution page (PutAwayItemsPage.vue): shows ONE row for the shared SKU with both tasks listed and qty summed', async () => {
+  it('execution page (PutAwayItemsPage.vue): shows ONE row for the shared SKU, qty summed — no "Receiving task" column at all', async () => {
     const receiptA = freshFullCatalogReceipt('exec-col-A')
     const sku = lineItemsForReceipt(receiptA)[0]!.sku
-    const { pa, rtA, rtB } = bundleTwoReceivingTasksSharingSku(sku, 13, 8)
+    const { pa } = bundleTwoReceivingTasksSharingSku(sku, 13, 8)
 
     const wrapper = mount(PutAwayItemsPage, { props: { orderId: pa.id } })
     await flushPromises()
 
     const headers = wrapper.findAll('th.pi-th').map(h => h.text())
-    expect(headers).toContain('Receiving task')
+    expect(headers).not.toContain('Receiving task')
 
     // SKU cell renders exactly once — no split rows for this SKU at all.
     const skuCells = wrapper.findAll('td.pi-td--merged').filter(td => td.text() === sku)
     expect(skuCells).toHaveLength(1)
     const bodyText = wrapper.find('tbody').text()
-    expect(bodyText).toContain(rtA.taskNo)
-    expect(bodyText).toContain(rtB.taskNo)
     expect(bodyText).toContain('21') // 13 + 8, the merged Received qty
     wrapper.unmount()
   })
 
-  it('details page: renders ONE row (Receiving task/Received qty merged, both tasks listed, qty summed), Product/SKU/Unit merged, no duplicate Vue keys', async () => {
+  it('details page: renders ONE row (Received qty merged, qty summed), Product/SKU/Unit merged, no "Receiving task" column, no duplicate Vue keys', async () => {
     const receiptA = freshFullCatalogReceipt('details-A')
     const sku = lineItemsForReceipt(receiptA)[0]!.sku
-    const { pa, rtA, rtB } = bundleTwoReceivingTasksSharingSku(sku, 15, 9)
+    const { pa } = bundleTwoReceivingTasksSharingSku(sku, 15, 9)
 
     const wrapper = mount(PutAwayDetailsPage, { props: { orderId: pa.id } })
     await flushPromises()
+
+    const headers = wrapper.findAll('th.detail-th').map(h => h.text())
+    expect(headers).not.toContain('Receiving task')
 
     const skuCells = wrapper.findAll('td.detail-td').filter(td => td.text() === sku)
     expect(skuCells).toHaveLength(1)
 
     const bodyText = wrapper.find('tbody').text()
-    expect(bodyText).toContain(rtA.taskNo)
-    expect(bodyText).toContain(rtB.taskNo)
     expect(bodyText).toContain('24') // 15 + 9, the merged Received qty
     wrapper.unmount()
   })
@@ -201,10 +199,9 @@ describe('Put-away — same SKU bundled from 2+ receiving tasks is ONE merged ro
     expect(saved.completedItems).toHaveLength(1)
     expect(saved.completedItems![0]).toMatchObject({ skuCode: plainSku, qty: 25, binLocation: 'A-01-01' })
 
-    // Reload via getPutAwayLineItems — still one merged row, both tasks listed.
+    // Reload via getPutAwayLineItems — still one merged row.
     const reloaded = getPutAwayLineItems(pa.id)
     const row = reloaded.find(it => it.skuCode === plainSku)!
     expect(row.qty).toBe(25)
-    expect(row.receivingTaskNos).toEqual([rtA.taskNo, rtB.taskNo])
   })
 })

@@ -155,7 +155,7 @@ const isProgressive = computed(() => filteredItems.value.length > STEP)
 // destination bins gets one row PER BIN, same granularity a plain SKU's
 // "Split storage location" already gets on PutAwayItemsPage.vue, instead of
 // cramming every bin into one cell as a stacked mini-list. Product/SKU/
-// Receiving task/Received qty/Unit/Action merge across every bin-row (only
+// Received qty/Unit/Action merge across every bin-row (only
 // Storage location/Put-away qty stay one-per-bin).
 type PutAwayRowWithMeta = PutAwayLineItem & {
   rowId: string
@@ -377,7 +377,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <colgroup>
-                <col /><col /><col /><col />
+                <col /><col /><col />
                 <col v-if="task.status !== 'open'" />
                 <col /><col /><col />
               </colgroup>
@@ -385,7 +385,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                 <tr>
                   <th class="detail-th">Product</th>
                   <th class="detail-th">SKU</th>
-                  <th class="detail-th">Receiving task</th>
                   <th class="detail-th detail-th--num">Received qty</th>
                   <th v-if="task.status !== 'open'" class="detail-th">Storage location</th>
                   <th class="detail-th detail-th--num">Put-away qty</th>
@@ -399,7 +398,6 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                     <ProductCell :name="row.productName" :desc="row.productDesc" :image="row.image" />
                   </td>
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.skuCode }}</td>
-                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.receivingTaskNos.join(', ') }}</td>
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--num">{{ fmt(row.qty) }}</td>
                   <td v-if="task.status !== 'open'" class="detail-td">
                     <span v-if="row.bin" class="pad-bin">{{ row.bin }}</span>
