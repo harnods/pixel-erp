@@ -535,7 +535,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <!-- The line-item sections appear only once a BOM is chosen (it defines them). -->
         <section v-if="hasBom" class="wo-section">
           <h2 class="wo-section-title">Raw materials</h2>
-          <p class="wo-section-desc">Unit purchase cost may change when inventory value adjusts</p>
+          <p class="wo-section-desc">Unit purchase cost may change when inventory value adjusts.</p>
           <label class="wo-checkbox-row wo-checkbox-row--tight">
             <MpCheckbox id="wo-bulk-wh" :is-checked="bulkSetWarehouse" @change="bulkSetWarehouse = !bulkSetWarehouse" />
             <span>Bulk set warehouse</span>
@@ -680,10 +680,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <!-- Cost summary -->
           <div class="wo-summary">
-            <div class="wo-summary-row"><span>Estimated subtotal of raw materials</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>Subtotal production cost</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>Subtotal routing cost</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-            <div class="wo-summary-row wo-summary-row--total"><span>Estimated total of production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+            <div class="wo-summary-row"><span>Estimated raw materials subtotal</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
+            <div class="wo-summary-row"><span>Production cost subtotal</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+            <div class="wo-summary-row"><span>Routing cost subtotal</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+            <div class="wo-summary-row wo-summary-row--total"><span>Estimated total production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
           </div>
         </section>
 
