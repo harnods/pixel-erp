@@ -20,8 +20,9 @@ import { stockLocationPaths } from '~/data/storageLocations'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
-import { notifyScanError } from '~/utils/scan'
+import { notifyScanError, sameCode } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -44,6 +45,12 @@ const locationOptions = computed(() => {
 })
 
 // ── Draft rows — one per displayed table line (can be split into multiple) ────
+// One row per SKU — a SKU bundled from 2+ receiving tasks is already merged
+// into a single lineItem (see putAwayTaskDetails.ts), so put-away itself never
+// needs to know which specific receiving task a unit came from, only how much
+// total needs a bin. A row can still split into MULTIPLE rows of its own via
+// "Split storage location" — that's about distributing qty across different
+// BINS, unrelated to receiving-task attribution.
 interface DraftRow {
   id: string
   skuCode: string
@@ -59,22 +66,25 @@ const search    = ref('')
 
 watch([() => props.orderId, lineItems], () => {
   rowCounter = 0
-  // Deduplicate by skuCode — one row per SKU, merging qty from multiple receiving tasks
-  const seen = new Map<string, string>()
-  lineItems.value.forEach(it => { if (!seen.has(it.skuCode)) seen.set(it.skuCode, it.binLocation) })
-  draftRows.value = [...seen.entries()].map(([skuCode, binLocation]) => ({
-    id: newRowId(), skuCode, qty: 0, binLocation,
-  }))
+  const seen = new Map<string, DraftRow>()
+  lineItems.value.forEach(it => {
+    if (!seen.has(it.skuCode)) {
+      seen.set(it.skuCode, { id: newRowId(), skuCode: it.skuCode, qty: 0, binLocation: it.binLocation })
+    }
+  })
+  draftRows.value = [...seen.values()]
   search.value = ''
 }, { immediate: true })
 
-// Lookup map: skuCode → line item (for product info)
+// Lookup map: skuCode → line item (for product info / total received qty).
 const itemBySkuCode = computed(() => new Map(lineItems.value.map(it => [it.skuCode, it])))
 
-// Summed received qty per SKU across all receiving tasks
-const totalQtyBySkuCode = computed(() => {
+function rowKey(row: DraftRow) { return row.skuCode }
+
+// Received qty per SKU — the real cap for that SKU's own draft row(s).
+const totalQtyByRowKey = computed(() => {
   const map = new Map<string, number>()
-  lineItems.value.forEach(it => { map.set(it.skuCode, (map.get(it.skuCode) ?? 0) + it.qty) })
+  lineItems.value.forEach(it => map.set(it.skuCode, it.qty))
   return map
 })
 
@@ -98,22 +108,21 @@ function isSerialTrackedSku(sku: string): boolean {
   return p ? SERIAL_CATS.has(p.category) : false
 }
 
-// ── Manage batch / Manage serial number — destination bin(s) per batch or serial,
-// seeded from what was recorded at receiving (or a previously-saved draft). Storage
-// location for these SKUs is decided entirely inside the drawers, never in the main
-// table — the table only shows a read-only summary of the bins actually used. ─────
-const batchLinesBySku  = ref<Record<string, CommittedBatch[]>>({})
-const serialLinesBySku = ref<Record<string, CommittedSerial[]>>({})
+// ── Manage batch / Manage serial number — destination bin(s) per batch or
+// serial, seeded from what was recorded at receiving (or a previously-saved
+// draft). Keyed by SKU alone — a SKU bundled from 2+ receiving tasks already
+// arrives pre-merged from getPutAwayLineItems, so there's only ever one bucket
+// per SKU, one Manage button, one drawer.
+const batchLinesByRowKey  = ref<Record<string, CommittedBatch[]>>({})
+const serialLinesByRowKey = ref<Record<string, CommittedSerial[]>>({})
 
 watch(lineItems, (items) => {
   const nextBatch: Record<string, CommittedBatch[]> = {}
   const nextSerial: Record<string, CommittedSerial[]> = {}
-  const seen = new Set<string>()
   for (const it of items) {
-    if (seen.has(it.skuCode)) continue
-    seen.add(it.skuCode)
+    const key = it.skuCode
     if (it.batchLines?.length) {
-      nextBatch[it.skuCode] = it.batchLines.map(b => ({
+      nextBatch[key] = it.batchLines.map(b => ({
         key: b.batchNo,
         batchNo: b.batchNo,
         expiryDate: b.expiryDate,
@@ -125,11 +134,11 @@ watch(lineItems, (items) => {
       }))
     }
     if (it.serialAssignments?.length) {
-      nextSerial[it.skuCode] = it.serialAssignments.map(s => ({ serial: s.serial, destLocationId: s.destLocationId }))
+      nextSerial[key] = it.serialAssignments.map(s => ({ serial: s.serial, destLocationId: s.destLocationId }))
     }
   }
-  batchLinesBySku.value = nextBatch
-  serialLinesBySku.value = nextSerial
+  batchLinesByRowKey.value = nextBatch
+  serialLinesByRowKey.value = nextSerial
 }, { immediate: true })
 
 const batchDrawerSku = ref<string | null>(null)
@@ -137,23 +146,35 @@ const batchDrawerOpen = computed({
   get: () => batchDrawerSku.value !== null,
   set: (v: boolean) => { if (!v) batchDrawerSku.value = null },
 })
-function openBatchDrawer(skuCode: string) { batchDrawerSku.value = skuCode }
-function batchAssignedQty(skuCode: string): number {
-  return (batchLinesBySku.value[skuCode] ?? []).reduce(
+function openBatchDrawer(sku: string) { batchDrawerSku.value = sku }
+function batchAssignedQty(key: string): number {
+  return (batchLinesByRowKey.value[key] ?? []).reduce(
     (s, b) => s + (b.destLocations?.reduce((ss, d) => ss + d.qty, 0) ?? 0), 0,
   )
 }
-function batchBins(skuCode: string): string[] {
+/** Real destination bin(s) already assigned for this row's batches — shown
+ *  directly in the main table so the operator only needs to open Manage batch
+ *  when they specifically want the batch numbers themselves. */
+function batchBins(key: string): string[] {
   const bins = new Set<string>()
-  for (const b of batchLinesBySku.value[skuCode] ?? []) {
+  for (const b of batchLinesByRowKey.value[key] ?? []) {
     for (const d of b.destLocations ?? []) if (d.qty > 0) bins.add(d.locationId)
   }
   return [...bins]
 }
+/** Put away qty PER bin, same order as batchBins — a batch can be split across
+ *  more than one destination bin, so the aggregate batchAssignedQty total isn't
+ *  enough once Storage location itself is a list. */
+function batchQtyByBin(key: string): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const b of batchLinesByRowKey.value[key] ?? []) {
+    for (const d of b.destLocations ?? []) if (d.qty > 0) map.set(d.locationId, (map.get(d.locationId) ?? 0) + d.qty)
+  }
+  return map
+}
 function saveBatchLines(batches: CommittedBatch[]) {
-  const sku = batchDrawerSku.value
-  if (!sku) return
-  batchLinesBySku.value = { ...batchLinesBySku.value, [sku]: batches }
+  if (!batchDrawerSku.value) return
+  batchLinesByRowKey.value = { ...batchLinesByRowKey.value, [batchDrawerSku.value]: batches }
 }
 
 const serialDrawerSku = ref<string | null>(null)
@@ -161,35 +182,35 @@ const serialDrawerOpen = computed({
   get: () => serialDrawerSku.value !== null,
   set: (v: boolean) => { if (!v) serialDrawerSku.value = null },
 })
-function openSerialDrawer(skuCode: string) { serialDrawerSku.value = skuCode }
-function serialAssignedQty(skuCode: string): number {
-  return (serialLinesBySku.value[skuCode] ?? []).filter(s => s.destLocationId).length
+function openSerialDrawer(sku: string) { serialDrawerSku.value = sku }
+function serialAssignedQty(key: string): number {
+  return (serialLinesByRowKey.value[key] ?? []).filter(s => s.destLocationId).length
 }
-function serialBins(skuCode: string): string[] {
+/** Real destination bin(s) already assigned for this row's serials — same
+ *  reasoning as batchBins above. */
+function serialBins(key: string): string[] {
   const bins = new Set<string>()
-  for (const s of serialLinesBySku.value[skuCode] ?? []) if (s.destLocationId) bins.add(s.destLocationId)
+  for (const s of serialLinesByRowKey.value[key] ?? []) if (s.destLocationId) bins.add(s.destLocationId)
   return [...bins]
 }
-function saveSerialLines(serials: CommittedSerial[]) {
-  const sku = serialDrawerSku.value
-  if (!sku) return
-  serialLinesBySku.value = { ...serialLinesBySku.value, [sku]: serials }
+/** Put away qty PER bin, same order as serialBins — same reasoning as batchQtyByBin. */
+function serialQtyByBin(key: string): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const s of serialLinesByRowKey.value[key] ?? []) if (s.destLocationId) map.set(s.destLocationId, (map.get(s.destLocationId) ?? 0) + 1)
+  return map
 }
-
-/** Read-only bin list shown in the main table for batch/serial-tracked SKUs —
- * listed one per line rather than comma-joined, since a SKU can span several bins. */
-function binsList(skuCode: string): string[] {
-  return isBatchTrackedSku(skuCode) ? batchBins(skuCode) : serialBins(skuCode)
+function saveSerialLines(serials: CommittedSerial[]) {
+  if (!serialDrawerSku.value) return
+  serialLinesByRowKey.value = { ...serialLinesByRowKey.value, [serialDrawerSku.value]: serials }
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 const skuQty           = computed(() => new Set(lineItems.value.map(it => it.skuCode)).size)
 const receivedQty      = computed(() => lineItems.value.reduce((s, it) => s + it.qty, 0))
-// Batch/serial-tracked SKUs get their qty from bin assignments, not row.qty (each
-// such SKU has exactly one draftRow — "Split storage location" is hidden for them).
 const draftHandled = computed(() => draftRows.value.reduce((s, r) => {
-  if (isBatchTrackedSku(r.skuCode)) return s + batchAssignedQty(r.skuCode)
-  if (isSerialTrackedSku(r.skuCode)) return s + serialAssignedQty(r.skuCode)
+  const key = rowKey(r)
+  if (isBatchTrackedSku(r.skuCode)) return s + batchAssignedQty(key)
+  if (isSerialTrackedSku(r.skuCode)) return s + serialAssignedQty(key)
   return s + (r.qty || 0)
 }, 0))
 
@@ -213,7 +234,12 @@ const pagedRows     = computed(() => filteredRows.value.slice(0, shownCount.valu
 const hasMoreItems  = computed(() => shownCount.value < filteredRows.value.length)
 const isProgressive = computed(() => filteredRows.value.length > PAGE_SIZE)
 
-// Group consecutive rows by skuCode for rowspan merging
+// Group consecutive rows by skuCode for rowspan merging — a plain SKU's
+// "Split storage location" can insert extra rows sharing the same SKU (to
+// distribute qty across different BINS); Product/SKU/Receiving task/Received
+// qty/Unit/Action all merge across the whole group, since none of them vary
+// per bin. Only Storage location/Put away qty stay per-row, since splitting
+// into different bins is the whole point.
 type RowWithMeta = DraftRow & { groupSize: number; groupIndex: number }
 const rowsWithMeta = computed<RowWithMeta[]>(() => {
   const rows = pagedRows.value
@@ -225,7 +251,7 @@ const rowsWithMeta = computed<RowWithMeta[]>(() => {
     while (j < rows.length && rows[j]!.skuCode === skuCode) j++
     const groupSize = j - i
     for (let k = i; k < j; k++) {
-      result.push({ ...rows[k]!, groupSize, groupIndex: k - i })
+      result.push({ ...rows[k]!, groupIndex: k - i, groupSize })
     }
     i = j
   }
@@ -265,13 +291,13 @@ watch(search, () => {
 })
 
 // ── Qty to handle input ───────────────────────────────────────────────────────
-// Cap per row at what's left of the SKU's total once every OTHER split row for
-// that SKU is subtracted — a fixed max of the full total let two split rows each
-// take the full amount (e.g. 19 + 1 on a 19-unit SKU) without ever erroring.
+// Cap per row at what's left of the SKU's total received qty once every OTHER
+// split row for that same SKU is subtracted, so two split rows can each take
+// up to the full amount (e.g. 19 + 1 on a 19-unit total) without ever erroring.
 function remainingQtyFor(row: DraftRow): number {
-  const total = totalQtyBySkuCode.value.get(row.skuCode) ?? 0
+  const total = totalQtyByRowKey.value.get(rowKey(row)) ?? 0
   const others = draftRows.value
-    .filter(r => r.skuCode === row.skuCode && r.id !== row.id)
+    .filter(r => rowKey(r) === rowKey(row) && r.id !== row.id)
     .reduce((s, r) => s + (r.qty || 0), 0)
   return Math.max(0, total - others)
 }
@@ -287,16 +313,21 @@ function onQtyInput(rowId: string, e: Event) {
 }
 
 // ── Split line ────────────────────────────────────────────────────────────────
+// The new row starts at qty 0 — the operator must scan the barcode (or type it
+// manually when above the scan threshold) same as any other row, never having
+// its qty auto-filled with the leftover remainder just because a split happened.
+// Storage location also starts empty, not copied from the original row — the
+// whole point of splitting is to put the remainder in a DIFFERENT bin, so
+// starting the new row pre-filled with the SAME bin the original already has
+// would just recreate the "same bin, different row" nonsense splitting is
+// meant to prevent (locOptionsFiltered already excludes bins sibling split
+// rows are using, but that's no help if this row starts with a conflicting
+// value of its own).
 function splitRow(rowId: string) {
   const idx = draftRows.value.findIndex(r => r.id === rowId)
   if (idx === -1) return
   const row = draftRows.value[idx]!
-  const totalQty = totalQtyBySkuCode.value.get(row.skuCode) ?? 0
-  const totalAssigned = draftRows.value
-    .filter(r => r.skuCode === row.skuCode)
-    .reduce((s, r) => s + (r.qty || 0), 0)
-  const remainder = Math.max(0, totalQty - totalAssigned)
-  const newRow: DraftRow = { id: newRowId(), skuCode: row.skuCode, qty: remainder, binLocation: row.binLocation }
+  const newRow: DraftRow = { id: newRowId(), skuCode: row.skuCode, qty: 0, binLocation: '' }
   const next = [...draftRows.value]
   next.splice(idx + 1, 0, newRow)
   draftRows.value = next
@@ -309,9 +340,19 @@ const locSearch      = ref('')
 function openLocPicker(rowId: string)  { activeLocRowId.value = rowId; locSearch.value = '' }
 function closeLocPicker(rowId: string) { if (activeLocRowId.value === rowId) { activeLocRowId.value = null; locSearch.value = '' } }
 function locOptionsFiltered(rowId: string) {
+  const row = draftRows.value.find(r => r.id === rowId)
   const q = activeLocRowId.value === rowId ? locSearch.value.trim().toLowerCase() : ''
-  if (!q) return locationOptions.value
-  return locationOptions.value.filter(loc => loc.toLowerCase().includes(q))
+  // Exclude bins already picked by this row's own sibling split rows (same
+  // SKU) — picking the SAME bin twice defeats the whole point of splitting,
+  // which is to distribute qty across DIFFERENT bins. Doesn't exclude a bin
+  // just because some OTHER SKU uses it — sharing a bin across different SKUs
+  // is normal warehouse behavior.
+  const usedBySiblings = row
+    ? new Set(draftRows.value.filter(r => r.id !== rowId && rowKey(r) === rowKey(row) && r.binLocation).map(r => r.binLocation))
+    : new Set<string>()
+  const base = locationOptions.value.filter(loc => !usedBySiblings.has(loc))
+  if (!q) return base
+  return base.filter(loc => loc.toLowerCase().includes(q))
 }
 // First 3 options surface as "Recommended locations"; the rest sit below a divider.
 function recommendedLocOptions(rowId: string) { return locOptionsFiltered(rowId).slice(0, 3) }
@@ -331,30 +372,51 @@ function handleScan(rawValue: string) {
   if (!v) return
 
   // Bin scan
-  if (locationOptions.value.includes(v)) {
-    activeBin.value = v
+  const matchedBin = locationOptions.value.find(loc => sameCode(loc, v))
+  if (matchedBin) {
+    activeBin.value = matchedBin
     playScanSuccessSound()
+    return
+  }
+
+  // Scanning a batch/serial-tracked SKU's own barcode opens its Manage drawer
+  // directly, same as Receiving/Picking — the operator shouldn't have to scan
+  // a specific batch/serial number (or find the row and click the action
+  // button) just to get there.
+  const trackedRow = draftRows.value.find(
+    r => sameCode(r.skuCode, v) && (isBatchTrackedSku(r.skuCode) || isSerialTrackedSku(r.skuCode)),
+  )
+  if (trackedRow) {
+    playScanSuccessSound()
+    if (isBatchTrackedSku(trackedRow.skuCode)) openBatchDrawer(trackedRow.skuCode)
+    else openSerialDrawer(trackedRow.skuCode)
     return
   }
 
   // SKU scan — only for plain (non-batch, non-serial) rows
   const bin = activeBin.value
   const skuRows = draftRows.value.filter(r =>
-    r.skuCode === v && !isBatchTrackedSku(r.skuCode) && !isSerialTrackedSku(r.skuCode),
+    sameCode(r.skuCode, v) && !isBatchTrackedSku(r.skuCode) && !isSerialTrackedSku(r.skuCode),
   )
   if (skuRows.length) {
-    const binRow = bin ? skuRows.find(r => r.binLocation === bin) : null
+    // Canonical stored casing for this SKU — a scan in different case than
+    // what's stored must still land on the SAME sku, not create a new key.
+    const sku = skuRows[0]!.skuCode
+    // Rows with capacity left — a SKU already split across bins (via "Split
+    // storage location") has one row per bin, each capped by remainingQtyFor,
+    // so a scan must spill over to the next row once one is fully assigned
+    // instead of getting stuck reporting "fully assigned" on the first match.
+    const withCapacity = skuRows.filter(r => remainingQtyFor(r) > 0)
+    if (!withCapacity.length) {
+      notifyScanError(`${v}: received qty already fully assigned`)
+      return
+    }
+    const binRow = bin ? skuRows.find(r => sameCode(r.binLocation, bin)) : null
 
     if (bin && !binRow) {
-      // Active bin differs from every existing row → auto-split a new row for this bin
-      const totalQty    = totalQtyBySkuCode.value.get(v) ?? 0
-      const assignedQty = skuRows.reduce((s, r) => s + (r.qty || 0), 0)
-      if (assignedQty >= totalQty) {
-        notifyScanError(`${v}: received qty already fully assigned`)
-        return
-      }
-      const newRow: DraftRow = { id: newRowId(), skuCode: v, qty: 1, binLocation: bin }
-      const lastSkuIdx = draftRows.value.reduce((acc, r, i) => r.skuCode === v ? i : acc, -1)
+      // Active bin differs from every existing row for this SKU → auto-split a new row for this bin.
+      const newRow: DraftRow = { id: newRowId(), skuCode: sku, qty: 1, binLocation: bin }
+      const lastSkuIdx = draftRows.value.reduce((acc, r, i) => sameCode(r.skuCode, sku) ? i : acc, -1)
       const next = [...draftRows.value]
       next.splice(lastSkuIdx + 1, 0, newRow)
       draftRows.value = next
@@ -365,13 +427,12 @@ function handleScan(rawValue: string) {
       return
     }
 
-    // Update existing row — prefer matching-bin row > unassigned row > first row
-    const target = binRow ?? skuRows.find(r => !r.binLocation) ?? skuRows[0]!
+    // Update existing row — prefer a matching-bin row with capacity left > the
+    // first (in source order) unassigned-bin row with capacity > the first row
+    // with capacity at all.
+    const target = (bin ? withCapacity.find(r => sameCode(r.binLocation, bin)) : null)
+      ?? withCapacity.find(r => !r.binLocation) ?? withCapacity[0]!
     const cap = remainingQtyFor(target)
-    if (cap === 0) {
-      notifyScanError(`${v}: received qty already fully assigned`)
-      return
-    }
     const nextBin = target.binLocation || bin || ''
     draftRows.value = draftRows.value.map(r =>
       r.id === target.id ? { ...r, qty: Math.min((r.qty || 0) + 1, cap), binLocation: nextBin } : r,
@@ -383,9 +444,9 @@ function handleScan(rawValue: string) {
     return
   }
 
-  // Batch number scan — find the batch across all batch-tracked SKUs
-  for (const [skuCode, batches] of Object.entries(batchLinesBySku.value)) {
-    const bIdx = batches.findIndex(b => b.batchNo === v)
+  // Batch number scan — find the batch across all batch-tracked rows
+  for (const [key, batches] of Object.entries(batchLinesByRowKey.value)) {
+    const bIdx = batches.findIndex(b => sameCode(b.batchNo, v))
     if (bIdx !== -1) {
       if (!bin) {
         notifyScanError('Scan a bin first before scanning batch numbers')
@@ -398,18 +459,18 @@ function handleScan(rawValue: string) {
         return
       }
       const newDest = [...(batch.destLocations ?? [])]
-      const dIdx = newDest.findIndex(d => d.locationId === bin)
+      const dIdx = newDest.findIndex(d => sameCode(d.locationId, bin))
       if (dIdx !== -1) {
         newDest[dIdx] = { locationId: bin, qty: newDest[dIdx]!.qty + 1 }
       } else {
         newDest.push({ locationId: bin, qty: 1 })
       }
-      batchLinesBySku.value = {
-        ...batchLinesBySku.value,
-        [skuCode]: batches.map((b, i) => i === bIdx ? { ...b, destLocations: newDest } : b),
+      batchLinesByRowKey.value = {
+        ...batchLinesByRowKey.value,
+        [key]: batches.map((b, i) => i === bIdx ? { ...b, destLocations: newDest } : b),
       }
       playScanSuccessSound()
-      const row = draftRows.value.find(r => r.skuCode === skuCode)
+      const row = draftRows.value.find(r => rowKey(r) === key)
       if (row) {
         flashRowId.value = row.id
         if (flashTimer) clearTimeout(flashTimer)
@@ -419,18 +480,18 @@ function handleScan(rawValue: string) {
     }
   }
 
-  // Serial number scan — find the serial across all serial-tracked SKUs
-  for (const [skuCode, serials] of Object.entries(serialLinesBySku.value)) {
-    const idx = serials.findIndex(s => s.serial === v)
+  // Serial number scan — find the serial across all serial-tracked rows
+  for (const [key, serials] of Object.entries(serialLinesByRowKey.value)) {
+    const idx = serials.findIndex(s => sameCode(s.serial, v))
     if (idx !== -1) {
       if (!bin) {
         notifyScanError('Scan a bin first before scanning serial numbers')
         return
       }
       const updated = serials.map((s, i) => i === idx ? { ...s, destLocationId: bin } : s)
-      serialLinesBySku.value = { ...serialLinesBySku.value, [skuCode]: updated }
+      serialLinesByRowKey.value = { ...serialLinesByRowKey.value, [key]: updated }
       playScanSuccessSound()
-      const row = draftRows.value.find(r => r.skuCode === skuCode)
+      const row = draftRows.value.find(r => rowKey(r) === key)
       if (row) {
         flashRowId.value = row.id
         if (flashTimer) clearTimeout(flashTimer)
@@ -445,38 +506,36 @@ function handleScan(rawValue: string) {
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
-// Plain SKUs contribute their draftRows as-is; batch/serial-tracked SKUs get
-// flattened from their per-bin drawer assignments into the same {skuCode, qty,
-// binLocation} shape, and their full assignment detail is kept for persistence
-// (so reopening a draft restores exactly which batch/serial went where).
+// Plain SKUs contribute their draftRows as-is. Batch/serial-tracked SKUs get
+// flattened from their per-bin drawer assignments into the same {skuCode,
+// qty, binLocation} shape — always exactly one row per SKU for tracked types
+// (splitting into multiple rows is a plain-SKU-only feature).
 function buildItemsAndAssignments() {
   const items: Array<{ skuCode: string; qty: number; binLocation: string }> = []
   const batchAssignments: Record<string, PutAwayBatchAssignment[]> = {}
   const serialAssignments: Record<string, PutAwaySerialAssignment[]> = {}
-  const seenTracked = new Set<string>()
 
   for (const r of draftRows.value) {
+    const key = rowKey(r)
     if (isBatchTrackedSku(r.skuCode)) {
-      if (seenTracked.has(r.skuCode)) continue
-      seenTracked.add(r.skuCode)
-      const lines = batchLinesBySku.value[r.skuCode] ?? []
+      const lines = batchLinesByRowKey.value[key] ?? []
       batchAssignments[r.skuCode] = lines.map(b => ({
         batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.onHand, unit: b.unit,
         destLocations: b.destLocations,
       }))
-      const byBin = new Map<string, number>()
-      for (const b of lines) for (const d of b.destLocations ?? []) {
-        if (d.qty > 0) byBin.set(d.locationId, (byBin.get(d.locationId) ?? 0) + d.qty)
-      }
-      for (const [binLocation, qty] of byBin) items.push({ skuCode: r.skuCode, qty, binLocation })
+      // Exactly ONE completedItems entry per row, always — regardless of how many
+      // bins (zero, one, or several) it's actually been assigned to. The real
+      // per-bin breakdown already lives in batchAssignments above; an entry per
+      // BIN here (the old behavior) meant an untouched row (no bin yet) produced
+      // ZERO entries and silently vanished from a saved draft, while a row split
+      // across 2+ bins produced duplicate rows on reload — both fixed by using
+      // the row's own total qty here instead of iterating destination bins.
+      items.push({ skuCode: r.skuCode, qty: totalQtyByRowKey.value.get(key) ?? 0, binLocation: '' })
     } else if (isSerialTrackedSku(r.skuCode)) {
-      if (seenTracked.has(r.skuCode)) continue
-      seenTracked.add(r.skuCode)
-      const serials = serialLinesBySku.value[r.skuCode] ?? []
+      const serials = serialLinesByRowKey.value[key] ?? []
       serialAssignments[r.skuCode] = serials.map(s => ({ serial: s.serial, destLocationId: s.destLocationId }))
-      const byBin = new Map<string, number>()
-      for (const s of serials) if (s.destLocationId) byBin.set(s.destLocationId, (byBin.get(s.destLocationId) ?? 0) + 1)
-      for (const [binLocation, qty] of byBin) items.push({ skuCode: r.skuCode, qty, binLocation })
+      // Same reasoning as the batch branch above — one entry per row, not per bin.
+      items.push({ skuCode: r.skuCode, qty: totalQtyByRowKey.value.get(key) ?? 0, binLocation: '' })
     } else {
       items.push({ skuCode: r.skuCode, qty: r.qty, binLocation: r.binLocation })
     }
@@ -484,27 +543,26 @@ function buildItemsAndAssignments() {
   return { items, assignments: { batchAssignments, serialAssignments } }
 }
 
-// Per-SKU check — an aggregate qty total can hit zero even when one SKU is
-// over-assigned and another under-assigned, or when a plain SKU's qty was entered
-// but never given a location. Every SKU must land on EXACTLY its received qty,
+// Per-SKU check — every SKU must land on EXACTLY its own total received qty,
 // fully backed by a real storage location, for batch/serial/plain alike.
 function findIncompleteSku(): { name: string; reason: 'missing' | 'over' } | null {
-  const skus = new Set(draftRows.value.map(r => r.skuCode))
-  for (const sku of skus) {
-    const expected = totalQtyBySkuCode.value.get(sku) ?? 0
+  const keys = new Set(draftRows.value.map(r => rowKey(r)))
+  for (const key of keys) {
+    const rowsForKey = draftRows.value.filter(r => rowKey(r) === key)
+    const sku = rowsForKey[0]!.skuCode
+    const expected = totalQtyByRowKey.value.get(key) ?? 0
     let assigned: number
     let missingLocation: boolean
 
     if (isBatchTrackedSku(sku)) {
-      assigned = batchAssignedQty(sku)
+      assigned = batchAssignedQty(key)
       missingLocation = assigned < expected
     } else if (isSerialTrackedSku(sku)) {
-      assigned = serialAssignedQty(sku)
+      assigned = serialAssignedQty(key)
       missingLocation = assigned < expected
     } else {
-      const rows = draftRows.value.filter(r => r.skuCode === sku)
-      assigned = rows.reduce((s, r) => s + (r.qty || 0), 0)
-      missingLocation = rows.some(r => (r.qty || 0) > 0 && !r.binLocation)
+      assigned = rowsForKey.reduce((s, r) => s + (r.qty || 0), 0)
+      missingLocation = rowsForKey.some(r => (r.qty || 0) > 0 && !r.binLocation)
     }
 
     if (missingLocation || assigned !== expected) {
@@ -530,6 +588,9 @@ function postPutAway() {
   const { items, assignments } = buildItemsAndAssignments()
   endPutAwayTask(props.orderId, items, assignments)
   toast.notify({ variant: 'success', title: 'Put-away finished' , maxWidth: 'max-content'})
+  // Already committed — the router.push below is this function's own doing,
+  // not the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   router.push(`/put-away/${props.orderId}`)
 }
 
@@ -537,8 +598,27 @@ function saveDraft() {
   const { items, assignments } = buildItemsAndAssignments()
   savePutAwayDraft(props.orderId, items, assignments)
   toast.notify({ variant: 'success', title: 'Put-away draft saved' , maxWidth: 'max-content'})
+  disableUnsavedChangesGuard()
   router.push(`/put-away/${props.orderId}`)
 }
+
+// ── Warn before losing unsaved put-away progress — refresh/close-tab (native
+// prompt) and in-app navigation/Back button (modal rendered once at the app
+// root, see [...slug].vue — this app has a single catch-all route, so a
+// per-page modal/onBeforeRouteLeave never fires). "Unsaved" = anything
+// assigned a bin at all. disableUnsavedChangesGuard() is called by
+// postPutAway()/saveDraft() right before their own router.push — otherwise
+// hasUnsavedChanges() would still read true (nothing else resets the
+// assignment state after commit) and the "Leave without saving?" modal would
+// fire right after the operator's own intentional Finish/Save action. ───────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => draftHandled.value > 0,
+  saveDraft: () => {
+    const { items, assignments } = buildItemsAndAssignments()
+    savePutAwayDraft(props.orderId, items, assignments)
+    toast.notify({ variant: 'success', title: 'Put-away draft saved', maxWidth: 'max-content' })
+  },
+})
 
 function goBack()    { router.push(`/put-away/${props.orderId}`) }
 function goPutAway() { router.push('/inbound-delivery?tab=Put-away') }
@@ -661,13 +741,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <col />
                 <col />
                 <col />
+                <col />
               </colgroup>
               <thead>
                 <tr>
                   <th class="pi-th">Product</th>
                   <th class="pi-th">SKU</th>
-                  <th class="pi-th">Storage location</th>
+                  <th class="pi-th">Receiving task</th>
                   <th class="pi-th pi-th--num">Received qty</th>
+                  <th class="pi-th">Storage location</th>
                   <th class="pi-th pi-th--num">Put away qty</th>
                   <th class="pi-th">Unit</th>
                   <th class="pi-th pi-th--action" aria-hidden="true" />
@@ -685,19 +767,29 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <!-- SKU — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ row.skuCode }}</td>
-                  <!-- Storage location: batch/serial-tracked SKUs manage it via the
-                       action column's icon button instead (location detail lives in
-                       the Manage batch / Manage serial numbers drawer, not here);
-                       plain SKUs keep the picker. -->
-                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--location-tracked">
-                    <MpTooltip :id="`pi-tt-loc-batch-${row.id}`" label="View via Manage batch" placement="top" use-portal>
-                      <span>—</span>
-                    </MpTooltip>
+                  <!-- Receiving task — every bundled receiving task this SKU's qty came
+                       from, joined together (traceability only; put-away itself no
+                       longer cares which specific one a unit came from). Merged
+                       across the whole SKU group, same as Product/SKU/Unit. -->
+                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.receivingTaskNos.join(', ') }}</td>
+                  <!-- Received qty — this SKU's total across every bundled receiving
+                       task, merged the same way. -->
+                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(totalQtyByRowKey.get(rowKey(row)) ?? 0) }}</td>
+                  <!-- Storage location: batch/serial-tracked SKUs show the real bin(s)
+                       already assigned, read-only — the batch/serial NUMBERS themselves
+                       still only live in the Manage batch/serial drawer, but the operator
+                       shouldn't have to open it just to see which bin(s) are in use. -->
+                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--location-summary">
+                    <div class="pi-location-summary-wrap">
+                      <span v-for="bin in batchBins(rowKey(row))" :key="bin" class="pi-location-summary-item">{{ bin }}</span>
+                      <span v-if="!batchBins(rowKey(row)).length" class="pi-location-summary-item">—</span>
+                    </div>
                   </td>
-                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--location-tracked">
-                    <MpTooltip :id="`pi-tt-loc-serial-${row.id}`" label="View via Manage serial numbers" placement="top" use-portal>
-                      <span>—</span>
-                    </MpTooltip>
+                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--location-summary">
+                    <div class="pi-location-summary-wrap">
+                      <span v-for="bin in serialBins(rowKey(row))" :key="bin" class="pi-location-summary-item">{{ bin }}</span>
+                      <span v-if="!serialBins(rowKey(row)).length" class="pi-location-summary-item">—</span>
+                    </div>
                   </td>
                   <td v-else class="pi-td pi-td--location">
                     <MpPopover :id="`pi-loc-${row.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="closeLocPicker(row.id)">
@@ -734,14 +826,22 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       </MpPopoverContent>
                     </MpPopover>
                   </td>
-                  <!-- Received qty — merged, summed across all receiving tasks -->
-                  <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged pi-td--num" :rowspan="row.groupSize">{{ fmt(totalQtyBySkuCode.get(row.skuCode) ?? 0) }}</td>
-                  <!-- Put away qty: batch/serial-tracked SKUs show the value directly -->
-                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td pi-td--num">
-                    <span class="pi-batch-val">{{ fmt(batchAssignedQty(row.skuCode)) }}</span>
+                  <!-- Put away qty: batch/serial-tracked SKUs mirror the Storage location
+                       list — one qty per bin, not a single aggregate, since the same batch
+                       or serial run can be split across more than one destination bin. Only
+                       switches to the stacked layout once there's actually a bin to show;
+                       otherwise it stays a plain right-aligned cell like the "0" fallback. -->
+                  <td v-if="isBatchTrackedSku(row.skuCode)" class="pi-td" :class="batchBins(rowKey(row)).length ? 'pi-td--qty-summary' : 'pi-td--num'">
+                    <div v-if="batchBins(rowKey(row)).length" class="pi-location-summary-wrap">
+                      <span v-for="bin in batchBins(rowKey(row))" :key="bin" class="pi-location-summary-item pi-location-summary-item--num">{{ fmt(batchQtyByBin(rowKey(row)).get(bin) ?? 0) }}</span>
+                    </div>
+                    <span v-else class="pi-batch-val">{{ fmt(batchAssignedQty(rowKey(row))) }}</span>
                   </td>
-                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--num">
-                    <span class="pi-batch-val">{{ fmt(serialAssignedQty(row.skuCode)) }}</span>
+                  <td v-else-if="isSerialTrackedSku(row.skuCode)" class="pi-td" :class="serialBins(rowKey(row)).length ? 'pi-td--qty-summary' : 'pi-td--num'">
+                    <div v-if="serialBins(rowKey(row)).length" class="pi-location-summary-wrap">
+                      <span v-for="bin in serialBins(rowKey(row))" :key="bin" class="pi-location-summary-item pi-location-summary-item--num">{{ fmt(serialQtyByBin(rowKey(row)).get(bin) ?? 0) }}</span>
+                    </div>
+                    <span v-else class="pi-batch-val">{{ fmt(serialAssignedQty(rowKey(row))) }}</span>
                   </td>
                   <td v-else class="pi-td pi-td--input">
                     <MpTooltip
@@ -770,21 +870,28 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <!-- Unit — merged -->
                   <td v-if="row.groupIndex === 0" class="pi-td pi-td--merged" :rowspan="row.groupSize">{{ itemBySkuCode.get(row.skuCode)?.unit }}</td>
-                  <!-- Actions — batch/serial-tracked SKUs manage storage location here
-                       (icon button); "Split storage location" only applies to plain SKUs. -->
-                  <td class="pi-td pi-td--action">
-                    <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pi-tt-batch-${row.id}`" label="Manage batch" placement="top" use-portal>
+                  <!-- Actions — batch/serial-tracked SKUs get ONE Manage button
+                       per SKU (never split into multiple rows — only plain SKUs
+                       can be, via "Split storage location" below). -->
+                  <td v-if="isBatchTrackedSku(row.skuCode) && row.groupIndex === 0" :rowspan="row.groupSize" class="pi-td pi-td--action">
+                    <MpTooltip :id="`pi-tt-batch-${row.skuCode}`" label="Manage batch" placement="top" use-portal>
                       <button class="pi-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(row.skuCode)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pi-tt-serial-${row.id}`" label="Manage serial numbers" placement="top" use-portal>
+                  </td>
+                  <td v-else-if="isSerialTrackedSku(row.skuCode) && row.groupIndex === 0" :rowspan="row.groupSize" class="pi-td pi-td--action">
+                    <MpTooltip :id="`pi-tt-serial-${row.skuCode}`" label="Manage serial numbers" placement="top" use-portal>
                       <button class="pi-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(row.skuCode)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
+                  </td>
+                  <!-- Plain SKU only — a tracked SKU never has a groupIndex > 0
+                       row (it never splits), so this branch is unreachable for
+                       those; kept as a v-else-if purely for correctness. -->
+                  <td v-else-if="!isBatchTrackedSku(row.skuCode) && !isSerialTrackedSku(row.skuCode)" class="pi-td pi-td--action">
                     <MpPopover
-                      v-else
                       :id="`pi-row-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
                     >
                       <MpPopoverTrigger>
@@ -803,7 +910,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                 </tr>
                 <tr v-if="!filteredRows.length">
-                  <td class="pi-td pi-empty" colspan="7">No products match your search.</td>
+                  <td class="pi-td pi-empty" colspan="8">No products match your search.</td>
                 </tr>
               </tbody>
             </table>
@@ -840,7 +947,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :warehouse-id="task?.warehouseId ?? ''"
     kind="put-away"
     :dest-location-paths="locationOptions"
-    :model-value="batchLinesBySku[batchDrawerSku] ?? []"
+    :model-value="batchLinesByRowKey[batchDrawerSku] ?? []"
+    :initial-active-bin="activeBin"
     @update:open="batchDrawerOpen = $event"
     @save="saveBatchLines"
   />
@@ -850,9 +958,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :sku="serialDrawerSku"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="put-away"
-    :target-count="(serialLinesBySku[serialDrawerSku] ?? []).length"
+    :target-count="(serialLinesByRowKey[serialDrawerSku] ?? []).length"
     :dest-location-paths="locationOptions"
-    :model-value="serialLinesBySku[serialDrawerSku] ?? []"
+    :model-value="serialLinesByRowKey[serialDrawerSku] ?? []"
+    :initial-active-bin="activeBin"
     @update:open="serialDrawerOpen = $event"
     @save="saveSerialLines"
   />
@@ -900,7 +1009,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   padding-bottom: var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.pi-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
+.pi-header :deep(.content-list) { padding-top: 0; flex: 0 0 318px; width: 318px; }
+.pi-header :deep(.content-list__value) { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 
 /* ── Summary stats ───────────────────────────────────────────────────────────── */
 .pi-summary { display: flex; gap: var(--mp-spacing-10); align-self: flex-start; }
@@ -951,6 +1061,12 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 }
 .pi-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pi-items thead .pi-th { position: sticky; top: 0; z-index: 1; }
+/* `.pi-items thead .pi-th` above outranks the plain `.pi-th--action` class on
+   specificity alone, so its z-index: 1 would otherwise silently win here,
+   letting the sticky action column's body cells (z-index: 2) scroll over the
+   header at the top-right corner. Match that selector's specificity (and go
+   higher than the body cell) so the header corner always wins. */
+.pi-items thead .pi-th--action { z-index: 3; }
 .pi-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 
 .pi-th {
@@ -973,9 +1089,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   border-right: 1px solid var(--mp-border-default);
   vertical-align: top;
 }
-.pi-td:last-child { border-right: none; }
+/* Action is always the true rightmost column (rendered per row for plain SKUs,
+   once per SKU group for tracked ones), so it's given border-right: none
+   directly rather than relying on `:last-child`. */
 .pi-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
-.pi-td--action { padding: 0; width: 48px; min-width: 48px; position: sticky; right: 0; z-index: 2; background: var(--mp-background-neutral-hovered); }
+.pi-td--action { padding: 0; width: 48px; min-width: 48px; position: sticky; right: 0; z-index: 2; background: var(--mp-background-neutral-hovered); border-right: none; }
 
 /* ── Product cell ─────────────────────────────────────────────────────────────── */
 /* ── Qty to handle input ─────────────────────────────────────────────────────── */
@@ -1016,6 +1134,12 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .pi-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
 
 .pi-batch-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+/* Put away qty for batch/serial rows mirrors the Storage location list line-for-line —
+   same stacked layout (full-width items, so the border-bottom divider still spans the
+   whole cell), just right-aligned text via justify-content instead of shrinking the
+   item box itself (which would clip the divider short). */
+.pi-td--qty-summary { padding: 0; }
+.pi-location-summary-item--num { justify-content: flex-end; padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-4); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pi-td--location-tracked { padding: 10px var(--mp-spacing-4); vertical-align: top; color: var(--mp-text-secondary); }
 .pi-view-btn {
   display: inline-flex; align-items: center; justify-content: center;

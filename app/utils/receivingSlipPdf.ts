@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable'
 import type { TaskLineItem } from '~/data/receivingTaskDetails'
 import { formatDateTimeLong } from './date'
 import { loadImagesByUrl } from './pdfImage'
+import { drawCanceledRibbon } from './pdfRibbon'
 
 /** One printable line — one row per SKU (receiving has no batch/serial detail yet
  *  at this stage; that's recorded during receiving itself, not decided up front). */
@@ -12,6 +13,7 @@ interface ReceivingSlipRow {
   product: string
   img: string
   qty: number
+  targetQty: number
   unit: string
 }
 
@@ -22,18 +24,18 @@ const PHOTO_ROW_HEIGHT = 46
 function buildRows(lineItems: TaskLineItem[]): ReceivingSlipRow[] {
   return lineItems.map((item, i) => ({
     no: i + 1, sku: item.skuCode, product: item.productName, img: item.image,
-    qty: item.expectedQty, unit: item.unit,
+    qty: item.expectedQty, targetQty: item.targetQty, unit: item.unit,
   }))
 }
 
 /**
  * Builds a printable receiving-slip document — handed to the operator BEFORE
- * receiving starts, so it only shows what's expected (purchase qty), never a
+ * receiving starts, so it only shows Purchase qty and Expected qty, never a
  * live received/outstanding count (that's still 0/full at this point). Returns
  * the jsPDF instance for the caller to preview/save (doesn't save it itself).
  */
 export async function generateReceivingSlipPdf(
-  task: { taskNo: string; warehouseName: string; assignee: string; purchaseNo: string },
+  task: { taskNo: string; warehouseName: string; assignee: string; purchaseNo: string; status?: string },
   lineItems: TaskLineItem[],
 ): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
@@ -85,8 +87,8 @@ export async function generateReceivingSlipPdf(
   autoTable(doc, {
     startY: y,
     theme: 'grid',
-    head: [['No.', 'Photo', 'SKU', 'Product', 'Purchase qty', 'Unit']],
-    body: rows.map((r) => [r.no, '', r.sku, r.product, r.qty, r.unit]),
+    head: [['No.', 'Photo', 'SKU', 'Product', 'Purchase qty', 'Expected qty', 'Unit']],
+    body: rows.map((r) => [r.no, '', r.sku, r.product, r.qty, r.targetQty, r.unit]),
     styles: { fontSize: 9, cellPadding: 5, lineColor: [220, 220, 220], lineWidth: 0.5 },
     headStyles: { fillColor: [235, 235, 235], textColor: 20, fontStyle: 'bold' },
     columnStyles: {
@@ -94,7 +96,8 @@ export async function generateReceivingSlipPdf(
       1: { cellWidth: PHOTO_COL_WIDTH, minCellHeight: PHOTO_ROW_HEIGHT },
       2: { cellWidth: 60 },
       4: { cellWidth: 70, halign: 'right' },
-      5: { cellWidth: 50 },
+      5: { cellWidth: 70, halign: 'right' },
+      6: { cellWidth: 50 },
     },
     margin: { left: marginX, right: marginX },
     didDrawCell: (data) => {
@@ -128,6 +131,8 @@ export async function generateReceivingSlipPdf(
   doc.text('Received by', marginX, sigY + 14)
   doc.line(pageWidth - marginX - sigWidth, sigY, pageWidth - marginX, sigY)
   doc.text('Checked by', pageWidth - marginX - sigWidth, sigY + 14)
+
+  if (task.status === 'canceled') drawCanceledRibbon(doc)
 
   return doc
 }

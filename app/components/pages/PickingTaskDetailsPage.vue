@@ -18,6 +18,7 @@ import {
 } from '~/data/pickingTaskDetails'
 import {
   getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds,
+  canCancelPickingTask, cancelPickingTask,
   type PickingTask,
 } from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
@@ -163,6 +164,21 @@ function startPickingAndNavigate() {
   startPicking(props.orderId)
   router.push(`/picking/${props.orderId}/pick`)
 }
+
+// Cancel — only while picking hasn't finished yet (open/in progress). Once
+// partially picked/completed, picking is already done and the task becomes a
+// permanent record.
+const canCancel = computed(() => !!task.value && canCancelPickingTask({ ...task.value, status: localStatus.value }))
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  if (!task.value) return
+  cancelPickingTask(task.value.id)
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
+  goBack()
+}
+
 const pdfPreviewOpen = ref(false)
 const pdfPreviewDoc = ref<jsPDF | null>(null)
 const pdfPreviewFilename = ref('')
@@ -375,7 +391,18 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       <!-- Summary grid -->
       <section class="pkd-summary">
         <div class="content-list-col">
-          <ContentList label="Warehouse" :value="task.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ task.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
@@ -596,6 +623,9 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary" @click="printPickingList">Print picking list</button>
+      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
+        Cancel
+      </button>
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">
         Start picking
       </button>
@@ -610,6 +640,24 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         Create packing
       </button>
     </footer>
+
+    <!-- ── Cancel confirmation ── -->
+    <MpModal id="pkd-cancel" :is-open="cancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Cancel {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          This picking task will be canceled and can no longer be continued. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
   </div>
 
@@ -854,6 +902,8 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 }
 .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
 .detail-item-row:hover .row-hover-btn { display: flex; }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
 
 /* ── Footer ──────────────────────────────────────────────────────────────────── */
 .detail-footer {
@@ -861,6 +911,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent;
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 .detail-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px);

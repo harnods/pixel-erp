@@ -309,7 +309,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <ClampText class="wh-product-sub" :text="(row as any).subtitle" />
                   </span>
                 </div>
-                <button class="row-hover-btn" @click.stop>
+                <button class="row-hover-btn row-hover-btn--top" @click.stop>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                     <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                     <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -487,7 +487,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
                   <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
                     <span>{{ b.batchNo }}</span>
-                    <button class="row-hover-btn" @click.stop>
+                    <button class="row-hover-btn row-hover-btn--top" @click.stop>
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                         <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                         <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -681,7 +681,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 /* Product cell */
 .cell-with-action { position: relative; display: flex; align-items: flex-start; width: 100%; min-width: 0; }
 .wh-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); min-width: 0; }
-.row-hover-btn { position: absolute; right: var(--mp-spacing-4); top: 50%; transform: translateY(-50%); display: none; align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
+.row-hover-btn { position: absolute; right: var(--mp-spacing-4); top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none; align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
 .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
 .cell-with-action:hover .row-hover-btn { display: flex; }
 :global(.erp-tr:hover .row-hover-btn) { display: flex; }
@@ -702,7 +702,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-btd.wh-btd--top { vertical-align: top; }
 .wh-batch-cell { position: relative; }
 .wh-batch-cell:hover .row-hover-btn { display: flex; }
-.row-hover-btn--top { top: var(--mp-spacing-2-5, 10px); transform: none; }
+.row-hover-btn--top { top: var(--mp-spacing-2\.5, 10px); transform: none; }
 .wh-expiry-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); white-space: nowrap; }
 .wh-expiry-cell--danger { color: var(--mp-text-danger, #a8352d); }
 .wh-expiry-warn { display: inline-flex; align-items: center; color: var(--mp-text-danger, #a8352d); flex-shrink: 0; cursor: default; }
@@ -717,10 +717,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-btd { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; white-space: nowrap; background: var(--mp-background-neutral); }
 .wh-btd--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .wh-btd--product, .wh-btd--sku { vertical-align: top; white-space: normal; }
-/* Expanded batch child rows — batch no./location/expiry/qty/unit all top-align,
-   so a taller sibling cell (e.g. a wrapped location) never pushes shorter ones
-   into a visually-centered position within the same row. */
-.wh-batch-child-row .wh-btd { vertical-align: top; }
 /* All-column borders when merged rows are present. border-collapse merges adjacent rights → no doubling.
    No border-left on first col (table edge), no border-right on last col (table edge). */
 .wh-batch-table--bordered .wh-btd,

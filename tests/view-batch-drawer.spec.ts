@@ -211,3 +211,85 @@ describe('ViewBatchDrawer — delivery details ("Order qty" / "Picked qty" / "Pa
     noPrior.unmount()
   })
 })
+
+describe('ViewBatchDrawer — put-away view (qtyBeforeLocation): Received qty before Storage location, one row per bin', () => {
+  it('header shows Received qty BEFORE Storage location — the opposite order from picking/delivery', () => {
+    const wrapper = mountDrawer({
+      qtyLabel: 'Put-away qty',
+      plannedQtyLabel: 'Received qty',
+      qtyBeforeLocation: true,
+      qtyToPick: 3,
+      pickedQty: 3,
+      plannedBatches: [{ batchNo: 'Batch #00001', expiryDate: '2026-12-01', desc: '', qty: 3, unit: 'Sack' }],
+      pickedBatches: [{
+        batchNo: 'Batch #00001', expiryDate: '2026-12-01', desc: '', qty: 3, unit: 'Sack',
+        destLocations: [{ locationId: 'Bin 01', qty: 2 }, { locationId: 'Bin 02', qty: 1 }],
+      }],
+    })
+    expect(headerRow(wrapper)).toEqual(['Batch', 'Expiry date', 'Description', 'Received qty', 'Storage location', 'Put-away qty', 'Unit'])
+    wrapper.unmount()
+  })
+
+  it('a batch split across 2+ destination bins renders one row per bin, Batch/Received qty merged via rowspan', () => {
+    const wrapper = mountDrawer({
+      qtyLabel: 'Put-away qty',
+      plannedQtyLabel: 'Received qty',
+      qtyBeforeLocation: true,
+      qtyToPick: 3,
+      pickedQty: 3,
+      plannedBatches: [{ batchNo: 'Batch #00001', expiryDate: '2026-12-01', desc: '', qty: 3, unit: 'Sack' }],
+      pickedBatches: [{
+        batchNo: 'Batch #00001', expiryDate: '2026-12-01', desc: '', qty: 3, unit: 'Sack',
+        destLocations: [{ locationId: 'Bin 01', qty: 2 }, { locationId: 'Bin 02', qty: 1 }],
+      }],
+    })
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(2)
+
+    const row1cells = rows[0]!.findAll('td')
+    expect(row1cells.map((td) => td.text())).toEqual(['Batch #00001', '01/12/2026', row1cells[2]!.text(), '3', 'Bin 01', '2', 'Sack'])
+    expect(row1cells[0]!.attributes('rowspan')).toBe('2') // Batch
+    expect(row1cells[3]!.attributes('rowspan')).toBe('2') // Received qty
+
+    const row2cells = rows[1]!.findAll('td')
+    // Batch/Expiry/Description/Received qty/Unit are merged (rowspan) — not re-rendered on row 2.
+    expect(row2cells.map((td) => td.text())).toEqual(['Bin 02', '1'])
+    wrapper.unmount()
+  })
+
+  it('a single-bin (unsplit) batch still renders as one row, unaffected by the bin-split machinery', () => {
+    const wrapper = mountDrawer({
+      qtyLabel: 'Put-away qty',
+      plannedQtyLabel: 'Received qty',
+      qtyBeforeLocation: true,
+      qtyToPick: 2,
+      pickedQty: 2,
+      plannedBatches: [{ batchNo: 'Batch #00001', expiryDate: '2026-12-01', desc: '', qty: 2, unit: 'Sack' }],
+      pickedBatches: [{
+        batchNo: 'Batch #00001', expiryDate: '2026-12-01', desc: '', qty: 2, unit: 'Sack',
+        destLocations: [{ locationId: 'Bin 01', qty: 2 }],
+      }],
+    })
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(1)
+    const cells = rows[0]!.findAll('td')
+    expect(cells.map((td) => td.text())).toEqual(['Batch #00001', '01/12/2026', cells[2]!.text(), '2', 'Bin 01', '2', 'Sack'])
+    wrapper.unmount()
+  })
+
+  it('without qtyBeforeLocation, the same data keeps the original order — proves the reorder is opt-in, not global', () => {
+    const wrapper = mountDrawer({
+      qtyLabel: 'Put-away qty',
+      plannedQtyLabel: 'Received qty',
+      qtyToPick: 3,
+      pickedQty: 3,
+      plannedBatches: [{ batchNo: 'Batch #00001', expiryDate: '2026-12-01', desc: '', qty: 3, unit: 'Sack' }],
+      pickedBatches: [{
+        batchNo: 'Batch #00001', expiryDate: '2026-12-01', desc: '', qty: 3, unit: 'Sack',
+        destLocations: [{ locationId: 'Bin 01', qty: 3 }],
+      }],
+    })
+    expect(headerRow(wrapper)).toEqual(['Batch', 'Expiry date', 'Description', 'Storage location', 'Received qty', 'Put-away qty', 'Unit'])
+    wrapper.unmount()
+  })
+})

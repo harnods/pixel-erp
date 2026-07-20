@@ -62,8 +62,15 @@ export interface ReceivingItem {
   sku: string;
   productName: string;
   unit: string;
-  /** units expected for this SKU in this task (from the PO line) */
+  /** Purchase qty — units ordered for this SKU on the PO line. The hard ceiling:
+   *  receivedQty may exceed targetQty but never this. */
   expectedQty: number;
+  /** "Expected qty" shown in the UI — how much is realistically expected to
+   *  arrive in THIS receiving task. Defaults to expectedQty at creation, but can
+   *  be set lower (never higher — see createReceivingTask). Drives the
+   *  Outstanding qty display and the barcode-scan-threshold check; does NOT cap
+   *  receivedQty (expectedQty/Purchase qty still does). */
+  targetQty: number;
   /** units the operator has recorded as received */
   receivedQty: number;
   /** Per-batch breakdown of receivedQty, recorded via Manage batch (batch-tracked SKUs only). */
@@ -187,11 +194,16 @@ function buildItems(
     else if (mode === "partial")
       received = (seed + i) % 3 === 0 ? 0 : Math.round(l.purchaseQty * (0.4 + ((seed + i) % 3) * 0.2));
     const receivedQty = Math.min(l.purchaseQty, received);
+    // Demo variety: ~1 in 4 lines expects a partial shipment this task (Expected
+    // qty < Purchase qty) — everything else defaults to the full Purchase qty,
+    // same as before this field existed.
+    const targetQty = (seed + i) % 4 === 0 ? Math.max(0, Math.round(l.purchaseQty * 0.7)) : l.purchaseQty;
     const item: ReceivingItem = {
       sku: l.sku,
       productName: l.productName,
       unit: l.unit,
       expectedQty: l.purchaseQty,
+      targetQty,
       receivedQty,
     };
     if (receivedQty > 0 && isSerialSku(l.sku)) {
@@ -307,8 +319,22 @@ function patchSnapshotSerials(snap: ReceivingTask[]): ReceivingTask[] {
   });
 }
 
+/**
+ * Migration: backfill targetQty on any snapshot saved before this field existed
+ * (both seed AND user-created tasks — this is a structural-field default, not a
+ * business-data backfill, so it isn't scoped to SEED_ID_RE like the one above).
+ * Defaults to expectedQty (Purchase qty), matching every task's actual behavior
+ * before "Expected qty" existed as its own concept.
+ */
+function patchMissingTargetQty(snap: ReceivingTask[]): ReceivingTask[] {
+  return snap.map((t) => {
+    if (t.items.every((it) => it.targetQty !== undefined)) return t;
+    return { ...t, items: t.items.map((it) => ({ ...it, targetQty: it.targetQty ?? it.expectedQty })) };
+  });
+}
+
 const _snap = loadSnapshot<ReceivingTask>("receiving");
-const snapshot = _snap ? patchSnapshotSerials(_snap) : null;
+const snapshot = _snap ? patchMissingTargetQty(patchSnapshotSerials(_snap)) : null;
 export const receivingTasks = reactive<ReceivingTask[]>(snapshot ?? seedTasks());
 
 /** PO grouping used by the Receiving index — derived from the flat task store. */
@@ -389,56 +415,47 @@ export function coverageForReceipt(receiptId: string): Set<string> {
   return covered;
 }
 
-/** PO line items that still need receiving: never covered, OR covered but received < purchased
- *  and not currently held by an open/in-progress task. */
+/** Per-SKU qty already spoken for on this receipt — either physically received
+ *  by an ENDED task ("pending put-away"/"completed", its real receivedQty), or
+ *  claimed by a still-open/in-progress task (its own planned targetQty, not
+ *  necessarily received yet). A SKU can be split across more than one
+ *  concurrent task this way, as long as their combined claim never exceeds the
+ *  line's Purchase qty — used everywhere "how much of this SKU is left to
+ *  receive" needs to account for BOTH, so a second task can't re-claim units
+ *  an open task already has dibs on. */
+export function claimedQtyBySku(receiptId: string): Record<string, number> {
+  const claimed: Record<string, number> = {};
+  for (const t of receivingTasks) {
+    if (t.receiptId !== receiptId) continue;
+    if (t.status === "open" || t.status === "in progress") {
+      for (const it of t.items) claimed[it.sku] = (claimed[it.sku] ?? 0) + it.targetQty;
+    } else if (t.status === "pending put-away" || t.status === "completed") {
+      for (const it of t.items) claimed[it.sku] = (claimed[it.sku] ?? 0) + it.receivedQty;
+    }
+  }
+  return claimed;
+}
+
+/** PO line items that still need receiving: purchaseQty exceeds what's already
+ *  claimed across every task on this receipt (open/in-progress claims by their
+ *  own targetQty, ended tasks by their real receivedQty) — never a blanket
+ *  "any open task touches this SKU at all" exclusion, so a SKU only partially
+ *  targeted by an open task still offers its real remainder to a new one. */
 export function uncoveredLineItems(
   receiptId: string,
 ): { sku: string; productName: string; unit: string; purchaseQty: number }[] {
   const r = receipts.find((x) => x.id === receiptId);
   if (!r) return [];
-
-  const activelyCovered = new Set<string>();
-  const received: Record<string, number> = {};
-  for (const t of receivingTasks) {
-    if (t.receiptId !== receiptId) continue;
-    if (t.status === "open" || t.status === "in progress")
-      for (const it of t.items) activelyCovered.add(it.sku);
-    if (t.status === "pending put-away" || t.status === "completed")
-      for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
-  }
-
-  return lineItemsForReceipt(r).filter(
-    (l) => !activelyCovered.has(l.sku) && (received[l.sku] ?? 0) < l.purchaseQty,
-  );
+  const claimed = claimedQtyBySku(receiptId);
+  return lineItemsForReceipt(r).filter((l) => (claimed[l.sku] ?? 0) < l.purchaseQty);
 }
 
-/** A receiving task can be created while uncovered SKUs remain (and PO isn't canceled).
- *  Also returns true for partial reception POs where received < purchased and no active
- *  task currently covers the outstanding SKUs. */
+/** A receiving task can be created while uncovered SKUs remain (and PO isn't canceled). */
 export function canCreateReceivingTask(receiptId: string): boolean {
   const r = receipts.find((x) => x.id === receiptId);
   if (!r || r.status === "canceled" || r.status === "completed") return false;
-
-  // SKUs already held by an open/in-progress task — don't create a duplicate
-  const activelyCovered = new Set<string>();
-  for (const t of receivingTasks) {
-    if (t.receiptId !== receiptId) continue;
-    if (t.status === "open" || t.status === "in progress")
-      for (const it of t.items) activelyCovered.add(it.sku);
-  }
-
-  // Total received per SKU (across all ended tasks)
-  const received: Record<string, number> = {};
-  for (const t of receivingTasks) {
-    if (t.receiptId !== receiptId) continue;
-    if (t.status !== "pending put-away" && t.status !== "completed") continue;
-    for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
-  }
-
-  const lines = lineItemsForReceipt(r);
-  return lines.some(
-    (l) => !activelyCovered.has(l.sku) && (received[l.sku] ?? 0) < l.purchaseQty,
-  );
+  const claimed = claimedQtyBySku(receiptId);
+  return lineItemsForReceipt(r).some((l) => (claimed[l.sku] ?? 0) < l.purchaseQty);
 }
 
 // ── Mutations (state machine) ────────────────────────────────────────────────────
@@ -460,6 +477,14 @@ export function createReceivingTask(opts: {
   receiptId: string;
   assignee: string;
   skus: string[];
+  /** Per-SKU "Expected qty" from the Create Purchase Receiving form — how much
+   *  is realistically expected THIS task, distinct from (and never above) the
+   *  SKU's outstanding qty (Purchase qty minus whatever's already claimed
+   *  elsewhere on this same receipt — ended tasks' real receivedQty, plus any
+   *  other still-open/in-progress task's own targetQty). Any SKU left out, or
+   *  given a value above its own outstanding qty, just defaults to the
+   *  outstanding qty. */
+  targetQtyBySku?: Record<string, number>;
 }): ReceivingTask | null {
   const r = receipts.find((x) => x.id === opts.receiptId);
   if (!r) return null;
@@ -467,13 +492,7 @@ export function createReceivingTask(opts: {
   const chosen = lines.filter((l) => opts.skus.includes(l.sku));
   if (!chosen.length) return null;
 
-  // Outstanding qty per SKU = purchaseQty minus what ended tasks already received
-  const priorReceived: Record<string, number> = {};
-  for (const t of receivingTasks) {
-    if (t.receiptId !== r.id) continue;
-    if (t.status !== "pending put-away" && t.status !== "completed") continue;
-    for (const it of t.items) priorReceived[it.sku] = (priorReceived[it.sku] ?? 0) + it.receivedQty;
-  }
+  const claimed = claimedQtyBySku(r.id);
 
   const n = freshSeq();
   const task: ReceivingTask = {
@@ -484,13 +503,18 @@ export function createReceivingTask(opts: {
     warehouseId: r.warehouseId,
     warehouseName: r.warehouseName,
     assignee: opts.assignee || operatorForWarehouse(r.warehouseId, 0),
-    items: chosen.map((l) => ({
-      sku: l.sku,
-      productName: l.productName,
-      unit: l.unit,
-      expectedQty: l.purchaseQty,
-      receivedQty: 0,
-    })),
+    items: chosen.map((l) => {
+      const outstanding = Math.max(0, l.purchaseQty - (claimed[l.sku] ?? 0));
+      const target = opts.targetQtyBySku?.[l.sku];
+      return {
+        sku: l.sku,
+        productName: l.productName,
+        unit: l.unit,
+        expectedQty: l.purchaseQty,
+        targetQty: target === undefined ? outstanding : Math.min(Math.max(0, target), outstanding),
+        receivedQty: 0,
+      };
+    }),
     skuScope: "",
     skuCount: 0,
     purchaseQty: 0,

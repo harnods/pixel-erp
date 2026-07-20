@@ -25,4 +25,11 @@ describe('generateReceivingSlipPdf', () => {
     const doc = await generateReceivingSlipPdf(task, [])
     expect(typeof doc.output).toBe('function')
   })
+
+  it('draws the canceled ribbon without throwing when the task is canceled', async () => {
+    const task = { ...receivingTasks[0]!, status: 'canceled' as const }
+    const items = getTaskLineItems(task)
+    const doc = await generateReceivingSlipPdf(task, items)
+    expect(typeof doc.output).toBe('function')
+  })
 })

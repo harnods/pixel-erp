@@ -951,7 +951,7 @@ const bulkCountLabel = computed(() => {
 /* Sticky separator border only when the table actually overflows horizontally */
 .erp-table-wrapper.is-overflowing .erp-th--fixed,
 .erp-table-wrapper.is-overflowing .erp-td--fixed {
-  box-shadow: inset 1px 0 0 0 var(--mp-border-bold);
+  box-shadow: inset 1px 0 0 0 var(--mp-border-default);
 }
 .has-ai .erp-td--fixed {
   right: var(--mp-sizes-7);

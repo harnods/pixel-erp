@@ -230,3 +230,33 @@ describe('ViewSerialDrawer — packing task details (View SN details for a seria
     wrapper.unmount()
   })
 })
+
+describe('ViewSerialDrawer — statusPlannedLabel/statusPickedLabel (put-away details)', () => {
+  // Put-away reuses this same plannedSerials/pickedSerials union+badge plumbing
+  // for a different fact than picking: a serial already RECEIVED (plannedSerials)
+  // vs. already ASSIGNED to a storage bin (pickedSerials) — "Reserved"/"Picked"
+  // (picking's own vocabulary) don't fit; nothing is "reserved" in put-away.
+  it('defaults stay "Reserved"/"Picked" when the new labels are not passed (picking/packing/delivery unaffected)', () => {
+    const wrapper = mountDrawer({
+      plannedSerials: [{ serial: 'SN001', location: 'Bin 01' }, { serial: 'SN002', location: '' }],
+      pickedSerials: [{ serial: 'SN001', location: 'Bin 01' }],
+    })
+    expect(bodyRow(wrapper, 'SN001')?.text()).toContain('Picked')
+    expect(bodyRow(wrapper, 'SN002')?.text()).toContain('Reserved')
+    wrapper.unmount()
+  })
+
+  it('put-away passes "Received"/"Assigned" instead — a not-yet-binned serial reads "Received", a binned one reads "Assigned"', () => {
+    const wrapper = mountDrawer({
+      plannedSerials: [{ serial: 'SN001', location: 'Bin 01' }, { serial: 'SN002', location: '' }],
+      pickedSerials: [{ serial: 'SN001', location: 'Bin 01' }],
+      statusPlannedLabel: 'Received',
+      statusPickedLabel: 'Assigned',
+    })
+    expect(bodyRow(wrapper, 'SN001')?.text()).toContain('Assigned')
+    expect(bodyRow(wrapper, 'SN001')?.text()).not.toContain('Picked')
+    expect(bodyRow(wrapper, 'SN002')?.text()).toContain('Received')
+    expect(bodyRow(wrapper, 'SN002')?.text()).not.toContain('Reserved')
+    wrapper.unmount()
+  })
+})

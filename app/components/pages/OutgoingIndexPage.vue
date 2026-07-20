@@ -309,6 +309,12 @@ function bulkPickable(selectedRows: Set<number>): boolean {
   if (!rows.every(o => o.warehouseId === wh)) return false
   return rows.some(canPickOrder)
 }
+// Explains why "Create picking list" is missing when it's specifically the
+// multi-warehouse rule that's blocking it (as opposed to none being pickable).
+function selectionSpansMultipleWarehouses(selectedRows: Set<number>): boolean {
+  const whs = new Set(selectedOrdersOf(selectedRows).map(o => o.warehouseId))
+  return whs.size > 1
+}
 // Bulk → create one picking list from the pickable orders in that (single) warehouse.
 function bulkCreatePicking(selectedRows: Set<number>, deselectAll: () => void) {
   if (!bulkPickable(selectedRows)) return
@@ -390,6 +396,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       >
         Create picking list
       </button>
+      <span v-else-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="out-bulk-hint">
+        Select orders from a single warehouse to create a picking list
+      </span>
       <button
         v-if="bulkCancelable(selectedRows as Set<number>)"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
@@ -869,13 +878,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   color: var(--mp-text-subtle);
 }
 
+/* Bulk-bar hint — explains why the create action is missing */
+.out-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+
 /* Source */
 .out-source {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden; white-space: normal; color: var(--mp-text-default);
 }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -890,15 +902,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Kebab — 20px tall so the actions cell stays within the 40px text-only row
    (10px vertical padding + 20px control = 40px → row stays middle-aligned). */
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
   margin-left: auto; /* keep it right-aligned in the actions cell */
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary);
 }
 /* block svg → no inline descender, so the cell stays within the 40px row */
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 /* Empty state */
 .empty-full { display: flex; flex-direction: column; align-items: center; }

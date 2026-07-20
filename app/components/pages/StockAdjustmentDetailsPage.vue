@@ -440,7 +440,18 @@ onUnmounted(() => {
             <ContentList label="Assignee" :value="adjustment.assignee || '—'" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Warehouse" :value="adjustment.warehouseName" />
+            <ContentList label="Warehouse">
+              <div class="wh-link-wrap">
+                <span>{{ adjustment.warehouseName }}</span>
+                <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${adjustment.warehouseId}`)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </ContentList>
             <ContentList label="Start date" :value="formatDateTimeLong(adjustment.startDate)" />
             <ContentList label="End date" :value="formatDateTimeLong(adjustment.endDate)" />
           </div>
@@ -460,7 +471,18 @@ onUnmounted(() => {
           </div>
           <div class="content-list-col">
             <ContentList label="Transaction no." :value="adjustment.number" />
-            <ContentList label="Warehouse" :value="adjustment.warehouseName" />
+            <ContentList label="Warehouse">
+              <div class="wh-link-wrap">
+                <span>{{ adjustment.warehouseName }}</span>
+                <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${adjustment.warehouseId}`)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList v-if="!isCount" label="Category" :value="adjustment.category" />
@@ -1075,6 +1097,8 @@ onUnmounted(() => {
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
 .detail-item-row:hover .row-hover-btn { display: flex; }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging {

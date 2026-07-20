@@ -22,6 +22,7 @@ import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { productBySku } from '~/data/inventory'
 import { resolveScan, notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -116,7 +117,7 @@ function handleScan(rawValue: string) {
   if (!v || !task.value) return
   // Global resolver — maps Batch No. / Serial Number / SKU straight to its real SKU,
   // same as picking/receiving/put-away; packing itself has no batch/serial choice
-  // to make (that was already decided at picking), so any of the three just
+  // to make (that was already decided at picking), so a batch/serial scan just
   // increments this line's packed qty by 1.
   const resolved = resolveScan(task.value.warehouseId, v)
   if (!resolved) {
@@ -126,6 +127,16 @@ function handleScan(rawValue: string) {
   const item = lineItems.value.find(it => it.skuCode === resolved.sku)
   if (!item) {
     notifyScanError(`${v}: SKU ${resolved.sku} isn't on this packing task`)
+    return
+  }
+  // Scanning the SKU's own barcode (not a specific batch/serial) for a
+  // batch/serial-tracked line opens its View drawer directly, same as
+  // Receiving/Picking/Put-away — instead of ambiguously incrementing a
+  // count without saying which batch/serial it came from.
+  if (resolved.kind === 'sku' && (isBatchTrackedSku(item.skuCode) || isSerialTrackedSku(item.skuCode))) {
+    playScanSuccessSound()
+    if (isBatchTrackedSku(item.skuCode)) openViewBatch(item)
+    else openViewSerial(item)
     return
   }
   const current = draftQty.value[item.key] ?? 0
@@ -222,13 +233,35 @@ function commit() {
     trackingNo: info?.trackingNo,
   })
   toast.notify({ variant: 'success', title: 'Packing finished, delivery ready to ship' , maxWidth: 'max-content'})
+  // Already committed — the router.push below is this function's own doing,
+  // not the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   router.push(`/packing/${props.orderId}`)
 }
 function saveDraft() {
   savePackingDraft(props.orderId, { ...draftQty.value })
   toast.notify({ variant: 'success', title: 'Packing draft saved' , maxWidth: 'max-content'})
+  disableUnsavedChangesGuard()
   router.push(`/packing/${props.orderId}`)
 }
+
+// ── Warn before losing unsaved packing progress — refresh/close-tab (native
+// prompt) and in-app navigation/Back button (modal rendered once at the app
+// root, see [...slug].vue — this app has a single catch-all route, so a
+// per-page modal/onBeforeRouteLeave never fires). "Unsaved" = anything packed
+// at all. disableUnsavedChangesGuard() is called by commit()/saveDraft()
+// right before their own router.push — otherwise hasUnsavedChanges() would
+// still read true (nothing else resets the packed qty after commit) and the
+// "Leave without saving?" modal would fire right after the operator's own
+// intentional Finish/Save action. ────────────────────────────────────────────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => draftPackedTotal.value > 0,
+  saveDraft: () => {
+    savePackingDraft(props.orderId, { ...draftQty.value })
+    toast.notify({ variant: 'success', title: 'Packing draft saved', maxWidth: 'max-content' })
+  },
+})
+
 function goBack() { router.push(`/packing/${props.orderId}`) }
 function goPacking() { router.push('/outbound-delivery?tab=Packing') }
 
@@ -485,7 +518,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 .pak-header { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
-.pak-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
+.pak-header :deep(.content-list) { padding-top: 0; flex: 0 0 318px; width: 318px; }
+.pak-header :deep(.content-list__value) { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 .pak-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pak-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
 .pak-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }

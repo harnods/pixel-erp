@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  MpButton, MpCheckbox, MpSpinner, MpAutocomplete,
+  MpButton, MpCheckbox, MpSpinner, MpAutocomplete, MpTooltip, MpIcon,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   css,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { receivingPOs } from '~/data/receivingTasks'
 import { getTaskLineItems, type TaskLineItem } from '~/data/receivingTaskDetails'
 import { addPutAwayTask } from '~/data/putAwayTasks'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { productBySku } from '~/data/inventory'
 import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
@@ -117,15 +121,47 @@ const selectedTasks = computed(() =>
   pendingTasks.value.filter(t => selectedIds.value.has(t.id)),
 )
 
+// ── Batch / serial helpers (same heuristic as receiving / put-away details) ───
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(warehouseId.value)
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+
 // ─── Aggregated SKU rows from selected tasks ───────────────────────────────────
+// One row per SKU, merged across every selected receiving task — put-away
+// doesn't track which specific task a unit came from, only the total qty and
+// (for traceability) which tasks contributed. Received qty sums, batch/serial
+// data concatenates.
 interface SkuRow extends TaskLineItem {
-  taskId: string
-  taskNo: string
+  taskNos: string[]
   rowKey: string
 }
 
+// View batch / View serial number — read-only, which batch/serial is already
+// on this receiving task (batch/serial identity is a settled fact from
+// receiving, same as on the put-away details page — nothing here depends on
+// the put-away task even existing yet).
+const viewBatchItem = ref<SkuRow | null>(null)
+const viewSerialItem = ref<SkuRow | null>(null)
+function openViewBatch(row: SkuRow) { viewBatchItem.value = row }
+function openViewSerial(row: SkuRow) { viewSerialItem.value = row }
+
 const skuRows = computed<SkuRow[]>(() => {
-  const rows: SkuRow[] = []
+  const bySku = new Map<string, SkuRow>()
   for (const t of selectedTasks.value) {
     // find the full ReceivingTask for getTaskLineItems
     const po = receivingPOs.find(p => p.id === t.warehouseId || p.tasks.some(tk => tk.id === t.id))
@@ -135,16 +171,19 @@ const skuRows = computed<SkuRow[]>(() => {
     // Partial reception: some SKUs on the task may have 0 received qty — nothing
     // to put away for those, so exclude them from the scope.
     const items = getTaskLineItems(task, t.purchaseNo).filter(item => item.receivedQty > 0)
-    items.forEach((item, i) => {
-      rows.push({
-        ...item,
-        taskId: t.id,
-        taskNo: t.taskNo,
-        rowKey: `${t.id}::${item.skuCode}::${i}`,
-      })
-    })
+    for (const item of items) {
+      const existing = bySku.get(item.skuCode)
+      if (existing) {
+        existing.receivedQty += item.receivedQty
+        existing.taskNos.push(t.taskNo)
+        if (item.batchLines?.length) existing.batchLines = [...(existing.batchLines ?? []), ...item.batchLines]
+        if (item.serialNumbers?.length) existing.serialNumbers = [...(existing.serialNumbers ?? []), ...item.serialNumbers]
+      } else {
+        bySku.set(item.skuCode, { ...item, taskNos: [t.taskNo], rowKey: item.skuCode })
+      }
+    }
   }
-  return rows
+  return [...bySku.values()]
 })
 
 // ─── Progressive pagination for SKU table ─────────────────────────────────────
@@ -427,6 +466,7 @@ async function handleCreate() {
                 <col />
                 <col />
                 <col />
+                <col />
               </colgroup>
               <thead>
                 <tr>
@@ -435,6 +475,7 @@ async function handleCreate() {
                   <th class="pa-th">Receiving task</th>
                   <th class="pa-th pa-th--num">Qty</th>
                   <th class="pa-th">Unit</th>
+                  <th class="pa-th pa-th--action"></th>
                 </tr>
               </thead>
               <tbody>
@@ -443,9 +484,21 @@ async function handleCreate() {
                     <ProductCell :name="row.productName" :desc="row.productDesc" :image="row.image" />
                   </td>
                   <td class="pa-td"><span class="pa-sku-text">{{ row.skuCode }}</span></td>
-                  <td class="pa-td"><span class="pa-task-ref">{{ row.taskNo }}</span></td>
+                  <td class="pa-td"><span class="pa-task-ref">{{ row.taskNos.join(', ') }}</span></td>
                   <td class="pa-td pa-td--num">{{ formatNum(row.receivedQty) }}</td>
                   <td class="pa-td">{{ row.unit }}</td>
+                  <td class="pa-td pa-td--action">
+                    <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pa-tt-batch-${row.rowKey}`" label="View batch" placement="top" use-portal>
+                      <button class="pa-view-btn" type="button" aria-label="View batch" @click="openViewBatch(row)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pa-tt-serial-${row.rowKey}`" label="View serial number" placement="top" use-portal>
+                      <button class="pa-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(row)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -468,6 +521,32 @@ async function handleCreate() {
       <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
+
+  <ViewBatchDrawer
+    v-if="viewBatchItem"
+    :open="true"
+    :sku="viewBatchItem.skuCode"
+    :warehouse-id="warehouseId"
+    kind="packing"
+    qty-label="Received qty"
+    :picked-batches="viewBatchItem.batchLines ?? []"
+    :product-name="viewBatchItem.productName"
+    :product-img="viewBatchItem.image"
+    @update:open="viewBatchItem = null"
+  />
+  <ViewSerialDrawer
+    v-if="viewSerialItem"
+    :open="true"
+    :sku="viewSerialItem.skuCode"
+    :warehouse-id="warehouseId"
+    kind="packing"
+    qty-label="Received qty"
+    :counted-total="(viewSerialItem.serialNumbers ?? []).length"
+    :picked-serials="(viewSerialItem.serialNumbers ?? []).map(serial => ({ serial, location: '' }))"
+    :product-name="viewSerialItem.productName"
+    :product-img="viewSerialItem.image"
+    @update:open="viewSerialItem = null"
+  />
 </template>
 
 <style scoped>
@@ -567,6 +646,13 @@ async function handleCreate() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
+/* Every column gets a left/right border; Action (always the true rightmost
+   column) gets border-right: none instead, since its right edge is the
+   table's own outer edge. */
+.pa-items .pa-th,
+.pa-items .pa-td { border-right: 1px solid var(--mp-border-default); }
+.pa-items .pa-th--action { border-right: none; }
+.pa-items .pa-td--action { border-right: none; }
 
 .pa-task-row { cursor: pointer; transition: background 80ms; }
 .pa-task-row:hover .pa-td { background: var(--mp-background-neutral-subtle); }
@@ -591,6 +677,16 @@ async function handleCreate() {
 .pa-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pa-items { width: 100%; table-layout: auto; border-collapse: collapse; }
 .pa-items thead .pa-th { position: sticky; top: 0; z-index: 1; }
+/* `.pa-items thead .pa-th` above outranks the plain `.pa-th--action` class on
+   specificity alone, so its z-index: 1 would otherwise silently win here,
+   letting the sticky action column's body cells (also z-index: 1) scroll over
+   the header at the top-right corner. Match that selector's specificity (and
+   go higher) so the header corner always wins. */
+.pa-items thead .pa-th--action { z-index: 3; }
+.pa-th--action { padding: 0; width: 48px; min-width: 48px; position: sticky; right: 0; z-index: 2; background: var(--mp-background-neutral-subtle); }
+.pa-td--action { text-align: center; white-space: nowrap; position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
+.pa-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.pa-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Product cell */
 .pa-product { display: flex; align-items: center; gap: var(--mp-spacing-3); }

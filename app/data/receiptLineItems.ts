@@ -50,6 +50,26 @@ function demoInboundLines(receipt: Receipt): ReceiptLineItem[] {
 
 export function lineItemsForReceipt(receipt: Receipt): ReceiptLineItem[] {
   if (receipt.id === DEMO_RECEIPT_ID) return demoInboundLines(receipt)
+  // A user-created receipt carries its REAL entered products — use those
+  // instead of fabricating an unrelated mix from skuQty/purchaseQty alone
+  // (the bug: what was actually entered on Create receipt never matched what
+  // the details page showed, because this function never looked at it).
+  if (receipt.lineItems?.length) {
+    return receipt.lineItems.map(({ productId, qty }) => {
+      const p = CATALOG.find((c) => c.id === productId)
+      return {
+        productId,
+        productName: p?.name ?? '',
+        productDesc: p?.desc ?? '',
+        sku: p?.sku ?? '',
+        colorHue: p?.hue ?? 0,
+        image: p?.img ?? '',
+        unit: p?.unit ?? '',
+        purchaseQty: qty,
+        storageLocation: binForSku(receipt.warehouseId, p?.sku ?? ''),
+      }
+    })
+  }
   const seed = receipt.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
   const count = Math.min(receipt.skuQty, CATALOG.length)
   const used = new Set<number>()

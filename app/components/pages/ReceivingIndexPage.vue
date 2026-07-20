@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
@@ -8,9 +8,10 @@ import {
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDateTime } from '~/utils/date'
 import {
-  receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask,
+  receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask, startReceiving,
   type ReceivingPO, type ReceivingTask,
 } from '~/data/receivingTasks'
 import { putAwayTasksFor } from '~/data/putAwayTasks'
@@ -31,6 +32,22 @@ const { assignedWarehouses } = useWarehouseContext()
 const scopedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.id))
 const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
+// ─── Columns ───────────────────────────────────────────────────────────────────
+const baseColumnItems = [
+  { key: 'taskNo', label: 'Receiving task no.', disabled: true },
+  { key: 'purchaseNo', label: 'Purchase order no.' },
+  { key: 'warehouseName', label: 'Warehouse' },
+  { key: 'assignee', label: 'Assignee' },
+  { key: 'skuCount', label: 'Sku qty' },
+  { key: 'expectedQty', label: 'Expected qty' },
+  { key: 'receivedQty', label: 'Received qty' },
+  { key: 'status', label: 'Status' },
+  { key: 'startDate', label: 'Start date' },
+  { key: 'endDate', label: 'End date' },
+]
+const columnItems = computed(() => isScoped.value ? baseColumnItems.filter(c => c.key !== 'assignee') : baseColumnItems)
+const colVis = reactive<Record<string, boolean>>(Object.fromEntries(baseColumnItems.map(c => [c.key, true])))
+
 // ─── Filters ───────────────────────────────────────────────────────────────────
 const search = ref('')
 const warehouseFilter = ref<string[]>([])
@@ -41,7 +58,7 @@ const activeWarehouseFilter = useActiveWarehouseFilter()
 watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
 onUnmounted(() => { activeWarehouseFilter.value = [] })
 const assigneeFilter = ref('')
-const statusFilter = ref('') // '' | open | completed
+const statusFilter = ref<string[]>([])
 
 // Bumped after a bulk status mutation so the (plain-data) queue recomputes.
 const dataVersion = ref(0)
@@ -82,7 +99,17 @@ function toggleWarehouse(id: string) {
   else warehouseFilter.value = [...warehouseFilter.value, id]
 }
 const assigneeLabel = computed(() => assigneeOptions.value.find(o => o.value === assigneeFilter.value)?.label ?? '')
-const statusLabel = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return statusOptions.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} statuses`
+})
+function toggleStatus(v: string) {
+  const idx = statusFilter.value.indexOf(v)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(x => x !== v)
+  else statusFilter.value = [...statusFilter.value, v]
+}
 
 // Flat task list filtered by the active criteria.
 const filteredTasks = computed<ReceivingTask[]>(() => {
@@ -90,7 +117,7 @@ const filteredTasks = computed<ReceivingTask[]>(() => {
   return baseTasks.value
     .filter(t => !warehouseFilter.value.length || warehouseFilter.value.includes(t.warehouseId))
     .filter(t => !assigneeFilter.value || t.assignee === assigneeFilter.value)
-    .filter(t => !statusFilter.value || t.status === statusFilter.value)
+    .filter(t => !statusFilter.value.length || statusFilter.value.includes(t.status))
     .filter(t =>
       !s
       || t.purchaseNo.toLowerCase().includes(s)
@@ -100,10 +127,10 @@ const filteredTasks = computed<ReceivingTask[]>(() => {
 })
 
 const hasActiveFilter = computed(
-  () => !!search.value || !!statusFilter.value || warehouseFilter.value.length > 0 || !!assigneeFilter.value,
+  () => !!search.value || statusFilter.value.length > 0 || warehouseFilter.value.length > 0 || !!assigneeFilter.value,
 )
 function clearFilters() {
-  search.value = ''; statusFilter.value = ''; warehouseFilter.value = []; assigneeFilter.value = ''
+  search.value = ''; statusFilter.value = []; warehouseFilter.value = []; assigneeFilter.value = ''
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
@@ -116,9 +143,9 @@ const pagedTasks  = computed(() => {
 })
 watch([search, warehouseFilter, assigneeFilter, statusFilter, perPage], () => { currentPage.value = 1 })
 
-// Total columns (Assignee hidden for Ops) — for the bulk bar colspan.
-// PO no. + Task no. + Warehouse + Assignee? + SKU scope + Purch qty + Recv qty + Status + Icons + Start + End + Actions
-const colCount = computed(() => (isScoped.value ? 11 : 12))
+// Total columns currently rendered (toggleable columns still visible, plus the
+// always-on Task no./icons/actions columns) — for the bulk bar colspan.
+const colCount = computed(() => columnItems.value.filter(c => colVis[c.key]).length + 2)
 
 // ─── Icon indicator — put-away task badge ───────────────────────────────────
 function hasPutAwayTask(taskId: string): boolean {
@@ -149,6 +176,12 @@ const selectedPutAwayWarehouseId = computed<string | null>(() => {
   return whs.size === 1 ? [...whs][0]! : null
 })
 const canCreatePutAway = computed(() => selectedPutAwayWarehouseId.value !== null)
+// Explains why "Create put-away" is missing when it's specifically the
+// multi-warehouse rule that's blocking it (as opposed to none being pending put-away).
+const selectedTasksSpanMultipleWarehouses = computed(() => {
+  const whs = new Set(selectedTaskObjs.value.map(t => t.warehouseId))
+  return whs.size > 1
+})
 function toggleTask(id: string) {
   const s = new Set(selectedTasks.value)
   s.has(id) ? s.delete(id) : s.add(id)
@@ -188,6 +221,12 @@ onMounted(() => { window.addEventListener('keydown', onEsc) })
 onUnmounted(() => { window.removeEventListener('keydown', onEsc) })
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+// Expected qty (targetQty) summed across the task's own lines — more relevant
+// here than Purchase qty (t.purchaseQty, whole-PO scope): this list is about
+// what each task is actually going after, not the PO's total demand.
+function expectedQtyTotal(t: ReceivingTask): number {
+  return t.items.reduce((s, it) => s + it.targetQty, 0)
+}
 // Aging shows only when a task ran longer than a day.
 function aging(t: ReceivingTask) {
   const d = taskAgingDays(t)
@@ -197,6 +236,11 @@ function aging(t: ReceivingTask) {
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(t: ReceivingTask) { router.push(`/receiving/${t.id}`) }
+function startReceivingAndNavigate(t: ReceivingTask) {
+  startReceiving(t.id)
+  router.push(`/receiving/${t.id}/receive`)
+}
+function continueReceiving(t: ReceivingTask) { router.push(`/receiving/${t.id}/receive`) }
 function createPutAway(t: ReceivingTask) {
   router.push({ path: '/inbound-delivery/put-away/create', query: { warehouseId: t.warehouseId, taskId: t.id } })
 }
@@ -257,18 +301,25 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover id="rcvg-status-filter" is-close-on-select>
+        <MpPopover id="rcvg-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <MpSelect id="rcvg-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''">
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+            <MpSelect id="rcvg-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = []">
+              <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem v-for="opt in statusOptions" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in statusOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`rcvg-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
       </div>
@@ -283,6 +334,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="rcvg-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-rcvg-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -307,16 +359,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <table class="rcvg-table">
         <colgroup>
           <col style="width: 200px" />
-          <col style="width: 220px" />
-          <col style="width: 150px" />
-          <col v-if="!isScoped" style="width: 140px" />
+          <col v-if="colVis.purchaseNo" style="width: 220px" />
+          <col v-if="colVis.warehouseName" style="width: 150px" />
+          <col v-if="!isScoped && colVis.assignee" style="width: 140px" />
+          <col v-if="colVis.skuCount" style="width: 100px" />
+          <col v-if="colVis.expectedQty" style="width: 120px" />
+          <col v-if="colVis.receivedQty" style="width: 100px" />
+          <col v-if="colVis.status" style="width: 130px" />
           <col style="width: 100px" />
-          <col style="width: 120px" />
-          <col style="width: 100px" />
-          <col style="width: 130px" />
-          <col style="width: 100px" />
-          <col style="width: 180px" />
-          <col style="width: 200px" />
+          <col v-if="colVis.startDate" style="width: 180px" />
+          <col v-if="colVis.endDate" style="width: 200px" />
           <col style="width: 44px" />
         </colgroup>
         <thead>
@@ -328,12 +380,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <MpCheckbox id="rcvg-bulk-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
                   <span class="rcvg-bulk-bar__count">{{ bulkCountLabel }}</span>
                   <button v-if="canCreatePutAway" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="bulkCreatePutAway">Create put-away</button>
+                  <span v-else-if="selectedTasksSpanMultipleWarehouses" class="rcvg-bulk-bar__hint">
+                    Select tasks from a single warehouse to create put-away
+                  </span>
                   <button
                     v-if="bulkCancelable"
                     class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                     :class="css({ color: 'var(--mp-text-critical)' })"
                     @click="bulkCancelOpen = true"
-                  >Cancel</button>
+                  >Cancel receiving task</button>
                 </div>
                 <div class="rcvg-bulk-bar__right">
                   <span>Press</span><kbd class="rcvg-bulk-bar__kbd">Esc</kbd><span>to deselect</span>
@@ -348,16 +403,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 <span>Receiving task no.</span>
               </div>
             </th>
-            <th class="rcvg-th">Purchase order no.</th>
-            <th class="rcvg-th">Warehouse</th>
-            <th v-if="!isScoped" class="rcvg-th">Assignee</th>
-            <th class="rcvg-th">Sku qty</th>
-            <th class="rcvg-th rcvg-th--right">Purchase qty</th>
-            <th class="rcvg-th rcvg-th--right">Received qty</th>
-            <th class="rcvg-th">Status</th>
+            <th v-if="colVis.purchaseNo" class="rcvg-th">Purchase order no.</th>
+            <th v-if="colVis.warehouseName" class="rcvg-th">Warehouse</th>
+            <th v-if="!isScoped && colVis.assignee" class="rcvg-th">Assignee</th>
+            <th v-if="colVis.skuCount" class="rcvg-th">Sku qty</th>
+            <th v-if="colVis.expectedQty" class="rcvg-th rcvg-th--right">Expected qty</th>
+            <th v-if="colVis.receivedQty" class="rcvg-th rcvg-th--right">Received qty</th>
+            <th v-if="colVis.status" class="rcvg-th">Status</th>
             <th class="rcvg-th" />
-            <th class="rcvg-th">Start date</th>
-            <th class="rcvg-th">End date</th>
+            <th v-if="colVis.startDate" class="rcvg-th">Start date</th>
+            <th v-if="colVis.endDate" class="rcvg-th">End date</th>
             <th class="rcvg-th rcvg-th--actions" />
           </tr>
         </thead>
@@ -384,7 +439,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </button>
               </div>
             </td>
-            <td class="rcvg-td rcvg-td--po">
+            <td v-if="colVis.purchaseNo" class="rcvg-td rcvg-td--po">
               <div class="rcvg-po-cell">
                 <span class="rcvg-po-no">{{ t.purchaseNo }}</span>
                 <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${t.receiptId}`)">
@@ -396,7 +451,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </button>
               </div>
             </td>
-            <td class="rcvg-td rcvg-td--warehouse">
+            <td v-if="colVis.warehouseName" class="rcvg-td rcvg-td--warehouse">
               <div class="rcvg-wh-cell">
                 <span>{{ t.warehouseName }}</span>
                 <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${t.warehouseId}`)">
@@ -408,11 +463,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </button>
               </div>
             </td>
-            <td v-if="!isScoped" class="rcvg-td rcvg-td--assignee">{{ t.assignee }}</td>
-            <td class="rcvg-td">{{ t.skuCount }}</td>
-            <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
-            <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
-            <td class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
+            <td v-if="!isScoped && colVis.assignee" class="rcvg-td rcvg-td--assignee">{{ t.assignee }}</td>
+            <td v-if="colVis.skuCount" class="rcvg-td">{{ t.skuCount }}</td>
+            <td v-if="colVis.expectedQty" class="rcvg-td rcvg-td--right">{{ fmt(expectedQtyTotal(t)) }}</td>
+            <td v-if="colVis.receivedQty" class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
+            <td v-if="colVis.status" class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
             <td class="rcvg-td">
               <div class="rcvg-icons-cell">
                 <MpTooltip
@@ -428,8 +483,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </MpTooltip>
               </div>
             </td>
-            <td class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
-              <td class="rcvg-td">
+            <td v-if="colVis.startDate" class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
+              <td v-if="colVis.endDate" class="rcvg-td">
                 <span class="rcvg-end">
                   <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
                   <span v-else class="rcvg-end__ongoing">—</span>
@@ -448,6 +503,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
                       <MpPopoverListItem @click="viewDetails(t)">View details</MpPopoverListItem>
+                      <MpPopoverListItem v-if="t.status === 'open'" @click="startReceivingAndNavigate(t)">Start receiving</MpPopoverListItem>
+                      <MpPopoverListItem v-else-if="t.status === 'in progress'" @click="continueReceiving(t)">Continue receiving</MpPopoverListItem>
                       <MpPopoverListItem v-if="t.status === 'pending put-away'" @click="createPutAway(t)">Create put-away</MpPopoverListItem>
                       <MpPopoverListItem
                         v-if="canCancelReceivingTask(t)"
@@ -601,6 +658,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-bulk-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); height: var(--mp-sizes-7, 28px); }
 .rcvg-bulk-bar__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .rcvg-bulk-bar__count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap; }
+.rcvg-bulk-bar__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .rcvg-bulk-bar__right { display: flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .rcvg-bulk-bar__kbd {
   display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5);
@@ -669,7 +727,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* Task number — View details chip on row hover */
 .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 10px; display: none;
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -682,12 +740,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-task-row:hover .row-hover-btn { display: flex; }
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 /* Empty state */
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }

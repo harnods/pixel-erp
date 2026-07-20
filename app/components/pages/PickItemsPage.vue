@@ -12,6 +12,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 import { getPickingLineItems, getPickingGroupedItems, type PickLineItem, type PickGroupItem } from '~/data/pickingTaskDetails'
 import {
   getPickingTask, savePickingDraft, endPicking, packableOrderIds,
@@ -402,7 +403,10 @@ function handleScan(rawValue: string) {
     return
   }
   if (isSerialTrackedSku(item.skuCode)) {
-    notifyScanError(`${v}: use Manage serial numbers to add serials`)
+    const group = groupBySkuCode(item.skuCode)
+    if (!group) return
+    playScanSuccessSound()
+    openSerialDrawer(group)
     return
   }
   draftQty.value = { ...draftQty.value, [item.key]: (draftQty.value[item.key] ?? 0) + 1 }
@@ -590,6 +594,9 @@ function commitPicking(createPacking = false) {
   showConfirm.value = false
   const complete = draftPickedTotal.value >= toPickTotal.value
   endPicking(props.orderId, buildPickedMap(), buildAssignments())
+  // Already committed — the router.push below is this function's own doing,
+  // not the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   // Re-check packability at the ORDER level (across every picking list for that
   // order), same as the picking detail page's own "Create packing" guard — this
   // task alone being fully picked doesn't mean the order is, if it spans more lists.
@@ -622,10 +629,29 @@ function commitPicking(createPacking = false) {
 function saveDraft() {
   savePickingDraft(props.orderId, buildPickedMap(), buildAssignments())
   toast.notify({ variant: 'success', title: 'Picking draft saved' , maxWidth: 'max-content'})
+  disableUnsavedChangesGuard()
   router.push(`/picking/${props.orderId}`)
 }
 function goBack() { router.push(`/picking/${props.orderId}`) }
 function goPicking() { router.push('/outbound-delivery?tab=Picking') }
+
+// ── Warn before losing unsaved picks — refresh/close-tab (native prompt) and
+// in-app navigation/Back button (modal rendered once at the app root, see
+// [...slug].vue — this app has a single catch-all route, so a per-page modal/
+// onBeforeRouteLeave never fires). "Unsaved" = anything picked at all (plain
+// qty, batch, or serial), same effectivePickedQty() already used above.
+// disableUnsavedChangesGuard() is called by commitPicking()/saveDraft() right
+// before their own router.push — otherwise hasUnsavedChanges() would still
+// read true (nothing else resets the picked state after commit) and the
+// "Leave without saving?" modal would fire right after the operator's own
+// intentional Finish/Save action. ────────────────────────────────────────────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => draftPickedTotal.value > 0,
+  saveDraft: () => {
+    savePickingDraft(props.orderId, buildPickedMap(), buildAssignments())
+    toast.notify({ variant: 'success', title: 'Picking draft saved', maxWidth: 'max-content' })
+  },
+})
 
 // ── Footer divider ────────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)
@@ -961,7 +987,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 .pik-header { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: var(--mp-spacing-5) var(--mp-spacing-10); padding-bottom: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
-.pik-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
+.pik-header :deep(.content-list) { padding-top: 0; flex: 0 0 318px; width: 318px; }
+.pik-header :deep(.content-list__value) { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 .pik-summary { flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pik-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
 .pik-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }

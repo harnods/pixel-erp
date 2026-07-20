@@ -146,7 +146,7 @@ describe('ManageSerialDrawer — scan bar available in every mode, with correct 
   it('receiving mode: scanning a genuinely new serial registers it; a serial already received in a prior task is rejected', async () => {
     const wrapper = mountDrawer({
       kind: 'receiving',
-      targetCount: 0,
+      targetCount: 5,
       modelValue: [],
       blockedSerials: ['ALREADY-RECEIVED-001'],
     })
@@ -233,7 +233,7 @@ describe('ManageSerialDrawer — scan bar available in every mode, with correct 
   it('"Reset count" in receiving mode restores blockedSerials rows correctly, without wiping them', async () => {
     const wrapper = mountDrawer({
       kind: 'receiving',
-      targetCount: 0,
+      targetCount: 5,
       modelValue: [],
       blockedSerials: ['PRIOR-TASK-SN-001'],
     })

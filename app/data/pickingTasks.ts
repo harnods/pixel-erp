@@ -99,6 +99,40 @@ function clonePicks<T>(picks: Record<string, T[]>): Record<string, T[]> {
   return JSON.parse(JSON.stringify(picks));
 }
 
+/**
+ * assignmentsFromReservations() caps each line's picks at the line's FULL qty
+ * (the reservation plan) — correct for plannedBatchPicks/plannedSerialPicks, but
+ * wrong for the task's REAL batchPicks/serialPicks on a demo task seeded with only
+ * a FRACTION actually picked ("in progress"/"partially picked", pickedByKey < line
+ * qty): without this trim, the real picks would list the full plan while the
+ * Picked qty stat shows only the fraction, disagreeing with each other. Mutates
+ * serialPicks/batchPicks in place, trimming (or dropping) each line down to its
+ * own pickedByKey qty.
+ */
+function trimPicksToPickedQty(
+  serialPicks: Record<string, PickingSerialPick[]>,
+  batchPicks: Record<string, PickingBatchPick[]>,
+  pickedByKey: Record<string, number>,
+): void {
+  for (const [key, picks] of Object.entries(serialPicks)) {
+    const cap = pickedByKey[key] ?? 0;
+    if (cap <= 0) delete serialPicks[key];
+    else if (picks.length > cap) serialPicks[key] = picks.slice(0, cap);
+  }
+  for (const [key, picks] of Object.entries(batchPicks)) {
+    let remaining = pickedByKey[key] ?? 0;
+    const trimmed: PickingBatchPick[] = [];
+    for (const b of picks) {
+      if (remaining <= 0) break;
+      const take = Math.min(b.qty, remaining);
+      trimmed.push(take === b.qty ? b : { ...b, qty: take });
+      remaining -= take;
+    }
+    if (trimmed.length) batchPicks[key] = trimmed;
+    else delete batchPicks[key];
+  }
+}
+
 const PICKING_WAREHOUSES = warehouses.filter(
   (w) => !w.isDefault && w.status === "active",
 );
@@ -180,6 +214,15 @@ function seedTasks(): PickingTask[] {
       // addPickingTask()), so they'd otherwise never pick up their order's
       // already-reserved batch/serial — read it the same way addPickingTask() does.
       const { batchPicks, serialPicks } = assignmentsFromReservations(lines, o.warehouseId);
+      const hasPlannedBatch = Object.keys(batchPicks).length > 0;
+      const hasPlannedSerial = Object.keys(serialPicks).length > 0;
+      const plannedBatchPicks = clonePicks(batchPicks);
+      const plannedSerialPicks = clonePicks(serialPicks);
+      // assignmentsFromReservations() caps at each line's FULL qty (the plan) —
+      // but pickedByKey above may only be a FRACTION of that ("in progress"/
+      // "partially picked"). Trim the REAL picks down to match, or the Picked
+      // qty stat and the batch/serial table would disagree.
+      if (pickedByKey) trimPicksToPickedQty(serialPicks, batchPicks, pickedByKey);
       out.push({
         id: `pick-demo-${t}`,
         taskNo: `Picking #${seq++}`,
@@ -196,8 +239,8 @@ function seedTasks(): PickingTask[] {
         endDate: finished ? isoAt(dayOffset, 11, 15) : undefined,
         lines,
         pickedByKey,
-        ...(Object.keys(batchPicks).length ? { batchPicks, plannedBatchPicks: clonePicks(batchPicks) } : {}),
-        ...(Object.keys(serialPicks).length ? { serialPicks, plannedSerialPicks: clonePicks(serialPicks) } : {}),
+        ...(hasPlannedBatch ? { ...(Object.keys(batchPicks).length ? { batchPicks } : {}), plannedBatchPicks } : {}),
+        ...(hasPlannedSerial ? { ...(Object.keys(serialPicks).length ? { serialPicks } : {}), plannedSerialPicks } : {}),
       });
     });
   }
@@ -733,11 +776,21 @@ export function endPicking(
   persistPicking();
 }
 
-/** Cancel a picking task — the order(s) it covered keep their reservation (they
- *  still need picking, just via a different list later). */
+/** A picking task can only be canceled while picking hasn't finished yet —
+ *  "partially picked"/"completed" mean endPicking() already committed real
+ *  effects (batch/serial pins, reservation re-pinning), so canceling at that
+ *  point would silently make picked stock unaccounted for. */
+export function canCancelPickingTask(t: PickingTask): boolean {
+  return t.status === "open" || t.status === "in progress";
+}
+
+/** Cancel a not-yet-finished picking task — the order(s) it covered keep their
+ *  reservation (they still need picking, just via a different list later).
+ *  Terminal state; the record itself is kept (never deleted) so it stays in
+ *  the audit trail. */
 export function cancelPickingTask(taskId: string, reason?: string): void {
   const t = getPickingTask(taskId);
-  if (!t) return;
+  if (!t || !canCancelPickingTask(t)) return;
   t.status = "canceled";
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;

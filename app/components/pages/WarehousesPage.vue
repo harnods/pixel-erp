@@ -15,6 +15,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 const router = useRouter()
 function goToDetail(id: string) { router.push(`/warehouses/${id}`) }
 function goEdit(id: string) { router.push(`/warehouses/${id}/edit`) }
+function goConfigure(id: string) { router.push(`/warehouses/${id}/configure`) }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const allColumns: TableColumn[] = [
@@ -458,6 +459,8 @@ const emptyDesc = computed(() =>
                 Delete
               </MpPopoverListItem>
             </template>
+            <div class="wh-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
+            <MpPopoverListItem @click="goConfigure((row as unknown as Warehouse).id)">Configure warehouse</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -802,7 +805,7 @@ const emptyDesc = computed(() =>
 .row-hover-btn {
   position: absolute;
   right: 0;
-  top: 50%;
+  top: var(--mp-spacing-2\.5, 10px);
   transform: translateY(-50%);
   display: none;
   align-items: center;
