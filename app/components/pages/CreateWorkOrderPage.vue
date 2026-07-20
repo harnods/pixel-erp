@@ -432,7 +432,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 is-clearable use-portal is-full-width :is-invalid="categoryError"
                 @update:model-value="categoryError = false"
               />
-              <MpFormErrorMessage>Please select a category</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select category</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- BOM name -->
@@ -444,7 +444,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 is-searchable is-clearable use-portal is-full-width :is-invalid="bomError"
                 @update:model-value="onBomSelect"
               />
-              <MpFormErrorMessage>Please select a BOM</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select BOM name</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- BOM no. (read-only, derived from the selected BOM) -->
@@ -462,7 +462,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 is-clearable use-portal is-full-width :is-invalid="workOrderTypeError"
                 @update:model-value="workOrderTypeError = false"
               />
-              <MpFormErrorMessage>Please select a work order type</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select work order type</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- Track routing -->
@@ -490,7 +490,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   use-portal @update:model-value="planDatesError = false"
                 />
               </div>
-              <MpFormErrorMessage>Please set the production plan dates</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select production plan dates</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- Produced qty — input with an attached "Pcs" suffix addon -->
@@ -515,7 +515,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
               <span class="wo-attach-or">or drag and drop here</span>
             </div>
-            <p class="wo-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum size of 10 MB and 3 files per BOM</p>
+            <p class="wo-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per work order</p>
             <ul v-if="attachedFiles.length" class="wo-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="wo-file-item">
                 <MpIcon name="document" size="sm" />
@@ -527,7 +527,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <label class="wo-checkbox-row">
             <MpCheckbox id="wo-subassembly" :is-checked="createAsSubAssembly" @change="createAsSubAssembly = !createAsSubAssembly" />
-            <span>Create as sub-assembly</span>
+            <span>Set as sub-assembly</span>
           </label>
         </section>
 
@@ -535,7 +535,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <!-- The line-item sections appear only once a BOM is chosen (it defines them). -->
         <section v-if="hasBom" class="wo-section">
           <h2 class="wo-section-title">Raw materials</h2>
-          <p class="wo-section-desc">Unit purchase cost may change if inventory value is adjusted.</p>
+          <p class="wo-section-desc">Unit purchase cost may change when inventory value adjusts</p>
           <label class="wo-checkbox-row wo-checkbox-row--tight">
             <MpCheckbox id="wo-bulk-wh" :is-checked="bulkSetWarehouse" @change="bulkSetWarehouse = !bulkSetWarehouse" />
             <span>Bulk set warehouse</span>
