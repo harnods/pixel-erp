@@ -54,7 +54,7 @@ function clearAll() {
         <div class="wf-filters-body">
           <MpFormControl id="wf-filters-keyword-fc">
             <MpFormLabel>Keyword</MpFormLabel>
-            <MpInput id="wf-filters-keyword" v-model="draft.keyword" placeholder="Search number, BOM name" is-full-width />
+            <MpInput id="wf-filters-keyword" v-model="draft.keyword" placeholder="Search number, name" is-full-width />
           </MpFormControl>
 
           <MpFormControl id="wf-filters-type-fc">
