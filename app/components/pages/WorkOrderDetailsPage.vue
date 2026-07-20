@@ -501,7 +501,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
         </div>
         <div v-else class="wod-empty">
           <p class="wod-empty-title">No partial production</p>
-          <p class="wod-empty-desc">Partial production records will appear here</p>
+          <p class="wod-empty-desc">Partial production records will appear here.</p>
         </div>
       </section>
 
