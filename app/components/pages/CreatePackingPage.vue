@@ -19,7 +19,7 @@ import {
 } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { orderSkuLines, productBySku } from '~/data/inventory'
-import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseDetail, binForSku } from '~/data/warehouseDetails'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
 
@@ -210,6 +210,57 @@ function isSerialTrackedSku(sku: string): boolean {
   const p = productBySku(sku)
   return p ? SERIAL_CATS.has(p.category) : false
 }
+/** Picked qty for a batch/serial-tracked line, broken down by which bin it was
+ *  actually picked from — a batch/serial always sits in exactly ONE fixed
+ *  bin, so 2+ bins only ever show up here because the line bundles 2+
+ *  DIFFERENT batches/serials that happen to live in different locations.
+ *  Direct mode (picking skipped for the warehouse) has no batchPicks/
+ *  serialPicks data source at all — always returns empty. */
+function rowQtyByBin(orderId: string, row: PackLine): Map<string, number> {
+  const map = new Map<string, number>()
+  if (isDirectMode.value) return map
+  const eligibleIds = eligiblePickingIdsForOrder(orderId)
+  if (isBatchTrackedSku(row.sku)) {
+    for (const b of batchPicksForPickingTasks(eligibleIds, orderId, row.sku)) {
+      if (b.qty > 0 && b.location) map.set(b.location, (map.get(b.location) ?? 0) + b.qty)
+    }
+  } else if (isSerialTrackedSku(row.sku)) {
+    for (const s of serialPicksForPickingTasks(eligibleIds, orderId, row.sku)) {
+      if (s.location) map.set(s.location, (map.get(s.location) ?? 0) + 1)
+    }
+  }
+  return map
+}
+function rowLocationsForDisplay(orderId: string, row: PackLine): string[] {
+  return [...rowQtyByBin(orderId, row).keys()]
+}
+
+interface PackCreateRowWithMeta {
+  row: PackLine
+  bin: string | null
+  binQty: number
+  groupIndex: number
+  groupSize: number
+}
+/** Expands an order table's visible lines into one row per bin actually used
+ *  (Storage location/Picked qty split per bin, everything else merged via
+ *  groupIndex/groupSize) — or a single row when there's nothing to split (0
+ *  or 1 bin used), matching the same pattern already used on the picking/
+ *  packing details pages. */
+function rowsWithMeta(t: OrderTable): PackCreateRowWithMeta[] {
+  const result: PackCreateRowWithMeta[] = []
+  for (const row of visibleLines(t)) {
+    const byBin = rowQtyByBin(t.orderId, row)
+    if (byBin.size < 2) {
+      result.push({ row, bin: null, binQty: 0, groupIndex: 0, groupSize: 1 })
+      continue
+    }
+    const bins = [...byBin.entries()]
+    bins.forEach(([bin, qty], idx) => result.push({ row, bin, binQty: qty, groupIndex: idx, groupSize: bins.length }))
+  }
+  return result
+}
+
 const viewBatchItem = ref<{ orderId: string; sku: string; product: string; img: string } | null>(null)
 const viewSerialItem = ref<{ orderId: string; sku: string; product: string; img: string } | null>(null)
 function openViewBatch(orderId: string, row: PackLine) { viewBatchItem.value = { orderId, sku: row.sku, product: row.product, img: row.img } }
@@ -525,10 +576,10 @@ async function handleCreate() {
                           placement="top"
                           use-portal
                         >
-                          <MpBadge type="warning">Not packable</MpBadge>
+                          <MpBadge for="tableStatus" type="warning">Not packable</MpBadge>
                         </MpTooltip>
                       </template>
-                      <MpBadge v-else type="completed">Ready to pack</MpBadge>
+                      <MpBadge v-else for="tableStatus" type="completed">Ready to pack</MpBadge>
                     </td>
                   </tr>
                 </tbody>
@@ -586,11 +637,12 @@ async function handleCreate() {
                 <table class="pk-items">
                   <colgroup>
                     <col v-if="isDirectMode" style="width: 6%" />
-                    <col :style="{ width: isDirectMode ? '30%' : '40%' }" />
-                    <col style="width: 16%" />
-                    <col :style="{ width: isDirectMode ? '14%' : '14%' }" />
-                    <col v-if="!isDirectMode" style="width: 14%" />
-                    <col v-if="isDirectMode" style="width: 14%" />
+                    <col :style="{ width: isDirectMode ? '26%' : '32%' }" />
+                    <col style="width: 12%" />
+                    <col v-if="!isDirectMode" style="width: 16%" />
+                    <col :style="{ width: isDirectMode ? '12%' : '12%' }" />
+                    <col v-if="!isDirectMode" style="width: 12%" />
+                    <col v-if="isDirectMode" style="width: 12%" />
                     <col style="width: 8%" />
                     <col v-if="!isDirectMode" style="width: 8%" />
                   </colgroup>
@@ -605,6 +657,7 @@ async function handleCreate() {
                       </th>
                       <th class="pk-th">Product</th>
                       <th class="pk-th">SKU</th>
+                      <th v-if="!isDirectMode" class="pk-th">Storage location</th>
                       <th class="pk-th pk-th--num">Order qty</th>
                       <th v-if="!isDirectMode" class="pk-th pk-th--num">Picked qty</th>
                       <th v-if="isDirectMode" class="pk-th pk-th--num">Pack qty</th>
@@ -614,43 +667,65 @@ async function handleCreate() {
                   </thead>
                   <tbody>
                     <tr
-                      v-for="row in visibleLines(t)"
-                      :key="row.key"
+                      v-for="meta in rowsWithMeta(t)"
+                      :key="`${meta.row.key}::${meta.groupIndex}`"
                       class="pk-item-row"
-                      :class="{ 'pk-item-row--off': isDirectMode ? !isLineSelected(row.key) : !isOrderSelected(t.orderId) }"
+                      :class="{ 'pk-item-row--off': isDirectMode ? !isLineSelected(meta.row.key) : !isOrderSelected(t.orderId) }"
                     >
-                      <td v-if="isDirectMode" class="pk-td" @click.stop>
+                      <td v-if="isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td" @click.stop>
                         <MpCheckbox
-                          :id="`pc-line-${row.key}`"
-                          :is-checked="isLineSelected(row.key)"
-                          @change="toggleLineSelection(row.key)"
+                          :id="`pc-line-${meta.row.key}`"
+                          :is-checked="isLineSelected(meta.row.key)"
+                          @change="toggleLineSelection(meta.row.key)"
                         />
                       </td>
-                      <td class="pk-td">
-                        <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
+                      <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td">
+                        <ProductCell :name="meta.row.product" :desc="meta.row.desc" :image="meta.row.img" />
                       </td>
-                      <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
-                      <td class="pk-td pk-td--num">{{ formatNum(row.order) }}</td>
-                      <td v-if="!isDirectMode" class="pk-td pk-td--num">{{ formatNum(row.picked) }}</td>
-                      <td v-if="isDirectMode" class="pk-td pk-td--input">
+                      <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td"><span class="pk-sku-text">{{ meta.row.sku }}</span></td>
+
+                      <!-- Storage location: split into one row per bin once the line's picks
+                           actually span 2+ different bins, else whatever bin(s) are already
+                           known (real batch/serial pick data — direct mode has none, so this
+                           column doesn't render there at all). -->
+                      <td v-if="!isDirectMode && meta.groupSize > 1" class="pk-td pk-td--location">{{ meta.bin }}</td>
+                      <td
+                        v-else-if="!isDirectMode && (isBatchTrackedSku(meta.row.sku) || isSerialTrackedSku(meta.row.sku))"
+                        class="pk-td pk-td--location"
+                        :class="{ 'pk-td--location-summary': rowLocationsForDisplay(t.orderId, meta.row).length > 0 }"
+                      >
+                        <div v-if="rowLocationsForDisplay(t.orderId, meta.row).length" class="pk-location-summary-wrap">
+                          <span v-for="loc in rowLocationsForDisplay(t.orderId, meta.row)" :key="loc" class="pk-location-summary-item">{{ loc }}</span>
+                        </div>
+                        <span v-else>—</span>
+                      </td>
+                      <td v-else-if="!isDirectMode" class="pk-td">{{ binForSku(warehouseId, meta.row.sku) }}</td>
+
+                      <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--num">{{ formatNum(meta.row.order) }}</td>
+
+                      <!-- Picked qty: static total for the line, unless split per bin — a bin
+                           row has no separate plan of its own, so it mirrors that bin's own
+                           picked qty. -->
+                      <td v-if="!isDirectMode" class="pk-td pk-td--num">{{ formatNum(meta.groupSize > 1 ? meta.binQty : meta.row.picked) }}</td>
+                      <td v-if="isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--input">
                         <input
-                          type="number" min="0" :max="row.picked" class="pk-qty-input"
-                          :value="packQtyFor(row)"
-                          :disabled="!isLineSelected(row.key)"
-                          :aria-label="`Pack qty for ${row.product}`"
-                          @input="setPackQty(row.key, ($event.target as HTMLInputElement).value, row.picked)"
+                          type="number" min="0" :max="meta.row.picked" class="pk-qty-input"
+                          :value="packQtyFor(meta.row)"
+                          :disabled="!isLineSelected(meta.row.key)"
+                          :aria-label="`Pack qty for ${meta.row.product}`"
+                          @input="setPackQty(meta.row.key, ($event.target as HTMLInputElement).value, meta.row.picked)"
                           @click.stop
                         />
                       </td>
-                      <td class="pk-td">{{ row.unit }}</td>
-                      <td v-if="!isDirectMode" class="pk-td pk-td--action">
-                        <MpTooltip v-if="isBatchTrackedSku(row.sku)" :id="`pc-tt-batch-${row.key}`" label="View batch" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" aria-label="View batch" @click.stop="openViewBatch(t.orderId, row)">
+                      <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td">{{ meta.row.unit }}</td>
+                      <td v-if="!isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--action">
+                        <MpTooltip v-if="isBatchTrackedSku(meta.row.sku)" :id="`pc-tt-batch-${meta.row.key}`" label="View batch" placement="top" use-portal>
+                          <button class="pk-view-btn" type="button" aria-label="View batch" @click.stop="openViewBatch(t.orderId, meta.row)">
                             <MpIcon name="competencies" size="md" />
                           </button>
                         </MpTooltip>
-                        <MpTooltip v-else-if="isSerialTrackedSku(row.sku)" :id="`pc-tt-serial-${row.key}`" label="View serial number" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" aria-label="View serial number" @click.stop="openViewSerial(t.orderId, row)">
+                        <MpTooltip v-else-if="isSerialTrackedSku(meta.row.sku)" :id="`pc-tt-serial-${meta.row.key}`" label="View serial number" placement="top" use-portal>
+                          <button class="pk-view-btn" type="button" aria-label="View serial number" @click.stop="openViewSerial(t.orderId, meta.row)">
                             <MpIcon name="competencies" size="md" />
                           </button>
                         </MpTooltip>
@@ -828,6 +903,27 @@ async function handleCreate() {
 .pk-item-row--off { opacity: 0.45; }
 .pk-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+/* Every column gets a right border since a bin-split line renders fewer
+   <td>s per row than the header; the Action column (the true rightmost) is
+   explicitly excepted. */
+.pk-items .pk-th,
+.pk-items .pk-td { border-right: 1px solid var(--mp-border-default); }
+.pk-items .pk-th--action,
+.pk-items .pk-td--action { border-right: none; }
+.pk-td--location { min-width: 160px; max-width: 200px; }
+/* Stacked list of 2+ known bins in one cell (a line's picks span 2+ bins but
+   the row isn't split) — the wrapping <td> gets padding:0 so each item can
+   carry its own 10px top/bottom padding instead of a wrapped bin name
+   sitting flush against its neighbor with no breathing room. */
+.pk-td--location-summary { padding: 0; }
+.pk-location-summary-wrap { display: flex; flex-direction: column; }
+.pk-location-summary-item {
+  display: flex; align-items: center; min-height: var(--mp-sizes-10, 40px);
+  padding: 10px var(--mp-spacing-2); box-sizing: border-box; flex-shrink: 0;
+  white-space: normal; word-break: break-word; line-height: var(--mp-line-heights-md);
+}
+.pk-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
 
 /* Editable Pack qty cell — white, input fills edge-to-edge, focus ring */
 .pk-td--input { padding: 0; background: var(--mp-background-neutral); }

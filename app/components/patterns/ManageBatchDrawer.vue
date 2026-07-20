@@ -379,8 +379,32 @@ function handleDrawerScan(rawValue: string) {
     return
   }
 
+  // Picking: scan the bin barcode first to make it "active" — the reverse of
+  // put-away's model, confirming which bin the operator is physically at
+  // before any batch counts as picked out of it.
+  if (isPicking.value) {
+    const matchedBin = (props.originLocationPaths ?? []).find(p => sameCode(p, v))
+    if (matchedBin) {
+      activeBin.value = matchedBin
+      playScanSuccessSound()
+      return
+    }
+  }
+
   const existing = rows.value.find(r => sameCode(r.batchNo, v))
   if (existing) {
+    if (isPicking.value) {
+      if (!activeBin.value) {
+        notifyScanError('Scan a bin first before scanning batch numbers')
+        return
+      }
+      // The batch's own fixed bin must match the active one — catches an
+      // operator scanning the right batch while standing at the wrong location.
+      if (existing.location && !sameCode(existing.location, activeBin.value)) {
+        notifyScanError(`${v}: stored in ${existing.location}, not ${activeBin.value}`)
+        return
+      }
+    }
     existing.counted = (existing.counted ?? 0) + 1
     playScanSuccessSound()
     flashScanned(existing.key)
@@ -398,6 +422,16 @@ function handleDrawerScan(rawValue: string) {
   if (resolved?.kind === 'batch') {
     const b = warehouseStock.value?.batches?.find(x => sameCode(x.batchNo, v))
     if (b) {
+      if (isPicking.value) {
+        if (!activeBin.value) {
+          notifyScanError('Scan a bin first before scanning batch numbers')
+          return
+        }
+        if (b.location && !sameCode(b.location, activeBin.value)) {
+          notifyScanError(`${v}: stored in ${b.location}, not ${activeBin.value}`)
+          return
+        }
+      }
       const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
       const idx = rows.value.length
       rows.value.push({
@@ -910,7 +944,7 @@ function fmtNum(n: number | null): string {
              Reset count clears every row's destLocRows back to a single blank entry
              (and drops the active bin), so it's safe to use in every mode. -->
         <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
-          <div v-if="isPutAway && activeBin" class="mbd-active-bin">
+          <div v-if="(isPutAway || isPicking) && activeBin" class="mbd-active-bin">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
