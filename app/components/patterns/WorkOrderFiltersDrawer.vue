@@ -54,14 +54,14 @@ function clearAll() {
         <div class="wf-filters-body">
           <MpFormControl id="wf-filters-keyword-fc">
             <MpFormLabel>Keyword</MpFormLabel>
-            <MpInput id="wf-filters-keyword" v-model="draft.keyword" placeholder="Search number, BOM name" is-full-width />
+            <MpInput id="wf-filters-keyword" v-model="draft.keyword" placeholder="Search..." is-full-width />
           </MpFormControl>
 
           <MpFormControl id="wf-filters-type-fc">
             <MpFormLabel>Work order type</MpFormLabel>
             <MpAutocomplete
               id="wf-filters-type" v-model="draft.type" :data="typeOptions"
-              label-prop="name" value-prop="id" placeholder="All types"
+              label-prop="name" value-prop="id" placeholder="Select work order type"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -70,7 +70,7 @@ function clearAll() {
             <MpFormLabel>Work order status</MpFormLabel>
             <MpAutocomplete
               id="wf-filters-status" v-model="draft.status" :data="statusOptions"
-              label-prop="name" value-prop="id" placeholder="All statuses"
+              label-prop="name" value-prop="id" placeholder="Select work order status"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -79,7 +79,7 @@ function clearAll() {
             <MpFormLabel>Start date</MpFormLabel>
             <MpDatePicker
               id="wf-filters-start" v-model="draft.startDate"
-              format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY"
+              format="DD/MM/YYYY" value-type="format" placeholder="Select start date"
               is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -88,15 +88,15 @@ function clearAll() {
             <MpFormLabel>End date</MpFormLabel>
             <MpDatePicker
               id="wf-filters-end" v-model="draft.endDate"
-              format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY"
+              format="DD/MM/YYYY" value-type="format" placeholder="Select end date"
               is-clearable use-portal is-full-width
             />
           </MpFormControl>
         </div>
 
         <footer class="wf-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Clear all</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply filters</button>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
         </footer>
       </div>
     </div>

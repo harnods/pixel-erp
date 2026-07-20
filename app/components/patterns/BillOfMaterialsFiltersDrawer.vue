@@ -55,14 +55,14 @@ function clearAll() {
         <div class="bf-filters-body">
           <MpFormControl id="bf-filters-keyword-fc">
             <MpFormLabel>Keyword</MpFormLabel>
-            <MpInput id="bf-filters-keyword" v-model="draft.keyword" placeholder="Search number, name, description" is-full-width />
+            <MpInput id="bf-filters-keyword" v-model="draft.keyword" placeholder="Search..." is-full-width />
           </MpFormControl>
 
           <MpFormControl id="bf-filters-category-fc">
             <MpFormLabel>Category</MpFormLabel>
             <MpAutocomplete
               id="bf-filters-category" v-model="draft.category" :data="categoryOptions"
-              label-prop="name" value-prop="id" placeholder="All categories"
+              label-prop="name" value-prop="id" placeholder="Select category"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -71,7 +71,7 @@ function clearAll() {
             <MpFormLabel>Costing reference</MpFormLabel>
             <MpAutocomplete
               id="bf-filters-costing" v-model="draft.costingReference" :data="costingOptions"
-              label-prop="name" value-prop="id" placeholder="All costing references"
+              label-prop="name" value-prop="id" placeholder="Select costing reference"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -80,7 +80,7 @@ function clearAll() {
             <MpFormLabel>Finished goods</MpFormLabel>
             <MpAutocomplete
               id="bf-filters-fg" v-model="draft.finishedGoodId" :data="finishedGoodOptions"
-              label-prop="name" value-prop="id" placeholder="All finished goods"
+              label-prop="name" value-prop="id" placeholder="Select finished goods"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -92,8 +92,8 @@ function clearAll() {
         </div>
 
         <footer class="bf-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Clear all</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply filters</button>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
         </footer>
       </div>
     </div>

@@ -63,11 +63,11 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 
           <div class="wod-meta">
             <div class="wod-meta-item">
-              <span class="wod-meta-label">Production request number</span>
+              <span class="wod-meta-label">Production request no.</span>
               <span class="wod-meta-value">{{ ctx.requestNo }}</span>
             </div>
             <div class="wod-meta-item">
-              <span class="wod-meta-label">Sales order number</span>
+              <span class="wod-meta-label">Sales order no.</span>
               <span class="wod-meta-value">{{ ctx.sourceNo }}</span>
             </div>
             <div class="wod-meta-item">
@@ -108,7 +108,7 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
                   <td class="wod-td">{{ wo.unit }}</td>
                   <td class="wod-td"><ErpStatusBadge :status="wo.status" /></td>
                   <td class="wod-td wod-td--actions">
-                    <button class="wod-open-btn" aria-label="Open details" @click="openDetails(wo)">
+                    <button class="wod-open-btn" aria-label="View details" @click="openDetails(wo)">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M9 6h9v9M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                       </svg>

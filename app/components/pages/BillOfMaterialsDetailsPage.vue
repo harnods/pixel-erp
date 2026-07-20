@@ -200,7 +200,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               <thead>
                 <tr>
                   <th class="bom-th">Product</th><th class="bom-th">SKU</th>
-                  <th class="bom-th bom-th--num">Needed</th><th class="bom-th">Unit</th>
+                  <th class="bom-th bom-th--num">Needed qty</th><th class="bom-th">Unit</th>
                   <th class="bom-th bom-th--num">Purchase cost</th>
                   <th class="bom-th bom-th--num">Estimated cost</th>
                 </tr>
@@ -288,10 +288,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 
         <!-- Cost summary -->
         <div class="bom-summary">
-          <div class="bom-summary-row"><span>Est. subtotal of raw materials</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-          <div class="bom-summary-row"><span>Subtotal production cost</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-          <div class="bom-summary-row"><span>Subtotal routing cost</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-          <div class="bom-summary-row bom-summary-row--total"><span>Est. total of production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+          <div class="bom-summary-row"><span>Estimated raw materials subtotal</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
+          <div class="bom-summary-row"><span>Production cost subtotal</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+          <div class="bom-summary-row"><span>Routing cost subtotal</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          <div class="bom-summary-row bom-summary-row--total"><span>Estimated total production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
         </div>
       </section>
 
@@ -313,7 +313,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               <thead>
                 <tr>
                   <th class="bom-th">Product</th><th class="bom-th">SKU</th>
-                  <th class="bom-th bom-th--num">Produced</th><th class="bom-th">Unit</th>
+                  <th class="bom-th bom-th--num">Produced qty</th><th class="bom-th">Unit</th>
                   <th class="bom-th">Percentage</th><th class="bom-th bom-th--num">Estimated cost</th>
                 </tr>
               </thead>
@@ -343,7 +343,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                 <thead>
                   <tr>
                     <th class="bom-th">Product</th><th class="bom-th">SKU</th>
-                    <th class="bom-th bom-th--num">Produced</th><th class="bom-th">Unit</th>
+                    <th class="bom-th bom-th--num">Produced qty</th><th class="bom-th">Unit</th>
                     <th class="bom-th">Percentage</th><th class="bom-th bom-th--num">Estimated cost</th>
                   </tr>
                 </thead>
@@ -368,7 +368,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
             <table class="bom-table">
               <thead>
                 <tr>
-                  <th class="bom-th">Account</th><th class="bom-th">Allocation method</th>
+                  <th class="bom-th">Account mapping</th><th class="bom-th">Allocation method</th>
                   <th class="bom-th">Percentage</th><th class="bom-th bom-th--num">Amount</th>
                 </tr>
               </thead>

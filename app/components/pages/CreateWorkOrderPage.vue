@@ -420,7 +420,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <MpFormLabel>Work order no.</MpFormLabel>
                 <span class="wo-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
               </div>
-              <MpInput id="wo-no-input" model-value="" placeholder="[Auto]" is-full-width is-disabled />
+              <MpInput id="wo-no-input" model-value="" placeholder="Auto" is-full-width is-disabled />
             </MpFormControl>
 
             <!-- Category -->
@@ -432,7 +432,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 is-clearable use-portal is-full-width :is-invalid="categoryError"
                 @update:model-value="categoryError = false"
               />
-              <MpFormErrorMessage>Please select a category</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select category</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- BOM name -->
@@ -444,13 +444,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 is-searchable is-clearable use-portal is-full-width :is-invalid="bomError"
                 @update:model-value="onBomSelect"
               />
-              <MpFormErrorMessage>Please select a BOM</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select BOM name</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- BOM no. (read-only, derived from the selected BOM) -->
             <MpFormControl id="wo-bomno">
               <MpFormLabel>BOM no.</MpFormLabel>
-              <MpInput id="wo-bomno-input" :model-value="bomNo" placeholder="[Auto]" is-full-width is-disabled />
+              <MpInput id="wo-bomno-input" :model-value="bomNo" placeholder="Auto" is-full-width is-disabled />
             </MpFormControl>
 
             <!-- Work order type -->
@@ -462,7 +462,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 is-clearable use-portal is-full-width :is-invalid="workOrderTypeError"
                 @update:model-value="workOrderTypeError = false"
               />
-              <MpFormErrorMessage>Please select a work order type</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select work order type</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- Track routing -->
@@ -486,11 +486,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <div class="wo-datepicker">
                 <MpDatePicker
                   id="wo-plan-dp" v-model="planDates" is-range format="DD/MM/YYYY"
-                  value-type="format" range-separator=" - " placeholder="Start date - End date"
+                  value-type="format" range-separator=" - " placeholder="Select date range"
                   use-portal @update:model-value="planDatesError = false"
                 />
               </div>
-              <MpFormErrorMessage>Please set the production plan dates</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select production plan dates</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- Produced qty — input with an attached "Pcs" suffix addon -->
@@ -515,7 +515,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
               <span class="wo-attach-or">or drag and drop here</span>
             </div>
-            <p class="wo-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum size of 10 MB and 3 files per BOM</p>
+            <p class="wo-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per work order</p>
             <ul v-if="attachedFiles.length" class="wo-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="wo-file-item">
                 <MpIcon name="document" size="sm" />
@@ -527,7 +527,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <label class="wo-checkbox-row">
             <MpCheckbox id="wo-subassembly" :is-checked="createAsSubAssembly" @change="createAsSubAssembly = !createAsSubAssembly" />
-            <span>Create as sub-assembly</span>
+            <span>Set as sub-assembly</span>
           </label>
         </section>
 
@@ -535,7 +535,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <!-- The line-item sections appear only once a BOM is chosen (it defines them). -->
         <section v-if="hasBom" class="wo-section">
           <h2 class="wo-section-title">Raw materials</h2>
-          <p class="wo-section-desc">Unit purchase cost may change if inventory value is adjusted.</p>
+          <p class="wo-section-desc">Unit purchase cost may change when inventory value adjusts.</p>
           <label class="wo-checkbox-row wo-checkbox-row--tight">
             <MpCheckbox id="wo-bulk-wh" :is-checked="bulkSetWarehouse" @change="bulkSetWarehouse = !bulkSetWarehouse" />
             <span>Bulk set warehouse</span>
@@ -550,7 +550,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <thead>
                 <tr>
                   <th class="wo-th">Product</th><th class="wo-th">Purchase cost</th><th class="wo-th">Warehouse</th>
-                  <th class="wo-th">Needed</th><th class="wo-th">Unit</th><th class="wo-th">Required date</th>
+                  <th class="wo-th">Needed qty</th><th class="wo-th">Unit</th><th class="wo-th">Required date</th>
                   <th class="wo-th wo-th--right">Estimated cost</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
@@ -567,11 +567,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td wo-td--num"><template v-if="row.productId">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</template></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" placeholder="Select warehouse" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`raw-need-${row.id}`" v-model="row.needed" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select unit" is-searchable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input">
                     <div v-if="row.productId" class="wo-datepicker"><MpDatePicker :id="`raw-date-${row.id}`" v-model="row.requiredDate" format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY" is-clearable use-portal /></div>
@@ -617,7 +617,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete :id="`cost-acc-${row.id}`" v-model="row.account" :data="COST_ACCOUNT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select cost account" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onCostAccount(row, v)" />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.account" :id="`cost-drv-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.account" :id="`cost-drv-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" placeholder="Select cost driver" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-unit-${row.id}`" v-model="row.estUnitCost" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-mult-${row.id}`" v-model="row.multiplier" type="number" placeholder="0" is-full-width /></td>
@@ -661,9 +661,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete :id="`route-proc-${row.id}`" v-model="row.process" :data="PROCESS_OPTIONS" label-prop="name" value-prop="id" placeholder="Select process" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRouteProcess(row, v)" />
                   </td>
-                  <td class="wo-td wo-td--input"><MpInput v-if="row.process" :id="`route-desc-${row.id}`" v-model="row.description" placeholder="Description" is-full-width /></td>
+                  <td class="wo-td wo-td--input"><MpInput v-if="row.process" :id="`route-desc-${row.id}`" v-model="row.description" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.process" :id="`route-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
@@ -680,10 +680,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <!-- Cost summary -->
           <div class="wo-summary">
-            <div class="wo-summary-row"><span>Estimated subtotal of raw materials</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>Subtotal production cost</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>Subtotal routing cost</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-            <div class="wo-summary-row wo-summary-row--total"><span>Estimated total of production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+            <div class="wo-summary-row"><span>Estimated raw materials subtotal</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
+            <div class="wo-summary-row"><span>Production cost subtotal</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+            <div class="wo-summary-row"><span>Routing cost subtotal</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+            <div class="wo-summary-row wo-summary-row--total"><span>Estimated total production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
           </div>
         </section>
 
@@ -758,7 +758,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td"><template v-if="row.productId">{{ row.sku || '—' }}</template></td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-qty-${row.id}`" v-model="row.producedQty" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select unit" is-searchable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.productId" :id="`other-cost-${row.id}`" v-model="row.estCost" type="number" placeholder="0" is-full-width /></td>
@@ -800,7 +800,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete :id="`waste-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onWasteMapping(row, v)" />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" placeholder="Select" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" placeholder="Select allocation method" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.accountMapping" :id="`waste-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.accountMapping" :id="`waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>

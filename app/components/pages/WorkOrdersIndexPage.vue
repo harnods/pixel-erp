@@ -31,7 +31,7 @@ const columns: TableColumn[] = [
   { key: 'status',          label: 'Status',               width: '170px'                  },
   { key: 'parentNumber',    label: 'Parent work order',    width: '170px'                  },
   { key: 'producedQty',     label: 'Produced qty',         width: '130px', align: 'right'  },
-  { key: 'productionPlan',  label: 'Production plan date',  width: '230px'                  },
+  { key: 'productionPlan',  label: 'Production plan dates', width: '230px'                  },
   { key: 'startDate',       label: 'Start date',           width: '130px'                  },
   { key: 'endDate',         label: 'End date',             width: '130px'                  },
 ]
@@ -341,7 +341,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">No work orders</p>
-        <p class="empty-full-desc">Create a work order to start producing.</p>
+        <p class="empty-full-desc">Work orders will appear here.</p>
       </div>
     </template>
   </ErpTablePage>

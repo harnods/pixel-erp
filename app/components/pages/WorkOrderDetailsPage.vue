@@ -227,7 +227,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
             <ContentList label="Produced qty" :value="`${wo.producedQty}`" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Work plan dates" :value="planRange" />
+            <ContentList label="Production plan dates" :value="planRange" />
             <ContentList label="Start date" :value="showStart ? formatDate(wo.startDate) : '—'" />
             <ContentList label="End date" :value="showEnd ? formatDate(wo.endDate) : '—'" />
           </div>
@@ -261,7 +261,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
                   <th class="wod-th wod-th--num">Needed qty</th>
                   <th class="wod-th wod-th--num">Adjusted qty</th>
                   <th class="wod-th wod-th--num">Consumed qty</th>
-                  <th class="wod-th wod-th--num">Variance</th>
+                  <th class="wod-th wod-th--num">Difference</th>
                   <th class="wod-th">Unit</th>
                   <th class="wod-th wod-th--num">Estimated cost</th>
                 </tr>
@@ -334,7 +334,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
                   <th class="wod-th">Process</th>
                   <th class="wod-th">Description</th>
                   <th class="wod-th">Account mapping</th>
-                  <th class="wod-th">Work plan dates</th>
+                  <th class="wod-th">Production plan dates</th>
                   <th class="wod-th">Start date</th>
                   <th class="wod-th">End date</th>
                   <th class="wod-th">Status</th>
@@ -360,10 +360,10 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 
         <!-- Cost summary -->
         <div class="wod-summary">
-          <div class="wod-summary-row"><span>Est. subtotal of raw materials</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-          <div class="wod-summary-row"><span>Subtotal production cost</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-          <div class="wod-summary-row"><span>Subtotal routing cost</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-          <div class="wod-summary-row wod-summary-row--total"><span>Est. total of production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+          <div class="wod-summary-row"><span>Estimated raw materials subtotal</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
+          <div class="wod-summary-row"><span>Production cost subtotal</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+          <div class="wod-summary-row"><span>Routing cost subtotal</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          <div class="wod-summary-row wod-summary-row--total"><span>Estimated total production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
         </div>
       </section>
 
@@ -500,8 +500,8 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
           </div>
         </div>
         <div v-else class="wod-empty">
-          <p class="wod-empty-title">No partial production yet</p>
-          <p class="wod-empty-desc">Partial production records will appear here as the work order progresses.</p>
+          <p class="wod-empty-title">No partial production</p>
+          <p class="wod-empty-desc">Partial production records will appear here.</p>
         </div>
       </section>
 
