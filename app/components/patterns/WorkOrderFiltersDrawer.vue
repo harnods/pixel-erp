@@ -79,7 +79,7 @@ function clearAll() {
             <MpFormLabel>Start date</MpFormLabel>
             <MpDatePicker
               id="wf-filters-start" v-model="draft.startDate"
-              format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY"
+              format="DD/MM/YYYY" value-type="format" placeholder="Select date"
               is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -88,7 +88,7 @@ function clearAll() {
             <MpFormLabel>End date</MpFormLabel>
             <MpDatePicker
               id="wf-filters-end" v-model="draft.endDate"
-              format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY"
+              format="DD/MM/YYYY" value-type="format" placeholder="Select date"
               is-clearable use-portal is-full-width
             />
           </MpFormControl>
