@@ -482,7 +482,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 placeholder="Enter BOM name" is-full-width :is-invalid="bomNameError"
                 @update:model-value="bomNameError = false"
               />
-              <MpFormErrorMessage>Please enter a BOM name</MpFormErrorMessage>
+              <MpFormErrorMessage>You must fill in BOM name</MpFormErrorMessage>
             </MpFormControl>
           </div>
 
@@ -496,7 +496,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 is-clearable use-portal is-full-width :is-invalid="categoryError"
                 @update:model-value="categoryError = false"
               />
-              <MpFormErrorMessage>Please select a category</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select category</MpFormErrorMessage>
             </MpFormControl>
 
             <MpFormControl id="bf-costing" is-required :is-invalid="costingError">
@@ -507,7 +507,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 is-clearable use-portal is-full-width :is-invalid="costingError"
                 @update:model-value="costingError = false"
               />
-              <MpFormErrorMessage>Please select a costing reference</MpFormErrorMessage>
+              <MpFormErrorMessage>You must select costing reference</MpFormErrorMessage>
             </MpFormControl>
           </div>
 
@@ -537,7 +537,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
               <span class="bf-attach-or">or drag and drop here</span>
             </div>
-            <p class="bf-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP format, with a maximum size of 10 MB per file and 3 files per BOM.</p>
+            <p class="bf-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per BOM</p>
             <ul v-if="attachedFiles.length" class="bf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="bf-file-item">
                 <MpIcon name="document" size="sm" />
@@ -552,7 +552,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpCheckbox id="bf-adjust" :is-checked="allowBomAdjustment" @change="allowBomAdjustment = !allowBomAdjustment" />
             <span class="bf-check-body">
               <span class="bf-check-title">Allow BOM adjustment</span>
-              <span class="bf-check-desc">Can add/reduce raw materials to the same SKU when creating a work order.</span>
+              <span class="bf-check-desc">You can add or reduce raw materials to the same SKU when creating a work order.</span>
             </span>
           </label>
         </section>
@@ -578,7 +578,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <tr>
                   <th class="bf-th bf-th--grip" />
                   <th class="bf-th">Product</th><th class="bf-th">SKU</th>
-                  <th class="bf-th">Needed</th><th class="bf-th">Unit</th>
+                  <th class="bf-th">Needed qty</th><th class="bf-th">Unit</th>
                   <th class="bf-th bf-th--right">Purchase cost</th>
                   <th class="bf-th bf-th--right">Estimated cost</th><th class="bf-th bf-th--del" />
                 </tr>
@@ -716,7 +716,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <div class="bf-summary-row"><span>Estimated raw materials subtotal</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
             <div class="bf-summary-row"><span>Production cost subtotal</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
             <div class="bf-summary-row"><span>Routing cost subtotal</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-            <div class="bf-summary-row bf-summary-row--total"><span>Estimated production cost total</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+            <div class="bf-summary-row bf-summary-row--total"><span>Estimated total production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
           </div>
         </section>
 
@@ -734,7 +734,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="bf-th">Product</th><th class="bf-th">SKU</th><th class="bf-th">Produced</th>
+                  <th class="bf-th">Product</th><th class="bf-th">SKU</th><th class="bf-th">Produced qty</th>
                   <th class="bf-th">Unit</th><th class="bf-th">Percentage</th><th class="bf-th bf-th--spacer" /><th class="bf-th bf-th--right">Estimated cost</th><th class="bf-th bf-th--del" />
                 </tr>
               </thead>
@@ -776,7 +776,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="bf-th">Product</th><th class="bf-th">SKU</th><th class="bf-th">Produced</th>
+                  <th class="bf-th">Product</th><th class="bf-th">SKU</th><th class="bf-th">Produced qty</th>
                   <th class="bf-th">Unit</th><th class="bf-th">Percentage</th><th class="bf-th bf-th--spacer" /><th class="bf-th bf-th--right">Estimated cost</th><th class="bf-th bf-th--del" />
                 </tr>
               </thead>

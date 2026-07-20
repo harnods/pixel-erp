@@ -21,7 +21,7 @@ const columns: TableColumn[] = [
   { key: 'name',             label: 'Name',               width: '200px', sortable: true },
   { key: 'category',         label: 'Category',           width: '130px' },
   { key: 'costingReference', label: 'Costing reference',  width: '170px' },
-  { key: 'finishedGood',     label: 'Finished good',      width: '180px' },
+  { key: 'finishedGood',     label: 'Finished goods',     width: '180px' },
   { key: 'description',      label: 'Description',        width: '280px' },
 ]
 
