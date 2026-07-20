@@ -60,6 +60,7 @@ function countStatusFor(i: number): AdjustmentStatus {
   const v = hash100(i * 41 + 11)
   if (v < 25) return 'not_started'
   if (v < 55) return 'in_progress'
+  if (v < 80) return 'counted'
   return 'completed'
 }
 
@@ -102,10 +103,10 @@ function generate(count = 24): StockAdjustment[] {
       const startMin = (hash100(i * 29 + 2) % 4) * 15
       const endHour = 14 + (hash100(i * 31 + 3) % 5)
       const endMin = (hash100(i * 37 + 4) % 4) * 15
-      if (status === 'in_progress' || status === 'completed') {
+      if (status === 'in_progress' || status === 'counted' || status === 'completed') {
         record.startDate = isoOffsetTs(-startDaysAgo, startHour, startMin)
       }
-      if (status === 'completed') {
+      if (status === 'counted' || status === 'completed') {
         record.endDate = isoOffsetTs(-startDaysAgo + durationDays, endHour, endMin)
       }
     }
@@ -130,6 +131,16 @@ export function wmsAdjustmentWarehouseOptions(): { value: string; label: string 
   const seen = new Map<string, string>()
   for (const a of wmsStockAdjustments) seen.set(a.warehouseId, a.warehouseName)
   return [...seen.entries()].map(([value, label]) => ({ value, label }))
+}
+
+/** Count tasks still open (not yet counted or completed) — badge for the "Count task" tab. */
+export function openWmsCountTaskCount(): number {
+  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status !== 'completed' && a.status !== 'counted').length
+}
+
+/** Count tasks counted but not yet reviewed by a manager — badge for the "Awaiting approval" tab. */
+export function awaitingWmsCountApprovalCount(): number {
+  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status === 'counted').length
 }
 
 export function deleteWmsAdjustments(ids: string[]): void {
@@ -203,6 +214,21 @@ export function finishWmsCount(id: string, lines: { sku: string; qty: number; lo
   a.endDate = new Date().toISOString()
   a.lines = lines
   applyStockCount(a.warehouseId, lines)
+  persist()
+  return a
+}
+
+const ACTOR = 'Rizal Candra'
+
+/** Manager approves a "Counted" task — applies the count to stock and marks it completed. */
+export function approveWmsAdjustment(id: string): StockAdjustment | undefined {
+  const a = wmsStockAdjustments.find((x) => x.id === id)
+  if (!a || a.status !== 'counted') return a
+  const lines = a.lines ?? adjustmentLineItems(a).map((l) => ({ sku: l.sku, qty: l.counted }))
+  applyStockCount(a.warehouseId, lines)
+  a.status = 'completed'
+  a.approvedBy = ACTOR
+  a.approvedAt = new Date().toISOString()
   persist()
   return a
 }

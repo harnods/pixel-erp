@@ -431,20 +431,13 @@ onUnmounted(() => {
         <!-- WMS Stock count layout -->
         <template v-if="isWmsCount">
           <div class="content-list-col">
-            <ContentList label="Transaction date" :value="formatDateLong(adjustment.date)" />
             <ContentList label="Transaction no." :value="adjustment.number" />
-            <ContentList label="Assignee" :value="adjustment.assignee || '—'" />
           </div>
           <div class="content-list-col">
             <ContentList label="Warehouse" :value="adjustment.warehouseName" />
-            <ContentList label="Start date" :value="formatDateTimeLong(adjustment.startDate)" />
-            <ContentList label="End date" :value="formatDateTimeLong(adjustment.endDate)" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Tags">
-              <ErpTagList v-if="adjustment.tags.length" :tags="adjustment.tags" />
-              <span v-else class="detail-note-text">—</span>
-            </ContentList>
+            <ContentList label="Assignee" :value="adjustment.assignee || '—'" />
           </div>
         </template>
 

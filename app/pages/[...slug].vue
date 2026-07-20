@@ -19,6 +19,8 @@ syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
+import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
+import { recommendationCount } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -105,6 +107,7 @@ const WarehouseTransfersPage = asyncPage(() => import('~/components/pages/Wareho
 const StockAdjustmentsPage = asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue'))
 const StockAdjustmentDetailsPage = asyncPage(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
 const StockCountFormPage = asyncPage(() => import('~/components/pages/StockCountFormPage.vue'))
+const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTaskPage.vue'))
 const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
@@ -119,6 +122,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: WarehouseTransferFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: WarehouseTransferFormPage, id: segs[1]! }
     return { component: WarehouseTransferDetailsPage, id: segs[1]! }
+  }
+  // /cycle-counts/new → dedicated count-task creation page (not the shared stock-count form)
+  if (segs.length >= 2 && segs[0] === 'cycle-counts' && segs[1] === 'new') {
+    return { component: NewCountTaskPage, id: 'new' }
   }
   // /stock-adjustments/:id → detail; /new & /:id/edit → create/edit form (TBD → placeholder)
   if (segs.length >= 2 && segs[0] === 'stock-adjustments') {
@@ -255,7 +262,7 @@ const pageTabs: Record<string, string[]> = {
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
-  'Cycle counts':      ['Count task', 'Recommendations'],
+  'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -298,6 +305,16 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Stock counts') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Cycle counts') {
+    const out: Record<string, number> = {}
+    const openTasks = openWmsCountTaskCount()
+    if (openTasks) out['Count task'] = openTasks
+    const awaiting = awaitingWmsCountApprovalCount()
+    if (awaiting) out['Awaiting approval'] = awaiting
+    const recommendations = recommendationCount()
+    if (recommendations) out['Recommendations'] = recommendations
+    return out
   }
   return {}
 })
@@ -365,6 +382,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   },
   'Cycle counts': {
     'Count task': StockAdjustmentsPage,
+    'Awaiting approval': StockAdjustmentsPage,
     'Recommendations': CycleCountRecommendationPage,
   },
 }
@@ -417,7 +435,6 @@ function newStockAdjustment(kind: 'count' | 'in-out') {
   stockActionsOpen.value = false
   router.push({ path: '/stock-adjustments/new', query: { type: kind } })
 }
-function newStockCount()  { router.push({ path: '/stock-adjustments/new', query: { type: 'count' } }) }
 function newStockInOut()  { router.push({ path: '/stock-adjustments/new', query: { type: 'in-out' } }) }
 
 // ── Chat sessions + history ───────────────────────────────────────────────
@@ -911,9 +928,9 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cycle counts' && activeTab === 'Count task'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockCount">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/cycle-counts/new')">
             <MpIcon name="add" size="md" color="icon.inverse" />
-            New stock count
+            New count task
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock counts'" class="page-title-actions">

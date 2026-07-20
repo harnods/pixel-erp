@@ -37,6 +37,7 @@ const statusConfig: Record<string, StatusConfig> = {
   approved:   { type: 'completed',    label: 'Approved'   },
   active:     { type: 'completed',    label: 'Active'     },
   completed:  { type: 'completed',    label: 'Completed'  },
+  counted:    { type: 'completed',    label: 'Counted'    },
   verified:   { type: 'completed',    label: 'Verified'   },
   success:    { type: 'completed',    label: 'Success'    },
   delivered:  { type: 'completed',    label: 'Delivered'  },

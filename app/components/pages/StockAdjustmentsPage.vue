@@ -26,11 +26,11 @@ function formatAging(startIso?: string, endIso?: string): string {
 }
 import {
   stockAdjustments, adjustmentWarehouseOptions, adjustmentMemo, adjustmentUpdatedBy, adjustmentUpdatedAt,
-  adjustmentApprovalLog, deleteAdjustments, approveAdjustment, ADJUSTMENT_CATEGORIES,
+  adjustmentApprovalLog, adjustmentLineItems, deleteAdjustments, approveAdjustment, ADJUSTMENT_CATEGORIES,
   type StockAdjustment, type ApprovalLog,
 } from '~/data/stockAdjustments'
 import {
-  wmsStockAdjustments, wmsAdjustmentWarehouseOptions, deleteWmsAdjustments,
+  wmsStockAdjustments, wmsAdjustmentWarehouseOptions, deleteWmsAdjustments, approveWmsAdjustment,
 } from '~/data/wmsStockAdjustments'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -71,6 +71,7 @@ const columns: TableColumn[] = [
   { key: 'account',       label: 'Account',      width: '190px', sortType: 'text' },
   { key: 'tags',          label: 'Tags',         width: '200px' },
   { key: 'lastUpdated',   label: 'Last updated', width: '220px' },
+  { key: 'totalSku',      label: 'Total SKU',    width: '110px', sortType: 'number', align: 'right' },
   { key: 'startDate',     label: 'Start date',   width: '170px', sortType: 'date' },
   { key: 'endDate',       label: 'End date',     width: '200px', sortType: 'date' },
   { key: 'assignee',      label: 'Assignee',     width: '160px', sortType: 'text' },
@@ -95,6 +96,7 @@ const visibleColumns = computed(() =>
     && !(kindFilter.value === 'count' && !isErpStockCounts.value && !isAwaiting.value && c.key === 'date')
     && !((kindFilter.value !== 'count' || isErpStockCounts.value) && (c.key === 'assignee' || c.key === 'status' || c.key === 'startDate' || c.key === 'endDate'))
     && !(isAwaiting.value && kindFilter.value === 'count' && (c.key === 'startDate' || c.key === 'endDate' || c.key === 'assignee'))
+    && !(c.key === 'totalSku' && currentPageKey.value !== 'Cycle counts')
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
@@ -106,10 +108,19 @@ const columnItems = [
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Tab: "All stock adjustments" vs "Awaiting approval" (driven by ?tab=) ────────
-const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
-const showCheckbox = computed(() => !(isAwaiting.value && viewAs.value === 'user'))
+// ERP's "Awaiting approval" (draft → manager approval) is a different workflow from
+// Cycle counts' "Awaiting approval" (counted → manager review) — kept separate so
+// the ERP-only manager UI (Approve button, approval log) never shows on Cycle counts,
+// which reuses the exact same table as its "Count task" tab, just filtered by status.
+const isAwaiting = computed(() => route.query.tab === 'Awaiting approval' && currentPageKey.value !== 'Cycle counts')
+const isCycleAwaiting = computed(() => currentPageKey.value === 'Cycle counts' && route.query.tab === 'Awaiting approval')
+// Drives the approval-actions UI (sticky actions column, Approve button, checkbox) —
+// shared by both awaiting-approval flavors; column visibility stays keyed to
+// `isAwaiting` alone so Cycle counts keeps the same columns as its Count task tab.
+const isAnyAwaiting = computed(() => isAwaiting.value || isCycleAwaiting.value)
+const showCheckbox = computed(() => !(isAnyAwaiting.value && viewAs.value === 'user'))
 const actionsWidth = computed(() => {
-  if (!isAwaiting.value) return undefined
+  if (!isAnyAwaiting.value) return undefined
   return viewAs.value === 'manager' ? '236px' : '148px'
 })
 
@@ -134,6 +145,7 @@ const statusFilter = ref('')
 const STATUS_OPTIONS = [
   { value: 'not_started', label: 'Open' },
   { value: 'in_progress', label: 'In progress' },
+  { value: 'counted',     label: 'Counted'     },
   { value: 'completed',   label: 'Completed'   },
 ]
 const whOptions = computed(() => activeWhOpts.value)
@@ -165,6 +177,8 @@ const baseRows = computed<StockAdjustment[]>(() => {
   if (demoState.value === 'empty') return []
   let list = [...activeList.value]
   if (isAwaiting.value) list = list.filter(a => a.status === 'draft')
+  else if (isCycleAwaiting.value) list = list.filter(a => a.status === 'counted')
+  else if (currentPageKey.value === 'Cycle counts') list = list.filter(a => a.status !== 'counted')
   else list = list.filter(a => a.status !== 'draft')
   if (kindFilter.value && !isErpStockCounts.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value.length) list = list.filter(a => warehouseFilter.value.includes(a.warehouseId))
@@ -188,7 +202,10 @@ const {
 
 const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || categoryFilter.value.length > 0 || !!statusFilter.value)
 function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = []; statusFilter.value = '' }
-watch([warehouseFilter, categoryFilter, statusFilter, isAwaiting], () => setPage(1))
+watch([warehouseFilter, categoryFilter, statusFilter, isAwaiting, isCycleAwaiting], () => setPage(1))
+// The Status filter is hidden on the Awaiting approval tab (every row is already
+// "Counted") — drop any leftover value so it can't silently zero out the table.
+watch(isCycleAwaiting, (v) => { if (v) statusFilter.value = '' })
 
 // ─── Row actions ─────────────────────────────────────────────────────────────────
 function viewDetails(row: StockAdjustment) { router.push(`/stock-adjustments/${row.id}`) }
@@ -197,8 +214,9 @@ function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
 function newAdjustment(kind: 'count' | 'in-out') {
   router.push({ path: '/stock-adjustments/new', query: { type: kind } })
 }
+function activeApprove(id: string) { isWmsPage.value ? approveWmsAdjustment(id) : approveAdjustment(id) }
 function approve(row: StockAdjustment) {
-  approveAdjustment(row.id)
+  activeApprove(row.id)
   toast.notify({ variant: 'success', title: `${row.number} approved` , maxWidth: 'max-content'})
 }
 
@@ -218,7 +236,7 @@ function selectedAdjustmentsOf(sel: Set<number>): StockAdjustment[] {
 }
 function bulkApprove(sel: Set<number>, deselectAll: () => void) {
   const rows = selectedAdjustmentsOf(sel)
-  for (const row of rows) approveAdjustment(row.id)
+  for (const row of rows) activeApprove(row.id)
   deselectAll()
   toast.notify({ variant: 'success', title: `${rows.length} adjustment${rows.length > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
 }
@@ -333,8 +351,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Status (WMS stock count only) -->
-        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts" id="sa-status-filter" is-close-on-select>
+        <!-- Status (WMS stock count only; not on the Awaiting approval tab — every row there is already "Counted") -->
+        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts && !isCycleAwaiting" id="sa-status-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
               id="sa-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
@@ -393,7 +411,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Bulk bar → approve (manager, awaiting tab) + delete ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <button
-        v-if="isAwaiting && viewAs === 'manager'"
+        v-if="isAnyAwaiting && viewAs === 'manager'"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         @click="bulkApprove(selectedRows as Set<number>, deselectAll)"
       >
@@ -456,6 +474,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <template #cell-assignee="{ value }">{{ value ?? '—' }}</template>
 
+    <template #cell-totalSku="{ row }">{{ adjustmentLineItems(row as unknown as StockAdjustment).length }}</template>
+
     <template #cell-status="{ value }">
       <ErpStatusBadge :status="value as string" />
     </template>
@@ -471,7 +491,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Actions ── -->
     <template #actions="{ row }">
       <!-- Awaiting approval, AS MANAGER — Approve + icon actions + kebab -->
-      <div v-if="isAwaiting && viewAs === 'manager'" class="sa-approval-actions">
+      <div v-if="isAnyAwaiting && viewAs === 'manager'" class="sa-approval-actions">
         <button
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
           @click.stop="approve(row as unknown as StockAdjustment)"
@@ -502,7 +522,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
 
       <!-- Awaiting approval, AS USER — Approval log + Comments + View details -->
-      <div v-else-if="isAwaiting" class="sa-approval-actions">
+      <div v-else-if="isAnyAwaiting" class="sa-approval-actions">
         <MpTooltip :id="`sa-tt-log-${row.id}`" label="Approval log" placement="top" use-portal>
           <button class="row-icon-ghost" aria-label="Approval log" @click.stop="openApprovalLog(row as unknown as StockAdjustment)">
             <MpIcon name="task-todo" size="md" />
