@@ -534,9 +534,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Empty state ── -->
     <div v-else class="empty-full">
       <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-      <p class="empty-full-title">{{ hasActiveFilter ? 'No results found' : 'No production request' }}</p>
-      <p class="empty-full-desc">{{ hasActiveFilter ? 'Try adjusting your search.' : 'Production request will appear here.' }}</p>
-      <a v-if="hasActiveFilter" class="empty-clear" @click="clearFilters">Clear search</a>
+      <p class="empty-full-title">{{ hasActiveFilter ? (search ? `"${search}" not found` : 'Production request not found') : 'No production request' }}</p>
+      <p class="empty-full-desc">{{ hasActiveFilter ? (search ? 'Recheck the keywords you have typed and try searching again.' : 'Your filter criteria didn\'t match any available production request. Try adjusting your filter.') : 'Production request will appear here.' }}</p>
+      <a v-if="hasActiveFilter" class="empty-clear" @click="clearFilters">Clear filters</a>
     </div>
   </div>
 
@@ -703,7 +703,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap;
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium);
-  color: var(--mp-text-secondary); line-height: 1;
+  color: var(--mp-text-secondary); line-height: 1; text-transform: uppercase;
 }
 .pr-preview-btn:hover { color: var(--mp-text-default); background: var(--mp-background-neutral-hovered); }
 .pr-child:hover .pr-preview-btn { display: inline-flex; }

@@ -111,7 +111,7 @@ function handleContinue() {
             <h3 class="cwo-product">{{ product.productName }}</h3>
             <p class="cwo-sku">SKU: {{ product.sku }}</p>
 
-            <label class="cwo-field-label">Bill of Materials</label>
+            <label class="cwo-field-label">Bill of materials</label>
             <div class="cwo-bom-field">
               <MpPopover id="cwo-bom" is-close-on-select>
                 <MpPopoverTrigger>

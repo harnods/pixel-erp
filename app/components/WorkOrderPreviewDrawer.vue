@@ -63,11 +63,11 @@ onUnmounted(() => window.removeEventListener('keydown', onEsc))
 
           <div class="wod-meta">
             <div class="wod-meta-item">
-              <span class="wod-meta-label">Production request number</span>
+              <span class="wod-meta-label">Production request no.</span>
               <span class="wod-meta-value">{{ ctx.requestNo }}</span>
             </div>
             <div class="wod-meta-item">
-              <span class="wod-meta-label">Sales order number</span>
+              <span class="wod-meta-label">Sales order no.</span>
               <span class="wod-meta-value">{{ ctx.sourceNo }}</span>
             </div>
             <div class="wod-meta-item">
