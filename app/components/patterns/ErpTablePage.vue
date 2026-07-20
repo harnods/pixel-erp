@@ -73,6 +73,9 @@ const props = withDefaults(defineProps<{
   rowDisabled?: (row: Record<string, unknown>, index: number) => boolean
   /** Singular noun shown in the bulk bar count, e.g. "warehouse" → "2 warehouses selected" */
   bulkLabel?: string
+  /** Plural override for the bulk bar count — use when the noun isn't just `bulkLabel + 's'`
+   *  (e.g. already-plural "bill of materials", or "entries"). Defaults to `bulkLabel + 's'`. */
+  bulkLabelPlural?: string
   /** Override the sticky actions column width (default 44px) — use when the #actions
    *  slot renders more than a single kebab button (several buttons in a row). */
   actionsWidth?: string
@@ -87,6 +90,7 @@ const props = withDefaults(defineProps<{
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
+  bulkLabelPlural: undefined,
   actionsWidth: undefined,
 })
 
@@ -333,7 +337,8 @@ const totalCols = computed(() =>
 const bulkCountLabel = computed(() => {
   const n = selectedRows.value.size
   const noun = props.bulkLabel ?? 'item'
-  return `${n} ${n === 1 ? noun : noun + 's'} selected`
+  const plural = props.bulkLabelPlural ?? `${noun}s`
+  return `${n} ${n === 1 ? noun : plural} selected`
 })
 </script>
 
@@ -917,6 +922,11 @@ const bulkCountLabel = computed(() => {
    `.erp-tr--align-top` is toggled by JS that measures row height. */
 .erp-tr--align-top .erp-td {
   vertical-align: top;
+}
+/* ...except the actions cell — a single kebab/button reads oddly pinned to the top
+   of a tall row, so it stays vertically centred regardless of row height. */
+.erp-tr--align-top .erp-td--actions {
+  vertical-align: middle;
 }
 
 /* Right-aligned cells — flip padding */

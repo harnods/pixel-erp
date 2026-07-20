@@ -1,13 +1,8 @@
 <script setup lang="ts">
-import { defineAsyncComponent, defineComponent, h, type Component, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { MpIcon, MpSpinner } from '@mekari/pixel3'
-
-// Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
-const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
-function asyncPage(loader: () => Promise<{ default: Component }>): Component {
-  return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
-}
+import { defineAsyncComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { MpIcon } from '@mekari/pixel3'
 import { receiptCountsByStage, receipts } from '~/data/receipts'
+import { productionRequestPendingCount } from '~/data/productionRequests'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { outgoingOpenCount } from '~/data/outgoing'
@@ -39,86 +34,107 @@ useHead({
 })
 
 const pageRegistry: Record<string, Component> = {
-  'Home':              asyncPage(() => import('~/components/pages/HomePage.vue')),
-  'Sales invoices':    asyncPage(() => import('~/components/pages/SalesInvoicesPage.vue')),
-  'Purchase invoices': asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
-  'Sales orders':      asyncPage(() => import('~/components/pages/SalesOrdersPage.vue')),
-  'Sales quotes':      asyncPage(() => import('~/components/pages/SalesQuotesPage.vue')),
-  'Sales deliveries':  asyncPage(() => import('~/components/pages/SalesDeliveriesPage.vue')),
-  'Warehouses':        asyncPage(() => import('~/components/pages/WarehousesPage.vue')),
-  'Storage locations': asyncPage(() => import('~/components/pages/StorageLocationsPage.vue')),
-  'On the way':        asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue')),
-  'Receiving':         asyncPage(() => import('~/components/pages/ReceivingIndexPage.vue')),
-  'Put-away':          asyncPage(() => import('~/components/pages/PutAwayIndexPage.vue')),
-  'Partial reception': asyncPage(() => import('~/components/pages/PartialReceptionIndexPage.vue')),
-  'Completed':         asyncPage(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
-  'Inbound completed': asyncPage(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
-  'Canceled':          asyncPage(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
-  'Warehouse transfers': asyncPage(() => import('~/components/pages/WarehouseTransfersPage.vue')),
-  'Stock adjustments': asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Cycle counts':      asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Stock counts':      asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Stock inout':       asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Company profile':    asyncPage(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
-  'Warehouse settings': asyncPage(() => import('~/components/pages/SettingsWarehousePage.vue')),
-  'Playground':         asyncPage(() => import('~/components/playground/PlaygroundPage.vue')),
+  'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
+  'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
+  'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
+  'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
+  'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
+  'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
+  'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
+  'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
+  'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
+  'Put-away':          defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue')),
+  'Partial reception': defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue')),
+  'Completed':         defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
+  'Inbound completed': defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
+  'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
+  'Work orders':        defineAsyncComponent(() => import('~/components/pages/WorkOrdersIndexPage.vue')),
+  'Bill of materials':  defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsIndexPage.vue')),
+  'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
+  'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
+  'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
+  'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
-const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
-const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
-const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
-const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
-const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
-const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
-const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
-const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
-const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
-const PartialReceiptDetailsPage = asyncPage(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
-const CompletedReceiptDetailsPage = asyncPage(() => import('~/components/pages/CompletedReceiptDetailsPage.vue'))
-const CanceledReceiptDetailsPage = asyncPage(() => import('~/components/pages/CanceledReceiptDetailsPage.vue'))
-const OutgoingIndexPage = asyncPage(() => import('~/components/pages/OutgoingIndexPage.vue'))
-const PickingIndexPage = asyncPage(() => import('~/components/pages/PickingIndexPage.vue'))
-const PackingIndexPage = asyncPage(() => import('~/components/pages/PackingIndexPage.vue'))
-const DeliveryIndexPage = asyncPage(() => import('~/components/pages/DeliveryIndexPage.vue'))
-const ShippedIndexPage = asyncPage(() => import('~/components/pages/ShippedIndexPage.vue'))
-const CreatePickingPage = asyncPage(() => import('~/components/pages/CreatePickingPage.vue'))
-const CreatePackingPage = asyncPage(() => import('~/components/pages/CreatePackingPage.vue'))
-const PickingTaskDetailsPage = asyncPage(() => import('~/components/pages/PickingTaskDetailsPage.vue'))
-const PickItemsPage = asyncPage(() => import('~/components/pages/PickItemsPage.vue'))
-const PackingTaskDetailsPage = asyncPage(() => import('~/components/pages/PackingTaskDetailsPage.vue'))
-const PackItemsPage = asyncPage(() => import('~/components/pages/PackItemsPage.vue'))
-const DeliveryTaskDetailsPage = asyncPage(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
-const HandoverToCourierPage = asyncPage(() => import('~/components/pages/HandoverToCourierPage.vue'))
-const NewShipmentPage = asyncPage(() => import('~/components/pages/NewShipmentPage.vue'))
-const ShipmentDetailsPage = asyncPage(() => import('~/components/pages/ShipmentDetailsPage.vue'))
-const OutgoingOrderDetailsPage = asyncPage(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
-const WarehouseTransferDetailsPage = asyncPage(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
-const WarehouseTransferFormPage = asyncPage(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
-const ReceivingIndexPage = asyncPage(() => import('~/components/pages/ReceivingIndexPage.vue'))
-const PutAwayIndexPage = asyncPage(() => import('~/components/pages/PutAwayIndexPage.vue'))
-const PartialReceptionIndexPage = asyncPage(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
-const CompletedReceiptIndexPage = asyncPage(() => import('~/components/pages/CompletedReceiptIndexPage.vue'))
-const CanceledReceiptIndexPage = asyncPage(() => import('~/components/pages/CanceledReceiptIndexPage.vue'))
-const ReceivingTaskDetailsPage = asyncPage(() => import('~/components/pages/ReceivingTaskDetailsPage.vue'))
-const ReceiveItemsPage = asyncPage(() => import('~/components/pages/ReceiveItemsPage.vue'))
-const CreatePurchaseReceivingPage = asyncPage(() => import('~/components/pages/CreatePurchaseReceivingPage.vue'))
-const CreatePutAwayPage = asyncPage(() => import('~/components/pages/CreatePutAwayPage.vue'))
-const CreateReceiptPage = asyncPage(() => import('~/components/pages/CreateReceiptPage.vue'))
-const CreateDeliveryOrderPage = asyncPage(() => import('~/components/pages/CreateDeliveryOrderPage.vue'))
-const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDetailsPage.vue'))
-const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
-const WarehouseTransfersPage = asyncPage(() => import('~/components/pages/WarehouseTransfersPage.vue'))
-const StockAdjustmentsPage = asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue'))
-const StockAdjustmentDetailsPage = asyncPage(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
-const StockCountFormPage = asyncPage(() => import('~/components/pages/StockCountFormPage.vue'))
-const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
-const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
-const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
+const SalesOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
+const ImportWarehousesPage = defineAsyncComponent(() => import('~/components/pages/ImportWarehousesPage.vue'))
+const NewWarehousePage = defineAsyncComponent(() => import('~/components/pages/NewWarehousePage.vue'))
+const WarehouseDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseDetailsPage.vue'))
+const ConfigureWarehousePage = defineAsyncComponent(() => import('~/components/pages/ConfigureWarehousePage.vue'))
+const StorageLocationDetailsPage = defineAsyncComponent(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
+const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
+const ReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue'))
+const ReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceiptDetailsPage.vue'))
+const PartialReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
+const CompletedReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptDetailsPage.vue'))
+const CanceledReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptDetailsPage.vue'))
+const OutgoingIndexPage = defineAsyncComponent(() => import('~/components/pages/OutgoingIndexPage.vue'))
+const PickingIndexPage = defineAsyncComponent(() => import('~/components/pages/PickingIndexPage.vue'))
+const PackingIndexPage = defineAsyncComponent(() => import('~/components/pages/PackingIndexPage.vue'))
+const DeliveryIndexPage = defineAsyncComponent(() => import('~/components/pages/DeliveryIndexPage.vue'))
+const ShippedIndexPage = defineAsyncComponent(() => import('~/components/pages/ShippedIndexPage.vue'))
+const CreatePickingPage = defineAsyncComponent(() => import('~/components/pages/CreatePickingPage.vue'))
+const CreatePackingPage = defineAsyncComponent(() => import('~/components/pages/CreatePackingPage.vue'))
+const PickingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PickingTaskDetailsPage.vue'))
+const PickItemsPage = defineAsyncComponent(() => import('~/components/pages/PickItemsPage.vue'))
+const PackingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PackingTaskDetailsPage.vue'))
+const PackItemsPage = defineAsyncComponent(() => import('~/components/pages/PackItemsPage.vue'))
+const DeliveryTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
+const HandoverToCourierPage = defineAsyncComponent(() => import('~/components/pages/HandoverToCourierPage.vue'))
+const NewShipmentPage = defineAsyncComponent(() => import('~/components/pages/NewShipmentPage.vue'))
+const ShipmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/ShipmentDetailsPage.vue'))
+const OutgoingOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
+const WarehouseTransferDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
+const WarehouseTransferFormPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
+const ReceivingIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue'))
+const PutAwayIndexPage = defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue'))
+const PartialReceptionIndexPage = defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
+const CompletedReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue'))
+const CanceledReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue'))
+const ReceivingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceivingTaskDetailsPage.vue'))
+const ReceiveItemsPage = defineAsyncComponent(() => import('~/components/pages/ReceiveItemsPage.vue'))
+const CreatePurchaseReceivingPage = defineAsyncComponent(() => import('~/components/pages/CreatePurchaseReceivingPage.vue'))
+const CreatePutAwayPage = defineAsyncComponent(() => import('~/components/pages/CreatePutAwayPage.vue'))
+const CreateReceiptPage = defineAsyncComponent(() => import('~/components/pages/CreateReceiptPage.vue'))
+const CreateDeliveryOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateDeliveryOrderPage.vue'))
+const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayDetailsPage.vue'))
+const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
+const CreateWorkOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateWorkOrderPage.vue'))
+const WorkOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
+const BillOfMaterialsDetailsPage = defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
+const CreateBillOfMaterialsPage = defineAsyncComponent(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
+const ProductionRequestIndexPage = defineAsyncComponent(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
+const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
+const StockAdjustmentsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue'))
+const StockAdjustmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
+const StockCountFormPage = defineAsyncComponent(() => import('~/components/pages/StockCountFormPage.vue'))
+const StockCountingPage = defineAsyncComponent(() => import('~/components/pages/StockCountingPage.vue'))
+const StockInOutFormPage = defineAsyncComponent(() => import('~/components/pages/StockInOutFormPage.vue'))
+const CycleCountRecommendationPage = defineAsyncComponent(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /work-orders/new → create a new work order (full page, brings its own title bar)
+  if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
+    return { component: CreateWorkOrderPage, id: 'new' }
+  }
+  // /work-orders/:id → work order detail (read-only, status-aware)
+  if (segs.length >= 2 && segs[0] === 'work-orders') {
+    return { component: WorkOrderDetailsPage, id: segs[1] }
+  }
+  // /bill-of-materials/new → create form; /:id → BOM detail.
+  // The bare index falls through to the registry.
+  if (segs.length >= 2 && segs[0] === 'bill-of-materials') {
+    if (segs[1] === 'new') return { component: CreateBillOfMaterialsPage, id: 'new' }
+    return { component: BillOfMaterialsDetailsPage, id: segs[1]! }
+  }
   // /warehouse-transfers/new → create form; /:id/edit → edit form; /:id → detail.
   // The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
@@ -260,7 +276,9 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
+  'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
+  'Cycle counts':      ['Count task', 'Recommendations'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -306,6 +324,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Production request') {
+    const pending = productionRequestPendingCount()
+    return pending ? { 'Awaiting': pending } : {}
   }
   if (currentPageKey.value === 'Stock counts') {
     const awaiting = awaitingAdjustmentCount()
@@ -370,9 +392,19 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'All stock adjustments': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
   },
+  // One shared component drives all three tabs; the tab is passed as a prop.
+  'Production request': {
+    'Awaiting':  () => h(ProductionRequestIndexPage, { tab: 'pending' }),
+    'Completed': () => h(ProductionRequestIndexPage, { tab: 'completed' }),
+    'Rejected':  () => h(ProductionRequestIndexPage, { tab: 'rejected' }),
+  },
   'Stock counts': {
     'All stock counts': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
+    'Recommendations': CycleCountRecommendationPage,
+  },
+  'Cycle counts': {
+    'Count task': StockAdjustmentsPage,
     'Recommendations': CycleCountRecommendationPage,
   },
 }
@@ -805,6 +837,22 @@ function startResize(e: MouseEvent) {
             New warehouse
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New work order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Bill of materials'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/bill-of-materials/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New bill of materials
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Inbound delivery'" class="page-title-actions">
           <template v-if="activeTab === 'Put-away'">
             <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/inbound-delivery/put-away/create')">
@@ -921,7 +969,7 @@ function startResize(e: MouseEvent) {
             New warehouse transfer
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Cycle counts'" class="page-title-actions">
+        <div v-else-if="currentPageKey === 'Cycle counts' && activeTab === 'Count task'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockCount">
             <MpIcon name="add" size="md" color="icon.inverse" />
             New stock count
