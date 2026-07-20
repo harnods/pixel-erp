@@ -145,7 +145,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           View BOM hierarchy
         </button>
 
-        <button class="detail-btn detail-btn--primary" @click="createWorkOrder">New work order</button>
+        <button class="detail-btn detail-btn--primary" @click="createWorkOrder">Create work order</button>
       </div>
     </header>
 
