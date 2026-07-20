@@ -115,7 +115,7 @@ function handleContinue() {
             <div class="cwo-bom-field">
               <MpPopover id="cwo-bom" is-close-on-select>
                 <MpPopoverTrigger>
-                  <MpSelect id="cwo-bom-select" :model-value="bom" is-full-width @mousedown.prevent>
+                  <MpSelect id="cwo-bom-select" :model-value="bom" placeholder="Select bill of materials" is-full-width @mousedown.prevent>
                     <option :value="bom">{{ bomLabel }}</option>
                   </MpSelect>
                 </MpPopoverTrigger>
