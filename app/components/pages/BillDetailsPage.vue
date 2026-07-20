@@ -81,8 +81,9 @@ function goExpenses() {
       <section class="bd-primary">
         <ContentList label="Beneficiary" :value="bill.beneficiary.name" />
         <div class="detail-primary-total">
-          <span class="detail-total-label">Total</span>
-          <span class="detail-total-amount">{{ formatIDR(bill.total) }}</span>
+          <span class="detail-total-amount">
+            <span class="detail-total-label">Total</span> {{ formatIDR(bill.total) }}
+          </span>
           <a class="detail-banner-link bd-journal-link" @click.prevent>View journal entry</a>
         </div>
       </section>
@@ -293,7 +294,6 @@ function goExpenses() {
 /* ── Beneficiary + Total (separated section, inline) ─────────────────────── */
 .bd-primary { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-primary-total { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-1); }
-.detail-total-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-total-amount { font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .bd-journal-link { font-size: var(--mp-font-sizes-sm); }
 
