@@ -329,6 +329,7 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
           { label: 'Warehouse transfers' },
+          { label: 'Cycle counts' },
           { label: 'Stock adjustments' },
         ],
         [
