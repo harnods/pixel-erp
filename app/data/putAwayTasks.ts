@@ -51,6 +51,9 @@ export interface PutAwayTask {
   canceledDate?: string;
   /** Why this task was canceled — shown on the task detail page. */
   canceledReason?: string;
+  /** A SKU shared by 2+ bundled receiving tasks is ONE merged entry (qty
+   *  summed) — put-away doesn't track which specific receiving task a unit
+   *  came from, only which bin it ends up in. */
   completedItems?: Array<{ skuCode: string; qty: number; binLocation: string }>;
   /** Per-SKU batch destination assignments (batch-tracked SKUs), draft or final. */
   batchAssignments?: Record<string, PutAwayBatchAssignment[]>;
@@ -194,6 +197,22 @@ export interface PutAwayAssignments {
   serialAssignments?: Record<string, PutAwaySerialAssignment[]>;
 }
 
+/** completedItems must keep at least one row per SKU, even at qty=0 — a
+ *  genuinely untouched SKU (nothing entered yet) still has to exist, not
+ *  vanish from the task entirely. A blanket `qty > 0` filter here was meant to
+ *  drop an ABANDONED extra "Split storage location" row (the operator split a
+ *  plain SKU's row then never filled the new one in), but it applied just as
+ *  well to a row that was never touched in the first place — only drop a
+ *  qty=0 row when a sibling for the SAME SKU already carries the real qty,
+ *  proving this specific row really is the abandoned extra one. */
+function dropAbandonedZeroRows<T extends { skuCode: string; qty: number }>(items: T[]): T[] {
+  const hasPositive = new Set<string>();
+  for (const it of items) {
+    if (it.qty > 0) hasPositive.add(it.skuCode);
+  }
+  return items.filter((it) => it.qty > 0 || !hasPositive.has(it.skuCode));
+}
+
 export function savePutAwayDraft(
   taskId: string,
   items: Array<{ skuCode: string; qty: number; binLocation: string }>,
@@ -202,7 +221,7 @@ export function savePutAwayDraft(
   const t = getPutAwayTask(taskId);
   if (!t) return;
   if (t.status === 'open') { t.status = 'in progress'; t.startDate = nowIso(); }
-  t.completedItems = items.filter((it) => it.qty > 0);
+  t.completedItems = dropAbandonedZeroRows(items);
   if (assignments?.batchAssignments) t.batchAssignments = assignments.batchAssignments;
   if (assignments?.serialAssignments) t.serialAssignments = assignments.serialAssignments;
   persistPutAways();
@@ -217,7 +236,7 @@ export function endPutAway(
   if (!t) return;
   t.status = 'completed';
   t.endDate = nowIso();
-  t.completedItems = items.filter((it) => it.qty > 0);
+  t.completedItems = dropAbandonedZeroRows(items);
   if (assignments?.batchAssignments) t.batchAssignments = assignments.batchAssignments;
   if (assignments?.serialAssignments) t.serialAssignments = assignments.serialAssignments;
 
@@ -246,9 +265,16 @@ export function endPutAway(
   persistPutAways();
 }
 
+/** A put-away task can only be canceled while not yet completed — endPutAway()
+ *  is what actually commits stock to its final bin/batch/serial location, so a
+ *  completed task has already taken real effect and must stay a permanent record. */
+export function canCancelPutAway(t: PutAwayTask): boolean {
+  return t.status === 'open' || t.status === 'in progress';
+}
+
 export function cancelPutAway(taskId: string, reason?: string): void {
   const t = getPutAwayTask(taskId);
-  if (!t) return;
+  if (!t || !canCancelPutAway(t)) return;
   t.status = 'canceled';
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;

@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
-  css, toast,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
+  MpModalOverlay, MpModalCloseButton, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { useTableState } from '~/composables/useTableState'
-import { packingTasksFor, packingTaskAgingDays, type PackingTask } from '~/data/packingTasks'
+import {
+  packingTasksFor, packingTaskAgingDays, startPacking, canCancelPackingTask, cancelPackingTask,
+  type PackingTask,
+} from '~/data/packingTasks'
 import { packingTaskHasShipment } from '~/data/deliveryTasks'
+import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
 import { outgoingOrders } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
@@ -77,7 +82,13 @@ function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — Status + Warehouse (hidden when scoped) ───
 const warehouseFilter = ref<string[]>([])
-const statusFilter = ref('')
+// Mirror into the shared singleton so the tab bar's count badges (Requests (N),
+// Picking (N), etc.) scope to whatever warehouse this table is actually
+// filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
+const statusFilter = ref<string[]>([])
 
 const baseTasks = computed<PackingRow[]>(() =>
   demoState.value === 'data'
@@ -109,7 +120,17 @@ function toggleWarehouse(id: string) {
   if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
   else warehouseFilter.value = [...warehouseFilter.value, id]
 }
-const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return statusOptions.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} statuses`
+})
+function toggleStatus(v: string) {
+  const idx = statusFilter.value.indexOf(v)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(x => x !== v)
+  else statusFilter.value = [...statusFilter.value, v]
+}
 
 const {
   search, currentPage, paginated, total, perPage,
@@ -123,14 +144,14 @@ const {
       || row.warehouseName.toLowerCase().includes(s)
       || row.source.toLowerCase().includes(s)
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
-    const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
+    const matchesStatus    = !statusFilter.value.length || statusFilter.value.includes(row.status)
     return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
 watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = [] }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -140,6 +161,27 @@ function agingDays(t: PackingTask) { return packingTaskAgingDays(t) }
 const router = useRouter()
 function viewDetails(row: PackingTask) { router.push(`/packing/${row.id}`) }
 function viewSalesOrder(row: PackingTask) { router.push(`/outbound-delivery/${row.salesOrderId}`) }
+function startPackingAndNavigate(row: PackingTask) {
+  startPacking(row.id)
+  router.push(`/packing/${row.id}/pack`)
+}
+function continuePacking(row: PackingTask) { router.push(`/packing/${row.id}/pack`) }
+// Finishing packing auto-creates the delivery — a completed task always has one to jump to.
+function viewDelivery(row: PackingTask) {
+  const d = getDeliveryForPackingTask(row.id)[0]
+  if (d) router.push(`/delivery/${d.id}`)
+}
+
+const cancelModalOpen = ref(false)
+const taskToCancel = ref<PackingTask | null>(null)
+function openCancelModal(t: PackingTask) { taskToCancel.value = t; cancelModalOpen.value = true }
+function closeCancelModal() { cancelModalOpen.value = false; taskToCancel.value = null }
+function confirmCancelTask() {
+  if (!taskToCancel.value) return
+  cancelPackingTask(taskToCancel.value.id)
+  toast.notify({ variant: 'success', title: `${taskToCancel.value.taskNo} canceled`, maxWidth: 'max-content' })
+  closeCancelModal()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -190,22 +232,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover id="pack-status-filter" is-close-on-select>
+        <MpPopover id="pack-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="pack-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''"
+              id="pack-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = []"
             >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+              <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in statusOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`pack-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
       </div>
@@ -334,6 +381,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as PackingTask)">View details</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as unknown as PackingTask).status === 'open'"
+              @click="startPackingAndNavigate(row as unknown as PackingTask)"
+            >Start packing</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else-if="(row as unknown as PackingTask).status === 'in progress'"
+              @click="continuePacking(row as unknown as PackingTask)"
+            >Continue packing</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else-if="(row as unknown as PackingTask).status === 'completed' && getDeliveryForPackingTask((row as unknown as PackingTask).id).length"
+              @click="viewDelivery(row as unknown as PackingTask)"
+            >View delivery</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancelPackingTask(row as unknown as PackingTask)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="openCancelModal(row as unknown as PackingTask)"
+            >Cancel</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -348,6 +412,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
+
+  <!-- ── Cancel confirmation modal ── -->
+  <MpModal id="pack-cancel-modal" :is-open="cancelModalOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
+    <MpModalContent>
+      <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        This packing task will be canceled and can no longer be continued. This can't be undone.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep task</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">Cancel task</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="pack-demo-fab" is-close-on-select use-portal placement="top-end">
@@ -413,7 +495,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .pack-no { color: var(--mp-text-default); }
 .pack-so { color: var(--mp-text-default); }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -448,12 +530,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }

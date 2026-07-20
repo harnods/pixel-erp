@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css,
+  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
@@ -9,6 +9,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
+import { addProductionRequest } from '~/data/productionRequests'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -21,6 +22,18 @@ const hasApproval = true
 
 const router = useRouter()
 const order = computed(() => getSalesOrderDetail(props.orderId))
+
+// Raise a production request for every registered-product line on this order —
+// the request carries this sales order as its real source (see productionRequests.ts).
+function handleCreateProductionRequest() {
+  const created = addProductionRequest(order.value)
+  if (!created.length) {
+    toast.notify({ variant: 'warning', title: 'No registered products on this order to produce' })
+    return
+  }
+  toast.notify({ variant: 'success', title: 'Production request created' })
+  router.push('/production-request')
+}
 const activityOpen = ref(false)
 const activityEntries = computed(() => [{
   date: order.value.lastUpdatedAt,
@@ -464,6 +477,7 @@ function goBack() { router.push('/sales-orders') }
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem>Preview</MpPopoverListItem>
+              <MpPopoverListItem @click="handleCreateProductionRequest">Create production request</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
@@ -788,7 +802,7 @@ function goBack() { router.push('/sales-orders') }
 .row-hover-btn {
   position: absolute;
   right: 0;
-  top: 50%;
+  top: var(--mp-spacing-2\.5, 10px);
   transform: translateY(-50%);
   display: none;
   align-items: center;

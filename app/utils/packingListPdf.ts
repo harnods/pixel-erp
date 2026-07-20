@@ -5,6 +5,7 @@ import type { PackLineItem } from '~/data/packingTaskDetails'
 import { formatDateTimeLong } from './date'
 import { generateBarcodeDataUrl } from './barcode'
 import { loadImagesByUrl } from './pdfImage'
+import { drawCanceledRibbon } from './pdfRibbon'
 
 /** One printable line — a plain SKU is one row; a batch/serial-tracked SKU expands
  *  to one row per batch/serial actually picked FOR THIS ORDER, so the operator
@@ -157,6 +158,8 @@ export async function generatePackingListPdf(
   doc.text('Packed by', marginX, sigY + 14)
   doc.line(pageWidth - marginX - sigWidth, sigY, pageWidth - marginX, sigY)
   doc.text('Checked by', pageWidth - marginX - sigWidth, sigY + 14)
+
+  if (task.status === 'canceled') drawCanceledRibbon(doc)
 
   return doc
 }

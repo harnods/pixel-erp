@@ -5,14 +5,13 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
-import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import {
   warehouseTransfers, transferWarehouseOptions, transferMemo, transferUpdatedBy, transferUpdatedAt,
-  transferApprovalLog, deleteTransfers, duplicateTransfer, approveTransfer,
+  transferApprovalLog, canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer,
   type WarehouseTransfer, type ApprovalLog,
 } from '~/data/warehouseTransfers'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
@@ -35,7 +34,6 @@ const columns: TableColumn[] = [
   { key: 'date',            label: 'Date',        width: '130px', sortable: true, sortType: 'date' },
   { key: 'originName',      label: 'Origin',      width: '220px', sortType: 'text' },
   { key: 'destinationName', label: 'Destination', width: '220px', sortType: 'text' },
-  { key: 'tags',            label: 'Tags',        width: '220px' },
   { key: 'lastUpdated',     label: 'Last updated', width: '220px' },
 ]
 
@@ -151,29 +149,34 @@ function bulkApprove(sel: Set<number>, deselectAll: () => void) {
   toast.notify({ variant: 'success', title: `${rows.length} transfer${rows.length > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
 }
 
-// ─── Bulk delete ─────────────────────────────────────────────────────────────────
-const bulkDeleteOpen = ref(false)
-const bulkDeleteIds = ref<string[]>([])
-const deleteReason = ref('')
-const deleteError = ref('')
-const REASON_MAX = 256
-let _bulkDeselect: (() => void) | null = null
-function askBulkDelete(sel: Set<number>, deselectAll: () => void) {
-  bulkDeleteIds.value = selectedTransfersOf(sel).map(t => t.id)
-  _bulkDeselect = deselectAll
-  deleteReason.value = ''
-  deleteError.value = ''
-  bulkDeleteOpen.value = true
+// ─── Bulk cancel — draft transfers only; once approved, stock has already moved
+// (applyTransfer runs at approval time), so there's nothing left to safely void. ──
+function cancelableSelection(sel: Set<number>): WarehouseTransfer[] {
+  return selectedTransfersOf(sel).filter(canCancelTransfer)
 }
-// Keep the button clickable (no disabled buttons) — validate on click, show inline error.
-function confirmBulkDelete() {
-  if (!deleteReason.value.trim()) {
-    deleteError.value = 'You must fill in reason for deleting'
-    return
-  }
-  deleteTransfers(bulkDeleteIds.value)
+function bulkCancelable(sel: Set<number>): boolean {
+  return cancelableSelection(sel).length > 0
+}
+const bulkCancelOpen = ref(false)
+const bulkCancelIds = ref<string[]>([])
+let _bulkDeselect: (() => void) | null = null
+function askBulkCancel(sel: Set<number>, deselectAll: () => void) {
+  bulkCancelIds.value = cancelableSelection(sel).map(t => t.id)
+  _bulkDeselect = deselectAll
+  bulkCancelOpen.value = true
+}
+// Single-row Cancel (kebab menu) reuses the same confirm modal as bulk.
+function askCancelRow(row: WarehouseTransfer) {
+  bulkCancelIds.value = [row.id]
+  _bulkDeselect = null
+  bulkCancelOpen.value = true
+}
+function confirmBulkCancel() {
+  const n = bulkCancelIds.value.length
+  for (const id of bulkCancelIds.value) cancelTransfer(id)
   _bulkDeselect?.()
-  bulkDeleteOpen.value = false
+  bulkCancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${n} transfer${n > 1 ? 's' : ''} canceled`, maxWidth: 'max-content' })
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
@@ -291,11 +294,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         Approve
       </button>
       <button
+        v-if="bulkCancelable(selectedRows as Set<number>)"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         :class="css({ color: 'var(--mp-text-critical)' })"
-        @click="askBulkDelete(selectedRows as Set<number>, deselectAll)"
+        @click="askBulkCancel(selectedRows as Set<number>, deselectAll)"
       >
-        Delete
+        Cancel
       </button>
     </template>
 
@@ -346,8 +350,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <template #cell-tags="{ value }"><ErpTagList :tags="(value as string[])" /></template>
-
     <!-- ── Last updated — timestamp + who (opt-in column) ── -->
     <template #cell-lastUpdated="{ row }">
       <div class="wt-updated">
@@ -387,7 +389,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverList>
               <MpPopoverListItem @click="viewDetails(row as unknown as WarehouseTransfer)">View details</MpPopoverListItem>
               <MpPopoverListItem @click="duplicate(row as unknown as WarehouseTransfer)">Duplicate</MpPopoverListItem>
-              <MpPopoverListItem @click="editTransfer(row as unknown as WarehouseTransfer)">Edit</MpPopoverListItem>
+              <MpPopoverListItem v-if="(row as unknown as WarehouseTransfer).status === 'draft'" @click="editTransfer(row as unknown as WarehouseTransfer)">Edit</MpPopoverListItem>
+              <MpPopoverListItem
+                v-if="canCancelTransfer(row as unknown as WarehouseTransfer)"
+                :class="css({ color: 'var(--mp-text-critical)' })"
+                @click="askCancelRow(row as unknown as WarehouseTransfer)"
+              >Cancel</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -429,7 +436,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as WarehouseTransfer)">View details</MpPopoverListItem>
             <MpPopoverListItem @click="duplicate(row as unknown as WarehouseTransfer)">Duplicate</MpPopoverListItem>
-            <MpPopoverListItem @click="editTransfer(row as unknown as WarehouseTransfer)">Edit</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as unknown as WarehouseTransfer).status === 'draft'" @click="editTransfer(row as unknown as WarehouseTransfer)">Edit</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancelTransfer(row as unknown as WarehouseTransfer)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="askCancelRow(row as unknown as WarehouseTransfer)"
+            >Cancel</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -456,36 +468,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @close="approvalLogOpen = false"
   />
 
-  <!-- ── Bulk delete confirmation ── -->
+  <!-- ── Cancel confirmation (single row + bulk share this) ── -->
   <MpModal
-    id="wt-bulk-delete" :is-open="bulkDeleteOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkDeleteOpen = false"
+    id="wt-bulk-cancel" :is-open="bulkCancelOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkCancelOpen = false"
   >
     <MpModalContent>
-      <MpModalHeader>Delete {{ bulkDeleteIds.length > 1 ? bulkDeleteIds.length + ' warehouse transfers' : 'warehouse transfer' }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Cancel {{ bulkCancelIds.length > 1 ? bulkCancelIds.length + ' warehouse transfers' : 'warehouse transfer' }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <p class="wt-del-intro">This action cannot be undone. Deleting {{ bulkDeleteIds.length > 1 ? 'these transfers' : 'this transfer' }} will:</p>
-        <ul class="wt-del-list">
-          <li>Remove the related journal entry</li>
-          <li>Trigger recalculation that may affect COGS and product stock quantity</li>
-        </ul>
-        <div class="wt-del-field">
-          <div class="wt-del-label-row">
-            <label class="wt-del-label" for="wt-del-reason">Reason for deleting<span class="wt-del-req">*</span></label>
-            <span class="wt-del-count">{{ deleteReason.length }} / {{ REASON_MAX }}</span>
-          </div>
-          <textarea
-            id="wt-del-reason" class="wt-del-textarea" :class="{ 'wt-del-textarea--error': deleteError }"
-            :maxlength="REASON_MAX" v-model="deleteReason" rows="3"
-            @input="deleteError = ''"
-          ></textarea>
-          <p v-if="deleteError" class="wt-del-error">{{ deleteError }}</p>
-        </div>
+        <p>{{ bulkCancelIds.length > 1 ? 'These transfers' : 'This transfer' }} will be canceled and can no longer be approved. This can't be undone.</p>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="bulkDeleteOpen = false">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">Delete</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="bulkCancelOpen = false">Keep {{ bulkCancelIds.length > 1 ? 'transfers' : 'transfer' }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkCancel">Cancel {{ bulkCancelIds.length > 1 ? 'transfers' : 'transfer' }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -593,7 +589,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .wt-updated-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
 .wt-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -607,13 +603,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* Kebab */
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 /* Awaiting-approval row actions — Approve (secondary) + ghost icon buttons + kebab,
    grouped and right-aligned in the one sticky actions column. */
@@ -636,28 +632,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* Modal footer */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
-
-/* Delete warehouse transfer modal */
-.wt-del-intro { color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.wt-del-list {
-  margin: var(--mp-spacing-2) 0 0; padding-left: 21px; list-style: disc;
-  color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px);
-}
-.wt-del-field { margin-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.wt-del-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; }
-.wt-del-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.wt-del-req { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
-.wt-del-count { margin-left: auto; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.wt-del-textarea {
-  width: 100%; min-height: 80px; resize: vertical;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
-  font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-}
-.wt-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
-.wt-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
-.wt-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
 /* Demo scenario FAB */
 .demo-fab {

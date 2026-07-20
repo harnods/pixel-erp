@@ -43,6 +43,10 @@ export interface PackingTask {
   status: "open" | "in progress" | "completed" | "canceled";
   startDate?: string;
   endDate?: string;
+  /** ISO timestamp — set when the task is canceled. */
+  canceledDate?: string;
+  /** Why this task was canceled — shown on the task detail page. */
+  canceledReason?: string;
   /** packed qty per line key (set as the operator matches/sorts) */
   packedByKey?: Record<string, number>;
   /** Direct-mode only (no pickingTaskId) — the specific SKU+qty this task covers,
@@ -458,6 +462,25 @@ export function endPacking(taskId: string, packed?: Record<string, number>): voi
   else if (!t.packedByKey) t.packedQty = t.toPackQty;
   t.status = "completed";
   t.endDate = nowIso();
+  persistPacking();
+}
+
+/** A packing task can only be canceled while packing hasn't finished yet —
+ *  "completed" means endPacking() already committed real effects (packed
+ *  units are what a delivery/shipment gets created from), so canceling at
+ *  that point would silently make packed stock unaccounted for. */
+export function canCancelPackingTask(t: PackingTask): boolean {
+  return t.status === "open" || t.status === "in progress";
+}
+
+/** Cancel a not-yet-finished packing task. Terminal state; the record itself
+ *  is kept (never deleted) so it stays in the audit trail. */
+export function cancelPackingTask(taskId: string, reason?: string): void {
+  const t = getPackingTask(taskId);
+  if (!t || !canCancelPackingTask(t)) return;
+  t.status = "canceled";
+  t.canceledDate = nowIso();
+  if (reason) t.canceledReason = reason;
   persistPacking();
 }
 

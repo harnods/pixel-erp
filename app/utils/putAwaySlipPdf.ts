@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable'
 import type { PutAwayLineItem } from '~/data/putAwayTaskDetails'
 import { formatDateTimeLong } from './date'
 import { loadImagesByUrl } from './pdfImage'
+import { drawCanceledRibbon } from './pdfRibbon'
 
 /** One printable line — one row per SKU. No storage location (destination bin
  *  isn't decided yet at print time — that's picked during put-away itself, same
@@ -36,7 +37,7 @@ function buildRows(lineItems: PutAwayLineItem[]): PutAwaySlipRow[] {
  * instance for the caller to preview/save (doesn't save it itself).
  */
 export async function generatePutAwaySlipPdf(
-  task: { taskNo: string; warehouseName: string; assignee: string },
+  task: { taskNo: string; warehouseName: string; assignee: string; status?: string },
   lineItems: PutAwayLineItem[],
 ): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
@@ -131,6 +132,8 @@ export async function generatePutAwaySlipPdf(
   doc.text('Put away by', marginX, sigY + 14)
   doc.line(pageWidth - marginX - sigWidth, sigY, pageWidth - marginX, sigY)
   doc.text('Checked by', pageWidth - marginX - sigWidth, sigY + 14)
+
+  if (task.status === 'canceled') drawCanceledRibbon(doc)
 
   return doc
 }

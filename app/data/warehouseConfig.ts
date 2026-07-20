@@ -102,6 +102,18 @@ export function saveWarehouseConfig(warehouseId: string, config: WarehouseConfig
   persistAll(all)
 }
 
+/**
+ * Whether a SKU line's qty must be reached by scanning one unit at a time —
+ * manual qty entry should be disabled for it. True when the threshold is ON
+ * and the line's qty is AT OR BELOW scanThresholdValue (matches the Configure
+ * warehouse page's own copy: "Items at or below this quantity must be scanned
+ * one by one. Above the limit, operators can enter the quantity manually.").
+ * Always false when the toggle itself is off.
+ */
+export function scanRequiredForQty(config: WarehouseConfig, qty: number): boolean {
+  return config.scanThreshold && qty <= config.scanThresholdValue
+}
+
 /** The warehouse's committed effective reservation priority order (see rankStorageLeaves). */
 export function effectiveLocationPriority(warehouseId: string): StorageLeaf[] {
   const leaves = getStorageLeaves(warehouseId).filter((l) => l.type === 'Storage')

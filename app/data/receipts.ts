@@ -36,6 +36,11 @@ export interface Receipt {
   trackingNos: string[];
   /** supplier — set on user-created receipts; seed receipts derive it by hash. */
   vendor?: string;
+  /** The REAL products/qty entered on Create receipt — set on user-created
+   *  receipts. Seed/demo receipts leave this unset, so lineItemsForReceipt()
+   *  falls back to its hash-derived mix for those instead (skuQty/purchaseQty
+   *  alone can't reconstruct which actual products were on the PO). */
+  lineItems?: { productId: string; qty: number }[];
 }
 
 // Anchor "today" so the arrival-date presets line up with the mock data.
@@ -304,10 +309,16 @@ export function closeReceipt(id: string): void {
   persistReceipts();
 }
 
+/** A receipt can only be canceled while not yet completed/already-canceled — once
+ *  fully received, it's a permanent record of what actually came in. */
+export function canCancelReceipt(r: Receipt): boolean {
+  return r.status !== "completed" && r.status !== "canceled";
+}
+
 /** Cancel a receipt (PO) — terminal state; no further receiving/put-away can happen. */
 export function cancelReceipt(id: string): void {
   const r = receipts.find((x) => x.id === id);
-  if (!r) return;
+  if (!r || !canCancelReceipt(r)) return;
   r.status = "canceled";
   r.canceledDate = new Date(RECEIPT_TODAY).toISOString().slice(0, 10);
   persistReceipts();

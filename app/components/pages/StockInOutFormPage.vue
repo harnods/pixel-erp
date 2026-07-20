@@ -16,6 +16,7 @@ import { stockLocationPaths } from '~/data/storageLocations'
 import { addAdjustment, accountOptions, IN_OUT_CATEGORIES } from '~/data/stockAdjustments'
 import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
 import { scrollToFirstError } from '~/utils/form'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const router = useRouter()
 const route = useRoute()
@@ -300,8 +301,25 @@ async function handleSave() {
   }
   isWms.value ? addWmsAdjustment(input) : addAdjustment(input)
   toast.notify({ variant: 'success', title: 'Stock in/out created' , maxWidth: 'max-content'})
+  // Already saved — the router.push below is this function's own doing, not
+  // the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   router.push(isWms.value ? '/stock-inout' : '/stock-adjustments')
 }
+
+// ── Warn before losing an in-progress stock in/out form — refresh/close-tab
+// (native prompt) and in-app navigation/Back button (modal rendered once at
+// the app root, see [...slug].vue — this app has a single catch-all route, so
+// a per-page modal/onBeforeRouteLeave never fires). "Unsaved" = at least one
+// product line added. No saveDraft option — this is a one-shot form, so the
+// modal offers only Leave/Cancel. disableUnsavedChangesGuard() is called by
+// handleSave() right before its own router.push — otherwise
+// hasUnsavedChanges() would still read true (nothing else clears the added
+// lines after save) and the "Leave without saving?" modal would fire right
+// after the operator's own intentional Save action. ─────────────────────────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => rows.value.length > 0,
+})
 
 // ── Sticky footer ─────────────────────────────────────────────────────────────────
 const stageEl = ref<HTMLElement | null>(null)

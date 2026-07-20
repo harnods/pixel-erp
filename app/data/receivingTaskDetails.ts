@@ -1,4 +1,4 @@
-import { receivingPOs, saveReceivingDraft, type ReceivingTask, type ReceivingPO } from './receivingTasks'
+import { receivingPOs, saveReceivingDraft, type ReceivingTask, type ReceivingPO, type ReceivingBatchLine } from './receivingTasks'
 import { putAwayTasks } from './putAwayTasks'
 import { CATALOG } from './catalog'
 import { binForSku } from './warehouseDetails'
@@ -11,8 +11,14 @@ export interface TaskLineItem {
   colorHue:    number
   binLocation: string
   expectedQty: number
+  /** "Expected qty" shown in the UI — see ReceivingItem.targetQty. */
+  targetQty: number
   receivedQty: number
   unit:        string
+  /** Per-batch breakdown already recorded for this line (batch-tracked SKUs only). */
+  batchLines?: ReceivingBatchLine[]
+  /** Serials already recorded for this line (serial-tracked SKUs only). */
+  serialNumbers?: string[]
 }
 
 const CATALOG_BY_SKU = new Map(CATALOG.map((p) => [p.sku, p]))
@@ -37,8 +43,11 @@ export function getTaskLineItems(task: ReceivingTask): TaskLineItem[] {
       colorHue:    p?.hue ?? 200,
       binLocation: binForSku(task.warehouseId, it.sku),
       expectedQty: it.expectedQty,
+      targetQty:   it.targetQty,
       receivedQty: it.receivedQty,
       unit:        it.unit || p?.unit || 'Unit',
+      batchLines:    it.batchLines,
+      serialNumbers: it.serialNumbers,
     }
   })
 }

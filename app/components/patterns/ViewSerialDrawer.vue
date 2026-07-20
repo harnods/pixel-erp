@@ -64,6 +64,16 @@ const props = defineProps<{
    *  match Picked/Packed qty. Only rendered when > 0 — a normal, single-cycle
    *  shipment never shows this stat at all. */
   shippedQty?: number
+  /** Status badge text for a plannedSerials-only row (not yet in pickedSerials) —
+   *  defaults to "Reserved" (picking: held for this order, not yet scanned). Put-
+   *  away reuses this same union/badge plumbing for a different fact (a serial
+   *  already received, not yet assigned a bin) and passes "Received" instead —
+   *  nothing is being "reserved" there. */
+  statusPlannedLabel?: string
+  /** Status badge text once a serial is also in pickedSerials — defaults to
+   *  "Picked" (picking). Put-away passes "Assigned", matching ManageSerialDrawer's
+   *  own put-away vocabulary for the same assigned-a-bin fact. */
+  statusPickedLabel?: string
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean] }>()
@@ -71,6 +81,8 @@ const emit = defineEmits<{ 'update:open': [boolean] }>()
 const isPacking = computed(() => props.kind === 'packing')
 const qtyLabel = computed(() => props.qtyLabel ?? 'Picked qty')
 const plannedQtyLabel = computed(() => props.plannedQtyLabel ?? 'Qty to pick')
+const statusPlannedLabel = computed(() => props.statusPlannedLabel ?? 'Reserved')
+const statusPickedLabel = computed(() => props.statusPickedLabel ?? 'Picked')
 // Packing mode normally has no status concept (just the picked list, as-is) — but
 // when plannedSerials is given (picking task view), rows carry a Reserved/Picked
 // status just like ManageSerialDrawer's picking-execution badges, so show the column.
@@ -304,8 +316,8 @@ function close() { emit('update:open', false) }
                 <td class="vsd-td vsd-td--mono" :class="{ 'vsd-td--strike': !row.counted }">{{ row.serial }}</td>
                 <td class="vsd-td vsd-td--muted" :class="{ 'vsd-td--strike': !row.counted }">{{ row.location || '—' }}</td>
                 <td v-if="isPacking && hasStatus" class="vsd-td vsd-td--status">
-                  <MpBadge v-if="row.status === 'picked'" for="tableStatus" type="completed">Picked</MpBadge>
-                  <MpBadge v-else-if="row.status === 'reserved'" for="tableStatus" type="warning">Reserved</MpBadge>
+                  <MpBadge v-if="row.status === 'picked'" for="tableStatus" type="completed">{{ statusPickedLabel }}</MpBadge>
+                  <MpBadge v-else-if="row.status === 'reserved'" for="tableStatus" type="warning">{{ statusPlannedLabel }}</MpBadge>
                 </td>
                 <td v-else-if="!isPacking" class="vsd-td vsd-td--status">
                   <MpBadge v-if="row.counted" variant="success">Counted</MpBadge>

@@ -16,9 +16,10 @@ import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
 import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { getWarehouseConfig } from '~/data/warehouseConfig'
-import { notifyScanError } from '~/utils/scan'
+import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
+import { notifyScanError, sameCode } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -30,6 +31,13 @@ const lineItems = computed(() => task.value ? getTaskLineItems(task.value) : [])
 // Put-away disabled for this task's warehouse → receiving finishes on its own,
 // no "create put-away" option to offer.
 const putAwayEnabledForTask = computed(() => getWarehouseConfig(po.value?.warehouseId ?? '').putAwayEnabled)
+// Below the warehouse's scan threshold, manual qty entry is disabled — the
+// operator must scan the barcode once per unit instead (scan handlers already
+// only ever +1, so they need no changes; only the manual input is gated).
+const warehouseConfig = computed(() => getWarehouseConfig(po.value?.warehouseId ?? ''))
+function qtyScanRequired(qty: number): boolean {
+  return scanRequiredForQty(warehouseConfig.value, qty)
+}
 
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
@@ -61,19 +69,25 @@ const priorReceivedPerSku = computed<Record<string, number>>(() => {
   }
   return map
 })
+// Outstanding is against Expected qty (this task's own target), not Purchase
+// qty (the whole-PO ceiling) — floored per line at 0, since receiving more
+// than expected is allowed and shouldn't read as a negative outstanding.
+// targetQty is already THIS task's own remaining target (createReceivingTask
+// nets it against prior ended tasks at creation time) — unlike expectedQty
+// (Purchase qty, the whole-PO ceiling, unchanged since before this task
+// existed), it must NOT be subtracted against priorReceivedPerSku again here.
 const draftOutstanding = computed(() =>
   lineItems.value.reduce((sum, it) => {
-    const prior = priorReceivedPerSku.value[it.skuCode] ?? 0
     const draft = draftQty.value[it.skuCode] ?? 0
-    return sum + Math.max(0, it.expectedQty - prior - draft)
+    return sum + Math.max(0, it.targetQty - draft)
   }, 0),
 )
 const shortItemsCount = computed(
-  () => lineItems.value.filter(it => {
-    const prior = priorReceivedPerSku.value[it.skuCode] ?? 0
-    return (draftQty.value[it.skuCode] ?? 0) + prior < it.expectedQty
-  }).length,
+  () => lineItems.value.filter(it => (draftQty.value[it.skuCode] ?? 0) < it.targetQty).length,
 )
+// Σ Expected qty — what "no outstanding" / "complete" means for THIS task,
+// distinct from purchaseTotal (Σ Purchase qty, the whole-PO ceiling).
+const targetTotal = computed(() => lineItems.value.reduce((s, it) => s + it.targetQty, 0))
 
 const filteredItems = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -148,6 +162,24 @@ function saveSerialLines(serials: CommittedSerial[]) {
   if (showQtyErrors.value) showQtyErrors.value = false
 }
 
+// Hydrate from whatever's already persisted on the task (e.g. resuming a saved
+// draft) — mirrors draftQty's watcher above; without this, continuing a draft
+// with existing batch/serial progress reopens both drawers blank.
+watch([() => props.orderId, lineItems], () => {
+  const nextBatch: Record<string, CommittedBatch[]> = {}
+  const nextSerial: Record<string, string[]> = {}
+  for (const it of lineItems.value) {
+    if (it.batchLines?.length) {
+      nextBatch[it.skuCode] = it.batchLines.map(b => ({
+        key: b.batchNo, batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, onHand: 0, counted: b.qty, unit: b.unit,
+      }))
+    }
+    if (it.serialNumbers?.length) nextSerial[it.skuCode] = it.serialNumbers
+  }
+  batchLinesBySku.value = nextBatch
+  serialLinesBySku.value = nextSerial
+}, { immediate: true })
+
 // SNs already received in prior tasks for the same receipt (block duplicates in drawer)
 const priorReceivedSerialsBySku = computed<Record<string, string[]>>(() => {
   const receiptId = task.value?.receiptId
@@ -215,7 +247,7 @@ function handleScan(rawValue: string) {
 
   // Batch number scan — find across all already-saved batch lines
   for (const [skuCode, batches] of Object.entries(batchLinesBySku.value)) {
-    const bIdx = batches.findIndex(b => b.batchNo === v)
+    const bIdx = batches.findIndex(b => sameCode(b.batchNo, v))
     if (bIdx !== -1) {
       const newCounted = (batches[bIdx]!.counted ?? 0) + 1
       const updated = batches.map((b, i) => i === bIdx ? { ...b, counted: newCounted } : b)
@@ -231,31 +263,58 @@ function handleScan(rawValue: string) {
   }
 
   // SKU scan
-  const item = lineItems.value.find(it => it.skuCode === v)
+  const item = lineItems.value.find(it => sameCode(it.skuCode, v))
   if (!item) {
     notifyScanError(`Barcode not found: "${v}"`)
     return
   }
-  if (isBatchTrackedSku(v)) {
+  // Use the item's own canonical SKU casing from here on, not the raw scan —
+  // draftQty/etc. are keyed by the stored SKU code, so a scan in different
+  // case than what's stored must still land on the SAME key, not a new one.
+  const sku = item.skuCode
+  if (isBatchTrackedSku(sku)) {
     playScanSuccessSound()
-    openBatchDrawer(v)
+    openBatchDrawer(sku)
     return
   }
-  if (isSerialTrackedSku(v)) {
-    notifyScanError(`${v}: use Manage serial numbers to add serials`)
+  if (isSerialTrackedSku(sku)) {
+    playScanSuccessSound()
+    openSerialDrawer(sku)
     return
   }
-  const current = draftQty.value[v] ?? 0
+  const current = draftQty.value[sku] ?? 0
   if (current >= item.expectedQty) {
-    notifyScanError(`${v}: purchase qty already fully received`)
+    notifyScanError(`${sku}: purchase qty already fully received`)
     return
   }
-  draftQty.value = { ...draftQty.value, [v]: current + 1 }
+  // Past Expected qty but still within Purchase qty — confirm before counting
+  // it, rather than silently accepting an over-expected unit.
+  if (current >= item.targetQty) {
+    exceedTargetConfirm.value = { sku, productName: item.productName, targetQty: item.targetQty }
+    return
+  }
+  incrementDraftQty(sku)
+}
+
+function incrementDraftQty(sku: string) {
+  const current = draftQty.value[sku] ?? 0
+  draftQty.value = { ...draftQty.value, [sku]: current + 1 }
   if (showQtyErrors.value) showQtyErrors.value = false
   playScanSuccessSound()
-  flashRowId.value = v
+  flashRowId.value = sku
   if (flashTimer) clearTimeout(flashTimer)
   flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
+}
+
+// ── Confirm counting a scan past Expected qty (still within Purchase qty) ──────
+const exceedTargetConfirm = ref<{ sku: string; productName: string; targetQty: number } | null>(null)
+function confirmExceedTarget() {
+  if (!exceedTargetConfirm.value) return
+  incrementDraftQty(exceedTargetConfirm.value.sku)
+  exceedTargetConfirm.value = null
+}
+function cancelExceedTarget() {
+  exceedTargetConfirm.value = null
 }
 
 const showQtyErrors = ref(false)
@@ -307,8 +366,13 @@ function buildReceivingDetail(): Record<string, { batchLines?: ReceivingBatchLin
 function commitReceiving(createPutAway = false) {
   showConfirm.value = false
   const received = { ...draftQty.value }
-  const complete = draftReceivedTotal.value >= purchaseTotal.value
+  // Against Expected qty, not Purchase qty — matches draftOutstanding above, so
+  // the confirm modal ("no outstanding") and this toast never contradict each other.
+  const complete = draftReceivedTotal.value >= targetTotal.value
   endReceivingTask(props.orderId, received, buildReceivingDetail())
+  // Already committed — the router.push below is this function's own doing,
+  // not the operator losing unsaved work, so the guard mustn't fire on it.
+  disableUnsavedChangesGuard()
   if (createPutAway) {
     router.push({
       path: '/inbound-delivery/put-away/create',
@@ -328,8 +392,26 @@ function commitReceiving(createPutAway = false) {
 function saveDraft() {
   saveReceivingDraft(props.orderId, { ...draftQty.value }, buildReceivingDetail())
   toast.notify({ variant: 'success', title: 'Receiving draft saved' , maxWidth: 'max-content'})
+  disableUnsavedChangesGuard()
   router.push(`/receiving/${props.orderId}`)
 }
+
+// ── Warn before losing unsaved receiving progress — refresh/close-tab (native
+// prompt) and in-app navigation/Back button (modal rendered once at the app
+// root, see [...slug].vue — this app has a single catch-all route, so a
+// per-page modal/onBeforeRouteLeave never fires). "Unsaved" = anything
+// received at all. disableUnsavedChangesGuard() is called by
+// commitReceiving()/saveDraft() right before their own router.push —
+// otherwise hasUnsavedChanges() would still read true (nothing else resets
+// the received qty after commit) and the "Leave without saving?" modal would
+// fire right after the operator's own intentional Finish/Save action. ───────
+const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
+  hasUnsavedChanges: () => draftReceivedTotal.value > 0,
+  saveDraft: () => {
+    saveReceivingDraft(props.orderId, { ...draftQty.value }, buildReceivingDetail())
+    toast.notify({ variant: 'success', title: 'Receiving draft saved', maxWidth: 'max-content' })
+  },
+})
 
 function goBack()      { router.push(`/receiving/${props.orderId}`) }
 function goReceiving() { router.push('/inbound-delivery?tab=Receiving') }
@@ -408,7 +490,17 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <span class="ri-stat-val">{{ fmt(draftReceivedTotal) }}</span>
         </div>
         <div class="ri-stat">
-          <span class="ri-stat-label">Outstanding qty</span>
+          <span class="ri-stat-label">
+            Outstanding qty
+            <MpTooltip
+              id="ri-tt-outstanding"
+              label="Against Expected qty, floored at 0 — receiving more than expected (up to Purchase qty) never shows as a negative outstanding."
+              placement="top"
+              use-portal
+            >
+              <span class="ri-stat-info"><MpIcon name="info" size="sm" /></span>
+            </MpTooltip>
+          </span>
           <span class="ri-stat-val">{{ fmt(draftOutstanding) }}</span>
         </div>
       </div>
@@ -449,12 +541,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                 <col />
                 <col />
                 <col />
+                <col />
               </colgroup>
               <thead>
                 <tr>
                   <th class="ri-th">Product</th>
                   <th class="ri-th">SKU</th>
                   <th class="ri-th ri-th--num">Purchase qty</th>
+                  <th class="ri-th ri-th--num">Expected qty</th>
                   <th class="ri-th ri-th--num">Received qty</th>
                   <th class="ri-th ri-th--num">Outstanding qty</th>
                   <th class="ri-th">Unit</th>
@@ -468,6 +562,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   </td>
                   <td class="ri-td">{{ item.skuCode }}</td>
                   <td class="ri-td ri-td--num">{{ fmt(item.expectedQty) }}</td>
+                  <td class="ri-td ri-td--num">{{ fmt(item.targetQty) }}</td>
                   <!-- Received qty -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--num">
                     <span v-if="batchHasCounts(item.skuCode)" class="ri-batch-val">{{ fmt(batchTotal(item.skuCode)) }}</span>
@@ -486,7 +581,24 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                     class="ri-td ri-td--input"
                     :class="{ 'ri-td--input--error': showQtyErrors && !(draftQty[item.skuCode] ?? 0) }"
                   >
+                    <MpTooltip
+                      v-if="qtyScanRequired(item.targetQty)"
+                      :id="`ri-tt-scan-${item.skuCode}`"
+                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      placement="top"
+                      use-portal
+                    >
+                      <input
+                        class="ri-qty-input"
+                        type="number" min="0"
+                        :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
+                        :value="draftQty[item.skuCode] ?? 0"
+                        :aria-label="`Received qty for ${item.productName}`"
+                        disabled
+                      />
+                    </MpTooltip>
                     <input
+                      v-else
                       class="ri-qty-input"
                       type="number" min="0"
                       :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
@@ -519,7 +631,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <td v-else class="ri-td ri-td--action"></td>
                 </tr>
                 <tr v-if="!filteredItems.length">
-                  <td class="ri-td ri-empty" colspan="7">No products match your search.</td>
+                  <td class="ri-td ri-empty" colspan="8">No products match your search.</td>
                 </tr>
               </tbody>
             </table>
@@ -567,11 +679,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       </MpModalHeader>
       <MpModalBody>
         <template v-if="draftOutstanding > 0">
-          {{ fmt(draftOutstanding) }} of {{ fmt(purchaseTotal) }} purchase qty still outstanding
+          {{ fmt(draftOutstanding) }} of {{ fmt(targetTotal) }} expected qty still outstanding
           across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'SKU' : 'SKUs' }}.
         </template>
         <template v-else>
-          All {{ fmt(purchaseTotal) }} units have been received.
+          All {{ fmt(targetTotal) }} expected units have been received.
         </template>
       </MpModalBody>
       <MpModalFooter>
@@ -589,13 +701,42 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <MpModalOverlay />
   </MpModal>
 
+  <!-- ── Confirm counting a scan past Expected qty ── -->
+  <MpModal
+    id="ri-exceed-target"
+    :is-open="!!exceedTargetConfirm"
+    size="md"
+    is-close-on-esc
+    :is-keep-alive="false"
+    @close="cancelExceedTarget"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        Count this unit anyway?
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        {{ exceedTargetConfirm?.productName }} ({{ exceedTargetConfirm?.sku }}) has an expected qty of
+        {{ fmt(exceedTargetConfirm?.targetQty ?? 0) }}. This unit is beyond that — count it as received anyway?
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="ri-modal-footer">
+          <button class="ri-btn ri-btn--ghost" @click="cancelExceedTarget">Cancel</button>
+          <button class="ri-btn ri-btn--primary" @click="confirmExceedTarget">Count it</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
   <ManageBatchDrawer
     v-if="batchDrawerSku"
     :open="batchDrawerOpen"
     :sku="batchDrawerSku"
     :warehouse-id="po?.warehouseId ?? ''"
     kind="receiving"
-    :target-count="lineItems.find(i => i.skuCode === batchDrawerSku)?.expectedQty ?? 0"
+    :target-count="lineItems.find(i => i.skuCode === batchDrawerSku)?.targetQty ?? 0"
+    :max-count="Math.max(0, (lineItems.find(i => i.skuCode === batchDrawerSku)?.expectedQty ?? 0) - (priorReceivedPerSku[batchDrawerSku] ?? 0))"
     :model-value="batchLinesBySku[batchDrawerSku] ?? []"
     @update:open="batchDrawerOpen = $event"
     @save="saveBatchLines"
@@ -606,8 +747,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :sku="serialDrawerSku"
     :warehouse-id="po?.warehouseId ?? ''"
     kind="receiving"
-    :delta="lineItems.find(i => i.skuCode === serialDrawerSku)?.expectedQty ?? 0"
-    :target-count="lineItems.find(i => i.skuCode === serialDrawerSku)?.expectedQty ?? 0"
+    :delta="lineItems.find(i => i.skuCode === serialDrawerSku)?.targetQty ?? 0"
+    :target-count="lineItems.find(i => i.skuCode === serialDrawerSku)?.targetQty ?? 0"
+    :max-count="Math.max(0, (lineItems.find(i => i.skuCode === serialDrawerSku)?.expectedQty ?? 0) - (priorReceivedPerSku[serialDrawerSku] ?? 0))"
     :location-on-hand="0"
     :model-value="(serialLinesBySku[serialDrawerSku] ?? []).map(s => ({ serial: s }))"
     :blocked-serials="priorReceivedSerialsBySku[serialDrawerSku] ?? []"
@@ -662,7 +804,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   padding-bottom: var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.ri-header :deep(.content-list) { padding-top: 0; min-width: 160px; }
+.ri-header :deep(.content-list) { padding-top: 0; flex: 0 0 318px; width: 318px; }
+.ri-header :deep(.content-list__value) { white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 
 /* ── Summary stats ───────────────────────────────────────────────────────────── */
 .ri-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
@@ -671,7 +814,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); font-variant-numeric: tabular-nums;
 }
-.ri-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ri-stat-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ri-stat-info { display: inline-flex; align-items: center; color: var(--mp-icon-default, var(--mp-text-secondary)); cursor: default; }
 
 /* ── SKU section (filter bar + table) ───────────────────────────────────────── */
 .ri-sku-section { display: flex; flex-direction: column; }

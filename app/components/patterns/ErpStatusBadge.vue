@@ -25,8 +25,12 @@ const props = withDefaults(
     size?: 'sm' | 'md'
     /** MpBadge variant. Default 'tableStatus' (table rows); use 'additionalInformation' next to a page-title H1. */
     badgeFor?: string
+    /** Explicit label override — keeps the mapped colour but shows this text instead.
+     *  Use when the same status value needs different wording per module (e.g. an
+     *  'in progress' order reads "In process" but a work order reads "In progress"). */
+    label?: string
   }>(),
-  { size: undefined, badgeFor: 'tableStatus' },
+  { size: undefined, badgeFor: 'tableStatus', label: undefined },
 )
 
 interface StatusConfig { type: string; label: string }
@@ -44,6 +48,7 @@ const statusConfig: Record<string, StatusConfig> = {
   invoiced:   { type: 'completed',    label: 'Invoiced'   },
   received:   { type: 'completed',    label: 'Received'   },
   shipped:    { type: 'completed',    label: 'Shipped'    },
+  fulfilled:  { type: 'completed',    label: 'Fulfilled'  },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
@@ -77,17 +82,21 @@ const statusConfig: Record<string, StatusConfig> = {
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },
+  'not allocated':{ type: 'announcement', label: 'Not allocated' },
   not_started:{ type: 'warning',      label: 'Open'        },
   'to do':    { type: 'announcement', label: 'To do'      },
   direct:     { type: 'announcement', label: 'Direct'     },
 
   // ── information — blue ────────────────────────────
   'partially processed': { type: 'information', label: 'Partially processed' },
+  'partially produced': { type: 'warning', label: 'Partially produced' },
+  'partially completed': { type: 'information', label: 'Partially completed' },
   'partially received': { type: 'information', label: 'Partially received' },
   'partial reception': { type: 'information', label: 'Partial reception' },
   'partially picked': { type: 'information', label: 'Partially picked' },
   'partially packed': { type: 'information', label: 'Partially packed' },
   'partially shipped': { type: 'information', label: 'Partially shipped' },
+  'partially fulfilled': { type: 'information', label: 'Partially fulfilled' },
   'in progress':{ type: 'information',  label: 'In progress' },
   in_progress:{ type: 'information',  label: 'In progress' },
   new:        { type: 'information',  label: 'New'        },
@@ -98,7 +107,8 @@ const statusConfig: Record<string, StatusConfig> = {
 
 const config = computed<StatusConfig>(() => {
   const key = props.status?.toLowerCase() ?? ''
-  return statusConfig[key] ?? { type: 'information', label: props.status }
+  const base = statusConfig[key] ?? { type: 'information', label: props.status }
+  return props.label ? { ...base, label: props.label } : base
 })
 </script>
 

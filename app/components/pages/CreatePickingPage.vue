@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon,
+  MpButton, MpAutocomplete, MpSpinner, MpTooltip, MpIcon,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css, toast,
 } from '@mekari/pixel3'
@@ -10,7 +10,7 @@ import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/Ma
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { pickableOrders, type OutgoingOrder } from '~/data/outgoing'
 import {
-  addPickingTask, pickedQtyForOrderSku, type PickingLine,
+  addPickingTask, pickedQtyForOrderSku, pickedKeysForOrder, type PickingLine,
   type PickingBatchPick, type PickingSerialPick,
 } from '~/data/pickingTasks'
 import { orderSkuLines, productBySku } from '~/data/inventory'
@@ -128,9 +128,13 @@ function orderLines(o: OutgoingOrder): SkuLine[] {
   // SKUs + qty come from the product DB (drawn from what this warehouse stocks), so
   // each line maps to a real bin — same source picking/packing use downstream.
   // `qty` = the FULL order demand; `picked` = what's already been picked for this
-  // order+SKU on earlier lists. SKUs already fully picked are dropped (nothing left).
+  // order+SKU on earlier lists. A SKU already covered — either fully picked, or still
+  // sitting on another UNFINISHED (open/in progress) picking task — is dropped, so the
+  // same SKU can't be double-committed to two picking tasks at once.
+  const covered = pickedKeysForOrder(o.id)
   const lines: SkuLine[] = []
   for (const l of orderSkuLines(o)) {
+    if (covered.has(`${o.id}::${l.sku}`)) continue
     const picked = pickedQtyForOrderSku(o.id, l.sku)
     if (l.qty - picked <= 0) continue
     lines.push({
@@ -169,11 +173,16 @@ const partialPickingLockedMsg = "This warehouse doesn't allow partial picking."
 function isLocked(key: string) { return lockedKeys.value.has(key) }
 function isSelected(key: string) { return isLocked(key) || !excludedKeys.value.has(key) }
 function toggleLine(key: string) {
-  if (isLocked(key)) return
+  if (isLocked(key)) {
+    toast.notify({ variant: 'error', title: partialPickingLockedMsg, maxWidth: 'max-content' })
+    return
+  }
   const s = new Set(excludedKeys.value)
   s.has(key) ? s.delete(key) : s.add(key)
   excludedKeys.value = s
 }
+function resetExclusions(): void { excludedKeys.value = new Set() }
+const anyExcluded = computed(() => excludedKeys.value.size > 0)
 // To pick is clamped to [0, cap] — can't pick more than the combined ordered qty,
 // nor more than the available stock for that SKU.
 function setQty(key: string, val: string, cap: number) {
@@ -411,22 +420,6 @@ function capForSku(sku: string): number {
   return row ? stockOf(row.key).cap : 0
 }
 
-// Select-all across the merged rows
-const allLinesSelected = computed(() => pickRows.value.length > 0 && pickRows.value.every(g => isSelected(g.key)))
-const someLinesSelected = computed(() => {
-  const sel = pickRows.value.filter(g => isSelected(g.key)).length
-  return sel > 0 && sel < pickRows.value.length
-})
-const allLinesLocked = computed(() => pickRows.value.length > 0 && pickRows.value.every(g => isLocked(g.key)))
-function toggleAllLines() {
-  if (allLinesLocked.value) return
-  const s = new Set(excludedKeys.value)
-  // Locked (marketplace) rows can never be excluded.
-  if (allLinesSelected.value) pickRows.value.forEach(g => { if (!isLocked(g.key)) s.add(g.key) })
-  else pickRows.value.forEach(g => s.delete(g.key))
-  excludedKeys.value = s
-}
-
 const selectedRows    = computed(() => pickRows.value.filter(g => isSelected(g.key)))
 const totalSkus       = computed(() => selectedRows.value.length)
 const totalToPick     = computed(() => selectedRows.value.reduce((a, g) => a + qtyToPick(g), 0))
@@ -525,6 +518,10 @@ async function handleCreate() {
   if (!assigneeId.value)  { assigneeError.value  = true; valid = false }
   if (!selectedOrders.value.length) valid = false
   if (!valid) { scrollToFirstError(); return }
+  if (!selectedRows.value.length) {
+    toast.notify({ variant: 'error', title: 'You must include at least one SKU to pick', maxWidth: 'max-content' })
+    return
+  }
   if (isPartialPick.value) { showPartialConfirm.value = true; return }
   await doCreate()
 }
@@ -700,46 +697,28 @@ async function doCreate() {
           </div>
         </div>
 
+        <div class="pk-filter-bar">
+          <span class="pk-sku-count">{{ totalSkus }} of {{ pickRows.length }} included</span>
+          <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">Reset</MpButton>
+        </div>
+
         <section class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pk-items-scroll">
             <table class="pk-items pk-items--split">
               <colgroup>
-                <col /><!-- Product (+ checkbox) -->
+                <col /><!-- Product -->
                 <col /><!-- SKU -->
                 <col v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" style="width: 170px" /><!-- Storage location -->
                 <col /><!-- Order qty -->
                 <col v-if="hasPriorPicks" /><!-- Picked qty -->
                 <col /><!-- Qty to pick -->
                 <col style="width: 100px" /><!-- Unit -->
-                <col v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" style="width: 48px" /><!-- Action -->
+                <col v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" style="width: 48px" /><!-- Manage batch/serial -->
+                <col style="width: 56px" /><!-- Remove/restore -->
               </colgroup>
               <thead>
                 <tr>
-                  <th class="pk-th pk-th--product-check">
-                    <div class="pk-check-wrap">
-                      <MpTooltip
-                        v-if="allLinesLocked"
-                        id="pk-lock-all-tt"
-                        :label="partialPickingLockedMsg"
-                        placement="top"
-                        use-portal
-                      >
-                        <span @click.stop>
-                          <MpCheckbox id="pk-all-lines" :is-checked="true" :is-disabled="true" />
-                        </span>
-                      </MpTooltip>
-                      <span v-else @click.stop>
-                        <MpCheckbox
-                          id="pk-all-lines"
-                          :is-checked="allLinesSelected"
-                          :is-indeterminate="someLinesSelected"
-                          :is-disabled="allLinesLocked"
-                          @change="toggleAllLines"
-                        />
-                      </span>
-                      <span>Product</span>
-                    </div>
-                  </th>
+                  <th class="pk-th">Product</th>
                   <th class="pk-th">SKU</th>
                   <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th">Storage location</th>
                   <th class="pk-th pk-th--num">Order qty</th>
@@ -747,6 +726,7 @@ async function doCreate() {
                   <th class="pk-th pk-th--num">Qty to pick</th>
                   <th class="pk-th">Unit</th>
                   <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th pk-th--action"></th>
+                  <th class="pk-th pk-th--remove" aria-hidden="true" />
                 </tr>
               </thead>
               <tbody>
@@ -757,28 +737,7 @@ async function doCreate() {
                   :class="{ 'pk-item-row--off': !isSelected(row.key) }"
                 >
                   <td class="pk-td">
-                    <div class="pk-check-wrap">
-                      <MpTooltip
-                        v-if="isLocked(row.key)"
-                        :id="`pk-lock-${row.key}`"
-                        :label="partialPickingLockedMsg"
-                        placement="top"
-                        use-portal
-                      >
-                        <span @click.stop>
-                          <MpCheckbox :id="`pk-line-${row.key}`" :is-checked="true" :is-disabled="true" />
-                        </span>
-                      </MpTooltip>
-                      <span v-else @click.stop>
-                        <MpCheckbox
-                          :id="`pk-line-${row.key}`"
-                          :is-checked="isSelected(row.key)"
-                          :is-disabled="isLocked(row.key)"
-                          @change="toggleLine(row.key)"
-                        />
-                      </span>
-                      <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
-                    </div>
+                    <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
                   </td>
                   <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
 
@@ -857,6 +816,31 @@ async function doCreate() {
                     </td>
                     <td v-else class="pk-td pk-td--action"></td>
                   </template>
+
+                  <td class="pk-td pk-td--remove">
+                    <template v-if="!isSelected(row.key)">
+                      <MpTooltip :id="`pk-rs-${row.key}`" label="Restore" placement="left" use-portal>
+                        <MpButton
+                          :aria-label="`Restore ${row.product}`"
+                          variant="ghost" left-icon="add"
+                          @click="toggleLine(row.key)"
+                        />
+                      </MpTooltip>
+                    </template>
+                    <template v-else>
+                      <MpTooltip
+                        :id="`pk-rm-${row.key}`"
+                        :label="isLocked(row.key) ? partialPickingLockedMsg : 'Remove'"
+                        placement="left" use-portal
+                      >
+                        <MpButton
+                          :aria-label="`Remove ${row.product}`"
+                          variant="ghost" left-icon="minus-circular"
+                          @click="toggleLine(row.key)"
+                        />
+                      </MpTooltip>
+                    </template>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1038,6 +1022,8 @@ async function doCreate() {
 .pk-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
 .pk-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pk-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pk-filter-bar { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-3); }
+.pk-sku-count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Picking list — per-order blocks ─────────────────────────────────────────── */
 .pk-order-block { margin-bottom: var(--mp-spacing-5); }
@@ -1069,7 +1055,6 @@ async function doCreate() {
 .pk-items thead .pk-th { position: sticky; top: 0; z-index: 1; }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pk-loc-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pk-check-wrap { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .pk-item-row--off { opacity: 0.45; }
 
 /* Once any row splits its Qty to pick cell (batch/serial-tracked SKU present), every
@@ -1110,9 +1095,6 @@ async function doCreate() {
 .pk-batch-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; }
 
 .pk-td--action { padding: 4px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
-/* Sticky action column — stays visible when the table scrolls wider than the stage */
-.pk-th--action { position: sticky; right: 0; z-index: 2; }
-.pk-td--action { position: sticky; right: 0; z-index: 1; }
 .pk-manage-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
@@ -1120,6 +1102,11 @@ async function doCreate() {
   cursor: pointer; color: var(--mp-text-secondary); padding: 0;
 }
 .pk-manage-icon-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+
+.pk-td--remove { padding: 2px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; text-align: right; }
+/* Sticky remove/restore column — stays visible when the table scrolls wider than the stage */
+.pk-th--remove { position: sticky; right: 0; z-index: 2; }
+.pk-td--remove { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
 
 /* ── Empty state ─────────────────────────────────────────────────────────────── */
 .pk-empty {

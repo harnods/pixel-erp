@@ -209,6 +209,10 @@ async function persist() {
     vendor: vendor.value,
     trackingNos: trackingNo.value ? [trackingNo.value] : [],
     memo: memo.value.trim() || undefined,
+    // The actual products/qty picked in the form above — without this, the
+    // details page had no way to know what was really entered and fabricated
+    // an unrelated random product mix from skuQty/purchaseQty alone.
+    lineItems: filledRows.map((r) => ({ productId: r.productId, qty: Number(r.qty) || 1 })),
   })
 }
 

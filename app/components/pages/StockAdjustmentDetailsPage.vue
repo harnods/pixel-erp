@@ -18,11 +18,11 @@ import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { formatDateLong, formatDateTimeLong, formatDateTime } from '~/utils/date'
 import {
   stockAdjustments, getAdjustment, adjustmentLineItems, adjustmentMemo, adjustmentAttachments,
-  adjustmentUpdatedBy, adjustmentUpdatedAt, accountCodeFor, deleteAdjustments, approveAdjustment,
+  adjustmentUpdatedBy, adjustmentUpdatedAt, accountCodeFor, canCancelAdjustment, cancelAdjustment, approveAdjustment,
   adjustmentApprovalLog,
   type AdjustmentLine,
 } from '~/data/stockAdjustments'
-import { wmsStockAdjustments, getWmsAdjustment, deleteWmsAdjustments, startWmsCount } from '~/data/wmsStockAdjustments'
+import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, startWmsCount } from '~/data/wmsStockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -330,16 +330,20 @@ function approve() {
   toast.notify({ variant: 'success', title: `${adjustment.value.number} approved` , maxWidth: 'max-content'})
 }
 
-// ── Delete (single) — same alert as the index ──────────────────────────────────
-const deleteOpen = ref(false)
-const deleteReason = ref('')
-const deleteError = ref('')
-const REASON_MAX = 256
-function askDelete() { deleteReason.value = ''; deleteError.value = ''; deleteOpen.value = true }
-function confirmDelete() {
-  if (!deleteReason.value.trim()) { deleteError.value = 'You must fill in reason for deleting'; return }
-  isWmsRecord.value ? deleteWmsAdjustments([props.orderId]) : deleteAdjustments([props.orderId])
-  deleteOpen.value = false
+// ── Cancel (single) — only while not yet applied to real stock: ERP draft, or a
+// WMS cycle count not yet finished. A WMS Stock In/Out is completed the instant
+// it's created (no draft window), so it's never cancelable at all. ────────────
+const canCancelRecord = computed(() => {
+  if (!adjustment.value) return false
+  return isWmsRecord.value ? canCancelWmsAdjustment(adjustment.value) : canCancelAdjustment(adjustment.value)
+})
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  if (!adjustment.value) return
+  isWmsRecord.value ? cancelWmsAdjustment(props.orderId) : cancelAdjustment(props.orderId)
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${adjustment.value.number} canceled`, maxWidth: 'max-content' })
   router.push(backPath())
 }
 
@@ -377,8 +381,8 @@ onUnmounted(() => {
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ adjustment.number }}</h1>
           <ErpStatusBadge
-            v-if="adjustment.status === 'draft'"
-            status="draft" badge-for="additionalInformation" size="md"
+            v-if="adjustment.status === 'draft' || adjustment.status === 'canceled'"
+            :status="adjustment.status" badge-for="additionalInformation" size="md"
           />
           <MpPopover id="sad-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
@@ -434,7 +438,18 @@ onUnmounted(() => {
             <ContentList label="Transaction no." :value="adjustment.number" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Warehouse" :value="adjustment.warehouseName" />
+            <ContentList label="Warehouse">
+              <div class="wh-link-wrap">
+                <span>{{ adjustment.warehouseName }}</span>
+                <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${adjustment.warehouseId}`)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList label="Assignee" :value="adjustment.assignee || '—'" />
@@ -449,7 +464,18 @@ onUnmounted(() => {
           </div>
           <div class="content-list-col">
             <ContentList label="Transaction no." :value="adjustment.number" />
-            <ContentList label="Warehouse" :value="adjustment.warehouseName" />
+            <ContentList label="Warehouse">
+              <div class="wh-link-wrap">
+                <span>{{ adjustment.warehouseName }}</span>
+                <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${adjustment.warehouseId}`)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList v-if="!isCount" label="Category" :value="adjustment.category" />
@@ -743,12 +769,15 @@ onUnmounted(() => {
       <!-- WMS stock count footer -->
       <template v-if="isWmsCount">
         <button class="detail-btn detail-btn--secondary" @click="printPdf">Print stock card</button>
-        <!-- Completed: no counting button, just Edit/Delete -->
-        <template v-if="adjustment.status === 'completed'">
-          <MpPopover id="sad-wms-actions-done" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <!-- Not started / In progress: split button. Completed: stock already
+             counted/applied — no actions left, terminal record. -->
+        <div v-if="adjustment.status === 'not_started' || adjustment.status === 'in_progress'" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startCounting">
+            {{ adjustment.status === 'in_progress' ? 'Continue counting' : 'Start counting' }}
+          </button>
+          <MpPopover id="sad-wms-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary">
-                Actions
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -757,34 +786,11 @@ onUnmounted(() => {
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
-                <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
-        </template>
-        <!-- Not started / In progress: split button -->
-        <template v-else>
-          <div class="detail-split-btn">
-            <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startCounting">
-              {{ adjustment.status === 'in_progress' ? 'Continue counting' : 'Start counting' }}
-            </button>
-            <MpPopover id="sad-wms-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-              <MpPopoverTrigger>
-                <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-                <MpPopoverList>
-                  <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
-                  <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
-          </div>
-        </template>
+        </div>
       </template>
 
       <!-- ERP + WMS stock in/out footer -->
@@ -802,9 +808,11 @@ onUnmounted(() => {
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem @click="preview">Preview</MpPopoverListItem>
-              <div role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
-              <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
-              <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
+              <template v-if="canCancelRecord">
+                <div role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
+                <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel</MpPopoverListItem>
+              </template>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -846,35 +854,20 @@ onUnmounted(() => {
       @update:open="viewSerialOpen = $event"
     />
 
-    <!-- Delete stock adjustment -->
+    <!-- Cancel stock adjustment -->
     <MpModal
-      id="sad-delete" :is-open="deleteOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteOpen = false"
+      id="sad-cancel" :is-open="cancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
     >
       <MpModalContent>
-        <MpModalHeader>Delete stock adjustment?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>Cancel stock adjustment?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="sa-del-intro">This action cannot be undone. Deleting this adjustment will:</p>
-          <ul class="sa-del-list">
-            <li>Remove the related journal entry</li>
-            <li>Trigger recalculation that may affect COGS and product stock quantity</li>
-          </ul>
-          <div class="sa-del-field">
-            <div class="sa-del-label-row">
-              <label class="sa-del-label" for="sad-del-reason">Reason for deleting<span class="sa-del-req">*</span></label>
-              <span class="sa-del-count">{{ deleteReason.length }} / {{ REASON_MAX }}</span>
-            </div>
-            <textarea
-              id="sad-del-reason" class="sa-del-textarea" :class="{ 'sa-del-textarea--error': deleteError }"
-              :maxlength="REASON_MAX" v-model="deleteReason" rows="3" @input="deleteError = ''"
-            ></textarea>
-            <p v-if="deleteError" class="sa-del-error">{{ deleteError }}</p>
-          </div>
+          <p>This adjustment will be canceled and can no longer be approved. This can't be undone.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">Keep adjustment</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel adjustment</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1070,19 +1063,8 @@ onUnmounted(() => {
 
 .sad-menu-divider { display: block; height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
 
-/* Delete modal */
+/* Cancel modal */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
-.sa-del-intro { color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.sa-del-list { margin: var(--mp-spacing-2) 0 0; padding-left: 21px; list-style: disc; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.sa-del-field { margin-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.sa-del-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; }
-.sa-del-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.sa-del-req { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
-.sa-del-count { margin-left: auto; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.sa-del-textarea { width: 100%; min-height: 80px; resize: vertical; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral, #fff); color: var(--mp-text-default); font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
-.sa-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
-.sa-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
-.sa-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
 /* Linked cycle counts section */
 .detail-linked-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); flex-shrink: 0; }
@@ -1108,6 +1090,8 @@ onUnmounted(() => {
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
 .detail-item-row:hover .row-hover-btn { display: flex; }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging {

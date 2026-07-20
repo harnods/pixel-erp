@@ -13,11 +13,16 @@ import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import {
-  getPickingLineItems, allPickingTasksFlat, getPackingForPickingTask, type PickLineItem,
+  getPickingLineItems, getPickingGroupedItems, allPickingTasksFlat, getPackingForPickingTask,
+  type PickLineItem, type PickGroupItem,
 } from '~/data/pickingTaskDetails'
-import { getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds, type PickingTask } from '~/data/pickingTasks'
+import {
+  getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds,
+  canCancelPickingTask, cancelPickingTask,
+  type PickingTask,
+} from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
@@ -32,6 +37,17 @@ const router = useRouter()
 
 const task = computed(() => getPickingTask(props.orderId))
 const lineItems = computed(() => task.value ? getPickingLineItems(task.value) : [])
+const itemByKey = computed(() => new Map(lineItems.value.map(it => [it.key, it])))
+// One row per SKU, merged across every order that contributed it — same fix as
+// PickItemsPage.vue: a task bundling the same SKU from 2 orders is one thing for
+// the picker to take, not two independent-looking rows.
+const groupedItems = computed(() => task.value ? getPickingGroupedItems(task.value) : [])
+function rowPickedForGroup(group: PickGroupItem): number {
+  return group.memberKeys.reduce((s, k) => {
+    const m = itemByKey.value.get(k)
+    return s + (m ? rowPicked(k, m.pickedQty) : 0)
+  }, 0)
+}
 
 // ── Local state mirror (mock data isn't deeply reactive) ─────────────────────
 const localStatus = ref<TaskStatus>('open')
@@ -56,12 +72,6 @@ function rowPicked(key: string, fallback: number): number {
   return localPicked.value[key] ?? fallback
 }
 
-// Batch/serial-tracked lines show "—" (location detail lives in the View batch /
-// View serial number drawer instead) rather than the static binLocation.
-function isTrackedItem(item: { batchPicks?: unknown[]; serialPicks?: unknown[] }): boolean {
-  return !!(item.batchPicks?.length || item.serialPicks?.length)
-}
-
 // ── Batch / serial helpers (same heuristic as receiving / put-away / packing) ───
 const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
 const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
@@ -83,11 +93,38 @@ function isSerialTrackedSku(sku: string): boolean {
 }
 
 // ── View batch / View serial number — read-only, which batch/SN is reserved for
-// this line (to be picked, or already picked). ──────────────────────────────────
+// this line (to be picked, or already picked). A merged group's members may span
+// 2+ orders, so this rebuilds a single synthetic line summing qty and combining
+// every member's batch/serial picks (merged the same way a single line's own
+// repeat picks already are) before handing it to the read-only drawer. ─────────
 const viewBatchItem = ref<PickLineItem | null>(null)
 const viewSerialItem = ref<PickLineItem | null>(null)
-function openViewBatch(item: PickLineItem) { viewBatchItem.value = item }
-function openViewSerial(item: PickLineItem) { viewSerialItem.value = item }
+// getPickingGroupedItems() already merges batch/serial picks across every member
+// line — this just fills in the one thing it can't know: live local edits to
+// picked qty (rowPickedForGroup), plus the orderId/salesNo fields the drawer
+// itself never reads but PickLineItem's type still requires.
+function mergedGroupItem(group: PickGroupItem): PickLineItem {
+  const first = itemByKey.value.get(group.memberKeys[0] ?? '')
+  return {
+    key: group.key,
+    orderId: first?.orderId ?? '',
+    salesNo: first?.salesNo ?? '',
+    productName: group.productName,
+    productDesc: group.productDesc,
+    skuCode: group.skuCode,
+    image: group.image,
+    binLocation: group.binLocation,
+    unit: group.unit,
+    expectedQty: group.expectedQty,
+    pickedQty: rowPickedForGroup(group),
+    batchPicks: group.batchPicks,
+    serialPicks: group.serialPicks,
+    plannedBatchPicks: group.plannedBatchPicks,
+    plannedSerialPicks: group.plannedSerialPicks,
+  }
+}
+function openViewBatch(group: PickGroupItem) { viewBatchItem.value = mergedGroupItem(group) }
+function openViewSerial(group: PickGroupItem) { viewSerialItem.value = mergedGroupItem(group) }
 
 // Linked sales orders + packing tasks
 const linkedOrders = computed(() =>
@@ -127,16 +164,47 @@ function startPickingAndNavigate() {
   startPicking(props.orderId)
   router.push(`/picking/${props.orderId}/pick`)
 }
+
+// Cancel — only while picking hasn't finished yet (open/in progress). Once
+// partially picked/completed, picking is already done and the task becomes a
+// permanent record.
+const canCancel = computed(() => !!task.value && canCancelPickingTask({ ...task.value, status: localStatus.value }))
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  if (!task.value) return
+  cancelPickingTask(task.value.id)
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
+  goBack()
+}
+
 const pdfPreviewOpen = ref(false)
 const pdfPreviewDoc = ref<jsPDF | null>(null)
 const pdfPreviewFilename = ref('')
 async function printPickingList() {
   if (!task.value) return
-  pdfPreviewDoc.value = await generatePickingListPdf(task.value, lineItems.value)
+  pdfPreviewDoc.value = await generatePickingListPdf(task.value, groupedItems.value)
   pdfPreviewFilename.value = `Picking List - ${task.value.taskNo}.pdf`
   pdfPreviewOpen.value = true
 }
 const cantPackModalOpen = ref(false)
+// Copy varies by whether EVERY order on this task is a marketplace order (1, or
+// several that all happen to be marketplace) vs a MIX of marketplace + non-marketplace
+// — same branching as PickItemsPage.vue's marketplaceWarningText, kept for defensive
+// consistency even though packableOrderIds() means this modal only ever fires for an
+// all-marketplace list in practice (a mixed list would already have a packable order).
+const cantPackText = computed(() => {
+  const t = task.value
+  const total = t?.salesOrderIds.length ?? 0
+  const count = (t?.salesOrderIds ?? []).filter(id => isMarketplaceOrder(outgoingOrders.find(o => o.id === id))).length
+  const suffix = 'must be picked in full — across every picking list that covers it — before a packing task can be created. Finish picking the remaining items, then come back here to create packing.'
+  const suffixPlural = suffix.replace('covers it', 'covers them')
+  if (count === total) {
+    return count > 1 ? `These sales orders ${suffixPlural}` : `This sales order ${suffix}`
+  }
+  return count > 1 ? `There are sales orders in this picking list that ${suffixPlural}` : `There is a sales order in this picking list that ${suffix}`
+})
 function createPacking() {
   // Packability is judged at the ORDER level across all picking lists, and an order
   // that already has a packing task created FROM THIS picking task is excluded —
@@ -189,13 +257,89 @@ function paAging(p: { startDate?: string; endDate?: string }): number {
 const itemSearch = ref('')
 const filteredItems = computed(() => {
   const q = itemSearch.value.trim().toLowerCase()
-  if (!q) return lineItems.value
-  return lineItems.value.filter(it => it.productName.toLowerCase().includes(q) || it.skuCode.toLowerCase().includes(q))
+  if (!q) return groupedItems.value
+  return groupedItems.value.filter(it => it.productName.toLowerCase().includes(q) || it.skuCode.toLowerCase().includes(q))
 })
 const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.value))
+
+/** Picked qty for a batch/serial-tracked group, broken down by which bin it was
+ *  actually picked from — read from the task's own committed batchPicks/
+ *  serialPicks (a batch/serial always sits in exactly ONE fixed bin), so 2+
+ *  bins only ever show up here because the group bundles 2+ DIFFERENT
+ *  batches/serials that happen to live in different locations. Empty/size-1
+ *  means nothing to split.
+ *
+ *  Gated on rowPickedForGroup(group) > 0 — task.batchPicks/serialPicks are
+ *  populated with the RESERVATION plan's own qty from the moment the task is
+ *  created (addPickingTask clones them into plannedBatchPicks too), not
+ *  zeroed until something's genuinely picked; pickedByKey (which
+ *  rowPickedForGroup ultimately reads) is the only real signal of actual
+ *  progress. Without this gate, a fresh, untouched task whose PLAN happens to
+ *  span 2+ bins would incorrectly split rows and show reservation qty as if
+ *  it had already been picked. */
+function groupQtyByBin(group: PickGroupItem): Map<string, number> {
+  const map = new Map<string, number>()
+  if (rowPickedForGroup(group) <= 0) return map
+  if (isBatchTrackedSku(group.skuCode)) {
+    for (const b of group.batchPicks ?? []) {
+      if (b.qty > 0 && b.location) map.set(b.location, (map.get(b.location) ?? 0) + b.qty)
+    }
+  } else if (isSerialTrackedSku(group.skuCode)) {
+    for (const s of group.serialPicks ?? []) {
+      if (s.location) map.set(s.location, (map.get(s.location) ?? 0) + 1)
+    }
+  }
+  return map
+}
+
+/** Storage location(s) to DISPLAY for a group — distinct from groupQtyByBin
+ *  above (which only ever drives row-splitting off REAL picks, unchanged).
+ *  Before anything's actually been picked, groupQtyByBin is empty and the
+ *  group would otherwise show no location at all — but the reservation plan
+ *  already knows where its batches/serials sit, so this falls back to
+ *  plannedBatchPicks/plannedSerialPicks to show that instead of a bare "—".
+ *  Never triggers row-splitting itself (Qty to pick/Picked qty stay the
+ *  group's own totals until something's genuinely picked from 2+ bins). */
+function groupLocationsForDisplay(group: PickGroupItem): string[] {
+  const bins = new Set<string>()
+  if (isBatchTrackedSku(group.skuCode)) {
+    const source = group.batchPicks?.length ? group.batchPicks : (group.plannedBatchPicks ?? [])
+    for (const b of source) if (b.location) bins.add(b.location)
+  } else if (isSerialTrackedSku(group.skuCode)) {
+    const source = group.serialPicks?.length ? group.serialPicks : (group.plannedSerialPicks ?? [])
+    for (const s of source) if (s.location) bins.add(s.location)
+  }
+  return [...bins]
+}
+
+interface PickDetailRowWithMeta {
+  item: PickGroupItem
+  bin: string | null
+  binQty: number
+  groupIndex: number
+  groupSize: number
+}
+/** Expands each visible group into one row per bin actually used (Storage
+ *  location/Qty to pick/Picked qty split per bin, Product/SKU/Outstanding/
+ *  Unit/Action merged via groupIndex/groupSize) — or a single row when
+ *  there's nothing to split (0 or 1 bin used), matching PickItemsPage.vue's
+ *  same pattern during live execution. */
+const visibleRowsWithMeta = computed<PickDetailRowWithMeta[]>(() => {
+  const result: PickDetailRowWithMeta[] = []
+  for (const item of visibleItems.value) {
+    const byBin = groupQtyByBin(item)
+    if (byBin.size < 2) {
+      result.push({ item, bin: null, binQty: 0, groupIndex: 0, groupSize: 1 })
+      continue
+    }
+    const bins = [...byBin.entries()]
+    bins.forEach(([bin, qty], idx) => result.push({ item, bin, binQty: qty, groupIndex: idx, groupSize: bins.length }))
+  }
+  return result
+})
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -323,7 +467,18 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       <!-- Summary grid -->
       <section class="pkd-summary">
         <div class="content-list-col">
-          <ContentList label="Warehouse" :value="task.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ task.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
           <ContentList label="Assignee" :value="task.assignee" />
         </div>
         <div class="content-list-col">
@@ -392,45 +547,66 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in visibleItems" :key="item.key" class="detail-item-row">
-                  <td class="detail-td">
-                    <ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" />
+                <tr
+                  v-for="row in visibleRowsWithMeta" :key="`${row.item.key}::${row.groupIndex}`"
+                  class="detail-item-row"
+                >
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">
+                    <ProductCell :name="row.item.productName" :desc="row.item.productDesc" :image="row.item.image" />
                   </td>
-                  <td class="detail-td">{{ item.skuCode }}</td>
-                  <td class="detail-td detail-td--location">
-                    <!-- Batch/serial-tracked: location detail now lives in the View
-                         batch / View serial number drawer, not duplicated here. -->
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.item.skuCode }}</td>
+                  <!-- Storage location: split into one row per bin once the group's picks
+                       actually span 2+ different bins; else shows whatever bin(s) are
+                       already known (actual picks, or the reservation plan when nothing's
+                       been picked yet) — only a genuinely unknown SKU falls back to the
+                       "view via drawer" placeholder. Plain SKUs keep the static bin text. -->
+                  <td v-if="row.groupSize > 1" class="detail-td detail-td--location">{{ row.bin }}</td>
+                  <td
+                    v-else-if="isBatchTrackedSku(row.item.skuCode) || isSerialTrackedSku(row.item.skuCode)"
+                    class="detail-td detail-td--location"
+                    :class="{ 'detail-td--location-summary': groupLocationsForDisplay(row.item).length }"
+                  >
+                    <div v-if="groupLocationsForDisplay(row.item).length" class="pkd-location-summary-wrap">
+                      <span v-for="loc in groupLocationsForDisplay(row.item)" :key="loc" class="pkd-location-summary-item">{{ loc }}</span>
+                    </div>
                     <MpTooltip
-                      v-if="isTrackedItem(item)"
-                      :id="`pkd-tt-loc-${item.key}`"
-                      :label="isBatchTrackedSku(item.skuCode) ? 'View via View batch' : 'View via View serial number'"
+                      v-else
+                      :id="`pkd-tt-loc-${row.item.key}`"
+                      :label="isBatchTrackedSku(row.item.skuCode) ? 'View via View batch' : 'View via View serial number'"
                       placement="top"
                       use-portal
                     >
                       <span>—</span>
                     </MpTooltip>
-                    <span v-else class="pkd-location-item" :title="item.binLocation">{{ item.binLocation }}</span>
                   </td>
-                  <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
+                  <td v-else class="detail-td detail-td--location">
+                    <span class="pkd-location-item" :title="row.item.binLocation">{{ row.item.binLocation }}</span>
+                  </td>
+
+                  <!-- Qty to pick: static total for the group, unless split per bin — a
+                       bin row has no separate plan of its own, so it mirrors that bin's
+                       own Picked qty (the only meaningful number once split). -->
+                  <td class="detail-td detail-td--num">{{ fmt(row.groupSize > 1 ? row.binQty : row.item.expectedQty) }}</td>
                   <td class="detail-td detail-td--num">
-                    <span :class="isInProgress ? '' : (rowPicked(item.key, item.pickedQty) === item.expectedQty ? 'pkd-qty--full' : rowPicked(item.key, item.pickedQty) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
-                      {{ fmt(rowPicked(item.key, item.pickedQty)) }}
+                    <span v-if="row.groupSize > 1">{{ fmt(row.binQty) }}</span>
+                    <span v-else :class="isInProgress ? '' : (rowPickedForGroup(row.item) === row.item.expectedQty ? 'pkd-qty--full' : rowPickedForGroup(row.item) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
+                      {{ fmt(rowPickedForGroup(row.item)) }}
                     </span>
                   </td>
-                  <td class="detail-td detail-td--num">
-                    <span :class="item.expectedQty - rowPicked(item.key, item.pickedQty) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
-                      {{ fmt(item.expectedQty - rowPicked(item.key, item.pickedQty)) }}
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--num">
+                    <span :class="row.item.expectedQty - rowPickedForGroup(row.item) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
+                      {{ fmt(row.item.expectedQty - rowPickedForGroup(row.item)) }}
                     </span>
                   </td>
-                  <td class="detail-td">{{ item.unit }}</td>
-                  <td class="detail-td detail-td--action">
-                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pkd-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
-                      <button class="pkd-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.item.unit }}</td>
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--action">
+                    <MpTooltip v-if="isBatchTrackedSku(row.item.skuCode)" :id="`pkd-tt-batch-${row.item.key}`" label="View batch" placement="top" use-portal>
+                      <button class="pkd-view-btn" type="button" aria-label="View batch" @click="openViewBatch(row.item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`pkd-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
-                      <button class="pkd-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.item.skuCode)" :id="`pkd-tt-serial-${row.item.key}`" label="View serial number" placement="top" use-portal>
+                      <button class="pkd-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(row.item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -544,6 +720,9 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary" @click="printPickingList">Print picking list</button>
+      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
+        Cancel
+      </button>
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">
         Start picking
       </button>
@@ -558,6 +737,24 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         Create packing
       </button>
     </footer>
+
+    <!-- ── Cancel confirmation ── -->
+    <MpModal id="pkd-cancel" :is-open="cancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Cancel {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          This picking task will be canceled and can no longer be continued. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
   </div>
 
@@ -615,9 +812,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       </MpModalHeader>
       <MpModalBody>
         <p style="margin:0;font-size:var(--mp-font-sizes-md);color:var(--mp-text-default)">
-          Marketplace orders must be picked in full — across every picking list that
-          covers them — before a packing task can be created. Finish picking the
-          remaining items, then come back here to create packing.
+          {{ cantPackText }}
         </p>
       </MpModalBody>
       <MpModalFooter>
@@ -760,10 +955,38 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+/* Product table only (not the Sales orders/Packing tasks linked tables below,
+   which share the same .detail-th/.detail-td classes) — every column gets a
+   right border since a bin-split group renders fewer <td>s per row than the
+   header; the Action column (the true rightmost) is explicitly excepted. */
+.detail-items .detail-th,
+.detail-items .detail-td { border-right: 1px solid var(--mp-border-default); }
+.detail-items .detail-th--action,
+.detail-items .detail-td--action { border-right: none; }
 .detail-td--location { min-width: 160px; max-width: 200px; }
 .pkd-location-item { display: block; white-space: normal; word-break: break-word; }
+/* Stacked list of 2+ known bins in one cell (a group's plan spans 2+ bins but
+   nothing's actually been picked yet, so it isn't split into real rows) — the
+   wrapping <td> gets padding:0 so each item can carry its own 10px top/bottom
+   padding instead, or a long (wrapped) bin name would otherwise sit flush
+   against its neighbor with no breathing room. */
+.detail-td--location-summary { padding: 0; }
+.pkd-location-summary-wrap { display: flex; flex-direction: column; }
+.pkd-location-summary-item {
+  display: flex; align-items: center; min-height: var(--mp-sizes-10, 40px);
+  padding: 10px var(--mp-spacing-2); box-sizing: border-box; flex-shrink: 0;
+  white-space: normal; word-break: break-word; line-height: var(--mp-line-heights-md);
+}
+.pkd-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
 .detail-td--action { text-align: center; white-space: nowrap; }
-/* Sticky action column — stays visible when the table scrolls wider than the stage */
+/* Sticky action column — stays visible when the table scrolls wider than the stage.
+   `.detail-items thead .detail-th` (z-index: 1) outranks the plain
+   `.detail-th--action` class on specificity alone, so its z-index silently won
+   here and tied the header's sticky corner cell with the body's — letting
+   scrolled-past rows paint over the header at the top-right intersection.
+   Match that selector's specificity (and go higher) so the header corner
+   always wins. */
+.detail-items thead .detail-th--action { z-index: 3; }
 .detail-th--action { position: sticky; right: 0; z-index: 2; }
 .detail-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
 .pkd-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
@@ -797,6 +1020,8 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 }
 .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
 .detail-item-row:hover .row-hover-btn { display: flex; }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
 
 /* ── Footer ──────────────────────────────────────────────────────────────────── */
 .detail-footer {
@@ -804,6 +1029,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent;
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 .detail-btn {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px);

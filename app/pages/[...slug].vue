@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, defineComponent, h, type Component, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { MpIcon, MpSpinner } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
@@ -8,6 +8,7 @@ function asyncPage(loader: () => Promise<{ default: Component }>): Component {
   return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
 }
 import { receiptCountsByStage, receipts } from '~/data/receipts'
+import { productionRequestPendingCount } from '~/data/productionRequests'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { outgoingOpenCount } from '~/data/outgoing'
@@ -24,10 +25,16 @@ import { recommendationCount } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
+import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
 const router = useRouter()
+
+// Unsaved-changes confirmation modal — lives here (not in each form page) since
+// this is the one component that survives every virtual page swap.
+const unsavedChangesModal = useUnsavedChangesModalState()
 
 // Browser tab title: "Mekari ERP | <module>"
 useHead({
@@ -35,29 +42,31 @@ useHead({
 })
 
 const pageRegistry: Record<string, Component> = {
-  'Home':              asyncPage(() => import('~/components/pages/HomePage.vue')),
-  'Sales invoices':    asyncPage(() => import('~/components/pages/SalesInvoicesPage.vue')),
-  'Purchase invoices': asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
-  'Sales orders':      asyncPage(() => import('~/components/pages/SalesOrdersPage.vue')),
-  'Sales quotes':      asyncPage(() => import('~/components/pages/SalesQuotesPage.vue')),
-  'Sales deliveries':  asyncPage(() => import('~/components/pages/SalesDeliveriesPage.vue')),
-  'Warehouses':        asyncPage(() => import('~/components/pages/WarehousesPage.vue')),
-  'Storage locations': asyncPage(() => import('~/components/pages/StorageLocationsPage.vue')),
-  'On the way':        asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue')),
-  'Receiving':         asyncPage(() => import('~/components/pages/ReceivingIndexPage.vue')),
-  'Put-away':          asyncPage(() => import('~/components/pages/PutAwayIndexPage.vue')),
-  'Partial reception': asyncPage(() => import('~/components/pages/PartialReceptionIndexPage.vue')),
-  'Completed':         asyncPage(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
-  'Inbound completed': asyncPage(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
-  'Canceled':          asyncPage(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
-  'Warehouse transfers': asyncPage(() => import('~/components/pages/WarehouseTransfersPage.vue')),
-  'Stock adjustments': asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Cycle counts':      asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Stock counts':      asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Stock inout':       asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue')),
-  'Company profile':    asyncPage(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
-  'Warehouse settings': asyncPage(() => import('~/components/pages/SettingsWarehousePage.vue')),
-  'Playground':         asyncPage(() => import('~/components/playground/PlaygroundPage.vue')),
+  'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
+  'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
+  'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
+  'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
+  'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
+  'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
+  'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
+  'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
+  'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
+  'Put-away':          defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue')),
+  'Partial reception': defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue')),
+  'Completed':         defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
+  'Inbound completed': defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue')),
+  'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
+  'Work orders':        defineAsyncComponent(() => import('~/components/pages/WorkOrdersIndexPage.vue')),
+  'Bill of materials':  defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsIndexPage.vue')),
+  'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
+  'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
+  'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
+  'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
@@ -103,6 +112,11 @@ const CreateReceiptPage = asyncPage(() => import('~/components/pages/CreateRecei
 const CreateDeliveryOrderPage = asyncPage(() => import('~/components/pages/CreateDeliveryOrderPage.vue'))
 const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
+const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
+const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
+const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
+const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
+const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
 const WarehouseTransfersPage = asyncPage(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 const StockAdjustmentsPage = asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue'))
 const StockAdjustmentDetailsPage = asyncPage(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
@@ -116,6 +130,20 @@ const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /work-orders/new → create a new work order (full page, brings its own title bar)
+  if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
+    return { component: CreateWorkOrderPage, id: 'new' }
+  }
+  // /work-orders/:id → work order detail (read-only, status-aware)
+  if (segs.length >= 2 && segs[0] === 'work-orders') {
+    return { component: WorkOrderDetailsPage, id: segs[1] }
+  }
+  // /bill-of-materials/new → create form; /:id → BOM detail.
+  // The bare index falls through to the registry.
+  if (segs.length >= 2 && segs[0] === 'bill-of-materials') {
+    if (segs[1] === 'new') return { component: CreateBillOfMaterialsPage, id: 'new' }
+    return { component: BillOfMaterialsDetailsPage, id: segs[1]! }
+  }
   // /warehouse-transfers/new → create form; /:id/edit → edit form; /:id → detail.
   // The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
@@ -261,36 +289,44 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
+  'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
 // Partial reception (Completed / Canceled are terminal, hidden by default).
+//
+// Scoped to whatever warehouse(s) the currently-visible tab's own "Warehouse"
+// filter is set to (activeWarehouseFilter, mirrored up by each index page) —
+// every sibling badge in the same section follows it too, since only one tab's
+// page is ever mounted at a time and filtering one is filtering the section.
+const activeWarehouseFilter = useActiveWarehouseFilter()
 const currentTabCounts = computed<Record<string, number>>(() => {
+  const wh = activeWarehouseFilter.value
   if (currentPageKey.value === 'Inbound delivery') {
-    const counts = receiptCountsByStage() // ERP = all warehouses
+    const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
     const receipts = (counts['On the way'] ?? 0) + (counts['Partial reception'] ?? 0)
     if (receipts) out['Receipts'] = receipts
     // Receiving / Put-away are task-based (a different dataset than the PO stages)
-    const recv = receivingOpenCount()
+    const recv = receivingOpenCount(wh)
     if (recv) out['Receiving'] = recv
-    const putaway = putAwayOpenCount()
+    const putaway = putAwayOpenCount(wh)
     if (putaway) out['Put-away'] = putaway
     return out
   }
   if (currentPageKey.value === 'Outbound delivery') {
     const out: Record<string, number> = {}
     // Outgoing badges the actionable orders: everything not yet Completed/Canceled.
-    const outgoing = outgoingOpenCount() // ERP = all warehouses
+    const outgoing = outgoingOpenCount(wh)
     if (outgoing) out['Requests'] = outgoing
     // Picking / Packing / Ready to ship are task-based (a different dataset than the orders)
-    const picking = pickingOpenCount()
+    const picking = pickingOpenCount(wh)
     if (picking) out['Picking'] = picking
-    const packing = packingOpenCount()
+    const packing = packingOpenCount(wh)
     if (packing) out['Packing'] = packing
-    const delivery = deliveryOpenCount()
+    const delivery = deliveryOpenCount(wh)
     if (delivery) out['Ready to ship'] = delivery
     return out
   }
@@ -301,6 +337,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Production request') {
+    const pending = productionRequestPendingCount()
+    return pending ? { 'Awaiting': pending } : {}
   }
   if (currentPageKey.value === 'Stock counts') {
     const awaiting = awaitingAdjustmentCount()
@@ -374,6 +414,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
+  },
+  // One shared component drives all three tabs; the tab is passed as a prop.
+  'Production request': {
+    'Awaiting':  () => h(ProductionRequestIndexPage, { tab: 'pending' }),
+    'Completed': () => h(ProductionRequestIndexPage, { tab: 'completed' }),
+    'Rejected':  () => h(ProductionRequestIndexPage, { tab: 'rejected' }),
   },
   'Stock counts': {
     'All stock counts': StockAdjustmentsPage,
@@ -814,6 +860,22 @@ function startResize(e: MouseEvent) {
             New warehouse
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New work order
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Bill of materials'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/bill-of-materials/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New bill of materials
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Inbound delivery'" class="page-title-actions">
           <template v-if="activeTab === 'Put-away'">
             <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/inbound-delivery/put-away/create')">
@@ -922,6 +984,9 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="showNewWarehouseTransfer" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+          </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newWarehouseTransfer">
             <MpIcon name="add" size="md" color="icon.inverse" />
             New warehouse transfer
@@ -1235,6 +1300,14 @@ function startResize(e: MouseEvent) {
     </Transition>
 
   </div>
+
+  <UnsavedChangesModal
+    :is-open="unsavedChangesModal.isOpen.value"
+    :has-save-draft="unsavedChangesModal.hasSaveDraft.value"
+    @leave="unsavedChangesModal.chooseLeave"
+    @draft="unsavedChangesModal.chooseDraft"
+    @cancel="unsavedChangesModal.chooseCancel"
+  />
 </template>
 
 <style scoped>
