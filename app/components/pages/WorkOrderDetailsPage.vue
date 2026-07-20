@@ -482,7 +482,7 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
               <thead>
                 <tr>
                   <th class="wod-th">Number</th><th class="wod-th wod-th--num">Qty to produce</th>
-                  <th class="wod-th wod-th--num">Fulfilled qty</th><th class="wod-th">Unit</th>
+                  <th class="wod-th wod-th--num">Produced qty</th><th class="wod-th">Unit</th>
                   <th class="wod-th">Due date</th><th class="wod-th">Status</th>
                 </tr>
               </thead>
