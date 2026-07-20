@@ -47,10 +47,15 @@ function makeOrder(salesNo: string, sku: string, qty: number): OutgoingOrder {
 
 /** Scan the batch barcode `count` times (+1 counted per scan) — this test's qty (3)
  *  is below the default barcode-scan threshold (50), so manual typing into the
- *  drawer is disabled by that unrelated feature; scanning is the sanctioned path. */
-async function scanBatchAndSave(wrapper: ReturnType<typeof mount>, batchNo: string, count: number) {
+ *  drawer is disabled by that unrelated feature; scanning is the sanctioned path.
+ *  Picking's active-bin model requires the batch's own known bin to be scanned
+ *  first — same as put-away in reverse, confirming the operator is at the right
+ *  physical location before anything counts as picked. */
+async function scanBatchAndSave(wrapper: ReturnType<typeof mount>, batchNo: string, count: number, bin: string) {
   // Scoped to the drawer specifically — the page behind it has its own ScanBar too.
   const scanInput = wrapper.find('.mbd-panel .scan-bar-input')
+  await scanInput.setValue(bin)
+  await scanInput.trigger('keydown.enter')
   for (let i = 0; i < count; i++) {
     await scanInput.setValue(batchNo)
     await scanInput.trigger('keydown.enter')
@@ -87,8 +92,8 @@ describe('Picking task spanning 2 orders — Manage batch on the merged row', ()
 
     // Pick 2 of the batch (by scanning — qty is below the scan threshold, so
     // manual typing is disabled) and save.
-    const batchNo = getWarehouseDetail(WAREHOUSE_ID)!.stock.find((s) => s.sku === SKU_BATCH)!.batches![0]!.batchNo
-    await scanBatchAndSave(wrapper, batchNo, 2)
+    const batch = getWarehouseDetail(WAREHOUSE_ID)!.stock.find((s) => s.sku === SKU_BATCH)!.batches![0]!
+    await scanBatchAndSave(wrapper, batch.batchNo, 2, batch.location)
 
     // Page-level header must reflect 2 picked.
     expect(wrapper.text()).toContain('2')

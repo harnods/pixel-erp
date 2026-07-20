@@ -264,6 +264,82 @@ const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.value))
+
+/** Picked qty for a batch/serial-tracked group, broken down by which bin it was
+ *  actually picked from — read from the task's own committed batchPicks/
+ *  serialPicks (a batch/serial always sits in exactly ONE fixed bin), so 2+
+ *  bins only ever show up here because the group bundles 2+ DIFFERENT
+ *  batches/serials that happen to live in different locations. Empty/size-1
+ *  means nothing to split.
+ *
+ *  Gated on rowPickedForGroup(group) > 0 — task.batchPicks/serialPicks are
+ *  populated with the RESERVATION plan's own qty from the moment the task is
+ *  created (addPickingTask clones them into plannedBatchPicks too), not
+ *  zeroed until something's genuinely picked; pickedByKey (which
+ *  rowPickedForGroup ultimately reads) is the only real signal of actual
+ *  progress. Without this gate, a fresh, untouched task whose PLAN happens to
+ *  span 2+ bins would incorrectly split rows and show reservation qty as if
+ *  it had already been picked. */
+function groupQtyByBin(group: PickGroupItem): Map<string, number> {
+  const map = new Map<string, number>()
+  if (rowPickedForGroup(group) <= 0) return map
+  if (isBatchTrackedSku(group.skuCode)) {
+    for (const b of group.batchPicks ?? []) {
+      if (b.qty > 0 && b.location) map.set(b.location, (map.get(b.location) ?? 0) + b.qty)
+    }
+  } else if (isSerialTrackedSku(group.skuCode)) {
+    for (const s of group.serialPicks ?? []) {
+      if (s.location) map.set(s.location, (map.get(s.location) ?? 0) + 1)
+    }
+  }
+  return map
+}
+
+/** Storage location(s) to DISPLAY for a group — distinct from groupQtyByBin
+ *  above (which only ever drives row-splitting off REAL picks, unchanged).
+ *  Before anything's actually been picked, groupQtyByBin is empty and the
+ *  group would otherwise show no location at all — but the reservation plan
+ *  already knows where its batches/serials sit, so this falls back to
+ *  plannedBatchPicks/plannedSerialPicks to show that instead of a bare "—".
+ *  Never triggers row-splitting itself (Qty to pick/Picked qty stay the
+ *  group's own totals until something's genuinely picked from 2+ bins). */
+function groupLocationsForDisplay(group: PickGroupItem): string[] {
+  const bins = new Set<string>()
+  if (isBatchTrackedSku(group.skuCode)) {
+    const source = group.batchPicks?.length ? group.batchPicks : (group.plannedBatchPicks ?? [])
+    for (const b of source) if (b.location) bins.add(b.location)
+  } else if (isSerialTrackedSku(group.skuCode)) {
+    const source = group.serialPicks?.length ? group.serialPicks : (group.plannedSerialPicks ?? [])
+    for (const s of source) if (s.location) bins.add(s.location)
+  }
+  return [...bins]
+}
+
+interface PickDetailRowWithMeta {
+  item: PickGroupItem
+  bin: string | null
+  binQty: number
+  groupIndex: number
+  groupSize: number
+}
+/** Expands each visible group into one row per bin actually used (Storage
+ *  location/Qty to pick/Picked qty split per bin, Product/SKU/Outstanding/
+ *  Unit/Action merged via groupIndex/groupSize) — or a single row when
+ *  there's nothing to split (0 or 1 bin used), matching PickItemsPage.vue's
+ *  same pattern during live execution. */
+const visibleRowsWithMeta = computed<PickDetailRowWithMeta[]>(() => {
+  const result: PickDetailRowWithMeta[] = []
+  for (const item of visibleItems.value) {
+    const byBin = groupQtyByBin(item)
+    if (byBin.size < 2) {
+      result.push({ item, bin: null, binQty: 0, groupIndex: 0, groupSize: 1 })
+      continue
+    }
+    const bins = [...byBin.entries()]
+    bins.forEach(([bin, qty], idx) => result.push({ item, bin, binQty: qty, groupIndex: idx, groupSize: bins.length }))
+  }
+  return result
+})
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -471,45 +547,66 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in visibleItems" :key="item.key" class="detail-item-row">
-                  <td class="detail-td">
-                    <ProductCell :name="item.productName" :desc="item.productDesc" :image="item.image" />
+                <tr
+                  v-for="row in visibleRowsWithMeta" :key="`${row.item.key}::${row.groupIndex}`"
+                  class="detail-item-row"
+                >
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">
+                    <ProductCell :name="row.item.productName" :desc="row.item.productDesc" :image="row.item.image" />
                   </td>
-                  <td class="detail-td">{{ item.skuCode }}</td>
-                  <td class="detail-td detail-td--location">
-                    <!-- Batch/serial-tracked: location detail now lives in the View
-                         batch / View serial number drawer, not duplicated here. -->
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.item.skuCode }}</td>
+                  <!-- Storage location: split into one row per bin once the group's picks
+                       actually span 2+ different bins; else shows whatever bin(s) are
+                       already known (actual picks, or the reservation plan when nothing's
+                       been picked yet) — only a genuinely unknown SKU falls back to the
+                       "view via drawer" placeholder. Plain SKUs keep the static bin text. -->
+                  <td v-if="row.groupSize > 1" class="detail-td detail-td--location">{{ row.bin }}</td>
+                  <td
+                    v-else-if="isBatchTrackedSku(row.item.skuCode) || isSerialTrackedSku(row.item.skuCode)"
+                    class="detail-td detail-td--location"
+                    :class="{ 'detail-td--location-summary': groupLocationsForDisplay(row.item).length }"
+                  >
+                    <div v-if="groupLocationsForDisplay(row.item).length" class="pkd-location-summary-wrap">
+                      <span v-for="loc in groupLocationsForDisplay(row.item)" :key="loc" class="pkd-location-summary-item">{{ loc }}</span>
+                    </div>
                     <MpTooltip
-                      v-if="isBatchTrackedSku(item.skuCode) || isSerialTrackedSku(item.skuCode)"
-                      :id="`pkd-tt-loc-${item.key}`"
-                      :label="isBatchTrackedSku(item.skuCode) ? 'View via View batch' : 'View via View serial number'"
+                      v-else
+                      :id="`pkd-tt-loc-${row.item.key}`"
+                      :label="isBatchTrackedSku(row.item.skuCode) ? 'View via View batch' : 'View via View serial number'"
                       placement="top"
                       use-portal
                     >
                       <span>—</span>
                     </MpTooltip>
-                    <span v-else class="pkd-location-item" :title="item.binLocation">{{ item.binLocation }}</span>
                   </td>
-                  <td class="detail-td detail-td--num">{{ fmt(item.expectedQty) }}</td>
+                  <td v-else class="detail-td detail-td--location">
+                    <span class="pkd-location-item" :title="row.item.binLocation">{{ row.item.binLocation }}</span>
+                  </td>
+
+                  <!-- Qty to pick: static total for the group, unless split per bin — a
+                       bin row has no separate plan of its own, so it mirrors that bin's
+                       own Picked qty (the only meaningful number once split). -->
+                  <td class="detail-td detail-td--num">{{ fmt(row.groupSize > 1 ? row.binQty : row.item.expectedQty) }}</td>
                   <td class="detail-td detail-td--num">
-                    <span :class="isInProgress ? '' : (rowPickedForGroup(item) === item.expectedQty ? 'pkd-qty--full' : rowPickedForGroup(item) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
-                      {{ fmt(rowPickedForGroup(item)) }}
+                    <span v-if="row.groupSize > 1">{{ fmt(row.binQty) }}</span>
+                    <span v-else :class="isInProgress ? '' : (rowPickedForGroup(row.item) === row.item.expectedQty ? 'pkd-qty--full' : rowPickedForGroup(row.item) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
+                      {{ fmt(rowPickedForGroup(row.item)) }}
                     </span>
                   </td>
-                  <td class="detail-td detail-td--num">
-                    <span :class="item.expectedQty - rowPickedForGroup(item) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
-                      {{ fmt(item.expectedQty - rowPickedForGroup(item)) }}
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--num">
+                    <span :class="row.item.expectedQty - rowPickedForGroup(row.item) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
+                      {{ fmt(row.item.expectedQty - rowPickedForGroup(row.item)) }}
                     </span>
                   </td>
-                  <td class="detail-td">{{ item.unit }}</td>
-                  <td class="detail-td detail-td--action">
-                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pkd-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
-                      <button class="pkd-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.item.unit }}</td>
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--action">
+                    <MpTooltip v-if="isBatchTrackedSku(row.item.skuCode)" :id="`pkd-tt-batch-${row.item.key}`" label="View batch" placement="top" use-portal>
+                      <button class="pkd-view-btn" type="button" aria-label="View batch" @click="openViewBatch(row.item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`pkd-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
-                      <button class="pkd-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.item.skuCode)" :id="`pkd-tt-serial-${row.item.key}`" label="View serial number" placement="top" use-portal>
+                      <button class="pkd-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(row.item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -858,8 +955,29 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+/* Product table only (not the Sales orders/Packing tasks linked tables below,
+   which share the same .detail-th/.detail-td classes) — every column gets a
+   right border since a bin-split group renders fewer <td>s per row than the
+   header; the Action column (the true rightmost) is explicitly excepted. */
+.detail-items .detail-th,
+.detail-items .detail-td { border-right: 1px solid var(--mp-border-default); }
+.detail-items .detail-th--action,
+.detail-items .detail-td--action { border-right: none; }
 .detail-td--location { min-width: 160px; max-width: 200px; }
 .pkd-location-item { display: block; white-space: normal; word-break: break-word; }
+/* Stacked list of 2+ known bins in one cell (a group's plan spans 2+ bins but
+   nothing's actually been picked yet, so it isn't split into real rows) — the
+   wrapping <td> gets padding:0 so each item can carry its own 10px top/bottom
+   padding instead, or a long (wrapped) bin name would otherwise sit flush
+   against its neighbor with no breathing room. */
+.detail-td--location-summary { padding: 0; }
+.pkd-location-summary-wrap { display: flex; flex-direction: column; }
+.pkd-location-summary-item {
+  display: flex; align-items: center; min-height: var(--mp-sizes-10, 40px);
+  padding: 10px var(--mp-spacing-2); box-sizing: border-box; flex-shrink: 0;
+  white-space: normal; word-break: break-word; line-height: var(--mp-line-heights-md);
+}
+.pkd-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
 .detail-td--action { text-align: center; white-space: nowrap; }
 /* Sticky action column — stays visible when the table scrolls wider than the stage.
    `.detail-items thead .detail-th` (z-index: 1) outranks the plain

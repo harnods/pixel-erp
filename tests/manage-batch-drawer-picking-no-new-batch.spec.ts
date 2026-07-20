@@ -59,12 +59,16 @@ describe('ManageBatchDrawer — picking mode never registers a brand-new batch',
   it('scanning a real existing batch still works (picking from existing stock is allowed)', async () => {
     const { sku, batch } = firstBatchTrackedStock()
     const wrapper = mount(ManageBatchDrawer, {
-      props: { open: true, warehouseId: WAREHOUSE_ID, sku, kind: 'picking', targetCount: 5, modelValue: [] },
+      props: {
+        open: true, warehouseId: WAREHOUSE_ID, sku, kind: 'picking', targetCount: 5, modelValue: [],
+        originLocationPaths: batch.location ? [batch.location] : [],
+      },
       attachTo: document.body,
     })
     await flushPromises()
     const before = rowCount(wrapper)
 
+    if (batch.location) await scan(batch.location) // activate the batch's own bin first
     await scan(batch.batchNo)
 
     expect(rowCount(wrapper)).toBe(before + 1)

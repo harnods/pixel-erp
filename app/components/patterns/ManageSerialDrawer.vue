@@ -378,6 +378,18 @@ function handleDrawerScan(rawValue: string) {
     return
   }
 
+  // Picking: scan the bin barcode first to make it "active" — the reverse of
+  // put-away's model, confirming which bin the operator is physically at
+  // before any serial counts as picked out of it.
+  if (isPicking.value) {
+    const matchedBin = (props.originLocationPaths ?? []).find(p => sameCode(p, v))
+    if (matchedBin) {
+      activeBin.value = matchedBin
+      playScanSuccessSound()
+      return
+    }
+  }
+
   const row = rows.value.find(r => sameCode(r.serial, v))
 
   if (!row) {
@@ -415,6 +427,20 @@ function handleDrawerScan(rawValue: string) {
     notifyScanError(`"${v}" is already selected`)
     return
   }
+
+  // Picking: the serial must actually be sitting in the active bin — catches
+  // an operator scanning the right unit but standing at the wrong location.
+  if (isPicking.value) {
+    if (!activeBin.value) {
+      notifyScanError('Scan a bin first before scanning serial numbers')
+      return
+    }
+    if (row.originLocation && !sameCode(row.originLocation, activeBin.value)) {
+      notifyScanError(`"${v}" is stored in ${row.originLocation}, not ${activeBin.value}`)
+      return
+    }
+  }
+
   if (countedCount.value >= props.targetCount) {
     notifyScanError('Qty to pick already fully selected')
     return
@@ -724,7 +750,7 @@ async function handleSave() {
              to make it active, then scan a serial barcode to assign it to that bin —
              same model as ManageBatchDrawer / the page-level scan bar. -->
         <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
-          <div v-if="isPutAway && activeBin" class="msn-active-bin">
+          <div v-if="(isPutAway || isPicking) && activeBin" class="msn-active-bin">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>

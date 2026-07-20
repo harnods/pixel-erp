@@ -26,6 +26,11 @@ function reservedSerials(): string[] {
   const item = getWarehouseDetail(WAREHOUSE_ID)?.stock.find((s) => s.sku === SKU)
   return item?.serials?.reserved.map((u) => u.serial) ?? []
 }
+function locationOf(serial: string): string | undefined {
+  const item = getWarehouseDetail(WAREHOUSE_ID)?.stock.find((s) => s.sku === SKU)
+  const su = item?.serials
+  return su?.available.find((u) => u.serial === serial)?.location ?? su?.reserved.find((u) => u.serial === serial)?.location
+}
 
 function mountDrawer(props: Record<string, unknown>) {
   return mount(ManageSerialDrawer, {
@@ -54,9 +59,11 @@ describe('ManageSerialDrawer — picking hides available units until scanned', (
 
   it('scanning an available unit reveals it in the table as Picked', async () => {
     const available = availableSerials()
-    const wrapper = mountDrawer({ targetCount: 1, plannedSerials: [] })
+    const loc = locationOf(available[0]!)
+    const wrapper = mountDrawer({ targetCount: 1, plannedSerials: [], originLocationPaths: loc ? [loc] : [] })
     await flushPromises()
 
+    if (loc) await scan(wrapper, loc) // activate the unit's own bin first
     await scan(wrapper, available[0]!)
 
     expect(wrapper.text()).toContain(available[0])
@@ -76,13 +83,18 @@ describe('ManageSerialDrawer — picking hides available units until scanned', (
 
   it('scanning the planned unit converts it from Reserved to Picked (already-visible row, no reveal needed)', async () => {
     const reserved = reservedSerials()
-    const wrapper = mountDrawer({ targetCount: 1, plannedSerials: [reserved[0]] })
+    const loc = locationOf(reserved[0]!)
+    const wrapper = mountDrawer({ targetCount: 1, plannedSerials: [reserved[0]], originLocationPaths: loc ? [loc] : [] })
     await flushPromises()
 
+    if (loc) await scan(wrapper, loc) // activate the unit's own bin first
     await scan(wrapper, reserved[0]!)
 
     expect(wrapper.text()).toContain(reserved[0])
-    expect(wrapper.text()).toContain('Picked')
+    // A real check that the scan actually landed — not just that the label text
+    // "Picked" exists somewhere (it's also a static stat label pre-scan).
+    const pickedStat = wrapper.findAll('.msn-stat').find((s) => s.text().includes('Picked qty'))
+    expect(pickedStat?.text()).toMatch(/Picked qty\s*1/)
     wrapper.unmount()
   })
 
@@ -97,9 +109,11 @@ describe('ManageSerialDrawer — picking hides available units until scanned', (
 
   it('scanning an available unit a second time (already selected) is rejected, not double-counted', async () => {
     const available = availableSerials()
-    const wrapper = mountDrawer({ targetCount: 2, plannedSerials: [] })
+    const loc = locationOf(available[0]!)
+    const wrapper = mountDrawer({ targetCount: 2, plannedSerials: [], originLocationPaths: loc ? [loc] : [] })
     await flushPromises()
 
+    if (loc) await scan(wrapper, loc) // activate the unit's own bin first
     await scan(wrapper, available[0]!)
     expect(wrapper.text()).toContain(available[0])
 
