@@ -550,7 +550,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <thead>
                 <tr>
                   <th class="wo-th">Product</th><th class="wo-th">Purchase cost</th><th class="wo-th">Warehouse</th>
-                  <th class="wo-th">Needed</th><th class="wo-th">Unit</th><th class="wo-th">Required date</th>
+                  <th class="wo-th">Needed qty</th><th class="wo-th">Unit</th><th class="wo-th">Required date</th>
                   <th class="wo-th wo-th--right">Estimated cost</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
