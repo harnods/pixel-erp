@@ -341,7 +341,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">No work orders</p>
-        <p class="empty-full-desc">Work orders will appear here</p>
+        <p class="empty-full-desc">Work orders will appear here.</p>
       </div>
     </template>
   </ErpTablePage>
