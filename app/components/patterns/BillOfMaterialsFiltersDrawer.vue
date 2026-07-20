@@ -62,7 +62,7 @@ function clearAll() {
             <MpFormLabel>Category</MpFormLabel>
             <MpAutocomplete
               id="bf-filters-category" v-model="draft.category" :data="categoryOptions"
-              label-prop="name" value-prop="id" placeholder="All categories"
+              label-prop="name" value-prop="id" placeholder="Select category"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -71,7 +71,7 @@ function clearAll() {
             <MpFormLabel>Costing reference</MpFormLabel>
             <MpAutocomplete
               id="bf-filters-costing" v-model="draft.costingReference" :data="costingOptions"
-              label-prop="name" value-prop="id" placeholder="All costing references"
+              label-prop="name" value-prop="id" placeholder="Select costing reference"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -80,7 +80,7 @@ function clearAll() {
             <MpFormLabel>Finished goods</MpFormLabel>
             <MpAutocomplete
               id="bf-filters-fg" v-model="draft.finishedGoodId" :data="finishedGoodOptions"
-              label-prop="name" value-prop="id" placeholder="All finished goods"
+              label-prop="name" value-prop="id" placeholder="Select finished goods"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>

@@ -61,7 +61,7 @@ function clearAll() {
             <MpFormLabel>Work order type</MpFormLabel>
             <MpAutocomplete
               id="wf-filters-type" v-model="draft.type" :data="typeOptions"
-              label-prop="name" value-prop="id" placeholder="All types"
+              label-prop="name" value-prop="id" placeholder="Select work order type"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>
@@ -70,7 +70,7 @@ function clearAll() {
             <MpFormLabel>Work order status</MpFormLabel>
             <MpAutocomplete
               id="wf-filters-status" v-model="draft.status" :data="statusOptions"
-              label-prop="name" value-prop="id" placeholder="All statuses"
+              label-prop="name" value-prop="id" placeholder="Select work order status"
               is-searchable is-clearable use-portal is-full-width
             />
           </MpFormControl>
