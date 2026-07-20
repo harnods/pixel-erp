@@ -95,8 +95,8 @@ function clearAll() {
         </div>
 
         <footer class="wf-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Clear all</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply filters</button>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
         </footer>
       </div>
     </div>
