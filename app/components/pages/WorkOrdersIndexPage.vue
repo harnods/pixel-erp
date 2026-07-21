@@ -181,7 +181,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverTrigger>
             <MpSelect
               id="wo-type-select"
-              placeholder="Select type"
+              placeholder="Type"
               :model-value="typeFilter"
               is-clearable
               :class="css({ width: '160px' })"
@@ -207,7 +207,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverTrigger>
             <MpSelect
               id="wo-status-select"
-              placeholder="Select status"
+              placeholder="Status"
               :model-value="statusFilter"
               is-clearable
               :class="css({ width: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
