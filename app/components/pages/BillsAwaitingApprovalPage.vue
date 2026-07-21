@@ -55,7 +55,7 @@ const rows = computed<Row[]>(() =>
 // ─── Table state ──────────────────────────────────────────────────────────────
 
 const {
-  search, currentPage, paginated, total, perPage,
+  search, hasActiveSearch, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState(rows, {
   filterFn: (row: Row, s) =>
@@ -101,11 +101,13 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     has-checkbox
     actions-width="228px"
+    :has-active-search="hasActiveSearch"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
     @sort-change="setSort"
     @hide-column="hideColumn"
+    @clear-search="search = ''"
   >
 
     <!-- ── Filter bar ── -->

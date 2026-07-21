@@ -54,7 +54,7 @@ const rows = computed<Row[]>(() =>
 // Classification drives the status-filter dropdown per spec.
 
 const {
-  search, statusFilter, currentPage, paginated, total, perPage,
+  search, statusFilter, hasActiveSearch, hasActiveFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState(rows, {
   filterFn: (row: Row, s, status) =>
@@ -124,11 +124,16 @@ function openFilePicker() { fileInputEl.value?.click() }
     :sort-dir="sortDir"
     has-checkbox
     actions-width="52px"
+    :has-active-search="hasActiveSearch"
+    :has-active-filter="hasActiveFilter"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
     @sort-change="setSort"
     @hide-column="hideColumn"
+    @clear-search="search = ''"
+    @clear-filters="statusFilter = ''"
+    @clear-all="search = ''; statusFilter = ''"
   >
 
     <!-- ── Upload dropzone — same position as the stats bar on other tabs ── -->

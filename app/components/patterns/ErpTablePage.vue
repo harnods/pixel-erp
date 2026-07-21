@@ -64,8 +64,9 @@ const props = withDefaults(defineProps<{
   hasAiChat?: boolean
   /** Show skeleton placeholder rows instead of data (e.g. first load) */
   loading?: boolean
-  /** True when a search/filter is active — switches the empty state to the inline
-   *  "No results found" variant (vs the full illustrated empty state). */
+  /** True when a text search is active. */
+  hasActiveSearch?: boolean
+  /** True when a status/dropdown filter is active. */
   hasActiveFilter?: boolean
   /** Returns a context label string for a given row — shown as a chip in the AI chat input */
   contextLabel?: (row: Record<string, unknown>) => string
@@ -82,6 +83,7 @@ const props = withDefaults(defineProps<{
   hasCheckbox: false,
   hasAiChat: false,
   loading: false,
+  hasActiveSearch: false,
   hasActiveFilter: false,
   contextLabel: undefined,
   rowDisabled: undefined,
@@ -96,6 +98,8 @@ const emit = defineEmits<{
   sortChange: [key: string, dir: 'asc' | 'desc']
   hideColumn: [key: string]
   clearFilters: []
+  clearSearch: []
+  clearAll: []
   selectionChange: [count: number]
 }>()
 
@@ -119,7 +123,7 @@ const showSkeleton = computed(() => props.loading || paginating.value)
  *  state the table header is hidden so the empty state replaces the whole table.
  *  (The inline "no results" filtered state keeps the header.) */
 const isFullEmpty = computed(
-  () => !showSkeleton.value && displayRows.value.length === 0 && !props.hasActiveFilter,
+  () => !showSkeleton.value && displayRows.value.length === 0 && !props.hasActiveFilter && !props.hasActiveSearch,
 )
 
 /** Rows currently rendered — frozen during a pagination change so the OLD rows stay
@@ -594,10 +598,20 @@ const bulkCountLabel = computed(() => {
               :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
             >
               <!-- Inline empty — search/filter eliminated all results (no illustration) -->
-              <div v-if="hasActiveFilter" class="empty-inline">
+              <div v-if="props.hasActiveSearch && props.hasActiveFilter" class="empty-inline">
+                <p class="empty-inline-title">No results found</p>
+                <p class="empty-inline-desc">Try adjusting your search or filters.</p>
+                <a class="empty-inline-clear" @click="emit('clearAll')">Clear search and filters</a>
+              </div>
+              <div v-else-if="props.hasActiveSearch" class="empty-inline">
+                <p class="empty-inline-title">No results found</p>
+                <p class="empty-inline-desc">Try adjusting your search.</p>
+                <a class="empty-inline-clear" @click="emit('clearSearch')">Clear search</a>
+              </div>
+              <div v-else-if="props.hasActiveFilter" class="empty-inline">
                 <p class="empty-inline-title">No results found</p>
                 <p class="empty-inline-desc">Try adjusting your filters.</p>
-                <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
+                <a class="empty-inline-clear" @click="emit('clearFilters')">Clear filters</a>
               </div>
               <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
               <slot v-else name="empty">
