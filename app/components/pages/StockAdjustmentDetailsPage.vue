@@ -394,7 +394,7 @@ onUnmounted(() => {
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ adjustment.number }}</h1>
           <ErpStatusBadge
-            v-if="adjustment.status === 'draft' || adjustment.status === 'canceled'"
+            v-if="isWmsCount || adjustment.status === 'draft' || adjustment.status === 'canceled'"
             :status="adjustment.status" badge-for="additionalInformation" size="md"
           />
           <MpPopover id="sad-jump" use-portal :is-keep-alive="false" placement="bottom-start">
