@@ -312,7 +312,7 @@ async function handleSave() {
   if (isWms.value) {
     const adj = addWmsAdjustment(input)
     toast.notify({ variant: 'success', title: 'Cycle count created', maxWidth: 'max-content' })
-    router.push(`/stock-adjustments/${adj.id}`)
+    router.push(`/cycle-counts/${adj.id}`)
   } else {
     const adj = addAdjustment(input)
     toast.notify({ variant: 'success', title: 'Stock count created', maxWidth: 'max-content' })

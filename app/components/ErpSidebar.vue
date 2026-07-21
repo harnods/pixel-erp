@@ -164,7 +164,7 @@ const toggleIcon = toggleIconUrl
 const shortcutIcon = shortcutIconUrl
 const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
-const { navigate, currentPageKey, setActiveMenuLabel } = useNavigation()
+const { navigate, currentPageKey, setActiveMenuLabel, activeSectionOverride } = useNavigation()
 const router = useRouter()
 
 const flyoutItem = ref<NavItem | null>(null)
@@ -329,7 +329,6 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
           { label: 'Warehouse transfers' },
-          { label: 'Cycle counts' },
           { label: 'Stock adjustments' },
         ],
         [
@@ -439,7 +438,7 @@ function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean):
 }
 const stockCountNav: NavItem[] = [
   { name: 'Stock count', icon: 'table-view-list' },
-  { name: 'Cycle count', icon: 'chart-of-account' },
+  { name: 'Cycle counts', icon: 'chart-of-account' },
   { name: 'Stock in/out', icon: 'fulfillment' },
 ]
 
@@ -579,7 +578,8 @@ const SECTION_PARENT: Record<string, string> = {
   'Put away': 'Inbound delivery',
 }
 
-watch(currentPageKey, (key) => {
+watch([currentPageKey, activeSectionOverride], ([urlKey, override]) => {
+  const key = override ?? urlKey
   let { nav, sub, panel } = resolveActive(key)
   // When the URL key isn't in this scenario's nav tree, try the canonical parent
   // section instead so the sidebar stays anchored (and the level-2 panel stays open).

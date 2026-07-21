@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import {
   MpBadge, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpCheckbox, css, toast,
 } from '@mekari/pixel3'
@@ -9,8 +9,13 @@ import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { MIN_STOCK_LIMIT, hashStr, recommendationReasons, type Reason } from '~/data/cycleCountRecommendations'
 
 const router = useRouter()
+
+// ─── First-load skeleton (matches Count task / Awaiting approval tabs) ────────────
+const loading = ref(true)
+onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
 // ── Warehouse filter (non-default, active) — multi-select; empty = all warehouses ──
 const wmsWarehouses = computed(() => warehouses.filter(w => w.status === 'active' && !w.isDefault))
@@ -48,16 +53,7 @@ const columns: TableColumn[] = [
 //   CountPriorityScore = W_neg × NegativeStockFlag + W_min × MinStockProximity + W_var × VarianceSignal
 //   Weights derive from the active-signal count + order (cycleCountRuleOrder):
 //   3 active → 0.5/0.3/0.2, 2 active → 0.6/0.4, 1 active → 1.0
-const MIN_STOCK_LIMIT = 10 // mirrors the existing "Min. stock" trigger threshold
-
-function hashStr(s: string): number {
-  let h = 0
-  for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0
-  return h
-}
-
-const ALL_REASONS = ['Negative stock', 'Min. stock', 'Variance signal'] as const
-type Reason = typeof ALL_REASONS[number]
+// (reason logic shared with the "Cycle counts" tab badge count — see ~/data/cycleCountRecommendations)
 
 interface Recommendation {
   warehouseId: string
@@ -99,10 +95,7 @@ const baseRows = computed<Recommendation[]>(() => {
       // trigger the "Variance signal" reason and to score, so mock stays coherent.
       const varianceNorm = (hashStr(stock.sku + wh.id + 'variance') % 101) / 100
 
-      const reasons: Reason[] = []
-      if (cfg.cycleCountRuleNeg && stock.onHand === 0) reasons.push('Negative stock')
-      if (cfg.cycleCountRuleMin && stock.onHand > 0 && stock.onHand < MIN_STOCK_LIMIT) reasons.push('Min. stock')
-      if (cfg.cycleCountRuleVar && varianceNorm > 0.8) reasons.push('Variance signal')
+      const reasons = recommendationReasons(cfg, wh.id, stock)
       if (!reasons.length) continue
 
       const negativeStockFlag = reasons.includes('Negative stock') ? 1 : 0
@@ -195,6 +188,7 @@ function reasonBadgeType(reason: string): string {
     :per-page="perPage"
     :sort-key="sortKey"
     :sort-dir="sortDir"
+    :loading="loading"
     :has-active-filter="hasActiveFilter"
     :has-checkbox="anyRecEnabled"
     bulk-label="SKU"

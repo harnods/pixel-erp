@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpIcon, MpSpinner,
+  MpTooltip, MpIcon, MpSpinner, MpSelect,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
   css, toast,
@@ -22,7 +22,7 @@ import {
   adjustmentApprovalLog,
   type AdjustmentLine,
 } from '~/data/stockAdjustments'
-import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, startWmsCount } from '~/data/wmsStockAdjustments'
+import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, startWmsCount, approveWmsAdjustment } from '~/data/wmsStockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -30,11 +30,21 @@ import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
-const isWmsRecord = computed(() => props.orderId.startsWith('wsa-'))
+const isWmsRecord = computed(() => props.orderId.startsWith('wsa-') || props.orderId.startsWith('cc-'))
 const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.orderId) : getAdjustment(props.orderId))
 const isCount = computed(() => adjustment.value?.kind === 'count')
 const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
 const isNotStarted = computed(() => isWmsCount.value && adjustment.value?.status === 'not_started')
+
+// /stock-adjustments/:id also serves WMS Cycle count records — tell the sidebar
+// this detail page belongs under "Cycle counts" so it doesn't default to
+// highlighting the ERP "Stock adjustments" menu item. (Stock in/out isn't a
+// reachable sidebar entry in the ERP nav tree, so it's left on the default
+// URL-derived resolution rather than pointed at a section that doesn't exist.)
+const { setActiveSectionOverride } = useNavigation()
+const sidebarSection = computed(() => (isWmsCount.value ? 'Cycle counts' : null))
+watch(sidebarSection, (label) => setActiveSectionOverride(label), { immediate: true })
+onUnmounted(() => setActiveSectionOverride(null))
 const lineItems = computed(() => adjustment.value ? adjustmentLineItems(adjustment.value) : [])
 const memo = computed(() => adjustment.value ? adjustmentMemo(adjustment.value) : '')
 const attachments = computed(() => adjustment.value ? adjustmentAttachments(adjustment.value) : [])
@@ -183,6 +193,22 @@ const groupedBySku = computed(() => {
 })
 const bySkuHasSerial = computed(() => groupedBySku.value.some(r => isSerialTrackedSku(r.sku)))
 
+// ── Variance reason (Counted status only — manager reviews each variance before approving) ──
+// A no-variance row has nothing to explain, so its reason select stays disabled.
+const isCountedStatus = computed(() => isWmsCount.value && adjustment.value?.status === 'counted')
+const REASON_OPTIONS = [
+  'Miscount / human error',
+  'Damage / spoilage',
+  'Theft / shrinkage',
+  'System error / sync gap',
+  'Misplacement (wrong bin)',
+  'Expiry write-off',
+]
+function hasVariance(difference: number): boolean { return difference !== 0 }
+// Keyed by SKU (not by line) so the reason stays consistent whether the operator
+// is looking at the By location or By SKU grouping of the same variance.
+const varianceReasons = reactive<Record<string, string>>({})
+
 // ── WMS stock count: group line items by storage location (accordion) ──────────
 const groupedByLocation = computed(() => {
   if (!isWmsCount.value) return []
@@ -299,7 +325,10 @@ const jumpResults = computed(() => {
     : source
   return matched.slice(0, 6)
 })
-function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/stock-adjustments/${id}`) }
+// Cycle count tasks live under /cycle-counts/:id (not /stock-adjustments/:id) —
+// see backPath() below for the same distinction on the list-level route.
+function detailBasePath(): string { return isWmsCount.value ? '/cycle-counts' : '/stock-adjustments' }
+function jumpTo(id: string) { jumpSearch.value = ''; router.push(`${detailBasePath()}/${id}`) }
 
 // Shared approval view toggle (manager vs user) — same singleton as the index page.
 const { viewAs, setViewAs } = useApprovalViewAs()
@@ -309,7 +338,9 @@ const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
 ]
 const approvalLog = computed(() => adjustment.value ? adjustmentApprovalLog(adjustment.value) : null)
 const approvalLogOpen = ref(false)
-const canApprove = computed(() => viewAs.value === 'manager' && adjustment.value?.status === 'draft')
+const canApprove = computed(() => viewAs.value === 'manager' && (
+  adjustment.value?.status === 'draft' || (isWmsCount.value && adjustment.value?.status === 'counted')
+))
 
 function backPath() {
   if (!isWmsRecord.value) return '/stock-adjustments'
@@ -321,12 +352,13 @@ function printPdf() { /* generates the adjustment PDF — not built in this prot
 function startCounting() {
   if (!adjustment.value) return
   if (adjustment.value.status === 'not_started') startWmsCount(adjustment.value.id)
-  router.push(`/stock-adjustments/${props.orderId}/count`)
+  router.push(`${detailBasePath()}/${props.orderId}/count`)
 }
-function editAdjustment() { router.push(`/stock-adjustments/${props.orderId}/edit`) }
+function editAdjustment() { router.push(`${detailBasePath()}/${props.orderId}/edit`) }
 function approve() {
   if (!adjustment.value) return
-  approveAdjustment(adjustment.value.id)
+  if (isWmsRecord.value) approveWmsAdjustment(adjustment.value.id)
+  else approveAdjustment(adjustment.value.id)
   toast.notify({ variant: 'success', title: `${adjustment.value.number} approved` , maxWidth: 'max-content'})
 }
 
@@ -381,7 +413,7 @@ onUnmounted(() => {
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ adjustment.number }}</h1>
           <ErpStatusBadge
-            v-if="adjustment.status === 'draft' || adjustment.status === 'canceled'"
+            v-if="isWmsCount || adjustment.status === 'draft' || adjustment.status === 'canceled'"
             :status="adjustment.status" badge-for="additionalInformation" size="md"
           />
           <MpPopover id="sad-jump" use-portal :is-keep-alive="false" placement="bottom-start">
@@ -416,7 +448,7 @@ onUnmounted(() => {
       </div>
 
       <div class="detail-titlerow-right">
-        <button v-if="canApprove" class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
+        <button v-if="canApprove && !isWmsCount" class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
         <template v-if="!isWmsRecord">
           <MpTooltip id="sad-tt-approval" label="Approval log" placement="bottom" use-portal>
             <button class="detail-icon-btn" aria-label="Approval log" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></button>
@@ -435,9 +467,7 @@ onUnmounted(() => {
         <!-- WMS Stock count layout -->
         <template v-if="isWmsCount">
           <div class="content-list-col">
-            <ContentList label="Transaction date" :value="formatDateLong(adjustment.date)" />
             <ContentList label="Transaction no." :value="adjustment.number" />
-            <ContentList label="Assignee" :value="adjustment.assignee || '—'" />
           </div>
           <div class="content-list-col">
             <ContentList label="Warehouse">
@@ -452,14 +482,9 @@ onUnmounted(() => {
                 </button>
               </div>
             </ContentList>
-            <ContentList label="Start date" :value="formatDateTimeLong(adjustment.startDate)" />
-            <ContentList label="End date" :value="formatDateTimeLong(adjustment.endDate)" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Tags">
-              <ErpTagList v-if="adjustment.tags.length" :tags="adjustment.tags" />
-              <span v-else class="detail-note-text">—</span>
-            </ContentList>
+            <ContentList label="Assignee" :value="adjustment.assignee || '—'" />
           </div>
         </template>
 
@@ -538,21 +563,27 @@ onUnmounted(() => {
           <MpAccordionPanel>
             <div class="detail-acc-body">
               <div class="detail-loc-scroll" :class="{ 'detail-loc-scroll--split': group.items.some(i => isSerialTrackedSku(i.sku)) }">
-                <table class="detail-items detail-items--fixed">
+                <table class="detail-items detail-items--fixed" :class="{ 'detail-items--with-reason': isCountedStatus }">
                   <colgroup>
                     <col class="detail-col-product" />
                     <col class="detail-col-sku" />
                     <col class="detail-col-batch" />
                     <col class="detail-col-num" />
+                    <col class="detail-col-num" />
+                    <col v-if="isCountedStatus" class="detail-col-num" />
                     <col class="detail-col-unit" />
+                    <col v-if="isCountedStatus" class="detail-col-reason" />
                   </colgroup>
                   <thead>
                     <tr>
                       <th class="detail-th">Product</th>
                       <th class="detail-th">SKU</th>
                       <th class="detail-th">Batch no.</th>
+                      <th class="detail-th detail-th--num">On hand qty</th>
                       <th class="detail-th detail-th--num">Counted qty</th>
+                      <th v-if="isCountedStatus" class="detail-th detail-th--num">Variance</th>
                       <th class="detail-th">Unit</th>
+                      <th v-if="isCountedStatus" class="detail-th">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -563,6 +594,7 @@ onUnmounted(() => {
                       <td class="detail-td detail-td--product"><ProductCell :name="item.product.name" :desc="item.product.desc" :image="item.product.img" /></td>
                       <td class="detail-td">{{ item.sku }}</td>
                       <td class="detail-td">{{ item.batchNumber ?? '—' }}</td>
+                      <td class="detail-td detail-td--num">{{ fmt(item.prevOnHand) }}</td>
                       <td v-if="isSerialTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
                         <div class="detail-counted-qty">{{ isNotStarted ? '—' : fmt(item.counted) }}</div>
                         <div v-if="!isNotStarted" class="detail-counted-action">
@@ -570,7 +602,30 @@ onUnmounted(() => {
                         </div>
                       </td>
                       <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(item.counted) }}</td>
+                      <td v-if="isCountedStatus" class="detail-td detail-td--num" :class="{ 'detail-diff--pos': item.difference > 0, 'detail-diff--neg': item.difference < 0 }">{{ diffLabel(item.difference) }}</td>
                       <td class="detail-td">{{ item.unit }}</td>
+                      <td v-if="isCountedStatus" class="detail-td detail-td--reason">
+                        <MpPopover v-if="hasVariance(item.difference)" :id="`reason-loc-${item.key}`" is-close-on-select use-portal placement="bottom-start">
+                          <MpPopoverTrigger>
+                            <MpSelect
+                              :id="`reason-loc-sel-${item.key}`" placeholder="Select reason..." is-full-width size="sm"
+                              :model-value="varianceReasons[item.sku] || undefined" is-clearable
+                              @mousedown.prevent @clear="varianceReasons[item.sku] = ''"
+                            >
+                              <option v-if="varianceReasons[item.sku]" :value="varianceReasons[item.sku]">{{ varianceReasons[item.sku] }}</option>
+                            </MpSelect>
+                          </MpPopoverTrigger>
+                          <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
+                            <MpPopoverList>
+                              <MpPopoverListItem
+                                v-for="r in REASON_OPTIONS" :key="r"
+                                :is-active="varianceReasons[item.sku] === r" @click="varianceReasons[item.sku] = r"
+                              >{{ r }}</MpPopoverListItem>
+                            </MpPopoverList>
+                          </MpPopoverContent>
+                        </MpPopover>
+                        <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width size="sm" />
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -588,14 +643,17 @@ onUnmounted(() => {
               <tr>
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
+                <th class="detail-th detail-th--num">On hand qty</th>
                 <th class="detail-th detail-th--num">Counted qty</th>
+                <th v-if="isCountedStatus" class="detail-th detail-th--num">Variance</th>
                 <th class="detail-th">Unit</th>
+                <th v-if="isCountedStatus" class="detail-th">Reason</th>
                 <th class="detail-th">Storage locations</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!groupedBySku.length">
-                <td colspan="5" class="detail-td detail-td--empty">
+                <td :colspan="isCountedStatus ? 8 : 6" class="detail-td detail-td--empty">
                   <div class="empty-inline">
                     <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
                     <p class="empty-inline-title">No results found</p>
@@ -608,6 +666,7 @@ onUnmounted(() => {
                   :class="{ 'detail-item-row--batch': isSerialTrackedSku(row.sku) }">
                 <td class="detail-td detail-td--product"><ProductCell :name="row.product.name" :desc="row.product.desc" :image="row.product.img" /></td>
                 <td class="detail-td">{{ row.sku }}</td>
+                <td class="detail-td detail-td--num">{{ fmt(row.prevOnHand) }}</td>
                 <td v-if="isSerialTrackedSku(row.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
                   <div class="detail-counted-qty">{{ isNotStarted ? '—' : fmt(row.counted) }}</div>
                   <div v-if="!isNotStarted" class="detail-counted-action">
@@ -615,7 +674,30 @@ onUnmounted(() => {
                   </div>
                 </td>
                 <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(row.counted) }}</td>
+                <td v-if="isCountedStatus" class="detail-td detail-td--num" :class="{ 'detail-diff--pos': row.difference > 0, 'detail-diff--neg': row.difference < 0 }">{{ diffLabel(row.difference) }}</td>
                 <td class="detail-td">{{ row.unit }}</td>
+                <td v-if="isCountedStatus" class="detail-td detail-td--reason">
+                  <MpPopover v-if="hasVariance(row.difference)" :id="`reason-sku-${row.sku}`" is-close-on-select use-portal placement="bottom-start">
+                    <MpPopoverTrigger>
+                      <MpSelect
+                        :id="`reason-sku-sel-${row.sku}`" placeholder="Select reason..." is-full-width size="sm"
+                        :model-value="varianceReasons[row.sku] || undefined" is-clearable
+                        @mousedown.prevent @clear="varianceReasons[row.sku] = ''"
+                      >
+                        <option v-if="varianceReasons[row.sku]" :value="varianceReasons[row.sku]">{{ varianceReasons[row.sku] }}</option>
+                      </MpSelect>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem
+                          v-for="r in REASON_OPTIONS" :key="r"
+                          :is-active="varianceReasons[row.sku] === r" @click="varianceReasons[row.sku] = r"
+                        >{{ r }}</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                  <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width size="sm" />
+                </td>
                 <td class="detail-td">
                   <div class="detail-loc-tags">
                     <span v-for="loc in row.locations" :key="loc" class="detail-loc-tag">{{ loc === '—' ? 'No location assigned' : loc }}</span>
@@ -722,7 +804,7 @@ onUnmounted(() => {
                 <td class="detail-td detail-td--number">
                   <div class="cell-with-action">
                     <span class="linked-num">{{ linkedCycleCount.number }}</span>
-                    <button class="row-hover-btn" @click.stop="router.push(`/stock-adjustments/${linkedCycleCount.id}`)">
+                    <button class="row-hover-btn" @click.stop="router.push(`/cycle-counts/${linkedCycleCount.id}`)">
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                         <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                         <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -776,6 +858,7 @@ onUnmounted(() => {
       <!-- WMS stock count footer -->
       <template v-if="isWmsCount">
         <button class="detail-btn detail-btn--secondary" @click="printPdf">Print stock card</button>
+        <button v-if="canApprove" class="detail-btn detail-btn--primary" @click="approve">Approve</button>
         <!-- Not started / In progress: split button. Completed: stock already
              counted/applied — no actions left, terminal record. -->
         <div v-if="adjustment.status === 'not_started' || adjustment.status === 'in_progress'" class="detail-split-btn">
@@ -982,12 +1065,18 @@ onUnmounted(() => {
 .detail-acc-meta { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap; }
 .detail-acc-body { padding: var(--mp-spacing-4) var(--mp-spacing-4) var(--mp-spacing-4) 0; }
 .detail-loc-scroll { overflow-x: auto; }
-.detail-items--fixed { table-layout: fixed; width: 840px; }
-.detail-col-product { width: 210px; }
+/* table-layout:fixed with a %-width table + one flexible (unwidthed) column
+   (Product) — the fixed-px columns keep their width and Product absorbs
+   whatever space is left, so the table always fills its container instead of
+   leaving dead space when the container is wider than the columns' sum. */
+.detail-items--fixed { table-layout: fixed; width: 100%; min-width: 950px; }
 .detail-col-sku { width: 90px; }
 .detail-col-batch { width: 120px; }
 .detail-col-num { width: 110px; }
 .detail-col-unit { width: 90px; }
+.detail-col-reason { width: 220px; }
+.detail-items--fixed.detail-items--with-reason { min-width: 1280px; }
+.detail-td--reason { padding-top: 6px; padding-bottom: 6px; vertical-align: middle; }
 .detail-loc-scroll--split .detail-th,
 .detail-items--split .detail-th { border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
 .detail-loc-scroll--split .detail-th:first-child,
