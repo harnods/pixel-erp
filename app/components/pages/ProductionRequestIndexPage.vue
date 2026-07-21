@@ -72,7 +72,7 @@ const valueColumns = computed<ValCol[]>(() => {
     : { key: 'dueDate', label: 'Due date', width: '140px', blankOnParent: true }
   return [
     requested,
-    { key: 'produced', label: 'Produced qty', width: '130px', align: 'right' },
+    { key: 'produced', label: 'Processed qty', width: '130px', align: 'right' },
     { key: 'remaining', label: 'Remaining qty', width: '140px', align: 'right' },
     unit, dateCol, memo, lastUpdatedCol,
   ]
