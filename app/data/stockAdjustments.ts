@@ -439,9 +439,14 @@ export interface AdjustmentInput {
   endDate?: string
   /** Set when posting from a WMS Cycle Count task */
   linkedCycleCountId?: string
+  /** Override the default 'draft' status — used when auto-generating a completed
+   *  record from an already-approved WMS cycle count (see approveWmsAdjustment). */
+  status?: AdjustmentStatus
+  approvedBy?: string
+  approvedAt?: string
 }
 
-/** Create a new (awaiting-approval) adjustment from the create form. */
+/** Create a new (awaiting-approval, unless `status` is overridden) adjustment. */
 export function addAdjustment(input: AdjustmentInput): StockAdjustment {
   const n = addSeq++
   const adj: StockAdjustment = {
@@ -453,11 +458,13 @@ export function addAdjustment(input: AdjustmentInput): StockAdjustment {
     warehouseName: input.warehouseName,
     category: input.category,
     account: accountForCategory(input.category),
-    status: 'draft',
+    status: input.status ?? 'draft',
     tags: input.tags,
     memo: input.memo,
     lines: input.lines,
     linkedCycleCountId: input.linkedCycleCountId,
+    approvedBy: input.approvedBy,
+    approvedAt: input.approvedAt,
   }
   stockAdjustments.unshift(adj)
   persistAdjustments()

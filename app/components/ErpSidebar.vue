@@ -329,7 +329,6 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
           { label: 'Warehouse transfers' },
-          { label: 'Cycle counts' },
           { label: 'Stock adjustments' },
         ],
         [
@@ -439,7 +438,7 @@ function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean):
 }
 const stockCountNav: NavItem[] = [
   { name: 'Stock count', icon: 'table-view-list' },
-  { name: 'Cycle count', icon: 'chart-of-account' },
+  { name: 'Cycle counts', icon: 'chart-of-account' },
   { name: 'Stock in/out', icon: 'fulfillment' },
 ]
 

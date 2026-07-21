@@ -298,7 +298,6 @@ const pageTabs: Record<string, string[]> = {
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
-  'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
@@ -349,10 +348,6 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Production request') {
     const pending = productionRequestPendingCount()
     return pending ? { 'Awaiting': pending } : {}
-  }
-  if (currentPageKey.value === 'Stock counts') {
-    const awaiting = awaitingAdjustmentCount()
-    return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   if (currentPageKey.value === 'Cycle counts') {
     const out: Record<string, number> = {}
@@ -433,11 +428,6 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Awaiting':  () => h(ProductionRequestIndexPage, { tab: 'pending' }),
     'Completed': () => h(ProductionRequestIndexPage, { tab: 'completed' }),
     'Rejected':  () => h(ProductionRequestIndexPage, { tab: 'rejected' }),
-  },
-  'Stock counts': {
-    'All stock counts': StockAdjustmentsPage,
-    'Awaiting approval': StockAdjustmentsPage,
-    'Recommendations': CycleCountRecommendationPage,
   },
   'Cycle counts': {
     'Count task': StockAdjustmentsPage,

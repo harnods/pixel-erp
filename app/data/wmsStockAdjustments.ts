@@ -2,11 +2,11 @@ import { reactive } from 'vue'
 import { warehouses } from './warehouses'
 import { operatorForWarehouse } from './warehouseTeam'
 import { warehouseProducts, PRODUCTS } from './inventory'
-import { applyStockCount, applyStockInOut } from './warehouseDetails'
+import { applyStockCount, applyStockInOut, getWarehouseDetail } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { TODAY } from './master'
 import {
-  accountForCategory, accountCodeFor,
+  accountForCategory, accountCodeFor, addAdjustment,
   type AdjustmentKind, type AdjustmentCategory, type AdjustmentStatus,
   type StockAdjustment, type AdjustmentInput, type AdjustmentLine,
   IN_OUT_CATEGORIES, adjustmentLineItems,
@@ -233,16 +233,33 @@ export function finishWmsCount(id: string, lines: { sku: string; qty: number; lo
 
 const ACTOR = 'Rizal Candra'
 
-/** Manager approves a "Counted" task — applies the count to stock and marks it completed. */
+/** Manager approves a "Counted" task — applies the count to stock, marks it completed,
+ *  and mirrors it into the ERP Stock counts index as a completed record. */
 export function approveWmsAdjustment(id: string): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find((x) => x.id === id)
   if (!a || a.status !== 'counted') return a
   const lines = a.lines ?? adjustmentLineItems(a).map((l) => ({ sku: l.sku, qty: l.counted }))
+  // Snapshot on-hand BEFORE applying the count — this is the "previous qty" the
+  // mirrored ERP record shows, same as the real state at the moment of approval.
+  const prevBySku = new Map((getWarehouseDetail(a.warehouseId)?.stock ?? []).map((s) => [s.sku, s.onHand]))
   applyStockCount(a.warehouseId, lines)
   a.status = 'completed'
   a.approvedBy = ACTOR
   a.approvedAt = new Date().toISOString()
   persist()
+  addAdjustment({
+    kind: 'count',
+    date: new Date().toISOString().slice(0, 10),
+    warehouseId: a.warehouseId,
+    warehouseName: a.warehouseName,
+    category: 'Stock count',
+    tags: [],
+    lines: lines.map((l) => ({ ...l, prevQty: prevBySku.get(l.sku) ?? 0 })),
+    linkedCycleCountId: a.id,
+    status: 'completed',
+    approvedBy: a.approvedBy,
+    approvedAt: a.approvedAt,
+  })
   return a
 }
 

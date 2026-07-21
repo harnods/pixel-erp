@@ -183,6 +183,8 @@ const baseRows = computed<StockAdjustment[]>(() => {
   if (isAwaiting.value) list = list.filter(a => a.status === 'draft')
   else if (isCycleAwaiting.value) list = list.filter(a => a.status === 'counted')
   else if (currentPageKey.value === 'Cycle counts') list = list.filter(a => a.status !== 'counted')
+  // Stock counts has no Awaiting approval tab — show every status in the one flat list.
+  else if (isErpStockCounts.value) { /* no status filter */ }
   else list = list.filter(a => a.status !== 'draft')
   if (kindFilter.value && !isErpStockCounts.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value.length) list = list.filter(a => warehouseFilter.value.includes(a.warehouseId))
