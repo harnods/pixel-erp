@@ -448,7 +448,7 @@ onUnmounted(() => {
       </div>
 
       <div class="detail-titlerow-right">
-        <button v-if="canApprove" class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
+        <button v-if="canApprove && !isWmsCount" class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
         <template v-if="!isWmsRecord">
           <MpTooltip id="sad-tt-approval" label="Approval log" placement="bottom" use-portal>
             <button class="detail-icon-btn" aria-label="Approval log" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></button>
@@ -608,7 +608,7 @@ onUnmounted(() => {
                         <MpPopover v-if="hasVariance(item.difference)" :id="`reason-loc-${item.key}`" is-close-on-select use-portal placement="bottom-start">
                           <MpPopoverTrigger>
                             <MpSelect
-                              :id="`reason-loc-sel-${item.key}`" placeholder="Select reason..." is-full-width
+                              :id="`reason-loc-sel-${item.key}`" placeholder="Select reason..." is-full-width size="sm"
                               :model-value="varianceReasons[item.sku] || undefined" is-clearable
                               @mousedown.prevent @clear="varianceReasons[item.sku] = ''"
                             >
@@ -624,7 +624,7 @@ onUnmounted(() => {
                             </MpPopoverList>
                           </MpPopoverContent>
                         </MpPopover>
-                        <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width />
+                        <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width size="sm" />
                       </td>
                     </tr>
                   </tbody>
@@ -680,7 +680,7 @@ onUnmounted(() => {
                   <MpPopover v-if="hasVariance(row.difference)" :id="`reason-sku-${row.sku}`" is-close-on-select use-portal placement="bottom-start">
                     <MpPopoverTrigger>
                       <MpSelect
-                        :id="`reason-sku-sel-${row.sku}`" placeholder="Select reason..." is-full-width
+                        :id="`reason-sku-sel-${row.sku}`" placeholder="Select reason..." is-full-width size="sm"
                         :model-value="varianceReasons[row.sku] || undefined" is-clearable
                         @mousedown.prevent @clear="varianceReasons[row.sku] = ''"
                       >
@@ -696,7 +696,7 @@ onUnmounted(() => {
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
-                  <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width />
+                  <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width size="sm" />
                 </td>
                 <td class="detail-td">
                   <div class="detail-loc-tags">
@@ -858,6 +858,7 @@ onUnmounted(() => {
       <!-- WMS stock count footer -->
       <template v-if="isWmsCount">
         <button class="detail-btn detail-btn--secondary" @click="printPdf">Print stock card</button>
+        <button v-if="canApprove" class="detail-btn detail-btn--primary" @click="approve">Approve</button>
         <!-- Not started / In progress: split button. Completed: stock already
              counted/applied — no actions left, terminal record. -->
         <div v-if="adjustment.status === 'not_started' || adjustment.status === 'in_progress'" class="detail-split-btn">
@@ -1064,14 +1065,17 @@ onUnmounted(() => {
 .detail-acc-meta { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap; }
 .detail-acc-body { padding: var(--mp-spacing-4) var(--mp-spacing-4) var(--mp-spacing-4) 0; }
 .detail-loc-scroll { overflow-x: auto; }
-.detail-items--fixed { table-layout: fixed; width: 950px; }
-.detail-col-product { width: 210px; }
+/* table-layout:fixed with a %-width table + one flexible (unwidthed) column
+   (Product) — the fixed-px columns keep their width and Product absorbs
+   whatever space is left, so the table always fills its container instead of
+   leaving dead space when the container is wider than the columns' sum. */
+.detail-items--fixed { table-layout: fixed; width: 100%; min-width: 950px; }
 .detail-col-sku { width: 90px; }
 .detail-col-batch { width: 120px; }
 .detail-col-num { width: 110px; }
 .detail-col-unit { width: 90px; }
 .detail-col-reason { width: 220px; }
-.detail-items--fixed.detail-items--with-reason { width: 1280px; }
+.detail-items--fixed.detail-items--with-reason { min-width: 1280px; }
 .detail-td--reason { padding-top: 6px; padding-bottom: 6px; vertical-align: middle; }
 .detail-loc-scroll--split .detail-th,
 .detail-items--split .detail-th { border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
