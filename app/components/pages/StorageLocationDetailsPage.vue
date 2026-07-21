@@ -16,7 +16,7 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import StockTables from '~/components/patterns/StockTables.vue'
 import StorageLocationTree from '~/components/patterns/StorageLocationTree.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
-import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
+import { getWarehouseDetail, getLocationStock, ensureLocationBarcode } from '~/data/warehouseDetails'
 import { findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { levelLabel, STORAGE_LEVEL_KEYS } from '~/data/storageLevels'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
@@ -39,6 +39,11 @@ function countDescendants(n: LocNode): number {
 }
 const subLocationCount = computed(() => (node.value ? countDescendants(node.value) : 0))
 const isStorage = computed(() => node.value?.type === 'Storage')
+// Only Storage-type locations get one — generated (and persisted) the first time
+// it's ever read, no manual "Generate" step.
+const locationBarcode = computed(() => (
+  isStorage.value ? ensureLocationBarcode(warehouseId.value, locId.value) : undefined
+))
 // Stock physically lives only at leaf nodes (no children) — branch nodes just aggregate
 // their children's ranges. Only show product tabs for leaves.
 const showStockTabs = computed(() => !!node.value && !hasChildren.value)
@@ -144,6 +149,10 @@ function confirmDeleteLocation() {
           <div class="sld-info-row">
             <dt class="sld-info-label">Location name</dt>
             <dd class="sld-info-value">{{ node.name }}</dd>
+          </div>
+          <div v-if="isStorage" class="sld-info-row">
+            <dt class="sld-info-label">Barcode</dt>
+            <dd class="sld-info-value">{{ locationBarcode }}</dd>
           </div>
           <div class="sld-info-row">
             <dt class="sld-info-label">Level</dt>

@@ -7,6 +7,7 @@ import { stockLocationPaths, getMultiLocConfig } from './storageLocations'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { getWarehouseSettings } from './warehouseSettings'
 import { effectiveLocationPriority } from './warehouseConfig'
+import { generateNextBarcode } from './barcodeConfig'
 
 // ── Persisted on-hand overlay ─────────────────────────────────────────────────
 // Stores absolute onHand values that override the deterministic generated base.
@@ -32,6 +33,52 @@ type BatchOverlay = Record<string, Record<string, ProductBatch[]>> // warehouseI
 const BATCH_OVERLAY_KEY = 'wh-batch-overlay-v1'
 const batchOverlay = reactive<BatchOverlay>(loadSnapshot<BatchOverlay>(BATCH_OVERLAY_KEY) ?? {})
 function persistBatchOverlay() { saveSnapshot(BATCH_OVERLAY_KEY, batchOverlay) }
+
+// ── Persisted serial-number barcode overlay ──────────────────────────────────
+// A serial always has a barcode — auto-generated (and persisted) the first time
+// it's ever read, no manual step. No user-facing "Generate" control anywhere.
+type SerialBarcodeOverlay = Record<string, string> // `${warehouseId}::${sku}::${serial}` → barcode
+const SERIAL_BARCODE_KEY = 'wh-serial-barcode-overlay-v1'
+const serialBarcodeOverlay = reactive<SerialBarcodeOverlay>(loadSnapshot<SerialBarcodeOverlay>(SERIAL_BARCODE_KEY) ?? {})
+function persistSerialBarcodeOverlay() { saveSnapshot(SERIAL_BARCODE_KEY, serialBarcodeOverlay) }
+function serialBarcodeKey(warehouseId: string, sku: string, serial: string): string {
+  return `${warehouseId}::${sku}::${serial}`
+}
+
+/** The barcode for one serial unit — generated (and persisted) on first read. */
+export function ensureSerialBarcode(warehouseId: string, sku: string, serial: string): string {
+  const key = serialBarcodeKey(warehouseId, sku, serial)
+  let barcode = serialBarcodeOverlay[key]
+  if (!barcode) {
+    barcode = generateNextBarcode('serial')
+    serialBarcodeOverlay[key] = barcode
+    persistSerialBarcodeOverlay()
+  }
+  return barcode
+}
+
+// ── Persisted storage-location (bin) barcode overlay ─────────────────────────
+// Only Storage-type locations (bins) get a barcode — Organizational nodes (Floor/
+// Zone/Aisle, …) are groupings, not a physical place something is scanned into.
+// Same as serials: generated (and persisted) the first time it's ever read.
+type LocationBarcodeOverlay = Record<string, string> // `${warehouseId}::${locId}` → barcode
+const LOCATION_BARCODE_KEY = 'wh-location-barcode-overlay-v1'
+const locationBarcodeOverlay = reactive<LocationBarcodeOverlay>(loadSnapshot<LocationBarcodeOverlay>(LOCATION_BARCODE_KEY) ?? {})
+function persistLocationBarcodeOverlay() { saveSnapshot(LOCATION_BARCODE_KEY, locationBarcodeOverlay) }
+function locationBarcodeKey(warehouseId: string, locId: string): string { return `${warehouseId}::${locId}` }
+
+/** The barcode for one Storage-type location — generated (and persisted) on first read.
+ *  Call only for `type === 'Storage'` nodes; Organizational nodes don't get one. */
+export function ensureLocationBarcode(warehouseId: string, locId: string): string {
+  const key = locationBarcodeKey(warehouseId, locId)
+  let barcode = locationBarcodeOverlay[key]
+  if (!barcode) {
+    barcode = generateNextBarcode('bin')
+    locationBarcodeOverlay[key] = barcode
+    persistLocationBarcodeOverlay()
+  }
+  return barcode
+}
 
 /**
  * Register a brand-new batch that isn't already in the warehouse's inventory —
@@ -329,8 +376,8 @@ function binLocation(seed: number, i: number): string[] {
 // tampers, pitchers, …) are neither — they have no batches and no serials.
 const BATCH_CATEGORIES = new Set(['Green Beans', 'Roasted Beans'])
 const SERIAL_CATEGORIES = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
-function isBatchTracked(category: string): boolean { return BATCH_CATEGORIES.has(category) }
-function isSerialized(category: string): boolean { return SERIAL_CATEGORIES.has(category) }
+export function isBatchTracked(category: string): boolean { return BATCH_CATEGORIES.has(category) }
+export function isSerialized(category: string): boolean { return SERIAL_CATEGORIES.has(category) }
 
 // Sample products that belong to more than one category (sku → category list)
 const MULTI_CATEGORIES: Record<string, string[]> = {

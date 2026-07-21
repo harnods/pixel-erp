@@ -220,8 +220,9 @@ function reasonBadgeType(reason: string): string {
                   :is-checked="warehouseFilter.includes(opt.value)"
                   @change="toggleWarehouse(opt.value)"
                   @click.stop
-                />
-                <span>{{ opt.label }}</span>
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>

@@ -437,6 +437,9 @@ const bulkCountLabel = computed(() => {
                   @click.stop
                 />
                 <span v-if="!col.noHeader" class="th-label">{{ col.label }}</span>
+                <!-- Optional per-column header extra (e.g. a settings icon) — opt-in via
+                     #header-<key>; most columns don't provide it, so nothing renders. -->
+                <slot :name="`header-${col.key}`" />
                 <!-- ERP column sort menu: hover reveals the icon; click opens options -->
                 <MpPopover
                   v-if="col.sortType"

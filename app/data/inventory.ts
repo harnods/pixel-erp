@@ -31,6 +31,10 @@ export interface Product {
   averageCost: number
   /** most recent purchase cost */
   lastPurchaseCost: number
+  /** system auto-generated barcode — only set on products created via the New
+   *  product form (per the configured barcode format); seed CATALOG products fall
+   *  back to a deterministic value derived in productsIndex.ts. */
+  barcode?: string
 }
 
 /**

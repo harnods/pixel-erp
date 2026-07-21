@@ -13,6 +13,7 @@ import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { outgoingOpenCount } from '~/data/outgoing'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { pendingApprovalCount } from '~/data/productsIndex'
 import { pickingOpenCount } from '~/data/pickingTasks'
 
 // Keep outbound order statuses derived from their tasks (coherent everywhere).
@@ -49,6 +50,7 @@ const pageRegistry: Record<string, Component> = {
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
+  'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
   'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
@@ -119,6 +121,10 @@ const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/Cre
 const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
 const WarehouseTransfersPage = asyncPage(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 const StockAdjustmentsPage = asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue'))
+const ProductsPage = asyncPage(() => import('~/components/pages/ProductsPage.vue'))
+const ProductDetailsPage = asyncPage(() => import('~/components/pages/ProductDetailsPage.vue'))
+const BatchDetailsPage = asyncPage(() => import('~/components/pages/BatchDetailsPage.vue'))
+const NewProductPage = asyncPage(() => import('~/components/pages/NewProductPage.vue'))
 const StockAdjustmentDetailsPage = asyncPage(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
 const StockCountFormPage = asyncPage(() => import('~/components/pages/StockCountFormPage.vue'))
 const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTaskPage.vue'))
@@ -221,6 +227,25 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
   }
+  if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
+    return { component: NewProductPage, id: 'new' }
+  }
+  // /product-list/:sku/edit → reuse the product form in edit mode
+  if (segs.length >= 3 && segs[0] === 'product-list' && segs[2] === 'edit') {
+    return { component: NewProductPage, id: segs[1]! }
+  }
+  // /product-list/:sku/batches/:batchNo → batch detail (a batch-tracked product's
+  // "Stock by batches" tab row); id is "sku::batchNo", same convention as the
+  // warehouse/location nested route below. batchNo (e.g. "Batch #001") is
+  // encodeURIComponent'd by the caller since "#" would otherwise start a URL
+  // fragment — decode it back here.
+  if (segs.length >= 4 && segs[0] === 'product-list' && segs[2] === 'batches') {
+    return { component: BatchDetailsPage, id: `${segs[1]}::${decodeURIComponent(segs[3]!)}` }
+  }
+  // /product-list/:sku → product detail
+  if (segs.length >= 2 && segs[0] === 'product-list') {
+    return { component: ProductDetailsPage, id: segs[1] }
+  }
   // /inbound-delivery/:id → inbound PO detail (kept under the section path so the
   // level-2 sidebar submenu stays active, like /sales-orders/:id).
   // /receiving/:taskId → task detail; "Receiving" resolves as Inbound delivery panel sub-item
@@ -299,6 +324,7 @@ const pageTabs: Record<string, string[]> = {
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
+  'Product list':      ['All products', 'Awaiting approval'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -358,6 +384,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const recommendations = recommendationCount()
     if (recommendations) out['Recommendations'] = recommendations
     return out
+  }
+  if (currentPageKey.value === 'Product list') {
+    const awaiting = pendingApprovalCount()
+    return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   return {}
 })
@@ -433,6 +463,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Count task': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
     'Recommendations': CycleCountRecommendationPage,
+  },
+  'Product list': {
+    'All products': ProductsPage,
+    'Awaiting approval': ProductsPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -877,6 +911,17 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New bill of materials
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Product list'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/product-list/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New product
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Inbound delivery'" class="page-title-actions">
