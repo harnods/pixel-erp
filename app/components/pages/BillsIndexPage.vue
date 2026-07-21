@@ -86,8 +86,9 @@ const {
 // ─── Filter options ───────────────────────────────────────────────────────────
 
 const statusOptions = [
-  { label: 'Open', value: 'unpaid' },
-  { label: 'Paid', value: 'paid'   },
+  { label: 'Open',    value: 'open'    },
+  { label: 'Overdue', value: 'overdue' },
+  { label: 'Paid',    value: 'paid'    },
 ]
 
 const statusLabel = computed(
