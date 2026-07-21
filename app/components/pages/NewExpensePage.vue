@@ -513,12 +513,12 @@ function handleSave(mode: 'close' | 'new') {
             <img src="/illustrations/receipt-dropzone.png" alt="" class="ex-dropzone-thumb-img" />
             <p class="ex-dropzone-title">
               Drop your receipt file here or
-              <button type="button" class="ex-dropzone-browse" @click.stop="handleClickInput">browse</button>
+              <button type="button" class="ex-dropzone-browse" @click.stop="handleClickInput">choose</button>
             </p>
             <p class="ex-dropzone-desc">
-              This feature will reduce your monthly AI token usage.
-              Supported formats: PDF, PNG and JPG.
-              Maximum file size 10 MB.
+              Airene will read your file and fill in the details automatically.
+              Supported formats: PDF, PNG, JPG.
+              Maximum file size: 10 MB.
             </p>
           </template>
           <template #loading>
@@ -532,7 +532,7 @@ function handleSave(mode: 'close' | 'new') {
         <p v-if="dropzoneError" class="ex-dropzone-error">{{ dropzoneError }}</p>
 
         <button v-if="!uploadedFile" type="button" class="ex-turn-off-link" @click="requestTurnOffAutofill">
-          Turn off autofill option
+          Turn off autofill
         </button>
 
         <!-- Uploaded-state footer: Airene disclaimer + feedback thumbs -->
@@ -584,7 +584,7 @@ function handleSave(mode: 'close' | 'new') {
                 {{ currentSearch ? `Add "${currentSearch}" as a new beneficiary` : 'Add new beneficiary' }}
               </template>
             </MpAutocomplete>
-            <MpFormErrorMessage>Please select a beneficiary</MpFormErrorMessage>
+            <MpFormErrorMessage>Select beneficiary</MpFormErrorMessage>
           </MpFormControl>
           <div class="ex-paid-check">
             <MpCheckbox id="ex-paid" :is-checked="iHavePaid" @change="iHavePaid = !iHavePaid" />
@@ -605,7 +605,7 @@ function handleSave(mode: 'close' | 'new') {
               <MpFormLabel>Transaction no.</MpFormLabel>
               <span class="ex-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
             </div>
-            <MpInput id="ex-transno-input" v-model="transactionNo" placeholder="[Auto]" is-full-width is-disabled />
+            <MpInput id="ex-transno-input" v-model="transactionNo" placeholder="Auto" is-full-width is-disabled />
           </MpFormControl>
           <!-- Due date — only relevant while the bill is still unpaid -->
           <MpFormControl v-if="!iHavePaid" id="ex-duedate">
@@ -619,7 +619,7 @@ function handleSave(mode: 'close' | 'new') {
             <MpInput id="ex-refno-input" v-model="referenceNo" is-full-width />
           </MpFormControl>
           <MpFormControl id="ex-tags">
-            <MpFormLabel>Tag</MpFormLabel>
+            <MpFormLabel>Tags</MpFormLabel>
             <MpInputTag id="ex-tags-input" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
           </MpFormControl>
         </div>
@@ -718,7 +718,7 @@ function handleSave(mode: 'close' | 'new') {
               <div class="ex-section-label-row">
                 <div class="ex-section-label">Attachment</div>
                 <MpButton v-if="!leftPanelOpen && autofillOff" variant="textLink" size="sm" left-icon="airene-brand" @click="reopenAutofillPanel">
-                  Try autofill
+                  Open autofill
                 </MpButton>
               </div>
               <div class="ex-attachment">
@@ -729,13 +729,13 @@ function handleSave(mode: 'close' | 'new') {
                   accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
                   is-multiple is-full-width
                   placeholder="or drag and drop here"
-                  button-text="Browse file"
+                  button-text="Choose file"
                   @change="onFormFileChange"
                   @dragover.prevent="formDragOver = true"
                   @dragleave.prevent="formDragOver = false"
                   @drop.prevent="onFormFileDrop"
                 />
-                <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
+                <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 5 files per transaction</p>
                 <MpUploadList
                   v-for="f in formAttachedFiles" :key="f.name"
                   :id="`ex-attachment-file-${f.name}`"
@@ -899,12 +899,12 @@ function handleSave(mode: 'close' | 'new') {
       <MpModalContent>
         <MpModalHeader>Close receipt panel?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="ex-modal-copy">You can turn it back on anytime from the same spot.</p>
+          <p class="ex-modal-copy">You can turn it back on anytime from the Attachment field.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="ex-modal-footer-btns">
             <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="showCloseConfirm = false">Cancel</button>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="closePanelDontShowAgain">Close &amp; don't show again</button>
+            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="closePanelDontShowAgain">Don't ask again</button>
             <button type="button" class="btn-enterprise btn-enterprise--primary" @click="closePanelKeepAsking">Close</button>
           </div>
         </MpModalFooter>
@@ -915,9 +915,9 @@ function handleSave(mode: 'close' | 'new') {
     <!-- Turn-off-autofill confirmation -->
     <MpModal :is-open="showTurnOffConfirm" @close="showTurnOffConfirm = false">
       <MpModalContent>
-        <MpModalHeader>Turn off autofill option?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>Turn off autofill?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="ex-modal-copy">You can turn it back on anytime from the attachment field in expense form.</p>
+          <p class="ex-modal-copy">You can turn it back on anytime from the Attachment field in the expense form.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="ex-modal-footer-btns">

@@ -13,6 +13,7 @@
     "@mekari/pixel3": "latest",
     "@mekari/pixel3-postcss": "latest",
     "@supabase/supabase-js": "^2.109.0",
+    "@unhead/vue": "^3.2.1",
     "nuxt": "^4.3.0",
     "vue": "^3.5.27",
     "vue-router": "^4.6.4"

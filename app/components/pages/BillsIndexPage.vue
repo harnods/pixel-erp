@@ -75,7 +75,7 @@ const rows = computed<Row[]>(() =>
 // ─── Table state ──────────────────────────────────────────────────────────────
 
 const {
-  search, statusFilter, currentPage, paginated, total, perPage,
+  search, statusFilter, hasActiveSearch, hasActiveFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState(rows, {
   filterFn: (row: Row, s, status) =>
@@ -86,9 +86,9 @@ const {
 // ─── Filter options ───────────────────────────────────────────────────────────
 
 const statusOptions = [
-  { label: 'Open',   value: 'open'   },
-  { label: 'Paid',   value: 'paid'   },
-  { label: 'Unpaid', value: 'unpaid' },
+  { label: 'Open',    value: 'open'    },
+  { label: 'Overdue', value: 'overdue' },
+  { label: 'Paid',    value: 'paid'    },
 ]
 
 const statusLabel = computed(
@@ -144,11 +144,18 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     has-checkbox
     actions-width="52px"
+    :has-active-search="hasActiveSearch"
+    :has-active-filter="hasActiveFilter"
+    :search-query="search"
+    object-label="expense"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
     @sort-change="setSort"
     @hide-column="hideColumn"
+    @clear-search="search = ''"
+    @clear-filters="statusFilter = ''"
+    @clear-all="search = ''; statusFilter = ''"
   >
 
     <!-- ── Stats section ── -->
@@ -195,12 +202,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             </div>
             <div class="upsell-copy">
               <p class="upsell-title">Control business spend with Mekari Card</p>
-              <p class="upsell-desc">Manage expenses easily with Mekari physical or virtual corporate cards. Say goodbye to manual reimbursement claims.</p>
+              <p class="upsell-desc">Manage expenses easily with Mekari physical or virtual corporate cards. Eliminate manual reimbursement claims.</p>
             </div>
           </div>
           <div class="upsell-actions">
             <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm">
-              Start set up
+              Set up now
             </button>
           </div>
         </div>

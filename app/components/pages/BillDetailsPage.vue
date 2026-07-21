@@ -231,7 +231,7 @@ function goExpenses() {
           </thead>
           <tbody class="detail-items-body">
             <tr v-if="!bill.lineItems?.length">
-              <td class="detail-td detail-td--muted" colspan="4">No accounts.</td>
+              <td class="detail-td detail-td--muted" colspan="4">No accounts</td>
             </tr>
             <tr v-for="(li, i) in bill.lineItems" :key="i" class="detail-item-row">
               <td class="detail-td">{{ li.account }}</td>
@@ -323,7 +323,7 @@ function goExpenses() {
               </thead>
               <tbody>
                 <tr v-if="!bill.payment">
-                  <td class="detail-td detail-td--muted" colspan="5">No payment recorded.</td>
+                  <td class="detail-td detail-td--muted" colspan="5">No payment recorded</td>
                 </tr>
                 <tr v-else class="detail-item-row">
                   <td class="detail-td">{{ formatDate(bill.payment.paymentDate) }}</td>
@@ -368,7 +368,7 @@ function goExpenses() {
           <MpPopoverList>
             <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>
             <MpPopoverListItem v-if="bill.status === 'unpaid' || isAwaitingApproval">Edit</MpPopoverListItem>
-            <MpTooltip v-if="isReconciled" id="detail-actions-delete-tt" label="Unmatch reconciliation to delete" placement="top" use-portal>
+            <MpTooltip v-if="isReconciled" id="detail-actions-delete-tt" label="Cannot delete. Transaction has been reconciled." placement="top" use-portal>
               <span class="detail-actions-delete-tt-wrap">
                 <MpPopoverListItem is-disabled>Delete</MpPopoverListItem>
               </span>
