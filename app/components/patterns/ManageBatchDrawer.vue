@@ -237,7 +237,9 @@ const qtyLabel = computed(() => {
   if (props.kind === 'picking') return 'Reserved qty'
   return 'Stock in/out qty'
 })
-const onHandLabel = computed(() => (isTransfer.value || isPicking.value) ? 'Available qty' : 'On hand qty')
+const isCountKind = computed(() => !props.kind || props.kind === 'count')
+const onHandLabel = computed(() => (isTransfer.value || isPicking.value) ? 'Available qty' : (isCountKind.value ? 'On hand' : 'On hand qty'))
+const countedLabel = computed(() => isCountKind.value ? 'Counted' : 'Counted qty')
 // Read-only "Qty to pick" column, next to Available qty — only meaningful once
 // actually executing a pick (planning IS the qty-to-pick input, nothing to show
 // alongside it) and only when the caller actually has a plan to show.
@@ -825,7 +827,7 @@ function fmtNum(n: number | null): string {
             <!-- stock count stats -->
             <template v-if="!isInOut">
               <div class="mbd-stat">
-                <span class="mbd-stat-label">Counted qty</span>
+                <span class="mbd-stat-label">{{ countedLabel }}</span>
                 <span class="mbd-stat-value">{{ fmtNum(totalCounted) }}</span>
               </div>
               <div
@@ -1109,7 +1111,7 @@ function fmtNum(n: number | null): string {
                 <th v-if="isPicking" class="mbd-th">Location</th>
                 <th v-if="showOnHandColumn" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
                 <th v-if="showPlannedQty" class="mbd-th mbd-th--num mbd-th--planned">Qty to pick</th>
-                <th class="mbd-th mbd-th--num">{{ isPicking ? (executionMode ? 'Picked qty' : 'Qty to pick') : (isInOut ? qtyLabel : 'Counted qty') }}</th>
+                <th class="mbd-th mbd-th--num">{{ isPicking ? (executionMode ? 'Picked qty' : 'Qty to pick') : (isInOut ? qtyLabel : countedLabel) }}</th>
                 <th v-if="showAfterStats" class="mbd-th mbd-th--num">{{ afterLabel }}</th>
                 <th class="mbd-th">Unit</th>
                 <th class="mbd-th mbd-th--del" />

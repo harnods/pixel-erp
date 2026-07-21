@@ -88,6 +88,10 @@ function isSerialTrackedSku(sku: string): boolean {
 interface CountRow { sku: string; counted: string; countedError: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[] }
 const rows = ref<CountRow[]>([])
 const selectedSkus = computed(() => rows.value.map(r => r.sku))
+function defaultAvgCostInput(sku: string): string {
+  const cost = avgCostFor(sku)
+  return cost > 0 ? cost.toLocaleString('id-ID') : ''
+}
 
 const drawerOpen = ref(false)
 const batchDrawerRow = ref<CountRow | null>(null)
@@ -132,17 +136,12 @@ function serialTotalFor(row: CountRow): number {
 
 function applyPicker(skus: string[]) {
   const existing = new Map(rows.value.map(r => [r.sku, r]))
-  rows.value = skus.map(sku => existing.get(sku) ?? { sku, counted: '', countedError: false, avgMode: 'auto', avgCostInput: '' })
+  rows.value = skus.map(sku => existing.get(sku) ?? { sku, counted: '', countedError: false, avgMode: 'auto', avgCostInput: defaultAvgCostInput(sku) })
 }
 function removeRow(sku: string) { rows.value = rows.value.filter(r => r.sku !== sku) }
 
 // Average cost per row: 'auto' shows the product's moving-average cost (read-only);
-// 'custom' turns the cell into an input. Switch via the hover edit menu.
-function fmtAvgInput(raw: string): string {
-  const digits = raw.replace(/\D/g, '')
-  if (!digits) return ''
-  return Number(digits).toLocaleString('id-ID')
-}
+// 'custom' turns the cell into a "Rp"-prefixed input. Switch via the hover edit menu.
 function onAvgInput(row: CountRow, ev: Event) {
   const input = ev.target as HTMLInputElement
   const digits = input.value.replace(/\D/g, '')
@@ -151,12 +150,26 @@ function onAvgInput(row: CountRow, ev: Event) {
 }
 function setAvgMode(row: CountRow, mode: 'auto' | 'custom') {
   row.avgMode = mode
-  if (mode === 'custom' && row.avgCostInput === '') {
-    const cost = avgCostFor(row.sku)
-    row.avgCostInput = cost > 0 ? cost.toLocaleString('id-ID') : ''
-  }
+  if (mode === 'custom' && row.avgCostInput === '') row.avgCostInput = defaultAvgCostInput(row.sku)
 }
-function fmtIDR(n: number) { return n.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }) }
+// ── Inline product swap (change a row's product without removing/re-adding) ────────
+const swapSearch = ref('')
+function swapProductSku(row: CountRow, newSku: string) {
+  row.sku = newSku
+  row.counted = ''
+  row.countedError = false
+  row.avgMode = 'auto'
+  row.avgCostInput = defaultAvgCostInput(newSku)
+  row.batchLines = undefined
+  row.serialLines = undefined
+}
+function swapCandidates(currentSku: string): PickerProduct[] {
+  const used = new Set(rows.value.map(r => r.sku))
+  const q = swapSearch.value.trim().toLowerCase()
+  return pickerProducts.value.filter(p =>
+    (p.sku === currentSku || !used.has(p.sku)) &&
+    (!q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)))
+}
 
 function onCountedInput(row: CountRow, ev: Event) {
   const input = ev.target as HTMLInputElement
@@ -189,9 +202,8 @@ function diffLabel(row: CountRow): string {
 type Progress = '' | 'counted' | 'uncounted'
 const progress = ref<Progress>('')
 const progressOptions: { value: Progress; label: string }[] = [
-  { value: '', label: 'All items' },
   { value: 'counted', label: 'Counted' },
-  { value: 'uncounted', label: 'Not counted' },
+  { value: 'uncounted', label: 'Uncounted' },
 ]
 // Default (all items) shows the field name "Count progress" as a placeholder.
 const progressLabel = computed(() => progress.value === '' ? 'Count progress' : (progressOptions.find(o => o.value === progress.value)?.label ?? 'Count progress'))
@@ -321,7 +333,7 @@ async function handleSave() {
 }
 
 // ── Storage-location mode ────────────────────────────────────────────────────────
-interface LocRow { sku: string; onHand: number; counted: string; countedError: boolean; isAuto: boolean; batchLines?: CommittedBatch[]; serialLines?: string[] }
+interface LocRow { sku: string; onHand: number; counted: string; countedError: boolean; isAuto: boolean; avgMode: 'auto' | 'custom'; avgCostInput: string; batchLines?: CommittedBatch[]; serialLines?: string[] }
 interface LocEntry {
   locId: string; fullPath: string
   skuStart: number; skuQty: number
@@ -331,31 +343,10 @@ interface LocEntry {
 const hasStorageLocs = computed(() => getStorageTree(warehouseId.value).length > 0)
 const locationDrawerOpen = ref(false)
 const selectedLocations = ref<LocEntry[]>([])
-watch(warehouseId, () => { selectedLocations.value = []; bySkuSelected.value = []; pendingCountBy.value = null; assigneeId.value = '' })
+watch(warehouseId, () => { selectedLocations.value = []; assigneeId.value = '' })
 
-const countBy = ref<'location' | 'sku'>('location')
-const pendingCountBy = ref<'location' | 'sku' | null>(null)
-
-const bySkuSelected = ref<string[]>([])
-const bySkuDrawerOpen = ref(false)
-
-function hasCountData(): boolean {
-  return selectedLocations.value.some(l => l.rows.length > 0) || bySkuSelected.value.length > 0
-}
-function requestSwitchCountBy(to: 'location' | 'sku') {
-  if (to === countBy.value) return
-  if (hasCountData()) { pendingCountBy.value = to; return }
-  applyCountBySwitch(to)
-}
-function applyCountBySwitch(to: 'location' | 'sku') {
-  countBy.value = to
-  selectedLocations.value = []
-  bySkuSelected.value = []
-  pendingCountBy.value = null
-}
-function confirmCountBySwitch() { if (pendingCountBy.value) applyCountBySwitch(pendingCountBy.value) }
-function cancelCountBySwitch() { pendingCountBy.value = null }
-
+// Builds location groups directly from a flat SKU list (used for preselect deep-links,
+// e.g. from Cycle count recommendations) — the location-grouped table is the only mode.
 function rebuildLocsBySkus(skus: string[]) {
   if (!skus.length) { selectedLocations.value = []; return }
   const wh = getWarehouseDetail(warehouseId.value)
@@ -375,17 +366,11 @@ function rebuildLocsBySkus(skus: string[]) {
       const entry = locMap.get(node.id)!
       if (!entry.rows.some(r => r.sku === sku)) {
         const onHand = getLocationStock(warehouseId.value, node.skuStart, node.skuQty).find(s => s.sku === sku)?.onHand ?? 0
-        entry.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false })
+        entry.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false, avgMode: 'auto', avgCostInput: defaultAvgCostInput(sku) })
       }
     }
   }
   selectedLocations.value = [...locMap.values()]
-}
-
-function applySkuPicker(skus: string[]) {
-  bySkuSelected.value = skus
-  rebuildLocsBySkus(skus)
-  bySkuDrawerOpen.value = false
 }
 
 interface FlatLoc { id: string; name: string; level: string; depth: number; skuStart: number; skuQty: number }
@@ -476,7 +461,7 @@ function confirmLocSelection() {
       const node = all.find(n => n.id === id)
       if (!node) return null
       const stockItems = getLocationStock(warehouseId.value, node.skuStart, node.skuQty)
-      const rows: LocRow[] = stockItems.map(s => ({ sku: s.sku, onHand: s.onHand, counted: '', countedError: false, isAuto: true }))
+      const rows: LocRow[] = stockItems.map(s => ({ sku: s.sku, onHand: s.onHand, counted: '', countedError: false, isAuto: true, avgMode: 'auto', avgCostInput: defaultAvgCostInput(s.sku) }))
       const fullPath = findLocation(warehouseId.value, id)?.path.map(n => n.name).join(' / ') ?? node.name
       return { locId: id, fullPath, skuStart: node.skuStart, skuQty: node.skuQty, rows, productDrawerOpen: false }
     })
@@ -540,13 +525,36 @@ function onLocCountedInput(row: LocRow, ev: Event) {
   row.countedError = false
   nextTick(() => { input.setSelectionRange(input.value.length, input.value.length) })
 }
+function onLocAvgInput(row: LocRow, ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const digits = input.value.replace(/\D/g, '')
+  row.avgCostInput = digits ? Number(digits).toLocaleString('id-ID') : ''
+  nextTick(() => { input.setSelectionRange(input.value.length, input.value.length) })
+}
+function setLocAvgMode(row: LocRow, mode: 'auto' | 'custom') {
+  row.avgMode = mode
+  if (mode === 'custom' && row.avgCostInput === '') row.avgCostInput = defaultAvgCostInput(row.sku)
+}
+function isLocCounted(row: LocRow): boolean {
+  if (isBatchTrackedSku(row.sku)) return locBatchHasCounts(row)
+  return row.counted.trim() !== ''
+}
+function locDisplayRows(loc: LocEntry): LocRow[] {
+  const q = search.value.trim().toLowerCase()
+  return loc.rows.filter(r => {
+    if (progress.value === 'counted' && !isLocCounted(r)) return false
+    if (progress.value === 'uncounted' && isLocCounted(r)) return false
+    if (q && !nameFor(r.sku).toLowerCase().includes(q) && !r.sku.toLowerCase().includes(q)) return false
+    return true
+  })
+}
 function removeLocRow(loc: LocEntry, sku: string) { loc.rows = loc.rows.filter(r => r.sku !== sku) }
 function addProductsToLoc(loc: LocEntry, skus: string[]) {
   const existingSkus = new Set(loc.rows.map(r => r.sku))
   for (const sku of skus) {
     if (!existingSkus.has(sku)) {
       const onHand = getLocationStock(warehouseId.value, loc.skuStart, loc.skuQty).find(s => s.sku === sku)?.onHand ?? 0
-      loc.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false })
+      loc.rows.push({ sku, onHand, counted: '', countedError: false, isAuto: false, avgMode: 'auto', avgCostInput: defaultAvgCostInput(sku) })
     }
   }
   loc.productDrawerOpen = false
@@ -557,6 +565,24 @@ function productsForLoc(loc: LocEntry): PickerProduct[] {
     const p = productBySku(s.sku)
     return { sku: s.sku, name: p?.name ?? s.sku, img: p?.img, desc: p?.desc }
   })
+}
+function swapLocProductSku(loc: LocEntry, row: LocRow, newSku: string) {
+  row.sku = newSku
+  row.onHand = getLocationStock(warehouseId.value, loc.skuStart, loc.skuQty).find(s => s.sku === newSku)?.onHand ?? 0
+  row.counted = ''
+  row.countedError = false
+  row.isAuto = false
+  row.avgMode = 'auto'
+  row.avgCostInput = defaultAvgCostInput(newSku)
+  row.batchLines = undefined
+  row.serialLines = undefined
+}
+function locSwapCandidates(loc: LocEntry, currentSku: string): PickerProduct[] {
+  const used = new Set(loc.rows.map(r => r.sku))
+  const q = swapSearch.value.trim().toLowerCase()
+  return productsForLoc(loc).filter(p =>
+    (p.sku === currentSku || !used.has(p.sku)) &&
+    (!q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)))
 }
 
 // ── Sticky footer divider ────────────────────────────────────────────────────────
@@ -582,7 +608,7 @@ onMounted(() => {
     const skus = preselectParam.split(',').filter(Boolean)
     nextTick(() => {
       if (hasStorageLocs.value) {
-        applySkuPicker(skus)
+        rebuildLocsBySkus(skus)
       } else {
         applyPicker(skus)
       }
@@ -679,47 +705,15 @@ onMounted(() => {
 
         <!-- Storage location mode -->
         <template v-if="hasStorageLocs">
-          <div class="scf-countby">
-            <span class="scf-countby-label">Count by</span>
-            <div class="scf-countby-wrap">
-              <div v-if="pendingCountBy" class="scf-countby-popover">
-                <p class="scf-countby-popover-text">Switching will clear all current entries.</p>
-                <div class="scf-countby-popover-btns">
-                  <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="cancelCountBySwitch">Cancel</button>
-                  <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmCountBySwitch">Switch</button>
-                </div>
-                <span class="scf-countby-popover-arrow" />
-              </div>
-              <div class="scf-countby-toggle">
-                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'location' }" type="button" @click="requestSwitchCountBy('location')">Location</button>
-                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'sku' }" type="button" @click="requestSwitchCountBy('sku')">SKU</button>
-              </div>
-            </div>
+          <div class="scf-loc-banner">
+            This warehouse uses storage locations. Select a location before making adjustments.
           </div>
-
-          <template v-if="countBy === 'location'">
-            <div class="scf-loc-banner">
-              This warehouse uses storage locations. Select location before making adjustments
-            </div>
-            <div class="scf-loc-actions">
-              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="locationDrawerOpen = true">
-                <MpIcon name="add" size="sm" />
-                Select locations
-              </button>
-            </div>
-          </template>
-
-          <template v-else>
-            <div class="scf-loc-banner">
-              Select products to count. They'll be grouped by their storage location.
-            </div>
-            <div class="scf-loc-actions">
-              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="bySkuDrawerOpen = true">
-                <MpIcon name="add" size="sm" />
-                Select products
-              </button>
-            </div>
-          </template>
+          <div class="scf-loc-actions">
+            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="locationDrawerOpen = true">
+              <MpIcon name="add" size="sm" />
+              Select location
+            </button>
+          </div>
 
           <MpAccordion is-allow-multiple is-allow-toggle class="scf-loc-accordions">
             <MpAccordionItem
@@ -732,7 +726,6 @@ onMounted(() => {
               <MpAccordionHeader>
                 <MpAccordionIcon />
                 <span class="scf-acc-label">{{ loc.fullPath }}</span>
-                <span class="scf-acc-meta">SKU qty: {{ loc.rows.length }}</span>
                 <button class="scf-acc-remove" type="button" aria-label="Remove location" @click.stop="removeLoc(loc.locId)">
                   <MpIcon name="minus-circular" size="sm" />
                 </button>
@@ -744,9 +737,11 @@ onMounted(() => {
                     <colgroup>
                       <col class="scf-col-prod" />
                       <col class="scf-col-sku" />
-                      <col class="scf-col-num" />
+                      <col class="scf-col-onhand" />
+                      <col class="scf-col-counted" />
+                      <col class="scf-col-diff" />
                       <col class="scf-col-unit" />
-                      <col class="scf-col-spacer" />
+                      <col class="scf-col-avg" />
                       <col class="scf-col-del" />
                     </colgroup>
                     <thead>
@@ -754,27 +749,96 @@ onMounted(() => {
                         <th class="scf-th">Product</th>
                         <th class="scf-th">SKU</th>
                         <th class="scf-th scf-th--num">On hand qty</th>
+                        <th class="scf-th">Counted qty</th>
+                        <th class="scf-th scf-th--num">Difference</th>
                         <th class="scf-th">Unit</th>
-                        <th class="scf-th" />
+                        <th class="scf-th">Average cost</th>
                         <th class="scf-th scf-th--del" />
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="row in loc.rows" :key="row.sku" class="scf-tr">
+                      <tr v-for="row in locDisplayRows(loc)" :key="row.sku" class="scf-tr">
                         <td class="scf-td scf-td--prod">
-                          <span class="scf-prod">
-                            <img v-if="imgFor(row.sku)" class="scf-thumb" :src="imgFor(row.sku)" :alt="nameFor(row.sku)" loading="lazy" />
-                            <span v-else class="scf-thumb scf-thumb--empty" />
-                            <span class="scf-prod-info">
-                              <span class="scf-prod-name">{{ nameFor(row.sku) }}</span>
-                              <span v-if="descFor(row.sku)" class="scf-prod-desc">{{ descFor(row.sku) }}</span>
-                            </span>
-                          </span>
+                          <MpPopover :id="`scf-loc-swap-${loc.locId}-${row.sku}`" is-close-on-select use-portal placement="bottom-start" @update:is-open="(v: boolean) => { if (v) swapSearch = '' }">
+                            <MpPopoverTrigger as-child>
+                              <button type="button" class="scf-prod scf-prod--swap">
+                                <img v-if="imgFor(row.sku)" class="scf-thumb" :src="imgFor(row.sku)" :alt="nameFor(row.sku)" loading="lazy" />
+                                <span v-else class="scf-thumb scf-thumb--empty" />
+                                <span class="scf-prod-info">
+                                  <span class="scf-prod-name">{{ nameFor(row.sku) }}</span>
+                                  <span v-if="descFor(row.sku)" class="scf-prod-desc">{{ descFor(row.sku) }}</span>
+                                </span>
+                                <MpIcon name="chevrons-down" size="sm" class="scf-prod-chevron" />
+                              </button>
+                            </MpPopoverTrigger>
+                            <MpPopoverContent :class="css({ width: '280px', maxHeight: '320px', overflowY: 'auto', padding: '0' })">
+                              <div class="scf-swap-search">
+                                <input v-model="swapSearch" type="text" placeholder="Search product..." />
+                              </div>
+                              <MpPopoverList>
+                                <MpPopoverListItem
+                                  v-for="p in locSwapCandidates(loc, row.sku)" :key="p.sku"
+                                  :is-active="p.sku === row.sku"
+                                  @click="swapLocProductSku(loc, row, p.sku)"
+                                >{{ p.name }} <span class="scf-swap-sku">{{ p.sku }}</span></MpPopoverListItem>
+                              </MpPopoverList>
+                            </MpPopoverContent>
+                          </MpPopover>
                         </td>
                         <td class="scf-td scf-td--muted">{{ row.sku }}</td>
                         <td class="scf-td scf-td--num">{{ row.onHand.toLocaleString('id-ID') }}</td>
+                        <!-- batch-tracked SKU -->
+                        <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--counted-batch scf-td--active">
+                          <div class="scf-qty-stack">
+                            <span v-if="locBatchHasCounts(row)" class="scf-batch-total">{{ locBatchTotalFor(row).toLocaleString('id-ID') }}</span>
+                            <button class="scf-manage-btn" type="button" @click="openLocBatchDrawer(row)">Manage batch</button>
+                          </div>
+                        </td>
+                        <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--counted-batch scf-td--active">
+                          <div class="scf-qty-stack">
+                            <input
+                              :id="`scf-loc-counted-${loc.locId}-${row.sku}`"
+                              class="scf-qty-input"
+                              type="text"
+                              inputmode="numeric"
+                              :value="row.counted"
+                              placeholder="0"
+                              @input="onLocCountedInput(row, $event)"
+                            />
+                            <button class="scf-manage-btn" type="button" @click="openLocSerialDrawer(row)">Manage serial number</button>
+                          </div>
+                        </td>
+                        <!-- regular SKU -->
+                        <td v-else class="scf-td scf-td--input">
+                          <input :id="`scf-loc-counted-${loc.locId}-${row.sku}`" class="scf-qty-input" type="text" inputmode="numeric" :value="row.counted" placeholder="0" @input="onLocCountedInput(row, $event)" />
+                        </td>
+                        <td class="scf-td scf-td--num" :class="{ 'scf-diff--pos': (locDiff(row) ?? 0) > 0, 'scf-diff--neg': (locDiff(row) ?? 0) < 0, 'scf-diff--uncounted': locDiff(row) === null }">{{ locDiffLabel(row) }}</td>
                         <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
-                        <td class="scf-td" />
+                        <td class="scf-td scf-td--avg scf-td--input">
+                          <div class="scf-avg-wrap" :class="{ 'scf-avg-wrap--auto': row.avgMode !== 'custom' }">
+                            <span class="scf-avg-prefix">Rp</span>
+                            <input
+                              class="scf-avg-num"
+                              type="text"
+                              inputmode="numeric"
+                              :value="row.avgMode === 'custom' ? row.avgCostInput : defaultAvgCostInput(row.sku)"
+                              placeholder="0"
+                              :disabled="row.avgMode !== 'custom'"
+                              @input="onLocAvgInput(row, $event)"
+                            />
+                            <MpPopover :id="`scf-loc-avg-${loc.locId}-${row.sku}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                              <MpPopoverTrigger>
+                                <button class="scf-avg-edit" type="button" aria-label="Edit average cost"><MpIcon name="edit" size="sm" /></button>
+                              </MpPopoverTrigger>
+                              <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+                                <MpPopoverList>
+                                  <MpPopoverListItem :is-active="row.avgMode === 'auto'" @click="setLocAvgMode(row, 'auto')">Auto-calculate</MpPopoverListItem>
+                                  <MpPopoverListItem :is-active="row.avgMode === 'custom'" @click="setLocAvgMode(row, 'custom')">Custom</MpPopoverListItem>
+                                </MpPopoverList>
+                              </MpPopoverContent>
+                            </MpPopover>
+                          </div>
+                        </td>
                         <td class="scf-td scf-td--del">
                           <button class="scf-del-btn" type="button" @click="removeLocRow(loc, row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
                         </td>
@@ -782,8 +846,9 @@ onMounted(() => {
                     </tbody>
                   </table>
                 </div>
+                <p class="scf-showing">Showing {{ locDisplayRows(loc).length }} of {{ loc.rows.length }} products</p>
                 <button class="scf-add-btn" type="button" @click="loc.productDrawerOpen = true">
-                  <MpIcon name="add" size="sm" /> Add product
+                  <MpIcon name="add" size="sm" /> Select product
                 </button>
 
                 <!-- Product drawer per location -->
@@ -806,72 +871,90 @@ onMounted(() => {
           <div class="scf-table-scroll">
             <table class="scf-table">
               <colgroup>
-                <col class="scf-col-prod" /><col class="scf-col-sku" /><col class="scf-col-num" /><col class="scf-col-num" /><col class="scf-col-action" /><col class="scf-col-num" /><col class="scf-col-unit" /><col class="scf-col-num" /><col class="scf-col-del" />
+                <col class="scf-col-prod" /><col class="scf-col-sku" /><col class="scf-col-onhand" /><col class="scf-col-counted" /><col class="scf-col-diff" /><col class="scf-col-unit" /><col class="scf-col-avg" /><col class="scf-col-del" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="scf-th">Product</th>
                   <th class="scf-th">SKU</th>
                   <th class="scf-th scf-th--num">On hand qty</th>
-                  <th class="scf-th scf-th--num">Counted qty</th>
-                  <th class="scf-th" />
+                  <th class="scf-th">Counted qty</th>
                   <th class="scf-th scf-th--num">Difference</th>
                   <th class="scf-th">Unit</th>
-                  <th class="scf-th scf-th--num">Average cost</th>
+                  <th class="scf-th">Average cost</th>
                   <th class="scf-th scf-th--del" />
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in displayRows" :key="row.sku" class="scf-tr">
                   <td class="scf-td scf-td--prod">
-                    <span class="scf-prod">
-                      <img v-if="imgFor(row.sku)" class="scf-thumb" :src="imgFor(row.sku)" :alt="nameFor(row.sku)" loading="lazy" />
-                      <span v-else class="scf-thumb scf-thumb--empty" />
-                      <span class="scf-prod-info">
-                        <span class="scf-prod-name">{{ nameFor(row.sku) }}</span>
-                        <span v-if="descFor(row.sku)" class="scf-prod-desc">{{ descFor(row.sku) }}</span>
-                      </span>
-                    </span>
+                    <MpPopover :id="`scf-swap-${row.sku}`" is-close-on-select use-portal placement="bottom-start" @update:is-open="(v: boolean) => { if (v) swapSearch = '' }">
+                      <MpPopoverTrigger as-child>
+                        <button type="button" class="scf-prod scf-prod--swap">
+                          <img v-if="imgFor(row.sku)" class="scf-thumb" :src="imgFor(row.sku)" :alt="nameFor(row.sku)" loading="lazy" />
+                          <span v-else class="scf-thumb scf-thumb--empty" />
+                          <span class="scf-prod-info">
+                            <span class="scf-prod-name">{{ nameFor(row.sku) }}</span>
+                            <span v-if="descFor(row.sku)" class="scf-prod-desc">{{ descFor(row.sku) }}</span>
+                          </span>
+                          <MpIcon name="chevrons-down" size="sm" class="scf-prod-chevron" />
+                        </button>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ width: '280px', maxHeight: '320px', overflowY: 'auto', padding: '0' })">
+                        <div class="scf-swap-search">
+                          <input v-model="swapSearch" type="text" placeholder="Search product..." />
+                        </div>
+                        <MpPopoverList>
+                          <MpPopoverListItem
+                            v-for="p in swapCandidates(row.sku)" :key="p.sku"
+                            :is-active="p.sku === row.sku"
+                            @click="swapProductSku(row, p.sku)"
+                          >{{ p.name }} <span class="scf-swap-sku">{{ p.sku }}</span></MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
                   </td>
                   <td class="scf-td scf-td--muted">{{ row.sku }}</td>
                   <td class="scf-td scf-td--num">{{ onHandFor(row.sku).toLocaleString('id-ID') }}</td>
                   <!-- batch-tracked SKU -->
-                  <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--num">
-                    <span v-if="batchHasCounts(row)" class="scf-batch-total">{{ batchTotalFor(row).toLocaleString('id-ID') }}</span>
-                    <span v-else class="scf-batch-empty">—</span>
+                  <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--counted-batch scf-td--active">
+                    <div class="scf-qty-stack">
+                      <span v-if="batchHasCounts(row)" class="scf-batch-total">{{ batchTotalFor(row).toLocaleString('id-ID') }}</span>
+                      <button class="scf-manage-btn" type="button" @click="openBatchDrawer(row)">Manage batch</button>
+                    </div>
                   </td>
-                  <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--input">
-                    <input
-                      :id="`scf-counted-${row.sku}`"
-                      class="scf-qty-input"
-                      type="text"
-                      inputmode="numeric"
-                      :value="row.counted"
-                      placeholder="0"
-                      @input="onCountedInput(row, $event)"
-                    />
+                  <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--counted-batch scf-td--active">
+                    <div class="scf-qty-stack">
+                      <input
+                        :id="`scf-counted-${row.sku}`"
+                        class="scf-qty-input"
+                        type="text"
+                        inputmode="numeric"
+                        :value="row.counted"
+                        placeholder="0"
+                        @input="onCountedInput(row, $event)"
+                      />
+                      <button class="scf-manage-btn" type="button" @click="openSerialDrawer(row)">Manage serial number</button>
+                    </div>
                   </td>
                   <!-- regular SKU (existing behavior unchanged) -->
                   <td v-else class="scf-td scf-td--input">
                     <input :id="`scf-counted-${row.sku}`" class="scf-qty-input" type="text" inputmode="numeric" :value="row.counted" placeholder="0" @input="onCountedInput(row, $event)" />
                   </td>
-                  <!-- action column: manage batch / manage serial numbers link -->
-                  <td v-if="isBatchTrackedSku(row.sku)" class="scf-td scf-td--action">
-                    <button class="scf-manage-btn" type="button" @click="openBatchDrawer(row)">Manage batch</button>
-                  </td>
-                  <td v-else-if="isSerialTrackedSku(row.sku)" class="scf-td scf-td--action">
-                    <button class="scf-manage-btn" type="button" @click="openSerialDrawer(row)">Manage serial numbers</button>
-                  </td>
-                  <td v-else class="scf-td scf-td--action" />
                   <td class="scf-td scf-td--num" :class="{ 'scf-diff--pos': (differenceOf(row) ?? 0) > 0, 'scf-diff--neg': (differenceOf(row) ?? 0) < 0, 'scf-diff--uncounted': differenceOf(row) === null }">{{ diffLabel(row) }}</td>
                   <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
-                  <td class="scf-td scf-td--num scf-td--avg" :class="{ 'scf-td--input': row.avgMode === 'custom' }">
-                    <div class="scf-avg-wrap">
-                      <template v-if="row.avgMode === 'custom'">
-                        <span class="scf-avg-prefix">Rp</span>
-                        <input class="scf-avg-num" type="text" inputmode="numeric" :value="row.avgCostInput" placeholder="0" @input="onAvgInput(row, $event)" />
-                      </template>
-                      <span v-else class="scf-avg-val">{{ fmtIDR(avgCostFor(row.sku)) }}</span>
+                  <td class="scf-td scf-td--avg scf-td--input">
+                    <div class="scf-avg-wrap" :class="{ 'scf-avg-wrap--auto': row.avgMode !== 'custom' }">
+                      <span class="scf-avg-prefix">Rp</span>
+                      <input
+                        class="scf-avg-num"
+                        type="text"
+                        inputmode="numeric"
+                        :value="row.avgMode === 'custom' ? row.avgCostInput : defaultAvgCostInput(row.sku)"
+                        placeholder="0"
+                        :disabled="row.avgMode !== 'custom'"
+                        @input="onAvgInput(row, $event)"
+                      />
                       <MpPopover :id="`scf-avg-${row.sku}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                         <MpPopoverTrigger>
                           <button class="scf-avg-edit" type="button" aria-label="Edit average cost"><MpIcon name="edit" size="sm" /></button>
@@ -892,6 +975,7 @@ onMounted(() => {
               </tbody>
             </table>
           </div>
+          <p class="scf-showing">Showing {{ displayRows.length }} of {{ rows.length }} products</p>
           <button class="scf-add-btn" type="button" @click="drawerOpen = true">
             <MpIcon name="add" size="sm" /> Select product
           </button>
@@ -935,7 +1019,6 @@ onMounted(() => {
     </footer>
 
     <SelectProductDrawer v-model:open="drawerOpen" :products="pickerProducts" :model-value="selectedSkus" @save="applyPicker" />
-    <SelectProductDrawer v-model:open="bySkuDrawerOpen" :products="pickerProducts" :model-value="bySkuSelected" @save="applySkuPicker" />
 
     <!-- Select locations drawer -->
     <Transition name="scf-loc">
@@ -1053,58 +1136,78 @@ onMounted(() => {
 
 .scf-table-section { margin-top: var(--mp-spacing-5); }
 .scf-table-scroll { overflow-x: auto; }
-.scf-table { width: 100%; table-layout: auto; border-collapse: collapse; border-spacing: 0; min-width: 900px; }
-.scf-table--loc { table-layout: fixed; }
-.scf-col-prod  { /* takes remaining width */ }
-.scf-col-sku   { width: 120px; }
-.scf-col-num   { width: 116px; }
-.scf-col-counted { width: 168px; }
-.scf-col-action { width: 160px; }
-.scf-col-unit  { width: 72px; }
-.scf-col-del   { width: 44px; }
-.scf-col-prod { width: 26%; } .scf-col-sku { width: 12%; } .scf-col-num { width: 12%; } .scf-col-unit { width: 8%; } .scf-col-spacer { /* fills remaining width */ } .scf-col-del { width: 44px; }
+.scf-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; min-width: 900px; }
+.scf-col-prod    { width: 26%; }
+.scf-col-sku     { width: 12%; }
+.scf-col-onhand  { width: 8%; }
+.scf-col-counted { width: 15%; }
+.scf-col-diff    { width: 9%; }
+.scf-col-unit    { width: 8%; }
+.scf-col-avg     { width: 17%; }
+.scf-col-del     { width: 44px; max-width: 44px; }
 .scf-table--loc .scf-th { background: var(--mp-background-neutral-subtle); }
 .scf-table--loc .scf-td { background: var(--mp-background-neutral, #fff); }
 .scf-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
 .scf-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-.scf-th--del { padding: 0; }
-/* Read-only cells are gray; editable cells (Counted, custom Average cost) are white. */
-.scf-td { padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; background: var(--mp-background-neutral-subtle); }
+.scf-th--del { width: 44px; max-width: 44px; padding: 0; }
+/* Read-only cells are gray; editable/interactive cells (Product, Counted, custom Average
+   cost, the delete-icon column) are white. Every body cell gets a right divider except
+   the trailing delete column, which sits flush against the table edge. */
+.scf-td { padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: middle; background: var(--mp-background-neutral-subtle); }
 .scf-td--muted { color: var(--mp-text-secondary); }
 .scf-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 .scf-diff--pos { color: var(--mp-text-success, #18794e); }
 .scf-diff--neg { color: var(--mp-text-danger, #a8352d); }
 .scf-diff--uncounted { color: var(--mp-text-secondary); }
 /* Average cost — value + edit icon to its right. The icon's space is always reserved
-   (visibility toggled, not display) so hovering never shifts the row or the icon. */
-/* height:1px on the td enables height:100% on the child wrap — actual rendered height wins. */
+   (visibility toggled, not display) so hovering never shifts the row or the icon.
+   height:1px on the td enables height:100% on the child wrap, which then always
+   matches the row's actual (content-driven) height. */
 .scf-td--avg.scf-td--input { height: 1px; }
-.scf-avg-wrap { display: flex; align-items: center; width: 100%; height: 100%; min-height: var(--mp-sizes-10, 40px); }
-.scf-avg-val { margin-left: auto; font-variant-numeric: tabular-nums; padding-right: var(--mp-spacing-2); }
-/* Custom average cost — table-input format (edge-to-edge, cell owns the focus ring)
-   with a gray "Rp" prefix box that spans the full cell height. */
+.scf-avg-wrap { display: flex; align-items: stretch; width: 100%; height: 100%; }
+/* Auto-calculate: fill the whole wrap (prefix to the edit button's reserved slot)
+   with the disabled color, so it reads as one seamless block with no white gap —
+   applied here (not on the input/button, which are visibility:hidden until hovered
+   and so never paint their own background) rather than the input alone. */
+.scf-avg-wrap--auto { background: var(--mp-background-disabled, rgba(29,31,36,0.04)); }
+/* Average cost is always the "Rp"-prefixed input; disabled (Auto-calculate) just
+   greys out the input rather than swapping to plain text. */
 .scf-avg-prefix { align-self: stretch; display: flex; align-items: center; padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); border-right: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); white-space: nowrap; }
-.scf-avg-num { flex: 1; min-width: 0; text-align: right; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
-.scf-avg-edit { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: var(--mp-spacing-1); padding: 0; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
+.scf-avg-num { flex: 1; min-width: 0; height: 100%; padding: 0 var(--mp-spacing-2); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
+.scf-avg-num:disabled { color: var(--mp-text-secondary); cursor: not-allowed; -webkit-text-fill-color: var(--mp-text-secondary); }
+.scf-avg-edit { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: var(--mp-spacing-1); align-self: center; padding: 0; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); flex-shrink: 0; }
 .scf-tr:hover .scf-avg-edit { visibility: visible; }
 .scf-avg-edit:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); }
-.scf-td--prod { width: 40%; max-width: 0; }
-.scf-prod { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; width: 100%; }
+.scf-td--prod { width: 40%; max-width: 0; height: 1px; padding: 0; background: var(--mp-background-neutral, #fff); }
+/* Product cell is a button that opens the swap-product popover — reset button chrome. */
+.scf-prod { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; width: 100%; height: 100%; padding: 8px var(--mp-spacing-4) 8px var(--mp-spacing-2); border: none; background: none; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.scf-prod:hover { background: var(--mp-background-neutral-subtle); }
+.scf-prod-chevron { margin-left: auto; flex-shrink: 0; color: var(--mp-icon-default); }
 .scf-thumb { width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0; border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral); }
 .scf-thumb--empty { background: var(--mp-background-neutral-subtle); }
 .scf-prod-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .scf-prod-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scf-prod-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scf-swap-search { padding: var(--mp-spacing-2); border-bottom: 1px solid var(--mp-border-default); }
+.scf-swap-search input { width: 100%; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); outline: none; }
+.scf-swap-sku { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .scf-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .scf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 .scf-batch-total { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .scf-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.scf-td--action { padding: 10px var(--mp-spacing-2); vertical-align: top; white-space: nowrap; }
+/* Counted cell for batch/serial-tracked rows — value/input on top, "Manage…" link stacked below.
+   Active/white background (not the muted read-only gray) — this column is always editable. */
+.scf-td--counted-batch { padding: 6px var(--mp-spacing-2) 6px var(--mp-spacing-4); vertical-align: middle; white-space: nowrap; }
+.scf-td--active { background: var(--mp-background-neutral, #fff); }
+.scf-qty-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.scf-qty-stack .scf-qty-input { width: 72px; text-align: right; height: 26px; padding: 0 4px; border-bottom: 1px solid var(--mp-border-default); background: transparent; }
+.scf-qty-stack .scf-qty-input:focus { border-bottom-color: var(--mp-border-bold); }
 .scf-manage-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .scf-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+.scf-showing { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .scf-qty-input { width: 100%; text-align: right; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
 .scf-qty-input::placeholder { color: var(--mp-text-placeholder); }
-.scf-td--del { padding: 0; text-align: center; }
+.scf-td--del { width: 44px; max-width: 44px; padding: 0; text-align: center; background: var(--mp-background-neutral, #fff); border-right: none; }
 .scf-del-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
 .scf-del-btn:hover { background: var(--mp-background-neutral-subtle); color: var(--mp-text-danger, #dc2626); }
 .scf-add-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-3); background: none; border: none; padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-full, 999px); cursor: pointer; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
@@ -1125,35 +1228,6 @@ onMounted(() => {
 .scf-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scf-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
 .scf-file-remove:hover { color: var(--mp-text-default); }
-
-/* Count by toggle */
-.scf-countby { margin-top: var(--mp-spacing-5); display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.scf-countby-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.scf-countby-toggle { display: flex; align-items: center; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; gap: 2px; }
-.scf-countby-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
-.scf-countby-btn:hover { color: var(--mp-text-default); }
-.scf-countby-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-.scf-countby-wrap { position: relative; }
-.scf-countby-popover {
-  position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 200;
-  min-width: 260px;
-  background: var(--mp-background-stage, #fff);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  display: flex; flex-direction: column; gap: var(--mp-spacing-3);
-}
-.scf-countby-popover-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.scf-countby-popover-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
-.scf-countby-popover-arrow {
-  position: absolute; bottom: -5px; left: 18px;
-  width: 8px; height: 8px;
-  background: var(--mp-background-stage, #fff);
-  border-right: 1px solid var(--mp-border-default);
-  border-bottom: 1px solid var(--mp-border-default);
-  transform: rotate(45deg);
-}
 
 /* Storage location banner + actions */
 .scf-loc-banner { margin-top: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }

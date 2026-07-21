@@ -187,8 +187,9 @@ function seedRows(): void {
     }
     rows.value = result
   } else if (!props.kind || props.kind === 'count') {
-    // Stock count: pre-populate all warehouse SNs as not-counted; user scans to confirm each
-    rows.value = warehouseSerials.map(s => ({ serial: s, counted: false }))
+    // Stock count: pre-populate all warehouse SNs as already counted; user removes
+    // (marks not-counted) any that aren't physically found during the count.
+    rows.value = warehouseSerials.map(s => ({ serial: s, counted: true }))
   } else if (props.locationOnHand === 0) {
     rows.value = []
   } else {
@@ -556,8 +557,12 @@ function setDestLoc(row: SerialRow, locId: string) {
   row.destLocId = locId
   locActiveKey.value = null
 }
+// Count mode: the Status column is only meaningful once there's a discrepancy
+// (some serial removed from the default all-counted state) — otherwise every
+// row would just say "Counted", adding noise. Other kinds always show it.
+const showStatusColumn = computed(() => !isCountMode.value || rows.value.some(r => !r.counted))
 const colspanCount = computed(() =>
-  3 + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0),
+  2 + (showStatusColumn.value ? 1 : 0) + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0),
 )
 
 function handleCancel() {
@@ -651,8 +656,16 @@ async function handleSave() {
             <!-- stock count stats -->
             <template v-else-if="!isInOut">
               <div class="msn-stat">
-                <span class="msn-stat-label">Counted qty</span>
+                <span class="msn-stat-label">On hand</span>
+                <span class="msn-stat-value">{{ fmtSerial(onHandCount) }}</span>
+              </div>
+              <div class="msn-stat">
+                <span class="msn-stat-label">Counted</span>
                 <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
+              </div>
+              <div class="msn-stat" :class="{ 'msn-stat--pos': difference > 0, 'msn-stat--neg': difference < 0 }">
+                <span class="msn-stat-label">Difference</span>
+                <span class="msn-stat-value">{{ fmtDiff(difference) }}</span>
               </div>
             </template>
             <!-- transfer stats -->
@@ -731,7 +744,7 @@ async function handleSave() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
-            <input v-model="search" class="msn-search-input" type="text" placeholder="Search..." />
+            <input v-model="search" class="msn-search-input" type="text" placeholder="Search serial number" />
             <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -806,7 +819,7 @@ async function handleSave() {
               <col class="msn-col-serial" />
               <col v-if="hasOriginLoc" class="msn-col-from-bin" />
               <col v-if="hasDestLoc" class="msn-col-to-bin" />
-              <col class="msn-col-status" />
+              <col v-if="showStatusColumn" class="msn-col-status" />
               <col class="msn-col-toggle" />
             </colgroup>
             <thead>
@@ -814,7 +827,7 @@ async function handleSave() {
                 <th class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ effectiveTargetCount }})</th>
                 <th v-if="hasOriginLoc" class="msn-th">ORIGIN LOCATION</th>
                 <th v-if="hasDestLoc" class="msn-th">STORAGE LOCATION</th>
-                <th class="msn-th">STATUS</th>
+                <th v-if="showStatusColumn" class="msn-th">STATUS</th>
                 <th class="msn-th msn-th--del" />
               </tr>
             </thead>
@@ -835,12 +848,10 @@ async function handleSave() {
                       'msn-tr--own-reserved': row.plannedOwn || (row.counted && !(isPicking && executionMode)),
                       'msn-tr--reserved': row.reserved,
                     }
-                  : isCountMode
-                    ? { 'msn-tr--selected': row.counted }
-                    : { 'msn-tr--removed': !row.counted },
+                  : { 'msn-tr--removed': !row.counted },
                   { 'msn-tr--scanned': lastScannedKey === row.serial }]"
               >
-                <td class="msn-td" :class="{ 'msn-td--strike': !isCountMode && !(isTransfer || isPicking) && !row.counted }">{{ row.serial }}</td>
+                <td class="msn-td" :class="{ 'msn-td--strike': !(isTransfer || isPicking) && !row.counted }">{{ row.serial }}</td>
                 <td v-if="hasOriginLoc" class="msn-td msn-td--from-bin">
                   <span class="msn-bin-text" :title="row.originLocation">{{ row.originLocation ?? '—' }}</span>
                 </td>
@@ -891,7 +902,7 @@ async function handleSave() {
                     </MpPopover>
                   </template>
                 </td>
-                <td class="msn-td msn-td--status">
+                <td v-if="showStatusColumn" class="msn-td msn-td--status">
                   <template v-if="isTransfer || isPicking">
                     <MpTooltip
                       v-if="row.reserved"
@@ -908,6 +919,10 @@ async function handleSave() {
                   <template v-else-if="isPutAway">
                     <MpBadge v-if="row.destLocId" for="tableStatus" type="success">Assigned</MpBadge>
                     <MpBadge v-else for="tableStatus" type="warning">Received</MpBadge>
+                  </template>
+                  <template v-else-if="isCountMode">
+                    <span v-if="row.counted" class="msn-status-text msn-status-text--success">Counted</span>
+                    <span v-else class="msn-status-text msn-status-text--danger">Not counted</span>
                   </template>
                   <template v-else>
                     <MpBadge v-if="row.counted" for="tableStatus" type="success">Counted</MpBadge>
@@ -1090,6 +1105,9 @@ async function handleSave() {
    so the toggle ("Add") column always lands flush against the table's right edge. */
 .msn-col-serial { /* fills remaining */ }
 .msn-col-status { width: 120px; }
+.msn-status-text { font-size: var(--mp-font-sizes-sm); }
+.msn-status-text--success { color: var(--mp-text-success, #18794e); }
+.msn-status-text--danger { color: var(--mp-text-danger, #a8352d); }
 .msn-col-toggle { width: 44px; }
 .msn-col-from-bin { /* fills remaining, alongside serial */ }
 .msn-col-to-bin { /* fills remaining, alongside serial */ }
@@ -1121,7 +1139,6 @@ async function handleSave() {
 .msn-td:last-child { border-right: none; }
 .msn-td--strike { text-decoration: line-through; color: var(--mp-text-secondary); }
 .msn-tr--removed .msn-td { background: var(--mp-background-danger-subtle, #fff5f5); }
-.msn-tr--selected .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
 .msn-tr--confirmed .msn-td { background: var(--mp-background-success-subtle, #f0fdf4); }
 .msn-tr--own-reserved .msn-td { background: var(--mp-background-warning-subtle, #fffbeb); }
 .msn-tr--reserved .msn-td { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
