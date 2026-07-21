@@ -510,11 +510,18 @@ const navGroups = computed<NavItem[][]>(() => {
 // lives inside a level-2 panel — the panel that should be open. Returning the
 // panel lets us restore it on refresh (otherwise the panel only ever opens via
 // a click handler, so a hard reload on a panel sub-page would lose it).
-function resolveActive(pageKey: string): {
+// A `shortcut`-flagged panel item (e.g. Inventory > Products > "Stock
+// adjustments") is a pointer INTO another section's real page, not an owner of
+// its own — e.g. WMS's own "Stock adjustments" shares that exact label. Search
+// non-shortcut items first so the real owning section (WMS) always wins the
+// sidebar highlight, regardless of which of the two identically-labeled items
+// was actually clicked; only fall back to a shortcut match if nothing else
+// claims the label (so standalone shortcuts, e.g. "Products reports", still work).
+function findActive(pageKey: string, allowShortcuts: boolean): {
   nav: string
   sub: string | null
   panel: ActivePanel | null
-} {
+} | null {
   for (const group of navGroups.value) {
     for (const item of group) {
       // slug-based match so names with caps/slashes (e.g. 'Stock in/out') still
@@ -533,6 +540,7 @@ function resolveActive(pageKey: string): {
           if (sub.label === pageKey) return { nav: item.name, sub: sub.label, panel: null }
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
+              if (!allowShortcuts && p.iconType === 'shortcut') continue
               if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
                 return {
                   nav: item.name,
@@ -551,6 +559,7 @@ function resolveActive(pageKey: string): {
       }
       for (const pGroup of item.panelSubmenu ?? []) {
         for (const p of pGroup) {
+          if (!allowShortcuts && p.iconType === 'shortcut') continue
           if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
             return {
               nav: item.name,
@@ -563,7 +572,15 @@ function resolveActive(pageKey: string): {
       }
     }
   }
-  return { nav: 'Home', sub: null, panel: null }
+  return null
+}
+
+function resolveActive(pageKey: string): {
+  nav: string
+  sub: string | null
+  panel: ActivePanel | null
+} {
+  return findActive(pageKey, false) ?? findActive(pageKey, true) ?? { nav: 'Home', sub: null, panel: null }
 }
 
 // Map URL-first-segment keys that don't appear directly in the nav tree to their
