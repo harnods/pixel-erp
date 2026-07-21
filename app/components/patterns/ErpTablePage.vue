@@ -68,6 +68,10 @@ const props = withDefaults(defineProps<{
   hasActiveSearch?: boolean
   /** True when a status/dropdown filter is active. */
   hasActiveFilter?: boolean
+  /** The current search term — used in the search empty state title. */
+  searchQuery?: string
+  /** Singular lowercase object label for filter empty state, e.g. "expense", "file". */
+  objectLabel?: string
   /** Returns a context label string for a given row — shown as a chip in the AI chat input */
   contextLabel?: (row: Record<string, unknown>) => string
   /** Return true for rows that cannot be selected (checkbox disabled) */
@@ -85,6 +89,8 @@ const props = withDefaults(defineProps<{
   loading: false,
   hasActiveSearch: false,
   hasActiveFilter: false,
+  searchQuery: '',
+  objectLabel: 'result',
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
@@ -598,19 +604,22 @@ const bulkCountLabel = computed(() => {
               :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
             >
               <!-- Inline empty — search/filter eliminated all results (no illustration) -->
+              <!-- Search + filter both active -->
               <div v-if="props.hasActiveSearch && props.hasActiveFilter" class="empty-inline">
-                <p class="empty-inline-title">No results found</p>
-                <p class="empty-inline-desc">Try adjusting your search or filters.</p>
+                <p class="empty-inline-title">"{{ props.searchQuery }}" not found</p>
+                <p class="empty-inline-desc">Your search and filter criteria didn't match any available {{ props.objectLabel }}. Try adjusting your search or filter.</p>
                 <a class="empty-inline-clear" @click="emit('clearAll')">Clear search and filters</a>
               </div>
+              <!-- Search only -->
               <div v-else-if="props.hasActiveSearch" class="empty-inline">
-                <p class="empty-inline-title">No results found</p>
-                <p class="empty-inline-desc">Try adjusting your search.</p>
+                <p class="empty-inline-title">"{{ props.searchQuery }}" not found</p>
+                <p class="empty-inline-desc">Recheck the keywords you have typed and try searching again.</p>
                 <a class="empty-inline-clear" @click="emit('clearSearch')">Clear search</a>
               </div>
+              <!-- Filter only -->
               <div v-else-if="props.hasActiveFilter" class="empty-inline">
-                <p class="empty-inline-title">No results found</p>
-                <p class="empty-inline-desc">Try adjusting your filters.</p>
+                <p class="empty-inline-title">{{ props.objectLabel.charAt(0).toUpperCase() + props.objectLabel.slice(1) }} not found</p>
+                <p class="empty-inline-desc">Your filter criteria didn't match any available {{ props.objectLabel }}. Try adjusting your filter.</p>
                 <a class="empty-inline-clear" @click="emit('clearFilters')">Clear filters</a>
               </div>
               <!-- Full empty — no data ever; module supplies illustration + title + CTA -->

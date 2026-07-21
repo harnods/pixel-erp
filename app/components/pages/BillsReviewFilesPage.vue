@@ -126,6 +126,8 @@ function openFilePicker() { fileInputEl.value?.click() }
     actions-width="52px"
     :has-active-search="hasActiveSearch"
     :has-active-filter="hasActiveFilter"
+    :search-query="search"
+    object-label="file"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"

@@ -102,6 +102,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     has-checkbox
     actions-width="228px"
     :has-active-search="hasActiveSearch"
+    :search-query="search"
+    object-label="expense"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
