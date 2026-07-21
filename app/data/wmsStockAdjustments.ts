@@ -218,13 +218,15 @@ export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number;
   return a
 }
 
+// Finishing a count doesn't apply stock yet — it moves the task to "Counted"
+// (Awaiting approval tab) and waits for a manager to review it. Stock only
+// changes once approveWmsAdjustment runs.
 export function finishWmsCount(id: string, lines: { sku: string; qty: number; location?: string }[]): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count') return a
-  a.status = 'completed'
+  a.status = 'counted'
   a.endDate = new Date().toISOString()
   a.lines = lines
-  applyStockCount(a.warehouseId, lines)
   persist()
   return a
 }

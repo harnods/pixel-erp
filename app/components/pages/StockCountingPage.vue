@@ -487,7 +487,7 @@ function commitFinish() {
       linkedCycleCountId: wmsAdj.id,
     })
   }
-  toast.notify({ variant: 'success', title: 'Cycle count completed', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: 'Cycle count submitted for approval', maxWidth: 'max-content' })
   // Already committed — the router.push below is this function's own doing,
   // not the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
@@ -796,7 +796,7 @@ onUnmounted(() => {
       <MpModalHeader>Finish counting?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         <p class="sc-confirm-text">
-          Counted <strong>{{ fmt(countedTotal) }}</strong> units across <strong>{{ fmt(skuCount) }}</strong> SKUs. This will post the count and update stock on hand.
+          Counted <strong>{{ fmt(countedTotal) }}</strong> units across <strong>{{ fmt(skuCount) }}</strong> SKUs. This will send the count for manager approval before stock on hand is updated.
         </p>
       </MpModalBody>
       <MpModalFooter>
