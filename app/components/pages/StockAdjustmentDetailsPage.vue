@@ -35,6 +35,16 @@ const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.ord
 const isCount = computed(() => adjustment.value?.kind === 'count')
 const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
 const isNotStarted = computed(() => isWmsCount.value && adjustment.value?.status === 'not_started')
+
+// /stock-adjustments/:id also serves WMS Cycle count records — tell the sidebar
+// this detail page belongs under "Cycle counts" so it doesn't default to
+// highlighting the ERP "Stock adjustments" menu item. (Stock in/out isn't a
+// reachable sidebar entry in the ERP nav tree, so it's left on the default
+// URL-derived resolution rather than pointed at a section that doesn't exist.)
+const { setActiveSectionOverride } = useNavigation()
+const sidebarSection = computed(() => (isWmsCount.value ? 'Cycle counts' : null))
+watch(sidebarSection, (label) => setActiveSectionOverride(label), { immediate: true })
+onUnmounted(() => setActiveSectionOverride(null))
 const lineItems = computed(() => adjustment.value ? adjustmentLineItems(adjustment.value) : [])
 const memo = computed(() => adjustment.value ? adjustmentMemo(adjustment.value) : '')
 const attachments = computed(() => adjustment.value ? adjustmentAttachments(adjustment.value) : [])
