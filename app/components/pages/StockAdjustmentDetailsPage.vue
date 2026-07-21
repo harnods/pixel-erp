@@ -309,7 +309,10 @@ const jumpResults = computed(() => {
     : source
   return matched.slice(0, 6)
 })
-function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/stock-adjustments/${id}`) }
+// Cycle count tasks live under /cycle-counts/:id (not /stock-adjustments/:id) —
+// see backPath() below for the same distinction on the list-level route.
+function detailBasePath(): string { return isWmsCount.value ? '/cycle-counts' : '/stock-adjustments' }
+function jumpTo(id: string) { jumpSearch.value = ''; router.push(`${detailBasePath()}/${id}`) }
 
 // Shared approval view toggle (manager vs user) — same singleton as the index page.
 const { viewAs, setViewAs } = useApprovalViewAs()
@@ -331,9 +334,9 @@ function printPdf() { /* generates the adjustment PDF — not built in this prot
 function startCounting() {
   if (!adjustment.value) return
   if (adjustment.value.status === 'not_started') startWmsCount(adjustment.value.id)
-  router.push(`/stock-adjustments/${props.orderId}/count`)
+  router.push(`${detailBasePath()}/${props.orderId}/count`)
 }
-function editAdjustment() { router.push(`/stock-adjustments/${props.orderId}/edit`) }
+function editAdjustment() { router.push(`${detailBasePath()}/${props.orderId}/edit`) }
 function approve() {
   if (!adjustment.value) return
   approveAdjustment(adjustment.value.id)
@@ -725,7 +728,7 @@ onUnmounted(() => {
                 <td class="detail-td detail-td--number">
                   <div class="cell-with-action">
                     <span class="linked-num">{{ linkedCycleCount.number }}</span>
-                    <button class="row-hover-btn" @click.stop="router.push(`/stock-adjustments/${linkedCycleCount.id}`)">
+                    <button class="row-hover-btn" @click.stop="router.push(`/cycle-counts/${linkedCycleCount.id}`)">
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                         <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                         <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>

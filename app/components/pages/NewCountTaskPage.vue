@@ -286,7 +286,7 @@ async function handleSave() {
     assignee: assigneeLabel.value || undefined,
   })
   toast.notify({ variant: 'success', title: 'Count task created', maxWidth: 'max-content' })
-  router.push(`/stock-adjustments/${adj.id}`)
+  router.push(`/cycle-counts/${adj.id}`)
 }
 </script>
 

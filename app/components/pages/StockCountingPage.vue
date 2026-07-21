@@ -408,7 +408,7 @@ function saveDraft() {
   saveWmsCountDraft(props.orderId, buildLines())
   toast.notify({ variant: 'success', title: 'Draft saved' , maxWidth: 'max-content'})
   disableUnsavedChangesGuard()
-  router.push(`/stock-adjustments/${props.orderId}`)
+  router.push(`/cycle-counts/${props.orderId}`)
 }
 
 // ── Warn before losing unsaved counting progress — refresh/close-tab (native
@@ -495,7 +495,7 @@ function commitFinish() {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-function goBack() { router.push(`/stock-adjustments/${props.orderId}`) }
+function goBack() { router.push(`/cycle-counts/${props.orderId}`) }
 function goList() { router.push('/cycle-counts') }
 
 // ── Footer overflow ───────────────────────────────────────────────────────────

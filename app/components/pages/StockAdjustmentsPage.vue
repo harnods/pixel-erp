@@ -212,13 +212,18 @@ watch([warehouseFilter, categoryFilter, statusFilter, isAwaiting, isCycleAwaitin
 watch(isCycleAwaiting, (v) => { if (v) statusFilter.value = '' })
 
 // ─── Row actions ─────────────────────────────────────────────────────────────────
-function viewDetails(row: StockAdjustment) { router.push(`/stock-adjustments/${row.id}`) }
-function editAdjustment(row: StockAdjustment) { router.push(`/stock-adjustments/${row.id}/edit`) }
+// WMS cycle count tasks live under /cycle-counts/:id (not /stock-adjustments/:id)
+// so the sidebar and breadcrumb reflect where they actually belong.
+function basePathFor(row: StockAdjustment): string {
+  return (isWmsPage.value && row.kind === 'count') ? '/cycle-counts' : '/stock-adjustments'
+}
+function viewDetails(row: StockAdjustment) { router.push(`${basePathFor(row)}/${row.id}`) }
+function editAdjustment(row: StockAdjustment) { router.push(`${basePathFor(row)}/${row.id}/edit`) }
 function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
 // WMS cycle counts only — Stock counts (ERP) and Stock in/out have no counting flow.
 function startCountingAndNavigate(row: StockAdjustment) {
   if (row.status === 'not_started') startWmsCount(row.id)
-  router.push(`/stock-adjustments/${row.id}/count`)
+  router.push(`${basePathFor(row)}/${row.id}/count`)
 }
 function newAdjustment(kind: 'count' | 'in-out') {
   router.push({ path: '/stock-adjustments/new', query: { type: kind } })

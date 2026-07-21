@@ -155,6 +155,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'cycle-counts' && segs[1] === 'new') {
     return { component: NewCountTaskPage, id: 'new' }
   }
+  // /cycle-counts/:id → detail; /:id/count → counting flow; /:id/edit → edit (TBD → placeholder).
+  // Cycle count tasks live at their own URL (not /stock-adjustments/:id) so the sidebar
+  // and breadcrumb reflect where they actually belong.
+  if (segs.length >= 2 && segs[0] === 'cycle-counts' && segs[1] !== 'new') {
+    if (segs.length >= 3 && segs[2] === 'count') return { component: StockCountingPage, id: segs[1]! }
+    if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
+    return { component: StockAdjustmentDetailsPage, id: segs[1]! }
+  }
   // /stock-adjustments/:id → detail; /new & /:id/edit → create/edit form (TBD → placeholder)
   if (segs.length >= 2 && segs[0] === 'stock-adjustments') {
     if (segs[1] === 'new') {
