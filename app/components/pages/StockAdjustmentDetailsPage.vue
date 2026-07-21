@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTooltip, MpIcon, MpSpinner,
@@ -192,6 +192,22 @@ const groupedBySku = computed(() => {
   )
 })
 const bySkuHasSerial = computed(() => groupedBySku.value.some(r => isSerialTrackedSku(r.sku)))
+
+// ── Variance reason (Counted status only — manager reviews each variance before approving) ──
+// A no-variance row has nothing to explain, so its reason select stays disabled.
+const isCountedStatus = computed(() => isWmsCount.value && adjustment.value?.status === 'counted')
+const REASON_OPTIONS = [
+  'Miscount / human error',
+  'Damage / spoilage',
+  'Theft / shrinkage',
+  'System error / sync gap',
+  'Misplacement (wrong bin)',
+  'Expiry write-off',
+]
+function hasVariance(difference: number): boolean { return difference !== 0 }
+// Keyed by SKU (not by line) so the reason stays consistent whether the operator
+// is looking at the By location or By SKU grouping of the same variance.
+const varianceReasons = reactive<Record<string, string>>({})
 
 // ── WMS stock count: group line items by storage location (accordion) ──────────
 const groupedByLocation = computed(() => {
@@ -544,13 +560,15 @@ onUnmounted(() => {
           <MpAccordionPanel>
             <div class="detail-acc-body">
               <div class="detail-loc-scroll" :class="{ 'detail-loc-scroll--split': group.items.some(i => isSerialTrackedSku(i.sku)) }">
-                <table class="detail-items detail-items--fixed">
+                <table class="detail-items detail-items--fixed" :class="{ 'detail-items--with-reason': isCountedStatus }">
                   <colgroup>
                     <col class="detail-col-product" />
                     <col class="detail-col-sku" />
                     <col class="detail-col-batch" />
                     <col class="detail-col-num" />
+                    <col v-if="isCountedStatus" class="detail-col-num" />
                     <col class="detail-col-unit" />
+                    <col v-if="isCountedStatus" class="detail-col-reason" />
                   </colgroup>
                   <thead>
                     <tr>
@@ -558,7 +576,9 @@ onUnmounted(() => {
                       <th class="detail-th">SKU</th>
                       <th class="detail-th">Batch no.</th>
                       <th class="detail-th detail-th--num">Counted qty</th>
+                      <th v-if="isCountedStatus" class="detail-th detail-th--num">Variance</th>
                       <th class="detail-th">Unit</th>
+                      <th v-if="isCountedStatus" class="detail-th">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -576,7 +596,18 @@ onUnmounted(() => {
                         </div>
                       </td>
                       <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(item.counted) }}</td>
+                      <td v-if="isCountedStatus" class="detail-td detail-td--num" :class="{ 'detail-diff--pos': item.difference > 0, 'detail-diff--neg': item.difference < 0 }">{{ diffLabel(item.difference) }}</td>
                       <td class="detail-td">{{ item.unit }}</td>
+                      <td v-if="isCountedStatus" class="detail-td">
+                        <select
+                          class="detail-reason-select"
+                          :disabled="!hasVariance(item.difference)"
+                          v-model="varianceReasons[item.sku]"
+                        >
+                          <option value="">Select reason...</option>
+                          <option v-for="r in REASON_OPTIONS" :key="r" :value="r">{{ r }}</option>
+                        </select>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -595,13 +626,15 @@ onUnmounted(() => {
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
                 <th class="detail-th detail-th--num">Counted qty</th>
+                <th v-if="isCountedStatus" class="detail-th detail-th--num">Variance</th>
                 <th class="detail-th">Unit</th>
+                <th v-if="isCountedStatus" class="detail-th">Reason</th>
                 <th class="detail-th">Storage locations</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!groupedBySku.length">
-                <td colspan="5" class="detail-td detail-td--empty">
+                <td :colspan="isCountedStatus ? 7 : 5" class="detail-td detail-td--empty">
                   <div class="empty-inline">
                     <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
                     <p class="empty-inline-title">No results found</p>
@@ -621,7 +654,18 @@ onUnmounted(() => {
                   </div>
                 </td>
                 <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(row.counted) }}</td>
+                <td v-if="isCountedStatus" class="detail-td detail-td--num" :class="{ 'detail-diff--pos': row.difference > 0, 'detail-diff--neg': row.difference < 0 }">{{ diffLabel(row.difference) }}</td>
                 <td class="detail-td">{{ row.unit }}</td>
+                <td v-if="isCountedStatus" class="detail-td">
+                  <select
+                    class="detail-reason-select"
+                    :disabled="!hasVariance(row.difference)"
+                    v-model="varianceReasons[row.sku]"
+                  >
+                    <option value="">Select reason...</option>
+                    <option v-for="r in REASON_OPTIONS" :key="r" :value="r">{{ r }}</option>
+                  </select>
+                </td>
                 <td class="detail-td">
                   <div class="detail-loc-tags">
                     <span v-for="loc in row.locations" :key="loc" class="detail-loc-tag">{{ loc === '—' ? 'No location assigned' : loc }}</span>
@@ -994,6 +1038,15 @@ onUnmounted(() => {
 .detail-col-batch { width: 120px; }
 .detail-col-num { width: 110px; }
 .detail-col-unit { width: 90px; }
+.detail-col-reason { width: 220px; }
+.detail-items--fixed.detail-items--with-reason { width: 1170px; }
+.detail-reason-select {
+  width: 100%; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-2);
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-family: inherit; font-size: var(--mp-font-sizes-md);
+}
+.detail-reason-select:disabled { background: var(--mp-background-neutral-subtle); color: var(--mp-text-placeholder); cursor: not-allowed; }
 .detail-loc-scroll--split .detail-th,
 .detail-items--split .detail-th { border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
 .detail-loc-scroll--split .detail-th:first-child,
