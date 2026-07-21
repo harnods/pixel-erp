@@ -34,29 +34,6 @@ const BATCH_OVERLAY_KEY = 'wh-batch-overlay-v1'
 const batchOverlay = reactive<BatchOverlay>(loadSnapshot<BatchOverlay>(BATCH_OVERLAY_KEY) ?? {})
 function persistBatchOverlay() { saveSnapshot(BATCH_OVERLAY_KEY, batchOverlay) }
 
-// ── Persisted serial-number barcode overlay ──────────────────────────────────
-// A serial always has a barcode — auto-generated (and persisted) the first time
-// it's ever read, no manual step. No user-facing "Generate" control anywhere.
-type SerialBarcodeOverlay = Record<string, string> // `${warehouseId}::${sku}::${serial}` → barcode
-const SERIAL_BARCODE_KEY = 'wh-serial-barcode-overlay-v1'
-const serialBarcodeOverlay = reactive<SerialBarcodeOverlay>(loadSnapshot<SerialBarcodeOverlay>(SERIAL_BARCODE_KEY) ?? {})
-function persistSerialBarcodeOverlay() { saveSnapshot(SERIAL_BARCODE_KEY, serialBarcodeOverlay) }
-function serialBarcodeKey(warehouseId: string, sku: string, serial: string): string {
-  return `${warehouseId}::${sku}::${serial}`
-}
-
-/** The barcode for one serial unit — generated (and persisted) on first read. */
-export function ensureSerialBarcode(warehouseId: string, sku: string, serial: string): string {
-  const key = serialBarcodeKey(warehouseId, sku, serial)
-  let barcode = serialBarcodeOverlay[key]
-  if (!barcode) {
-    barcode = generateNextBarcode('serial')
-    serialBarcodeOverlay[key] = barcode
-    persistSerialBarcodeOverlay()
-  }
-  return barcode
-}
-
 // ── Persisted storage-location (bin) barcode overlay ─────────────────────────
 // Only Storage-type locations (bins) get a barcode — Organizational nodes (Floor/
 // Zone/Aisle, …) are groupings, not a physical place something is scanned into.

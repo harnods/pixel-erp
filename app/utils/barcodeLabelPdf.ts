@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf'
-import { generateBarcodeDataUrl } from './barcode'
+import { generateBarcodeDataUrl, type BarcodeStyle } from './barcode'
+import { getWarehouseSettings } from '~/data/warehouseSettings'
 
 export interface BarcodeLabelInfo {
   barcode: string
@@ -15,6 +16,9 @@ const GRID_CELL_WIDTH = 220
 const GRID_CELL_HEIGHT = 160
 const GRID_BARCODE_WIDTH = 160
 const GRID_BARCODE_HEIGHT = 60
+// A QR code is square — sized to roughly the same visual weight as the
+// barcode image rather than reusing its wide/short dimensions.
+const GRID_QR_SIZE = 80
 
 // jsPDF's default portrait orientation silently swaps a wider-than-tall custom
 // format back to portrait — pass the orientation that actually matches our
@@ -23,26 +27,36 @@ function orientationFor(width: number, height: number): 'p' | 'l' {
   return width >= height ? 'l' : 'p'
 }
 
-function drawLabelCell(doc: jsPDF, barcodeDataUrl: string, info: BarcodeLabelInfo, cellX: number, cellY: number) {
+function drawLabelCell(doc: jsPDF, codeDataUrl: string, style: BarcodeStyle, info: BarcodeLabelInfo, cellX: number, cellY: number) {
   const centerX = cellX + GRID_CELL_WIDTH / 2
-  const barcodeY = cellY + 26
-  doc.addImage(barcodeDataUrl, 'PNG', centerX - GRID_BARCODE_WIDTH / 2, barcodeY, GRID_BARCODE_WIDTH, GRID_BARCODE_HEIGHT)
+  const codeY = cellY + 26
+  const codeWidth = style === 'qrcode' ? GRID_QR_SIZE : GRID_BARCODE_WIDTH
+  const codeHeight = style === 'qrcode' ? GRID_QR_SIZE : GRID_BARCODE_HEIGHT
+  doc.addImage(codeDataUrl, 'PNG', centerX - codeWidth / 2, codeY, codeWidth, codeHeight)
 
-  let y = barcodeY + GRID_BARCODE_HEIGHT + 20
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(12)
-  doc.text(info.batchNo, centerX, y, { align: 'center' })
+  // A blank field (e.g. no batch/serial identifier for a plain SKU label) is
+  // skipped entirely rather than leaving an empty line's worth of gap.
+  let y = codeY + codeHeight + 20
+  if (info.batchNo) {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.text(info.batchNo, centerX, y, { align: 'center' })
+    y += 15
+  }
 
-  y += 15
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.text(info.productName, centerX, y, { align: 'center' })
+  if (info.productName) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.text(info.productName, centerX, y, { align: 'center' })
+    y += 13
+  }
 
-  y += 13
-  doc.setFontSize(9)
-  doc.setTextColor(120)
-  doc.text(info.sku, centerX, y, { align: 'center' })
-  doc.setTextColor(0)
+  if (info.sku) {
+    doc.setFontSize(9)
+    doc.setTextColor(120)
+    doc.text(info.sku, centerX, y, { align: 'center' })
+    doc.setTextColor(0)
+  }
 }
 
 /**
@@ -61,7 +75,8 @@ export async function generateBarcodeLabelPdf(
   qty: number,
   columns: BarcodeLabelColumns,
 ): Promise<jsPDF> {
-  const barcodeDataUrl = await generateBarcodeDataUrl(info.barcode)
+  const style = getWarehouseSettings().barcodeStyle
+  const codeDataUrl = await generateBarcodeDataUrl(info.barcode, style)
   const count = Math.max(1, Math.floor(qty))
 
   if (columns === 1) {
@@ -69,7 +84,7 @@ export async function generateBarcodeLabelPdf(
     const doc = new jsPDF({ unit: 'pt', format: [GRID_CELL_WIDTH, GRID_CELL_HEIGHT], orientation })
     for (let i = 0; i < count; i++) {
       if (i > 0) doc.addPage([GRID_CELL_WIDTH, GRID_CELL_HEIGHT], orientation)
-      drawLabelCell(doc, barcodeDataUrl, info, 0, 0)
+      drawLabelCell(doc, codeDataUrl, style, info, 0, 0)
     }
     return doc
   }
@@ -82,7 +97,7 @@ export async function generateBarcodeLabelPdf(
   for (let i = 0; i < count; i++) {
     const row = Math.floor(i / columns)
     const col = i % columns
-    drawLabelCell(doc, barcodeDataUrl, info, col * GRID_CELL_WIDTH, row * GRID_CELL_HEIGHT)
+    drawLabelCell(doc, codeDataUrl, style, info, col * GRID_CELL_WIDTH, row * GRID_CELL_HEIGHT)
   }
 
   doc.setDrawColor(150)

@@ -4,7 +4,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import {
-  getReservationForSerial, ensureSerialBarcode, type WarehouseStockItem, type SerialUnit,
+  getReservationForSerial, type WarehouseStockItem, type SerialUnit,
 } from '~/data/warehouseDetails'
 import { outgoingOrders } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
@@ -107,9 +107,8 @@ function openDetail(row: SerialUnit) {
   step.value = 'detail'
 }
 function backToList() { step.value = 'list' }
-const detailBarcode = computed(() =>
-  props.product && detailSerial.value ? ensureSerialBarcode(props.warehouseId, props.product.sku, detailSerial.value.serial) : ''
-)
+// A serial number's barcode IS the serial number itself — no separate generated code.
+const detailBarcode = computed(() => detailSerial.value?.serial ?? '')
 
 // ── Print barcode — options modal (qty + columns) then the shared PDF preview ──
 const printBarcodeOptionsOpen = ref(false)
@@ -126,9 +125,8 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
   const row = printBarcodeTarget.value
   if (!props.product || !row) return
   printBarcodeOptionsOpen.value = false
-  const barcode = ensureSerialBarcode(props.warehouseId, props.product.sku, row.serial)
   barcodePreviewDoc.value = await generateBarcodeLabelPdf({
-    barcode,
+    barcode: row.serial,
     batchNo: row.serial,
     productName: props.product.name,
     sku: props.product.sku,

@@ -336,11 +336,6 @@ const activeFilterCount = computed(() =>
       </div>
     </template>
 
-    <template #cell-barcode="{ row }">
-      <span v-if="(row as ProductIndexRow).barcodeAssigned">{{ (row as ProductIndexRow).barcode }}</span>
-      <span v-else>—</span>
-    </template>
-
     <!-- ── Cell: quantity columns ── -->
     <template #cell-onHand="{ value }">{{ (value as number).toLocaleString('id-ID') }}</template>
     <template #cell-reserved="{ value }">{{ (value as number).toLocaleString('id-ID') }}</template>

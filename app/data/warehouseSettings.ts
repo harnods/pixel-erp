@@ -26,16 +26,27 @@ export const SERIAL_RULE_OPTIONS: { id: SerialSelectionRule; name: string }[] = 
   { id: 'serial_created_asc', name: 'Serial created date (earliest first)' },
 ]
 
+// Which symbology "Print barcode" (SKU/batch/serial/bin labels) renders — a
+// display choice, not a data change, so switching it never touches barcode
+// values already assigned.
+export type BarcodeStyle = 'barcode' | 'qrcode'
+export const BARCODE_STYLE_OPTIONS: { id: BarcodeStyle; name: string }[] = [
+  { id: 'barcode', name: 'Barcode (Code 128)' },
+  { id: 'qrcode', name: 'QR code' },
+]
+
 export interface WarehouseSettings {
   multiLocationStorage: boolean
   batchSelectionRule:   BatchSelectionRule
   serialSelectionRule:  SerialSelectionRule
+  barcodeStyle:         BarcodeStyle
 }
 
 const DEFAULTS: WarehouseSettings = {
   multiLocationStorage: true,
   batchSelectionRule:   'fefo',
   serialSelectionRule:  'serial_created_asc',
+  barcodeStyle:         'barcode',
 }
 
 export function getWarehouseSettings(): WarehouseSettings {
@@ -47,6 +58,7 @@ export function getWarehouseSettings(): WarehouseSettings {
       multiLocationStorage: parsed.multiLocationStorage ?? DEFAULTS.multiLocationStorage,
       batchSelectionRule:   parsed.batchSelectionRule   ?? DEFAULTS.batchSelectionRule,
       serialSelectionRule:  parsed.serialSelectionRule  ?? DEFAULTS.serialSelectionRule,
+      barcodeStyle:         parsed.barcodeStyle         ?? DEFAULTS.barcodeStyle,
     }
   } catch { return { ...DEFAULTS } }
 }

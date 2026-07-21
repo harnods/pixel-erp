@@ -191,7 +191,7 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Sales' },
     { label: 'Purchases' },
     { label: 'Inventory' },
-    { label: 'Warehouses' },
+    { label: 'Warehouses', to: 'Warehouse settings' },
     { label: 'Production' },
     { label: 'Default accounts' },
   ],

@@ -11,7 +11,6 @@ import {
 import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.vue'
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
-import { generateNextBarcode } from '~/data/barcodeConfig'
 
 // order-id from the catch-all route: 'new' → create, a SKU → edit.
 const props = defineProps<{ orderId?: string }>()
@@ -214,9 +213,9 @@ async function save() {
     toast.notify({ variant: 'success', title: 'Product updated', maxWidth: 'max-content' })
     router.push(`/product-list/${props.orderId}`)
   } else {
-    // New product → assign the next auto-generated barcode (forward-only: this
-    // never touches an already-assigned barcode on an existing SKU).
-    const created = addCustomProduct({ ...payload, barcode: generateNextBarcode() })
+    // New product → whatever's in the field (free-typed or generated via the
+    // settings icon); left blank, the product simply has no real barcode yet.
+    const created = addCustomProduct({ ...payload, barcode: barcode.value.trim() || undefined })
     toast.notify({ variant: 'success', title: 'Product saved', maxWidth: 'max-content' })
     router.push(`/product-list/${created.sku}`)
   }
@@ -227,7 +226,7 @@ async function saveAndAdd() {
   if (!validate()) return
   isSavingAndAdding.value = true
   await new Promise(r => setTimeout(r, 600))
-  addCustomProduct({ ...buildPayload(), barcode: generateNextBarcode() })
+  addCustomProduct({ ...buildPayload(), barcode: barcode.value.trim() || undefined })
   toast.notify({ variant: 'success', title: 'Product saved', maxWidth: 'max-content' })
   isSavingAndAdding.value = false
   resetForm()
@@ -318,9 +317,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <MpFormControl id="np-barcode" class="np-field-270">
                   <div class="np-label-row">
                     <MpFormLabel>Barcode</MpFormLabel>
-                    <BarcodeSettingsButton />
+                    <BarcodeSettingsButton @generated="barcode = $event" />
                   </div>
-                  <MpInput id="np-barcode-input" v-model="barcode" placeholder="[AUTO]" is-full-width is-disabled />
+                  <MpInput id="np-barcode-input" v-model="barcode" placeholder="Enter barcode or generate" is-full-width />
                 </MpFormControl>
               </div>
 

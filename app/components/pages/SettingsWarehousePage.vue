@@ -7,7 +7,7 @@ import {
 } from '@mekari/pixel3'
 import {
   getWarehouseSettings, saveWarehouseSettings,
-  BATCH_RULE_OPTIONS, SERIAL_RULE_OPTIONS,
+  BATCH_RULE_OPTIONS, SERIAL_RULE_OPTIONS, BARCODE_STYLE_OPTIONS,
   type WarehouseSettings,
 } from '~/data/warehouseSettings'
 
@@ -29,7 +29,8 @@ const ruleConfirmOpen = ref(false)
 const hasChanges = computed(() =>
   draft.multiLocationStorage !== committed.multiLocationStorage ||
   draft.batchSelectionRule   !== committed.batchSelectionRule   ||
-  draft.serialSelectionRule  !== committed.serialSelectionRule
+  draft.serialSelectionRule  !== committed.serialSelectionRule  ||
+  draft.barcodeStyle         !== committed.barcodeStyle
 )
 // The batch/serial rule only decides what a NEW order reserves — orders already
 // reserved (at their own creation time) never get recomputed, so changing this
@@ -41,6 +42,7 @@ const hasRuleChange = computed(() =>
 
 const batchRuleLabel  = computed(() => BATCH_RULE_OPTIONS.find(o => o.id === draft.batchSelectionRule)?.name ?? '')
 const serialRuleLabel = computed(() => SERIAL_RULE_OPTIONS.find(o => o.id === draft.serialSelectionRule)?.name ?? '')
+const barcodeStyleLabel = computed(() => BARCODE_STYLE_OPTIONS.find(o => o.id === draft.barcodeStyle)?.name ?? '')
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
@@ -156,6 +158,26 @@ async function saveEdit() {
             class="ws-rule-select"
           />
           <span v-else class="ws-rule-value">{{ serialRuleLabel }}</span>
+        </div>
+
+        <h3 class="ws-subsection-title ws-subsection-title--spaced">Print barcode</h3>
+
+        <div class="ws-toggle-row ws-toggle-row--rule">
+          <div class="ws-toggle-info">
+            <span class="ws-toggle-title">Barcode format</span>
+            <span class="ws-toggle-desc">Symbology used when printing labels for SKUs, batches, serial numbers, and storage bins.</span>
+          </div>
+          <MpAutocomplete
+            v-if="isEditing"
+            id="ws-barcode-style-ac"
+            v-model="draft.barcodeStyle"
+            :data="BARCODE_STYLE_OPTIONS"
+            label-prop="name"
+            value-prop="id"
+            use-portal
+            class="ws-rule-select"
+          />
+          <span v-else class="ws-rule-value">{{ barcodeStyleLabel }}</span>
         </div>
 
       </div>
