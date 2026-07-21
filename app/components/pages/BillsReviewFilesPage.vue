@@ -144,7 +144,7 @@ function openFilePicker() { fileInputEl.value?.click() }
               Drop your file here or <span class="upload-card__choose">choose</span>
             </span>
             <span class="upload-card__desc">Supported formats: CSV, PNG, XLSX, PDF, JPG.</span>
-            <span class="upload-card__desc">Maximum file size 10 MB.</span>
+            <span class="upload-card__desc">Maximum file size: 10 MB.</span>
           </span>
         </button>
 

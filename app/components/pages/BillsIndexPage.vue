@@ -88,7 +88,7 @@ const {
 const statusOptions = [
   { label: 'Open',   value: 'open'   },
   { label: 'Paid',   value: 'paid'   },
-  { label: 'Unpaid', value: 'unpaid' },
+  { label: 'Open', value: 'unpaid' },
 ]
 
 const statusLabel = computed(
@@ -195,12 +195,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             </div>
             <div class="upsell-copy">
               <p class="upsell-title">Control business spend with Mekari Card</p>
-              <p class="upsell-desc">Manage expenses easily with Mekari physical or virtual corporate cards. Say goodbye to manual reimbursement claims.</p>
+              <p class="upsell-desc">Manage expenses easily with Mekari physical or virtual corporate cards. Eliminate manual reimbursement claims.</p>
             </div>
           </div>
           <div class="upsell-actions">
             <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm">
-              Start set up
+              Set up now
             </button>
           </div>
         </div>

@@ -214,7 +214,7 @@ const pageTabs: Record<string, string[]> = {
   'Barang keluar': ['Outgoing', 'Picking', 'Packing', 'Delivery'],
   'Barang masuk': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
-  'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
+  'Expenses': ['Bills', 'Awaiting approval', 'Review files'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -252,7 +252,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
-    if (bills.length) out['Awaiting Approval'] = bills.length
+    if (bills.length) out['Awaiting approval'] = bills.length
     if (reviewFiles.length) out['Review files'] = reviewFiles.length
     return out
   }
@@ -298,7 +298,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   },
   'Expenses': {
     'Bills': BillsIndexPage,
-    'Awaiting Approval': BillsAwaitingApprovalPage,
+    'Awaiting approval': BillsAwaitingApprovalPage,
     'Review files': BillsReviewFilesPage,
   },
 }
