@@ -375,7 +375,12 @@ const currentTabs = computed<string[]>(() => {
   })
 })
 const activeTab = ref('')
-watch([currentPageKey, () => route.query.tab], () => {
+watch([currentPageKey, () => route.query.tab, detailMatch], () => {
+  // Detail routes (e.g. /stock-adjustments/:id) render via `detailMatch`, bypassing
+  // the tab bar entirely — don't stamp a `?tab=` query onto them just because their
+  // first URL segment happens to match an index page that has tabs (e.g. a WMS
+  // Cycle count detail sharing the /stock-adjustments/:id prefix with ERP records).
+  if (detailMatch.value) return
   const tabs = currentTabs.value
   const queryTab = route.query.tab as string | undefined
   const resolved = (queryTab && tabs.includes(queryTab)) ? queryTab : (tabs[0] ?? '')
