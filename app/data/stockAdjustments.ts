@@ -202,14 +202,14 @@ function generate(count = 26): StockAdjustment[] {
         endDate: countStatus === 'completed'
           ? isoOffsetDT(-startDaysAgo, endHour, startMin)
           : undefined,
-        linkedCycleCountId: `wsa-${String((hash100(i * 31 + 11) % 14) + 1).padStart(3, '0')}`,
+        linkedCycleCountId: `cc-${String((hash100(i * 31 + 11) % 14) + 1).padStart(3, '0')}`,
       }),
     })
   }
   return out
 }
 
-const KEY = 'stock-adjustments-v3'
+const KEY = 'stock-adjustments-v4'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const stockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 

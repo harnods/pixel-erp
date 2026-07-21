@@ -86,7 +86,7 @@ function generate(count = 24): StockAdjustment[] {
     const durationDays = (hash100(i * 7 + 3) % 5) + 1
     const status = kind === 'count' ? countStatusFor(i) : 'completed'
     const record: StockAdjustment = {
-      id: `wsa-${String(i + 1).padStart(3, '0')}`,
+      id: `${kind === 'count' ? 'cc' : 'wsa'}-${String(i + 1).padStart(3, '0')}`,
       kind,
       number: `${kind === 'count' ? 'Cycle Count' : 'Stock In/Out'} #${seq}`,
       date: isoOffset(-startDaysAgo),
@@ -115,7 +115,7 @@ function generate(count = 24): StockAdjustment[] {
   return out
 }
 
-const KEY = 'wms-stock-adjustments-v6'
+const KEY = 'wms-stock-adjustments-v7'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const wmsStockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 
@@ -176,7 +176,7 @@ function nextSeqFor(kind: AdjustmentKind): number {
 export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
   const n = addSeq++
   const adj: StockAdjustment = {
-    id: `wsa-new-${n}`,
+    id: `${input.kind === 'count' ? 'cc' : 'wsa'}-new-${n}`,
     kind: input.kind,
     number: `${input.kind === 'count' ? 'Cycle Count' : 'Stock In/Out'} #${nextSeqFor(input.kind)}`,
     date: input.date,

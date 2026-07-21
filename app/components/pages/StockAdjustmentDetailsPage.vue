@@ -30,7 +30,7 @@ import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 
-const isWmsRecord = computed(() => props.orderId.startsWith('wsa-'))
+const isWmsRecord = computed(() => props.orderId.startsWith('wsa-') || props.orderId.startsWith('cc-'))
 const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.orderId) : getAdjustment(props.orderId))
 const isCount = computed(() => adjustment.value?.kind === 'count')
 const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
