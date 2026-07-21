@@ -155,10 +155,15 @@ function viewBatch(batchNo: string) {
   router.push(`/product-list/${product.value.sku}/batches/${encodeURIComponent(batchNo)}`)
 }
 
+type PrintBarcodeTarget = { kind: 'batch'; batch: ProductBatchSummary } | { kind: 'sku' }
 const printBarcodeOptionsOpen = ref(false)
-const printBarcodeTarget = ref<ProductBatchSummary | null>(null)
+const printBarcodeTarget = ref<PrintBarcodeTarget | null>(null)
 function printBatchBarcode(b: ProductBatchSummary) {
-  printBarcodeTarget.value = b
+  printBarcodeTarget.value = { kind: 'batch', batch: b }
+  printBarcodeOptionsOpen.value = true
+}
+function printSkuBarcode() {
+  printBarcodeTarget.value = { kind: 'sku' }
   printBarcodeOptionsOpen.value = true
 }
 
@@ -166,16 +171,29 @@ const barcodePreviewOpen = ref(false)
 const barcodePreviewDoc = ref<jsPDF | null>(null)
 const barcodePreviewFilename = ref('')
 async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
-  const b = printBarcodeTarget.value
-  if (!product.value || !b) return
+  const target = printBarcodeTarget.value
+  if (!product.value || !target) return
   printBarcodeOptionsOpen.value = false
-  barcodePreviewDoc.value = await generateBarcodeLabelPdf({
-    barcode: b.barcode,
-    batchNo: b.batchNo,
-    productName: product.value.name,
-    sku: product.value.sku,
-  }, qty, columns)
-  barcodePreviewFilename.value = `Barcode - ${b.batchNo}.pdf`
+  if (target.kind === 'batch') {
+    const b = target.batch
+    barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+      barcode: b.barcode,
+      batchNo: b.batchNo,
+      productName: product.value.name,
+      sku: product.value.sku,
+    }, qty, columns)
+    barcodePreviewFilename.value = `Barcode - ${b.batchNo}.pdf`
+  } else {
+    // No separate batch/serial identifier for a plain SKU label — the SKU itself
+    // is already shown below, so leave the bold headline field blank.
+    barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+      barcode: product.value.barcode,
+      batchNo: '',
+      productName: product.value.name,
+      sku: product.value.sku,
+    }, qty, columns)
+    barcodePreviewFilename.value = `Barcode - ${product.value.sku}.pdf`
+  }
   barcodePreviewOpen.value = true
 }
 // ── Stock by serial numbers tab (serial-tracked products only) ────────────────────
@@ -227,6 +245,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="router.push(`/product-list/${product.sku}/edit`)">Edit</MpPopoverListItem>
+            <MpPopoverListItem @click="printSkuBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem>Duplicate</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
           </MpPopoverList>
