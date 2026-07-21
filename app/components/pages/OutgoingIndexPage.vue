@@ -430,8 +430,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="warehouseFilter.includes(opt.value)"
                   @change="toggleWarehouse(opt.value)"
                   @click.stop
-                />
-                <span>{{ opt.label }}</span>
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -455,8 +456,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="statusFilter.includes(s)"
                   @change="toggleStatus(s)"
                   @click.stop
-                />
-                <span>{{ statusOptionLabel(s) }}</span>
+                >
+                  {{ statusOptionLabel(s) }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>

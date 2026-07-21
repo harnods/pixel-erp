@@ -309,8 +309,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="warehouseFilter.includes(opt.value)"
                   @change="toggleWarehouse(opt.value)"
                   @click.stop
-                />
-                <span>{{ opt.label }}</span>
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -335,8 +336,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="categoryFilter.includes(opt)"
                   @change="toggleCategory(opt)"
                   @click.stop
-                />
-                <span>{{ opt }}</span>
+                >
+                  {{ opt }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>

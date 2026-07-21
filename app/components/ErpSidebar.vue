@@ -301,7 +301,7 @@ const erpNavGroups: NavItem[][] = [
             label: 'Products',
             panelSubmenu: [
               [
-                { label: 'Products' },
+                { label: 'Products', to: 'Product list' },
                 { label: 'Categories' },
                 { label: 'Variant options' },
                 { label: 'Units' },

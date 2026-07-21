@@ -7,6 +7,7 @@ import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { outgoingOpenCount } from '~/data/outgoing'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { pendingApprovalCount } from '~/data/productsIndex'
 import { pickingOpenCount } from '~/data/pickingTasks'
 
 // Keep outbound order statuses derived from their tasks (coherent everywhere).
@@ -41,6 +42,7 @@ const pageRegistry: Record<string, Component> = {
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
+  'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
   'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
@@ -111,6 +113,10 @@ const CreateBillOfMaterialsPage = defineAsyncComponent(() => import('~/component
 const ProductionRequestIndexPage = defineAsyncComponent(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
 const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 const StockAdjustmentsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue'))
+const ProductsPage = defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue'))
+const ProductDetailsPage = defineAsyncComponent(() => import('~/components/pages/ProductDetailsPage.vue'))
+const BatchDetailsPage = defineAsyncComponent(() => import('~/components/pages/BatchDetailsPage.vue'))
+const NewProductPage = defineAsyncComponent(() => import('~/components/pages/NewProductPage.vue'))
 const StockAdjustmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
 const StockCountFormPage = defineAsyncComponent(() => import('~/components/pages/StockCountFormPage.vue'))
 const StockCountingPage = defineAsyncComponent(() => import('~/components/pages/StockCountingPage.vue'))
@@ -200,6 +206,25 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
   }
+  if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
+    return { component: NewProductPage, id: 'new' }
+  }
+  // /product-list/:sku/edit → reuse the product form in edit mode
+  if (segs.length >= 3 && segs[0] === 'product-list' && segs[2] === 'edit') {
+    return { component: NewProductPage, id: segs[1]! }
+  }
+  // /product-list/:sku/batches/:batchNo → batch detail (a batch-tracked product's
+  // "Stock by batches" tab row); id is "sku::batchNo", same convention as the
+  // warehouse/location nested route below. batchNo (e.g. "Batch #001") is
+  // encodeURIComponent'd by the caller since "#" would otherwise start a URL
+  // fragment — decode it back here.
+  if (segs.length >= 4 && segs[0] === 'product-list' && segs[2] === 'batches') {
+    return { component: BatchDetailsPage, id: `${segs[1]}::${decodeURIComponent(segs[3]!)}` }
+  }
+  // /product-list/:sku → product detail
+  if (segs.length >= 2 && segs[0] === 'product-list') {
+    return { component: ProductDetailsPage, id: segs[1] }
+  }
   // /inbound-delivery/:id → inbound PO detail (kept under the section path so the
   // level-2 sidebar submenu stays active, like /sales-orders/:id).
   // /receiving/:taskId → task detail; "Receiving" resolves as Inbound delivery panel sub-item
@@ -279,6 +304,7 @@ const pageTabs: Record<string, string[]> = {
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
   'Cycle counts':      ['Count task', 'Recommendations'],
+  'Product list':      ['All products', 'Awaiting approval'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -331,6 +357,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Stock counts') {
     const awaiting = awaitingAdjustmentCount()
+    return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Product list') {
+    const awaiting = pendingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   return {}
@@ -406,6 +436,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Cycle counts': {
     'Count task': StockAdjustmentsPage,
     'Recommendations': CycleCountRecommendationPage,
+  },
+  'Product list': {
+    'All products': ProductsPage,
+    'Awaiting approval': ProductsPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -851,6 +885,17 @@ function startResize(e: MouseEvent) {
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             New bill of materials
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Product list'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/product-list/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New product
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Inbound delivery'" class="page-title-actions">

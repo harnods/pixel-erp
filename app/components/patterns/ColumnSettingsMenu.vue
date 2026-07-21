@@ -73,7 +73,9 @@ function toggle(item: ColumnSettingItem) {
 .cs-item {
   display: flex;
   align-items: center;
-  gap: var(--mp-spacing-2);
+  /* No gap here — MpCheckbox already renders its own 12px control-to-label gap
+     internally (checkbox__root). A wrapper gap would stack into a double gap. */
+  gap: 0;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   cursor: pointer;
   user-select: none;

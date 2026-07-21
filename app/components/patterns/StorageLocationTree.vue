@@ -14,6 +14,7 @@ import {
 } from '@mekari/pixel3'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import { getStorageTree, findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { ensureLocationBarcode } from '~/data/warehouseDetails'
 import { useUrlModal } from '@ds/proto-review'
 
 const props = withDefaults(defineProps<{
@@ -93,6 +94,7 @@ function editLoc(n: LocNode) { drawerEditId.value = n.id; drawerParentId.value =
 function onSaved(pid: string | null) {
   if (pid && pid !== props.parentId) expanded.value = new Set([...expanded.value, pid])
 }
+
 </script>
 
 <template>
