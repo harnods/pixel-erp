@@ -1,16 +1,25 @@
 <script setup lang="ts">
 import {
-  MpIcon,
+  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { bills } from '~/data'
+import { bills, duplicateBill } from '~/data'
 import type { Bill } from '~/data'
 
+const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
+
+// This tab shows every bill relabeled as "Draft" (awaiting approval) — not the
+// bill's real status — so the detail page is told via query, not bill.status.
+function goDetail(id: string) { router.push({ path: `/expenses/${id}`, query: { approval: '1' } }) }
+function duplicate(id: string) {
+  duplicateBill(id)
+  toast.notify({ variant: 'success', title: 'Expense duplicated' })
+}
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
@@ -91,7 +100,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
-    actions-width="200px"
+    actions-width="228px"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -148,10 +157,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     </template>
 
     <!-- ── Cell: Number ── -->
-    <template #cell-number="{ value }">
+    <template #cell-number="{ value, row }">
       <div class="cell-with-action">
         <span class="cell-text">{{ formatNumber(value as number) }}</span>
-        <button class="row-hover-btn" @click.stop>
+        <button class="row-hover-btn" @click.stop="goDetail((row as Row).id)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -162,10 +171,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     </template>
 
     <!-- ── Cell: Beneficiary ── -->
-    <template #cell-beneficiaryName="{ value }">
+    <template #cell-beneficiaryName="{ value, row }">
       <div class="cell-with-action">
         <span class="cell-text">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop>
+        <button class="row-hover-btn" @click.stop="goDetail((row as Row).id)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1.2"/>
             <path d="M4.5 1.5v9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
@@ -198,7 +207,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     </template>
 
     <!-- ── Actions ── -->
-    <template #actions>
+    <template #actions="{ row }">
       <div class="row-actions">
         <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click.stop>Approve</button>
         <div class="row-actions__icons">
@@ -208,6 +217,23 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <button class="row-icon-btn" aria-label="Add comment" @click.stop>
             <MpIcon name="comment" size="md" />
           </button>
+          <MpPopover :id="`awaiting-row-actions-${(row as Row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="row-icon-btn" aria-label="More actions" @click.stop>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <circle cx="12" cy="5" r="2" />
+                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="12" cy="19" r="2" />
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="goDetail((row as Row).id)">View details</MpPopoverListItem>
+                <MpPopoverListItem @click="duplicate((row as Row).id)">Duplicate</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
       </div>
     </template>

@@ -100,6 +100,13 @@ export interface BillPayment {
   reference?: string
 }
 
+/** "Less: Withholding" deduction — see NewExpensePage's withholding rows. */
+export interface BillWithholding {
+  name: string
+  amount: number
+  account: string
+}
+
 export interface Bill {
   id: string
   number: number                            // rendered as "Expense #00001"
@@ -107,7 +114,7 @@ export interface Bill {
   category: string
   date: string
   dueDate: string
-  total: number         // bill total IDR
+  total: number         // bill total IDR (after withholding deduction, if any)
   balanceDue: number    // remaining unpaid amount IDR (0 when fully paid)
   status: BillStatus
   tags?: string[]
@@ -116,6 +123,7 @@ export interface Bill {
   lineItems?: BillLineItem[]
   subtotal?: number
   taxAmount?: number
+  withholding?: BillWithholding
   /** only set when the bill was created (or later marked) as paid */
   payment?: BillPayment
   /** true once the payment has been matched against a bank transaction */

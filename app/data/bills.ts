@@ -4,7 +4,21 @@ import type { Bill } from './types'
 // "Today" for demo purposes is 2026-07-15 — due dates before that are overdue,
 // due dates after that are upcoming (still shown as unpaid, not overdue).
 export const bills = reactive<Bill[]>([
-  { id: 'BILL001', number: 1, beneficiary: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  category: 'Office supplies', date: '2026-06-20', dueDate: '2026-07-04', total: 12_500_000, balanceDue: 0,           status: 'paid',   tags: ['Supplies'], reconciled: true, payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 12_500_000, paymentDate: '2026-07-03', reference: 'TRX-000112' } , lineItems: [{ account: '520 - Office supplies', description: '', tax: 'No tax', amount: 12500000 }]},
+  { id: 'BILL001', number: 1, beneficiary: { id: 'V001', name: 'PT Sumber Makmur Sejahtera' },  category: 'Office supplies', date: '2026-06-20', dueDate: '2026-07-04', total: 12_500_000, balanceDue: 0,           status: 'paid',   tags: ['Supplies'], reconciled: true,
+    memo: 'Q3 office supplies restock for the HQ pantry and printing station — approved by Finance Manager.',
+    attachments: [
+      { name: 'invoice-BILL001.pdf', sizeKB: 245.3 },
+      { name: 'receipt-office-supplies.jpg', sizeKB: 512.8 },
+    ],
+    payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 12_500_000, paymentDate: '2026-07-03', reference: 'TRX-000112' },
+    subtotal: 12_000_000,
+    taxAmount: 900_000,
+    withholding: { name: 'PPh 23 - Jasa', amount: 400_000, account: '2-20502 Withholding Tax Payable' },
+    lineItems: [
+      { account: '520 - Office supplies', description: 'A4 paper, ballpoint pens, and folders', tax: 'PPN 10%', amount: 5_000_000 },
+      { account: '520 - Office supplies', description: 'Printer toner cartridges', tax: 'PPN 10%', amount: 4_000_000 },
+      { account: '710 - Equipment', description: 'Wireless keyboard and mouse set', tax: 'No tax', amount: 3_000_000 },
+    ]},
   { id: 'BILL002', number: 2, beneficiary: { id: 'V002', name: 'CV Abadi Jaya Teknik' },        category: 'Equipment',       date: '2026-06-21', dueDate: '2026-07-25', total: 34_000_000, balanceDue: 34_000_000, status: 'unpaid'                          , lineItems: [{ account: '710 - Equipment', description: '', tax: 'No tax', amount: 34000000 }]},
   { id: 'BILL003', number: 3, beneficiary: { id: 'V003', name: 'PT Mitra Global Solusi' },      category: 'Utilities',       date: '2026-06-22', dueDate: '2026-07-01', total: 8_200_000,  balanceDue: 8_200_000,  status: 'unpaid'                          , lineItems: [{ account: '610 - Utilities', description: '', tax: 'No tax', amount: 8200000 }]},
   { id: 'BILL004', number: 4, beneficiary: { id: 'V004', name: 'PT Karya Cipta Mandiri' },      category: 'Software',        date: '2026-06-23', dueDate: '2026-07-30', total: 15_800_000, balanceDue: 0,           status: 'paid', reconciled: true, payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 15_800_000, paymentDate: '2026-06-27' } , lineItems: [{ account: '485 - Subscriptions', description: '', tax: 'No tax', amount: 15800000 }]},
@@ -38,4 +52,21 @@ export function addBill(data: Omit<Bill, 'id' | 'number'>): Bill {
   const bill: Bill = { ...data, id: `BILL-NEW-${n}`, number: n }
   bills.unshift(bill)
   return bill
+}
+
+/** Duplicate an existing bill — every field carries over exactly as-is (status,
+ * payment, reconciled included) except id/number, which addBill assigns fresh.
+ * structuredClone() throws on Vue's reactive Proxy, so deep-clone via JSON instead —
+ * safe here since Bill is plain JSON-shaped data (no Dates/functions). */
+export function duplicateBill(id: string): Bill | null {
+  const source = bills.find((b) => b.id === id)
+  if (!source) return null
+  const { id: _id, number: _number, ...rest } = JSON.parse(JSON.stringify(source)) as Bill
+  return addBill(rest)
+}
+
+/** Approve a draft (awaiting-approval) bill — moves it into the normal unpaid lifecycle. */
+export function approveBill(id: string): void {
+  const bill = bills.find((b) => b.id === id)
+  if (bill && bill.status === 'draft') bill.status = 'unpaid'
 }

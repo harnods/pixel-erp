@@ -949,7 +949,10 @@ function handleSave(mode: 'close' | 'new') {
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title {
   margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
+  /* --mp-line-heights-2xl resolves to a unitless 1.67 in this app (not a px value), which
+     computes to 40px on a 24px title — taller than intended and reads as a gap above the
+     breadcrumb. Hardcode the real 32px instead of trusting the var/fallback. */
+  line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
 }
 

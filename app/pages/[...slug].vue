@@ -88,6 +88,7 @@ const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/P
 const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 const NewExpensePage = defineAsyncComponent(() => import('~/components/pages/NewExpensePage.vue'))
 const BillDetailsPage = defineAsyncComponent(() => import('~/components/pages/BillDetailsPage.vue'))
+const SpendMoneyPage = defineAsyncComponent(() => import('~/components/pages/SpendMoneyPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -96,6 +97,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
     return { component: NewExpensePage, id: 'new' }
+  }
+  // /expenses/:id/payment → "Add payment" form for that unpaid bill (New spend money)
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment') {
+    return { component: SpendMoneyPage, id: segs[1]! }
   }
   // /expenses/:id → bill/expense detail page
   if (segs.length >= 2 && segs[0] === 'expenses') {

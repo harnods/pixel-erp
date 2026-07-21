@@ -2,18 +2,26 @@
 import { type Ref } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { bills } from '~/data'
+import { bills, duplicateBill } from '~/data'
 import type { Bill, BillStatus } from '~/data'
 
 const router = useRouter()
 function goDetail(id: string) { router.push(`/expenses/${id}`) }
+function addPayment(id: string) { router.push(`/expenses/${id}/payment`) }
+function duplicate(id: string) {
+  duplicateBill(id)
+  toast.notify({ variant: 'success', title: 'Expense duplicated' })
+}
+// "Set as recurring" isn't built yet — kept in the row-kebab markup below (per design)
+// but hidden until the feature ships.
+const showSetAsRecurring = false
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const aireneOpen = inject<Ref<boolean>>('aireneOpen')
@@ -341,14 +349,26 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     </template>
 
     <!-- ── Actions ── -->
-    <template #actions>
-      <button class="row-kebab" aria-label="More actions">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="12" cy="5" r="2" />
-          <circle cx="12" cy="12" r="2" />
-          <circle cx="12" cy="19" r="2" />
-        </svg>
-      </button>
+    <template #actions="{ row }">
+      <MpPopover :id="`bill-row-actions-${(row as Row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+        <MpPopoverTrigger>
+          <button class="row-kebab" aria-label="More actions">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem @click="goDetail((row as Row).id)">View details</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).status === 'unpaid'" @click="addPayment((row as Row).id)">Add payment</MpPopoverListItem>
+            <MpPopoverListItem v-if="showSetAsRecurring">Set as recurring</MpPopoverListItem>
+            <MpPopoverListItem @click="duplicate((row as Row).id)">Duplicate</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </template>
 
     <template #cell-lastUpdated="{ row }">
