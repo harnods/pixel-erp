@@ -1,17 +1,18 @@
 /**
  * generatePickingListPdf() builds a real jsPDF document (+ jspdf-autotable) and
  * returns it for the caller to preview/save (it doesn't save it itself — that's
- * the Print-preview modal's job). These tests can't practically inspect the
- * rendered PDF's pixel content, so they verify the thing that's actually at risk
- * of breaking: the function runs without throwing across every line-item shape
- * it has to flatten (plain SKU, batch-tracked, serial-tracked, no lines at all),
- * and returns a real document each time.
+ * the Print-preview modal's job). Beyond "runs without throwing", buildRows() is
+ * exported specifically so row-count/merge behavior can be asserted directly —
+ * a batch/serial-tracked SKU must still print as ONE row per SKU (matching
+ * "Total SKU"), with every batch/serial it carries listed as multiple lines
+ * WITHIN that row's own Batch/Serial no. and Bin location cells, not as
+ * separate rows.
  */
 import { describe, it, expect } from 'vitest'
 import { addOutgoing, type OutgoingOrder } from '~/data/outgoing'
 import { addPickingTask, getPickingTask, type PickingTask } from '~/data/pickingTasks'
 import { getPickingLineItems } from '~/data/pickingTaskDetails'
-import { generatePickingListPdf } from '~/utils/pickingListPdf'
+import { generatePickingListPdf, buildRows } from '~/utils/pickingListPdf'
 
 const WAREHOUSE_ID = 'wh-006'
 const WAREHOUSE_NAME = 'Gudang Makassar Selatan'
@@ -38,18 +39,30 @@ describe('generatePickingListPdf', () => {
     expect(typeof doc.output).toBe('function')
   })
 
-  it('generates a PDF for a batch-tracked SKU, flattening one row per batch', async () => {
+  it('generates a PDF for a batch-tracked SKU: still ONE row, every batch listed within it', async () => {
     const task = makeTaskForSku('1001', 'Green Beans Arabica Gayo Grade 1', 'Sack', 3)
     const items = getPickingLineItems(getPickingTask(task.id)!)
-    expect(items.some((i) => (i.plannedBatchPicks?.length ?? 0) > 0)).toBe(true)
+    const batches = items[0]!.plannedBatchPicks ?? []
+    expect(batches.length).toBeGreaterThan(0)
+    const rows = buildRows(items)
+    expect(rows).toHaveLength(1) // one row for the whole SKU, not one per batch
+    expect(rows[0]!.qty).toBe(3) // combined qty across every batch
+    expect(rows[0]!.batchOrSerial.split('\n')).toHaveLength(batches.length)
     const doc = await generatePickingListPdf(task, items)
     expect(typeof doc.output).toBe('function')
   })
 
-  it('generates a PDF for a serial-tracked SKU, flattening one row per serial', async () => {
-    const task = makeTaskForSku('2004', 'Espresso Machine Lever Manual 1-Group', 'Unit', 1)
+  it('generates a PDF for a serial-tracked SKU: still ONE row even with 2+ serials assigned', async () => {
+    // qty=2 forces 2 distinct serials to be reserved for this line — the exact
+    // scenario that used to print as 2 separate rows for the same SKU.
+    const task = makeTaskForSku('2004', 'Espresso Machine Lever Manual 1-Group', 'Unit', 2)
     const items = getPickingLineItems(getPickingTask(task.id)!)
-    expect(items.some((i) => (i.plannedSerialPicks?.length ?? 0) > 0)).toBe(true)
+    const serials = items[0]!.plannedSerialPicks ?? []
+    expect(serials.length).toBe(2)
+    const rows = buildRows(items)
+    expect(rows).toHaveLength(1) // one row for the whole SKU, not one per serial
+    expect(rows[0]!.qty).toBe(2)
+    expect(rows[0]!.batchOrSerial.split('\n')).toHaveLength(2)
     const doc = await generatePickingListPdf(task, items)
     expect(typeof doc.output).toBe('function')
   })
