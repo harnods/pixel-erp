@@ -19,6 +19,10 @@ const editingCustom = computed(() => isEdit.value ? customProducts.find(p => p.s
 
 const router = useRouter()
 
+// WMS doesn't deal in pricing/costing/accounting — those fields/sections are ERP-only.
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
 const NAME_MAX = 255
 const DESC_MAX = 6000
 
@@ -370,10 +374,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             @dragleave="dragOver = false"
             @drop.prevent="onPhotoDrop"
           >
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="np-dropzone-icon">
-              <path d="M4 16l4.586-4.586a2 2 0 0 1 2.828 0L16 16M14 14l1.586-1.586a2 2 0 0 1 2.828 0L20 14M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              <circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.5"/>
-            </svg>
+            <img src="/upload-photo.svg" alt="" aria-hidden="true" class="np-dropzone-icon" />
             <p class="np-dropzone-copy">
               <label class="np-dropzone-link">
                 Choose photo
@@ -393,10 +394,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
         </div>
       </div>
 
-      <!-- ── Pricing & inventory info ── -->
+      <!-- ── Pricing & inventory info (WMS: "Inventory info" — no pricing) ── -->
       <div class="nw-form-group np-full">
         <div class="nw-section">
-          <h2 class="nw-section-title">Pricing &amp; inventory info</h2>
+          <h2 class="nw-section-title">{{ isWms ? 'Inventory info' : 'Pricing & inventory info' }}</h2>
           <div class="nw-section-spacer" />
 
           <div class="nw-fields">
@@ -422,7 +423,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     is-searchable use-portal is-full-width
                   />
                 </MpFormControl>
-                <MpFormControl id="np-inventory-account" class="np-field-270" is-required>
+                <MpFormControl v-if="!isWms" id="np-inventory-account" class="np-field-270" is-required>
                   <MpFormLabel>Default inventory account</MpFormLabel>
                   <MpAutocomplete
                     id="np-inventory-account-ac" v-model="inventoryAccount" :data="inventoryAccountOptions" label-prop="label" value-prop="value"
@@ -432,74 +433,75 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </div>
             </div>
 
-            <!-- I buy this product -->
-            <div class="np-toggle-block">
-              <label class="np-checkbox-row">
-                <MpCheckbox id="np-does-buy" :is-checked="doesBuy" @change="doesBuy = !doesBuy" />
-                <span>I buy this product</span>
-              </label>
-              <div v-if="doesBuy" class="nw-row np-toggle-fields">
-                <MpFormControl id="np-purchase-cost" class="np-field-270">
-                  <MpFormLabel>Default purchase cost</MpFormLabel>
-                  <div class="np-prefix-wrap">
-                    <span class="np-prefix-chip">Rp</span>
-                    <input id="np-purchase-cost-input" v-model="purchaseCost" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
-                  </div>
-                </MpFormControl>
-                <MpFormControl id="np-purchase-account" class="np-field-270" is-required>
-                  <MpFormLabel>Default purchase account</MpFormLabel>
-                  <MpAutocomplete
-                    id="np-purchase-account-ac" v-model="purchaseAccount" :data="purchaseAccountOptions" label-prop="label" value-prop="value"
-                    is-searchable use-portal is-full-width
-                  />
-                </MpFormControl>
-                <MpFormControl id="np-purchase-tax" class="np-field-270">
-                  <MpFormLabel>Default purchase tax</MpFormLabel>
-                  <MpAutocomplete
-                    id="np-purchase-tax-ac" v-model="purchaseTax" :data="taxOptions" label-prop="label" value-prop="value"
-                    placeholder="Select default purchase tax" is-searchable use-portal is-full-width is-clearable
-                  />
-                </MpFormControl>
+            <!-- I buy this product / I sell this product — ERP only; WMS only tracks stock -->
+            <template v-if="!isWms">
+              <div class="np-toggle-block">
+                <label class="np-checkbox-row">
+                  <MpCheckbox id="np-does-buy" :is-checked="doesBuy" @change="doesBuy = !doesBuy" />
+                  <span>I buy this product</span>
+                </label>
+                <div v-if="doesBuy" class="nw-row np-toggle-fields">
+                  <MpFormControl id="np-purchase-cost" class="np-field-270">
+                    <MpFormLabel>Default purchase cost</MpFormLabel>
+                    <div class="np-prefix-wrap">
+                      <span class="np-prefix-chip">Rp</span>
+                      <input id="np-purchase-cost-input" v-model="purchaseCost" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
+                    </div>
+                  </MpFormControl>
+                  <MpFormControl id="np-purchase-account" class="np-field-270" is-required>
+                    <MpFormLabel>Default purchase account</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-purchase-account-ac" v-model="purchaseAccount" :data="purchaseAccountOptions" label-prop="label" value-prop="value"
+                      is-searchable use-portal is-full-width
+                    />
+                  </MpFormControl>
+                  <MpFormControl id="np-purchase-tax" class="np-field-270">
+                    <MpFormLabel>Default purchase tax</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-purchase-tax-ac" v-model="purchaseTax" :data="taxOptions" label-prop="label" value-prop="value"
+                      placeholder="Select default purchase tax" is-searchable use-portal is-full-width is-clearable
+                    />
+                  </MpFormControl>
+                </div>
               </div>
-            </div>
 
-            <!-- I sell this product -->
-            <div class="np-toggle-block">
-              <label class="np-checkbox-row">
-                <MpCheckbox id="np-does-sell" :is-checked="doesSell" @change="doesSell = !doesSell" />
-                <span>I sell this product</span>
-              </label>
-              <div v-if="doesSell" class="nw-row np-toggle-fields np-toggle-fields--wrap">
-                <MpFormControl id="np-sales-price" class="np-field-270">
-                  <MpFormLabel>Default sales price</MpFormLabel>
-                  <div class="np-prefix-wrap">
-                    <span class="np-prefix-chip">Rp</span>
-                    <input id="np-sales-price-input" v-model="salesPrice" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
-                  </div>
-                </MpFormControl>
-                <MpFormControl id="np-sales-account" class="np-field-270" is-required>
-                  <MpFormLabel>Default sales account</MpFormLabel>
-                  <MpAutocomplete
-                    id="np-sales-account-ac" v-model="salesAccount" :data="salesAccountOptions" label-prop="label" value-prop="value"
-                    is-searchable use-portal is-full-width
-                  />
-                </MpFormControl>
-                <MpFormControl id="np-sales-tax" class="np-field-270">
-                  <MpFormLabel>Default sales tax</MpFormLabel>
-                  <MpAutocomplete
-                    id="np-sales-tax-ac" v-model="salesTax" :data="taxOptions" label-prop="label" value-prop="value"
-                    placeholder="Select default sales tax" is-searchable use-portal is-full-width is-clearable
-                  />
-                </MpFormControl>
-                <MpFormControl id="np-discount-account" class="np-field-270">
-                  <MpFormLabel>Default discount account</MpFormLabel>
-                  <MpAutocomplete
-                    id="np-discount-account-ac" v-model="discountAccount" :data="discountAccountOptions" label-prop="label" value-prop="value"
-                    placeholder="Select default discount account" is-searchable use-portal is-full-width is-clearable
-                  />
-                </MpFormControl>
+              <div class="np-toggle-block">
+                <label class="np-checkbox-row">
+                  <MpCheckbox id="np-does-sell" :is-checked="doesSell" @change="doesSell = !doesSell" />
+                  <span>I sell this product</span>
+                </label>
+                <div v-if="doesSell" class="nw-row np-toggle-fields np-toggle-fields--wrap">
+                  <MpFormControl id="np-sales-price" class="np-field-270">
+                    <MpFormLabel>Default sales price</MpFormLabel>
+                    <div class="np-prefix-wrap">
+                      <span class="np-prefix-chip">Rp</span>
+                      <input id="np-sales-price-input" v-model="salesPrice" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
+                    </div>
+                  </MpFormControl>
+                  <MpFormControl id="np-sales-account" class="np-field-270" is-required>
+                    <MpFormLabel>Default sales account</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-sales-account-ac" v-model="salesAccount" :data="salesAccountOptions" label-prop="label" value-prop="value"
+                      is-searchable use-portal is-full-width
+                    />
+                  </MpFormControl>
+                  <MpFormControl id="np-sales-tax" class="np-field-270">
+                    <MpFormLabel>Default sales tax</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-sales-tax-ac" v-model="salesTax" :data="taxOptions" label-prop="label" value-prop="value"
+                      placeholder="Select default sales tax" is-searchable use-portal is-full-width is-clearable
+                    />
+                  </MpFormControl>
+                  <MpFormControl id="np-discount-account" class="np-field-270">
+                    <MpFormLabel>Default discount account</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-discount-account-ac" v-model="discountAccount" :data="discountAccountOptions" label-prop="label" value-prop="value"
+                      placeholder="Select default discount account" is-searchable use-portal is-full-width is-clearable
+                    />
+                  </MpFormControl>
+                </div>
               </div>
-            </div>
+            </template>
 
           </div>
         </div>
@@ -603,10 +605,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 /* Radio group */
 .np-radio-group { display: flex; gap: var(--mp-spacing-6); align-items: center; }
-.np-radio-item { display: flex; align-items: center; gap: var(--mp-spacing-3); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); user-select: none; }
+/* No gap here — MpRadio already renders its own 12px control-to-label gap
+   internally (radio__root). A wrapper gap would stack into a double gap. */
+.np-radio-item { display: flex; align-items: center; gap: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); user-select: none; }
 
 /* Plain checkbox row (not wrapped in MpFormControl — matches Figma's simple toggle rows) */
-.np-checkbox-row { display: flex; align-items: center; gap: var(--mp-spacing-3); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); user-select: none; }
+/* No gap here — MpCheckbox already renders its own 12px control-to-label gap
+   internally (checkbox__root). A wrapper gap would stack into a double gap. */
+.np-checkbox-row { display: flex; align-items: center; gap: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); user-select: none; }
 
 /* Toggle-reveal blocks (Pricing & inventory info) */
 .np-toggle-block { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
@@ -642,7 +648,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   transition: background 0.15s;
 }
 .np-dropzone--over { background: var(--mp-background-neutral-subtle-hovered, var(--mp-background-neutral-hovered)); }
-.np-dropzone-icon { color: var(--mp-text-placeholder); }
+.np-dropzone-icon { width: 48px; height: 48px; }
 .np-dropzone-copy { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
 .np-dropzone-link { color: var(--mp-text-link); cursor: pointer; }
 .np-dropzone-link:hover { text-decoration: underline; text-underline-offset: 2px; }

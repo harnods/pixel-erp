@@ -33,6 +33,10 @@ const route = useRoute()
 
 const product = computed(() => getProductDetail(props.orderId))
 
+// WMS doesn't deal in pricing/costing/accounting — those fields/sections are ERP-only.
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
 function goBack() { router.push('/product-list') }
 
 // ── Tabs — driven by ?section= (NOT ?tab=: this route's first segment, "product-list",
@@ -275,7 +279,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <div class="pd-field-col pd-field-col--flex">
             <ContentList label="Product type" :value="product.productType" />
             <ContentList label="Track stock by" :value="product.trackStockBy" />
-            <ContentList label="Default inventory account">
+            <ContentList v-if="!isWms" label="Default inventory account">
               <a class="pd-link">{{ product.defaultInventoryAccount }}</a>
             </ContentList>
           </div>
@@ -288,8 +292,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         </div>
       </section>
 
-      <!-- Purchase info / Sales info -->
-      <div class="pd-two-col">
+      <!-- Purchase info / Sales info — ERP only, WMS doesn't deal in pricing/accounting -->
+      <div v-if="!isWms" class="pd-two-col">
         <section class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Purchase info</h2>
           <div class="pd-purchase-row">
