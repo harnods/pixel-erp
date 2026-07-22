@@ -117,7 +117,7 @@ function clearFilters() {
 function archiveBom(row: BillOfMaterials) {
   row.archived = true
   persistBillOfMaterials()
-  toast.notify({ variant: 'success', title: 'Bill of materials deleted' })
+  toast.notify({ variant: 'success', title: 'Bill of materials archived' })
 }
 
 // ─── Delete confirmation ────────────────────────────────────────────────────────
@@ -306,7 +306,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as BillOfMaterials)">View details</MpPopoverListItem>
             <MpPopoverListItem @click="duplicateBom(row as unknown as BillOfMaterials)">Duplicate</MpPopoverListItem>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal(row as unknown as BillOfMaterials)">Delete</MpPopoverListItem>
+            <MpPopoverListItem @click="openDeleteModal(row as unknown as BillOfMaterials)">Archive</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -336,8 +336,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Delete confirmation ── -->
   <ConfirmModal
     v-model:is-open="isDeleteModalOpen"
-    title="Delete bill of materials?"
+    title="Archive bill of materials?"
     :description="`${bomToDelete?.number ?? ''} will be removed from the list. You can still find it via the Show archived BOM filter.`"
+    confirm-label="Archive"
     @confirm="confirmDelete"
   />
 
