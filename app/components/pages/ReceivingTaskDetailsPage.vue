@@ -14,7 +14,7 @@ import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask, type TaskLineItem } from '~/data/receivingTaskDetails'
 import {
-  taskAgingDays, startReceiving, canCancelReceivingTask, cancelReceivingTask,
+  taskAgingDays, startReceiving, canCancelReceivingTask, cancelReceivingTask, acknowledgeCanceledReceipt,
   type ReceivingTask,
 } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
@@ -146,6 +146,24 @@ function createPutAway() {
 // ── Receiving actions ───────────────────────────────────────────────────────
 function startReceivingAndNavigate() {
   startReceiving(props.orderId)
+  router.push(`/receiving/${props.orderId}/receive`)
+}
+
+// This task's own PO was canceled while it was in progress — Continue
+// receiving is blocked (real receiving work may already exist, so it's never
+// silently auto-canceled like an open task on the same PO would be) until the
+// operator explicitly acknowledges the banner below.
+const needsCancelAck = computed(() => !!task.value?.needsCancelAck)
+function acknowledgeCancelAck() {
+  if (!task.value) return
+  acknowledgeCanceledReceipt(task.value.id)
+  toast.notify({ variant: 'success', title: 'Acknowledged — you can continue receiving', maxWidth: 'max-content' })
+}
+function continueReceiving() {
+  if (needsCancelAck.value) {
+    toast.notify({ variant: 'error', title: 'Acknowledge the canceled purchase order below before continuing', maxWidth: 'max-content' })
+    return
+  }
   router.push(`/receiving/${props.orderId}/receive`)
 }
 
@@ -354,6 +372,21 @@ function goBack() {
 
     <!-- ── Scrollable stage ── -->
     <div ref="stageEl" class="detail-stage">
+
+      <!-- Purchase order behind this task was canceled while it was already in
+           progress — real receiving work may already exist, so it isn't
+           silently auto-canceled. Continue receiving is blocked until this is
+           acknowledged. -->
+      <div v-if="needsCancelAck" class="rcvgd-cancel-banner">
+        <svg class="rcvgd-cancel-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="rcvgd-cancel-banner-text">
+          The purchase order behind this task ({{ task.purchaseNo }}) was canceled. Acknowledge to continue receiving.
+        </span>
+        <button class="rcvgd-cancel-banner-btn" type="button" @click="acknowledgeCancelAck">Acknowledge</button>
+      </div>
 
       <!-- ── Summary grid ── -->
       <section class="rcvgd-summary">
@@ -629,7 +662,7 @@ function goBack() {
       <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">
         Start receiving
       </button>
-      <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/receiving/${orderId}/receive`)">
+      <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="continueReceiving">
         Continue receiving
       </button>
       <button v-else-if="localStatus === 'pending put-away'" class="detail-btn detail-btn--primary" @click="createPutAway">
@@ -783,6 +816,24 @@ function goBack() {
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex; flex-direction: column; gap: var(--mp-spacing-8);
 }
+
+/* ── Canceled-PO acknowledge banner ──────────────────────────────────────── */
+.rcvgd-cancel-banner {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-warning-subtle, #fffbeb);
+  border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.rcvgd-cancel-banner-icon { color: var(--mp-icon-warning, #d97706); flex-shrink: 0; }
+.rcvgd-cancel-banner-text { flex: 1; }
+.rcvgd-cancel-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.rcvgd-cancel-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Summary grid ────────────────────────────────────────────────────────── */
 .rcvgd-summary {

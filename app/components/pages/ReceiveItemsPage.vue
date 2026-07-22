@@ -13,7 +13,7 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
-import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
+import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, acknowledgeCanceledReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
@@ -416,6 +416,16 @@ const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
 function goBack()      { router.push(`/receiving/${props.orderId}`) }
 function goReceiving() { router.push('/inbound-delivery?tab=Receiving') }
 
+// Defense in depth — the details page already blocks navigating here via
+// Continue receiving until acknowledged, but a direct URL visit must be
+// blocked the same way (real receiving work may already exist on this task,
+// so it's never silently auto-canceled once its PO is gone).
+function acknowledgeAndProceed() {
+  if (!task.value) return
+  acknowledgeCanceledReceipt(task.value.id)
+  toast.notify({ variant: 'success', title: 'Acknowledged — you can continue receiving', maxWidth: 'max-content' })
+}
+
 // ── Footer divider ────────────────────────────────────────────────────────────
 const stageEl          = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)
@@ -448,7 +458,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 </script>
 
 <template>
-  <div v-if="task && po" class="detail-page">
+  <div v-if="task && po && task.needsCancelAck" class="ri-not-found">
+    <p>The purchase order behind this task ({{ task.purchaseNo }}) was canceled.</p>
+    <p>Acknowledge to continue receiving.</p>
+    <button class="ri-btn ri-btn--primary" type="button" @click="acknowledgeAndProceed">Acknowledge</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to task</button>
+  </div>
+
+  <div v-else-if="task && po" class="detail-page">
 
     <!-- ── Title bar ── -->
     <header class="detail-bar">

@@ -4,16 +4,17 @@ import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpDatePicker, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpInput, css,
+  MpModalOverlay, MpModalCloseButton, MpInput, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { receiptsForStages, receiptStage, cancelReceipt, canCancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
+import { receiptsForStages, receiptStage, canCancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
+import { cancelInboundReceipt } from '~/data/inboundSync'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -284,8 +285,11 @@ function openBulkCancelModal(selectedRows: Set<number>, deselectAll: () => void)
 }
 function closeCancelModal() { cancelModalOpen.value = false; receiptsToCancel.value = [] }
 function confirmCancel() {
-  for (const r of receiptsToCancel.value) cancelReceipt(r.id)
+  const failed = receiptsToCancel.value.filter((r) => !cancelInboundReceipt(r.id).ok)
   closeCancelModal()
+  if (failed.length) {
+    toast.notify({ variant: 'error', title: `${failed.length} receipt${failed.length > 1 ? 's' : ''} could not be canceled`, maxWidth: 'max-content' })
+  }
 }
 
 // Delete confirmation — manually-created receipts only (no real PO behind them).

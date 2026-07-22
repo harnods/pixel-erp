@@ -4,7 +4,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpIcon, MpSpinner, css,
+  MpIcon, MpSpinner, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
@@ -12,7 +12,8 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStages, cancelReceipt, isManualReceipt, deleteReceipt, receipts, type Receipt } from '~/data/receipts'
+import { receiptsForStages, isManualReceipt, deleteReceipt, receipts, type Receipt } from '~/data/receipts'
+import { cancelInboundReceipt } from '~/data/inboundSync'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
@@ -169,8 +170,12 @@ const cancelModalOpen = ref(false)
 function openCloseReceiptModal() { cancelModalOpen.value = true }
 function closeCancelModal() { cancelModalOpen.value = false }
 function confirmCancel() {
-  cancelReceipt(props.orderId)
+  const result = cancelInboundReceipt(props.orderId)
   closeCancelModal()
+  if (!result.ok) {
+    toast.notify({ variant: 'error', title: "This receipt can't be canceled", maxWidth: 'max-content' })
+    return
+  }
   router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
 }
 

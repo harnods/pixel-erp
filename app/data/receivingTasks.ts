@@ -121,6 +121,14 @@ export interface ReceivingTask {
   putAwayTaskId?: string;
   canceledDate?: string;
   canceledReason?: string;
+  /** This task's OWN receipt (PO) was canceled while the task was already "in
+   *  progress" — real receiving work may already exist, so it is NOT
+   *  auto-canceled the way an "open" task on the same PO would be (see
+   *  cancelInboundReceipt in inboundSync.ts). Instead, Continue receiving is
+   *  blocked until the operator explicitly acknowledges the PO is gone (see
+   *  acknowledgeCanceledReceipt below) — after that, the task behaves exactly
+   *  like any other in-progress task again. */
+  needsCancelAck?: boolean;
 }
 
 /** A PO with its receiving task(s) — a grouping view derived from the flat store. */
@@ -589,6 +597,35 @@ export function cancelReceivingTask(taskId: string, reason?: string): void {
   if (reason) t.canceledReason = reason;
   persistTasks();
   recomputeReceiptStatus(t.receiptId);
+}
+
+/**
+ * This task's own PO was just canceled while it was already "in progress" —
+ * called only from cancelInboundReceipt (inboundSync.ts), never directly.
+ * Unlike an "open" task on the same PO (auto-canceled outright, nothing to
+ * reconcile), an in-progress task may already have real receivedQty recorded,
+ * so it is deliberately NOT auto-canceled — status/qty are left untouched.
+ * This just flags it so the UI can block Continue receiving until the
+ * operator explicitly acknowledges via acknowledgeCanceledReceipt below.
+ */
+export function flagTaskCanceledPoAck(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t) return;
+  t.needsCancelAck = true;
+  persistTasks();
+}
+
+/**
+ * Operator confirms awareness that this task's source PO was canceled —
+ * clears the Continue-receiving block. Doesn't change status/qty/targets;
+ * the operator decides what to do next (keep receiving toward whatever's
+ * still outstanding, or End receiving with what's already recorded).
+ */
+export function acknowledgeCanceledReceipt(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t) return;
+  t.needsCancelAck = false;
+  persistTasks();
 }
 
 function applyReceivingDetail(
