@@ -49,6 +49,40 @@ function rowPickedForGroup(group: PickGroupItem): number {
   }, 0)
 }
 
+// ── "By orders" view — same line items, grouped by the order they belong to
+// instead of merged by SKU. Header (order no./customer/source) mirrors
+// CreatePackingPage.vue's per-order block exactly. ──────────────────────────
+type ViewMode = 'combined' | 'orders'
+const viewMode = ref<ViewMode>('combined')
+interface PickOrderGroup {
+  orderId: string
+  salesNo: string
+  customer: string
+  source: string
+  isMarketplace: boolean
+  lines: PickLineItem[]
+}
+const orderGroups = computed<PickOrderGroup[]>(() => {
+  const map = new Map<string, PickOrderGroup>()
+  for (const it of lineItems.value) {
+    let g = map.get(it.orderId)
+    if (!g) {
+      const o = outgoingOrders.find(x => x.id === it.orderId)
+      g = {
+        orderId: it.orderId,
+        salesNo: it.salesNo,
+        customer: o?.customer ?? '',
+        source: o?.source ?? '',
+        isMarketplace: isMarketplaceOrder(o),
+        lines: [],
+      }
+      map.set(it.orderId, g)
+    }
+    g.lines.push(it)
+  }
+  return [...map.values()]
+})
+
 // ── Local state mirror (mock data isn't deeply reactive) ─────────────────────
 const localStatus = ref<TaskStatus>('open')
 const localEndDate = ref<string | null>(null)
@@ -125,6 +159,10 @@ function mergedGroupItem(group: PickGroupItem): PickLineItem {
 }
 function openViewBatch(group: PickGroupItem) { viewBatchItem.value = mergedGroupItem(group) }
 function openViewSerial(group: PickGroupItem) { viewSerialItem.value = mergedGroupItem(group) }
+// By-orders view — the line is already a single order's own PickLineItem, no
+// merge to undo.
+function openViewBatchForLine(item: PickLineItem) { viewBatchItem.value = item }
+function openViewSerialForLine(item: PickLineItem) { viewSerialItem.value = item }
 
 // Linked sales orders + packing tasks
 const linkedOrders = computed(() =>
@@ -265,6 +303,16 @@ const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.value))
 
+// Same search box, applied per-order instead of to the merged rows — an order
+// with no matching line drops out entirely rather than showing an empty table.
+const filteredOrderGroups = computed(() => {
+  const q = itemSearch.value.trim().toLowerCase()
+  if (!q) return orderGroups.value
+  return orderGroups.value
+    .map(g => ({ ...g, lines: g.lines.filter(l => l.productName.toLowerCase().includes(q) || l.skuCode.toLowerCase().includes(q)) }))
+    .filter(g => g.lines.length > 0)
+})
+
 /** Picked qty for a batch/serial-tracked group, broken down by which bin it was
  *  actually picked from — read from the task's own committed batchPicks/
  *  serialPicks (a batch/serial always sits in exactly ONE fixed bin), so 2+
@@ -340,6 +388,57 @@ const visibleRowsWithMeta = computed<PickDetailRowWithMeta[]>(() => {
   }
   return result
 })
+
+// Same bin-split idea as groupQtyByBin/groupLocationsForDisplay above, but for
+// a single order's own (un-merged) line — one line only ever has its OWN
+// picks to split, no memberKeys to sum, so the picked qty is just the line's
+// own (locally-overlaid) pickedQty.
+function lineQtyByBin(item: PickLineItem): Map<string, number> {
+  const map = new Map<string, number>()
+  if (rowPicked(item.key, item.pickedQty) <= 0) return map
+  if (isBatchTrackedSku(item.skuCode)) {
+    for (const b of item.batchPicks ?? []) {
+      if (b.qty > 0 && b.location) map.set(b.location, (map.get(b.location) ?? 0) + b.qty)
+    }
+  } else if (isSerialTrackedSku(item.skuCode)) {
+    for (const s of item.serialPicks ?? []) {
+      if (s.location) map.set(s.location, (map.get(s.location) ?? 0) + 1)
+    }
+  }
+  return map
+}
+function lineLocationsForDisplay(item: PickLineItem): string[] {
+  const bins = new Set<string>()
+  if (isBatchTrackedSku(item.skuCode)) {
+    const source = item.batchPicks?.length ? item.batchPicks : (item.plannedBatchPicks ?? [])
+    for (const b of source) if (b.location) bins.add(b.location)
+  } else if (isSerialTrackedSku(item.skuCode)) {
+    const source = item.serialPicks?.length ? item.serialPicks : (item.plannedSerialPicks ?? [])
+    for (const s of source) if (s.location) bins.add(s.location)
+  }
+  return [...bins]
+}
+interface PickOrderRowWithMeta {
+  item: PickLineItem
+  bin: string | null
+  binQty: number
+  groupIndex: number
+  groupSize: number
+}
+/** Same row-expansion as visibleRowsWithMeta, scoped to one order's own lines. */
+function orderRowsWithMeta(group: PickOrderGroup): PickOrderRowWithMeta[] {
+  const result: PickOrderRowWithMeta[] = []
+  for (const item of group.lines) {
+    const byBin = lineQtyByBin(item)
+    if (byBin.size < 2) {
+      result.push({ item, bin: null, binQty: 0, groupIndex: 0, groupSize: 1 })
+      continue
+    }
+    const bins = [...byBin.entries()]
+    bins.forEach(([bin, qty], idx) => result.push({ item, bin, binQty: qty, groupIndex: idx, groupSize: bins.length }))
+  }
+  return result
+}
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -518,6 +617,10 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       <!-- Line items -->
       <div class="pkd-table-wrap">
         <div class="pkd-filter-bar">
+          <div class="detail-loc-toggle">
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">Combined</button>
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">By orders</button>
+          </div>
           <div class="pkd-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -530,7 +633,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
             </button>
           </div>
         </div>
-        <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
+        <section v-if="viewMode === 'combined'" class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <thead>
@@ -622,6 +725,107 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
             <span>Showing {{ visibleItems.length }} of {{ filteredItems.length }} products</span>
           </div>
         </section>
+
+        <!-- By orders view — same items, one section + table per contributing
+             sales order, header mirrors CreatePackingPage.vue's order grouping
+             (order no. / customer / source). -->
+        <template v-else>
+          <div v-for="group in filteredOrderGroups" :key="group.orderId" class="pkd-order-block">
+            <div class="pkd-order-head">
+              <span class="pkd-order-no">{{ group.salesNo }}</span>
+              <span v-if="group.customer" class="pkd-order-cust">{{ group.customer }}</span>
+              <span v-if="group.source" class="pkd-order-source">
+                <SourceLabel :source="group.source" />
+                <MpTooltip
+                  v-if="group.isMarketplace"
+                  :id="`pkd-mkt-${group.orderId}`"
+                  label="Marketplace orders must be picked in full. Items can't be removed."
+                  placement="top"
+                  use-portal
+                >
+                  <span class="pkd-source-info"><MpIcon name="info" size="sm" /></span>
+                </MpTooltip>
+              </span>
+            </div>
+            <section class="detail-items-section">
+              <div class="detail-items-scroll">
+                <table class="detail-items">
+                  <thead>
+                    <tr>
+                      <th class="detail-th">Product</th>
+                      <th class="detail-th">SKU</th>
+                      <th class="detail-th">Storage location</th>
+                      <th class="detail-th detail-th--num">Qty to pick</th>
+                      <th class="detail-th detail-th--num">Picked qty</th>
+                      <th class="detail-th detail-th--num">Remaining qty to pick</th>
+                      <th class="detail-th">Unit</th>
+                      <th class="detail-th detail-th--action"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="row in orderRowsWithMeta(group)" :key="`${row.item.key}::${row.groupIndex}`"
+                      class="detail-item-row"
+                    >
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">
+                        <ProductCell :name="row.item.productName" :desc="row.item.productDesc" :image="row.item.image" />
+                      </td>
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.item.skuCode }}</td>
+                      <td v-if="row.groupSize > 1" class="detail-td detail-td--location">{{ row.bin }}</td>
+                      <td
+                        v-else-if="isBatchTrackedSku(row.item.skuCode) || isSerialTrackedSku(row.item.skuCode)"
+                        class="detail-td detail-td--location"
+                        :class="{ 'detail-td--location-summary': lineLocationsForDisplay(row.item).length }"
+                      >
+                        <div v-if="lineLocationsForDisplay(row.item).length" class="pkd-location-summary-wrap">
+                          <span v-for="loc in lineLocationsForDisplay(row.item)" :key="loc" class="pkd-location-summary-item">{{ loc }}</span>
+                        </div>
+                        <MpTooltip
+                          v-else
+                          :id="`pkd-tt-loc-order-${row.item.key}`"
+                          :label="isBatchTrackedSku(row.item.skuCode) ? 'View via View batch' : 'View via View serial number'"
+                          placement="top"
+                          use-portal
+                        >
+                          <span>—</span>
+                        </MpTooltip>
+                      </td>
+                      <td v-else class="detail-td detail-td--location">
+                        <span class="pkd-location-item" :title="row.item.binLocation">{{ row.item.binLocation }}</span>
+                      </td>
+
+                      <td class="detail-td detail-td--num">{{ fmt(row.groupSize > 1 ? row.binQty : row.item.expectedQty) }}</td>
+                      <td class="detail-td detail-td--num">
+                        <span v-if="row.groupSize > 1">{{ fmt(row.binQty) }}</span>
+                        <span v-else :class="isInProgress ? '' : (rowPicked(row.item.key, row.item.pickedQty) === row.item.expectedQty ? 'pkd-qty--full' : rowPicked(row.item.key, row.item.pickedQty) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
+                          {{ fmt(rowPicked(row.item.key, row.item.pickedQty)) }}
+                        </span>
+                      </td>
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--num">
+                        <span :class="row.item.expectedQty - rowPicked(row.item.key, row.item.pickedQty) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
+                          {{ fmt(row.item.expectedQty - rowPicked(row.item.key, row.item.pickedQty)) }}
+                        </span>
+                      </td>
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.item.unit }}</td>
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--action">
+                        <MpTooltip v-if="isBatchTrackedSku(row.item.skuCode)" :id="`pkd-tt-batch-order-${row.item.key}`" label="View batch" placement="top" use-portal>
+                          <button class="pkd-view-btn" type="button" aria-label="View batch" @click="openViewBatchForLine(row.item)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                        <MpTooltip v-else-if="isSerialTrackedSku(row.item.skuCode)" :id="`pkd-tt-serial-order-${row.item.key}`" label="View serial number" placement="top" use-portal>
+                          <button class="pkd-view-btn" type="button" aria-label="View serial number" @click="openViewSerialForLine(row.item)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </template>
       </div>
 
       <!-- Linked transactions -->
@@ -906,7 +1110,20 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 .pkd-progress-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .pkd-table-wrap { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-.pkd-filter-bar { display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-3); }
+.pkd-filter-bar { display: flex; justify-content: space-between; align-items: center; gap: var(--mp-spacing-3); }
+/* Combined / By orders toggle — same pill pattern as StockAdjustmentDetailsPage.vue's By location/By SKU toggle. */
+.detail-loc-toggle { display: flex; align-items: center; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; gap: 2px; }
+.detail-loc-toggle-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.detail-loc-toggle-btn:hover { color: var(--mp-text-default); }
+.detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+/* Per-order blocks (By orders view) — same header pattern as CreatePackingPage.vue's order grouping. */
+.pkd-order-block { margin-bottom: var(--mp-spacing-5); }
+.pkd-order-head { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-2); }
+.pkd-order-no { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pkd-order-cust { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pkd-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
+.pkd-source-info { display: inline-flex; align-items: center; color: var(--mp-icon-default, var(--mp-text-secondary)); cursor: default; }
 .pkd-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);

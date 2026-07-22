@@ -439,13 +439,100 @@ function generateTrackingScenario(): OutgoingOrder[] {
   ];
 }
 
+/**
+ * Demo scenario: TWO sales orders at Gudang Jakarta Pusat (wh-001) — one
+ * regular ERP order, one Desty marketplace order — meant to be bundled into a
+ * single Open picking task (see seedMultiOrderPickingDemo() in
+ * pickingTasks.ts), exercising the Combined/By orders toggle on
+ * PickingTaskDetailsPage.vue with a real multi-order task. Each order draws
+ * from its own distinct SKUs (no SKU shared between the two) so their demand
+ * never compounds against the same stock line. Verified via
+ * tests/data-integrity.spec.ts (available ≥ demand for every SKU/warehouse
+ * pair, post-reservation) against the live seed at wh-001: 3001 available 9,
+ * 3002 available 20, 3005 available 21, 3006 available 22 — this demo only
+ * ever claims 3 of 3001, 2 of 3002, 3 of 3005, 2 of 3006.
+ */
+function generateMultiOrderPickingScenario(): OutgoingOrder[] {
+  return [
+    {
+      id: "out-demo-multi-a",
+      number: "OUT-2026-0701",
+      salesNo: "Sales Order #10200",
+      source: "Sales Order",
+      warehouseId: "wh-001",
+      warehouseName: "Gudang Jakarta Pusat",
+      skuQty: 2,
+      orderQty: 6,
+      shippedQty: 0,
+      status: "pending",
+      dueDate: isoOffset(5),
+      memo: "For demo multi-order picking (regular)",
+      customer: "Hotel Mulia Senayan",
+      lines: [
+        {
+          sku: "3001",
+          productName: "Milk Frothing Pitcher 600ml",
+          desc: "Stainless steel, sharp spout, latte art",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/products/milk-steaming-pitcher_7a0b6d9d-dc2f-410b-83e8-0c0caf6403e5.jpg",
+          unit: "Unit",
+          qty: 3,
+        },
+        {
+          sku: "3005",
+          productName: "Paper Filter V60 02 (100 pcs)",
+          desc: "Natural unbleached, cone shape",
+          img: "https://cdn.shopify.com/s/files/1/0801/9439/files/0129_hariometeo_112_2485daae-afa0-42da-b4d9-97fb436ffc99.jpg",
+          unit: "Box",
+          qty: 3,
+        },
+      ],
+    },
+    {
+      id: "out-demo-multi-b",
+      number: "OUT-2026-0702",
+      salesNo: "#SO201",
+      source: "Shopee: Central Perk",
+      warehouseId: "wh-001",
+      warehouseName: "Gudang Jakarta Pusat",
+      skuQty: 2,
+      orderQty: 4,
+      shippedQty: 0,
+      status: "pending",
+      dueDate: `${isoOffset(1)}T23:59:00`,
+      memo: "For demo multi-order picking (marketplace)",
+      customer: "Fore Coffee Thamrin",
+      lines: [
+        {
+          sku: "3002",
+          productName: "Tamper 58mm Flat Base",
+          desc: "Anodized aluminium handle, calibrated",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/products/Lucca-Stainless-Steel-Espresso-Tamper-05.jpg",
+          unit: "Unit",
+          qty: 2,
+        },
+        {
+          sku: "3006",
+          productName: "Knock Box Drawer Stainless",
+          desc: "2.4 L capacity, rubber knock bar",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/files/LUCCA-Knock-Box-Small-Black-by-Clive-Coffee.jpg",
+          unit: "Unit",
+          qty: 2,
+        },
+      ],
+    },
+  ];
+}
+
 // The outbound graph (orders + picking + packing + delivery) is persisted as a
 // full snapshot so seed records mutated by the flow (status derivation, shipped
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
 const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
-  outgoingSnapshot ?? [...generateTrackingScenario(), ...generateOrders(), ...generateShipped(3), ...generateCanceled()],
+  outgoingSnapshot ?? [
+    ...generateTrackingScenario(), ...generateMultiOrderPickingScenario(),
+    ...generateOrders(), ...generateShipped(3), ...generateCanceled(),
+  ],
 );
 
 // Pending / open / in-process / partially-shipped orders are pickable. (A partially

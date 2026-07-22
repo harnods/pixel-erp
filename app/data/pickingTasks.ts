@@ -186,7 +186,11 @@ function seedTasks(): PickingTask[] {
   // isn't packable anyway.
   const cands = PICKING_WAREHOUSES.map((w) => ({
     w,
-    orders: pickableOrders([w.id]).filter((o) => o.source !== "Outbound delivery"),
+    // out-demo-multi-* are reserved for seedMultiOrderPickingDemo() below — kept
+    // out of this generic single-order pool so they're never accidentally
+    // consumed by it first (they'd otherwise be prime candidates: wh-001 is
+    // comfortably stocked, so it's a likely "richest warehouse" pick).
+    orders: pickableOrders([w.id]).filter((o) => o.source !== "Outbound delivery" && !o.id.startsWith("out-demo-multi")),
   })).sort((a, b) => b.orders.length - a.orders.length);
   const pool = cands.flatMap((c) => c.orders); // richest warehouse's orders come first
   if (pool.length) {
@@ -245,6 +249,7 @@ function seedTasks(): PickingTask[] {
     });
   }
   out.push(...seedShippedPicks(seq));
+  out.push(seedMultiOrderPickingDemo());
   return out;
 }
 
@@ -338,6 +343,41 @@ function seedShippedPicks(startSeq: number): PickingTask[] {
     });
   });
   return out;
+}
+
+/**
+ * Seed: ONE Open picking task bundling 2 sales orders from the same warehouse —
+ * one regular ERP order (out-demo-multi-a), one Desty marketplace order
+ * (out-demo-multi-b) — demoing the Combined/By orders toggle on
+ * PickingTaskDetailsPage.vue with a real multi-order task. Qty and stock
+ * reservation both come straight from buildPickingLines()/
+ * assignmentsFromReservations() — the exact same functions addPickingTask()
+ * itself uses — so nothing here is hand-faked; the reservation was already
+ * made automatically by reserveAllPickableOrders() (outgoing.ts) the moment
+ * these two orders were seeded as "pending", same as any other pickable order.
+ */
+function seedMultiOrderPickingDemo(): PickingTask {
+  const orderA = outgoingOrders.find((o) => o.id === "out-demo-multi-a")!;
+  const orderB = outgoingOrders.find((o) => o.id === "out-demo-multi-b")!;
+  const lines = buildPickingLines([orderA.id, orderB.id], [orderA.salesNo, orderB.salesNo]);
+  const toPickQty = lines.reduce((s, l) => s + l.qty, 0);
+  const { batchPicks, serialPicks } = assignmentsFromReservations(lines, orderA.warehouseId);
+  return {
+    id: "pick-demo-multi-001",
+    taskNo: "Picking #30500", // clearly outside the 30090+ range other seeds use, so it can never collide
+    salesOrderIds: [orderA.id, orderB.id],
+    salesNos: [orderA.salesNo, orderB.salesNo],
+    warehouseId: orderA.warehouseId,
+    warehouseName: orderA.warehouseName,
+    assignee: operatorForWarehouse(orderA.warehouseId, 0),
+    skuQty: new Set(lines.map((l) => l.sku)).size,
+    toPickQty,
+    pickedQty: 0,
+    status: "open",
+    lines,
+    ...(Object.keys(batchPicks).length ? { batchPicks, plannedBatchPicks: clonePicks(batchPicks) } : {}),
+    ...(Object.keys(serialPicks).length ? { serialPicks, plannedSerialPicks: clonePicks(serialPicks) } : {}),
+  };
 }
 
 function isoAt(dayOffset: number, hour: number, minute: number): string {
