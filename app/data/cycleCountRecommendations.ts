@@ -45,3 +45,41 @@ export function recommendationCount(): number {
   }
   return count
 }
+
+const WEIGHT_TABLE: Record<number, number[]> = { 3: [0.5, 0.3, 0.2], 2: [0.6, 0.4], 1: [1] }
+const RULE_KEY = { neg: 'cycleCountRuleNeg', min: 'cycleCountRuleMin', var: 'cycleCountRuleVar' } as const
+
+/** Highest-priority recommended product names — mirrors the Recommendations table's
+ *  own score/sort so the "N recommended for counting today" summary (e.g. a daily
+ *  banner on the Cycle counts index) never drifts from what that table shows first. */
+export function topRecommendedProductNames(limit = 3): string[] {
+  const cfg = getWarehouseSettings()
+  if (!cfg.cycleCountRec) return []
+
+  const activeOrder = cfg.cycleCountRuleOrder.filter((r) => cfg[RULE_KEY[r]])
+  const weights = WEIGHT_TABLE[activeOrder.length] ?? []
+  const weightFor = (rule: 'neg' | 'min' | 'var') => {
+    const i = activeOrder.indexOf(rule)
+    return i === -1 ? 0 : (weights[i] ?? 0)
+  }
+
+  const scored: { name: string; score: number }[] = []
+  for (const wh of warehouses.filter((w) => w.status === 'active' && !w.isDefault)) {
+    const detail = getWarehouseDetail(wh.id)
+    if (!detail) continue
+    for (const stock of detail.stock) {
+      const reasons = recommendationReasons(cfg, wh.id, stock)
+      if (!reasons.length) continue
+
+      const varianceNorm = (hashStr(stock.sku + wh.id + 'variance') % 101) / 100
+      const negativeStockFlag = reasons.includes('Negative stock') ? 1 : 0
+      const minStockProximity = reasons.includes('Min. stock')
+        ? Math.max(0, (MIN_STOCK_LIMIT - stock.onHand) / MIN_STOCK_LIMIT)
+        : 0
+      const score = weightFor('neg') * negativeStockFlag + weightFor('min') * minStockProximity + weightFor('var') * varianceNorm
+      scored.push({ name: stock.name, score })
+    }
+  }
+  scored.sort((a, b) => b.score - a.score)
+  return scored.slice(0, limit).map((r) => r.name)
+}

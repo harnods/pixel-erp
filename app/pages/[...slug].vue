@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { MpIcon, MpSpinner } from '@mekari/pixel3'
+import { MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
@@ -22,7 +22,7 @@ import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
-import { recommendationCount } from '~/data/cycleCountRecommendations'
+import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -431,6 +431,13 @@ function selectTab(tab: string) {
   if (route.query.tab === tab) return
   router.push({ query: { ...route.query, tab } })
 }
+
+// Daily banner (Cycle counts index, all tabs) — top 3 recommended product names,
+// only shown once the Recommendations tab actually has SKUs flagged for counting.
+const cycleCountBannerNames = computed(() => topRecommendedProductNames(3))
+const cycleCountBannerVisible = computed(() =>
+  currentPageKey.value === 'Cycle counts' && cycleCountBannerNames.value.length > 0,
+)
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {
@@ -1116,6 +1123,14 @@ function startResize(e: MouseEvent) {
       </div>
 
       <div class="stage">
+        <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
+          <MpBannerIcon name="info" />
+          <MpBannerTitle>Recommended for counting today</MpBannerTitle>
+          <MpBannerDescription>{{ cycleCountBannerNames.join(', ') }}</MpBannerDescription>
+          <MpBannerLink>
+            <MpButton variant="textLink" size="sm" @click="selectTab('Recommendations')">View all recommendations</MpButton>
+          </MpBannerLink>
+        </MpBanner>
         <component v-if="activeTabComponent" :is="activeTabComponent" />
         <div v-else-if="currentTabs.length" class="tab-stage-placeholder">
           <p class="tab-stage-placeholder__title">{{ activeTab }}</p>
@@ -1582,6 +1597,10 @@ function startResize(e: MouseEvent) {
   gap: var(--mp-spacing-5);
   padding: 0 var(--mp-spacing-6);
   background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0;
+}
+
+.cycle-count-banner {
   flex-shrink: 0;
 }
 
