@@ -86,16 +86,85 @@ index pages (e.g. Sales Orders):
     <div class="filter-search">
       <!-- search svg -->
       <input v-model="search" class="filter-search-input" placeholder="Search..." />
+      <button
+        v-if="search"
+        class="filter-search-clear"
+        type="button"
+        aria-label="Clear search"
+        @click="search = ''"
+      >
+        <MpIcon name="close" size="sm" />
+      </button>
     </div>
   </div>
 </template>
 ```
 
 The `.filter-*` classes (`.filter-left`, `.filter-right`, `.filter-select-wrap`,
-`.filter-all-btn`, `.filter-icon-btn`, `.filter-search`, …) are defined in the
-page's own scoped `<style>` — copy them from `PurchaseInvoicesPage.vue`. The
+`.filter-all-btn`, `.filter-icon-btn`, `.filter-search`, `.filter-search-clear`, …)
+are defined in the page's own scoped `<style>` — copy them from
+`PurchaseInvoicesPage.vue`, then add the search clear button state below. The
 left/right split works because the table's internal `.erp-filter-bar` uses
 `justify-content: space-between`.
+
+### Search clear/reset button
+
+Every search form in a filter bar must provide an inline clear/reset button when
+the search has a value.
+
+| State | Rule |
+|---|---|
+| Empty search | Show search icon + input only. Do not show the clear button. |
+| Search has value | Show a trailing icon button inside the search pill. Clicking it resets only the search value, not all other filters. |
+| Icon | Use the Pixel clear/X/remove icon. Validate the exact icon name with Pixel MCP before implementation. Current MCP matches include `close`, `X`, and `remove-tag`; literal `remove` is not listed. |
+| Accessibility | Button must be `type="button"` with `aria-label="Clear search"`. |
+
+Recommended markup for the current hand-rolled index-page search:
+
+```vue
+<div class="filter-search">
+  <MpIcon name="search" size="md" />
+  <input
+    v-model="search"
+    class="filter-search-input"
+    type="text"
+    placeholder="Search..."
+  />
+  <button
+    v-if="search"
+    class="filter-search-clear"
+    type="button"
+    aria-label="Clear search"
+    @click="search = ''"
+  >
+    <MpIcon name="close" size="sm" />
+  </button>
+</div>
+```
+
+Recommended clear-button style:
+
+```css
+.filter-search-clear {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--mp-radii-full);
+  background: transparent;
+  color: var(--mp-icon-secondary);
+  cursor: pointer;
+}
+
+.filter-search-clear:hover {
+  background: var(--mp-background-neutral-hovered);
+  color: var(--mp-icon-default);
+}
+```
 
 ---
 
@@ -137,6 +206,11 @@ When the user describes what should be in the filter bar, map their words to slo
   </MpInputGroup>
 </template>
 ```
+
+If using Pixel `MpInput`, use its built-in clear behavior (`is-clearable`) only
+when the rendered icon matches the required clear/X/remove icon behavior. If the
+page uses the current hand-rolled pill search, add the explicit trailing
+`filter-search-clear` button shown above.
 
 ## With Status Filter + Create Button
 

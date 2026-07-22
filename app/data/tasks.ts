@@ -2,14 +2,16 @@ import { reactive } from 'vue'
 
 export type TaskDocType =
   | 'Sales Quote' | 'Sales Order' | 'Sales Delivery' | 'Sales Invoice'
+  | 'Payment received' | 'Sales Return'
   | 'Purchase Request' | 'Purchase Order' | 'Purchase Delivery' | 'Purchase Invoice'
-  | 'Expense' | 'Warehouse Transfer' | 'Production Plan' | 'Stock In/Out'
+  | 'Purchase Quote' | 'Purchase Payment' | 'Purchase Return'
+  | 'Expense' | 'Warehouse Transfer' | 'Production Plan' | 'Stock In/Out' | 'Stock Count'
 
-export type TaskStatus = 'awaiting approval' | 'action required'
+export type TaskStatus = 'awaiting approval' | 'action required' | 'submitted'
 
 // Doc types with no meaningful Total / Balance due / Due date — internal
 // movements/plans rather than billable transactions.
-const NON_FINANCIAL_DOC_TYPES: TaskDocType[] = ['Warehouse Transfer', 'Production Plan', 'Stock In/Out']
+const NON_FINANCIAL_DOC_TYPES: TaskDocType[] = ['Warehouse Transfer', 'Production Plan', 'Stock In/Out', 'Stock Count']
 
 export interface Task {
   id: string
@@ -31,8 +33,10 @@ export interface Task {
 
 const docTypes: TaskDocType[] = [
   'Sales Quote', 'Sales Order', 'Sales Delivery', 'Sales Invoice',
+  'Payment received', 'Sales Return',
   'Purchase Request', 'Purchase Order', 'Purchase Delivery', 'Purchase Invoice',
-  'Expense', 'Warehouse Transfer', 'Production Plan', 'Stock In/Out',
+  'Purchase Quote', 'Purchase Payment', 'Purchase Return',
+  'Expense', 'Warehouse Transfer', 'Production Plan', 'Stock In/Out', 'Stock Count',
 ]
 
 const contacts = [
@@ -112,7 +116,7 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
     }
 
     return {
-      id: `TASK-${status === 'awaiting approval' ? 'AA' : 'AR'}-${n}`,
+      id: `TASK-${status === 'awaiting approval' ? 'AA' : status === 'submitted' ? 'TS' : 'AR'}-${n}`,
       docType,
       number: n,
       details,
@@ -129,6 +133,7 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
 }
 
 export const awaitingApprovalTasks = reactive<Task[]>(buildTasks(25, 'awaiting approval', 7))
+export const submittedTasks = reactive<Task[]>(buildTasks(25, 'submitted', 13))
 
 export function formatTaskNumber(task: Task): string {
   return `${task.docType} #${String(task.number).padStart(5, '0')}`
@@ -234,16 +239,30 @@ export function commentsFor(task: Task): TaskComment[] {
 // the fixed order the tab strip should render (not alphabetical/random).
 export const taskDocTypeTabs: { label: string; docType: TaskDocType | null }[] = [
   { label: 'All', docType: null },
-  { label: 'Sales quotes', docType: 'Sales Quote' },
-  { label: 'Sales orders', docType: 'Sales Order' },
-  { label: 'Sales deliveries', docType: 'Sales Delivery' },
   { label: 'Sales invoices', docType: 'Sales Invoice' },
-  { label: 'Purchase requests', docType: 'Purchase Request' },
-  { label: 'Purchase orders', docType: 'Purchase Order' },
-  { label: 'Purchase deliveries', docType: 'Purchase Delivery' },
+  { label: 'Payment received', docType: 'Payment received' },
+  { label: 'Sales orders', docType: 'Sales Order' },
+  { label: 'Sales returns', docType: 'Sales Return' },
+  { label: 'Sales quotes', docType: 'Sales Quote' },
+  { label: 'Sales deliveries', docType: 'Sales Delivery' },
   { label: 'Purchase invoices', docType: 'Purchase Invoice' },
+  { label: 'Purchase payments', docType: 'Purchase Payment' },
+  { label: 'Purchase orders', docType: 'Purchase Order' },
+  { label: 'Purchase returns', docType: 'Purchase Return' },
+  { label: 'Purchase quotes', docType: 'Purchase Quote' },
+  { label: 'Purchase deliveries', docType: 'Purchase Delivery' },
+  { label: 'Purchase requests', docType: 'Purchase Request' },
   { label: 'Expenses', docType: 'Expense' },
   { label: 'Warehouse transfers', docType: 'Warehouse Transfer' },
-  { label: 'Production plans', docType: 'Production Plan' },
   { label: 'Stock In/Out', docType: 'Stock In/Out' },
+  { label: 'Stock counts', docType: 'Stock Count' },
+  { label: 'Production plans', docType: 'Production Plan' },
 ]
+
+// Inbox › Awaiting approval inner tab groups.
+export const INBOX_TAB_GROUPS: Record<string, TaskDocType[]> = {
+  Sales:     ['Sales Invoice', 'Payment received', 'Sales Order', 'Sales Return', 'Sales Quote', 'Sales Delivery'],
+  Purchases: ['Purchase Invoice', 'Purchase Payment', 'Purchase Order', 'Purchase Return', 'Purchase Quote', 'Purchase Delivery', 'Purchase Request'],
+  Expenses:  ['Expense'],
+  Warehouse: ['Warehouse Transfer', 'Stock In/Out', 'Stock Count'],
+}

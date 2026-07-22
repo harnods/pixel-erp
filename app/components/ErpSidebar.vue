@@ -106,6 +106,11 @@ interface PanelSubItem {
   to?: string
   /** Task-count indicator shown right-aligned (e.g. items awaiting action). */
   count?: number
+  /**
+   * Explicit full router path (may include a query string) for items that route
+   * outside the label→slug scheme — e.g. the Inbox panel tabs (/inbox?tab=…).
+   */
+  path?: string
 }
 
 // Level-2 flyout item. If panelSubmenu is set, clicking it opens a level-3 panel.
@@ -154,6 +159,16 @@ const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
 const { navigate, currentPageKey, setActiveMenuLabel } = useNavigation()
 const router = useRouter()
+const route = useRoute()
+
+// Inbox level-2 panel — reached from the header notification icon (not the nav
+// tree). Its tabs route via ?tab= so the page key stays 'Inbox' (same pattern as
+// the Reports panel, but query-driven since it's a single page).
+const inboxPanelSubmenu: PanelSubItem[][] = [[
+  { label: 'Awaiting approval', path: '/inbox?tab=awaiting-approval' },
+  { label: 'Transaction submitted', path: '/inbox?tab=transaction-submitted' },
+  { label: 'Reminders', path: '/inbox?tab=reminders' },
+]]
 
 const flyoutItem = ref<NavItem | null>(null)
 const flyoutStyle = ref<Record<string, string>>({})
@@ -550,7 +565,18 @@ const SECTION_PARENT: Record<string, string> = {
   'Put away': 'Barang masuk',
 }
 
-watch(currentPageKey, (key) => {
+watch([currentPageKey, () => route.query.tab], ([key]) => {
+  // Inbox is reached from the header notification icon, not the sidebar tree —
+  // open its own level-2 panel (titled INBOX) and don't highlight any nav item.
+  if (key === 'Inbox') {
+    const tab = (route.query.tab as string | undefined) ?? 'awaiting-approval'
+    const match = inboxPanelSubmenu[0].find(p => p.path?.includes(`tab=${tab}`)) ?? inboxPanelSubmenu[0][0]!
+    openPanel({ title: 'Inbox', groups: inboxPanelSubmenu, parentNavName: 'Inbox' })
+    activePanelSubItem.value = match.label
+    activeItem.value = ''
+    setActiveMenuLabel(match.label)
+    return
+  }
   let { nav, sub, panel } = resolveActive(key)
   // When the URL key isn't in this scenario's nav tree, try the canonical parent
   // section instead so the sidebar stays anchored (and the level-2 panel stays open).
@@ -630,7 +656,8 @@ function handleNavClick(item: NavItem) {
 
 function handlePanelSubItemClick(sub: PanelSubItem) {
   activePanelSubItem.value = sub.label
-  navigate(sub.to ?? sub.label)
+  if (sub.path) router.push(sub.path)
+  else navigate(sub.to ?? sub.label)
 }
 
 function handleFlyoutSubItemClick(sub: SubItem) {

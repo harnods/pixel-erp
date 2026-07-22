@@ -1,95 +1,45 @@
 <script setup lang="ts">
 import {
   MpIcon, MpAutocomplete,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogPopover from '~/components/patterns/ApprovalLogPopover.vue'
 import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
-import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import { taskDocTypeTabs, formatTaskNumber, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
 
 const props = defineProps<{
-  /** Underlying dataset for this tab (Awaiting approval / Actions required) */
   tasks: Task[]
-  /** Unique id prefix so per-row popover/select ids don't collide across tabs */
   idPrefix: string
-  /** When set, limits the Transaction type dropdown to these docType values only */
   allowedDocTypes?: string[] | null
-  /** When true, hides the Transaction type filter entirely (e.g. Expenses tab) */
   hideTransactionType?: boolean
-  /** Column keys to force-hide regardless of user column settings */
   hiddenColumns?: string[]
 }>()
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
-// ─── Approve / Reject actions ─────────────────────────────────────────────────
-const approvedIds = ref<Set<number>>(new Set())
-const rejectedIds = ref<Set<number>>(new Set())
-const activeTasks = computed(() =>
-  props.tasks.filter(t => !approvedIds.value.has(t.id) && !rejectedIds.value.has(t.id))
-)
-
-function approveTask(row: Task) {
-  approvedIds.value = new Set([...approvedIds.value, row.id])
-  toast.notify({
-    variant: 'success',
-    title: `${row.docType} approved`,
-    rootProps: { class: 'toast-enterprise' },
-  })
-}
-
-// ─── Reject modal ─────────────────────────────────────────────────────────────
-const rejectTarget = ref<Task | null>(null)
-const rejectModalOpen = computed(() => rejectTarget.value !== null)
-
-function openRejectModal(row: Task) {
-  rejectTarget.value = row
-}
-
-function handleReject(_reason: string) {
-  const row = rejectTarget.value
-  if (!row) return
-  rejectedIds.value = new Set([...rejectedIds.value, row.id])
-  const label = row.docType.toLowerCase()
-  toast.notify({
-    variant: 'success',
-    title: `${label.charAt(0).toUpperCase()}${label.slice(1)} rejected`,
-    rootProps: { class: 'toast-enterprise' },
-  })
-  rejectTarget.value = null
-}
-
-function closeRejectModal() {
-  rejectTarget.value = null
-}
-
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'date',        label: 'Date',         width: '120px',                                sortType: 'date'   },
-  { key: 'number',       label: 'Number',       width: '240px', sortable: true,                sortType: 'number' },
-  { key: 'details',      label: 'Details',      width: '260px', sortable: true,                sortType: 'text'   },
-  { key: 'requestedBy',  label: 'Requested by', width: '160px', sortable: true,                sortType: 'text'   },
-  { key: 'balanceDue',   label: 'Balance due',  width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'total',        label: 'Total',        width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'dueDate',      label: 'Due date',     width: '120px',                                sortType: 'date'   },
+  { key: 'number',      label: 'Number',        width: '240px', sortable: true,                sortType: 'number' },
+  { key: 'details',     label: 'Details',       width: '260px', sortable: true,                sortType: 'text'   },
+  { key: 'requestedBy', label: 'Requested by',  width: '160px', sortable: true,                sortType: 'text'   },
+  { key: 'status',      label: 'Status',        width: '120px'                                                    },
+  { key: 'balanceDue',  label: 'Balance due',   width: '160px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'total',       label: 'Total',         width: '160px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'dueDate',     label: 'Due date',      width: '120px',                                sortType: 'date'   },
 ]
 
-// Column show/hide — Date & Number are always on (locked in the menu).
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map((c) => [c.key, true])))
 const columnItems = columns.map((c) => ({ key: c.key, label: c.label, disabled: c.key === 'date' || c.key === 'number' }))
 const visibleColumns = computed<TableColumn[]>(() =>
   columns.filter((c) => columnVisibility[c.key] && !props.hiddenColumns?.includes(c.key))
 )
 function hideColumn(key: string) { columnVisibility[key] = false }
-
-// ─── Date range filter (default: last 30 days) — AdvancedDateRangePicker
-// replicates the Pixel "Advance" date-picker pattern (sidebar presets +
-// day/month/year calendar views) with its own label + field. ─────────────────
 
 function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
 function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x }
@@ -102,11 +52,6 @@ const dateRange = computed<[Date, Date] | null>(() => {
   return start && end ? [dayStart(start), dayStart(end)] : null
 })
 
-// ─── Transaction type filter — typeable (MpAutocomplete): typing filters the
-// list to matching doc types; selecting one sets transactionTypeFilter to its
-// raw docType string (MpAutocomplete resolves objects to their value-prop
-// automatically when isRawValue is left at its default false). ─────────────
-
 const transactionTypeOptions = computed(() =>
   taskDocTypeTabs
     .filter((t) => t.docType)
@@ -115,13 +60,7 @@ const transactionTypeOptions = computed(() =>
 )
 const transactionTypeFilter = ref('')
 
-// ─── Table state ──────────────────────────────────────────────────────────────
-
-// Newest request first by default — sorted on the source itself (not via
-// setSort) so the Date column doesn't render as the "active" sort column;
-// its sort icon stays hover-only, same as every other column, until the
-// user actually picks a sort option from it.
-const defaultSortedTasks = computed(() => [...activeTasks.value].sort((a, b) => b.date.localeCompare(a.date)))
+const defaultSortedTasks = computed(() => [...props.tasks].sort((a, b) => b.date.localeCompare(a.date)))
 
 const {
   search, currentPage, paginated, total, perPage,
@@ -143,12 +82,9 @@ const {
   },
 })
 
-// reset to page 1 when the extra (non-built-in) filters change
 watch([transactionTypeFilter, dateRangeValue], () => setPage(1))
 
 const hasActiveFilter = computed(() => !!search.value || !!transactionTypeFilter.value)
-
-// ─── Formatters ───────────────────────────────────────────────────────────────
 
 function formatIDR(amount: number) {
   return new Intl.NumberFormat('id-ID', {
@@ -175,7 +111,7 @@ function formatDate(iso: string) {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     :has-active-filter="hasActiveFilter"
-    actions-width="228px"
+    actions-width="172px"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -183,14 +119,11 @@ function formatDate(iso: string) {
     @hide-column="hideColumn"
   >
 
-    <!-- ── Filter bar (existing pattern: filters, icon buttons, search) ── -->
+    <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <!-- Date range — Pixel "Advance" date-picker pattern (sidebar presets +
-             day/month/year calendar), label outside/above the field -->
         <AdvancedDateRangePicker :id="`${idPrefix}-tasks-daterange`" v-model="dateRangeValue" />
 
-        <!-- Transaction type — hidden for Expenses tab (only one type there) -->
         <MpAutocomplete
           v-if="!hideTransactionType"
           :id="`${idPrefix}-tasks-txntype-autocomplete`"
@@ -239,7 +172,7 @@ function formatDate(iso: string) {
       {{ formatDate(value as string) }}
     </template>
 
-    <!-- ── Cell: Number — View details chip on hover (same as Bills) ── -->
+    <!-- ── Cell: Number ── -->
     <template #cell-number="{ row }">
       <div class="cell-with-action">
         <span class="cell-text">{{ formatTaskNumber(row as Task) }}</span>
@@ -253,8 +186,7 @@ function formatDate(iso: string) {
       </div>
     </template>
 
-    <!-- ── Cell: Details — Stock In/Out shows product name + qty as a two-line
-         product cell; everything else is plain text (contact / warehouse route). ── -->
+    <!-- ── Cell: Details ── -->
     <template #cell-details="{ value, row }">
       <ProductCell
         v-if="(row as Task).docType === 'Stock In/Out'"
@@ -264,32 +196,29 @@ function formatDate(iso: string) {
       <template v-else>{{ value }}</template>
     </template>
 
-    <!-- ── Cell: Requested by ── -->
-    <template #cell-requestedBy="{ value }">
-      {{ value }}
+    <!-- ── Cell: Status — always Draft (announcement/gray) ── -->
+    <template #cell-status>
+      <ErpStatusBadge status="draft" />
     </template>
 
-    <!-- ── Cell: Balance due — dash for non-financial doc types (0 = N/A) ── -->
+    <!-- ── Cell: Balance due ── -->
     <template #cell-balanceDue="{ value }">
       {{ value ? formatIDR(value as number) : '–' }}
     </template>
 
-    <!-- ── Cell: Total — dash for non-financial doc types (0 = N/A) ── -->
+    <!-- ── Cell: Total ── -->
     <template #cell-total="{ value }">
       {{ value ? formatIDR(value as number) : '–' }}
     </template>
 
-    <!-- ── Cell: Due date — dash for non-financial doc types ('' = N/A) ── -->
+    <!-- ── Cell: Due date ── -->
     <template #cell-dueDate="{ value }">
       {{ value ? formatDate(value as string) : '–' }}
     </template>
 
-    <!-- ── Actions: same approval button group pattern as Bills, plus the
-         Approval log / Comments popover pattern (self-contained trigger +
-         popover, bottom-end/4px gap, plain-CSS tooltip — see memory) ── -->
+    <!-- ── Actions: approval log + comments + kebab (no approve, no reject) ── -->
     <template #actions="{ row }">
       <div class="row-actions">
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click.stop="approveTask(row as Task)">Approve</button>
         <div class="row-actions__icons">
           <ApprovalLogPopover
             :id="`${idPrefix}-applog-${(row as Task).id}`"
@@ -314,7 +243,6 @@ function formatDate(iso: string) {
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem>View details</MpPopoverListItem>
-                <MpPopoverListItem variant="danger" @click.stop="openRejectModal(row as Task)">Reject</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -322,17 +250,9 @@ function formatDate(iso: string) {
       </div>
     </template>
   </ErpTablePage>
-
-  <RejectTransactionModal
-    :is-open="rejectModalOpen"
-    :doc-type="rejectTarget?.docType ?? ''"
-    @close="closeRejectModal"
-    @reject="handleReject"
-  />
 </template>
 
 <style scoped>
-/* Cell with hover action button (same as Bills' Number/Beneficiary cells) */
 .cell-with-action {
   position: relative;
   display: flex;
@@ -378,27 +298,22 @@ function formatDate(iso: string) {
   display: flex;
 }
 
-/* Actions cell: left padding 8px only */
 :global(.erp-td--actions) {
-  padding-left: var(--mp-spacing-2) !important; /* 8px */
+  padding-left: var(--mp-spacing-2) !important;
 }
 
-/* Row actions: Approve button + icon button group (same as Bills awaiting approval),
-   flushed to the right edge of the sticky actions column (erp-td--actions is
-   text-align:right, but that has no effect on this flex child — justify-content
-   does the actual flush). */
 .row-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--mp-spacing-6);
   padding-left: 0;
+  margin-left: -8px;
 }
 
 .row-actions__icons {
   display: flex;
   align-items: center;
-  gap: var(--mp-spacing-5); /* 20px (8px more than before) */
+  gap: var(--mp-spacing-5);
 }
 
 .row-icon-btn {
@@ -417,14 +332,13 @@ function formatDate(iso: string) {
   color: var(--mp-text-default);
 }
 
-/* ── Filter bar (copied from BillsAwaitingApprovalPage) ──────────────────── */
+/* ── Filter bar ──────────────────────────────────────────────────────────── */
 
 .filter-left {
   display: flex;
   align-items: flex-end;
   gap: var(--mp-spacing-4);
 }
-
 
 .filter-right {
   display: flex;
@@ -493,11 +407,4 @@ function formatDate(iso: string) {
   min-width: 0;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
-
-/* Enterprise toast — fully rounded with enterprise styling */
-:global(.toast-enterprise) {
-  border-radius: var(--mp-radii-full, 999px) !important;
-  border-color: var(--mp-border-success) !important;
-  background-color: var(--mp-background-neutral) !important;
-}
 </style>

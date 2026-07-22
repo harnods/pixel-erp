@@ -74,12 +74,11 @@ Reuse as-is; do not redesign per module.
      **`View details` is always the first item**; `Share via …` actions are separated
      by a divider; min-width 160px, single-line labels (see
      [ErpTablePage.md → Row actions menu](ErpTablePage.md#row-actions-menu-kebab)).
-   - **Row metrics**: single-line row = **40px**, **6px** vertical padding on every
-     column (incl. icon-button columns). Don't change.
+   - **Row metrics**: follow [ErpTablePage.md → Row](ErpTablePage.md#row) as the
+     single source of truth.
    - **Skeleton** = 3 solid rows: on **first load** (`:loading`) and **automatically
      on every page / rows-per-page change** (built into `ErpTablePage`).
-   - **Cell alignment**: single-line rows are centred (middle); a row with a multi-line
-     cell switches all its cells to top-aligned (line up with the tall cell's first line).
+   - **Cell alignment**: follow [ErpTablePage.md → Cell content rules](ErpTablePage.md#cell-content-rules).
    - **Tags column** uses `ErpTagList` (clamped to 2 lines, `More` link on overflow).
    - **Empty state** — two variants (see [ErpTablePage.md → Empty state](ErpTablePage.md#empty-state--two-variants)):
      *full* (illustration + title + CTA via `#empty`, no data ever) vs *inline*

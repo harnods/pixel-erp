@@ -1,3 +1,9 @@
+/* ── Toast — fully rounded pill, project-wide ───────────────────────────────── */
+
+.mp-toast__root {
+  border-radius: var(--mp-radii-full, 999px) !important;
+}
+
 /* ── ERP shared button ──────────────────────────────────────────────────────── */
 
 .btn-enterprise {

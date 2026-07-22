@@ -15,7 +15,7 @@ import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
 import { reviewFiles } from '~/data/reviewFiles'
-import { awaitingApprovalTasks } from '~/data/tasks'
+import { awaitingApprovalTasks, submittedTasks, INBOX_TAB_GROUPS } from '~/data/tasks'
 import { actionItems } from '~/data/actionItems'
 
 const { pageTitle, currentPageKey } = useNavigation()
@@ -46,6 +46,7 @@ const pageRegistry: Record<string, Component> = {
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Company profile':   defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Playground':        defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
+  'Inbox':             defineAsyncComponent(() => import('~/components/pages/InboxPage.vue')),
 }
 
 const SalesOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
@@ -288,6 +289,39 @@ watch([currentPageKey, () => route.query.tab], () => {
 function selectTab(tab: string) {
   if (route.query.tab === tab) return
   router.push({ query: { ...route.query, tab } })
+}
+
+// ── Inbox › Awaiting approval inner tabs ─────────────────────────────────────
+// These secondary tabs appear in the same gray area as the page-tabs above,
+// when the Inbox page is open on its Awaiting approval sidebar panel item.
+const INBOX_INNER_TABS = [
+  { key: 'all',       label: 'All' },
+  { key: 'sales',     label: 'Sales' },
+  { key: 'purchases', label: 'Purchase' },
+  { key: 'expenses',  label: 'Expense' },
+  { key: 'warehouse', label: 'Warehouse' },
+]
+
+const showInboxInnerTabs = computed(() =>
+  currentPageKey.value === 'Inbox' &&
+  (route.query.tab === 'awaiting-approval' || route.query.tab === 'transaction-submitted')
+)
+
+const inboxInnerTab = computed<string>(() => (route.query.innerTab as string | undefined) ?? 'all')
+
+const inboxInnerTabCounts = computed<Record<string, number>>(() => {
+  const src = route.query.tab === 'transaction-submitted' ? submittedTasks : awaitingApprovalTasks
+  return {
+    sales:     src.filter(t => (INBOX_TAB_GROUPS.Sales     as string[]).includes(t.docType)).length,
+    purchases: src.filter(t => (INBOX_TAB_GROUPS.Purchases as string[]).includes(t.docType)).length,
+    expenses:  src.filter(t => (INBOX_TAB_GROUPS.Expenses  as string[]).includes(t.docType)).length,
+    warehouse: src.filter(t => (INBOX_TAB_GROUPS.Warehouse as string[]).includes(t.docType)).length,
+  }
+})
+
+function selectInboxInnerTab(key: string) {
+  if (route.query.innerTab === key) return
+  router.push({ query: { ...route.query, innerTab: key } })
 }
 
 // Real component to render in the stage for a given page + tab (else placeholder).
@@ -888,6 +922,29 @@ function startResize(e: MouseEvent) {
             New warehouse transfer
           </button>
         </div>
+      </div>
+
+      <!-- Inbox › Awaiting approval inner tabs (same position + style as page-tabs) -->
+      <div v-if="showInboxInnerTabs" class="page-tabs" role="tablist">
+        <button
+          v-for="t in INBOX_INNER_TABS"
+          :key="t.key"
+          class="page-tab"
+          :class="{ 'page-tab--active': inboxInnerTab === t.key }"
+          role="tab"
+          :aria-selected="inboxInnerTab === t.key"
+          @click="selectInboxInnerTab(t.key)"
+        >
+          {{ t.label }}
+          <MpBadge
+            v-if="inboxInnerTabCounts[t.key] != null && t.key !== 'all'"
+            for="additionalInformation"
+            type="warning"
+            class="page-tab-count"
+          >
+            {{ inboxInnerTabCounts[t.key] }}
+          </MpBadge>
+        </button>
       </div>
 
       <!-- Status tabs (below the title, outside the stage) -->

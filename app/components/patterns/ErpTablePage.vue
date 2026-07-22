@@ -767,11 +767,13 @@ const bulkCountLabel = computed(() => {
 /* Right-aligned header — flip padding (Figma: pl-16 pr-8) */
 .erp-th--right {
   text-align: right;
+  vertical-align: middle;
   padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4);
 }
 
 .erp-th--center {
   text-align: center;
+  vertical-align: middle;
   padding: var(--mp-spacing-1) var(--mp-spacing-2);
 }
 
@@ -835,8 +837,9 @@ const bulkCountLabel = computed(() => {
 
 /* ── Column sort menu (ERP behaviour) ── */
 /* header content wraps label + sort icon; right-aligned columns push it to the end */
-.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); max-width: 100%; }
-.erp-th--right .th-inner { flex-direction: row-reverse; }
+.th-inner { display: inline-flex; align-items: center; justify-content: flex-start; gap: var(--mp-spacing-1); max-width: 100%; height: 100%; }
+.erp-th--right .th-inner { flex-direction: row-reverse; justify-content: flex-end; }
+.erp-th--center .th-inner { justify-content: center; }
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
   display: inline-flex; align-items: center; justify-content: center;
