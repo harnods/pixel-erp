@@ -69,8 +69,8 @@ function hideColumn(key: string) { colVis[key] = false }
 // ─── Filters ───────────────────────────────────────────────────────────────────
 // Status — multi-select. Completed & Canceled are terminal, hidden by default, so
 // the default view shows only the actionable stages.
-const STATUS_OPTIONS = ['Open', 'In process', 'Partially shipped', 'Completed', 'Canceled']
-const DEFAULT_STATUSES = ['Open', 'In process', 'Partially shipped']
+const STATUS_OPTIONS = ['Pending', 'Open', 'In process', 'Partially shipped', 'Completed', 'Canceled']
+const DEFAULT_STATUSES = ['Pending', 'Open', 'In process', 'Partially shipped']
 const STATUS_LABELS: Record<string, string> = {}
 function statusOptionLabel(s: string) { return STATUS_LABELS[s] ?? s }
 const statusFilter = ref<string[]>([...DEFAULT_STATUSES])
@@ -324,8 +324,9 @@ function bulkCreatePicking(selectedRows: Set<number>, deselectAll: () => void) {
   router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: wh, orderIds: eligible.map(o => o.id).join(','), from: 'requests' } })
 }
 
-// Only open orders can be cancelled.
-function canCancelOrder(o: OutgoingOrder) { return o.status === 'open' }
+// Only orders with no work started yet can be cancelled (previously just "open" —
+// now split into Pending/Open, both still count as "nothing started").
+function canCancelOrder(o: OutgoingOrder) { return o.status === 'pending' || o.status === 'open' }
 function cancelableSelection(selectedRows: Set<number>) { return selectedOrdersOf(selectedRows).filter(canCancelOrder) }
 function bulkCancelable(selectedRows: Set<number>) { return cancelableSelection(selectedRows).length > 0 }
 
@@ -561,7 +562,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ value }">
-      <ErpStatusBadge :status="(value as string)" />
+      <ErpStatusBadge :status="(value as string)" :type="value === 'pending' ? 'announcement' : undefined" />
     </template>
 
     <!-- ── Icon indicators — picking list + packing task badges ── -->

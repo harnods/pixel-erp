@@ -265,7 +265,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         <button class="detail-breadcrumb" @click="goBack">Outbound delivery</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ order.salesNo }}</h1>
-          <ErpStatusBadge :status="outgoingStage(order)" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge :status="outgoingStage(order)" :type="order.status === 'pending' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
           <MpPopover id="ood-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">

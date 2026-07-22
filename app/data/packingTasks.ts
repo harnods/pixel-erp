@@ -363,7 +363,7 @@ export function remainingSkusForOrder(order: OutgoingOrder): RemainingSkuLine[] 
  */
 export function canCreatePackingDirectlyForOrder(order: OutgoingOrder): boolean {
   if (getWarehouseConfig(order.warehouseId).pickingEnabled) return false;
-  if (order.status !== "open" && order.status !== "in progress") return false;
+  if (order.status !== "pending" && order.status !== "open" && order.status !== "in progress") return false;
   return remainingSkusForOrder(order).length > 0;
 }
 

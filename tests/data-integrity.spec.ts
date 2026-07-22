@@ -2,7 +2,7 @@
  * Data integrity checks for seed + generated warehouse/order data.
  *
  * Rules validated:
- * 1. Every open/in-progress outbound order has enough AVAILABLE qty per SKU
+ * 1. Every pending/open/in-progress outbound order has enough AVAILABLE qty per SKU
  *    in its warehouse (available = onHand − reserved at the item level).
  * 2. For batch-tracked SKUs: sum(batch.available) === item.available.
  * 3. For batch-tracked SKUs on active orders: sum(batch.available) ≥ order demand.
@@ -18,7 +18,7 @@ import { warehouses } from '~/data/warehouses'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const ACTIVE_STATUSES = new Set(['open', 'in progress'])
+const ACTIVE_STATUSES = new Set(['pending', 'open', 'in progress'])
 
 function activeOrders() {
   return outgoingOrders.filter(o => ACTIVE_STATUSES.has(o.status))

@@ -14,8 +14,11 @@ import {
   getReservationsForOrder,
 } from './warehouseDetails'
 
-/** Outbound order status. */
+/** Pending = no picking/packing task yet · Open = task(s) created, none started ·
+ *  In progress = at least one task started · Partially shipped = some qty shipped,
+ *  short of full · Completed = fully shipped · Canceled = voided. */
 export type OutgoingStatus =
+  | "pending"
   | "open"
   | "in progress"
   | "partially shipped"
@@ -43,7 +46,7 @@ export interface OutgoingOrder {
   orderQty: number;
   /** units shipped so far (0 = none, < orderQty = partial, = orderQty = full) */
   shippedQty: number;
-  status: string;
+  status: OutgoingStatus;
   /** ISO date the goods fully left the warehouse (completed orders only) */
   shippedDate?: string;
   /** ISO date the order was canceled (canceled orders only) */
@@ -102,10 +105,10 @@ function generateMemo(i: number, dueIso: string): string | undefined {
 }
 
 // Units shipped so far, derived from the status:
-//  - open / in progress → 0 (nothing has left yet)
+//  - pending/open/in progress → 0 (nothing has left yet)
 //  - partially shipped → shipped short of the full qty (varied, never full)
 //  - completed → shipped in full (or accepted short)
-function computeShipped(i: number, status: string, orderQty: number): number {
+function computeShipped(i: number, status: OutgoingStatus, orderQty: number): number {
   switch (status) {
     case "completed":
       // ~4 of 10 completed orders shipped short (accepted as partial)
@@ -122,7 +125,7 @@ function computeShipped(i: number, status: string, orderQty: number): number {
       return Math.min(orderQty - 1, Math.max(1, Math.round(orderQty * f)));
     }
     default:
-      return 0; // open / in progress
+      return 0; // pending / open / in progress
   }
 }
 
@@ -172,12 +175,16 @@ const CUSTOMERS = [
 ]
 
 /**
- * Status for order i — weighted to feel like a real outbound queue: mostly Open +
+ * Status for order i — weighted to feel like a real outbound queue: mostly Pending +
  * Completed, fewer In progress / Partially shipped. Canceled is appended separately.
+ * This is the PRE-task seed value; seedTasks() (pickingTasks.ts/packingTasks.ts) reads
+ * it to decide what tasks to attach, then syncOutboundOrderStatuses() re-derives the
+ * real status (Pending/Open/In progress/Partially shipped/Completed) from those tasks
+ * on every page mount — so "pending" here just means "no task ended (or started) yet".
  */
-function statusFor(i: number): string {
+function statusFor(i: number): OutgoingStatus {
   const h = hash100(i);
-  if (h < 30) return "open";              // ~30% awaiting fulfillment
+  if (h < 30) return "pending";           // ~30% awaiting fulfillment
   if (h < 52) return "in progress";       // ~22% being picked/packed
   if (h < 67) return "partially shipped"; // ~15% shipped short
   return "completed";                     // ~33% fully shipped
@@ -398,7 +405,7 @@ function generateTrackingScenario(): OutgoingOrder[] {
       skuQty: 3,
       orderQty: 9,
       shippedQty: 0,
-      status: "open",
+      status: "pending",
       dueDate: isoOffset(7),
       memo: "For demo 001",
       customer: "Anomali Coffee",
@@ -441,13 +448,13 @@ export const outgoingOrders = reactive<OutgoingOrder[]>(
   outgoingSnapshot ?? [...generateTrackingScenario(), ...generateOrders(), ...generateShipped(3), ...generateCanceled()],
 );
 
-// Open / in-process / partially-shipped orders are pickable. (A partially shipped
-// order flips to that status the moment ANY of it ships — even if most of it was
-// never picked at all — so it still needs to allow further pick lists for whatever
+// Pending / open / in-process / partially-shipped orders are pickable. (A partially
+// shipped order flips to that status the moment ANY of it ships — even if most of it
+// was never picked at all — so it still needs to allow further pick lists for whatever
 // SKU/qty remains uncovered; the per-SKU/qty check lives in pickingTasks.canPickOrder.
 // "completed" is excluded on purpose: shippedTotal >= orderQty there, so nothing
 // can possibly be left to pick.)
-const PICKABLE_STATUSES = ["open", "in progress", "partially shipped"];
+const PICKABLE_STATUSES = ["pending", "open", "in progress", "partially shipped"];
 
 /**
  * Reserve every currently pickable (open / in-process) order — stands in for
@@ -522,6 +529,7 @@ export function cancelOutgoingOrder(orderId: string, reason?: string, canceledBy
 
 // status → stage label (used by tabs / sidebar panel)
 const STATUS_TO_STAGE: Record<string, string> = {
+  pending: "Pending",
   open: "Open",
   "in progress": "In process",
   "partially shipped": "Partially shipped",
