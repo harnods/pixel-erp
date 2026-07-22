@@ -86,6 +86,13 @@ function isSerialTrackedSku(sku: string): boolean {
   const p = productBySku(sku)
   return p ? SERIAL_CATS.has(p.category) : false
 }
+// Batch/serial SKUs are picked from ONE shared pool (the Manage batch/serial
+// drawer) regardless of which order asked for them — that pool can't be split
+// independently per order, so those rows keep the old row-level (whole-SKU)
+// exclude/qty behavior everywhere, including from the By-orders view.
+function isTrackedSku(sku: string): boolean {
+  return isBatchTrackedSku(sku) || isSerialTrackedSku(sku)
+}
 
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
@@ -160,8 +167,23 @@ const orderTables = computed<OrderTable[]>(() =>
 // A picking list can cover any subset of SKUs regardless of whether an order is a
 // marketplace order — the marketplace "must be complete" rule is enforced later, at
 // packing-task creation, not here.
+//
+// Two independent layers of state, by SKU kind:
+// - Tracked (batch/serial) SKUs: row-level only (excludedKeys / qtyOverrides,
+//   keyed by SKU) — a single shared pool across every contributing order,
+//   unchanged from before.
+// - Plain SKUs: per-order-line (excludedLineKeys / lineQtyOverrides, keyed by
+//   `${orderId}::${sku}`) — each order can be edited/removed independently
+//   from the By-orders view. Combined's own qty input still edits the row's
+//   TOTAL (unchanged UX) by redistributing that total across member lines
+//   fill-order (first member filled first) — same rule as before, just now
+//   written into the per-line state instead of a single row override, so
+//   Combined's displayed total is simply the sum of the per-line values.
 const excludedKeys = ref(new Set<string>())
 const qtyOverrides = ref<Record<string, number>>({})
+const excludedLineKeys = ref(new Set<string>())
+const lineQtyOverrides = ref<Record<string, number>>({})
+function lineKeyOf(orderId: string, sku: string): string { return `${orderId}::${sku}` }
 // When the warehouse doesn't allow partial picking, every SKU must be picked in
 // full — nothing can be excluded and qty can't be lowered below the order qty.
 const partialPickingAllowed = computed(() =>
@@ -172,23 +194,89 @@ const lockedKeys = computed(() =>
 )
 const partialPickingLockedMsg = "This warehouse doesn't allow partial picking."
 function isLocked(key: string) { return lockedKeys.value.has(key) }
-function isSelected(key: string) { return isLocked(key) || !excludedKeys.value.has(key) }
+function isSelected(key: string): boolean {
+  if (isLocked(key)) return true
+  if (isTrackedSku(key)) return !excludedKeys.value.has(key)
+  const row = pickRows.value.find(r => r.key === key)
+  if (!row) return !excludedKeys.value.has(key)
+  return row.members.some(m => !excludedLineKeys.value.has(lineKeyOf(m.orderId, key)))
+}
 function toggleLine(key: string) {
   if (isLocked(key)) {
     toast.notify({ variant: 'error', title: partialPickingLockedMsg, maxWidth: 'max-content' })
     return
   }
-  const s = new Set(excludedKeys.value)
-  s.has(key) ? s.delete(key) : s.add(key)
-  excludedKeys.value = s
+  if (isTrackedSku(key)) {
+    const s = new Set(excludedKeys.value)
+    s.has(key) ? s.delete(key) : s.add(key)
+    excludedKeys.value = s
+    return
+  }
+  const row = pickRows.value.find(r => r.key === key)
+  if (!row) return
+  const nowSelected = isSelected(key)
+  const s = new Set(excludedLineKeys.value)
+  for (const m of row.members) {
+    const k = lineKeyOf(m.orderId, key)
+    if (nowSelected) s.add(k) // currently has at least one included member -> Remove excludes ALL
+    else s.delete(k)          // currently all excluded -> Restore includes ALL
+  }
+  excludedLineKeys.value = s
 }
-function resetExclusions(): void { excludedKeys.value = new Set() }
-const anyExcluded = computed(() => excludedKeys.value.size > 0)
+/** By-orders: remove/restore just ONE order's line for a plain SKU, independent
+ *  of any other order sharing that same SKU. */
+function toggleMemberLine(orderId: string, sku: string) {
+  if (isLocked(sku)) {
+    toast.notify({ variant: 'error', title: partialPickingLockedMsg, maxWidth: 'max-content' })
+    return
+  }
+  const k = lineKeyOf(orderId, sku)
+  const s = new Set(excludedLineKeys.value)
+  s.has(k) ? s.delete(k) : s.add(k)
+  excludedLineKeys.value = s
+}
+function resetExclusions(): void {
+  excludedKeys.value = new Set()
+  excludedLineKeys.value = new Set()
+}
+const anyExcluded = computed(() => excludedKeys.value.size > 0 || excludedLineKeys.value.size > 0)
 // To pick is clamped to [0, cap] — can't pick more than the combined ordered qty,
-// nor more than the available stock for that SKU.
+// nor more than the available stock for that SKU. For plain SKUs this is the
+// ROW's total — it gets redistributed across member order-lines fill-order
+// (same rule as before), which then becomes each line's stored value.
 function setQty(key: string, val: string, cap: number) {
   const n = Math.min(cap, Math.max(0, Math.floor(Number(val) || 0)))
-  qtyOverrides.value = { ...qtyOverrides.value, [key]: n }
+  if (isTrackedSku(key)) {
+    qtyOverrides.value = { ...qtyOverrides.value, [key]: n }
+    return
+  }
+  const row = pickRows.value.find(r => r.key === key)
+  if (!row) return
+  let remaining = n
+  const next = { ...lineQtyOverrides.value }
+  for (const m of row.members) {
+    const alloc = Math.min(m.qty, remaining)
+    next[lineKeyOf(m.orderId, key)] = alloc
+    remaining -= alloc
+  }
+  lineQtyOverrides.value = next
+}
+/** By-orders: edit just ONE order's own qty-to-pick for a plain SKU, independent
+ *  of other orders sharing that SKU — clamped to that order's own remaining
+ *  demand AND to what's still left of the SKU's shared stock cap once every
+ *  OTHER order's current qty is accounted for (so the total across orders can
+ *  never exceed the same stock cap Combined enforces). */
+function setMemberQty(row: MergedRow, orderId: string, val: string) {
+  const m = row.members.find(x => x.orderId === orderId)
+  if (!m) return
+  const individualRemaining = Math.max(0, m.qty - pickedQtyForOrderSku(orderId, row.sku))
+  const otherSum = row.members
+    .filter(x => x.orderId !== orderId)
+    .reduce((s, x) => s + effectiveLineQty(row, x.orderId), 0)
+  const poolCap = Math.max(0, stockOf(row.key).cap - otherSum)
+  const memberCap = Math.min(individualRemaining, poolCap)
+  const n = Math.min(memberCap, Math.max(0, Math.floor(Number(val) || 0)))
+  lineQtyOverrides.value = { ...lineQtyOverrides.value, [lineKeyOf(orderId, row.sku)]: n }
 }
 
 // ─── Picking list rows — merged by SKU across the selected orders ─────────────────
@@ -229,7 +317,12 @@ const hasPriorPicks = computed(() => pickRows.value.some(g => g.pickedQty > 0))
 const SHOW_STORAGE_AND_MANAGE_COLUMNS = false
 
 // ─── Stock per merged SKU — one pool (On hand − Reserved); cap = min(demand, avail) ─
-interface RowStock { onHand: number; reserved: number; available: number; cap: number; toPick: number }
+interface RowStock {
+  onHand: number; reserved: number; available: number; cap: number; toPick: number
+  /** Plain SKUs only — the default fill-order split of `cap` among members, used
+   *  as the fallback for any order-line that hasn't been individually edited yet. */
+  defaults: Map<string, number>
+}
 const rowStock = computed<Map<string, RowStock>>(() => {
   const map = new Map<string, RowStock>()
   for (const g of pickRows.value) {
@@ -240,17 +333,46 @@ const rowStock = computed<Map<string, RowStock>>(() => {
     // more than what's available in stock.
     const remaining = Math.max(0, g.orderQty - g.pickedQty)
     const cap = Math.min(remaining, available)
+
+    let fillRemaining = cap
+    const defaults = new Map<string, number>()
+    for (const m of g.members) {
+      const alloc = Math.min(m.qty, fillRemaining)
+      defaults.set(m.orderId, alloc)
+      fillRemaining -= alloc
+    }
+
     const selected = isSelected(g.key)
-    // Locked rows always pick the full cap — qty overrides never apply to them,
-    // even a stale one left over from a different (partial-allowed) warehouse.
-    const desired = isLocked(g.key) ? cap : (qtyOverrides.value[g.key] ?? cap)
-    const toPick = selected ? Math.min(Math.max(0, desired), cap) : 0
-    map.set(g.key, { onHand, reserved, available, cap, toPick })
+    let toPick = 0
+    if (selected) {
+      if (isTrackedSku(g.sku)) {
+        // Locked rows always pick the full cap — qty overrides never apply to
+        // them, even a stale one left over from a different (partial-allowed)
+        // warehouse.
+        const desired = isLocked(g.key) ? cap : (qtyOverrides.value[g.key] ?? cap)
+        toPick = Math.min(Math.max(0, desired), cap)
+      } else {
+        for (const m of g.members) {
+          if (excludedLineKeys.value.has(lineKeyOf(m.orderId, g.sku))) continue
+          const k = lineKeyOf(m.orderId, g.sku)
+          toPick += lineQtyOverrides.value[k] ?? defaults.get(m.orderId) ?? 0
+        }
+      }
+    }
+    map.set(g.key, { onHand, reserved, available, cap, toPick, defaults })
   }
   return map
 })
 function stockOf(key: string): RowStock {
-  return rowStock.value.get(key) ?? { onHand: 0, reserved: 0, available: 0, cap: 0, toPick: 0 }
+  return rowStock.value.get(key) ?? { onHand: 0, reserved: 0, available: 0, cap: 0, toPick: 0, defaults: new Map() }
+}
+/** A specific order's own effective qty-to-pick for a plain SKU — its explicit
+ *  per-line override if set, else its fill-order default share of the row's cap. */
+function effectiveLineQty(row: MergedRow, orderId: string): number {
+  if (!isSelected(row.key)) return 0
+  if (excludedLineKeys.value.has(lineKeyOf(orderId, row.sku))) return 0
+  const rs = stockOf(row.key)
+  return lineQtyOverrides.value[lineKeyOf(orderId, row.sku)] ?? rs.defaults.get(orderId) ?? 0
 }
 
 // ─── Manage batch / Manage serial number — decide up front, at creation, which
@@ -421,29 +543,41 @@ function capForSku(sku: string): number {
   return row ? stockOf(row.key).cap : 0
 }
 
-/** How much of a merged row's qty-to-pick lands on each contributing order —
- *  filled member-by-member in order (same rule doCreate() uses to split the
- *  saved PickingLines), so the By-orders view always matches what gets saved. */
+/** How much of a merged row's qty-to-pick lands on each contributing order.
+ *  Tracked (batch/serial) SKUs: one shared pool, filled member-by-member in
+ *  order (same rule doCreate() uses to split the saved PickingLines) — this
+ *  can't be edited independently per order (see isTrackedSku above).
+ *  Plain SKUs: each member's OWN effective line qty (its explicit per-line
+ *  override, or its fill-order default share) — independently editable from
+ *  the By-orders view, so this is the single source of truth doCreate() and
+ *  the By-orders view both read. */
 function memberAllocations(row: MergedRow): Map<string, number> {
   const map = new Map<string, number>()
-  let remaining = qtyToPick(row)
-  for (const m of row.members) {
-    const alloc = Math.min(m.qty, remaining)
-    map.set(m.orderId, (map.get(m.orderId) ?? 0) + alloc)
-    remaining -= alloc
+  if (isTrackedSku(row.sku)) {
+    let remaining = qtyToPick(row)
+    for (const m of row.members) {
+      const alloc = Math.min(m.qty, remaining)
+      map.set(m.orderId, (map.get(m.orderId) ?? 0) + alloc)
+      remaining -= alloc
+    }
+    return map
   }
+  for (const m of row.members) map.set(m.orderId, effectiveLineQty(row, m.orderId))
   return map
 }
 
-// ─── Picking list — by orders view (read-only breakdown of the same rows) ───────
-// Combined stays the single place edits (qty, exclude, batch/serial) happen;
-// By orders just re-renders those same rows split per contributing sales order,
-// mirroring CreatePackingPage.vue's order grouping (order no./customer/source).
+// ─── Picking list — by orders view ──────────────────────────────────────────────
+// Same rows as Combined, split per contributing sales order (order no./customer/
+// source, mirroring CreatePackingPage.vue's grouping). Plain SKUs are fully
+// editable here (independent qty + remove per order); tracked (batch/serial)
+// SKUs stay a shared, row-level pool — same qty/remove as Combined, since their
+// underlying batch/serial pool can't be split per order without opening the
+// drawer, which is unchanged by this view.
 type ViewMode = 'combined' | 'orders'
 const viewMode = ref<ViewMode>('combined')
 interface ByOrderLine {
   key: string; sku: string; product: string; desc: string; img: string; unit: string; bin: string
-  orderQty: number; pickedQty: number; toPick: number; excluded: boolean
+  orderQty: number; pickedQty: number; toPick: number; excluded: boolean; editable: boolean
 }
 interface OrderGroup { order: OutgoingOrder; source: string; isMarketplace: boolean; lines: ByOrderLine[] }
 const orderGroups = computed<OrderGroup[]>(() => {
@@ -452,17 +586,22 @@ const orderGroups = computed<OrderGroup[]>(() => {
     map.set(o.id, { order: o, source: o.source, isMarketplace: isMarketplaceOrder(o), lines: [] })
   }
   for (const row of pickRows.value) {
+    const tracked = isTrackedSku(row.sku)
     const allocByOrder = memberAllocations(row)
     for (const m of row.members) {
       const g = map.get(m.orderId)
       if (!g) continue
+      const excluded = tracked
+        ? !isSelected(row.key)
+        : (!isSelected(row.key) || excludedLineKeys.value.has(lineKeyOf(m.orderId, row.sku)))
       g.lines.push({
         key: `${m.orderId}::${row.sku}`,
         sku: row.sku, product: row.product, desc: row.desc, img: row.img, unit: row.unit, bin: row.bin,
         orderQty: m.qty,
         pickedQty: pickedQtyForOrderSku(m.orderId, row.sku),
-        toPick: isSelected(row.key) ? (allocByOrder.get(m.orderId) ?? 0) : 0,
-        excluded: !isSelected(row.key),
+        toPick: allocByOrder.get(m.orderId) ?? 0,
+        excluded,
+        editable: !tracked,
       })
     }
   }
@@ -470,6 +609,9 @@ const orderGroups = computed<OrderGroup[]>(() => {
     .map(g => ({ ...g, lines: g.lines.sort((a, b) => a.bin.localeCompare(b.bin)) }))
     .filter(g => g.lines.length)
 })
+function rowForSku(sku: string): MergedRow | undefined {
+  return pickRows.value.find(r => r.sku === sku)
+}
 
 const selectedRows    = computed(() => pickRows.value.filter(g => isSelected(g.key)))
 const totalSkus       = computed(() => selectedRows.value.length)
@@ -748,14 +890,11 @@ async function doCreate() {
         </div>
 
         <div class="pk-filter-bar">
-          <div class="pk-filter-bar-left">
-            <span class="pk-sku-count">{{ totalSkus }} of {{ pickRows.length }} included</span>
-            <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">Reset</MpButton>
-          </div>
           <div class="detail-loc-toggle">
             <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">Combined</button>
             <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">By orders</button>
           </div>
+          <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">Reset</MpButton>
         </div>
 
         <section v-if="viewMode === 'combined'" class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
@@ -910,10 +1049,11 @@ async function doCreate() {
           </div>
         </section>
 
-        <!-- By orders view — same rows (incl. current exclude/qty edits), one
-             section + table per contributing sales order, header mirrors
-             CreatePackingPage.vue's order grouping (order no./customer/source).
-             Read-only: edits (exclude, qty, batch/serial) only happen in Combined. -->
+        <!-- By orders view — same rows, one section + table per contributing sales
+             order, header mirrors CreatePackingPage.vue's order grouping (order
+             no./customer/source). Plain SKUs are independently editable per
+             order here (qty + remove/restore); tracked (batch/serial) SKUs stay
+             a shared row-level pool — same qty/remove as Combined. -->
         <template v-else>
           <div v-for="group in orderGroups" :key="group.order.id" class="pk-order-block">
             <div class="pk-order-head">
@@ -934,7 +1074,7 @@ async function doCreate() {
             </div>
             <section class="pk-items-section">
               <div class="pk-items-scroll">
-                <table class="pk-items">
+                <table class="pk-items pk-items--split">
                   <colgroup>
                     <col /><!-- Product -->
                     <col /><!-- SKU -->
@@ -942,6 +1082,7 @@ async function doCreate() {
                     <col v-if="hasPriorPicks" /><!-- Picked qty -->
                     <col /><!-- Qty to pick -->
                     <col style="width: 100px" /><!-- Unit -->
+                    <col style="width: 56px" /><!-- Remove/restore -->
                   </colgroup>
                   <thead>
                     <tr>
@@ -951,6 +1092,7 @@ async function doCreate() {
                       <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
                       <th class="pk-th pk-th--num">Qty to pick</th>
                       <th class="pk-th">Unit</th>
+                      <th class="pk-th pk-th--remove" aria-hidden="true" />
                     </tr>
                   </thead>
                   <tbody>
@@ -966,8 +1108,43 @@ async function doCreate() {
                       <td class="pk-td"><span class="pk-sku-text">{{ line.sku }}</span></td>
                       <td class="pk-td pk-td--num">{{ formatNum(line.orderQty) }}</td>
                       <td v-if="hasPriorPicks" class="pk-td pk-td--num">{{ formatNum(line.pickedQty) }}</td>
-                      <td class="pk-td pk-td--num">{{ formatNum(line.toPick) }}</td>
+                      <td v-if="line.editable" class="pk-td pk-td--input">
+                        <input
+                          type="number" min="0" class="pk-qty-input"
+                          :value="line.toPick"
+                          :disabled="line.excluded || isLocked(line.sku)"
+                          :title="isLocked(line.sku) ? partialPickingLockedMsg : undefined"
+                          :aria-label="`Qty to pick for ${line.product} (${group.order.salesNo})`"
+                          @input="setMemberQty(rowForSku(line.sku)!, group.order.id, ($event.target as HTMLInputElement).value)"
+                          @click.stop
+                        />
+                      </td>
+                      <td v-else class="pk-td pk-td--num">{{ formatNum(line.toPick) }}</td>
                       <td class="pk-td">{{ line.unit }}</td>
+                      <td class="pk-td pk-td--remove">
+                        <template v-if="line.excluded">
+                          <MpTooltip :id="`pk-order-rs-${line.key}`" label="Restore" placement="left" use-portal>
+                            <MpButton
+                              :aria-label="`Restore ${line.product}`"
+                              variant="ghost" left-icon="add"
+                              @click="line.editable ? toggleMemberLine(group.order.id, line.sku) : toggleLine(line.sku)"
+                            />
+                          </MpTooltip>
+                        </template>
+                        <template v-else>
+                          <MpTooltip
+                            :id="`pk-order-rm-${line.key}`"
+                            :label="isLocked(line.sku) ? partialPickingLockedMsg : 'Remove'"
+                            placement="left" use-portal
+                          >
+                            <MpButton
+                              :aria-label="`Remove ${line.product}`"
+                              variant="ghost" left-icon="minus-circular"
+                              @click="line.editable ? toggleMemberLine(group.order.id, line.sku) : toggleLine(line.sku)"
+                            />
+                          </MpTooltip>
+                        </template>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -1145,8 +1322,6 @@ async function doCreate() {
 .pk-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pk-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .pk-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-3); }
-.pk-filter-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.pk-sku-count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Combined / By orders toggle (copied verbatim from StockAdjustmentDetailsPage.vue / PickingTaskDetailsPage.vue) ── */
 .detail-loc-toggle { display: flex; align-items: center; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; gap: 2px; }
