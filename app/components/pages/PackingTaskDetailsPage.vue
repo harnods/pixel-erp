@@ -199,7 +199,7 @@ const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.valu
  *  "reservation not yet confirmed" gate is needed here. Packing has no
  *  per-bin PACKED breakdown anywhere in its data model (packedByKey is a
  *  flat total per line) — only Storage location/Picked qty ever split;
- *  Packed qty/Outstanding qty/Unit stay merged regardless. */
+ *  Packed qty/Remaining qty to pack/Unit stay merged regardless. */
 /** Storage location(s) to DISPLAY for a batch/serial-tracked line — real bin(s)
  *  it was actually picked from, replacing the old generic binForSku()
  *  fallback (a warehouse-wide default location for the SKU, unrelated to
@@ -236,7 +236,7 @@ interface PackRowWithMeta {
   groupSize: number
 }
 /** Expands each visible line into one row per bin actually used (Storage
- *  location/Picked qty split per bin, Product/SKU/Packed qty/Outstanding qty/
+ *  location/Picked qty split per bin, Product/SKU/Packed qty/Remaining qty to pack/
  *  Unit/Action merged via groupIndex/groupSize) — or a single row when
  *  there's nothing to split (0 or 1 bin used), matching Picking's same
  *  pattern. */
@@ -310,7 +310,6 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         <button class="detail-breadcrumb" @click="goBack">Packing</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
-          <span v-if="isInProgress" class="pck-pulse" aria-label="In process" />
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="pck-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
@@ -386,7 +385,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         <div class="pck-progress-stat"><span class="pck-progress-label">SKU qty</span><span class="pck-progress-val">{{ task.skuQty }}</span></div>
         <div v-if="!skippedPicking" class="pck-progress-stat"><span class="pck-progress-label">Picked qty</span><span class="pck-progress-val">{{ fmt(pickedTotal) }}</span></div>
         <div class="pck-progress-stat"><span class="pck-progress-label">Packed qty</span><span class="pck-progress-val">{{ fmt(packedTotal) }}</span></div>
-        <div class="pck-progress-stat"><span class="pck-progress-label">Outstanding qty</span><span class="pck-progress-val">{{ fmt(outstandingTotal) }}</span></div>
+        <div class="pck-progress-stat"><span class="pck-progress-label">Remaining qty to pack</span><span class="pck-progress-val">{{ fmt(outstandingTotal) }}</span></div>
       </section>
 
       <div class="pck-table-wrap">
@@ -413,7 +412,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                   <th class="detail-th">Storage location</th>
                   <th v-if="!skippedPicking" class="detail-th detail-th--num">Picked qty</th>
                   <th class="detail-th detail-th--num">Packed qty</th>
-                  <th class="detail-th detail-th--num">Outstanding qty</th>
+                  <th class="detail-th detail-th--num">Remaining qty to pack</th>
                   <th class="detail-th">Unit</th>
                   <th class="detail-th detail-th--action"></th>
                 </tr>
@@ -706,10 +705,6 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
-
-@keyframes pck-pulse-ring { 0% { transform: scale(0.85); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
-.pck-pulse { position: relative; display: inline-flex; width: var(--mp-sizes-2, 8px); height: var(--mp-sizes-2, 8px); border-radius: var(--mp-radii-full, 999px); background: var(--mp-colors-emerald-500, #10b981); flex-shrink: 0; }
-.pck-pulse::after { content: ''; position: absolute; inset: 0; border-radius: var(--mp-radii-full, 999px); background: var(--mp-colors-emerald-500, #10b981); animation: pck-pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
 
 .detail-bar-right { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5); flex-shrink: 0; }
 .pck-last-updated-label { font-size: var(--mp-font-sizes-xs, 11px); color: var(--mp-text-secondary); }

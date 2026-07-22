@@ -66,11 +66,8 @@ function hideColumn(key: string) { colVis[key] = false }
 // ─── Filters ───────────────────────────────────────────────────────────────────
 // Status — multi-select. Completed & Canceled are terminal, hidden by default, so
 // the default view shows only the actionable stages.
-const STATUS_OPTIONS = ['On the way', 'Partial reception', 'Completed', 'Canceled']
-const DEFAULT_STATUSES = ['On the way', 'Partial reception']
-// Display label per stage value — "On the way" shows as "Open" (value stays internal).
-const STATUS_LABELS: Record<string, string> = { 'On the way': 'Open' }
-function statusOptionLabel(s: string) { return STATUS_LABELS[s] ?? s }
+const STATUS_OPTIONS = ['Pending', 'Open', 'In progress', 'Partial reception', 'Completed', 'Canceled']
+const DEFAULT_STATUSES = ['Pending', 'Open', 'In progress', 'Partial reception']
 const statusFilter = ref<string[]>([...DEFAULT_STATUSES])
 function toggleStatus(s: string) {
   statusFilter.value = statusFilter.value.includes(s)
@@ -81,7 +78,7 @@ const statusLabel = computed(() => {
   const n = statusFilter.value.length
   if (n === 0) return ''
   if (n === STATUS_OPTIONS.length) return 'All statuses'
-  if (n === 1) return statusOptionLabel(statusFilter.value[0])
+  if (n === 1) return statusFilter.value[0]
   return `${n} statuses`
 })
 const statusIsDefault = computed(() =>
@@ -399,7 +396,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   @change="toggleStatus(s)"
                   @click.stop
                 >
-                  {{ statusOptionLabel(s) }}
+                  {{ s }}
                 </MpCheckbox>
               </label>
             </div>
@@ -503,7 +500,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ value }">
-      <ErpStatusBadge :status="(value as string)" />
+      <ErpStatusBadge :status="(value as string)" :type="value === 'pending' ? 'announcement' : undefined" />
     </template>
 
     <!-- ── Icon indicator — purchase receiving task badge ── -->

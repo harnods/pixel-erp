@@ -611,8 +611,8 @@ interface PickRowWithMeta {
   groupSize: number
 }
 /** Expands each paged group into one row per bin actually used (Storage
- *  location/Qty to pick/Picked qty split per bin, Product/SKU/Outstanding/
- *  Unit/Action merged via groupIndex/groupSize) — or a single row when there's
+ *  location/Qty to pick/Picked qty split per bin, Product/SKU/Remaining qty
+ *  to pick/Unit/Action merged via groupIndex/groupSize) — or a single row when there's
  *  nothing to split (0 or 1 bin used), so the table renders exactly as before
  *  until a group genuinely spans 2+ bins. Plain (non-tracked) SKUs never
  *  split — groupQtyByBin only returns entries for batch/serial-tracked SKUs. */
@@ -821,7 +821,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
         <div class="pik-stat"><span class="pik-stat-label">SKU qty</span><span class="pik-stat-val">{{ fmt(groupedItems.length) }}</span></div>
         <div class="pik-stat"><span class="pik-stat-label">Qty to pick</span><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span></div>
         <div class="pik-stat"><span class="pik-stat-label">Picked qty</span><span class="pik-stat-val">{{ fmt(draftPickedTotal) }}</span></div>
-        <div class="pik-stat"><span class="pik-stat-label">Outstanding qty</span><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">Remaining qty to pick</span><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pik-sku-section">
@@ -865,7 +865,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                 <col style="width: 170px" /><!-- Storage location -->
                 <col /><!-- Qty to pick -->
                 <col /><!-- Picked qty -->
-                <col /><!-- Outstanding qty -->
+                <col /><!-- Remaining qty to pick -->
                 <col style="width: 100px" /><!-- Unit -->
                 <col /><!-- Action -->
               </colgroup>
@@ -876,7 +876,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <th class="pik-th">Storage location</th>
                   <th class="pik-th pik-th--num">Qty to pick</th>
                   <th class="pik-th pik-th--num">Picked qty</th>
-                  <th class="pik-th pik-th--num">Outstanding qty</th>
+                  <th class="pik-th pik-th--num">Remaining qty to pick</th>
                   <th class="pik-th">Unit</th>
                   <th class="pik-th pik-th--action"></th>
                 </tr>
@@ -1168,7 +1168,6 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
    rightmost) is the one explicitly marked border-right:none below — a merged
    row (rowspan across a group's bin-split rows) renders fewer <td>s than the
    header, so `:last-child` would land on the wrong cell for those rows. */
-.pik-th { border-right: 1px solid var(--mp-border-default); }
 .pik-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);

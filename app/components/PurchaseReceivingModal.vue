@@ -50,6 +50,9 @@ const shownCount  = ref(PAGE_SIZE)            // show 10 by default
 const loadingMore = ref(false)
 const pagedItems  = computed<ReceiptLineItem[]>(() => visibleItems.value.slice(0, shownCount.value))
 const hasMoreItems = computed(() => shownCount.value < visibleItems.value.length)
+// Only frame + internally scroll when the list is longer than one page; a short
+// list renders borderless and grows naturally.
+const isProgressive = computed(() => visibleItems.value.length > PAGE_SIZE)
 
 function loadMoreItems(): void {
   if (loadingMore.value || !hasMoreItems.value) return
@@ -218,7 +221,7 @@ function handleCreate() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
-              <input v-model="search" class="pr-filter-search-input" type="text" placeholder="Search SKU or product" />
+              <input v-model="search" class="pr-filter-search-input" type="text" placeholder="Search..." />
               <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -241,7 +244,7 @@ function handleCreate() {
           </div>
 
           <!-- Table — bordered, internally-scrolling panel past the default page -->
-          <section v-else class="pr-items-section pr-items-section--bordered">
+          <section v-else class="pr-items-section" :class="{ 'pr-items-section--bordered': isProgressive }">
             <div ref="itemsScrollEl" class="pr-items-scroll">
               <table class="pr-items">
                 <colgroup>

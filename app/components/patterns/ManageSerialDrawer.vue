@@ -645,7 +645,7 @@ async function handleSave() {
                 <span class="msn-stat-value">{{ fmtSerial(countedCount) }}</span>
               </div>
               <div v-if="isReceiving" class="msn-stat">
-                <span class="msn-stat-label">Outstanding qty</span>
+                <span class="msn-stat-label">Remaining qty to receive</span>
                 <span class="msn-stat-value">{{ fmtSerial(Math.max(0, targetCount - countedCount)) }}</span>
               </div>
               <div v-if="isPutAway" class="msn-stat">
@@ -1123,10 +1123,8 @@ async function handleSave() {
 }
 .msn-th--del { padding: 0; }
 
-/* Column borders — added whenever a location column is present, regardless of
-   whether it's an editable picker (form) or a plain read-only display. */
-.msn-table--locs .msn-th { border-right: 1px solid var(--mp-border-default); }
-.msn-table--locs .msn-th:last-child { border-right: none; }
+/* Body cells carry the right dividers (see .msn-td). The form-table header stays
+   white with border-bottom only — no side borders on th. */
 
 .msn-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);

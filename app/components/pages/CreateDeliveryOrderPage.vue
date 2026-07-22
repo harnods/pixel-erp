@@ -218,7 +218,7 @@ async function persist() {
     skuQty,
     orderQty,
     shippedQty: 0,
-    status: 'open',
+    status: 'pending',
     dueDate: estimatedDelivery.value ? toISODate(estimatedDelivery.value) : txDate,
     memo: memo.value.trim() || undefined,
     customer: customer.value,
@@ -698,7 +698,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   height: var(--mp-sizes-7, 28px);
   text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default);

@@ -1020,9 +1020,11 @@ onUnmounted(() => {
 /* ── Table ───────────────────────────────────────────────────────────────────── */
 .sc-loc-scroll { overflow-x: auto; }
 .sc-loc-scroll--split .sc-row--serial .sc-td { vertical-align: top; }
-.sc-loc-scroll--split .sc-td { border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
-.sc-loc-scroll--split .sc-td:first-child { border-left: none; }
-.sc-loc-scroll--split .sc-td:last-child { border-right: none; }
+/* Form table (Counted qty input) → column dividers in every mode, not just the
+   serial-split one. Right divider on each cell, edges trimmed. */
+.sc-loc-scroll .sc-td { border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
+.sc-loc-scroll .sc-td:first-child { border-left: none; }
+.sc-loc-scroll .sc-td:last-child { border-right: none; }
 
 .sc-items { width: 100%; border-collapse: collapse; }
 .sc-items--fixed { table-layout: fixed; width: 100%; }

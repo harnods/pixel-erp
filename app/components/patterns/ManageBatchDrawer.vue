@@ -880,7 +880,7 @@ function fmtNum(n: number | null): string {
                 </span>
               </div>
               <div v-if="isReceiving" class="mbd-stat">
-                <span class="mbd-stat-label">Outstanding qty</span>
+                <span class="mbd-stat-label">Remaining qty to receive</span>
                 <span class="mbd-stat-value">{{ Math.max(0, (props.targetCount ?? 0) - (totalCounted ?? 0)).toLocaleString('id-ID') }}</span>
               </div>
               <div v-if="isPutAway" class="mbd-stat">

@@ -229,6 +229,10 @@ const rows = computed<BatchRow[]>(() => {
   }))
 })
 
+// Column separators only when a batch actually splits across 2+ bins (put-away) —
+// a non-split table (count / in-out / single-bin) must have no left/right borders.
+const isSplit = computed(() => rows.value.some(r => r.groupSize > 1))
+
 const totalOnHand = computed(() => rows.value.reduce((s, r) => s + r.onHand, 0))
 const totalPicked = computed(() => rows.value.reduce((s, r) => s + r.value, 0))
 const totalDelta = computed(() => props.deltaTotal ?? 0)
@@ -324,7 +328,7 @@ function close() { emit('update:open', false) }
 
         <!-- Table -->
         <div class="vbd-table-wrap">
-          <table class="vbd-table">
+          <table class="vbd-table" :class="{ 'vbd-table--split': isSplit }">
             <colgroup>
               <col class="vbd-col-batch" />
               <col class="vbd-col-expiry" />
@@ -517,9 +521,9 @@ function close() { emit('update:open', false) }
    for its border-right: none, since a groupIndex > 0 row renders fewer <td>s
    than the header and its own last rendered cell isn't reliably the table's
    true right edge. */
-.vbd-table .vbd-th,
-.vbd-table .vbd-td { border-right: 1px solid var(--mp-border-default); }
-.vbd-th--unit,
-.vbd-td--unit { border-right: none; }
+.vbd-table--split .vbd-th,
+.vbd-table--split .vbd-td { border-right: 1px solid var(--mp-border-default); }
+.vbd-table--split .vbd-th--unit,
+.vbd-table--split .vbd-td--unit { border-right: none; }
 
 </style>

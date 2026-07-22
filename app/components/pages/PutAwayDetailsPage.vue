@@ -738,6 +738,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
    given border-right: none below — not a generic `:last-child` rule. */
 .detail-items .detail-th,
 .detail-items .detail-td { border-right: 1px solid var(--mp-border-default); }
+.detail-items .detail-th--action,
+.detail-items .detail-td--action { border-right: none; }
 /* Sticky action column — stays visible when the table scrolls wider than the stage.
    See PickingTaskDetailsPage.vue for why the header corner needs a higher z-index
    than the plain `.detail-th--action` class alone would give it. */

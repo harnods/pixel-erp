@@ -192,6 +192,9 @@ const groupedBySku = computed(() => {
   )
 })
 const bySkuHasSerial = computed(() => groupedBySku.value.some(r => isSerialTrackedSku(r.sku)))
+// The main (non-WMS-count) items table splits its qty cell into stacked qty + view
+// action for any batch/serial SKU — so it needs column dividers whenever one is present.
+const itemsHaveTracked = computed(() => lineItems.value.some(i => isBatchTrackedSku(i.sku) || isSerialTrackedSku(i.sku)))
 
 // ── Variance reason (Counted status only — manager reviews each variance before approving) ──
 // A no-variance row has nothing to explain, so its reason select stays disabled.
@@ -715,7 +718,7 @@ onUnmounted(() => {
       <!-- Line items: flat table (ERP + WMS stock in/out) -->
       <section v-if="!isWmsCount" class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsBordered }">
         <div ref="itemsScrollEl" class="detail-items-scroll">
-          <table ref="itemsTableEl" class="detail-items">
+          <table ref="itemsTableEl" class="detail-items" :class="{ 'detail-items--split': itemsHaveTracked }">
             <thead>
               <tr>
                 <th class="detail-th">Product</th>

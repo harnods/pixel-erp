@@ -38,7 +38,7 @@ Receipt (PO)
  ├─ number: "RCV-2026-0001"                    ← display receipt number
  ├─ purchaseNo: "Purchase Order #10090"         ← source PO (ERP) or "#PO060" (Desty)
  ├─ warehouseId / warehouseName
- ├─ status: "on the way" | "partial reception" | "completed" | "canceled"
+ ├─ status: "pending" | "open" | "in progress" | "partial reception" | "completed" | "canceled"
  ├─ skuQty, purchaseQty, receivedQty           ← receivedQty updated by recomputeReceiptStatus()
  ├─ estimatedArrival, receivedDate?, canceledDate?, memo, trackingNos[], vendor?
  └─ lineItems (derived via lineItemsForReceipt())
@@ -89,7 +89,9 @@ PutAwayTask
 
 | Data | UI label |
 |---|---|
-| `"on the way"` | Open |
+| `"pending"` | Pending (gray) — no receiving task exists yet |
+| `"open"` | Open (yellow) — task(s) exist, none started |
+| `"in progress"` | In progress (blue) — at least one task started |
 | `"partial reception"` | Partial reception |
 | `"completed"` | Completed |
 | `"canceled"` | Canceled |
@@ -98,29 +100,46 @@ PutAwayTask
         create (PO raised)
               │
               ▼
-          ┌──────────┐   first task END; some SKU qty short   ┌──────────────────┐
-          │ on the   │ ──────────────────────────────────────▶ │ partial reception│
-          │  way     │                                          └──────────────────┘
-          └──────────┘                                                │         │
-              │   │                                      later task(s)│         │ Admin
-   cancel     │   │ all SKUs received in full (one or                 │ fill    │ closeReceipt()
- (nothing     │   │ more task ENDs; every SKU ≥ purchaseQty)         │ all     │
-  received)   │   ▼                                                   │ gaps    │
-              │ ┌───────────┐ ◀─────────────────────────────────────────────────┘
-              ▼ │ completed │
-        ┌──────────┐ └───────────┘
-        │ canceled │
-        └──────────┘
+          ┌─────────┐  create task   ┌──────┐  start task   ┌─────────────┐
+          │ pending │ ──────────────▶│ open │ ─────────────▶│ in progress │
+          └─────────┘                └──────┘               └─────────────┘
+              ▲   │                     ▲   │                   │       │
+              │   │ cancel last          │   │ cancel last       │       │ first task END;
+              │   │ active task,         │   │ active task       │       │ some SKU qty short
+              │   │ none ever ended      │   │ (another remains) │       ▼
+              └───┘                     └───┘                    ┌──────────────────┐
+                                                                   │ partial reception│
+                                                                   └──────────────────┘
+   cancel                                                              │         │
+ (from pending/                                                        │ later   │ Admin
+  open/in progress,                                                    │ task(s) │ closeReceipt()
+  nothing received)                                                    │ fill all│
+              │                                                         │ gaps    │
+              ▼                                                         ▼         │
+        ┌──────────┐                                            ┌───────────┐ ◀───┘
+        │ canceled │                                            │ completed │
+        └──────────┘                                            └───────────┘
 ```
 
-**Derivation algorithm** (runs on every `endReceiving()` call):
+**Derivation algorithm** (`recomputeReceiptStatus()`, runs after every task create /
+start / cancel / end):
 ```
-received[sku] = Σ receivedQty  across all tasks where status ∈ { pending put-away, completed }
-if every PO sku: received[sku] >= purchaseQty[sku]  → "completed"
-else if at least one task has ended                  → "partial reception"
-else                                                 → "on the way"  (stays Open)
+ended  = tasks where status ∈ { pending put-away, completed }
+active = tasks where status ∈ { open, in progress }
+
+if ended.length > 0:
+  received[sku] = Σ receivedQty across ended tasks
+  if every PO sku: received[sku] >= purchaseQty[sku]  → "completed"
+  else                                                 → "partial reception"
+else if active has any "in progress"  → "in progress"
+else if active.length > 0             → "open"
+else                                   → "pending"
 ```
 
+> Once a PO has an ended task, it never falls back to pending/open/in progress —
+> a second task created for the remainder doesn't change a `"partial reception"`
+> PO's status until *that* task also ends.
+>
 > **PO status reflects receipt completeness only — independent of put-away.**
 > A PO can be `"completed"` while its receiving task is still `"pending put-away"`.
 
@@ -165,17 +184,20 @@ Rules:
    (open or later). Admin may create another task **only while uncovered SKUs remain**.
    When every SKU is covered, "Create receiving task" should be disabled
    (`canCreateReceivingTask()` returns `false`).
-4. Creating a task **does not change PO status** — PO stays `"on the way"` (or
-   `"partial reception"` if it already was).
-5. A `"partial reception"` PO can still receive new tasks for its uncovered SKUs.
+4. Creating a task bumps PO status to `"open"` — unless the PO already has an
+   ended task, in which case it stays `"partial reception"`/`"completed"` instead.
+5. A `"partial reception"` PO can still receive new tasks for its uncovered SKUs
+   (status stays `"partial reception"` regardless of that new task's own state,
+   until it too ends).
 6. The create form pre-fills only the **uncovered SKUs** (`uncoveredLineItems(receiptId)`).
 
 ---
 
 ## 5. Operator receiving flow
 
-1. Operator opens the task, clicks **Start receiving** → status `in progress`,
-   `startDate = now()`.
+1. Operator opens the task, clicks **Start receiving** → task status `in progress`,
+   `startDate = now()`; PO status follows to `"in progress"` too (unless it already
+   has an ended task).
 2. Operator inputs **received qty per SKU** in the modal.
 3. **Save draft** persists progress (`saveReceivingDraft()`); status stays `in progress`.
 4. **End receiving** (`endReceiving()`):
@@ -224,9 +246,9 @@ All linked records share the **same warehouse, SKUs, and quantities**.
 
 | State | PO status | Receiving tasks | Put-away |
 |---|---|---|---|
-| **A** | `on the way` — arrived, no task | none | — |
-| **B** | `on the way` — task created, not started | 1× `open` | — |
-| **C** | `on the way` — operator receiving | 1× `in progress` (start ts, partial qty) | — |
+| **A** | `pending` — no task at all | none | — |
+| **B** | `open` — task created, not started | 1× `open` | — |
+| **C** | `in progress` — operator receiving | 1× `in progress` (start ts, partial qty) | — |
 | **D** | `completed` — fully received, awaiting put-away | 1× `pending put-away` (full qty) | — |
 | **E** | `completed` — received & put away | 1× `completed` | 1× `open` put-away |
 | **F** | `partial reception` — short qty | 1× `pending put-away` (qty < expected) | — |
@@ -289,7 +311,9 @@ Uses [ErpStatusBadge](../patterns/ErpStatusBadge.md).
 
 | Entity | Status (data) | UI label | Badge colour |
 |---|---|---|---|
-| PO | `on the way` | Open | yellow (warning) |
+| PO | `pending` | Pending | gray (announcement — overridden per-instance; the shared `pending` key defaults to yellow for other modules like Production requests) |
+| PO | `open` | Open | yellow (warning) |
+| PO | `in progress` | In progress | blue (information) |
 | PO | `partial reception` | Partial reception | blue (information) |
 | PO | `completed` | Completed | green |
 | PO | `canceled` | Canceled | gray (announcement) |
@@ -318,12 +342,13 @@ Uses [ErpStatusBadge](../patterns/ErpStatusBadge.md).
 |---|---|
 | `receivingTasks` | Reactive flat array of all tasks |
 | `receivingPOs` | Derived reactive grouping by receipt |
-| `createReceivingTask(opts)` | Admin creates Open task for chosen SKUs |
-| `startReceiving(taskId)` | → In progress + startDate |
+| `createReceivingTask(opts)` | Admin creates Open task for chosen SKUs; bumps PO to Open |
+| `startReceiving(taskId)` | → In progress + startDate; bumps PO to In progress |
 | `saveReceivingDraft(taskId, received)` | Persist mid-flight qty, stay In progress |
 | `endReceiving(taskId, received?)` | → Pending put-away + endDate; re-derives PO status |
+| `cancelReceivingTask(taskId)` | → Canceled; re-derives PO status (may drop to Open/Pending) |
 | `linkPutAway(taskId, putAwayTaskId)` | → Completed; called by `addPutAwayTask` |
-| `recomputeReceiptStatus(receiptId)` | Re-derive PO status from ended tasks |
+| `recomputeReceiptStatus(receiptId)` | Re-derive PO status (Pending/Open/In progress from active tasks, or Partial reception/Completed from ended tasks) |
 | `uncoveredLineItems(receiptId)` | PO SKUs not yet in any task |
 | `canCreateReceivingTask(receiptId)` | `true` when uncovered SKUs remain |
 | `receivedSummaryForReceipt(receiptId)` | Per-SKU `{ received, assignee }` from ended tasks |
@@ -362,8 +387,9 @@ Uses [ErpStatusBadge](../patterns/ErpStatusBadge.md).
 
 - Per-SKU inbound graph: Receipt → ReceivingTask(items[]) → PutAway — same warehouse,
   SKUs, and quantities; fully traceable with working detail-page links.
-- PO status derived (`"on the way"` / `"partial reception"` / `"completed"`) from ended
-  receiving tasks; `receivedQty` updated on every derivation.
+- PO status derived (`"pending"` / `"open"` / `"in progress"` from active tasks,
+  `"partial reception"` / `"completed"` from ended tasks); `receivedQty` updated
+  on every derivation.
 - `receivedSummaryForReceipt()` drives the receipt detail's "Received qty" and
   "Received by" columns — keyed by SKU code, not positional index.
 - Create receiving task → `open`, covering only **uncovered SKUs**

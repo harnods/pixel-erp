@@ -327,8 +327,9 @@ const pageTabs: Record<string, string[]> = {
   'Product list':      ['All products', 'Awaiting approval'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
-// The Receipts tab badges the default-visible (actionable) receipts: On the way +
-// Partial reception (Completed / Canceled are terminal, hidden by default).
+// The Receipts tab badges the default-visible (actionable) receipts: Pending +
+// Open + In progress + Partial reception (Completed / Canceled are terminal,
+// hidden by default).
 //
 // Scoped to whatever warehouse(s) the currently-visible tab's own "Warehouse"
 // filter is set to (activeWarehouseFilter, mirrored up by each index page) —
@@ -340,7 +341,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
-    const receipts = (counts['On the way'] ?? 0) + (counts['Partial reception'] ?? 0)
+    const receipts = (counts['Pending'] ?? 0) + (counts['Open'] ?? 0) + (counts['In progress'] ?? 0) + (counts['Partial reception'] ?? 0)
     if (receipts) out['Receipts'] = receipts
     // Receiving / Put-away are task-based (a different dataset than the PO stages)
     const recv = receivingOpenCount(wh)
