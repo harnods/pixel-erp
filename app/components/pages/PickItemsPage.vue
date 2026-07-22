@@ -13,6 +13,8 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
+import ViewBatchDrawer, { type PickedBatchRow } from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer, { type PickedSerialRow } from '~/components/patterns/ViewSerialDrawer.vue'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 import { getPickingLineItems, getPickingGroupedItems, type PickLineItem, type PickGroupItem } from '~/data/pickingTaskDetails'
 import {
@@ -677,6 +679,23 @@ function orderRowsWithMeta(group: PickOrderGroup): PickOrderRowWithMeta[] {
   return result
 }
 
+// ── By orders: View batch / View serial number — read-only, same live draft
+// state Combined's Manage batch/serial drawers write to (batchLinesByKey/
+// serialLinesByKey), just not editable from here. A line is already a single
+// order's own PickLineItem, no merge to undo (unlike Combined's grouped rows).
+const viewBatchItem = ref<PickLineItem | null>(null)
+const viewSerialItem = ref<PickLineItem | null>(null)
+function pickedBatchRowsForItem(item: PickLineItem): PickedBatchRow[] {
+  return (batchLinesByKey.value[item.key] ?? [])
+    .filter(b => (b.counted ?? 0) > 0)
+    .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.counted ?? 0, unit: b.unit, location: b.location }))
+}
+function pickedSerialRowsForItem(item: PickLineItem): PickedSerialRow[] {
+  return serialLinesByKey.value[item.key] ?? []
+}
+function openViewBatchForLine(item: PickLineItem) { viewBatchItem.value = item }
+function openViewSerialForLine(item: PickLineItem) { viewSerialItem.value = item }
+
 // ── Progressive pagination ────────────────────────────────────────────────────
 const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)
@@ -1122,6 +1141,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                     <col /><!-- Picked qty -->
                     <col /><!-- Remaining qty to pick -->
                     <col style="width: 100px" /><!-- Unit -->
+                    <col /><!-- Action -->
                   </colgroup>
                   <thead>
                     <tr>
@@ -1131,7 +1151,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                       <th class="pik-th pik-th--num">Qty to pick</th>
                       <th class="pik-th pik-th--num">Picked qty</th>
                       <th class="pik-th pik-th--num">Remaining qty to pick</th>
-                      <th class="pik-th pik-th--last">Unit</th>
+                      <th class="pik-th">Unit</th>
+                      <th class="pik-th pik-th--action"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1165,7 +1186,27 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                           {{ fmt(row.item.expectedQty - effectivePickedQty(row.item)) }}
                         </span>
                       </td>
-                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="pik-td pik-td--last">{{ row.item.unit }}</td>
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="pik-td">{{ row.item.unit }}</td>
+
+                      <!-- Action column: View batch / View serial numbers — read-only,
+                           same live draft state Combined's Manage batch/serial drawers
+                           write to. Merged across a group's own bin-split rows, same
+                           as Combined's own Action column. -->
+                      <td v-if="row.groupIndex === 0 && isBatchTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
+                        <MpTooltip :id="`pik-tt-batch-order-${row.item.key}`" label="View batch" placement="top" use-portal>
+                          <button class="pik-manage-icon-btn" type="button" aria-label="View batch" @click="openViewBatchForLine(row.item)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                      </td>
+                      <td v-else-if="row.groupIndex === 0 && isSerialTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
+                        <MpTooltip :id="`pik-tt-serial-order-${row.item.key}`" label="View serial number" placement="top" use-portal>
+                          <button class="pik-manage-icon-btn" type="button" aria-label="View serial number" @click="openViewSerialForLine(row.item)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                      </td>
+                      <td v-else-if="row.groupIndex === 0" :rowspan="row.groupSize" class="pik-td pik-td--action"></td>
                     </tr>
                   </tbody>
                 </table>
@@ -1254,6 +1295,39 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     :planned-serials="(activeSerialGroup.plannedSerialPicks ?? []).map(s => s.serial)"
     @update:open="serialDrawerOpen = $event"
     @save="saveSerialLines"
+  />
+
+  <!-- By orders: View batch / View serial number — read-only view of the same
+       live draft state (batchLinesByKey/serialLinesByKey), not editable here. -->
+  <ViewBatchDrawer
+    v-if="viewBatchItem"
+    :open="true"
+    :sku="viewBatchItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    :qty-to-pick="viewBatchItem.expectedQty"
+    :picked-qty="effectivePickedQty(viewBatchItem)"
+    :picked-batches="pickedBatchRowsForItem(viewBatchItem)"
+    :planned-batches="viewBatchItem.plannedBatchPicks ?? []"
+    :product-name="viewBatchItem.productName"
+    :product-img="viewBatchItem.image"
+    @update:open="viewBatchItem = null"
+  />
+  <ViewSerialDrawer
+    v-if="viewSerialItem"
+    :open="true"
+    :sku="viewSerialItem.skuCode"
+    :warehouse-id="task?.warehouseId ?? ''"
+    kind="packing"
+    :qty-to-pick="viewSerialItem.expectedQty"
+    :picked-qty="effectivePickedQty(viewSerialItem)"
+    :counted-total="pickedSerialRowsForItem(viewSerialItem).length"
+    :picked-serials="pickedSerialRowsForItem(viewSerialItem)"
+    :planned-serials="viewSerialItem.plannedSerialPicks ?? []"
+    :task-finished="false"
+    :product-name="viewSerialItem.productName"
+    :product-img="viewSerialItem.image"
+    @update:open="viewSerialItem = null"
   />
 </template>
 
@@ -1452,10 +1526,6 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-order-cust { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pik-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
 .pik-source-info { display: inline-flex; color: var(--mp-text-secondary); cursor: help; }
-/* This read-only table has no action column, so Unit really is the last one —
-   except it from the generic .pik-td border-right rule above. */
-.pik-th--last,
-.pik-td--last { border-right: none; }
 
 /* ── Row flash on scan ────────────────────────────────────────────────────────── */
 @keyframes pik-flash {

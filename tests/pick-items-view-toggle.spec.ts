@@ -89,4 +89,32 @@ describe('PickItemsPage — Combined / By orders toggle', () => {
 
     wrapper.unmount()
   })
+
+  it('batch-tracked SKUs get a View batch button in By orders, opening the same live draft state as Combined', async () => {
+    const BATCH_SKU = '1001' // Green Beans Arabica Gayo Grade 1 — batch-tracked
+    const order = makeOrder('Pick Toggle Batch Order', 'Djournal Coffee', 'Manual', [{ sku: BATCH_SKU, qty: 5 }])
+    const task = addPickingTask({
+      salesOrderIds: [order.id], salesNos: [order.salesNo],
+      warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME, assignee: 'Test Operator',
+    })
+
+    const wrapper = mount(PickItemsPage, { props: { orderId: task.id } })
+    await flushPromises()
+
+    await wrapper.findAll('.detail-loc-toggle-btn').find(b => b.text() === 'By orders')!.trigger('click')
+    await flushPromises()
+
+    const row = wrapper.findAll('.pik-order-block')[0]!.find('tbody tr')
+    const viewBtn = row.find('.pik-td--action button')
+    expect(viewBtn.exists()).toBe(true)
+    expect(viewBtn.attributes('aria-label')).toBe('View batch')
+
+    await viewBtn.trigger('click')
+    await flushPromises()
+
+    // Opens the read-only ViewBatchDrawer (not the editable ManageBatchDrawer).
+    expect(wrapper.find('.vbd-panel[aria-label="View batch"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
 })
