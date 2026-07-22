@@ -15,6 +15,8 @@ import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
 import { reviewFiles } from '~/data/reviewFiles'
+import { awaitingApprovalTasks } from '~/data/tasks'
+import { actionItems } from '~/data/actionItems'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
@@ -55,6 +57,8 @@ const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/Pl
 const BillsIndexPage = defineAsyncComponent(() => import('~/components/pages/BillsIndexPage.vue'))
 const BillsAwaitingApprovalPage = defineAsyncComponent(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = defineAsyncComponent(() => import('~/components/pages/BillsReviewFilesPage.vue'))
+const TasksAwaitingApprovalPage = defineAsyncComponent(() => import('~/components/pages/TasksAwaitingApprovalPage.vue'))
+const TasksActionsRequiredPage = defineAsyncComponent(() => import('~/components/pages/TasksActionsRequiredPage.vue'))
 const ReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceiptDetailsPage.vue'))
 const PartialReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
@@ -215,6 +219,7 @@ const pageTabs: Record<string, string[]> = {
   'Barang masuk': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
+  'Tasks': ['Awaiting approval', 'Actions required'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
 // The Receipts tab badges the default-visible (actionable) receipts: On the way +
@@ -254,6 +259,12 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const out: Record<string, number> = {}
     if (bills.length) out['Awaiting Approval'] = bills.length
     if (reviewFiles.length) out['Review files'] = reviewFiles.length
+    return out
+  }
+  if (currentPageKey.value === 'Tasks') {
+    const out: Record<string, number> = {}
+    if (awaitingApprovalTasks.length) out['Awaiting approval'] = awaitingApprovalTasks.length
+    if (actionItems.length) out['Actions required'] = actionItems.length
     return out
   }
   return {}
@@ -300,6 +311,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Bills': BillsIndexPage,
     'Awaiting Approval': BillsAwaitingApprovalPage,
     'Review files': BillsReviewFilesPage,
+  },
+  'Tasks': {
+    'Awaiting approval': TasksAwaitingApprovalPage,
+    'Actions required': TasksActionsRequiredPage,
   },
 }
 const activeTabComponent = computed<Component | null>(

@@ -49,6 +49,7 @@ const statusConfig: Record<string, StatusConfig> = {
   open:       { type: 'warning',      label: 'Open'       },
   unpaid:     { type: 'warning',      label: 'Unpaid'     },
   pending:    { type: 'warning',      label: 'Pending'    },
+  'awaiting approval': { type: 'warning', label: 'Awaiting approval' },
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
   receiving:  { type: 'warning',      label: 'Receiving'  },

@@ -679,7 +679,7 @@ const bulkCountLabel = computed(() => {
 /* Filter bar */
 .erp-filter-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   padding: 0;
   margin-bottom: var(--mp-spacing-5);
