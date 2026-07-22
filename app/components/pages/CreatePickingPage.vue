@@ -1143,7 +1143,7 @@ async function doCreate() {
 .pk-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
 .pk-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pk-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.pk-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-3); }
+.pk-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
 
 /* ── Combined / By orders toggle (copied verbatim from StockAdjustmentDetailsPage.vue / PickingTaskDetailsPage.vue) ── */
 .detail-loc-toggle { display: flex; align-items: center; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; gap: 2px; }
