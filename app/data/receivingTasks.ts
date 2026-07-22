@@ -123,11 +123,12 @@ export interface ReceivingTask {
   canceledReason?: string;
   /** This task's OWN receipt (PO) was canceled while the task was already "in
    *  progress" — real receiving work may already exist, so it is NOT
-   *  auto-canceled the way an "open" task on the same PO would be (see
-   *  cancelInboundReceipt in inboundSync.ts). Instead, Continue receiving is
-   *  blocked until the operator explicitly acknowledges the PO is gone (see
-   *  acknowledgeCanceledReceipt below) — after that, the task behaves exactly
-   *  like any other in-progress task again. */
+   *  auto-canceled immediately the way an "open" task on the same PO would be
+   *  (see cancelInboundReceipt in inboundSync.ts). Instead, Continue receiving
+   *  is blocked until the operator explicitly acknowledges the PO is gone —
+   *  acknowledging (see acknowledgeCanceledReceipt below) then cancels the
+   *  task itself, since there's nothing left to receive once its one-and-only
+   *  PO is gone. */
   needsCancelAck?: boolean;
 }
 
@@ -616,16 +617,19 @@ export function flagTaskCanceledPoAck(taskId: string): void {
 }
 
 /**
- * Operator confirms awareness that this task's source PO was canceled —
- * clears the Continue-receiving block. Doesn't change status/qty/targets;
- * the operator decides what to do next (keep receiving toward whatever's
- * still outstanding, or End receiving with what's already recorded).
+ * Operator acknowledges that this task's source PO was canceled. Since a
+ * receiving task always belongs to exactly ONE PO (no cross-PO bundling),
+ * there is nothing left to receive once that PO is gone — acknowledging
+ * therefore cancels the task itself (same terminal state a manual Cancel
+ * would reach; real receivedQty already recorded stays on the record for
+ * the audit trail, same as any other receiving-task cancel). A no-op if the
+ * task isn't actually flagged (nothing to acknowledge).
  */
 export function acknowledgeCanceledReceipt(taskId: string): void {
   const t = getReceivingTask(taskId);
-  if (!t) return;
+  if (!t || !t.needsCancelAck) return;
   t.needsCancelAck = false;
-  persistTasks();
+  cancelReceivingTask(taskId, "Purchase order was canceled");
 }
 
 function applyReceivingDetail(

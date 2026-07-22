@@ -418,12 +418,16 @@ function goReceiving() { router.push('/inbound-delivery?tab=Receiving') }
 
 // Defense in depth — the details page already blocks navigating here via
 // Continue receiving until acknowledged, but a direct URL visit must be
-// blocked the same way (real receiving work may already exist on this task,
-// so it's never silently auto-canceled once its PO is gone).
-function acknowledgeAndProceed() {
+// blocked the same way. Since this task belongs to exactly ONE PO,
+// acknowledging cancels the task itself (nothing left to receive once its
+// one-and-only PO is gone) — there's no receive UI to fall back into here,
+// so this navigates back to the task details page instead.
+function acknowledgeAndCancel() {
   if (!task.value) return
+  const taskNo = task.value.taskNo
   acknowledgeCanceledReceipt(task.value.id)
-  toast.notify({ variant: 'success', title: 'Acknowledged — you can continue receiving', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
+  goBack()
 }
 
 // ── Footer divider ────────────────────────────────────────────────────────────
@@ -460,8 +464,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 <template>
   <div v-if="task && po && task.needsCancelAck" class="ri-not-found">
     <p>The purchase order behind this task ({{ task.purchaseNo }}) was canceled.</p>
-    <p>Acknowledge to continue receiving.</p>
-    <button class="ri-btn ri-btn--primary" type="button" @click="acknowledgeAndProceed">Acknowledge</button>
+    <p>There's nothing left to receive for it — acknowledging will cancel this task too.</p>
+    <button class="ri-btn ri-btn--primary" type="button" @click="acknowledgeAndCancel">Acknowledge</button>
     <button class="detail-breadcrumb" @click="goBack">Back to task</button>
   </div>
 

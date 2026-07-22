@@ -12,10 +12,12 @@ export type CancelInboundResult =
  * of every task it owns, never just a portion of one:
  *  - open (not started) → canceled outright; nothing to reconcile.
  *  - in progress (started — real receiving work may already exist) → NOT
- *    auto-canceled. Flagged (flagTaskCanceledPoAck) so Continue receiving is
- *    blocked until the operator explicitly acknowledges the PO is gone (see
- *    acknowledgeCanceledReceipt in receivingTasks.ts) — after that it behaves
- *    like any other in-progress task again.
+ *    auto-canceled immediately. Flagged (flagTaskCanceledPoAck) so Continue
+ *    receiving is blocked until the operator explicitly acknowledges the PO
+ *    is gone — acknowledging (acknowledgeCanceledReceipt in
+ *    receivingTasks.ts) then cancels the task too, since there's nothing left
+ *    to receive once its one PO is gone; whatever receivedQty already exists
+ *    stays on the record for the audit trail.
  *  - pending put-away / completed (already ended) → untouched; those goods
  *    are already real and accounted for, regardless of the PO's fate.
  * Lives above receipts/receivingTasks to avoid a load-time circular import

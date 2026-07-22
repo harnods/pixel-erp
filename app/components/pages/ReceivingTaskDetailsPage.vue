@@ -149,22 +149,25 @@ function startReceivingAndNavigate() {
   router.push(`/receiving/${props.orderId}/receive`)
 }
 
-// This task's own PO was canceled while it was in progress — Continue
-// receiving is blocked (real receiving work may already exist, so it's never
-// silently auto-canceled like an open task on the same PO would be) until the
-// operator explicitly acknowledges the banner below.
+// This task's own PO was canceled while it was in progress — real receiving
+// work may already exist, so it's never silently auto-canceled the way an
+// open task on the same PO would be. Continue receiving is blocked until the
+// operator explicitly acknowledges via the modal below — since this task
+// belongs to exactly ONE PO, acknowledging then cancels the task itself
+// (nothing left to receive once its one-and-only PO is gone).
 const needsCancelAck = computed(() => !!task.value?.needsCancelAck)
-function acknowledgeCancelAck() {
-  if (!task.value) return
-  acknowledgeCanceledReceipt(task.value.id)
-  toast.notify({ variant: 'success', title: 'Acknowledged — you can continue receiving', maxWidth: 'max-content' })
-}
+const ackCancelOpen = ref(false)
 function continueReceiving() {
-  if (needsCancelAck.value) {
-    toast.notify({ variant: 'error', title: 'Acknowledge the canceled purchase order below before continuing', maxWidth: 'max-content' })
-    return
-  }
+  if (needsCancelAck.value) { ackCancelOpen.value = true; return }
   router.push(`/receiving/${props.orderId}/receive`)
+}
+function confirmAcknowledgeCancel() {
+  if (!task.value) return
+  const taskNo = task.value.taskNo
+  acknowledgeCanceledReceipt(task.value.id)
+  ackCancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
+  goBack()
 }
 
 // Cancel — only while receiving hasn't finished yet (open/in progress). Once
@@ -383,9 +386,9 @@ function goBack() {
           <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
         </svg>
         <span class="rcvgd-cancel-banner-text">
-          The purchase order behind this task ({{ task.purchaseNo }}) was canceled. Acknowledge to continue receiving.
+          The purchase order behind this task ({{ task.purchaseNo }}) was canceled. This task can no longer be continued.
         </span>
-        <button class="rcvgd-cancel-banner-btn" type="button" @click="acknowledgeCancelAck">Acknowledge</button>
+        <button class="rcvgd-cancel-banner-btn" type="button" @click="ackCancelOpen = true">Acknowledge</button>
       </div>
 
       <!-- ── Summary grid ── -->
@@ -682,6 +685,25 @@ function goBack() {
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
             <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Acknowledge canceled-PO confirmation ── -->
+    <MpModal id="rcvgd-ack-cancel" :is-open="ackCancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackCancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Acknowledge canceled purchase order?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          The purchase order behind this task ({{ task?.purchaseNo }}) was canceled. There's nothing left to
+          receive for it — acknowledging will cancel {{ task?.taskNo }} too. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">Review</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">Acknowledge</button>
           </div>
         </MpModalFooter>
       </MpModalContent>

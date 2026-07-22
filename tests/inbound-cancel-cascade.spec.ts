@@ -5,9 +5,11 @@
  * so canceling a PO invalidates 100% of every task it owns, never a portion:
  *
  *  - open (not started)     → canceled outright, nothing to reconcile.
- *  - in progress (started)  → NOT auto-canceled (real receiving work may
- *    already exist) — flagged (needsCancelAck) so Continue receiving is
- *    blocked until the operator explicitly acknowledges the PO is gone.
+ *  - in progress (started)  → NOT auto-canceled immediately (real receiving
+ *    work may already exist) — flagged (needsCancelAck) so Continue receiving
+ *    is blocked until the operator explicitly acknowledges the PO is gone.
+ *    Acknowledging then cancels the task too (nothing left to receive once
+ *    its one-and-only PO is gone) — real receivedQty stays on the record.
  *  - pending put-away / completed (already ended) → untouched; those goods
  *    are already real and accounted for regardless of the PO's fate.
  *  - a task on a DIFFERENT, unrelated PO → completely untouched.
@@ -103,7 +105,7 @@ describe('Inbound PO cancel cascade — in-progress receiving task', () => {
     expect(after.receivedQty).toBe(4) // untouched — nothing lost
   })
 
-  it('acknowledging clears the flag without touching status/qty — task is fully usable again', () => {
+  it('acknowledging CANCELS the task — nothing left to receive once its one PO is gone', () => {
     const receipt = makeReceipt(10)
     const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
     startReceiving(task.id)
@@ -114,10 +116,26 @@ describe('Inbound PO cancel cascade — in-progress receiving task', () => {
 
     const after = getReceivingTask(task.id)!
     expect(after.needsCancelAck).toBe(false)
-    expect(after.status).toBe('in progress') // still in progress, unchanged
-    // Still cancelable manually afterward if the operator chooses to, same as
-    // any other in-progress task — acknowledging doesn't strip that option.
-    expect(canCancelReceivingTask(after)).toBe(true)
+    expect(after.status).toBe('canceled') // NOT still in progress — acknowledging cancels it
+    expect(after.canceledReason).toBe('Purchase order was canceled')
+    expect(after.canceledDate).toBeTruthy()
+    // Terminal — can't be canceled again, and (crucially) can never be
+    // "started" again since it's not "open" — no way back into receiving.
+    expect(canCancelReceivingTask(after)).toBe(false)
+  })
+
+  it('acknowledging preserves whatever receivedQty was already real before the PO was canceled', () => {
+    const receipt = makeReceipt(10)
+    const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
+    startReceiving(task.id)
+    saveReceivingDraft(task.id, { [SKU_A.sku]: 4 })
+    cancelInboundReceipt(receipt.id)
+
+    acknowledgeCanceledReceipt(task.id)
+
+    const after = getReceivingTask(task.id)!
+    expect(after.status).toBe('canceled')
+    expect(after.receivedQty).toBe(4) // untouched — the record keeps what was real
   })
 
   it('acknowledging a task whose PO was never canceled is a harmless no-op', () => {
@@ -130,7 +148,22 @@ describe('Inbound PO cancel cascade — in-progress receiving task', () => {
 
     const after = getReceivingTask(task.id)!
     expect(after.needsCancelAck).toBeFalsy()
-    expect(after.status).toBe('in progress')
+    expect(after.status).toBe('in progress') // guarded — nothing to acknowledge, so nothing happens
+  })
+
+  it('acknowledging an already-open (never started) task is a harmless no-op — it was already auto-canceled', () => {
+    // Sanity check: an "open" task never gets needsCancelAck at all (it's
+    // auto-canceled immediately by cancelInboundReceipt), so acknowledging
+    // it afterward must not do anything further.
+    const receipt = makeReceipt(10)
+    const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
+    cancelInboundReceipt(receipt.id)
+    expect(getReceivingTask(task.id)!.status).toBe('canceled')
+    expect(getReceivingTask(task.id)!.needsCancelAck).toBeFalsy()
+
+    acknowledgeCanceledReceipt(task.id)
+
+    expect(getReceivingTask(task.id)!.status).toBe('canceled')
   })
 })
 
@@ -206,11 +239,15 @@ describe('Inbound PO cancel cascade — guard rails', () => {
     startReceiving(task.id)
     cancelInboundReceipt(receipt.id)
     expect(getReceivingTask(task.id)!.needsCancelAck).toBe(true)
-    acknowledgeCanceledReceipt(task.id) // operator acknowledges, keeps working
+    acknowledgeCanceledReceipt(task.id) // operator acknowledges — task is now canceled too
+    expect(getReceivingTask(task.id)!.status).toBe('canceled')
 
-    const result = cancelInboundReceipt(receipt.id) // trying to cancel again
+    const result = cancelInboundReceipt(receipt.id) // trying to cancel the PO again
     expect(result).toEqual({ ok: false, reason: 'CANNOT_CANCEL' })
-    expect(getReceivingTask(task.id)!.needsCancelAck).toBe(false) // untouched by the rejected attempt
+    // The rejected second attempt didn't touch the task any further.
+    const after = getReceivingTask(task.id)!
+    expect(after.status).toBe('canceled')
+    expect(after.needsCancelAck).toBe(false)
   })
 
   it('returns CANNOT_CANCEL for a fully completed receipt', () => {
