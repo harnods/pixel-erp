@@ -211,6 +211,17 @@ function hasVariance(difference: number): boolean { return difference !== 0 }
 // Keyed by SKU (not by line) so the reason stays consistent whether the operator
 // is looking at the By location or By SKU grouping of the same variance.
 const varianceReasons = reactive<Record<string, string>>({})
+// Every SKU with a variance must have a reason picked before the manager can
+// approve — checked against wmsCountLines (the finest-grained source) so it's
+// correct regardless of which grouping (By location / By SKU) is on screen.
+const missingReasonSkus = computed(() => {
+  if (!isCountedStatus.value) return []
+  const skus = new Set<string>()
+  for (const item of wmsCountLines.value) {
+    if (hasVariance(item.difference)) skus.add(item.sku)
+  }
+  return [...skus].filter((sku) => !varianceReasons[sku])
+})
 
 // ── WMS stock count: group line items by storage location (accordion) ──────────
 const groupedByLocation = computed(() => {
@@ -360,6 +371,10 @@ function startCounting() {
 function editAdjustment() { router.push(`${detailBasePath()}/${props.orderId}/edit`) }
 function approve() {
   if (!adjustment.value) return
+  if (missingReasonSkus.value.length) {
+    toast.notify({ variant: 'error', title: 'Select a reason for every variance before approving', maxWidth: 'max-content' })
+    return
+  }
   if (isWmsRecord.value) approveWmsAdjustment(adjustment.value.id)
   else approveAdjustment(adjustment.value.id)
   toast.notify({ variant: 'success', title: `${adjustment.value.number} approved` , maxWidth: 'max-content'})
@@ -566,7 +581,7 @@ onUnmounted(() => {
           <MpAccordionPanel>
             <div class="detail-acc-body">
               <div class="detail-loc-scroll" :class="{ 'detail-loc-scroll--split': group.items.some(i => isSerialTrackedSku(i.sku)) }">
-                <table class="detail-items detail-items--fixed" :class="{ 'detail-items--with-reason': isCountedStatus }">
+                <table class="detail-items detail-items--fixed detail-items--cyclecount" :class="{ 'detail-items--with-reason': isCountedStatus }">
                   <colgroup>
                     <col class="detail-col-product" />
                     <col class="detail-col-sku" />
@@ -586,7 +601,7 @@ onUnmounted(() => {
                       <th class="detail-th detail-th--num">Counted qty</th>
                       <th v-if="isCountedStatus" class="detail-th detail-th--num">Variance</th>
                       <th class="detail-th">Unit</th>
-                      <th v-if="isCountedStatus" class="detail-th">Reason</th>
+                      <th v-if="isCountedStatus" class="detail-th detail-th--reason">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -612,8 +627,8 @@ onUnmounted(() => {
                           <MpPopoverTrigger>
                             <MpSelect
                               :id="`reason-loc-sel-${item.key}`" placeholder="Select reason..." is-full-width size="sm"
-                              :model-value="varianceReasons[item.sku] || undefined" is-clearable
-                              @mousedown.prevent @clear="varianceReasons[item.sku] = ''"
+                              :model-value="varianceReasons[item.sku] || undefined"
+                              @mousedown.prevent
                             >
                               <option v-if="varianceReasons[item.sku]" :value="varianceReasons[item.sku]">{{ varianceReasons[item.sku] }}</option>
                             </MpSelect>
@@ -641,7 +656,7 @@ onUnmounted(() => {
       <!-- Line items: WMS stock count → by SKU flat table -->
       <section v-if="isWmsCount && locViewMode === 'sku'" class="detail-items-section" :class="{ 'detail-items-section--bordered': groupedBySku.length > 10 }">
         <div class="detail-items-scroll">
-          <table class="detail-items" :class="{ 'detail-items--split': bySkuHasSerial }">
+          <table class="detail-items detail-items--cyclecount" :class="{ 'detail-items--split': bySkuHasSerial }">
             <thead>
               <tr>
                 <th class="detail-th">Product</th>
@@ -650,7 +665,7 @@ onUnmounted(() => {
                 <th class="detail-th detail-th--num">Counted qty</th>
                 <th v-if="isCountedStatus" class="detail-th detail-th--num">Variance</th>
                 <th class="detail-th">Unit</th>
-                <th v-if="isCountedStatus" class="detail-th">Reason</th>
+                <th v-if="isCountedStatus" class="detail-th detail-th--reason">Reason</th>
                 <th class="detail-th">Storage locations</th>
               </tr>
             </thead>
@@ -684,8 +699,8 @@ onUnmounted(() => {
                     <MpPopoverTrigger>
                       <MpSelect
                         :id="`reason-sku-sel-${row.sku}`" placeholder="Select reason..." is-full-width size="sm"
-                        :model-value="varianceReasons[row.sku] || undefined" is-clearable
-                        @mousedown.prevent @clear="varianceReasons[row.sku] = ''"
+                        :model-value="varianceReasons[row.sku] || undefined"
+                        @mousedown.prevent
                       >
                         <option v-if="varianceReasons[row.sku]" :value="varianceReasons[row.sku]">{{ varianceReasons[row.sku] }}</option>
                       </MpSelect>
@@ -1079,7 +1094,33 @@ onUnmounted(() => {
 .detail-col-unit { width: 90px; }
 .detail-col-reason { width: 220px; }
 .detail-items--fixed.detail-items--with-reason { min-width: 1280px; }
-.detail-td--reason { padding-top: 6px; padding-bottom: 6px; vertical-align: middle; }
+/* Reason select fills the FULL row height (flat, edge-to-edge trigger) instead of
+   floating as a short pill inside a taller row — matches the row-select convention
+   used elsewhere (e.g. Other cost account rows). Percentage heights don't reliably
+   resolve against a <td> (its height is a table-layout result, not a specified
+   value), so the select is absolutely positioned against the cell's own box instead. */
+/* min-width matters where this column has no <colgroup> (the By SKU table uses
+   auto layout) — with the select absolutely positioned it no longer contributes
+   its own content width to that calculation, so the column must reserve it. */
+.detail-td--reason, .detail-th--reason {
+  border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default);
+}
+/* Approving-cycle-count tables (By location / By SKU): a vertical divider on the
+   right of every column, on every row — not just the Reason column. */
+.detail-items--cyclecount .detail-td, .detail-items--cyclecount .detail-th {
+  border-right: 1px solid var(--mp-border-default);
+}
+/* Everything but Reason is read-only in this review — a disabled fill makes that
+   at a glance, leaving the one actionable column (Reason) visually distinct. */
+.detail-items--cyclecount .detail-td:not(.detail-td--reason) {
+  background: var(--mp-background-disabled, rgba(29, 31, 36, 0.04));
+}
+.detail-td--reason { padding: 0; position: relative; vertical-align: middle; min-width: 180px; }
+.detail-td--reason :deep(.mp-select__root) { position: absolute; inset: 0; width: 100%; height: 100%; }
+.detail-td--reason :deep(.mp-select__control) {
+  height: 100%; width: 100%; border: none; border-radius: 0; background: transparent;
+}
+.detail-td--reason :deep(.mp-select__control):not(:disabled):hover { background: var(--mp-background-neutral-hovered); }
 .detail-loc-scroll--split .detail-th,
 .detail-items--split .detail-th { border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
 .detail-loc-scroll--split .detail-th:first-child,
@@ -1092,6 +1133,11 @@ onUnmounted(() => {
 .detail-items--split .detail-td:first-child { border-left: none; }
 .detail-loc-scroll--split .detail-td:last-child,
 .detail-items--split .detail-td:last-child { border-right: none; }
+
+/* Every row closes with a right border — including the last column (overrides the
+   split-mode suppression above) so each table reads as a bounded row on this page. */
+.detail-th:last-child, .detail-td:last-child { border-right: 1px solid var(--mp-border-default); }
+
 .detail-loc-tags { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .detail-loc-tag { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
