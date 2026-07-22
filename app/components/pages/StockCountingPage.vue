@@ -1223,7 +1223,7 @@ onUnmounted(() => {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   cursor: pointer; border: 1px solid transparent; white-space: nowrap;
 }
-.sc-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-default); }
+.sc-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-default); font-weight: var(--mp-font-weights-regular); }
 .sc-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .sc-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }
 .sc-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }

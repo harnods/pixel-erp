@@ -456,7 +456,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                       <div class="pr-request-cell">
                         <span class="pr-request-no">{{ r.requestNo }}</span>
                         <button v-if="r.producedQty > 0" class="pr-preview-btn" @click.stop="openPreview(p, src, r)">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                             <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" stroke-width="1.5"/>
                             <circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.5"/>
                           </svg>
@@ -696,16 +696,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Production request no. — reveals an "Open preview" button on row hover */
 .pr-request-cell { position: relative; display: flex; align-items: center; min-width: 0; }
 .pr-request-no { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* Chip style matches the canonical WMS row-hover chip (.row-hover-btn) — only the
+   icon + label differ (eye + "Open preview", keeping its distinct preview action). */
 .pr-preview-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-  display: none; align-items: center; gap: var(--mp-spacing-1);
-  padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%);
+  display: none; align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap;
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium);
-  color: var(--mp-text-secondary); line-height: 1; text-transform: uppercase;
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+  letter-spacing: var(--mp-letter-spacings-normal);
 }
-.pr-preview-btn:hover { color: var(--mp-text-default); background: var(--mp-background-neutral-hovered); }
 .pr-child:hover .pr-preview-btn { display: inline-flex; }
 
 /* Sales order — merged (row-spanning) cell, boxed with side borders. Highlights

@@ -425,7 +425,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep task</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeCancelModal">Keep task</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">Cancel task</button>
         </div>
       </MpModalFooter>

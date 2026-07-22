@@ -1172,7 +1172,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   cursor: pointer; border: 1px solid transparent; white-space: nowrap;
   line-height: var(--mp-line-heights-md); transition: background 0.15s;
 }
-.pi-btn--ghost     { background: transparent; border-color: transparent; color: var(--mp-text-secondary); }
+.pi-btn--ghost     { background: transparent; border-color: transparent; color: var(--mp-text-secondary); font-weight: var(--mp-font-weights-regular); }
 .pi-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .pi-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }
 .pi-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }

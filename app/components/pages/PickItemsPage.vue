@@ -1243,7 +1243,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 }
 .pik-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .pik-btn--primary:disabled:hover { background: var(--mp-background-brand-bold, #029861); }
-.pik-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-secondary); }
+.pik-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-secondary); font-weight: var(--mp-font-weights-regular); }
 .pik-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .pik-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }
 .pik-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }

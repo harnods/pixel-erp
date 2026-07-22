@@ -955,6 +955,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 }
 .ri-btn--ghost {
   background: transparent; border-color: transparent; color: var(--mp-text-secondary);
+  font-weight: var(--mp-font-weights-regular);
 }
 .ri-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .ri-btn--secondary {
