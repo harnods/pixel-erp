@@ -9,7 +9,7 @@
 
 import { warehouses } from './warehouses'
 import { getWarehouseDetail, type WarehouseStockItem } from './warehouseDetails'
-import { getWarehouseConfig } from './warehouseConfig'
+import { getWarehouseSettings, type WarehouseSettings } from './warehouseSettings'
 
 export const MIN_STOCK_LIMIT = 10 // mirrors the existing "Min. stock" trigger threshold
 
@@ -22,7 +22,7 @@ export function hashStr(s: string): number {
   return h
 }
 
-export function recommendationReasons(cfg: ReturnType<typeof getWarehouseConfig>, warehouseId: string, stock: WarehouseStockItem): Reason[] {
+export function recommendationReasons(cfg: WarehouseSettings, warehouseId: string, stock: WarehouseStockItem): Reason[] {
   const varianceNorm = (hashStr(stock.sku + warehouseId + 'variance') % 101) / 100
   const reasons: Reason[] = []
   if (cfg.cycleCountRuleNeg && stock.onHand === 0) reasons.push('Negative stock')
@@ -31,12 +31,12 @@ export function recommendationReasons(cfg: ReturnType<typeof getWarehouseConfig>
   return reasons
 }
 
-/** Count of SKUs currently flagged for a cycle count recommendation, across warehouses that have it enabled. */
+/** Count of SKUs currently flagged for a cycle count recommendation (global setting, applies to every warehouse). */
 export function recommendationCount(): number {
+  const cfg = getWarehouseSettings()
+  if (!cfg.cycleCountRec) return 0
   let count = 0
   for (const wh of warehouses.filter((w) => w.status === 'active' && !w.isDefault)) {
-    const cfg = getWarehouseConfig(wh.id)
-    if (!cfg.cycleCountRec) continue
     const detail = getWarehouseDetail(wh.id)
     if (!detail) continue
     for (const stock of detail.stock) {

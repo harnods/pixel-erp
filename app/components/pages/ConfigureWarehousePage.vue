@@ -40,13 +40,7 @@ const hasChanges = computed(() =>
   draft.preventDuplicateLabel  !== committed.preventDuplicateLabel  ||
   draft.locationPriority.join(',') !== committed.locationPriority.join(',') ||
   draft.scanThreshold          !== committed.scanThreshold          ||
-  draft.scanThresholdValue     !== committed.scanThresholdValue     ||
-  draft.cycleCountRec          !== committed.cycleCountRec          ||
-  draft.cycleCountAutoTask     !== committed.cycleCountAutoTask     ||
-  draft.cycleCountRuleNeg      !== committed.cycleCountRuleNeg      ||
-  draft.cycleCountRuleVar      !== committed.cycleCountRuleVar      ||
-  draft.cycleCountRuleMin      !== committed.cycleCountRuleMin      ||
-  draft.cycleCountRuleOrder.join(',') !== committed.cycleCountRuleOrder.join(',')
+  draft.scanThresholdValue     !== committed.scanThresholdValue
 )
 // The location priority order only decides where a NEW order reserves from —
 // orders already reserved (at their own creation time) keep their original bin,
@@ -54,42 +48,6 @@ const hasChanges = computed(() =>
 const hasLocationPriorityChange = computed(() =>
   draft.locationPriority.join(',') !== committed.locationPriority.join(',')
 )
-
-const cycleCountActiveRules = computed(() =>
-  [draft.cycleCountRuleNeg, draft.cycleCountRuleVar, draft.cycleCountRuleMin].filter(Boolean).length
-)
-
-// ─── Cycle count rule ordering ────────────────────────────────────────────────
-type RuleKey = 'neg' | 'var' | 'min'
-const RULE_META: Record<RuleKey, { draftKey: 'cycleCountRuleNeg' | 'cycleCountRuleVar' | 'cycleCountRuleMin'; title: string; desc: string; ariaLabel: string }> = {
-  neg: { draftKey: 'cycleCountRuleNeg', title: 'Negative stock',        ariaLabel: 'Negative stock rule',   desc: 'Flag SKUs that went negative within the lookback window, a confirmed signal of a system-vs-physical mismatch.' },
-  var: { draftKey: 'cycleCountRuleVar', title: 'Variance signal',       ariaLabel: 'Variance signal rule',  desc: 'Flag SKUs whose last count exceeded the variance tolerance, likely to drift again.' },
-  min: { draftKey: 'cycleCountRuleMin', title: 'Min stock (watch list)', ariaLabel: 'Min stock rule',        desc: 'Flag watch-listed SKUs at or below their minimum stock level, a predictive signal for high-priority products.' },
-}
-
-const ruleDragSrc  = ref<number | null>(null)
-const ruleDragOver = ref<number | null>(null)
-
-function onRuleDragStart(i: number, e: DragEvent) {
-  ruleDragSrc.value = i
-  e.dataTransfer!.effectAllowed = 'move'
-}
-function onRuleDragOver(i: number, e: DragEvent) {
-  e.preventDefault()
-  e.dataTransfer!.dropEffect = 'move'
-  ruleDragOver.value = i
-}
-function onRuleDrop(i: number, e: DragEvent) {
-  e.preventDefault()
-  if (ruleDragSrc.value === null || ruleDragSrc.value === i) { ruleDragOver.value = null; return }
-  const r = [...draft.cycleCountRuleOrder]
-  const [moved] = r.splice(ruleDragSrc.value, 1)
-  r.splice(i, 0, moved!)
-  draft.cycleCountRuleOrder = r
-  ruleDragSrc.value = null
-  ruleDragOver.value = null
-}
-function onRuleDragEnd() { ruleDragSrc.value = null; ruleDragOver.value = null }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 function startEdit() {
@@ -371,70 +329,6 @@ const toggleConfirmItems = computed((): string[] => {
             <span v-else class="cw-sub-value">{{ draft.scanThresholdValue }} pcs</span>
           </div>
 
-          <h3 class="cw-subsection-title cw-subsection-title--spaced">Cycle counts</h3>
-
-          <!-- Cycle count recommendation master toggle -->
-          <div class="cw-toggle-row">
-            <div class="cw-toggle-info">
-              <span class="cw-toggle-title">Cycle count recommendation</span>
-              <span class="cw-toggle-desc">Show a recommendation board that surfaces which SKUs to prioritize for counting, based on negative stock, count variance, and minimum stock signals.</span>
-            </div>
-            <MpToggle v-model:is-checked="draft.cycleCountRec" :is-disabled="!isEditing" aria-label="Cycle count recommendation" />
-          </div>
-
-          <!-- Sub-settings: only visible when master toggle is ON -->
-          <template v-if="draft.cycleCountRec">
-
-            <!-- Recommendation rules (drag to reorder priority when editing) -->
-            <div class="cw-rec-group" :class="{ 'cw-rec-group--editing': isEditing }">
-              <span class="cw-rec-group-label">Recommendation rules</span>
-
-              <div
-                v-for="(ruleKey, i) in draft.cycleCountRuleOrder"
-                :key="ruleKey"
-                class="cw-rec-rule-row"
-                :class="{
-                  'cw-rec-rule-row--dragging':   isEditing && ruleDragSrc === i,
-                  'cw-rec-rule-row--over-above': isEditing && ruleDragOver === i && ruleDragSrc !== null && ruleDragSrc > i,
-                  'cw-rec-rule-row--over-below': isEditing && ruleDragOver === i && ruleDragSrc !== null && ruleDragSrc < i,
-                }"
-                :draggable="isEditing ? 'true' : 'false'"
-                @dragstart="isEditing && onRuleDragStart(i, $event)"
-                @dragover="isEditing && onRuleDragOver(i, $event)"
-                @drop="isEditing && onRuleDrop(i, $event)"
-                @dragend="isEditing && onRuleDragEnd()"
-              >
-                <span v-if="isEditing" class="cw-rec-handle" aria-hidden="true">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <circle cx="5" cy="4" r="1.2"/><circle cx="11" cy="4" r="1.2"/>
-                    <circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/>
-                    <circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/>
-                  </svg>
-                </span>
-                <div class="cw-toggle-info">
-                  <span class="cw-toggle-title">{{ RULE_META[ruleKey as RuleKey].title }}</span>
-                  <span class="cw-toggle-desc">{{ RULE_META[ruleKey as RuleKey].desc }}</span>
-                </div>
-                <MpToggle
-                  :is-checked="draft[RULE_META[ruleKey as RuleKey].draftKey]"
-                  :is-disabled="!isEditing || (draft[RULE_META[ruleKey as RuleKey].draftKey] && cycleCountActiveRules === 1)"
-                  :aria-label="RULE_META[ruleKey as RuleKey].ariaLabel"
-                  @update:is-checked="draft[RULE_META[ruleKey as RuleKey].draftKey] = $event"
-                />
-              </div>
-            </div>
-
-            <!-- Auto-create nested toggle -->
-            <div class="cw-toggle-row">
-              <div class="cw-toggle-info">
-                <span class="cw-toggle-title">Auto-create cycle count tasks</span>
-                <span class="cw-toggle-desc">Automatically create pending cycle count tasks for all recommended SKUs. When off, the recommendation board is advisory only; no tasks are created.</span>
-              </div>
-              <MpToggle v-model:is-checked="draft.cycleCountAutoTask" :is-disabled="!isEditing" aria-label="Auto-create cycle count tasks" />
-            </div>
-
-          </template>
-
         </div>
 
         <div v-if="isEditing" class="cw-action-bar">
@@ -600,33 +494,4 @@ const toggleConfirmItems = computed((): string[] => {
 }
 .cw-sub-input:focus { border-color: var(--mp-border-focused, #2563eb); }
 .cw-sub-unit { font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
-
-.cw-rec-group {
-  display: flex; flex-direction: column;
-  margin: var(--mp-spacing-1) 0;
-  padding: var(--mp-spacing-3) 0 var(--mp-spacing-1) var(--mp-spacing-4);
-  border-left: 2px solid var(--mp-border-default);
-}
-.cw-rec-group--editing { border-left: none; }
-.cw-rec-group-label {
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-subtle); text-transform: uppercase; letter-spacing: 0.4px;
-  margin-bottom: var(--mp-spacing-1);
-}
-.cw-rec-rule-row {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0;
-  transition: opacity 150ms;
-}
-.cw-rec-rule-row[draggable="true"] { cursor: grab; user-select: none; }
-.cw-rec-rule-row[draggable="true"]:active { cursor: grabbing; }
-.cw-rec-rule-row--dragging { opacity: 0.4; }
-.cw-rec-rule-row--over-above { border-top: 2px solid var(--mp-border-selected, #0f6d4d); }
-.cw-rec-rule-row--over-below { border-bottom: 2px solid var(--mp-border-selected, #0f6d4d); }
-
-.cw-rec-handle {
-  flex-shrink: 0; color: var(--mp-text-disabled, #b0b6b8);
-  display: flex; align-items: center;
-}
-.cw-rec-rule-row:hover .cw-rec-handle { color: var(--mp-text-subtle); }
 </style>

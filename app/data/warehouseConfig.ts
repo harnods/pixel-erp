@@ -43,13 +43,6 @@ export interface WarehouseConfig {
   locationPriority: string[]
   scanThreshold: boolean
   scanThresholdValue: number
-  cycleCountRec: boolean
-  cycleCountAutoTask: boolean
-  cycleCountRuleNeg: boolean
-  cycleCountRuleVar: boolean
-  cycleCountRuleMin: boolean
-  /** Priority order for recommendation rules — highest priority first. */
-  cycleCountRuleOrder: ('neg' | 'var' | 'min')[]
 }
 
 const DEFAULTS: WarehouseConfig = {
@@ -61,12 +54,6 @@ const DEFAULTS: WarehouseConfig = {
   locationPriority: [],
   scanThreshold: true,
   scanThresholdValue: 50,
-  cycleCountRec: false,
-  cycleCountAutoTask: false,
-  cycleCountRuleNeg: true,
-  cycleCountRuleVar: true,
-  cycleCountRuleMin: true,
-  cycleCountRuleOrder: ['neg', 'var', 'min'],
 }
 
 function loadAll(): Record<string, WarehouseConfig> {

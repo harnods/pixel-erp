@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
 
 /** A product option for the picker. */
-export interface PickerProduct { sku: string; name: string; img?: string; desc?: string }
+export interface PickerProduct { sku: string; name: string; img?: string; desc?: string; minStock?: number; unit?: string }
 
 const props = defineProps<{
   open: boolean
@@ -85,6 +85,7 @@ async function save() {
               <span class="spd-info">
                 <span class="spd-name">{{ p.name }}</span>
                 <span class="spd-sku">SKU {{ p.sku }}</span>
+                <span v-if="p.minStock !== undefined" class="spd-min-stock">Min. stock {{ p.minStock.toLocaleString('id-ID') }}{{ p.unit ? ` ${p.unit}` : '' }}</span>
               </span>
               <span class="spd-act spd-act--add"><MpIcon name="add" size="sm" /></span>
             </button>
@@ -116,6 +117,7 @@ async function save() {
               <span class="spd-info">
                 <span class="spd-name">{{ p.name }}</span>
                 <span class="spd-sku">SKU {{ p.sku }}</span>
+                <span v-if="p.minStock !== undefined" class="spd-min-stock">Min. stock {{ p.minStock.toLocaleString('id-ID') }}{{ p.unit ? ` ${p.unit}` : '' }}</span>
               </span>
               <span class="spd-act spd-act--remove"><MpIcon name="minus-circular" size="sm" /></span>
             </button>
@@ -190,6 +192,7 @@ async function save() {
 .spd-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .spd-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .spd-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.spd-min-stock { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .spd-act { display: none; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; }
 .spd-item:hover .spd-act { display: inline-flex; }
 .spd-act--add { color: var(--mp-text-link); }
