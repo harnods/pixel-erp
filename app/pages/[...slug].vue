@@ -1102,8 +1102,10 @@ function startResize(e: MouseEvent) {
         </div>
       </div>
 
-      <!-- Status tabs (below the title, outside the stage) -->
-      <div v-if="currentTabs.length" class="page-tabs" role="tablist">
+      <!-- Status tabs (below the title, outside the stage) — hidden when there's
+           nothing to switch between (e.g. WMS's Product list, once Awaiting
+           approval is filtered out, is left with only "All products"). -->
+      <div v-if="currentTabs.length > 1" class="page-tabs" role="tablist">
         <button
           v-for="tab in currentTabs"
           :key="tab"
