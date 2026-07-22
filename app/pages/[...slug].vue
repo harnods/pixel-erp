@@ -398,13 +398,17 @@ const currentTabCounts = computed<Record<string, number>>(() => {
 // Multi-warehouse views (ERP/WMS Standalone) keep every tab — a disabled
 // warehouse's tasks just never appear in it, no need to hide the tab itself.
 const { hasWarehouseContext, activeWarehouse } = useWarehouseContext()
+const { activeScenario } = useScenario()
 const currentTabs = computed<string[]>(() => {
   const tabs = pageTabs[currentPageKey.value] ?? []
-  if (!hasWarehouseContext.value || !activeWarehouse.value) return tabs
-  const config = getWarehouseConfig(activeWarehouse.value.id)
+  const config = (hasWarehouseContext.value && activeWarehouse.value) ? getWarehouseConfig(activeWarehouse.value.id) : null
   return tabs.filter((tab) => {
-    if (currentPageKey.value === 'Inbound delivery' && tab === 'Put-away') return config.putAwayEnabled
-    if (currentPageKey.value === 'Outbound delivery' && tab === 'Picking') return config.pickingEnabled
+    if (config) {
+      if (currentPageKey.value === 'Inbound delivery' && tab === 'Put-away') return config.putAwayEnabled
+      if (currentPageKey.value === 'Outbound delivery' && tab === 'Picking') return config.pickingEnabled
+    }
+    // WMS doesn't deal in the ERP-side product approval workflow.
+    if (currentPageKey.value === 'Product list' && tab === 'Awaiting approval') return activeScenario.value === 'ERP'
     return true
   })
 })
@@ -483,7 +487,6 @@ const activeTabComponent = computed<Component | null>(
 
 // New PO / Import buttons — POs are manually created from the WMS module (→ Draft),
 // so these show only in WMS Standalone, on Inbound delivery pages.
-const { activeScenario } = useScenario()
 const BARANG_MASUK_PAGES = [
   'Inbound delivery', 'Draft', 'On the way', 'Receiving', 'Partial reception', 'Inbound completed', 'Canceled',
 ]
@@ -1106,8 +1109,10 @@ function startResize(e: MouseEvent) {
         </div>
       </div>
 
-      <!-- Status tabs (below the title, outside the stage) -->
-      <div v-if="currentTabs.length" class="page-tabs" role="tablist">
+      <!-- Status tabs (below the title, outside the stage) — hidden when there's
+           nothing to switch between (e.g. WMS's Product list, once Awaiting
+           approval is filtered out, is left with only "All products"). -->
+      <div v-if="currentTabs.length > 1" class="page-tabs" role="tablist">
         <button
           v-for="tab in currentTabs"
           :key="tab"

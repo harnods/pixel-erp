@@ -130,6 +130,12 @@ interface NavItem {
    * slug — e.g. WMS Ops "Warehouses" opens a specific warehouse's detail directly.
    */
   path?: string
+  /**
+   * Navigation identity (page label) when it must differ from the display name —
+   * e.g. WMS Standalone's "Products" leaf routes to the "Product list" page.
+   * Defaults to `name`.
+   */
+  to?: string
 }
 
 interface ActivePanel {
@@ -456,7 +462,7 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Reports', icon: 'reports' },
   ],
   [
-    { name: 'Inventory', icon: 'products' },
+    { name: 'Products', icon: 'products', to: 'Product list' },
     { name: 'Warehouses', icon: 'warehouse' },
   ],
   [
@@ -528,7 +534,7 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
     for (const item of group) {
       // slug-based match so names with caps/slashes (e.g. 'Stock in/out') still
       // resolve through the URL round-trip
-      if (labelToPath(item.name) === labelToPath(pageKey)) {
+      if (labelToPath(item.to ?? item.name) === labelToPath(pageKey)) {
         // If the matched nav item owns a level-2 panel, return it so the panel
         // stays open on refresh of a detail page (e.g. /stock-adjustments/wsa-001
         // resolves to 'Stock adjustments', which has a panelSubmenu).
@@ -696,7 +702,7 @@ function handleNavClick(item: NavItem) {
     // Simple leaf nav item (e.g. Home, Expenses, Settings)
     activeItem.value = item.name
     if (item.path) router.push(item.path)
-    else navigate(item.name)
+    else navigate(item.to ?? item.name)
     closePanel()
   }
   // Items with submenu: flyout opens on hover, click does nothing

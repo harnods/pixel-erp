@@ -29,6 +29,10 @@ function viewDetails(sku: string) { router.push(`/product-list/${sku}`) }
 // "Awaiting approval" tab — driven by the URL, same pattern as Stock adjustments.
 const isAwaiting = computed(() => route.query.tab === 'Awaiting approval')
 
+// WMS scenarios don't deal in pricing/costing — those columns/stats are ERP-only.
+const { activeScenario } = useScenario()
+const isWms = computed(() => activeScenario.value.startsWith('WMS'))
+
 // ─── Column definitions — match Figma Products table exactly ──────────────────
 //
 //  Figma structure (left → right):
@@ -49,10 +53,13 @@ const columns: TableColumn[] = [
   { key: 'onTheWay',            label: 'In transit qty',         width: '130px', align: 'right',                 sortType: 'number' },
   { key: 'minStock',            label: 'Min. stock',             width: '104px', align: 'right',                 sortType: 'number' },
   { key: 'unit',                label: 'Unit',                   width: '96px',                  sortType: 'text'   },
-  { key: 'defaultSalesPrice',   label: 'Default sales price',    width: '184px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'averageCost',         label: 'Average cost',           width: '184px', align: 'right',                 sortType: 'number' },
-  { key: 'lastPurchaseCost',    label: 'Last Purchase cost',     width: '184px', align: 'right',                 sortType: 'number' },
-  { key: 'defaultPurchaseCost', label: 'Default Purchase cost',  width: '184px', align: 'right',                 sortType: 'number' },
+  // Pricing/costing columns — ERP only, WMS doesn't deal in pricing.
+  ...(isWms.value ? [] : [
+    { key: 'defaultSalesPrice',   label: 'Default sales price',    width: '184px', align: 'right' as const, sortable: true, sortType: 'number' as const },
+    { key: 'averageCost',         label: 'Average cost',           width: '184px', align: 'right' as const,                 sortType: 'number' as const },
+    { key: 'lastPurchaseCost',    label: 'Last Purchase cost',     width: '184px', align: 'right' as const,                 sortType: 'number' as const },
+    { key: 'defaultPurchaseCost', label: 'Default Purchase cost',  width: '184px', align: 'right' as const,                 sortType: 'number' as const },
+  ]),
 ]
 
 // Column show/hide (Name always on; Last updated appended, hidden by default)
@@ -187,7 +194,8 @@ const activeFilterCount = computed(() =>
     <!-- ── Stats section ── -->
     <template v-if="!isAwaiting" #stats>
       <div class="stats-section">
-        <div class="stat-card stat-card--bordered">
+        <!-- WMS doesn't deal in pricing/costing, so inventory value isn't meaningful there. -->
+        <div v-if="!isWms" class="stat-card stat-card--bordered">
           <div class="stat-title">Total inventory value</div>
           <div class="stat-period">Based on current product value</div>
           <div class="stat-amount">{{ formatIDR(totalInventoryValue) }}</div>
