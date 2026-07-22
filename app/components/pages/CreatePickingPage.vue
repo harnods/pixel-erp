@@ -1054,7 +1054,7 @@ async function doCreate() {
              no./customer/source). Plain SKUs are independently editable per
              order here (qty + remove/restore); tracked (batch/serial) SKUs stay
              a shared row-level pool — same qty/remove as Combined. -->
-        <template v-else>
+        <div v-else class="pk-orders-scroll">
           <div v-for="group in orderGroups" :key="group.order.id" class="pk-order-block">
             <div class="pk-order-head">
               <span class="pk-order-no">{{ group.order.salesNo }}</span>
@@ -1074,13 +1074,13 @@ async function doCreate() {
             </div>
             <section class="pk-items-section">
               <div class="pk-items-scroll">
-                <table class="pk-items pk-items--split">
+                <table class="pk-items pk-items--split pk-items--order">
                   <colgroup>
-                    <col /><!-- Product -->
-                    <col /><!-- SKU -->
-                    <col /><!-- Order qty -->
-                    <col v-if="hasPriorPicks" /><!-- Picked qty -->
-                    <col /><!-- Qty to pick -->
+                    <col /><!-- Product (only unfixed column — fills the rest, same width every table since every other column below is fixed) -->
+                    <col style="width: 120px" /><!-- SKU -->
+                    <col style="width: 110px" /><!-- Order qty -->
+                    <col v-if="hasPriorPicks" style="width: 110px" /><!-- Picked qty -->
+                    <col style="width: 130px" /><!-- Qty to pick -->
                     <col style="width: 100px" /><!-- Unit -->
                     <col style="width: 56px" /><!-- Remove/restore -->
                   </colgroup>
@@ -1151,7 +1151,7 @@ async function doCreate() {
               </div>
             </section>
           </div>
-        </template>
+        </div>
       </div>
 
     </div><!-- /detail-stage -->
@@ -1330,6 +1330,10 @@ async function doCreate() {
 .detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
 /* ── Picking list — per-order blocks ─────────────────────────────────────────── */
+/* By orders can stack many order blocks — unlike Combined's single section
+   (which fills the stage and scrolls internally), each block here just takes
+   its natural content height, and THIS wrapper is the one that scrolls. */
+.pk-orders-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; }
 .pk-order-block { margin-bottom: var(--mp-spacing-5); }
 .pk-order-head {
   display: flex; align-items: baseline; gap: var(--mp-spacing-2);
@@ -1367,6 +1371,12 @@ async function doCreate() {
    column gets left/right borders — no double border, no outer border on the ends. */
 .pk-items--split .pk-td { border-right: 1px solid var(--mp-border-default); }
 .pk-items--split .pk-td:last-child { border-right: none; }
+
+/* By orders: every order gets its own <table>, so table-layout: auto would size
+   each one's columns independently off its own content (misaligned widths across
+   orders). Forcing fixed layout + identical explicit widths on every column but
+   Product keeps every order's table lined up the same. */
+.pk-items--order { table-layout: fixed; }
 
 /* Form-table look: grey read-only cells, white editable cell */
 .pk-items .pk-td {
