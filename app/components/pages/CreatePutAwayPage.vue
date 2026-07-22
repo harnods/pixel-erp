@@ -646,14 +646,6 @@ async function handleCreate() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-/* Every column gets a left/right border; Action (always the true rightmost
-   column) gets border-right: none instead, since its right edge is the
-   table's own outer edge. */
-.pa-items .pa-th,
-.pa-items .pa-td { border-right: 1px solid var(--mp-border-default); }
-.pa-items .pa-th--action { border-right: none; }
-.pa-items .pa-td--action { border-right: none; }
-
 .pa-task-row { cursor: pointer; transition: background 80ms; }
 .pa-task-row:hover .pa-td { background: var(--mp-background-neutral-subtle); }
 .pa-cell-check { display: flex; align-items: center; gap: var(--mp-spacing-2); }

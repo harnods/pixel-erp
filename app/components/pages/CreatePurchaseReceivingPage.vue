@@ -58,7 +58,7 @@ const visibleItems = computed<ReceiptLineItem[]>(() => {
 const hasRemoved = computed(() => removed.value.size > 0)
 
 // ─── Partial reception context ────────────────────────────────────────────────
-// Received qty / Outstanding qty columns matter as soon as ANY earlier receiving
+// Received qty / Remaining qty to receive columns matter as soon as ANY earlier receiving
 // task already exists for this receipt — not just once the receipt has been
 // formally marked "partial reception" (which only happens after a task ENDS).
 // A still-open/in-progress first task already claims qty per SKU (see
@@ -289,7 +289,7 @@ function handleCreate() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pr-filter-search-input" type="text" placeholder="Search SKU or product" />
+            <input v-model="search" class="pr-filter-search-input" type="text" placeholder="Search..." />
             <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -309,14 +309,14 @@ function handleCreate() {
           <div ref="itemsScrollEl" class="pr-items-scroll">
             <table class="pr-items">
               <colgroup>
-                <col />
-                <col />
-                <col class="pr-col--num" />
-                <col class="pr-col--num" />
-                <col v-if="hasExistingReceivingTasks" class="pr-col--num" />
-                <col v-if="hasExistingReceivingTasks" class="pr-col--num" />
-                <col />
-                <col />
+                <col :style="{ width: hasExistingReceivingTasks ? '26%' : '34%' }" />
+                <col :style="{ width: hasExistingReceivingTasks ? '10%' : '14%' }" />
+                <col :style="{ width: hasExistingReceivingTasks ? '11%' : '16%' }" />
+                <col :style="{ width: hasExistingReceivingTasks ? '11%' : '16%' }" />
+                <col v-if="hasExistingReceivingTasks" style="width: 11%" />
+                <col v-if="hasExistingReceivingTasks" style="width: 15%" />
+                <col :style="{ width: hasExistingReceivingTasks ? '8%' : '12%' }" />
+                <col style="width: 56px" />
               </colgroup>
               <thead>
                 <tr>
@@ -325,7 +325,7 @@ function handleCreate() {
                   <th class="pr-th pr-th--num">Purchase qty</th>
                   <th class="pr-th pr-th--num">Expected qty</th>
                   <th v-if="hasExistingReceivingTasks" class="pr-th pr-th--num">Received qty</th>
-                  <th v-if="hasExistingReceivingTasks" class="pr-th pr-th--num">Outstanding qty</th>
+                  <th v-if="hasExistingReceivingTasks" class="pr-th pr-th--num">Remaining qty to receive</th>
                   <th class="pr-th">Unit</th>
                   <th class="pr-th pr-th--action" aria-hidden="true" />
                 </tr>
@@ -511,7 +511,7 @@ function handleCreate() {
 .pr-items-section--bordered .pr-items-count {
 }
 .pr-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
-.pr-items { width: 100%; table-layout: auto; border-collapse: collapse; }
+.pr-items { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .pr-items thead .pr-th { position: sticky; top: 0; z-index: 1; }
 
 .pr-th {
@@ -535,7 +535,6 @@ function handleCreate() {
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
   background: var(--mp-background-neutral-subtle);
 }
-.pr-col--num { width: 110px; }
 .pr-td--num {
   text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);

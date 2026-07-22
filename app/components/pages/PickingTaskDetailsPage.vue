@@ -323,8 +323,8 @@ interface PickDetailRowWithMeta {
   groupSize: number
 }
 /** Expands each visible group into one row per bin actually used (Storage
- *  location/Qty to pick/Picked qty split per bin, Product/SKU/Outstanding/
- *  Unit/Action merged via groupIndex/groupSize) — or a single row when
+ *  location/Qty to pick/Picked qty split per bin, Product/SKU/Remaining qty
+ *  to pick/Unit/Action merged via groupIndex/groupSize) — or a single row when
  *  there's nothing to split (0 or 1 bin used), matching PickItemsPage.vue's
  *  same pattern during live execution. */
 const visibleRowsWithMeta = computed<PickDetailRowWithMeta[]>(() => {
@@ -422,7 +422,6 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         <button class="detail-breadcrumb" @click="goBack">Picking</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
-          <span v-if="isInProgress" class="pkd-pulse" aria-label="In process" />
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="pkd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
@@ -511,7 +510,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
           <span class="pkd-progress-val">{{ fmt(pickedTotal) }}</span>
         </div>
         <div class="pkd-progress-stat">
-          <span class="pkd-progress-label">Outstanding qty</span>
+          <span class="pkd-progress-label">Remaining qty to pick</span>
           <span class="pkd-progress-val">{{ fmt(outstandingTotal) }}</span>
         </div>
       </section>
@@ -541,7 +540,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                   <th class="detail-th">Storage location</th>
                   <th class="detail-th detail-th--num">Qty to pick</th>
                   <th class="detail-th detail-th--num">Picked qty</th>
-                  <th class="detail-th detail-th--num">Outstanding qty</th>
+                  <th class="detail-th detail-th--num">Remaining qty to pick</th>
                   <th class="detail-th">Unit</th>
                   <th class="detail-th detail-th--action"></th>
                 </tr>
@@ -842,21 +841,6 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
-}
-
-@keyframes pkd-pulse-ring {
-  0%   { transform: scale(0.85); opacity: 1; }
-  100% { transform: scale(1.8);  opacity: 0; }
-}
-.pkd-pulse {
-  position: relative; display: inline-flex;
-  width: var(--mp-sizes-2, 8px); height: var(--mp-sizes-2, 8px);
-  border-radius: var(--mp-radii-full, 999px); background: var(--mp-colors-emerald-500, #10b981); flex-shrink: 0;
-}
-.pkd-pulse::after {
-  content: ''; position: absolute; inset: 0; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-colors-emerald-500, #10b981);
-  animation: pkd-pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .detail-bar-right { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5); flex-shrink: 0; }

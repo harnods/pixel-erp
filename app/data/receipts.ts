@@ -3,6 +3,18 @@ import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY, VENDORS } from './master'
 
+/** Pending = no receiving task yet · Open = task(s) created, none started ·
+ *  In progress = at least one task started · Partial reception = at least one
+ *  task ended short of full qty · Completed = full qty received ·
+ *  Canceled = voided. */
+export type ReceiptStatus =
+  | "pending"
+  | "open"
+  | "in progress"
+  | "partial reception"
+  | "completed"
+  | "canceled";
+
 /** An inbound goods receipt (Inbound delivery → Receipt). */
 export interface Receipt {
   id: string;
@@ -18,7 +30,7 @@ export interface Receipt {
   purchaseQty: number;
   /** units actually received so far (0 = none, < purchaseQty = partial, = purchaseQty = full) */
   receivedQty: number;
-  status: string;
+  status: ReceiptStatus;
   /** ISO date the goods were fully received (completed receipts only) */
   receivedDate?: string;
   /** ISO date the PO was canceled (canceled receipts only) */
@@ -69,11 +81,10 @@ function generateMemo(i: number, arrivalIso: string): string | undefined {
 }
 
 // Units received so far, derived from the stage:
-//  - on the way → 0 (nothing arrived yet)
-//  - receiving → partway through
+//  - pending/open/in progress → 0 (nothing ended yet)
 //  - partial reception → receiving was closed short of the full qty (varied, never full)
 //  - completed → received in full
-function computeReceived(i: number, status: string, purchaseQty: number): number {
+function computeReceived(i: number, status: ReceiptStatus, purchaseQty: number): number {
   switch (status) {
     case "completed":
       // ~4 of 10 completed POs were closed short (accepted as partial)
@@ -83,8 +94,6 @@ function computeReceived(i: number, status: string, purchaseQty: number): number
         return Math.min(purchaseQty - 1, Math.max(1, Math.round(purchaseQty * f)));
       }
       return purchaseQty;
-    case "receiving":
-      return Math.round(purchaseQty * 0.4);
     case "partial reception": {
       const fractions = [0.35, 0.5, 0.6, 0.75, 0.45, 0.8, 0.55, 0.3];
       const f = fractions[i % fractions.length];
@@ -92,7 +101,7 @@ function computeReceived(i: number, status: string, purchaseQty: number): number
       return Math.min(purchaseQty - 1, Math.max(1, Math.round(purchaseQty * f)));
     }
     default:
-      return 0; // on the way
+      return 0; // pending / open / in progress — seedTasks() derives the real split
   }
 }
 
@@ -120,18 +129,21 @@ function hashId(id: string): number {
   return id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
 }
 
-// Future arrival windows for not-yet-arrived (on the way) POs — spread so each
+// Future arrival windows for not-yet-arrived (pending) POs — spread so each
 // arrival-date preset (today / tomorrow / next 7 days / this month / beyond) hits some.
 const FUTURE_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7, 9, 12, 18, 23, 27, 34, 40];
 
 /**
  * Status for receipt i — weighted to feel like a real inbound queue rather than a
- * strict cycle: mostly On the way + Completed, fewer Partial reception. "receiving"
- * isn't used here (it has no list of its own), so every receipt is visible.
+ * strict cycle: mostly Pending + Completed, fewer Partial reception. This is the
+ * PRE-task seed value; seedTasks() (receivingTasks.ts) reads it to decide what
+ * tasks to attach, then initInbound() re-derives the real status (Pending / Open
+ * / In progress / Partial reception / Completed) from those tasks via
+ * recomputeReceiptStatus() — so "pending" here just means "no ended task yet".
  */
-function statusFor(i: number): string {
+function statusFor(i: number): ReceiptStatus {
   const h = hash100(i);
-  if (h < 42) return "on the way";       // ~42% awaiting arrival
+  if (h < 42) return "pending";           // ~42% not yet started
   if (h < 64) return "partial reception"; // ~22% received short
   return "completed";                     // ~36% fully received
 }
@@ -142,9 +154,9 @@ function generateReceipts(count = 42): Receipt[] {
   for (let i = 0; i < count; i++) {
     const wh = RECEIVING_WAREHOUSES[i % RECEIVING_WAREHOUSES.length];
     const status = statusFor(i);
-    // Arrival makes sense per status: on the way → still to come (future);
+    // Arrival makes sense per status: pending → still to come (future);
     // arrived states (partial / completed) → a recent past date.
-    const arrived = status !== "on the way";
+    const arrived = status !== "pending";
     const offset = arrived
       ? -(((i * 7) % 26) + 2)                       // 2–27 days ago
       : FUTURE_OFFSETS[i % FUTURE_OFFSETS.length];  // upcoming
@@ -197,7 +209,7 @@ function generateDemoInbound(): Receipt[] {
     skuQty: 3,
     purchaseQty: 6,
     receivedQty: 0,
-    status: 'on the way',
+    status: 'pending',
     estimatedArrival: isoOffset(2),
     memo: 'Demo PO: 1 batch-tracked, 1 serial-tracked, 1 plain SKU (qty 2 each) — for partial receiving test',
     trackingNos: [],
@@ -342,8 +354,9 @@ export function deleteReceipt(id: string): void {
 
 // status → stage label (used by tabs / sidebar panel)
 const STATUS_TO_STAGE: Record<string, string> = {
-  "on the way": "On the way",
-  receiving: "Receiving",
+  pending: "Pending",
+  open: "Open",
+  "in progress": "In progress",
   "partial reception": "Partial reception",
   completed: "Completed",
   canceled: "Canceled",
@@ -375,7 +388,7 @@ export function receiptsForStage(stage: string, warehouseIds?: string[]): Receip
   );
 }
 
-/** Stage label for a receipt (e.g. "on the way" → "On the way"). */
+/** Stage label for a receipt (e.g. "pending" → "Pending"). */
 export function receiptStage(r: Receipt): string {
   return STATUS_TO_STAGE[r.status] ?? r.status;
 }

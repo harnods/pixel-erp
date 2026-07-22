@@ -72,7 +72,7 @@ const linkedPutAway = computed(() => task.value ? getPutAwayForTask({ ...task.va
 // PO status — the REAL derived receipt status (single source), not a local guess.
 const poStatus = computed<string>(() => {
   const r = receipts.find(x => x.id === po.value?.receiptId)
-  return r?.status ?? 'on the way'
+  return r?.status ?? 'open'
 })
 
 const purchaseTotal      = computed(() => task.value?.purchaseQty ?? 0)
@@ -313,8 +313,6 @@ function goBack() {
         <button class="detail-breadcrumb" @click="goBack">Receiving</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
-          <!-- Pulse — only while in progress -->
-          <span v-if="isInProgress" class="rcvgd-pulse" aria-label="In process" />
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcvgd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
@@ -405,7 +403,7 @@ function goBack() {
           <span class="rcvgd-progress-val">{{ fmt(savedReceivedTotal) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">Outstanding qty</span>
+          <span class="rcvgd-progress-label">Remaining qty to receive</span>
           <span class="rcvgd-progress-val">{{ fmt(outstandingTotal) }}</span>
         </div>
       </section>
@@ -430,14 +428,14 @@ function goBack() {
         <div ref="itemsScrollEl" class="detail-items-scroll">
           <table class="detail-items">
             <colgroup>
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
-              <col />
+              <col style="width: 26%" />
+              <col style="width: 10%" />
+              <col style="width: 11%" />
+              <col style="width: 11%" />
+              <col style="width: 11%" />
+              <col style="width: 15%" />
+              <col style="width: 8%" />
+              <col style="width: 56px" />
             </colgroup>
             <thead>
               <tr>
@@ -446,7 +444,7 @@ function goBack() {
                 <th class="detail-th detail-th--num">Purchase qty</th>
                 <th class="detail-th detail-th--num">Expected qty</th>
                 <th class="detail-th detail-th--num">Received qty</th>
-                <th class="detail-th detail-th--num">Outstanding qty</th>
+                <th class="detail-th detail-th--num">Remaining qty to receive</th>
                 <th class="detail-th">Unit</th>
                 <th class="detail-th detail-th--action"></th>
               </tr>
@@ -723,25 +721,6 @@ function goBack() {
   color: var(--mp-text-default);
 }
 
-/* Pulse dot — animated green ring for in-progress tasks */
-@keyframes rcvgd-pulse-ring {
-  0%   { transform: scale(0.85); opacity: 1; }
-  100% { transform: scale(1.8);  opacity: 0; }
-}
-.rcvgd-pulse {
-  position: relative; display: inline-flex;
-  width: var(--mp-sizes-2, 8px); height: var(--mp-sizes-2, 8px);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-colors-emerald-500, #10b981);
-  flex-shrink: 0;
-}
-.rcvgd-pulse::after {
-  content: ''; position: absolute; inset: 0;
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-colors-emerald-500, #10b981);
-  animation: rcvgd-pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
 /* Last updated — top-right of title bar, in-progress only */
 .detail-bar-right {
   display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5);
@@ -861,7 +840,7 @@ function goBack() {
 .detail-items-sentinel { height: 1px; }
 .detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
 .detail-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
-.detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
+.detail-items { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .detail-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);

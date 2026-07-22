@@ -13,7 +13,6 @@ interface PutAwaySlipRow {
   sku: string
   product: string
   img: string
-  receivingTaskNo: string
   qty: number
   unit: string
 }
@@ -25,7 +24,7 @@ const PHOTO_ROW_HEIGHT = 46
 function buildRows(lineItems: PutAwayLineItem[]): PutAwaySlipRow[] {
   return lineItems.map((item, i) => ({
     no: i + 1, sku: item.skuCode, product: item.productName, img: item.image,
-    receivingTaskNo: item.receivingTaskNo, qty: item.qty, unit: item.unit,
+    qty: item.qty, unit: item.unit,
   }))
 }
 
@@ -88,17 +87,16 @@ export async function generatePutAwaySlipPdf(
   autoTable(doc, {
     startY: y,
     theme: 'grid',
-    head: [['No.', 'Photo', 'SKU', 'Product', 'Receiving task', 'Qty to put away', 'Unit']],
-    body: rows.map((r) => [r.no, '', r.sku, r.product, r.receivingTaskNo, r.qty, r.unit]),
+    head: [['No.', 'Photo', 'SKU', 'Product', 'Qty to put away', 'Unit']],
+    body: rows.map((r) => [r.no, '', r.sku, r.product, r.qty, r.unit]),
     styles: { fontSize: 9, cellPadding: 5, lineColor: [220, 220, 220], lineWidth: 0.5 },
     headStyles: { fillColor: [235, 235, 235], textColor: 20, fontStyle: 'bold' },
     columnStyles: {
       0: { cellWidth: 28, halign: 'center' },
       1: { cellWidth: PHOTO_COL_WIDTH, minCellHeight: PHOTO_ROW_HEIGHT },
       2: { cellWidth: 60 },
-      4: { cellWidth: 90 },
-      5: { cellWidth: 80, halign: 'right' },
-      6: { cellWidth: 50 },
+      4: { cellWidth: 80, halign: 'right' },
+      5: { cellWidth: 50 },
     },
     margin: { left: marginX, right: marginX },
     didDrawCell: (data) => {

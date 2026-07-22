@@ -74,6 +74,7 @@
             v-for="sub in group"
             :key="sub.label"
             class="submenu-item"
+            :class="{ active: activePanelSubItem === sub.label }"
             @click="handleFlyoutSubItemClick(sub)"
           >
             <span>{{ sub.label }}</span>
@@ -334,7 +335,7 @@ const erpNavGroups: NavItem[][] = [
         [
           { label: 'Storage locations' },
           { label: 'Warehouse reports', iconType: 'shortcut' },
-          { label: 'Warehouse settings', iconType: 'settings' },
+          { label: 'Warehouse settings', iconType: 'shortcut' },
         ],
       ],
     },
@@ -428,7 +429,8 @@ function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean):
   const c = receiptCountsByStage(scopeIds)
   const items: PanelSubItem[] = []
   if (withDraft) items.push({ label: 'Draft' })
-  items.push({ label: 'On the way', count: c['On the way'] })
+  const onTheWayCount = (c['Pending'] ?? 0) + (c['Open'] ?? 0) + (c['In progress'] ?? 0) || undefined
+  items.push({ label: 'On the way', count: onTheWayCount })
   items.push({ label: 'Receiving', count: receivingOpenCount(scopeIds) || undefined })
   items.push({ label: 'Put-away', count: putAwayOpenCount(scopeIds) || undefined })
   items.push({ label: 'Partial reception', count: c['Partial reception'] })
@@ -537,6 +539,10 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
       }
       for (const subGroup of item.submenu ?? []) {
         for (const sub of subGroup) {
+          // Shortcut flyout items (e.g. WMS → "Warehouse settings") are pointers
+          // into another module's page, not owners — skip on the first pass so the
+          // real owning section (Settings) wins the active highlight.
+          if (!allowShortcuts && sub.iconType === 'shortcut') continue
           if (sub.label === pageKey) return { nav: item.name, sub: sub.label, panel: null }
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
@@ -1024,6 +1030,12 @@ function cancelClose() {
 }
 
 .submenu-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
+
+.submenu-item.active {
+  background-color: #E2E8F0;
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-link, #165082);
+}
 
 .submenu-item-icon { width: var(--mp-sizes-5); height: var(--mp-sizes-5); flex-shrink: 0; filter: brightness(0) opacity(0.5); }
 .submenu-item-icon--shortcut { width: var(--mp-sizes-4); height: var(--mp-sizes-4); }

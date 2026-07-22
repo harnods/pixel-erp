@@ -29,8 +29,13 @@ const props = withDefaults(
      *  Use when the same status value needs different wording per module (e.g. an
      *  'in progress' order reads "In process" but a work order reads "In progress"). */
     label?: string
+    /** Explicit colour-type override — keeps the mapped label but uses this MpBadge
+     *  type instead. Use when the same status value needs a different colour per
+     *  module (e.g. 'pending' reads warning/yellow for Production requests, but
+     *  announcement/gray for Purchase orders). */
+    type?: 'completed' | 'announcement' | 'information' | 'warning' | 'critical'
   }>(),
-  { size: undefined, badgeFor: 'tableStatus', label: undefined },
+  { size: undefined, badgeFor: 'tableStatus', label: undefined, type: undefined },
 )
 
 interface StatusConfig { type: string; label: string }
@@ -57,7 +62,6 @@ const statusConfig: Record<string, StatusConfig> = {
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
   receiving:  { type: 'warning',      label: 'Receiving'  },
-  'on the way':{ type: 'warning',     label: 'Open'       },
   'ready to pack':{ type: 'warning',  label: 'Ready to pack' },
   'ready to ship':{ type: 'warning',  label: 'Ready to ship' },
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
@@ -108,7 +112,7 @@ const statusConfig: Record<string, StatusConfig> = {
 const config = computed<StatusConfig>(() => {
   const key = props.status?.toLowerCase() ?? ''
   const base = statusConfig[key] ?? { type: 'information', label: props.status }
-  return props.label ? { ...base, label: props.label } : base
+  return { ...base, ...(props.label ? { label: props.label } : {}), ...(props.type ? { type: props.type } : {}) }
 })
 </script>
 

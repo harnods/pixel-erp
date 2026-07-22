@@ -335,7 +335,7 @@ const showConfirm = ref(false)
 function endReceiving() {
   if (draftReceivedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'error', title: 'You must fill in received qty for at least one item', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: 'Receive at least one item to finish, or cancel the task instead.', maxWidth: 'max-content' })
     return
   }
   showConfirm.value = true
@@ -491,10 +491,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         </div>
         <div class="ri-stat">
           <span class="ri-stat-label">
-            Outstanding qty
+            Remaining qty to receive
             <MpTooltip
               id="ri-tt-outstanding"
-              label="Against Expected qty, floored at 0 — receiving more than expected (up to Purchase qty) never shows as a negative outstanding."
+              label="Against Expected qty, floored at 0 — receiving more than expected (up to Purchase qty) never shows as a negative remaining qty."
               placement="top"
               use-portal
             >
@@ -534,14 +534,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <div ref="itemsScrollEl" class="ri-items-scroll">
             <table class="ri-items">
               <colgroup>
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
+                <col style="width: 26%" />
+                <col style="width: 10%" />
+                <col style="width: 11%" />
+                <col style="width: 11%" />
+                <col style="width: 11%" />
+                <col style="width: 15%" />
+                <col style="width: 8%" />
+                <col style="width: 56px" />
               </colgroup>
               <thead>
                 <tr>
@@ -550,7 +550,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <th class="ri-th ri-th--num">Purchase qty</th>
                   <th class="ri-th ri-th--num">Expected qty</th>
                   <th class="ri-th ri-th--num">Received qty</th>
-                  <th class="ri-th ri-th--num">Outstanding qty</th>
+                  <th class="ri-th ri-th--num">Remaining qty to receive</th>
                   <th class="ri-th">Unit</th>
                   <th class="ri-th"></th>
                 </tr>
@@ -864,7 +864,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .ri-items thead .ri-th { position: sticky; top: 0; z-index: 1; }
 
-.ri-items { width: 100%; border-collapse: collapse; table-layout: auto; }
+.ri-items { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .ri-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);

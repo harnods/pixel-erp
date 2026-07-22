@@ -12,7 +12,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage, cancelReceipt, isManualReceipt, deleteReceipt, receipts, type Receipt } from '~/data/receipts'
+import { receiptsForStages, cancelReceipt, isManualReceipt, deleteReceipt, receipts, type Receipt } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
@@ -38,7 +38,7 @@ const activityEntries = computed(() => {
   }]
 })
 const receipt = computed<Receipt | undefined>(() =>
-  receiptsForStage('On the way').find((r) => r.id === props.orderId),
+  receiptsForStages(['Pending', 'Open', 'In progress']).find((r) => r.id === props.orderId),
 )
 const currentReceipt = computed(() => receipts.find(r => r.id === props.orderId))
 
@@ -111,7 +111,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 // ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
 const jumpSearch = ref('')
 const jumpResults = computed(() => {
-  const all = receiptsForStage('On the way')
+  const all = receiptsForStages(['Pending', 'Open', 'In progress'])
   const q = jumpSearch.value.trim().toLowerCase()
   const matched = q ? all.filter(r => r.purchaseNo.toLowerCase().includes(q)) : all
   return matched.slice(0, 5)
@@ -196,7 +196,7 @@ function confirmDelete() {
         <button class="detail-breadcrumb" @click="goBack">Receipts</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
-          <ErpStatusBadge v-if="receipt" :status="receipt.status" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge v-if="receipt" :status="receipt.status" :type="receipt.status === 'pending' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">

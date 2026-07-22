@@ -274,7 +274,10 @@ function seedTasks(): ReceivingTask[] {
         out.push(make(r, lines.slice(cut), "zero", "open", 1, false, false));
       }
     } else {
-      // "on the way" (Open). Most → no task (state A); a few → B/C.
+      // Pre-task seed status "pending" (no ended task yet). Most → no task at
+      // all, so recomputeReceiptStatus() below leaves the PO at Pending (state
+      // A); a few get an Open (state B) or In progress (state C) task instead —
+      // recomputeReceiptStatus() bumps the PO to match once initInbound() runs.
       const bucket = h % 5;
       if (bucket === 0) out.push(make(r, lines, "zero", "open", 0, false, false)); // B
       else if (bucket === 1) out.push(make(r, lines, "partial", "in progress", 0, true, false)); // C
@@ -382,7 +385,14 @@ function initInbound(): void {
 }
 
 // ── PO status derivation ─────────────────────────────────────────────────────────
-/** Re-derive a receipt's status (Open / Partial reception / Completed) from its tasks. */
+/**
+ * Re-derive a receipt's status from its tasks — Pending / Open / In progress
+ * once no task has ended yet, Partial reception / Completed once at least one
+ * has. A receipt with ended tasks never falls back to Pending/Open/In progress
+ * even if a later, still-active task exists on it (e.g. a second receiving task
+ * covering the remainder) — completeness is judged by cumulative received qty,
+ * not by what's currently in flight.
+ */
 export function recomputeReceiptStatus(receiptId: string): void {
   const r = receipts.find((x) => x.id === receiptId);
   if (!r || r.status === "canceled") return;
@@ -390,19 +400,29 @@ export function recomputeReceiptStatus(receiptId: string): void {
   const tasks = receivingTasks.filter((t) => t.receiptId === receiptId);
   const ended = tasks.filter((t) => t.status === "pending put-away" || t.status === "completed");
 
-  const received: Record<string, number> = {};
-  for (const t of ended)
-    for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
+  if (ended.length > 0) {
+    const received: Record<string, number> = {};
+    for (const t of ended)
+      for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
 
-  r.receivedQty = Object.values(received).reduce((s, n) => s + n, 0);
+    r.receivedQty = Object.values(received).reduce((s, n) => s + n, 0);
 
-  if (ended.length === 0) {
-    r.status = "on the way"; // Open — nothing ended yet
-  } else if (lines.every((l) => (received[l.sku] ?? 0) >= l.purchaseQty)) {
-    r.status = "completed";
-    r.receivedDate = r.receivedDate ?? nowIso().slice(0, 10);
+    if (lines.every((l) => (received[l.sku] ?? 0) >= l.purchaseQty)) {
+      r.status = "completed";
+      r.receivedDate = r.receivedDate ?? nowIso().slice(0, 10);
+    } else {
+      r.status = "partial reception";
+    }
   } else {
-    r.status = "partial reception";
+    r.receivedQty = 0;
+    const active = tasks.filter((t) => t.status === "open" || t.status === "in progress");
+    if (active.some((t) => t.status === "in progress")) {
+      r.status = "in progress";
+    } else if (active.length > 0) {
+      r.status = "open";
+    } else {
+      r.status = "pending";
+    }
   }
   persistReceipts();
 }
@@ -471,7 +491,9 @@ function freshSeq(): number {
 
 /**
  * Admin creates an Open receiving task covering the given SKUs (a subset of the
- * receipt's uncovered SKUs). PO status is unchanged. Returns the new task.
+ * receipt's uncovered SKUs). Bumps the PO to Open — unless it already has an
+ * ended task, in which case recomputeReceiptStatus keeps it at Partial
+ * reception/Completed instead. Returns the new task.
  */
 export function createReceivingTask(opts: {
   receiptId: string;
@@ -525,6 +547,7 @@ export function createReceivingTask(opts: {
   syncTaskTotals(task, lines.length);
   receivingTasks.unshift(task);
   persistTasks();
+  recomputeReceiptStatus(r.id);
   return task;
 }
 
@@ -532,13 +555,14 @@ export function getReceivingTask(taskId: string): ReceivingTask | undefined {
   return receivingTasks.find((t) => t.id === taskId);
 }
 
-/** Operator starts receiving → In progress + start timestamp. */
+/** Operator starts receiving → In progress + start timestamp; PO follows to In progress. */
 export function startReceiving(taskId: string): void {
   const t = getReceivingTask(taskId);
   if (!t || t.status !== "open") return;
   t.status = "in progress";
   t.startDate = nowIso();
   persistTasks();
+  recomputeReceiptStatus(t.receiptId);
 }
 
 /** A receiving task can only be canceled while receiving hasn't finished yet —
@@ -554,7 +578,9 @@ export function canCancelReceivingTask(t: ReceivingTask): boolean {
 /** Cancel a not-yet-finished receiving task — its SKUs simply become uncovered
  *  again (uncoveredLineItems only excludes open/in-progress tasks), so a new
  *  receiving task can be created for them. Terminal state; the record itself is
- *  kept (never deleted) so it stays in the audit trail. */
+ *  kept (never deleted) so it stays in the audit trail. PO status is re-derived
+ *  afterward — it drops back to Open (another active task remains), or all the
+ *  way to Pending if this was the last one and none has ever ended. */
 export function cancelReceivingTask(taskId: string, reason?: string): void {
   const t = getReceivingTask(taskId);
   if (!t || !canCancelReceivingTask(t)) return;
@@ -562,6 +588,7 @@ export function cancelReceivingTask(taskId: string, reason?: string): void {
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;
   persistTasks();
+  recomputeReceiptStatus(t.receiptId);
 }
 
 function applyReceivingDetail(

@@ -18,8 +18,8 @@ function firstWithStatus(status: string) {
 }
 
 describe('Receipt — cancel is guarded to non-terminal statuses', () => {
-  it('an "on the way" receipt can be canceled', () => {
-    const r = firstWithStatus('on the way')
+  it('a "pending" receipt can be canceled', () => {
+    const r = firstWithStatus('pending')
     expect(canCancelReceipt(r)).toBe(true)
 
     cancelReceipt(r.id)
@@ -47,7 +47,7 @@ describe('Receipt — cancel is guarded to non-terminal statuses', () => {
   })
 
   it('an already-"canceled" receipt cannot be canceled again', () => {
-    const r = firstWithStatus('on the way')
+    const r = firstWithStatus('pending')
     cancelReceipt(r.id)
     expect(r.status).toBe('canceled')
     const stampedDate = r.canceledDate

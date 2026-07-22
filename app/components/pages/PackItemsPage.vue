@@ -320,7 +320,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
         <div class="pak-stat"><span class="pak-stat-label">SKU qty</span><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span></div>
         <div v-if="!skippedPicking" class="pak-stat"><span class="pak-stat-label">Picked qty</span><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span></div>
         <div class="pak-stat"><span class="pak-stat-label">Packed qty</span><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span></div>
-        <div class="pak-stat"><span class="pak-stat-label">Outstanding qty</span><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">Remaining qty to pack</span><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pak-sku-section">
@@ -354,7 +354,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <th class="pak-th pak-th--num">Order qty</th>
                   <th v-if="!skippedPicking" class="pak-th pak-th--num">Picked qty</th>
                   <th class="pak-th pak-th--num">Packed qty</th>
-                  <th class="pak-th pak-th--num">Outstanding qty</th>
+                  <th class="pak-th pak-th--num">Remaining qty to pack</th>
                   <th class="pak-th">Unit</th>
                   <th class="pak-th pak-th--action"></th>
                 </tr>

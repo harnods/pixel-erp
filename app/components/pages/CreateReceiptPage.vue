@@ -204,7 +204,7 @@ async function persist() {
     skuQty,
     purchaseQty,
     receivedQty: 0,
-    status: 'on the way',
+    status: 'pending',
     estimatedArrival: estimatedArrival.value ? toISODate(estimatedArrival.value) : txDate,
     vendor: vendor.value,
     trackingNos: trackingNo.value ? [trackingNo.value] : [],

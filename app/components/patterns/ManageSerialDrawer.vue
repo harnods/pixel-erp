@@ -645,7 +645,7 @@ async function handleSave() {
                 <span class="msn-stat-value">{{ fmtSerial(countedCount) }}</span>
               </div>
               <div v-if="isReceiving" class="msn-stat">
-                <span class="msn-stat-label">Outstanding qty</span>
+                <span class="msn-stat-label">Remaining qty to receive</span>
                 <span class="msn-stat-value">{{ fmtSerial(Math.max(0, targetCount - countedCount)) }}</span>
               </div>
               <div v-if="isPutAway" class="msn-stat">
