@@ -1168,7 +1168,6 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
    rightmost) is the one explicitly marked border-right:none below — a merged
    row (rowspan across a group's bin-split rows) renders fewer <td>s than the
    header, so `:last-child` would land on the wrong cell for those rows. */
-.pik-th { border-right: 1px solid var(--mp-border-default); }
 .pik-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);

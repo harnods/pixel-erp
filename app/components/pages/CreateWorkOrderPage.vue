@@ -985,12 +985,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
-.wo-th:last-child { border-right: none; }
 .wo-th--right { text-align: right; }
 /* Action/button icon column — fixed 44px, pinned to the right edge of the table
    so it stays visible while the table scrolls horizontally. Compound selector
@@ -1022,13 +1021,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: middle;
+  background: var(--mp-background-neutral-subtle);
 }
 .wo-td:last-child { border-right: none; }
 .wo-tr:last-child .wo-td { border-bottom: none; }
 .wo-td--num { font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
 .wo-td--right { text-align: right; }
-.wo-td--input { padding: 0; vertical-align: middle; }
-.wo-td--num-input { padding: 0; }
+.wo-td--input { padding: 0; vertical-align: middle; background: var(--mp-background-neutral, #fff); }
+.wo-td--num-input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .wo-td--num-input :deep(input) { text-align: right; }
 /* Cell controls are borderless within the grid; the focused cell shows a 2px inset
    ring (square) — matching the barang-masuk/new create-table active state. */

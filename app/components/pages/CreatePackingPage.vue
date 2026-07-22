@@ -634,7 +634,7 @@ async function handleCreate() {
             </div>
             <section class="pk-items-section" :class="{ 'pk-items-section--bordered': overflowingOrders.has(t.orderId) }">
               <div :ref="el => setScrollRef(t.orderId, el)" class="pk-items-scroll">
-                <table class="pk-items">
+                <table class="pk-items" :class="{ 'pk-items--form': isDirectMode }">
                   <colgroup>
                     <col v-if="isDirectMode" style="width: 6%" />
                     <col :style="{ width: isDirectMode ? '26%' : '32%' }" />
@@ -904,13 +904,15 @@ async function handleCreate() {
 .pk-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-/* Every column gets a right border since a bin-split line renders fewer
-   <td>s per row than the header; the Action column (the true rightmost) is
-   explicitly excepted. */
-.pk-items .pk-th,
+/* Body cells get a right divider since a bin-split line renders fewer <td>s per
+   row than the header; the Action column (the true rightmost) is excepted. The
+   form-table header stays white with border-bottom only (no side dividers). */
 .pk-items .pk-td { border-right: 1px solid var(--mp-border-default); }
-.pk-items .pk-th--action,
 .pk-items .pk-td--action { border-right: none; }
+/* Direct mode has no sticky action column, so the true last cell (Unit) must drop
+   its right border to avoid an outer frame. Direct rows never bin-split, so
+   :last-child reliably lands on the real last column here. */
+.pk-items--form .pk-td:last-child { border-right: none; }
 .pk-td--location { min-width: 160px; max-width: 200px; }
 /* Stacked list of 2+ known bins in one cell (a line's picks span 2+ bins but
    the row isn't split) — the wrapping <td> gets padding:0 so each item can
@@ -928,6 +930,12 @@ async function handleCreate() {
 /* Editable Pack qty cell — white, input fills edge-to-edge, focus ring */
 .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
 .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+/* Direct/skip-picking mode is a FORM table (Pack qty input) → read-only cells go
+   gray, the input + sticky action stay white. From-picking mode is a plain read-only
+   table, so it keeps default (no gray). */
+.pk-items--form .pk-td { background: var(--mp-background-neutral-subtle); }
+.pk-items--form .pk-td--input,
+.pk-items--form .pk-td--action { background: var(--mp-background-neutral, #fff); }
 .pk-qty-input {
   display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box; text-align: right;
   padding: 0 var(--mp-spacing-2);

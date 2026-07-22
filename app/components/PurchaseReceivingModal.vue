@@ -50,6 +50,9 @@ const shownCount  = ref(PAGE_SIZE)            // show 10 by default
 const loadingMore = ref(false)
 const pagedItems  = computed<ReceiptLineItem[]>(() => visibleItems.value.slice(0, shownCount.value))
 const hasMoreItems = computed(() => shownCount.value < visibleItems.value.length)
+// Only frame + internally scroll when the list is longer than one page; a short
+// list renders borderless and grows naturally.
+const isProgressive = computed(() => visibleItems.value.length > PAGE_SIZE)
 
 function loadMoreItems(): void {
   if (loadingMore.value || !hasMoreItems.value) return
@@ -241,7 +244,7 @@ function handleCreate() {
           </div>
 
           <!-- Table — bordered, internally-scrolling panel past the default page -->
-          <section v-else class="pr-items-section pr-items-section--bordered">
+          <section v-else class="pr-items-section" :class="{ 'pr-items-section--bordered': isProgressive }">
             <div ref="itemsScrollEl" class="pr-items-scroll">
               <table class="pr-items">
                 <colgroup>

@@ -533,6 +533,7 @@ function handleCreate() {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
+  border-right: 1px solid var(--mp-border-default);
   background: var(--mp-background-neutral-subtle);
 }
 .pr-td--num {
@@ -551,7 +552,7 @@ function handleCreate() {
   text-align: right; font-variant-numeric: tabular-nums;
   line-height: var(--mp-line-heights-lg, 20px);
 }
-.pr-td--action { text-align: right; padding-block: 2px; padding-right: var(--mp-spacing-2); }
+.pr-td--action { text-align: right; padding-block: 2px; padding-right: var(--mp-spacing-2); border-right: none; }
 .pr-item-row--removed .pr-td { background: var(--mp-background-neutral-subtle); color: var(--mp-text-disabled); }
 .pr-item-row--removed :deep(.pc-name),
 .pr-item-row--removed :deep(.pc-desc),

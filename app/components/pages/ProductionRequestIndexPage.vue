@@ -654,6 +654,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .pr-td--muted { color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; }
 .pr-req-no { color: var(--mp-text-default); }
 
+/* Split/merged table (colspan on Product/Request, rowspan on lane + sales-order) →
+   vertical column separators: right divider on every cell, last (actions) column none.
+   First column needs no left border since only right dividers are used. */
+.pr-th, .pr-td { border-right: 1px solid var(--mp-border-default); }
+.pr-th--actions, .pr-td--actions { border-right: none; }
+
 /* Parent (product) row */
 .pr-parent { background: var(--mp-background-neutral); }
 .pr-parent:hover .pr-td { background: var(--mp-background-neutral-hovered); }
@@ -690,7 +696,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .pr-child:hover > .pr-child-td { background: var(--mp-background-neutral-hovered); }
 .pr-child-lane {
   background: var(--mp-background-neutral);
-  border-right: 1px solid var(--mp-border-default);
 }
 .pr-child-request { color: var(--mp-text-default); }
 /* Production request no. — reveals an "Open preview" button on row hover */
@@ -715,8 +720,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .pr-child-source {
   vertical-align: top;
   background: var(--mp-background-neutral);
-  border-left: 1px solid var(--mp-border-default);
-  border-right: 1px solid var(--mp-border-default);
   padding-top: var(--mp-spacing-3);
 }
 .pr-child-source--hovered { background: var(--mp-background-neutral-hovered); }
