@@ -68,6 +68,7 @@ const statusConfig: Record<string, StatusConfig> = {
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
+  recommended:{ type: 'warning',      label: 'Recommended'},
 
   // ── critical — red ────────────────────────────────
   overdue:    { type: 'critical',     label: 'Overdue'    },
@@ -103,6 +104,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'partially fulfilled': { type: 'information', label: 'Partially fulfilled' },
   'in progress':{ type: 'information',  label: 'In progress' },
   in_progress:{ type: 'information',  label: 'In progress' },
+  'task created':{ type: 'information', label: 'Task created' },
   new:        { type: 'information',  label: 'New'        },
   beta:       { type: 'information',  label: 'Beta'       },
   vip:        { type: 'information',  label: 'VIP'        },
