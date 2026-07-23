@@ -178,7 +178,9 @@ const cancelModalOpen = ref(false)
 const isPartialClose = computed(() => currentReceipt.value?.status === 'partial reception')
 // Cancel-receipt is an order-level action → it lives in the primary split-button's
 // dropdown, never as a standalone footer button (mirrors the outbound order detail).
-const canCancelAction = computed(() => !isManual.value && !!currentReceipt.value && canCancelReceipt(currentReceipt.value))
+// Manual (Direct Inbound) receipts are cancellable too — they keep Delete as well,
+// so an operator can either void-and-keep (Cancel) or hard-remove (Delete).
+const canCancelAction = computed(() => !!currentReceipt.value && canCancelReceipt(currentReceipt.value))
 const cancelActionLabel = computed(() => (isPartialClose.value ? 'Close receipt' : 'Cancel receipt'))
 function openCloseReceiptModal() { cancelModalOpen.value = true }
 // Edit order — order-level action, same dropdown as Cancel/Close (mirrors the
