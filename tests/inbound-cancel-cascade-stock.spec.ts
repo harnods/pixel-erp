@@ -82,9 +82,9 @@ describe('Inbound PO cancel cascade — "pending put-away" always auto-cancels',
 })
 
 describe('Inbound PO cancel cascade — "completed" with a real (unfinished) put-away link', () => {
-  it('a put-away task merely CREATED (not finished) is flagged instead — the receiving task itself is left alone', () => {
-    // See tests/inbound-cancel-cascade-putaway.spec.ts for the full put-away
-    // ack cascade (acknowledging cancels both the put-away and this task).
+  it('a put-away merely CREATED (open, never started) is auto-canceled outright — receiving stays completed, no reversal', () => {
+    // See tests/inbound-cancel-cascade-putaway.spec.ts for the in-progress put-away
+    // ack cascade (that one is flagged first; this open one cancels immediately).
     const receipt = makeReceipt(12, SKU_PLAIN.productId)
     const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
     startReceiving(task.id)
@@ -102,11 +102,12 @@ describe('Inbound PO cancel cascade — "completed" with a real (unfinished) put
     const result = cancelInboundReceipt(receipt.id)
     expect(result.ok).toBe(true)
 
-    expect(getPutAwayTask(pa.id)!.needsCancelAck).toBe(true) // the put-away is flagged...
+    expect(getPutAwayTask(pa.id)!.status).toBe('canceled') // open → auto-canceled, no ack
+    expect(getPutAwayTask(pa.id)!.needsCancelAck).toBeFalsy()
     const after = getReceivingTask(task.id)!
-    expect(after.status).toBe('completed') // ...not the receiving task — its fate follows the put-away's
+    expect(after.status).toBe('completed') // done work stays completed
     expect(after.needsCancelAck).toBeFalsy()
-    expect(wmsStockAdjustments.length).toBe(adjustmentsBefore) // nothing to reverse yet — no adjustment created
+    expect(wmsStockAdjustments.length).toBe(adjustmentsBefore) // nothing to reverse — no adjustment created
   })
 
   it('legacy/malformed "completed" data with NO put-away link and stockCommitted never set is auto-canceled, no reversal attempted', () => {

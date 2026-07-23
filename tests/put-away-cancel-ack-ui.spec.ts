@@ -51,6 +51,7 @@ function makeFlaggedPutAway() {
     receivingTaskIds: [task.id], receivingTaskNos: [task.taskNo],
     warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME, assignee: 'Test Operator',
   })
+  startPutAway(pa.id) // in-progress → flagged for ack (an open one auto-cancels outright)
   cancelInboundReceipt(receipt.id)
   return { receipt, task, pa }
 }
@@ -63,7 +64,7 @@ function findModalButton(text: string): HTMLElement {
 }
 
 describe('PutAwayDetailsPage — canceled-PO acknowledge banner/modal', () => {
-  it('shows the banner and blocks Start put-away behind a confirmation modal', async () => {
+  it('shows the banner and blocks Continue put-away behind a confirmation modal', async () => {
     const { pa } = makeFlaggedPutAway()
     expect(getPutAwayTask(pa.id)!.needsCancelAck).toBe(true)
 
@@ -73,7 +74,7 @@ describe('PutAwayDetailsPage — canceled-PO acknowledge banner/modal', () => {
     expect(wrapper.find('.pad-cancel-banner').exists()).toBe(true)
     expect(document.querySelector('#modal-pad-ack-cancel')).toBeNull() // not opened yet
 
-    const startBtn = wrapper.findAll('button').find((b) => b.text() === 'Start put-away')!
+    const startBtn = wrapper.findAll('button').find((b) => b.text() === 'Continue put-away')!
     await startBtn.trigger('click')
     await flushPromises()
 
@@ -101,12 +102,12 @@ describe('PutAwayDetailsPage — canceled-PO acknowledge banner/modal', () => {
     wrapper.unmount()
   })
 
-  it('confirming Acknowledge in the modal (reached via Start put-away) cancels the put-away; receiving stays completed', async () => {
+  it('confirming Acknowledge in the modal (reached via Continue put-away) cancels the put-away; receiving stays completed', async () => {
     const { pa, task } = makeFlaggedPutAway()
 
     const wrapper = mount(PutAwayDetailsPage, { props: { orderId: pa.id } })
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text() === 'Start put-away')!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text() === 'Continue put-away')!.trigger('click')
     await flushPromises()
 
     findModalButton('Acknowledge').click()
@@ -124,13 +125,13 @@ describe('PutAwayDetailsPage — canceled-PO acknowledge banner/modal', () => {
 
     const wrapper = mount(PutAwayDetailsPage, { props: { orderId: pa.id } })
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text() === 'Start put-away')!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text() === 'Continue put-away')!.trigger('click')
     await flushPromises()
 
     findModalButton('Review').click()
     await flushPromises()
 
-    expect(getPutAwayTask(pa.id)!.status).toBe('open') // untouched
+    expect(getPutAwayTask(pa.id)!.status).toBe('in progress') // untouched
     expect(getPutAwayTask(pa.id)!.needsCancelAck).toBe(true) // still flagged
 
     wrapper.unmount()
@@ -150,6 +151,7 @@ describe('PutAwayDetailsPage — canceled-PO acknowledge banner/modal', () => {
     await flushPromises()
 
     expect(wrapper.find('.pad-cancel-banner').exists()).toBe(false)
+    // Normal open put-away (PO never canceled) → button is "Start put-away".
     const startBtn = wrapper.findAll('button').find((b) => b.text() === 'Start put-away')!
     await startBtn.trigger('click')
     await flushPromises()

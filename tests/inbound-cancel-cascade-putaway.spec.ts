@@ -85,7 +85,7 @@ describe('Receipt status now waits for put-away, not just receiving', () => {
 })
 
 describe('Inbound PO cancel cascade — unfinished put-away is flagged, not the receiving task', () => {
-  it('an OPEN put-away (just created) is flagged; the receiving task is left alone', () => {
+  it('an OPEN put-away (never started) is auto-canceled outright — no ack; receiving stays completed', () => {
     const receipt = makeReceipt(10)
     const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
     startReceiving(task.id)
@@ -100,10 +100,11 @@ describe('Inbound PO cancel cascade — unfinished put-away is flagged, not the 
     expect(result.ok).toBe(true)
     expect(receipt.status).toBe('canceled')
 
-    expect(getPutAwayTask(pa.id)!.needsCancelAck).toBe(true)
-    expect(getPutAwayTask(pa.id)!.status).toBe('open') // not yet canceled — awaiting ack
+    // Not started → no work to acknowledge → canceled immediately, no flag.
+    expect(getPutAwayTask(pa.id)!.needsCancelAck).toBeFalsy()
+    expect(getPutAwayTask(pa.id)!.status).toBe('canceled')
     const rAfter = getReceivingTask(task.id)!
-    expect(rAfter.status).toBe('completed') // untouched — its fate follows the put-away's
+    expect(rAfter.status).toBe('completed') // done work stays completed
     expect(rAfter.needsCancelAck).toBeFalsy()
   })
 
@@ -134,11 +135,12 @@ describe('Inbound PO cancel cascade — unfinished put-away is flagged, not the 
       receivingTaskIds: [task.id], receivingTaskNos: [task.taskNo],
       warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME, assignee: 'Test Operator',
     })
+    startPutAway(pa.id) // in-progress → this is the state that gets flagged for ack
     cancelInboundReceipt(receipt.id)
 
-    // The task is still technically "open"/cancelable in the data layer (the
-    // UI is what blocks Start/Continue via needsCancelAck) — verify the flag
-    // itself is the signal the UI gates on, and it survives untouched here.
+    // The task is still technically cancelable in the data layer (the UI is what
+    // blocks Start/Continue via needsCancelAck) — verify the flag itself is the
+    // signal the UI gates on, and it survives untouched here.
     expect(canCancelPutAway(getPutAwayTask(pa.id)!)).toBe(true)
     expect(getPutAwayTask(pa.id)!.needsCancelAck).toBe(true)
   })
@@ -154,6 +156,7 @@ describe('Inbound PO cancel cascade — acknowledging an unfinished put-away', (
       receivingTaskIds: [task.id], receivingTaskNos: [task.taskNo],
       warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME, assignee: 'Test Operator',
     })
+    startPutAway(pa.id) // in-progress → flagged for ack (an open one would auto-cancel)
     cancelInboundReceipt(receipt.id)
     expect(getPutAwayTask(pa.id)!.needsCancelAck).toBe(true)
 
@@ -255,7 +258,7 @@ describe('Inbound PO cancel cascade — a put-away that ALREADY finished is unto
 })
 
 describe('Inbound PO cancel cascade — a put-away on a DIFFERENT, unrelated PO is completely unaffected', () => {
-  it('canceling one PO does not flag an unrelated PO\'s open put-away', () => {
+  it('canceling one PO does not touch an unrelated PO\'s open put-away', () => {
     const receiptA = makeReceipt(10)
     const taskA = addReceivingTask({ receiptId: receiptA.id, assignee: 'Test Operator' })!
     startReceiving(taskA.id)
@@ -276,7 +279,8 @@ describe('Inbound PO cancel cascade — a put-away on a DIFFERENT, unrelated PO 
 
     cancelInboundReceipt(receiptA.id)
 
-    expect(getPutAwayTask(paA.id)!.needsCancelAck).toBe(true)
+    expect(getPutAwayTask(paA.id)!.status).toBe('canceled') // open → auto-canceled by its own PO
+    expect(getPutAwayTask(paB.id)!.status).toBe('open') // untouched
     expect(getPutAwayTask(paB.id)!.needsCancelAck).toBeFalsy() // untouched
     expect(receiptB.status).toBe('in progress') // untouched
   })

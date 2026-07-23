@@ -287,16 +287,23 @@ export function canCancelPutAway(t: PutAwayTask): boolean {
   return t.status === 'open' || t.status === 'in progress';
 }
 
-export function cancelPutAway(taskId: string, reason?: string): void {
+export function cancelPutAway(
+  taskId: string,
+  reason?: string,
+  opts?: { revertReceiving?: boolean },
+): void {
   const t = getPutAwayTask(taskId);
   if (!t || !canCancelPutAway(t)) return;
   t.status = 'canceled';
   t.canceledDate = nowIso();
   t.canceledBy = "Rizal Candra";
   if (reason) t.canceledReason = reason;
-  // Send each source receiving task back to "pending put-away" — the goods still need
-  // putting away, so the operator can create a fresh put-away for them.
-  for (const rid of t.receivingTaskIds) revertPutAwayLink(rid, t.id);
+  // Manual cancel (PO still live): send each source receiving task back to "pending
+  // put-away" so the operator can create a fresh put-away. PO-cancel cascade passes
+  // revertReceiving:false — the order is gone, so a completed receiving stays completed.
+  if (opts?.revertReceiving !== false) {
+    for (const rid of t.receivingTaskIds) revertPutAwayLink(rid, t.id);
+  }
   persistPutAways();
 }
 

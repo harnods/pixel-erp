@@ -5,7 +5,7 @@ import {
   receivingTasksForReceipt, cancelReceivingTask, flagTaskCanceledPoAck, forceCancelEndedTask,
   lockedReceivingQtyForSku, recomputeReceiptStatus,
 } from "./receivingTasks";
-import { getPutAwayTask, flagPutAwayCanceledPoAck } from "./putAwayTasks";
+import { getPutAwayTask, flagPutAwayCanceledPoAck, cancelPutAway } from "./putAwayTasks";
 import { lineItemsForReceipt } from "./receiptLineItems";
 import { CATALOG } from "./catalog";
 
@@ -147,8 +147,16 @@ export function cancelInboundReceipt(receiptId: string, reason?: string): Cancel
 
     if (t.status === "completed" && t.putAwayTaskId) {
       const pa = getPutAwayTask(t.putAwayTaskId);
-      if (pa && pa.status !== "completed" && pa.status !== "canceled") {
-        flagPutAwayCanceledPoAck(pa.id); // put-away not finished — flag IT, leave the receiving task alone
+      if (pa && pa.status === "open") {
+        // Put-away not started yet → auto-cancel outright, no ack needed. The receiving
+        // task already finished, so it STAYS completed (revertReceiving:false).
+        cancelPutAway(pa.id, cancelReason, { revertReceiving: false });
+        continue;
+      }
+      if (pa && pa.status === "in progress") {
+        // Real put-away work underway → flag it so the operator acknowledges before it's
+        // canceled; the receiving task is left alone (stays completed) either way.
+        flagPutAwayCanceledPoAck(pa.id);
         continue;
       }
     }
