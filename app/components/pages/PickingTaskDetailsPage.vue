@@ -19,6 +19,7 @@ import {
 import {
   getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds,
   canCancelPickingTask, cancelPickingTask,
+  pendingCanceledOrderIds, acknowledgeCanceledPickingOrders,
   type PickingTask,
 } from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
@@ -235,6 +236,20 @@ function releaseReservedFromTask() {
   let released = 0
   for (const id of releasableOrderIds.value) if (releaseReservedForCancelledOrder(id)) released++
   if (released) toast.notify({ variant: 'success', title: 'Reserved stock released', maxWidth: 'max-content' })
+}
+
+// ── Cancelled-order acknowledgment (shared picking task) ──────────────────────
+// One order on this shared task was cancelled. The pick list still shows the
+// original numbers until the operator acknowledges — which drops that order's lines
+// from the pick work while keeping it in the Sales orders list (linked transaction).
+const pendingCanceled = computed(() =>
+  task.value ? pendingCanceledOrderIds(task.value).map(id => outgoingOrders.find(o => o.id === id)?.salesNo ?? id) : [],
+)
+const needsCancelAck = computed(() => !!task.value?.needsCancelAck && pendingCanceled.value.length > 0)
+function acknowledgeCancel() {
+  if (!task.value) return
+  acknowledgeCanceledPickingOrders(task.value.id)
+  toast.notify({ variant: 'success', title: 'Picking list updated — cancelled order removed', maxWidth: 'max-content' })
 }
 
 const pdfPreviewOpen = ref(false)
@@ -581,6 +596,20 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 
     <!-- ── Scrollable stage ── -->
     <div ref="stageEl" class="detail-stage">
+
+      <!-- A shared order on this picking task was cancelled — the pick list still
+           shows the original numbers until the operator acknowledges, which drops that
+           order's lines (it stays under Sales orders as a linked transaction). -->
+      <div v-if="needsCancelAck" class="pkd-cancel-banner">
+        <svg class="pkd-cancel-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="pkd-cancel-banner-text">
+          {{ pendingCanceled.join(', ') }} {{ pendingCanceled.length > 1 ? 'were' : 'was' }} cancelled. Acknowledge to update this picking list — {{ pendingCanceled.length > 1 ? 'they' : 'it' }} will stay listed under Sales orders.
+        </span>
+        <button class="pkd-cancel-banner-btn" type="button" @click="acknowledgeCancel">Acknowledge</button>
+      </div>
 
       <!-- Summary grid -->
       <section class="pkd-summary">
@@ -1128,6 +1157,23 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
+
+.pkd-cancel-banner {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
+  background: var(--mp-background-warning-subtle, #fffbeb);
+  border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.pkd-cancel-banner-icon { color: var(--mp-icon-warning, #d97706); flex-shrink: 0; }
+.pkd-cancel-banner-text { flex: 1; }
+.pkd-cancel-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.pkd-cancel-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .pkd-reason { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
 .pkd-reason-release {

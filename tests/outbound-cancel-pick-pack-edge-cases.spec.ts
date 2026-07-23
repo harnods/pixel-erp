@@ -32,8 +32,9 @@ import {
 import {
   addPickingTask, startPicking, endPicking, getPickingTask, getPickingForOrder,
   packableOrderIds, canCreatePackingFrom, orderFullyPickedAcrossTasks, orderPickedTotal,
-  orderPickedQtyInTask,
+  orderPickedQtyInTask, acknowledgeCanceledPickingOrders,
 } from '~/data/pickingTasks'
+import { getPickingLineItems } from '~/data/pickingTaskDetails'
 import { addPackingTask, endPacking, getPackingTask, getPackingForOrder } from '~/data/packingTasks'
 import {
   addDeliveryTaskFromPackingTasks, getDeliveryForOrder, getDeliveryTask, handoverToCourierBulk, completeShipment,
@@ -182,6 +183,31 @@ describe('cancel one order within a SHARED picking task', () => {
     expect(packableOrderIds(t)).toEqual([b.id])            // only B is packable now
     expect(canCreatePackingFrom(t)).toBe(true)
 
+    releaseReservedForCancelledOrder(a.id)
+    cancelOutboundOrder(b.id); releaseReservedForCancelledOrder(b.id)
+  })
+
+  it('ACK flow: cancelling a shared order flags needsCancelAck; pick work unchanged until Ack, then dropped — order stays linked', () => {
+    const a = makeOrder(2); const b = makeOrder(2)
+    const pt = addPickingTask({
+      salesOrderIds: [a.id, b.id], salesNos: [a.salesNo, b.salesNo],
+      warehouseId: WH, warehouseName: WH_NAME, assignee: 'Op',
+    })
+    const toPickBefore = getPickingTask(pt.id)!.toPickQty // 2 + 2
+
+    cancelOutboundOrder(a.id)
+    const t = getPickingTask(pt.id)!
+    expect(t.needsCancelAck).toBe(true)                           // banner shows
+    expect(t.toPickQty).toBe(toPickBefore)                        // pick work UNCHANGED until ack
+    expect(getPickingLineItems(t).some((l) => l.orderId === a.id)).toBe(true) // A still in pick work
+
+    acknowledgeCanceledPickingOrders(pt.id)
+    const t2 = getPickingTask(pt.id)!
+    expect(t2.needsCancelAck).toBe(false)
+    expect(t2.toPickQty).toBe(2)                                  // only B's qty remains as work
+    expect(getPickingLineItems(t2).some((l) => l.orderId === a.id)).toBe(false) // A dropped from pick work
+    expect(t2.salesOrderIds.sort()).toEqual([a.id, b.id].sort())  // A STILL linked (Sales orders list)
+    expect(getPickingForOrder(a.id).map((x) => x.id)).toContain(pt.id)
     releaseReservedForCancelledOrder(a.id)
     cancelOutboundOrder(b.id); releaseReservedForCancelledOrder(b.id)
   })

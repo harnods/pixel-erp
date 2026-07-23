@@ -75,6 +75,15 @@ export interface PickingTask {
   canceledDate?: string;
   /** Why this task was canceled — shown on the task detail page. */
   canceledReason?: string;
+  /** A SHARED order on this task was cancelled and the operator hasn't acknowledged
+   *  it yet — the pick list still shows the original numbers; a banner prompts the
+   *  operator to acknowledge, which drops the cancelled order's lines from the pick
+   *  work (acknowledgeCanceledPickingOrders). The cancelled order stays LINKED
+   *  (visible in the task's Sales orders list) either way. */
+  needsCancelAck?: boolean;
+  /** Orders whose cancellation has been acknowledged — their lines are excluded from
+   *  the pick work (Qty to pick / rows) but they remain in salesOrderIds for linking. */
+  canceledAckedOrderIds?: string[];
   /** planned pick lines (per SKU per order) */
   lines?: PickingLine[];
   /** picked qty per line key (set as the operator picks) */
@@ -847,6 +856,49 @@ export function cancelPickingTask(taskId: string, reason?: string, force = false
   t.status = "canceled";
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;
+  persistPicking();
+}
+
+/** Flag a shared picking task that just had one of its orders cancelled — the pick
+ *  list still shows the original numbers; the operator must acknowledge (below) to
+ *  drop the cancelled order's lines from the pick work. No-op if there's nothing
+ *  left un-acknowledged. */
+export function markPickingNeedsCancelAck(taskId: string): void {
+  const t = getPickingTask(taskId);
+  if (!t || t.status === "canceled") return;
+  if (pendingCanceledOrderIds(t).length === 0) return;
+  t.needsCancelAck = true;
+  persistPicking();
+}
+
+/** Orders on this task that are cancelled but whose cancellation the operator hasn't
+ *  acknowledged yet (still counted in the pick work + driving the ack banner). */
+export function pendingCanceledOrderIds(t: PickingTask): string[] {
+  const acked = new Set(t.canceledAckedOrderIds ?? []);
+  return t.salesOrderIds.filter((id) => {
+    if (acked.has(id)) return false;
+    const o = outgoingOrders.find((x) => x.id === id);
+    return o?.status === "canceled";
+  });
+}
+
+/** Operator acknowledges the cancelled order(s) on a SHARED picking task: their lines
+ *  drop out of the pick work (Qty to pick / SKU qty / rows recomputed for the LIVE
+ *  orders only), but they stay in salesOrderIds so they remain visible in the task's
+ *  Sales orders list (linked transactions). The task keeps running for its live orders. */
+export function acknowledgeCanceledPickingOrders(taskId: string): void {
+  const t = getPickingTask(taskId);
+  if (!t) return;
+  const pending = pendingCanceledOrderIds(t);
+  if (pending.length === 0) { if (t.needsCancelAck) { t.needsCancelAck = false; persistPicking(); } return; }
+  t.canceledAckedOrderIds = [...new Set([...(t.canceledAckedOrderIds ?? []), ...pending])];
+  t.needsCancelAck = false;
+  // Recompute the pick-work stats from the remaining (non-acknowledged) lines only.
+  const acked = new Set(t.canceledAckedOrderIds);
+  const liveLines = (t.lines?.length ? t.lines : buildPickingLines(t.salesOrderIds, t.salesNos))
+    .filter((l) => !acked.has(l.orderId));
+  t.skuQty = new Set(liveLines.map((l) => l.sku)).size;
+  t.toPickQty = liveLines.reduce((s, l) => s + l.qty, 0);
   persistPicking();
 }
 

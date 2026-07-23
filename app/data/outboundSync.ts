@@ -1,5 +1,5 @@
 import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder } from "./outgoing";
-import { getPickingForOrder, cancelPickingTask } from "./pickingTasks";
+import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck } from "./pickingTasks";
 import { getPackingForOrder, cancelPackingTask } from "./packingTasks";
 import { deliveryTasks, getDeliveryForOrder, canCancelDeliveryTask, cancelDeliveryTask, shippedQtyBySkuForOrder } from "./deliveryTasks";
 
@@ -30,6 +30,9 @@ export function cancelOutboundOrder(orderId: string, reason?: string): CancelOut
   // Auto reason stamped on every cascaded task so its detail page explains WHY it
   // was cancelled (the operator never cancelled the task directly).
   const taskReason = `Sales order ${order.salesNo} was cancelled${reason ? ` — ${reason}` : ""}`;
+  // Mark the order canceled FIRST, so the cascade below sees it as canceled (the
+  // needs-ack flag on a shared picking task keys off the order's cancelled status).
+  cancelOutgoingOrder(orderId, reason);
   const isCanceled = (id: string) => outgoingOrders.find((o) => o.id === id)?.status === "canceled";
   // Picking cascade.
   for (const t of getPickingForOrder(orderId)) {
@@ -37,9 +40,11 @@ export function cancelOutboundOrder(orderId: string, reason?: string): CancelOut
     const hasOtherLiveOrder = t.salesOrderIds.some((id) => id !== orderId && !isCanceled(id));
     if (t.salesOrderIds.length > 1 && hasOtherLiveOrder) {
       // Shared task still serving another live order — keep it running AND keep the
-      // cancelled order linked (so it stays visible under Linked transactions on the
-      // order's detail page). It simply can't be packed anymore — packableOrderIds()
-      // already excludes a cancelled order. We deliberately do NOT drop its lines.
+      // cancelled order linked (so it stays visible under Linked transactions on both
+      // detail pages). It can't be packed (packableOrderIds excludes cancelled). The
+      // pick WORK isn't touched automatically: flag the task so the operator explicitly
+      // ACKNOWLEDGES the cancellation, which then drops its lines from the pick list.
+      markPickingNeedsCancelAck(t.id);
     } else {
       // This cancelled order is the task's only (remaining) live order → void it,
       // regardless of how far picking got.
@@ -49,7 +54,6 @@ export function cancelOutboundOrder(orderId: string, reason?: string): CancelOut
   // Packing (1 per order) → always void; delivery/shipping (ready-to-ship only) cancel.
   for (const t of getPackingForOrder(orderId)) cancelPackingTask(t.id, taskReason, true);
   for (const d of getDeliveryForOrder(orderId)) if (canCancelDeliveryTask(d)) cancelDeliveryTask(d.id, taskReason);
-  cancelOutgoingOrder(orderId, reason);
   return { ok: true };
 }
 

@@ -30,7 +30,12 @@ export interface PickLineItem {
 }
 
 export function getPickingLineItems(task: PickingTask): PickLineItem[] {
-  return pickingLinesOf(task).map((l) => ({
+  // A cancelled order stays LINKED to a shared picking task (visible in its Sales
+  // orders list). Its lines drop out of the pick WORK (Qty to pick / rows) only
+  // AFTER the operator acknowledges the cancellation (see acknowledgeCanceledPickingOrders)
+  // — until then the task still shows the original numbers plus a "needs ack" banner.
+  const acked = new Set(task.canceledAckedOrderIds ?? []);
+  return pickingLinesOf(task).filter((l) => !acked.has(l.orderId)).map((l) => ({
     key: l.key,
     orderId: l.orderId,
     salesNo: l.salesNo,
