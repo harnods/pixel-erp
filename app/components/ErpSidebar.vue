@@ -243,7 +243,7 @@ const erpNavGroups: NavItem[][] = [
         { label: 'Fixed assets' },
       ]],
     },
-    { name: 'Tasks', icon: 'productivity' },
+    { name: 'My approvals', icon: 'productivity' },
     {
       name: 'Accounting', icon: 'chart-of-account',
       submenu: [

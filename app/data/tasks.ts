@@ -259,10 +259,41 @@ export const taskDocTypeTabs: { label: string; docType: TaskDocType | null }[] =
   { label: 'Production plans', docType: 'Production Plan' },
 ]
 
-// Inbox › Awaiting approval inner tab groups.
-export const INBOX_TAB_GROUPS: Record<string, TaskDocType[]> = {
-  Sales:     ['Sales Invoice', 'Payment received', 'Sales Order', 'Sales Return', 'Sales Quote', 'Sales Delivery'],
-  Purchases: ['Purchase Invoice', 'Purchase Payment', 'Purchase Order', 'Purchase Return', 'Purchase Quote', 'Purchase Delivery', 'Purchase Request'],
-  Expenses:  ['Expense'],
-  Warehouse: ['Warehouse Transfer', 'Stock In/Out', 'Stock Count'],
-}
+// Transaction type filter, grouped into parent categories for the two-level
+// cascade menu (Figma: Inbox "Transaction type" filter — pick the parent,
+// then the child). A group with a single child (Expenses) has no submenu —
+// clicking it selects that child directly.
+export const taskTypeGroups: { label: string; children: { label: string; value: TaskDocType }[] }[] = [
+  {
+    label: 'Sales',
+    children: [
+      { label: 'Sales invoices', value: 'Sales Invoice' },
+      { label: 'Sales orders', value: 'Sales Order' },
+      { label: 'Sales quotes', value: 'Sales Quote' },
+      { label: 'Sales deliveries', value: 'Sales Delivery' },
+    ],
+  },
+  {
+    label: 'Purchases',
+    children: [
+      { label: 'Purchase invoices', value: 'Purchase Invoice' },
+      { label: 'Purchase orders', value: 'Purchase Order' },
+      { label: 'Purchase deliveries', value: 'Purchase Delivery' },
+      { label: 'Purchase requests', value: 'Purchase Request' },
+    ],
+  },
+  {
+    label: 'Expenses',
+    children: [
+      { label: 'Expenses', value: 'Expense' },
+    ],
+  },
+  {
+    label: 'Warehouse',
+    children: [
+      { label: 'Warehouse transfers', value: 'Warehouse Transfer' },
+      { label: 'Production plans', value: 'Production Plan' },
+      { label: 'Stock In/Out', value: 'Stock In/Out' },
+    ],
+  },
+]

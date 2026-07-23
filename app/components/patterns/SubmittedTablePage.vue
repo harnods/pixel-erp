@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpAutocomplete,
+  MpIcon,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -10,7 +10,8 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogPopover from '~/components/patterns/ApprovalLogPopover.vue'
 import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
-import { taskDocTypeTabs, formatTaskNumber, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
+import TransactionTypeCascadeMenu from '~/components/patterns/TransactionTypeCascadeMenu.vue'
+import { taskTypeGroups, formatTaskNumber, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
 
 const props = defineProps<{
   tasks: Task[]
@@ -52,11 +53,13 @@ const dateRange = computed<[Date, Date] | null>(() => {
   return start && end ? [dayStart(start), dayStart(end)] : null
 })
 
-const transactionTypeOptions = computed(() =>
-  taskDocTypeTabs
-    .filter((t) => t.docType)
-    .filter((t) => !props.allowedDocTypes || props.allowedDocTypes.includes(t.docType as string))
-    .map((t) => ({ label: t.label, value: t.docType as string }))
+const cascadeGroups = computed(() =>
+  taskTypeGroups
+    .map((g) => ({
+      label: g.label,
+      children: g.children.filter((c) => !props.allowedDocTypes || props.allowedDocTypes.includes(c.value)),
+    }))
+    .filter((g) => g.children.length > 0)
 )
 const transactionTypeFilter = ref('')
 
@@ -124,18 +127,11 @@ function formatDate(iso: string) {
       <div class="filter-left">
         <AdvancedDateRangePicker :id="`${idPrefix}-tasks-daterange`" v-model="dateRangeValue" />
 
-        <MpAutocomplete
+        <TransactionTypeCascadeMenu
           v-if="!hideTransactionType"
-          :id="`${idPrefix}-tasks-txntype-autocomplete`"
+          :id="`${idPrefix}-tasks-txntype-cascade`"
           v-model="transactionTypeFilter"
-          :data="transactionTypeOptions"
-          label-prop="label"
-          value-prop="value"
-          placeholder="Transaction type"
-          is-searchable
-          is-clearable
-          use-portal
-          :class="css({ width: '200px' })"
+          :groups="cascadeGroups"
         />
 
         <button class="filter-all-btn">

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpAutocomplete,
+  MpIcon,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -10,7 +10,8 @@ import ApprovalLogPopover from '~/components/patterns/ApprovalLogPopover.vue'
 import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
-import { taskDocTypeTabs, formatTaskNumber, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
+import TransactionTypeCascadeMenu from '~/components/patterns/TransactionTypeCascadeMenu.vue'
+import { taskTypeGroups, formatTaskNumber, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
 
 const props = defineProps<{
   /** Underlying dataset for this tab (Awaiting approval / Actions required) */
@@ -102,17 +103,10 @@ const dateRange = computed<[Date, Date] | null>(() => {
   return start && end ? [dayStart(start), dayStart(end)] : null
 })
 
-// ─── Transaction type filter — typeable (MpAutocomplete): typing filters the
-// list to matching doc types; selecting one sets transactionTypeFilter to its
-// raw docType string (MpAutocomplete resolves objects to their value-prop
-// automatically when isRawValue is left at its default false). ─────────────
+// ─── Transaction type filter — two-level cascade (parent category → child
+// doc type); selecting a leaf sets transactionTypeFilter to its raw docType
+// string, same as the table's other filters. ───────────────────────────────
 
-const transactionTypeOptions = computed(() =>
-  taskDocTypeTabs
-    .filter((t) => t.docType)
-    .filter((t) => !props.allowedDocTypes || props.allowedDocTypes.includes(t.docType as string))
-    .map((t) => ({ label: t.label, value: t.docType as string }))
-)
 const transactionTypeFilter = ref('')
 
 // ─── Table state ──────────────────────────────────────────────────────────────
@@ -190,19 +184,13 @@ function formatDate(iso: string) {
              day/month/year calendar), label outside/above the field -->
         <AdvancedDateRangePicker :id="`${idPrefix}-tasks-daterange`" v-model="dateRangeValue" />
 
-        <!-- Transaction type — hidden for Expenses tab (only one type there) -->
-        <MpAutocomplete
+        <!-- Transaction type — two-level cascade menu (parent category, then
+             child doc type); see TransactionTypeCascadeMenu.vue. -->
+        <TransactionTypeCascadeMenu
           v-if="!hideTransactionType"
-          :id="`${idPrefix}-tasks-txntype-autocomplete`"
+          :id="`${idPrefix}-tasks-txntype-cascade`"
           v-model="transactionTypeFilter"
-          :data="transactionTypeOptions"
-          label-prop="label"
-          value-prop="value"
-          placeholder="Transaction type"
-          is-searchable
-          is-clearable
-          use-portal
-          :class="css({ width: '200px' })"
+          :groups="taskTypeGroups"
         />
 
         <button class="filter-all-btn">
@@ -387,6 +375,11 @@ function formatDate(iso: string) {
    flushed to the right edge of the sticky actions column (erp-td--actions is
    text-align:right, but that has no effect on this flex child — justify-content
    does the actual flush). */
+/* Actions cell: left padding 8px only */
+:global(.erp-td--actions) {
+  padding-left: var(--mp-spacing-2) !important; /* 8px */
+}
+
 .row-actions {
   display: flex;
   align-items: center;

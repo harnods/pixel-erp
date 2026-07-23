@@ -836,9 +836,13 @@ const bulkCountLabel = computed(() => {
 }
 
 /* ── Column sort menu (ERP behaviour) ── */
-/* header content wraps label + sort icon; right-aligned columns push it to the end */
-.th-inner { display: inline-flex; align-items: center; justify-content: flex-start; gap: var(--mp-spacing-1); max-width: 100%; height: 100%; }
-.erp-th--right .th-inner { flex-direction: row-reverse; justify-content: flex-end; }
+/* header content wraps label + sort icon; right-aligned columns push it to the end.
+   vertical-align: middle is required here (not just on .erp-th) — flex-direction:
+   row-reverse shifts which child the browser uses to compute this inline-flex box's
+   baseline, which silently breaks the cell's vertical-align: middle for right-aligned
+   sortable headers (Balance due / Total sat flush to the top instead of centered). */
+.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); max-width: 100%; vertical-align: middle; }
+.erp-th--right .th-inner { flex-direction: row-reverse; }
 .erp-th--center .th-inner { justify-content: center; }
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
