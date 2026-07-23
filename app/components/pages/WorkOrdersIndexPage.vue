@@ -168,6 +168,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
+    :search="search"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"

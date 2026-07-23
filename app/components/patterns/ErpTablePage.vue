@@ -67,6 +67,8 @@ const props = withDefaults(defineProps<{
   /** True when a search/filter is active — switches the empty state to the inline
    *  "No results found" variant (vs the full illustrated empty state). */
   hasActiveFilter?: boolean
+  /** Current search keyword — used to branch filter-only vs search empty state copy. */
+  search?: string
   /** Returns a context label string for a given row — shown as a chip in the AI chat input */
   contextLabel?: (row: Record<string, unknown>) => string
   /** Return true for rows that cannot be selected (checkbox disabled) */
@@ -87,6 +89,7 @@ const props = withDefaults(defineProps<{
   hasAiChat: false,
   loading: false,
   hasActiveFilter: false,
+  search: '',
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
@@ -602,8 +605,8 @@ const bulkCountLabel = computed(() => {
                    the full empty state, so both empty states read consistently) -->
               <div v-if="hasActiveFilter" class="empty-inline">
                 <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
-                <p class="empty-inline-title">No results found</p>
-                <p class="empty-inline-desc">Try adjusting your search or filters.</p>
+                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No results match your filters` }}</p>
+                <p class="empty-inline-desc">{{ props.search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.' }}</p>
                 <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
               </div>
               <!-- Full empty — no data ever; module supplies illustration + title + CTA -->

@@ -164,6 +164,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
+    :search="search"
     has-checkbox
     bulk-label="bill of materials"
     bulk-label-plural="bill of materials"
