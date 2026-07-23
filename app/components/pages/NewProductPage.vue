@@ -210,11 +210,11 @@ async function save() {
 
   if (isEdit.value && editingCustom.value) {
     updateCustomProduct(props.orderId!, payload)
-    toast.notify({ variant: 'success', title: 'Product updated', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: 'Product changes saved', maxWidth: 'max-content' })
     router.push(`/product-list/${payload.sku}`)
   } else if (isEdit.value) {
     // Seed (CATALOG) product — read-only master data, nothing to persist.
-    toast.notify({ variant: 'success', title: 'Product updated', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: 'Product changes saved', maxWidth: 'max-content' })
     router.push(`/product-list/${props.orderId}`)
   } else {
     // New product → whatever's in the field (free-typed or generated via the
