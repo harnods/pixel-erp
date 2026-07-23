@@ -640,6 +640,88 @@ export function pickedQtyForOrderSku(orderId: string, sku: string): number {
   return sum;
 }
 
+/** Qty of one order+SKU that is LOCKED into an already-started picking task
+ *  (in progress / partially picked / completed) — this much can't be removed or
+ *  reduced when the order is edited (D7 AC#4). A SKU only on Pending/Open picking
+ *  tasks (or none) is not locked, so it can still be freely reduced/removed. */
+export function lockedOutboundQtyForSku(orderId: string, sku: string): number {
+  const STARTED = new Set(["in progress", "partially picked", "completed"]);
+  let sum = 0;
+  for (const t of getPickingForOrder(orderId)) {
+    if (!STARTED.has(t.status)) continue;
+    for (const l of pickingLinesOf(t)) {
+      if (l.orderId === orderId && l.sku === sku) sum += l.qty;
+    }
+  }
+  return sum;
+}
+
+/** One order+SKU's qty on each PENDING (open) picking task — the tasks a D7 reduction
+ *  can drain from, per task (D7 allocation step). Started tasks are excluded (locked). */
+export function pendingPickingLinesForSku(orderId: string, sku: string): { taskId: string; taskNo: string; qty: number }[] {
+  const out: { taskId: string; taskNo: string; qty: number }[] = [];
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status !== "open") continue;
+    const qty = pickingLinesOf(t).filter((l) => l.orderId === orderId && l.sku === sku).reduce((s, l) => s + l.qty, 0);
+    if (qty > 0) out.push({ taskId: t.id, taskNo: t.taskNo, qty });
+  }
+  return out;
+}
+
+/** Would reducing (orderId, sku) to 0 on this task leave the task with NO lines at all?
+ *  (Used to flag "will be cancelled" and to decide auto-cancel — a task still holding
+ *  another SKU or another order's line is kept; only the emptied line is removed.) */
+export function pickingTaskEmptiedByRemoving(taskId: string, orderId: string, sku: string): boolean {
+  const t = getPickingTask(taskId);
+  if (!t) return false;
+  return pickingLinesOf(t).every((l) => l.orderId === orderId && l.sku === sku);
+}
+
+/** D7 allocation step — reduce (orderId, sku)'s line qty on ONE pending picking task
+ *  by `reduceBy`. If the line hits 0 it's removed (its batch/serial/picked entries
+ *  cleared); if the task then holds NO lines at all it auto-cancels (AC#5) and its
+ *  reservation-owned bin-lines return to the claimable pool. A task still holding
+ *  other SKUs / other orders' lines is kept — only the emptied line goes. */
+export function reduceOrderSkuOnPickingTask(taskId: string, orderId: string, sku: string, reduceBy: number): void {
+  const t = getPickingTask(taskId);
+  if (!t || t.status !== "open" || reduceBy <= 0) return;
+  const lines = t.lines?.length ? t.lines : buildPickingLines(t.salesOrderIds, t.salesNos);
+  const key = `${orderId}::${sku}`;
+  let remaining = reduceBy;
+  const next: PickingLine[] = [];
+  for (const l of lines) {
+    if (l.orderId === orderId && l.sku === sku && remaining > 0) {
+      const take = Math.min(l.qty, remaining);
+      remaining -= take;
+      const nq = l.qty - take;
+      if (nq > 0) next.push({ ...l, qty: nq });
+      // else: line fully removed
+    } else next.push(l);
+  }
+  t.lines = next;
+  const stillHasLine = next.some((l) => l.orderId === orderId && l.sku === sku);
+  if (!stillHasLine) {
+    for (const map of [t.batchPicks, t.serialPicks, t.plannedBatchPicks, t.plannedSerialPicks, t.pickedByKey]) {
+      if (map) delete (map as Record<string, unknown>)[key];
+    }
+  }
+  t.skuQty = new Set(next.map((l) => l.sku)).size;
+  t.toPickQty = next.reduce((s, l) => s + l.qty, 0);
+  // Drop this order from the task's order list if it no longer has any line here.
+  if (!next.some((l) => l.orderId === orderId)) {
+    const keep = t.salesOrderIds.map((id, i) => (id === orderId ? -1 : i)).filter((i) => i >= 0);
+    t.salesOrderIds = keep.map((i) => t.salesOrderIds[i]!);
+    t.salesNos = keep.map((i) => t.salesNos[i]!);
+  }
+  if (next.length === 0) {
+    t.status = "canceled";
+    t.canceledDate = nowIso();
+    t.canceledReason = "Emptied by order edit";
+    t.canceledBy = "Rizal Candra";
+  }
+  persistPicking();
+}
+
 /** Merge a batch-pick array down to one entry per batchNo, summing qty — a task's
  *  own batchPicks[key], or several tasks' concatenated, can otherwise carry the same
  *  batch as 2+ separate entries (a stale reservation duplicate, a re-pin followed by

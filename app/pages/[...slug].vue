@@ -200,6 +200,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment') {
     return { component: ShipmentDetailsPage, id: segs[2]! }
   }
+  // /outbound-delivery/:id/edit → edit the outbound order (reuses the create form in edit mode)
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[2] === 'edit') {
+    return { component: CreateDeliveryOrderPage, id: segs[1] }
+  }
   // /outbound-delivery/:id → outgoing sales order detail (not the picking/packing/handover/shipment sub-routes)
   if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing' && segs[1] !== 'handover' && segs[1] !== 'new-shipment' && segs[1] !== 'shipment' && segs[1] !== 'new') {
     return { component: OutgoingOrderDetailsPage, id: segs[1] }

@@ -35,7 +35,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
     description: 'Gudang distribusi wilayah Jawa Timur',
     name: 'Gudang Surabaya Timur',
     code: 'GDG-SBY-01',
-    skuTotal: 19,
+    skuTotal: 30,
     pics: [
       { id: 'p2', name: 'Dewi Rahayu' },
       { id: 'p3', name: 'Rizki Pratama' },
@@ -51,7 +51,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
     description: 'Gudang industri kawasan Bandung Selatan',
     name: 'Gudang Bandung Selatan',
     code: 'GDG-BDG-01',
-    skuTotal: 12,
+    skuTotal: 30,
     pics: [
       { id: 'p4', name: 'Sari Indah' },
       { id: 'p5', name: 'Hendra Wijaya' },
@@ -67,7 +67,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
     id: 'wh-004',
     name: 'Gudang Medan Baru',
     code: 'GDG-MDN-01',
-    skuTotal: 21,
+    skuTotal: 30,
     pics: [{ id: 'p7', name: 'Ratna Sari' }],
     address: 'Jl. Letjen Jamin Ginting No. 77, Padang Bulan, Kecamatan Medan Baru, Kota Medan, Sumatera Utara 20155',
     status: 'active',
@@ -79,7 +79,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
     id: 'wh-005',
     name: 'Gudang Semarang Industrial',
     code: 'GDG-SMG-01',
-    skuTotal: 16,
+    skuTotal: 30,
     pics: [
       { id: 'p8', name: 'Farhan Nugroho' },
       { id: 'p9', name: 'Lestari Putri' },
@@ -107,7 +107,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
     id: 'wh-007',
     name: 'Gudang Bali Kuta',
     code: 'GDG-DPS-01',
-    skuTotal: 8,
+    skuTotal: 30,
     pics: [{ id: 'p11', name: 'Ni Made Ayu' }],
     address: 'Jl. Raya Kuta No. 88, Kelurahan Kuta, Kecamatan Kuta, Kabupaten Badung, Bali 80361',
     status: 'archived',
@@ -119,7 +119,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
     id: 'wh-008',
     name: 'Gudang Palembang',
     code: 'GDG-PLB-01',
-    skuTotal: 10,
+    skuTotal: 30,
     pics: [{ id: 'p12', name: 'Yusuf Hakim' }],
     address: 'Jl. POM X No. 33, Kelurahan Srijaya, Kecamatan Alang-Alang Lebar, Kota Palembang, Sumatera Selatan 30153',
     status: 'active',
@@ -133,7 +133,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
     description: 'Gudang fulfillment wilayah Jakarta Timur dan sekitarnya',
     name: 'Gudang Jakarta Timur',
     code: 'GDG-JKT-02',
-    skuTotal: 23,
+    skuTotal: 30,
     pics: [{ id: 'p13', name: 'Bayu Pradana' }],
     address: 'Jl. Raya Bekasi KM 25, Kawasan Industri Pulogadung, Kecamatan Cakung, Jakarta Timur, DKI Jakarta 13920',
     status: 'active',
@@ -146,7 +146,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
     description: 'Gudang fulfillment wilayah Makassar Utara dan sekitarnya',
     name: 'Gudang Makassar Utara',
     code: 'GDG-MKS-02',
-    skuTotal: 14,
+    skuTotal: 30,
     pics: [{ id: 'p10', name: 'Agus Firmansyah' }],
     address: 'Jl. Perintis Kemerdekaan KM 12, Kelurahan Tamalanrea, Kecamatan Tamalanrea, Kota Makassar, Sulawesi Selatan 90245',
     status: 'active',
@@ -161,7 +161,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
 // detail and forms all update live. "Reset demo data" clears the snapshot.
 // Bump the key when the SEED shape/values change so stale snapshots (e.g. the old
 // item-quantity skuTotal) are discarded instead of overriding the fresh seed.
-const WAREHOUSES_KEY = 'warehouses-v6'
+const WAREHOUSES_KEY = 'warehouses-v7'
 const snapshot = loadSnapshot<Warehouse>(WAREHOUSES_KEY)
 export const warehouses = reactive<Warehouse[]>(snapshot ?? [...SEED_WAREHOUSES])
 

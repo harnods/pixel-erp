@@ -1,11 +1,158 @@
-import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder } from "./outgoing";
-import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck } from "./pickingTasks";
+import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder, canEditOutboundOrder, updateOutgoingOrderLines, recordOutgoingEdit } from "./outgoing";
+import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck, lockedOutboundQtyForSku, pendingPickingLinesForSku, reduceOrderSkuOnPickingTask, getPickingTask } from "./pickingTasks";
 import { getPackingForOrder, cancelPackingTask } from "./packingTasks";
 import { deliveryTasks, getDeliveryForOrder, canCancelDeliveryTask, cancelDeliveryTask, shippedQtyBySkuForOrder } from "./deliveryTasks";
+import { orderSkuLines, productBySku } from "./inventory";
+import { getWarehouseDetail, consumeReservation } from "./warehouseDetails";
 
 export type CancelOutboundResult =
   | { ok: true }
   | { ok: false; reason: "NOT_FOUND" | "OUTBOUND_ALREADY_SHIPPED" | "OUTBOUND_CANNOT_CANCEL_COMPLETED" };
+
+export type EditOutboundResult =
+  | { ok: true }
+  | { ok: false; reason: "NOT_FOUND" | "NOT_EDITABLE" | "SKU_LOCKED" | "NO_ALLOCATABLE_STOCK" | "REDUCTION_EXCEEDS_REMOVABLE" | "INVALID_ALLOCATION"; sku?: string; locked?: number; removable?: number };
+
+/** Per-task reduction of one SKU (D7 allocation step). */
+export interface TaskReduction { taskId: string; taskNo: string; currentQty: number; reduceBy: number; willCancel: boolean }
+/** The default proposal for reducing a SKU spread across pending picking tasks (AC#3). */
+export interface SkuReductionProposal {
+  sku: string; reduction: number; locked: number; removable: number; unassigned: number;
+  exceedsRemovable: boolean; taskReductions: TaskReduction[];
+}
+
+/** D7 AC#3 default proposal — drain the smallest pending task first so the fewest
+ *  tasks remain. `R` is the amount to take from pending TASKS (order/unassigned qty
+ *  is reduced separately, before this). Callers pass the pending lines + R. */
+function drainSmallestFirst(pending: { taskId: string; taskNo: string; qty: number }[], R: number): TaskReduction[] {
+  let rem = R;
+  return [...pending].sort((a, b) => a.qty - b.qty).map((p) => {
+    const reduceBy = Math.min(p.qty, Math.max(0, rem));
+    rem -= reduceBy;
+    return { taskId: p.taskId, taskNo: p.taskNo, currentQty: p.qty, reduceBy, willCancel: reduceBy === p.qty };
+  });
+}
+
+/** D7 allocation step — the default proposal for reducing `sku` on `orderId` by `N`.
+ *  Reduces any UNASSIGNED (not-on-a-task) qty first, then drains pending tasks smallest
+ *  first (AC#3). Reports the removable cap (AC#2) so the caller can reject over-cap. */
+export function proposeSkuReduction(orderId: string, sku: string, N: number): SkuReductionProposal {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  const orderQty = order ? (orderSkuLines(order).find((l) => l.product.sku === sku)?.qty ?? 0) : 0;
+  const locked = lockedOutboundQtyForSku(orderId, sku);
+  const pending = pendingPickingLinesForSku(orderId, sku);
+  const pendingTotal = pending.reduce((s, p) => s + p.qty, 0);
+  const removable = orderQty - locked;
+  const unassigned = Math.max(0, orderQty - locked - pendingTotal);
+  const R = Math.max(0, N - Math.min(N, unassigned)); // remainder taken from pending tasks
+  const taskReductions = drainSmallestFirst(pending, R).filter((t) => t.reduceBy > 0);
+  // flag will-cancel accurately: only if the whole task (all lines) empties
+  for (const tr of taskReductions) {
+    tr.willCancel = tr.reduceBy === tr.currentQty && (getPickingTask(tr.taskId)?.salesOrderIds.length === 1) &&
+      (getPickingTask(tr.taskId)?.skuQty === 1);
+  }
+  return { sku, reduction: N, locked, removable, unassigned, exceedsRemovable: N > removable, taskReductions };
+}
+
+/**
+ * D7 — Edit an outbound order's SKU lines (+ optional header + optional per-SKU
+ * pending-task reduction allocation). Enforces the full D7 rule set:
+ *  - AC#4 add/increase: reserve the delta; reject the WHOLE edit if unallocatable
+ *    (NO_ALLOCATABLE_STOCK), no partial apply;
+ *  - AC#4 lock: a SKU's qty on a STARTED picking task can't be removed/reduced;
+ *  - allocation AC#2: a reduction can't exceed the removable (order qty − locked) —
+ *    REDUCTION_EXCEEDS_REMOVABLE with {locked, removable};
+ *  - allocation AC#3/#4: the reduction drains pending tasks (default smallest-first,
+ *    or a caller-supplied override which must sum exactly to the pending remainder and
+ *    stay within each task's qty, else INVALID_ALLOCATION);
+ *  - allocation AC#5: a pending task emptied by the reduction auto-cancels;
+ *  - a reduced/removed line releases its reservation back to Available.
+ * Validated fully BEFORE any mutation (no partial apply).
+ */
+export function editOutboundOrder(
+  orderId: string,
+  newLines: { sku: string; qty: number }[],
+  header?: { customer?: string; dueDate?: string; memo?: string },
+  allocations?: Record<string, { taskId: string; reduceBy: number }[]>,
+): EditOutboundResult {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return { ok: false, reason: "NOT_FOUND" };
+  if (!canEditOutboundOrder(order)) return { ok: false, reason: "NOT_EDITABLE" };
+  const wh = order.warehouseId;
+
+  const oldBySku = new Map<string, number>();
+  for (const l of orderSkuLines(order)) oldBySku.set(l.product.sku, l.qty);
+  const newBySku = new Map<string, number>();
+  for (const l of newLines) if (l.qty > 0) newBySku.set(l.sku, (newBySku.get(l.sku) ?? 0) + l.qty);
+  const skus = new Set<string>([...oldBySku.keys(), ...newBySku.keys()]);
+
+  // ── Validate everything up-front (no partial apply) ──────────────────────────
+  const wd = getWarehouseDetail(wh);
+  const reductionPlans: { sku: string; N: number; taskReductions: { taskId: string; reduceBy: number }[] }[] = [];
+  for (const sku of skus) {
+    const delta = (newBySku.get(sku) ?? 0) - (oldBySku.get(sku) ?? 0);
+    if (delta > 0) {
+      // increase → must be reservable now
+      if ((wd?.stock.find((s) => s.sku === sku)?.available ?? 0) < delta) return { ok: false, reason: "NO_ALLOCATABLE_STOCK", sku };
+      continue;
+    }
+    if (delta === 0) continue;
+    const N = -delta;
+    const locked = lockedOutboundQtyForSku(orderId, sku);
+    const removable = (oldBySku.get(sku) ?? 0) - locked;
+    if (N > removable) return { ok: false, reason: "REDUCTION_EXCEEDS_REMOVABLE", sku, locked, removable };
+    const pending = pendingPickingLinesForSku(orderId, sku);
+    const pendingTotal = pending.reduce((s, p) => s + p.qty, 0);
+    const unassigned = Math.max(0, (oldBySku.get(sku) ?? 0) - locked - pendingTotal);
+    const R = Math.max(0, N - Math.min(N, unassigned)); // to drain from pending tasks
+    let taskReductions: { taskId: string; reduceBy: number }[];
+    const override = allocations?.[sku];
+    if (override) {
+      // AC#4 — accept any distribution: each ∈ [0, task qty] AND sum === R exactly.
+      const byTask = new Map(pending.map((p) => [p.taskId, p.qty]));
+      let sum = 0;
+      for (const a of override) {
+        const cap = byTask.get(a.taskId);
+        if (cap === undefined || a.reduceBy < 0 || a.reduceBy > cap) return { ok: false, reason: "INVALID_ALLOCATION", sku };
+        sum += a.reduceBy;
+      }
+      if (sum !== R) return { ok: false, reason: "INVALID_ALLOCATION", sku };
+      taskReductions = override.filter((a) => a.reduceBy > 0);
+    } else {
+      taskReductions = drainSmallestFirst(pending, R).filter((t) => t.reduceBy > 0).map((t) => ({ taskId: t.taskId, reduceBy: t.reduceBy }));
+    }
+    reductionPlans.push({ sku, N, taskReductions });
+  }
+
+  // ── Build the audit trail ("apa ke apa") BEFORE mutating the order ─────────────
+  const nameOf = (sku: string) =>
+    orderSkuLines(order).find((l) => l.product.sku === sku)?.product.name ?? productBySku(sku)?.name ?? sku;
+  const changes: { label: string; value: string }[] = [];
+  for (const sku of [...skus].sort()) {
+    const oldQty = oldBySku.get(sku) ?? 0;
+    const newQty = newBySku.get(sku) ?? 0;
+    if (oldQty === newQty) continue;
+    if (oldQty === 0) changes.push({ label: `${nameOf(sku)} (${sku})`, value: `Added — qty ${newQty}` });
+    else if (newQty === 0) changes.push({ label: `${nameOf(sku)} (${sku})`, value: `Removed — was ${oldQty}` });
+    else changes.push({ label: `${nameOf(sku)} (${sku}) qty`, value: `${oldQty} → ${newQty}` });
+  }
+  if (header?.customer !== undefined && header.customer !== (order.customer ?? ""))
+    changes.push({ label: "Customer", value: `${order.customer || "—"} → ${header.customer || "—"}` });
+  if (header?.dueDate !== undefined && header.dueDate !== order.dueDate)
+    changes.push({ label: "Estimated delivery", value: `${order.dueDate || "—"} → ${header.dueDate || "—"}` });
+  if (header?.memo !== undefined && header.memo !== (order.memo ?? ""))
+    changes.push({ label: "Memo", value: `${order.memo || "—"} → ${header.memo || "—"}` });
+
+  // ── Commit ───────────────────────────────────────────────────────────────────
+  for (const plan of reductionPlans) {
+    for (const tr of plan.taskReductions) reduceOrderSkuOnPickingTask(tr.taskId, orderId, plan.sku, tr.reduceBy);
+    consumeReservation(orderId, wh, plan.sku, plan.N); // release the full reduction back to Available
+  }
+  updateOutgoingOrderLines(orderId, [...newBySku].map(([sku, qty]) => ({ sku, qty })), header);
+  recordOutgoingEdit(orderId, changes); // D7 — activity log
+  reserveAllPickableOrders(); // reserve any increases (order still pickable)
+  return { ok: true };
+}
 
 /** D2 AC#5/AC#6 — cancel an outbound order (terminal, kept & auditable) and cascade
  *  across its tasks. Cancel is allowed only while NOTHING has shipped (posting guard):
