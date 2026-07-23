@@ -12,7 +12,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStages, isManualReceipt, deleteReceipt, canCancelReceipt, receipts, type Receipt } from '~/data/receipts'
+import { receiptsForStages, isManualReceipt, deleteReceipt, canCancelReceipt, canEditReceipt, receipts, type Receipt } from '~/data/receipts'
 import { cancelInboundReceipt } from '~/data/inboundSync'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
@@ -26,7 +26,7 @@ const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const d = detail.value
   if (!d) return []
-  return [{
+  const created = {
     date: d.lastUpdatedAt,
     user: d.lastUpdatedBy,
     activity: 'Created',
@@ -36,7 +36,13 @@ const activityEntries = computed(() => {
       { label: 'Vendor', value: d.vendor ?? '—' },
       { label: 'Warehouse', value: d.warehouseName },
     ],
-  }]
+  }
+  // Edit order entries (newest first) — the real before → after diff computed
+  // by editInboundReceipt (inboundSync.ts) when the edit was saved.
+  const edits = (currentReceipt.value?.editHistory ?? []).map((e) => ({
+    date: e.date, user: e.user, activity: 'Edited', details: e.changes,
+  }))
+  return [...edits, created]
 })
 const receipt = computed<Receipt | undefined>(() =>
   receiptsForStages(['Pending', 'Open', 'In progress']).find((r) => r.id === props.orderId),
@@ -175,6 +181,10 @@ const isPartialClose = computed(() => currentReceipt.value?.status === 'partial 
 const canCancelAction = computed(() => !isManual.value && !!currentReceipt.value && canCancelReceipt(currentReceipt.value))
 const cancelActionLabel = computed(() => (isPartialClose.value ? 'Close receipt' : 'Cancel receipt'))
 function openCloseReceiptModal() { cancelModalOpen.value = true }
+// Edit order — order-level action, same dropdown as Cancel/Close (mirrors the
+// outbound order detail's Edit order placement).
+const canEdit = computed(() => !!currentReceipt.value && canEditReceipt(currentReceipt.value))
+function goEdit() { router.push(`/inbound-delivery/${props.orderId}/edit`) }
 function closeCancelModal() { cancelModalOpen.value = false }
 function confirmCancel() {
   const wasPartial = isPartialClose.value // capture before status flips to 'canceled'
@@ -517,9 +527,9 @@ function confirmDelete() {
       <button v-if="isManual" class="detail-btn detail-btn--secondary" @click="openDeleteModal">Delete</button>
 
       <!-- Create purchase receiving — split button; the chevron holds the order-level
-           Cancel/Close receipt action (never a standalone footer button). -->
+           Edit order / Cancel/Close receipt actions (never a standalone footer button). -->
       <template v-if="canCreateReceivingTask(orderId)">
-        <div v-if="canCancelAction" class="detail-split-btn">
+        <div v-if="canEdit || canCancelAction" class="detail-split-btn">
           <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openPurchaseReceiving">Create purchase receiving</button>
           <MpPopover id="rcd-actions-recv" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
@@ -529,7 +539,8 @@ function confirmDelete() {
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -537,8 +548,8 @@ function confirmDelete() {
         <button v-else class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">Create purchase receiving</button>
       </template>
 
-      <!-- No create action left, but the receipt is still cancellable -->
-      <MpPopover v-else-if="canCancelAction" id="rcd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+      <!-- No create action left, but the receipt is still editable/cancellable -->
+      <MpPopover v-else-if="canEdit || canCancelAction" id="rcd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
             Actions
@@ -547,7 +558,8 @@ function confirmDelete() {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
