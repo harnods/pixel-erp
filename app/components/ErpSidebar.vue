@@ -340,6 +340,7 @@ const erpNavGroups: NavItem[][] = [
         ],
         [
           { label: 'Storage locations' },
+          { label: 'Couriers' },
           { label: 'Warehouse reports', iconType: 'shortcut' },
           { label: 'Warehouse settings', iconType: 'shortcut' },
         ],
