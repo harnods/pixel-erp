@@ -89,6 +89,8 @@ interface LineRow {
   unit: string
   qtyError: boolean
   qtyInsufficient: boolean
+  /** Edit mode — qty was set below what's already committed to a started picking task. */
+  qtyLocked: boolean
   productError: boolean
   /** Edit mode — qty already committed to a started picking task: can't remove this
    *  row or set qty below it (D7 AC#4). 0 = freely editable. */
@@ -97,8 +99,16 @@ interface LineRow {
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, productError: false, lockedQty: 0 }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false, lockedQty: 0 }
 }
+
+/** Tooltip/error text for an invalid qty cell (edit mode included). */
+function qtyErrorMsg(row: LineRow): string {
+  if (row.qtyLocked) return `Can’t go below ${row.lockedQty} — already in a picking task`
+  if (row.qtyInsufficient) return `Insufficient stock (${availableQty(row.productSku)} available)`
+  return ''
+}
+function qtyInvalid(row: LineRow): boolean { return row.qtyInsufficient || row.qtyLocked }
 
 function availableQty(sku: string): number {
   if (!warehouseId.value) return Infinity
@@ -172,7 +182,7 @@ function prefillFromOrder() {
       description: l.product.desc,
       qty: String(l.qty),
       unit: l.product.unit,
-      qtyError: false, qtyInsufficient: false, productError: false,
+      qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false,
       lockedQty: lockedOutboundQtyForSku(o.id, l.product.sku),
     } as LineRow
   })
@@ -237,8 +247,9 @@ async function validate(): Promise<boolean> {
     valid = false
   }
   for (const row of filledRows) {
+    row.qtyLocked = false
     if (!row.qty || Number(row.qty) < 1) { row.qtyError = true; valid = false }
-    else if (row.lockedQty > 0 && Number(row.qty) < row.lockedQty) { row.qtyError = true; valid = false } // can't drop below picked
+    else if (row.lockedQty > 0 && Number(row.qty) < row.lockedQty) { row.qtyLocked = true; valid = false } // can't drop below picked
     else row.qtyError = false
     checkQtyInsufficient(row)
     if (row.qtyInsufficient) valid = false
@@ -613,11 +624,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <td class="cr-td cr-td--input">
                       <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
                     </td>
-                    <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-insufficient': row.qtyInsufficient }">
+                    <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-insufficient': qtyInvalid(row) }">
                       <MpTooltip
-                        v-if="row.qtyInsufficient"
+                        v-if="qtyInvalid(row)"
                         :id="`cr-qty-tooltip-${row.id}`"
-                        :label="`Insufficient stock (${availableQty(row.productSku)} available)`"
+                        :label="qtyErrorMsg(row)"
                         placement="top"
                         use-portal
                         class="cr-qty-tooltip-wrap"
@@ -627,8 +638,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           v-model="row.qty"
                           type="number"
                           is-full-width
-                          :is-invalid="row.qtyError"
-                          @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false }"
+                          :is-invalid="row.qtyError || qtyInvalid(row)"
+                          @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false; row.qtyLocked = false }"
                         />
                       </MpTooltip>
                       <MpInput
@@ -638,7 +649,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         type="number"
                         is-full-width
                         :is-invalid="row.qtyError"
-                        @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false }"
+                        @update:model-value="() => { row.qtyError = false; row.qtyInsufficient = false; row.qtyLocked = false }"
                       />
                     </td>
                     <td class="cr-td cr-td--unit">{{ row.unit }}</td>
