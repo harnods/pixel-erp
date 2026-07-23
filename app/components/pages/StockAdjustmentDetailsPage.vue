@@ -129,6 +129,15 @@ function openViewSerialForSku(row: { sku: string; product: { name: string; img: 
   viewSerialOpen.value = true
 }
 
+function openViewBatchForSku(row: { sku: string; product: { name: string; img: string; desc: string; unit: string; averageCost: number }; prevOnHand: number; counted: number; difference: number; unit: string; locations: string[] }) {
+  viewBatchItem.value = {
+    key: row.sku, sku: row.sku, product: row.product as AdjustmentLine['product'],
+    prevOnHand: row.prevOnHand, counted: row.counted, difference: row.difference,
+    unit: row.unit, averageCost: 0, storageLocation: row.locations[0] ?? '—',
+  }
+  viewBatchOpen.value = true
+}
+
 function hashStr(s: string): number {
   let h = 0
   for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
@@ -154,6 +163,12 @@ const wmsCountLines = computed((): AdjustmentLine[] => {
       result.push(item)
       continue
     }
+    // Split the SKU's REAL counted total (0 for a freshly-started task with
+    // nothing saved yet, or the actual/seed value otherwise) proportionally
+    // across its batches by on-hand share — never invent an independent
+    // per-batch delta, or a genuinely-uncounted task would show fabricated
+    // variance the moment its status flips to in_progress.
+    const totalBatchOnHand = whItem.batches.reduce((s, b) => s + b.onHand, 0) || 1
     for (let b = 0; b < whItem.batches.length; b++) {
       const batch = whItem.batches[b]!
       const bh = hashStr(batch.batchNo + String(b))
@@ -164,15 +179,15 @@ const wmsCountLines = computed((): AdjustmentLine[] => {
         if (loc2) {
           const qty1 = Math.ceil(batch.onHand * 0.6)
           const qty2 = batch.onHand - qty1
-          const d1 = (bh % 7) - 3
-          const d2 = (hashStr(batch.batchNo + 'b') % 5) - 2
-          result.push({ key: `${item.sku}~${batch.batchNo}~a`, sku: item.sku, product: item.product, unit: item.unit, averageCost: item.averageCost, prevOnHand: qty1, counted: Math.max(0, qty1 + d1), difference: d1, storageLocation: batch.location, batchNumber: batch.batchNo, batchExpiry: batch.expiryDate })
-          result.push({ key: `${item.sku}~${batch.batchNo}~b`, sku: item.sku, product: item.product, unit: item.unit, averageCost: item.averageCost, prevOnHand: qty2, counted: Math.max(0, qty2 + d2), difference: d2, storageLocation: loc2, batchNumber: batch.batchNo, batchExpiry: batch.expiryDate })
+          const counted1 = Math.round(item.counted * qty1 / totalBatchOnHand)
+          const counted2 = Math.round(item.counted * qty2 / totalBatchOnHand)
+          result.push({ key: `${item.sku}~${batch.batchNo}~a`, sku: item.sku, product: item.product, unit: item.unit, averageCost: item.averageCost, prevOnHand: qty1, counted: counted1, difference: counted1 - qty1, storageLocation: batch.location, batchNumber: batch.batchNo, batchExpiry: batch.expiryDate })
+          result.push({ key: `${item.sku}~${batch.batchNo}~b`, sku: item.sku, product: item.product, unit: item.unit, averageCost: item.averageCost, prevOnHand: qty2, counted: counted2, difference: counted2 - qty2, storageLocation: loc2, batchNumber: batch.batchNo, batchExpiry: batch.expiryDate })
           continue
         }
       }
-      const d = (bh % 11) - 4
-      result.push({ key: `${item.sku}~${batch.batchNo}`, sku: item.sku, product: item.product, unit: item.unit, averageCost: item.averageCost, prevOnHand: batch.onHand, counted: Math.max(0, batch.onHand + d), difference: d, storageLocation: batch.location, batchNumber: batch.batchNo, batchExpiry: batch.expiryDate })
+      const counted = Math.round(item.counted * batch.onHand / totalBatchOnHand)
+      result.push({ key: `${item.sku}~${batch.batchNo}`, sku: item.sku, product: item.product, unit: item.unit, averageCost: item.averageCost, prevOnHand: batch.onHand, counted, difference: counted - batch.onHand, storageLocation: batch.location, batchNumber: batch.batchNo, batchExpiry: batch.expiryDate })
     }
   }
   return result
@@ -234,12 +249,33 @@ const missingReasonSkus = computed(() => {
   return [...skus].filter((sku) => !varianceReasons[sku])
 })
 
+// ── WMS stock count: merge batch-split rows into one per (SKU, location) — the
+// Batch no. column moves into the View batch drawer instead of separate rows,
+// matching the counting page's row-merging. ─────────────────────────────────
+const mergedWmsRows = computed((): AdjustmentLine[] => {
+  if (!isWmsCount.value) return []
+  const map = new Map<string, AdjustmentLine>()
+  for (const item of wmsCountLines.value) {
+    const loc = item.storageLocation || '—'
+    const key = `${item.sku}::${loc}`
+    const row = map.get(key)
+    if (row) {
+      row.prevOnHand += item.prevOnHand
+      row.counted += item.counted
+      row.difference += item.difference
+    } else {
+      map.set(key, { key, sku: item.sku, product: item.product, prevOnHand: item.prevOnHand, counted: item.counted, difference: item.difference, unit: item.unit, averageCost: item.averageCost, storageLocation: loc })
+    }
+  }
+  return [...map.values()]
+})
+
 // ── WMS stock count: group line items by storage location (accordion) ──────────
 const groupedByLocation = computed(() => {
   if (!isWmsCount.value) return []
   const q = locSearch.value.trim().toLowerCase()
   const groups = new Map<string, AdjustmentLine[]>()
-  for (const item of wmsCountLines.value) {
+  for (const item of mergedWmsRows.value) {
     const loc = item.storageLocation || '—'
     if (!groups.has(loc)) groups.set(loc, [])
     groups.get(loc)!.push(item)
@@ -251,7 +287,7 @@ const groupedByLocation = computed(() => {
       location: g.location,
       items: g.location.toLowerCase().includes(q)
         ? g.items
-        : g.items.filter(i => i.sku.toLowerCase().includes(q) || i.product.name.toLowerCase().includes(q) || (i.batchNumber ?? '').toLowerCase().includes(q)),
+        : g.items.filter(i => i.sku.toLowerCase().includes(q) || i.product.name.toLowerCase().includes(q)),
     }))
     .filter(g => g.items.length > 0)
 })
@@ -596,43 +632,47 @@ onUnmounted(() => {
                   <colgroup>
                     <col class="detail-col-product" />
                     <col class="detail-col-sku" />
-                    <col class="detail-col-batch" />
                     <col class="detail-col-num" />
                     <col class="detail-col-num" />
                     <col v-if="isCountedStatus" class="detail-col-num" />
                     <col class="detail-col-unit" />
+                    <col class="detail-col-action" />
                     <col v-if="isCountedStatus" class="detail-col-reason" />
                   </colgroup>
                   <thead>
                     <tr>
                       <th class="detail-th">Product</th>
                       <th class="detail-th">SKU</th>
-                      <th class="detail-th">Batch no.</th>
                       <th class="detail-th detail-th--num">On hand qty</th>
                       <th class="detail-th detail-th--num">Counted qty</th>
                       <th v-if="isCountedStatus" class="detail-th detail-th--num">Variance</th>
                       <th class="detail-th">Unit</th>
+                      <th class="detail-th detail-th--action" />
                       <th v-if="isCountedStatus" class="detail-th detail-th--reason">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr
-                      v-for="item in group.items" :key="item.key" class="detail-item-row"
-                      :class="{ 'detail-item-row--batch': isSerialTrackedSku(item.sku) }"
-                    >
+                    <tr v-for="item in group.items" :key="item.key" class="detail-item-row">
                       <td class="detail-td detail-td--product"><ProductCell :name="item.product.name" :desc="item.product.desc" :image="item.product.img" /></td>
                       <td class="detail-td">{{ item.sku }}</td>
-                      <td class="detail-td">{{ item.batchNumber ?? '—' }}</td>
                       <td class="detail-td detail-td--num">{{ fmt(item.prevOnHand) }}</td>
-                      <td v-if="isSerialTrackedSku(item.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
-                        <div class="detail-counted-qty">{{ isNotStarted ? '—' : fmt(item.counted) }}</div>
-                        <div v-if="!isNotStarted" class="detail-counted-action">
-                          <button class="detail-view-link" type="button" @click="openViewSerial(item)">View serial numbers</button>
-                        </div>
-                      </td>
-                      <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(item.counted) }}</td>
+                      <td class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(item.counted) }}</td>
                       <td v-if="isCountedStatus" class="detail-td detail-td--num" :class="{ 'detail-diff--pos': item.difference > 0, 'detail-diff--neg': item.difference < 0 }">{{ diffLabel(item.difference) }}</td>
                       <td class="detail-td">{{ item.unit }}</td>
+                      <td class="detail-td detail-td--action">
+                        <template v-if="!isNotStarted">
+                          <MpTooltip v-if="isBatchTrackedSku(item.sku)" :id="`sad-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
+                            <button class="detail-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                              <MpIcon name="competencies" size="md" />
+                            </button>
+                          </MpTooltip>
+                          <MpTooltip v-else-if="isSerialTrackedSku(item.sku)" :id="`sad-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
+                            <button class="detail-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                              <MpIcon name="competencies" size="md" />
+                            </button>
+                          </MpTooltip>
+                        </template>
+                      </td>
                       <td v-if="isCountedStatus" class="detail-td detail-td--reason">
                         <MpPopover v-if="hasVariance(item.difference)" :id="`reason-loc-${item.key}`" is-close-on-select use-portal placement="bottom-start">
                           <MpPopoverTrigger>
@@ -676,13 +716,14 @@ onUnmounted(() => {
                 <th class="detail-th detail-th--num">Counted qty</th>
                 <th v-if="isCountedStatus" class="detail-th detail-th--num">Variance</th>
                 <th class="detail-th">Unit</th>
+                <th class="detail-th detail-th--action" />
                 <th v-if="isCountedStatus" class="detail-th detail-th--reason">Reason</th>
                 <th class="detail-th">Storage locations</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!groupedBySku.length">
-                <td :colspan="isCountedStatus ? 8 : 6" class="detail-td detail-td--empty">
+                <td :colspan="isCountedStatus ? 9 : 7" class="detail-td detail-td--empty">
                   <div class="empty-inline">
                     <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
                     <p class="empty-inline-title">No results found</p>
@@ -691,20 +732,27 @@ onUnmounted(() => {
                   </div>
                 </td>
               </tr>
-              <tr v-for="row in groupedBySku" :key="row.sku" class="detail-item-row"
-                  :class="{ 'detail-item-row--batch': isSerialTrackedSku(row.sku) }">
+              <tr v-for="row in groupedBySku" :key="row.sku" class="detail-item-row">
                 <td class="detail-td detail-td--product"><ProductCell :name="row.product.name" :desc="row.product.desc" :image="row.product.img" /></td>
                 <td class="detail-td">{{ row.sku }}</td>
                 <td class="detail-td detail-td--num">{{ fmt(row.prevOnHand) }}</td>
-                <td v-if="isSerialTrackedSku(row.sku)" class="detail-td detail-td--counted-batch" style="padding: 0;">
-                  <div class="detail-counted-qty">{{ isNotStarted ? '—' : fmt(row.counted) }}</div>
-                  <div v-if="!isNotStarted" class="detail-counted-action">
-                    <button class="detail-view-link" type="button" @click="openViewSerialForSku(row)">View serial numbers</button>
-                  </div>
-                </td>
-                <td v-else class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(row.counted) }}</td>
+                <td class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(row.counted) }}</td>
                 <td v-if="isCountedStatus" class="detail-td detail-td--num" :class="{ 'detail-diff--pos': row.difference > 0, 'detail-diff--neg': row.difference < 0 }">{{ diffLabel(row.difference) }}</td>
                 <td class="detail-td">{{ row.unit }}</td>
+                <td class="detail-td detail-td--action">
+                  <template v-if="!isNotStarted">
+                    <MpTooltip v-if="isBatchTrackedSku(row.sku)" :id="`sad-tt-batch-sku-${row.sku}`" label="View batch" placement="top" use-portal>
+                      <button class="detail-view-btn" type="button" aria-label="View batch" @click="openViewBatchForSku(row)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.sku)" :id="`sad-tt-serial-sku-${row.sku}`" label="View serial number" placement="top" use-portal>
+                      <button class="detail-view-btn" type="button" aria-label="View serial number" @click="openViewSerialForSku(row)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </template>
+                </td>
                 <td v-if="isCountedStatus" class="detail-td detail-td--reason">
                   <MpPopover v-if="hasVariance(row.difference)" :id="`reason-sku-${row.sku}`" is-close-on-select use-portal placement="bottom-start">
                     <MpPopoverTrigger>
@@ -1140,9 +1188,9 @@ onUnmounted(() => {
    leaving dead space when the container is wider than the columns' sum. */
 .detail-items--fixed { table-layout: fixed; width: 100%; min-width: 950px; }
 .detail-col-sku { width: 90px; }
-.detail-col-batch { width: 120px; }
 .detail-col-num { width: 110px; }
 .detail-col-unit { width: 90px; }
+.detail-col-action { width: 56px; }
 .detail-col-reason { width: 220px; }
 .detail-items--fixed.detail-items--with-reason { min-width: 1280px; }
 /* Reason select fills the FULL row height (flat, edge-to-edge trigger) instead of
@@ -1230,6 +1278,17 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 .detail-view-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* View batch/serial action column (WMS cycle count tables) */
+.detail-th--action { text-align: center; white-space: nowrap; }
+.detail-td--action { text-align: center; white-space: nowrap; }
+.detail-view-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  border-radius: var(--mp-radii-md); background: none; border: none;
+  cursor: pointer; color: var(--mp-icon-default);
+}
+.detail-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .detail-notes-left { display: flex; flex-direction: column; }
 .detail-note-text { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); white-space: pre-line; }
