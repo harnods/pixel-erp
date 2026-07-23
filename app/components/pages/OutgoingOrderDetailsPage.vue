@@ -345,6 +345,11 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             </div>
           </ContentList>
         </div>
+        <div v-if="order.status === 'canceled'" class="content-list-col">
+          <ContentList label="Canceled date" :value="order.canceledDate ? formatDateLong(order.canceledDate) : '—'" />
+          <ContentList label="Reason" :value="order.canceledReason ?? '—'" />
+          <ContentList label="Canceled by" :value="order.canceledBy ?? '—'" />
+        </div>
       </section>
 
       <!-- Line items -->

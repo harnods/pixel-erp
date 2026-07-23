@@ -75,6 +75,8 @@ export interface PickingTask {
   canceledDate?: string;
   /** Why this task was canceled — shown on the task detail page. */
   canceledReason?: string;
+  /** Who canceled it — shown on the task detail page. */
+  canceledBy?: string;
   /** A SHARED order on this task was cancelled and the operator hasn't acknowledged
    *  it yet — the pick list still shows the original numbers; a banner prompts the
    *  operator to acknowledge, which drops the cancelled order's lines from the pick
@@ -856,6 +858,7 @@ export function cancelPickingTask(taskId: string, reason?: string, force = false
   t.status = "canceled";
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;
+  t.canceledBy = "Rizal Candra";
   persistPicking();
 }
 

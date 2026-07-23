@@ -47,6 +47,8 @@ export interface PackingTask {
   canceledDate?: string;
   /** Why this task was canceled — shown on the task detail page. */
   canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
   /** packed qty per line key (set as the operator matches/sorts) */
   packedByKey?: Record<string, number>;
   /** Direct-mode only (no pickingTaskId) — the specific SKU+qty this task covers,
@@ -492,6 +494,7 @@ export function cancelPackingTask(taskId: string, reason?: string, force = false
   t.status = "canceled";
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;
+  t.canceledBy = "Rizal Candra";
   persistPacking();
 }
 

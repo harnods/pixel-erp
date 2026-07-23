@@ -50,6 +50,8 @@ export interface DeliveryTask {
   /** cancel audit (D2 cascade) — set when the parent outbound is cancelled */
   canceledDate?: string;
   canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
   /** how it leaves: self delivery (own driver) or online shipping (3rd-party courier) */
   deliveryMethod?: "self" | "online";
   /** ISO date the goods were handed to the courier (shipped only) */
@@ -354,6 +356,7 @@ export function cancelDeliveryTask(taskId: string, reason?: string): void {
   t.status = "canceled";
   t.canceledDate = new Date().toISOString();
   if (reason) t.canceledReason = reason;
+  t.canceledBy = "Rizal Candra";
   persistDelivery();
 }
 

@@ -271,8 +271,8 @@ function confirmCancel() {
   if (!task.value) return
   cancelPutAway(task.value.id)
   cancelOpen.value = false
+  // stay on this detail page — task.status is now 'canceled' and the header shows it
   toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
-  goBack()
 }
 
 const pdfPreviewOpen = ref(false)
@@ -371,6 +371,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <template v-if="task.status === 'canceled'">
             <ContentList label="Canceled date" :value="formatDateTimeLong(task.canceledDate)" />
             <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+            <ContentList label="Canceled by" :value="task.canceledBy ?? '—'" />
           </template>
           <ContentList v-else label="End date" :value="formatDateTimeLong(task.endDate)" />
         </div>
@@ -567,7 +568,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel</MpPopoverListItem>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>

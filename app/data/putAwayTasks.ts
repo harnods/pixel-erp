@@ -53,6 +53,8 @@ export interface PutAwayTask {
   canceledDate?: string;
   /** Why this task was canceled — shown on the task detail page. */
   canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
   /** A SKU shared by 2+ bundled receiving tasks is ONE merged entry (qty
    *  summed) — put-away doesn't track which specific receiving task a unit
    *  came from, only which bin it ends up in. */
@@ -290,6 +292,7 @@ export function cancelPutAway(taskId: string, reason?: string): void {
   if (!t || !canCancelPutAway(t)) return;
   t.status = 'canceled';
   t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
   if (reason) t.canceledReason = reason;
   persistPutAways();
 }
@@ -322,6 +325,7 @@ export function acknowledgeCanceledPutAway(taskId: string): void {
   t.needsCancelAck = false;
   t.status = 'canceled';
   t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
   t.canceledReason = 'Purchase order was canceled';
   persistPutAways();
   for (const rid of t.receivingTaskIds) {

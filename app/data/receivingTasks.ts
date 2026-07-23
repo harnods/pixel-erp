@@ -125,6 +125,8 @@ export interface ReceivingTask {
   putAwayTaskId?: string;
   canceledDate?: string;
   canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
   /** This task's OWN receipt (PO) was canceled while the task was already "in
    *  progress" — real receiving work may already exist, so it is NOT
    *  auto-canceled immediately the way an "open" task on the same PO would be
@@ -626,6 +628,7 @@ export function cancelReceivingTask(taskId: string, reason?: string): void {
   if (!t || !canCancelReceivingTask(t)) return;
   t.status = "canceled";
   t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
   if (reason) t.canceledReason = reason;
   persistTasks();
   recomputeReceiptStatus(t.receiptId);
@@ -664,6 +667,7 @@ export function forceCancelEndedTask(taskId: string, reason: string): void {
   if (!t || (t.status !== "pending put-away" && t.status !== "completed") || t.stockCommitted) return;
   t.status = "canceled";
   t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
   t.canceledReason = reason;
   persistTasks();
 }
@@ -773,6 +777,7 @@ export function acknowledgeCanceledReceipt(taskId: string): void {
   if (t.stockCommitted) reverseReceivingStock(t);
   t.status = "canceled";
   t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
   t.canceledReason = "Purchase order was canceled";
   persistTasks();
 }

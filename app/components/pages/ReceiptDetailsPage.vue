@@ -177,13 +177,15 @@ const cancelActionLabel = computed(() => (isPartialClose.value ? 'Close receipt'
 function openCloseReceiptModal() { cancelModalOpen.value = true }
 function closeCancelModal() { cancelModalOpen.value = false }
 function confirmCancel() {
+  const wasPartial = isPartialClose.value // capture before status flips to 'canceled'
   const result = cancelInboundReceipt(props.orderId)
   closeCancelModal()
   if (!result.ok) {
     toast.notify({ variant: 'error', title: "This receipt can't be canceled", maxWidth: 'max-content' })
     return
   }
-  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
+  // Stay on this detail page — currentReceipt is now 'canceled' and the header shows it.
+  toast.notify({ variant: 'success', title: `Receipt ${wasPartial ? 'closed' : 'cancelled'}`, maxWidth: 'max-content' })
 }
 
 // Manually-created receipts (New receipt form) have no real PO behind them, so they
@@ -267,6 +269,11 @@ function confirmDelete() {
               </button>
             </div>
           </ContentList>
+        </div>
+        <div v-if="currentReceipt?.status === 'canceled'" class="content-list-col">
+          <ContentList label="Canceled date" :value="currentReceipt.canceledDate ? formatDateLong(currentReceipt.canceledDate) : '—'" />
+          <ContentList label="Reason" :value="currentReceipt.canceledReason ?? '—'" />
+          <ContentList label="Canceled by" :value="currentReceipt.canceledBy ?? '—'" />
         </div>
       </section>
 
