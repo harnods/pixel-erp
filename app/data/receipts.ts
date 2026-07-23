@@ -338,9 +338,19 @@ export function closeReceipt(id: string): void {
 }
 
 /** A receipt can only be canceled while not yet completed/already-canceled — once
- *  fully received, it's a permanent record of what actually came in. */
+ *  fully received, it's a permanent record of what actually came in. NOTE: user-facing
+ *  cancel is additionally hidden for "partial reception" (see canCloseReceipt) — per WMS
+ *  PRD 1.1 C1 AC#5 a partially-received inbound is *closed* (accept-as-final), not
+ *  cancelled. The data-layer cancel path stays available for the internal cascade. */
 export function canCancelReceipt(r: Receipt): boolean {
   return r.status !== "completed" && r.status !== "canceled";
+}
+
+/** A partially-received receipt is *closed* (accept-as-final, close-forward) rather than
+ *  cancelled — PRD C1 AC#5/AC#8. This is the user-facing action for "partial reception";
+ *  it supersedes Cancel in the UI. */
+export function canCloseReceipt(r: Receipt): boolean {
+  return r.status === "partial reception";
 }
 
 /**

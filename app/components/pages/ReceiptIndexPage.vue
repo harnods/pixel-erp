@@ -11,7 +11,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { receiptsForStages, receiptStage, canCancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
+import { receiptsForStages, receiptStage, canCancelReceipt, canCloseReceipt, closeReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 import { cancelInboundReceipt } from '~/data/inboundSync'
@@ -263,10 +263,11 @@ function bulkEditTracking(selectedRows: Set<number>, deselectAll: () => void) {
 
 // Cancel confirmation — shared by the single-row action and the bulk action.
 // Only receipts not yet completed/canceled are eligible — once fully received,
-// the PO is a permanent record.
+// the PO is a permanent record. Partial reception is excluded: it's *closed*
+// (accept-as-final), not cancelled (PRD C1 AC#5).
 function cancelableSelection(selectedRows: Set<number>): Receipt[] {
   const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as Receipt[]
-  return rows.filter(canCancelReceipt)
+  return rows.filter((r) => canCancelReceipt(r) && !canCloseReceipt(r))
 }
 function bulkCancelable(selectedRows: Set<number>): boolean {
   return cancelableSelection(selectedRows).length > 0
@@ -286,6 +287,18 @@ function confirmCancel() {
   if (failed.length) {
     toast.notify({ variant: 'error', title: `${failed.length} receipt${failed.length > 1 ? 's' : ''} could not be canceled`, maxWidth: 'max-content' })
   }
+}
+
+// Close confirmation — a partially-received receipt is accepted as final (close-forward),
+// never cancelled (PRD C1 AC#5). Keeps what was received; abandons the remaining qty.
+const closeModalOpen = ref(false)
+const receiptToClose = ref<Receipt | null>(null)
+function openCloseModal(row: Receipt) { receiptToClose.value = row; closeModalOpen.value = true }
+function closeCloseModal() { closeModalOpen.value = false; receiptToClose.value = null }
+function confirmClose() {
+  if (receiptToClose.value) closeReceipt(receiptToClose.value.id)
+  closeCloseModal()
+  toast.notify({ variant: 'success', title: 'Receipt closed', maxWidth: 'max-content' })
 }
 
 // Delete confirmation — manually-created receipts only (no real PO behind them).
@@ -562,11 +575,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               v-if="canCreateReceivingTask((row as unknown as Receipt).id)"
               @click="purchaseReceiving(row as unknown as Receipt)"
             >Create purchase receiving</MpPopoverListItem>
-            <!-- Manually-created receipts (New receipt form) can be Deleted outright
-                 (hard-remove, no real PO behind them) AND Cancelled (void-and-keep as a
-                 record) — same as the detail page. PO-derived ones can only be canceled. -->
+            <!-- A partially-received receipt is CLOSED (accept-as-final), never cancelled
+                 (PRD C1 AC#5). Not-yet-received receipts can be Cancelled. Manual receipts
+                 (no real PO) can also be Deleted outright. -->
             <MpPopoverListItem
-              v-if="canCancelReceipt(row as unknown as Receipt)"
+              v-if="canCloseReceipt(row as unknown as Receipt)"
+              @click="openCloseModal(row as unknown as Receipt)"
+            >Close receipt</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancelReceipt(row as unknown as Receipt) && !canCloseReceipt(row as unknown as Receipt)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as Receipt)"
             >Cancel receipt</MpPopoverListItem>
@@ -609,6 +626,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep receipt</button>
           <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel receipt</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Close confirmation modal (partial reception → accept as final) ── -->
+  <MpModal
+    id="rcv-close-modal" :is-open="closeModalOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCloseModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>Close receipt?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        Receipt {{ receiptToClose?.number }} will be closed and accepted as final. What's
+        already received is kept; the remaining quantity is abandoned. This can't be undone.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCloseModal">Keep open</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmClose">Close receipt</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
