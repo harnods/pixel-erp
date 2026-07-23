@@ -545,11 +545,10 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="canEdit" class="detail-btn detail-btn--secondary" @click="goEdit">Edit order</button>
       <!-- Create picking — split button; the chevron holds order-level actions
-           (Cancel order / Release reserved), matching StockAdjustmentDetailsPage. -->
+           (Edit order / Cancel order / Release reserved), matching StockAdjustmentDetailsPage. -->
       <template v-if="canPickOrder(order)">
-        <div v-if="canCancel || canRelease" class="detail-split-btn">
+        <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
           <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="createPicking">Create picking list</button>
           <MpPopover id="ood-actions-pick" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
@@ -559,6 +558,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
                 <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel order</MpPopoverListItem>
                 <MpPopoverListItem v-if="canRelease" @click="releaseReserved">Release reserved</MpPopoverListItem>
               </MpPopoverList>
@@ -570,7 +570,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
       <!-- Create packing — same split treatment -->
       <template v-else-if="canCreatePackingDirectlyForOrder(order)">
-        <div v-if="canCancel || canRelease" class="detail-split-btn">
+        <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
           <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openDirectPacking">Create packing</button>
           <MpPopover id="ood-actions-pack" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
@@ -580,6 +580,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
                 <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel order</MpPopoverListItem>
                 <MpPopoverListItem v-if="canRelease" @click="releaseReserved">Release reserved</MpPopoverListItem>
               </MpPopoverList>
@@ -589,8 +590,8 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         <button v-else class="detail-btn detail-btn--primary" @click="openDirectPacking">Create packing</button>
       </template>
 
-      <!-- No create action left, but the order is still cancellable / has reserved to release -->
-      <MpPopover v-else-if="canCancel || canRelease" id="ood-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+      <!-- No create action left, but the order is still editable / cancellable / has reserved to release -->
+      <MpPopover v-else-if="canEdit || canCancel || canRelease" id="ood-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
             Actions
@@ -599,6 +600,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
             <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel order</MpPopoverListItem>
             <MpPopoverListItem v-if="canRelease" @click="releaseReserved">Release reserved</MpPopoverListItem>
           </MpPopoverList>
