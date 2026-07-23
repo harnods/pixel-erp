@@ -344,19 +344,16 @@ export function canCancelDeliveryTask(t: DeliveryTask): boolean {
 }
 
 /** Cancel a delivery task (ready-to-ship or out-for-delivery) — part of the
- *  outbound-cancel cascade. An out-for-delivery cancel also DETACHES the delivery
- *  from its shipment doc (clears shipmentNo/status/date), so the shipment no longer
- *  lists it; a shipment left with no live deliveries simply drops off the Shipped
- *  tab (getShipment/listShipments ignore canceled deliveries). */
+ *  outbound-cancel cascade. An out-for-delivery delivery STAYS attached to its
+ *  shipment (shipmentNo kept) so the shipment shows it as canceled and prompts the
+ *  operator to acknowledge; acknowledging (acknowledgeCanceledShipment) then detaches
+ *  it. A ready-to-ship delivery has no shipment, so there's nothing to detach. */
 export function cancelDeliveryTask(taskId: string, reason?: string): void {
   const t = deliveryTasks.find((x) => x.id === taskId);
   if (!t || !canCancelDeliveryTask(t)) return;
   t.status = "canceled";
   t.canceledDate = new Date().toISOString();
   if (reason) t.canceledReason = reason;
-  t.shipmentNo = undefined;
-  t.shipmentStatus = undefined;
-  t.shippedDate = undefined;
   persistDelivery();
 }
 
@@ -510,11 +507,17 @@ export interface ShipmentSummary {
   receivedNote?: string;
   /** signed proof-of-delivery file name, set once completed. */
   proofFile?: string;
+  /** One of the shipment's orders was cancelled (still attached) and the operator
+   *  hasn't acknowledged it yet — the shipment shows it as canceled and a banner
+   *  prompts an acknowledge, which detaches it (acknowledgeCanceledShipment). */
+  needsCancelAck: boolean;
   deliveries: DeliveryTask[];
 }
 export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
-  const deliveries = deliveryTasks.filter((t) => t.status !== "canceled" && t.shipmentNo?.replace(/\D/g, "") === shipmentSeq);
-  const first = deliveries[0];
+  // Include canceled deliveries still attached to the shipment (pending acknowledge),
+  // so the shipment shows them as canceled before the operator acknowledges.
+  const deliveries = deliveryTasks.filter((t) => t.shipmentNo?.replace(/\D/g, "") === shipmentSeq);
+  const first = deliveries.find((d) => d.status !== "canceled") ?? deliveries[0];
   if (!first) return undefined;
   return {
     shipmentSeq,
@@ -528,6 +531,7 @@ export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
     receivedBy: first.receivedBy,
     receivedNote: first.receivedNote,
     proofFile: first.proofFile,
+    needsCancelAck: deliveries.some((d) => d.status === "canceled"),
     deliveries,
   };
 }
@@ -537,13 +541,13 @@ export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
 export function listShipments(warehouseIds?: string[]): ShipmentSummary[] {
   const byNo = new Map<string, DeliveryTask[]>();
   for (const t of deliveryTasks) {
-    if (!t.shipmentNo || t.status === "canceled") continue;
+    if (!t.shipmentNo) continue; // canceled-but-attached stays listed until acknowledged
     if (warehouseIds?.length && !warehouseIds.includes(t.warehouseId)) continue;
     if (!byNo.has(t.shipmentNo)) byNo.set(t.shipmentNo, []);
     byNo.get(t.shipmentNo)!.push(t);
   }
   return [...byNo.entries()].map(([shipmentNo, deliveries]) => {
-    const first = deliveries[0]!;
+    const first = deliveries.find((d) => d.status !== "canceled") ?? deliveries[0]!;
     return {
       shipmentSeq: shipmentNo.replace(/\D/g, ""),
       shipmentNo,
@@ -552,9 +556,27 @@ export function listShipments(warehouseIds?: string[]): ShipmentSummary[] {
       warehouseId: first.warehouseId,
       warehouseName: first.warehouseName,
       status: first.shipmentStatus ?? "open",
+      needsCancelAck: deliveries.some((d) => d.status === "canceled"),
       deliveries,
     };
   });
+}
+
+/** Operator acknowledges the cancelled order(s) in a multi-order shipment: each
+ *  canceled delivery is DETACHED from the shipment (shipmentNo cleared) so the
+ *  shipment lists only its live deliveries. The detached delivery still exists
+ *  (canceled) and stays visible on its own order's detail page. */
+export function acknowledgeCanceledShipment(shipmentSeq: string): void {
+  let changed = false;
+  for (const t of deliveryTasks) {
+    if (t.shipmentNo?.replace(/\D/g, "") !== shipmentSeq) continue;
+    if (t.status !== "canceled") continue;
+    t.shipmentNo = undefined;
+    t.shipmentStatus = undefined;
+    t.shippedDate = undefined;
+    changed = true;
+  }
+  if (changed) persistDelivery();
 }
 
 /**

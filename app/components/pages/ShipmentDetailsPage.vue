@@ -8,7 +8,7 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
   MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpDatePicker, MpIcon, toast,
 } from '@mekari/pixel3'
-import { getShipment, completeShipment } from '~/data/deliveryTasks'
+import { getShipment, completeShipment, acknowledgeCanceledShipment } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateShipmentPdf } from '~/utils/shipmentPdf'
@@ -22,6 +22,7 @@ const shipment = computed(() => getShipment(props.orderId))
 interface Row {
   id: string; salesOrderId: string; salesNo: string; packingTaskId: string; packingTaskNo: string
   source: string; skuQty: number; orderQty: number; shippedQty: number; courier: string; trackingNo: string
+  status: string
 }
 const rows = computed<Row[]>(() => {
   const s = shipment.value
@@ -42,9 +43,16 @@ const rows = computed<Row[]>(() => {
       shippedQty: t.shippedQty,
       courier: t.courier ?? '—',
       trackingNo: t.trackingNo ?? '—',
+      status: t.status,
     }
   })
 })
+
+function acknowledgeCancel() {
+  if (!shipment.value) return
+  acknowledgeCanceledShipment(shipment.value.shipmentSeq)
+  toast.notify({ variant: 'success', title: 'Shipment updated — cancelled order removed', maxWidth: 'max-content' })
+}
 
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Shipped' } }) }
@@ -143,6 +151,20 @@ function confirmComplete() {
 
     <div class="detail-stage">
 
+      <!-- One of this shipment's orders was cancelled (parcel came back) — it's still
+           listed as Canceled until the operator acknowledges, which removes it from
+           this shipment (it stays on its own order's detail). -->
+      <div v-if="shipment.needsCancelAck" class="shd-cancel-banner">
+        <svg class="shd-cancel-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="shd-cancel-banner-text">
+          An order in this shipment was cancelled. Acknowledge to remove it from this shipment — it stays on its own order's detail.
+        </span>
+        <button class="shd-cancel-banner-btn" type="button" @click="acknowledgeCancel">Acknowledge</button>
+      </div>
+
       <section class="shd-summary">
         <div class="content-list-col">
           <ContentList label="Warehouse">
@@ -194,10 +216,11 @@ function confirmComplete() {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in rows" :key="row.id" class="detail-item-row">
+            <tr v-for="row in rows" :key="row.id" class="detail-item-row" :class="{ 'shd-row-canceled': row.status === 'canceled' }">
               <td class="detail-td">
                 <div class="cell-with-action">
                   <span class="cell-text">{{ row.salesNo }}</span>
+                  <ErpStatusBadge v-if="row.status === 'canceled'" status="canceled" />
                   <button class="row-hover-btn" @click.stop="viewSalesOrder(row)">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                       <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -352,6 +375,24 @@ function confirmComplete() {
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex; flex-direction: column; gap: var(--mp-spacing-8);
 }
+.shd-cancel-banner {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-warning-subtle, #fffbeb);
+  border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.shd-cancel-banner-icon { color: var(--mp-icon-warning, #d97706); flex-shrink: 0; }
+.shd-cancel-banner-text { flex: 1; }
+.shd-cancel-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.shd-cancel-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
+.shd-row-canceled .cell-text { color: var(--mp-text-secondary); }
+
 .shd-summary { display: grid; grid-template-columns: 244px 244px; column-gap: var(--mp-spacing-6); row-gap: 0; }
 .content-list-col { display: flex; flex-direction: column; }
 

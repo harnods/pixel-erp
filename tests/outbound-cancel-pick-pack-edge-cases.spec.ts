@@ -38,6 +38,7 @@ import { getPickingLineItems } from '~/data/pickingTaskDetails'
 import { addPackingTask, endPacking, getPackingTask, getPackingForOrder } from '~/data/packingTasks'
 import {
   addDeliveryTaskFromPackingTasks, getDeliveryForOrder, getDeliveryTask, handoverToCourierBulk, completeShipment,
+  getShipment, acknowledgeCanceledShipment,
 } from '~/data/deliveryTasks'
 import { cancelOutboundOrder, syncOutboundOrderStatuses } from '~/data/outboundSync'
 import { getWarehouseDetail, reservedQtyForTask } from '~/data/warehouseDetails'
@@ -494,19 +495,28 @@ describe('multi-order picking/packing/shipment — cancel one order, keep the ot
   }
 
   // Scenario 4a — handover done, shipment "open" (out for delivery): still reversible.
-  it('Scenario 4a: shipment OPEN (out for delivery) — S02 can STILL be cancelled; on-hand untouched, S01 stays out for delivery', () => {
+  // Cancelling flags the shipment for acknowledgement; the cancelled delivery stays
+  // ATTACHED (shown as canceled) until the operator acknowledges, which detaches it.
+  it('Scenario 4a: shipment OPEN — S02 cancellable; needs-ack until acknowledged, then detached; on-hand untouched; S01 continues', () => {
     const s01 = order([line(A, 1)]); const s02 = order([line(A, 1)], 'Shopee: Central Perk')
     const del1 = shipMk(s01); const del2 = shipMk(s02)
     const onHandBefore = stock(A).onHand
-    handoverToCourierBulk([del1.id, del2.id], { assignee: 'Op', transactionDate: '2026-07-20' })
+    const [ship] = handoverToCourierBulk([del1.id, del2.id], { assignee: 'Op', transactionDate: '2026-07-20' })
     expect(getDeliveryTask(del2.id)!.status).toBe('out for delivery') // NOT shipped yet
     expect(stock(A).onHand).toBe(onHandBefore) // nothing posted while open
 
     const res = cancelOutboundOrder(s02.id) // courier was closed, parcel came back
     expect(res.ok).toBe(true)
-    expect(getDeliveryTask(del2.id)!.status).toBe('canceled')       // detached + cancelled
-    expect(getDeliveryTask(del2.id)!.shipmentNo).toBeUndefined()
+    expect(getDeliveryTask(del2.id)!.status).toBe('canceled')
+    // Stays attached + shipment flagged for ack until acknowledged.
+    expect(getDeliveryTask(del2.id)!.shipmentNo).toBeTruthy()
+    expect(getShipment(ship!.shipmentSeq)!.needsCancelAck).toBe(true)
     expect(getDeliveryTask(del1.id)!.status).toBe('out for delivery') // S01 keeps going
+
+    acknowledgeCanceledShipment(ship!.shipmentSeq)
+    expect(getDeliveryTask(del2.id)!.shipmentNo).toBeUndefined()      // detached on ack
+    expect(getShipment(ship!.shipmentSeq)!.needsCancelAck).toBe(false)
+    expect(getShipment(ship!.shipmentSeq)!.deliveries.map(d => d.id)).toEqual([del1.id]) // only S01 left
     expect(stock(A).onHand).toBe(onHandBefore) // still nothing deducted
     cleanup(s01, s02)
   })
