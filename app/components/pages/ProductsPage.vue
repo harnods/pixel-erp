@@ -301,9 +301,7 @@ const activeFilterCount = computed(() =>
             </button>
           </MpTooltip>
           <!-- Column settings -->
-          <MpTooltip id="prod-tt-columns" label="Column settings" placement="bottom" use-portal>
-            <ColumnSettingsMenu id="prod-col-settings" :items="columnItems" :visibility="columnVisibility" />
-          </MpTooltip>
+          <ColumnSettingsMenu id="prod-col-settings" tooltip="Column settings" :items="columnItems" :visibility="columnVisibility" />
           <!-- Export -->
           <MpTooltip id="prod-tt-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export">
