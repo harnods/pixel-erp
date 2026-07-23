@@ -11,7 +11,7 @@ import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { outgoingOrders, outgoingStage, isMarketplaceOrder, canCancelOutboundOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder, type OutgoingOrder } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, isMarketplaceOrder, canCancelOutboundOrder, canEditOutboundOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder, type OutgoingOrder } from '~/data/outgoing'
 import { syncOutboundOrderStatuses, cancelOutboundOrder } from '~/data/outboundSync'
 import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
 import { getPackingForOrder, addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
@@ -207,6 +207,8 @@ function createPicking() {
 
 // ─── Cancel order + Release reserved (D2/D6) ───────────────────────────────────
 const canCancel = computed(() => !!order.value && canCancelOutboundOrder(order.value))
+const canEdit = computed(() => !!order.value && canEditOutboundOrder(order.value))
+function goEdit() { if (order.value) router.push(`/outbound-delivery/${order.value.id}/edit`) }
 const canRelease = computed(() => !!order.value && canReleaseReservedForOrder(order.value.id))
 const cancelModalOpen = ref(false)
 function askCancel() { cancelModalOpen.value = true }
@@ -543,6 +545,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
+      <button v-if="canEdit" class="detail-btn detail-btn--secondary" @click="goEdit">Edit order</button>
       <!-- Create picking — split button; the chevron holds order-level actions
            (Cancel order / Release reserved), matching StockAdjustmentDetailsPage. -->
       <template v-if="canPickOrder(order)">

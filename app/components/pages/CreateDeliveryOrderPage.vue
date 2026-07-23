@@ -6,10 +6,17 @@ import {
   MpTooltip, MpDatePicker, toast,
 } from '@mekari/pixel3'
 import { warehouses } from '~/data/warehouses'
-import { addOutgoing, nextDeliveryOrderNo } from '~/data/outgoing'
+import { addOutgoing, nextDeliveryOrderNo, outgoingOrders, canEditOutboundOrder } from '~/data/outgoing'
+import { editOutboundOrder } from '~/data/outboundSync'
+import { orderSkuLines } from '~/data/inventory'
+import { lockedOutboundQtyForSku } from '~/data/pickingTasks'
 import { CATALOG } from '~/data/catalog'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { scrollToFirstError } from '~/utils/form'
+
+const props = defineProps<{ orderId?: string }>()
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
+const editingOrder = computed(() => (isEdit.value ? outgoingOrders.find((o) => o.id === props.orderId) : undefined))
 
 function toDisplayDate(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -83,11 +90,14 @@ interface LineRow {
   qtyError: boolean
   qtyInsufficient: boolean
   productError: boolean
+  /** Edit mode — qty already committed to a started picking task: can't remove this
+   *  row or set qty below it (D7 AC#4). 0 = freely editable. */
+  lockedQty: number
 }
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, productError: false }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, productError: false, lockedQty: 0 }
 }
 
 function availableQty(sku: string): number {
@@ -133,7 +143,40 @@ function onProductSelect(row: LineRow, id: string) {
 
 function removeRow(id: number) {
   if (rows.value.length === 1) return
+  const row = rows.value.find((r) => r.id === id)
+  if (row && row.lockedQty > 0) {
+    toast.notify({ variant: 'error', title: `${row.productName} is already being picked and can't be removed`, maxWidth: 'max-content' })
+    return
+  }
   rows.value = rows.value.filter((r) => r.id !== id)
+}
+
+// ── Edit mode — prefill from the order (warehouse locked, per-SKU picking lock) ──
+function prefillFromOrder() {
+  const o = editingOrder.value
+  if (!o) return
+  customer.value = o.customer ?? ''
+  warehouseId.value = o.warehouseId
+  transactionNo.value = o.salesNo
+  transactionDate.value = o.transactionDate ? toDisplayDate(o.transactionDate.slice(0, 10)) : todayDisplay
+  estimatedDelivery.value = o.dueDate ? toDisplayDate(o.dueDate) : todayDisplay
+  memo.value = o.memo ?? ''
+  const lines = orderSkuLines(o).map((l) => {
+    const cat = CATALOG.find((c) => c.sku === l.product.sku)
+    return {
+      id: rowSeq++,
+      productId: cat?.id ?? l.product.sku,
+      productName: l.product.name,
+      productSku: l.product.sku,
+      productImg: l.product.img,
+      description: l.product.desc,
+      qty: String(l.qty),
+      unit: l.product.unit,
+      qtyError: false, qtyInsufficient: false, productError: false,
+      lockedQty: lockedOutboundQtyForSku(o.id, l.product.sku),
+    } as LineRow
+  })
+  rows.value = lines.length ? [...lines, makeRow()] : [makeRow()]
 }
 
 // ── Drag-and-drop row reorder ─────────────────────────────────────────────
@@ -195,6 +238,7 @@ async function validate(): Promise<boolean> {
   }
   for (const row of filledRows) {
     if (!row.qty || Number(row.qty) < 1) { row.qtyError = true; valid = false }
+    else if (row.lockedQty > 0 && Number(row.qty) < row.lockedQty) { row.qtyError = true; valid = false } // can't drop below picked
     else row.qtyError = false
     checkQtyInsufficient(row)
     if (row.qtyInsufficient) valid = false
@@ -235,9 +279,39 @@ async function persist() {
   })
 }
 
+/** Edit mode — apply changes via editOutboundOrder (D7 gates). Returns false (and
+ *  toasts) on rejection so the caller stays on the form (no partial apply). */
+function persistEdit(): boolean {
+  const o = editingOrder.value
+  if (!o) return false
+  const lines = rows.value.filter((r) => r.productId).map((r) => ({ sku: r.productSku, qty: Number(r.qty) || 0 }))
+  const res = editOutboundOrder(o.id, lines, {
+    customer: customer.value,
+    dueDate: estimatedDelivery.value ? toISODate(estimatedDelivery.value) : undefined,
+    memo: memo.value.trim(),
+  })
+  if (!res.ok) {
+    const msg = res.reason === 'NO_ALLOCATABLE_STOCK' ? 'Not enough stock to reserve the added quantity'
+      : res.reason === 'SKU_LOCKED' ? 'A SKU already being picked can’t be removed or reduced'
+      : res.reason === 'NOT_EDITABLE' ? 'This order can no longer be edited'
+      : 'Could not save the changes'
+    toast.notify({ variant: 'error', title: msg, maxWidth: 'max-content' })
+    return false
+  }
+  return true
+}
+
 async function handleSave() {
   if (!await validate()) return
   isSaving.value = true
+  if (isEdit.value) {
+    const ok = persistEdit()
+    isSaving.value = false
+    if (!ok) return
+    toast.notify({ variant: 'success', title: 'Order updated', maxWidth: 'max-content' })
+    router.push(`/outbound-delivery/${props.orderId}`)
+    return
+  }
   await persist()
   toast.notify({ variant: 'success', title: 'Delivery order saved', maxWidth: 'max-content' })
   goRequests()
@@ -261,6 +335,7 @@ function checkStageOverflow() {
 }
 let stageObserver: ResizeObserver | null = null
 onMounted(() => {
+  if (isEdit.value) prefillFromOrder()
   nextTick(() => {
     checkStageOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
@@ -282,7 +357,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <button class="detail-breadcrumb" @click="goRequests">Outbound delivery</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New delivery order</h1>
+          <h1 class="detail-title">{{ isEdit ? 'Edit delivery order' : 'New delivery order' }}</h1>
         </div>
       </div>
     </header>
@@ -416,6 +491,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 label-prop="name"
                 value-prop="id"
                 is-searchable is-clearable use-portal is-full-width
+                :is-disabled="isEdit"
                 :is-invalid="warehouseError"
                 @update:model-value="warehouseError = false"
               />
@@ -602,8 +678,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goRequests">Cancel</MpButton>
-      <button class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}</button>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+      <button v-if="!isEdit" class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}</button>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
     </footer>
   </div>
 </template>

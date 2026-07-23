@@ -3,7 +3,7 @@ import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY } from './master'
 import { getWarehouseConfig } from './warehouseConfig'
-import { orderSkuLines } from './inventory'
+import { orderSkuLines, productBySku } from './inventory'
 import {
   getWarehouseDetail,
   autoSelectLocationBins,
@@ -638,6 +638,47 @@ export function cancelOutgoingOrder(orderId: string, reason?: string, canceledBy
  *  fully shipped order is terminal for cancel (posting guard). */
 export function canCancelOutboundOrder(order: OutgoingOrder): boolean {
   return order.status !== "canceled" && (order.shippedQty ?? 0) === 0;
+}
+
+/** D7 edit gate — an outbound order is editable while nothing has shipped and it
+ *  isn't cancelled. (Prototype: all sources editable; the PRD restricts this to
+ *  Direct outbound, but the demo allows any.) The per-SKU add/remove rules vs
+ *  picking state are enforced in editOutboundOrder (outboundSync). */
+export function canEditOutboundOrder(order: OutgoingOrder): boolean {
+  return order.status !== "canceled" && (order.shippedQty ?? 0) === 0;
+}
+
+/** Apply an edit's new SKU lines (+ optional header fields) to an order and persist.
+ *  Reservation sync (reserve added / release removed) is orchestrated by
+ *  editOutboundOrder in outboundSync — this only writes the order record. */
+export function updateOutgoingOrderLines(
+  orderId: string,
+  lines: { sku: string; qty: number }[],
+  header?: { customer?: string; dueDate?: string; memo?: string },
+): void {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  order.lines = lines
+    .filter((l) => l.qty > 0)
+    .map((l) => {
+      const p = productBySku(l.sku);
+      return {
+        sku: l.sku,
+        productName: p?.name ?? l.sku,
+        desc: p?.desc ?? "",
+        img: p?.img ?? "",
+        unit: p?.unit ?? "Unit",
+        qty: l.qty,
+      };
+    });
+  order.orderQty = order.lines.reduce((s, l) => s + l.qty, 0);
+  order.skuQty = order.lines.length;
+  if (header) {
+    if (header.customer !== undefined) order.customer = header.customer;
+    if (header.dueDate !== undefined) order.dueDate = header.dueDate;
+    if (header.memo !== undefined) order.memo = header.memo;
+  }
+  persistOutgoing();
 }
 
 /** D6 — can this cancelled order's reserved stock still be released? Only when it's

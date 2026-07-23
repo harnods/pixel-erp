@@ -640,6 +640,22 @@ export function pickedQtyForOrderSku(orderId: string, sku: string): number {
   return sum;
 }
 
+/** Qty of one order+SKU that is LOCKED into an already-started picking task
+ *  (in progress / partially picked / completed) — this much can't be removed or
+ *  reduced when the order is edited (D7 AC#4). A SKU only on Pending/Open picking
+ *  tasks (or none) is not locked, so it can still be freely reduced/removed. */
+export function lockedOutboundQtyForSku(orderId: string, sku: string): number {
+  const STARTED = new Set(["in progress", "partially picked", "completed"]);
+  let sum = 0;
+  for (const t of getPickingForOrder(orderId)) {
+    if (!STARTED.has(t.status)) continue;
+    for (const l of pickingLinesOf(t)) {
+      if (l.orderId === orderId && l.sku === sku) sum += l.qty;
+    }
+  }
+  return sum;
+}
+
 /** Merge a batch-pick array down to one entry per batchNo, summing qty — a task's
  *  own batchPicks[key], or several tasks' concatenated, can otherwise carry the same
  *  batch as 2+ separate entries (a stale reservation duplicate, a re-pin followed by

@@ -1,11 +1,66 @@
-import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder } from "./outgoing";
-import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck } from "./pickingTasks";
+import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder, canEditOutboundOrder, updateOutgoingOrderLines } from "./outgoing";
+import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck, lockedOutboundQtyForSku } from "./pickingTasks";
 import { getPackingForOrder, cancelPackingTask } from "./packingTasks";
 import { deliveryTasks, getDeliveryForOrder, canCancelDeliveryTask, cancelDeliveryTask, shippedQtyBySkuForOrder } from "./deliveryTasks";
+import { orderSkuLines } from "./inventory";
+import { getWarehouseDetail, consumeReservation } from "./warehouseDetails";
 
 export type CancelOutboundResult =
   | { ok: true }
   | { ok: false; reason: "NOT_FOUND" | "OUTBOUND_ALREADY_SHIPPED" | "OUTBOUND_CANNOT_CANCEL_COMPLETED" };
+
+export type EditOutboundResult =
+  | { ok: true }
+  | { ok: false; reason: "NOT_FOUND" | "NOT_EDITABLE" | "SKU_LOCKED" | "NO_ALLOCATABLE_STOCK"; sku?: string };
+
+/**
+ * D7 — Edit an outbound order's SKU lines (+ optional header). Enforces AC#4:
+ *  - a SKU already LOCKED into a started picking task (in progress / partially picked /
+ *    completed) can't be removed or reduced below its locked qty (SKU_LOCKED);
+ *  - an added / increased qty must be reservable now, else NO_ALLOCATABLE_STOCK (nothing
+ *    is committed — the whole edit is rejected, no partial apply);
+ *  - a removed / reduced line releases its reservation back to Available;
+ *  - reservation stays granular (reserveAllPickableOrders re-reserves the increase at
+ *    batch/serial/storage-location detail, same path a fresh order uses).
+ * Lives here (above picking) so it can read picking state without a load-time cycle.
+ */
+export function editOutboundOrder(
+  orderId: string,
+  newLines: { sku: string; qty: number }[],
+  header?: { customer?: string; dueDate?: string; memo?: string },
+): EditOutboundResult {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return { ok: false, reason: "NOT_FOUND" };
+  if (!canEditOutboundOrder(order)) return { ok: false, reason: "NOT_EDITABLE" };
+  const wh = order.warehouseId;
+
+  const oldBySku = new Map<string, number>();
+  for (const l of orderSkuLines(order)) oldBySku.set(l.product.sku, l.qty);
+  const newBySku = new Map<string, number>();
+  for (const l of newLines) if (l.qty > 0) newBySku.set(l.sku, (newBySku.get(l.sku) ?? 0) + l.qty);
+  const skus = new Set<string>([...oldBySku.keys(), ...newBySku.keys()]);
+
+  // 1) Lock check — can't drop below what's already committed to a started picking task.
+  for (const sku of skus) {
+    if ((newBySku.get(sku) ?? 0) < lockedOutboundQtyForSku(orderId, sku)) return { ok: false, reason: "SKU_LOCKED", sku };
+  }
+  // 2) Allocatable pre-check for every increase — reject the WHOLE edit if any can't reserve.
+  const wd = getWarehouseDetail(wh);
+  for (const sku of skus) {
+    const delta = (newBySku.get(sku) ?? 0) - (oldBySku.get(sku) ?? 0);
+    if (delta > 0 && (wd?.stock.find((s) => s.sku === sku)?.available ?? 0) < delta) return { ok: false, reason: "NO_ALLOCATABLE_STOCK", sku };
+  }
+  // 3) Release reductions/removals back to Available (before rewriting the lines).
+  for (const sku of skus) {
+    const delta = (newBySku.get(sku) ?? 0) - (oldBySku.get(sku) ?? 0);
+    if (delta < 0) consumeReservation(orderId, wh, sku, -delta);
+  }
+  // 4) Commit the new lines + header.
+  updateOutgoingOrderLines(orderId, [...newBySku].map(([sku, qty]) => ({ sku, qty })), header);
+  // 5) Reserve the increases (order is still pickable → reserveOrder reserves the delta).
+  reserveAllPickableOrders();
+  return { ok: true };
+}
 
 /** D2 AC#5/AC#6 — cancel an outbound order (terminal, kept & auditable) and cascade
  *  across its tasks. Cancel is allowed only while NOTHING has shipped (posting guard):
