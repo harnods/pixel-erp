@@ -56,6 +56,19 @@ export interface Receipt {
    *  falls back to its hash-derived mix for those instead (skuQty/purchaseQty
    *  alone can't reconstruct which actual products were on the PO). */
   lineItems?: { productId: string; qty: number }[];
+  /** Edit history (newest first) — one entry per successful Edit order save,
+   *  shown in the PO's Activity log alongside its "Created" entry. Populated
+   *  by editInboundReceipt (inboundSync.ts), which computes the actual
+   *  before → after diff. */
+  editHistory?: ReceiptEditLogEntry[];
+}
+
+/** One Edit order save — what changed, as ready-to-display "label: old → new"
+ *  pairs (see ActivityLogModal). */
+export interface ReceiptEditLogEntry {
+  date: string;
+  user: string;
+  changes: { label: string; value: string }[];
 }
 
 // Anchor "today" so the arrival-date presets line up with the mock data.
@@ -328,6 +341,66 @@ export function closeReceipt(id: string): void {
  *  fully received, it's a permanent record of what actually came in. */
 export function canCancelReceipt(r: Receipt): boolean {
   return r.status !== "completed" && r.status !== "canceled";
+}
+
+/**
+ * Edit gate (PRD C2 AC#4) — a receipt is editable while it isn't completed or
+ * cancelled; a closed/terminal PO is a permanent record. Per-SKU add/remove
+ * rules against receiving state are enforced in editInboundReceipt
+ * (inboundSync.ts), not here.
+ *
+ * Demo note: the PRD restricts editing to Direct Inbound only — an
+ * external-source Inbound (ERP PO / Desty PO) is read-only in WMS, changed
+ * only via the source hitting the A7 update endpoint. This prototype allows
+ * editing regardless of source, since there's no real external system here to
+ * push changes back.
+ */
+export function canEditReceipt(r: Receipt): boolean {
+  return r.status !== "completed" && r.status !== "canceled";
+}
+
+/**
+ * Apply an edit's new line items (+ optional header fields) to a receipt and
+ * persist. Writing `lineItems` here is also what "materializes" a seed
+ * receipt's line items for the first time — lineItemsForReceipt() already
+ * prefers a real `lineItems` array over its hash-derived fallback once one
+ * exists (same pattern as user-created receipts from Create receipt).
+ * Lock validation happens in editInboundReceipt (inboundSync) — this only
+ * writes the record.
+ */
+export function updateReceiptLines(
+  receiptId: string,
+  lines: { productId: string; qty: number }[],
+  header?: { vendor?: string; estimatedArrival?: string; memo?: string; trackingNos?: string[] },
+): void {
+  const r = receipts.find((x) => x.id === receiptId);
+  if (!r) return;
+  r.lineItems = lines.filter((l) => l.qty > 0);
+  r.skuQty = r.lineItems.length;
+  r.purchaseQty = r.lineItems.reduce((s, l) => s + l.qty, 0);
+  if (header) {
+    if (header.vendor !== undefined) r.vendor = header.vendor;
+    if (header.estimatedArrival !== undefined) r.estimatedArrival = header.estimatedArrival;
+    if (header.memo !== undefined) r.memo = header.memo;
+    if (header.trackingNos !== undefined) r.trackingNos = header.trackingNos;
+  }
+  persistReceipts();
+}
+
+/**
+ * Append one Edit order entry to the PO's activity log (shown via
+ * ActivityLogModal). The actual before → after diff is computed by the
+ * caller (editInboundReceipt in inboundSync.ts, which has both the old and
+ * new line items in scope) — this only records it. A no-op when there's
+ * nothing to log (e.g. Save with no real changes).
+ */
+export function appendReceiptEditLog(receiptId: string, changes: { label: string; value: string }[]): void {
+  if (!changes.length) return;
+  const r = receipts.find((x) => x.id === receiptId);
+  if (!r) return;
+  if (!r.editHistory) r.editHistory = [];
+  r.editHistory.unshift({ date: new Date().toISOString(), user: "Rizal Candra", changes });
+  persistReceipts();
 }
 
 /** Cancel a receipt (PO) — terminal state; no further receiving/put-away can happen. */

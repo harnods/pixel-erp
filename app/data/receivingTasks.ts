@@ -905,6 +905,26 @@ export function receivingTasksForReceipt(receiptId: string): ReceivingTask[] {
 }
 
 /**
+ * D-equivalent of PRD C2 AC#4's edit lock: the qty of this SKU that's already
+ * been PHYSICALLY RECEIVED (not just assigned) on a task that's started or
+ * ended — "in progress", "pending put-away", or "completed". An editInboundReceipt
+ * (inboundSync.ts) edit can never reduce a SKU's PO qty below this, since that
+ * stock has genuinely arrived and can't be "un-received." An "open" (not yet
+ * started) task contributes nothing — nothing has been received on it yet, so
+ * its SKUs stay freely editable (matches the PRD: "the same add/remove is
+ * still allowed against that Pending receiving task").
+ */
+export function lockedReceivingQtyForSku(receiptId: string, sku: string): number {
+  let sum = 0;
+  for (const t of receivingTasks) {
+    if (t.receiptId !== receiptId) continue;
+    if (t.status === "open" || t.status === "canceled") continue;
+    for (const it of t.items) if (it.sku === sku) sum += it.receivedQty;
+  }
+  return sum;
+}
+
+/**
  * Per-SKU received summary for a receipt — aggregated across its ENDED receiving
  * tasks (the officially-received goods). Drives the receipt detail's line-items
  * "Received qty" / "Received by" so they reflect what was actually received.

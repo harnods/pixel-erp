@@ -283,6 +283,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'inbound-delivery' && segs[2] === 'receive') {
     return { component: CreatePurchaseReceivingPage, id: segs[1] }
   }
+  // /inbound-delivery/:id/edit → edit the PO (reuses the create form in edit mode)
+  if (segs.length >= 3 && segs[0] === 'inbound-delivery' && segs[2] === 'edit') {
+    return { component: CreateReceiptPage, id: segs[1] }
+  }
   if (segs.length >= 2 && segs[0] === 'inbound-delivery') {
     const r = receipts.find((x) => x.id === segs[1])
     let component = ReceiptDetailsPage

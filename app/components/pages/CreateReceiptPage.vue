@@ -6,10 +6,17 @@ import {
   MpDatePicker, MpTooltip, toast,
 } from '@mekari/pixel3'
 import { warehouses } from '~/data/warehouses'
-import { addReceipt, nextReceiptNo } from '~/data/receipts'
+import { addReceipt, nextReceiptNo, receipts, canEditReceipt } from '~/data/receipts'
+import { editInboundReceipt } from '~/data/inboundSync'
+import { lineItemsForReceipt } from '~/data/receiptLineItems'
+import { lockedReceivingQtyForSku } from '~/data/receivingTasks'
 import { VENDORS } from '~/data/master'
 import { CATALOG } from '~/data/catalog'
 import { scrollToFirstError } from '~/utils/form'
+
+const props = defineProps<{ orderId?: string }>()
+const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
+const editingReceipt = computed(() => (isEdit.value ? receipts.find((r) => r.id === props.orderId) : undefined))
 
 function toDisplayDate(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -78,11 +85,22 @@ interface LineRow {
   unit: string
   qtyError: boolean
   productError: boolean
+  /** Edit mode — qty was set below what's already been physically received. */
+  qtyLocked: boolean
+  /** Edit mode — qty already physically received for this SKU: can't remove
+   *  this row or set qty below it (PRD C2 AC#4). 0 = freely editable. */
+  lockedQty: number
 }
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, productError: false }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, productError: false, qtyLocked: false, lockedQty: 0 }
+}
+
+/** Tooltip/error text for a qty cell locked by receiving state (edit mode). */
+function qtyErrorMsg(row: LineRow): string {
+  if (row.qtyLocked) return `Can't go below ${row.lockedQty} — already received`
+  return 'Qty must be at least 1'
 }
 
 const rows = ref<LineRow[]>([makeRow()])
@@ -115,7 +133,38 @@ function onProductSelect(row: LineRow, id: string) {
 
 function removeRow(id: number) {
   if (rows.value.length === 1) return
+  const row = rows.value.find((r) => r.id === id)
+  if (row && row.lockedQty > 0) {
+    toast.notify({ variant: 'error', title: `${row.productName} has already been received and can't be removed`, maxWidth: 'max-content' })
+    return
+  }
   rows.value = rows.value.filter((r) => r.id !== id)
+}
+
+// ── Edit mode — prefill from the receipt (per-SKU receiving lock) ──────────
+function prefillFromReceipt() {
+  const r = editingReceipt.value
+  if (!r) return
+  vendor.value = r.vendor ?? ''
+  transactionDate.value = todayDisplay
+  warehouseId.value = r.warehouseId
+  transactionNo.value = r.purchaseNo
+  estimatedArrival.value = r.estimatedArrival ? toDisplayDate(r.estimatedArrival) : todayDisplay
+  trackingNo.value = r.trackingNos[0] ?? ''
+  memo.value = r.memo ?? ''
+  const lines = lineItemsForReceipt(r).map((l) => ({
+    id: rowSeq++,
+    productId: l.productId,
+    productName: l.productName,
+    productSku: l.sku,
+    productImg: l.image,
+    description: l.productDesc,
+    qty: String(l.purchaseQty),
+    unit: l.unit,
+    qtyError: false, productError: false, qtyLocked: false,
+    lockedQty: lockedReceivingQtyForSku(r.id, l.sku),
+  } as LineRow))
+  rows.value = lines.length ? [...lines, makeRow()] : [makeRow()]
 }
 
 // ── Drag-and-drop row reorder ─────────────────────────────────────────────
@@ -165,7 +214,9 @@ async function validate(): Promise<boolean> {
     valid = false
   } else {
     for (const row of filledRows) {
+      row.qtyLocked = false
       if (!row.qty || Number(row.qty) < 1) { row.qtyError = true; valid = false }
+      else if (row.lockedQty > 0 && Number(row.qty) < row.lockedQty) { row.qtyLocked = true; valid = false } // can't drop below received
       else row.qtyError = false
     }
   }
@@ -216,9 +267,41 @@ async function persist() {
   })
 }
 
+/** Edit mode — apply changes via editInboundReceipt (C2 AC#4 lock). Returns
+ *  false (and toasts) on rejection so the caller stays on the form (no
+ *  partial apply). */
+function persistEdit(): boolean {
+  const r = editingReceipt.value
+  if (!r) return false
+  const filledRows = rows.value.filter((row) => row.productId)
+  const lines = filledRows.map((row) => ({ productId: row.productId, qty: Number(row.qty) || 0 }))
+  const res = editInboundReceipt(r.id, lines, {
+    vendor: vendor.value,
+    estimatedArrival: estimatedArrival.value ? toISODate(estimatedArrival.value) : undefined,
+    memo: memo.value.trim(),
+    trackingNos: trackingNo.value ? [trackingNo.value] : [],
+  })
+  if (!res.ok) {
+    const msg = res.reason === 'SKU_LOCKED' ? `A SKU already received can't be removed or reduced below ${res.locked}`
+      : res.reason === 'NOT_EDITABLE' ? 'This PO can no longer be edited'
+      : 'Could not save the changes'
+    toast.notify({ variant: 'error', title: msg, maxWidth: 'max-content' })
+    return false
+  }
+  return true
+}
+
 async function handleSave() {
   if (!await validate()) return
   isSaving.value = true
+  if (isEdit.value) {
+    const ok = persistEdit()
+    isSaving.value = false
+    if (!ok) return
+    toast.notify({ variant: 'success', title: 'Purchase order updated', maxWidth: 'max-content' })
+    router.push(`/inbound-delivery/${props.orderId}`)
+    return
+  }
   await persist()
   toast.notify({ variant: 'success', title: 'Receipt saved', maxWidth: 'max-content' })
   isSaving.value = false
@@ -243,6 +326,7 @@ function checkStageOverflow() {
 }
 let stageObserver: ResizeObserver | null = null
 onMounted(() => {
+  if (isEdit.value) prefillFromReceipt()
   nextTick(() => {
     checkStageOverflow()
     stageObserver = new ResizeObserver(checkStageOverflow)
@@ -264,7 +348,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <button class="detail-breadcrumb" @click="goReceipts">Inbound delivery</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New receipt</h1>
+          <h1 class="detail-title">{{ isEdit ? 'Edit purchase order' : 'New receipt' }}</h1>
         </div>
       </div>
     </header>
@@ -386,6 +470,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 label-prop="name"
                 value-prop="id"
                 is-searchable is-clearable use-portal is-full-width
+                :is-disabled="isEdit"
                 :is-invalid="warehouseError"
                 @update:model-value="warehouseError = false"
               />
@@ -509,11 +594,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <td class="cr-td cr-td--input">
                       <MpInput :id="`cr-desc-${row.id}`" v-model="row.description" is-full-width />
                     </td>
-                    <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-error': row.qtyError }">
+                    <td class="cr-td cr-td--input cr-td--qty-cell" :class="{ 'cr-td--qty-error': row.qtyError || row.qtyLocked }">
                       <MpTooltip
-                        v-if="row.qtyError"
+                        v-if="row.qtyError || row.qtyLocked"
                         :id="`cr-qty-tooltip-${row.id}`"
-                        label="Qty must be at least 1"
+                        :label="qtyErrorMsg(row)"
                         placement="top"
                         use-portal
                         class="cr-qty-tooltip-wrap"
@@ -523,7 +608,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           v-model="row.qty"
                           type="number"
                           is-full-width
-                          @update:model-value="row.qtyError = false"
+                          @update:model-value="() => { row.qtyError = false; row.qtyLocked = false }"
                         />
                       </MpTooltip>
                       <MpInput
@@ -532,7 +617,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         v-model="row.qty"
                         type="number"
                         is-full-width
-                        @update:model-value="row.qtyError = false"
+                        @update:model-value="() => { row.qtyError = false; row.qtyLocked = false }"
                       />
                     </td>
                     <td class="cr-td cr-td--unit">{{ row.unit }}</td>
@@ -573,8 +658,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goReceipts">Cancel</MpButton>
-      <button class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}</button>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+      <button v-if="!isEdit" class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}</button>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
     </footer>
   </div>
 </template>

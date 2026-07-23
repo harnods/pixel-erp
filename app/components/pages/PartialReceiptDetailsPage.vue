@@ -12,7 +12,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage, closeReceipt, isManualReceipt, receipts, type Receipt } from '~/data/receipts'
+import { receiptsForStage, closeReceipt, isManualReceipt, canEditReceipt, receipts, type Receipt } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
@@ -27,11 +27,15 @@ const isManual = computed(() => !!currentReceipt.value && isManualReceipt(curren
 const hasActiveReceivingTasks = computed(() =>
   receivingTasksForReceipt(props.orderId).some(t => t.status === 'open' || t.status === 'in progress')
 )
+// Edit order — order-level action, same dropdown as Close receipt (mirrors
+// the outbound order detail's Edit order placement).
+const canEdit = computed(() => !!currentReceipt.value && canEditReceipt(currentReceipt.value))
+function goEdit() { router.push(`/inbound-delivery/${props.orderId}/edit`) }
 const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const d = detail.value
   if (!d) return []
-  return [{
+  const created = {
     date: d.lastUpdatedAt,
     user: d.lastUpdatedBy,
     activity: 'Created',
@@ -41,7 +45,13 @@ const activityEntries = computed(() => {
       { label: 'Vendor', value: d.vendor ?? '—' },
       { label: 'Warehouse', value: d.warehouseName },
     ],
-  }]
+  }
+  // Edit order entries (newest first) — the real before → after diff computed
+  // by editInboundReceipt (inboundSync.ts) when the edit was saved.
+  const edits = (currentReceipt.value?.editHistory ?? []).map((e) => ({
+    date: e.date, user: e.user, activity: 'Edited', details: e.changes,
+  }))
+  return [...edits, created]
 })
 const receipt = computed<Receipt | undefined>(() =>
   receiptsForStage('Partial reception').find((r) => r.id === props.orderId),
@@ -489,7 +499,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
       </MpPopover>
 
       <!-- Create purchase receiving (primary split button) — hidden once every SKU
-           is already covered by a receiving task; Close stands alone. -->
+           is already covered by a receiving task; Edit/Close live in the dropdown. -->
       <div v-if="canCreateReceivingTask(orderId)" class="detail-split">
         <button class="detail-btn detail-btn--primary detail-split-main" @click="openPurchaseReceiving">
           Create purchase receiving
@@ -504,12 +514,26 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
+              <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
               <MpPopoverListItem v-if="!isManual && !hasActiveReceivingTasks" @click="openCloseModal">Close receipt</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
       </div>
-      <button v-else-if="!isManual && !hasActiveReceivingTasks" class="detail-btn detail-btn--secondary" @click="openCloseModal">Close receipt</button>
+      <MpPopover v-else-if="canEdit || (!isManual && !hasActiveReceivingTasks)" id="prd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--primary">
+            Actions
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+            <MpPopoverListItem v-if="!isManual && !hasActiveReceivingTasks" @click="openCloseModal">Close receipt</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </div>
 
 
