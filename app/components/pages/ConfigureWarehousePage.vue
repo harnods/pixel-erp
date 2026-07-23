@@ -198,6 +198,7 @@ const INPUT_ORDER: RuleKey[] = ['neg', 'var', 'min']
 // Variance signal's own lookback, so it still does useful work on its own.
 function inputDisabledFor(key: RuleKey): boolean {
   if (!isEditing.value) return true
+  if (key === 'neg') return !draft.cycleCountRuleNeg && !draft.cycleCountRuleVar
   if (key === 'var') return !draft.cycleCountRuleVar
   if (key === 'min') return !draft.cycleCountRuleMin && !draft.cycleCountAutoTask
   return false
@@ -205,9 +206,13 @@ function inputDisabledFor(key: RuleKey): boolean {
 
 function inputCaptionFor(key: RuleKey): string {
   if (key === 'neg') {
-    return draft.cycleCountRuleVar
-      ? 'How far recent lookback and variance threshold period'
-      : 'How far recent lookback period'
+    const negOn = draft.cycleCountRuleNeg
+    const varOn = draft.cycleCountRuleVar
+    if (!negOn && !varOn) return ''
+    if (negOn && !varOn) return 'How far recent lookback negative stock period'
+    return negOn
+      ? 'How far recent lookback negative stock & variance threshold period'
+      : 'How far recent lookback variance threshold period'
   }
   if (key === 'min') {
     const minOn = draft.cycleCountRuleMin
