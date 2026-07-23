@@ -23,7 +23,7 @@ import {
 } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { getShipment, marketplaceShipping, type ShipmentSummary } from '~/data/deliveryTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePackingListPdf } from '~/utils/packingListPdf'
 import { productBySku } from '~/data/inventory'
@@ -132,6 +132,20 @@ function confirmCancel() {
   cancelOpen.value = false
   toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
   goBack()
+}
+
+// Release reserved — text link on the Reason line when this task was cancelled
+// because its order was cancelled and that order still holds reserved stock.
+// Disappears once released (canReleaseReservedForOrder = false).
+const canReleaseReserved = computed(() => {
+  const id = task.value?.salesOrderId
+  return !!id && canReleaseReservedForOrder(id)
+})
+function releaseReservedFromTask() {
+  const id = task.value?.salesOrderId
+  if (id && releaseReservedForCancelledOrder(id)) {
+    toast.notify({ variant: 'success', title: 'Reserved stock released', maxWidth: 'max-content' })
+  }
 }
 
 const pdfPreviewOpen = ref(false)
@@ -370,7 +384,12 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <template v-if="localStatus === 'canceled'">
             <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
-            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+            <ContentList label="Reason">
+              <span class="pck-reason">
+                <span>{{ task.canceledReason ?? '—' }}</span>
+                <button v-if="canReleaseReserved" type="button" class="pck-reason-release" @click="releaseReservedFromTask">Release reserved</button>
+              </span>
+            </ContentList>
           </template>
           <ContentList v-else label="End date">
             <span class="pck-end-cell">
@@ -738,6 +757,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .content-list-col { display: flex; flex-direction: column; }
 .pck-end-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .pck-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #f1f5f9); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
+.pck-reason { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.pck-reason-release { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
+.pck-reason-release:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .pck-progress { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pck-progress-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-28, 112px); }

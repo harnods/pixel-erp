@@ -22,7 +22,7 @@ import {
   type PickingTask,
 } from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
@@ -184,6 +184,13 @@ const linkedPacking = computed(() => task.value ? getPackingForPickingTask(task.
 const hasPackableOrders = computed(() => {
   const t = task.value
   if (!t) return true
+  // Every order on this task cancelled → nothing left to pack, hide the button
+  // (don't fall through to the "finish picking" modal for a dead order).
+  const activeOrders = t.salesOrderIds.filter(id => {
+    const o = outgoingOrders.find(x => x.id === id)
+    return o && o.status !== 'canceled'
+  })
+  if (activeOrders.length === 0) return false
   const ids = packableOrderIds(t)
   if (ids.length === 0) return true
   return ids.some(id => !orderPackedFromPickingTask(id, t.id))
@@ -215,6 +222,19 @@ function confirmCancel() {
   cancelOpen.value = false
   toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
   goBack()
+}
+
+// Release reserved — shown as a text link on the Reason line when this task was
+// cancelled BECAUSE its order was cancelled and that order still holds reserved
+// stock. Once released the link disappears (canReleaseReservedForOrder = false).
+const releasableOrderIds = computed(() =>
+  (task.value?.salesOrderIds ?? []).filter(id => canReleaseReservedForOrder(id)),
+)
+const canReleaseReserved = computed(() => releasableOrderIds.value.length > 0)
+function releaseReservedFromTask() {
+  let released = 0
+  for (const id of releasableOrderIds.value) if (releaseReservedForCancelledOrder(id)) released++
+  if (released) toast.notify({ variant: 'success', title: 'Reserved stock released', maxWidth: 'max-content' })
 }
 
 const pdfPreviewOpen = ref(false)
@@ -583,7 +603,12 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <template v-if="localStatus === 'canceled'">
             <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
-            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+            <ContentList label="Reason">
+              <span class="pkd-reason">
+                <span>{{ task.canceledReason ?? '—' }}</span>
+                <button v-if="canReleaseReserved" type="button" class="pkd-reason-release" @click="releaseReservedFromTask">Release reserved</button>
+              </span>
+            </ContentList>
           </template>
           <ContentList v-else label="End date">
             <span class="pkd-end-cell">
@@ -1103,6 +1128,13 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
+
+.pkd-reason { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.pkd-reason-release {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); line-height: var(--mp-line-heights-md);
+}
+.pkd-reason-release:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .pkd-progress { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pkd-progress-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-28, 112px); }

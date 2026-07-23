@@ -12,6 +12,8 @@ import {
   reserveStock,
   releaseReservationsForTask,
   getReservationsForOrder,
+  hasReservationsForTask,
+  reservedQtyForTask,
 } from './warehouseDetails'
 
 /** Pending = no picking/packing task yet · Open = task(s) created, none started ·
@@ -46,6 +48,10 @@ export interface OutgoingOrder {
   orderQty: number;
   /** units shipped so far (0 = none, < orderQty = partial, = orderQty = full) */
   shippedQty: number;
+  /** shipped units PER SKU (derived by syncOutboundOrderStatuses from completed
+   *  shipments) — lets reserveOrder avoid re-reserving stock that has already left
+   *  when a partially-shipped order is re-evaluated (it's still "pickable"). */
+  shippedBySku?: Record<string, number>;
   status: OutgoingStatus;
   /** ISO date the goods fully left the warehouse (completed orders only) */
   shippedDate?: string;
@@ -55,6 +61,13 @@ export interface OutgoingOrder {
   canceledReason?: string;
   /** who canceled the order (canceled orders only) */
   canceledBy?: string;
+  /** D6 — reserved-stock release audit. A cancelled order does NOT auto-release its
+   *  reservation; a user triggers "Release Reserved" to return the still-held
+   *  (un-shipped) reserved qty to Available. These record that release for audit and
+   *  prevent re-release (a released reservation can't be re-held). */
+  reservedReleasedDate?: string;
+  reservedReleasedBy?: string;
+  reservedReleasedQty?: number;
   /** ISO date the order is due to leave the warehouse */
   dueDate: string;
   /** free-text memo the back-office writes on the order (optional) — e.g.
@@ -367,7 +380,11 @@ function reserveOrder(order: OutgoingOrder): void {
       // Plain SKU — a bare qty reservation, nothing to validate it against.
       return sum + r.qty;
     }, 0);
-    const remaining = line.qty - already;
+    // Subtract units that already SHIPPED (goods gone, reservation consumed at
+    // shipment completion) — a partially-shipped order is still "pickable", so
+    // without this it would re-reserve the shipped-and-gone quantity.
+    const shipped = order.shippedBySku?.[line.sku] ?? 0;
+    const remaining = line.qty - shipped - already;
     if (remaining <= 0) continue;
     const preferredLocations = autoSelectLocationBins(order.warehouseId, line.sku, remaining).map((b) => b.location);
     if (item.batches?.length) {
@@ -610,8 +627,47 @@ export function cancelOutgoingOrder(orderId: string, reason?: string, canceledBy
   order.canceledDate = isoOffset(0);
   if (reason) order.canceledReason = reason;
   order.canceledBy = canceledBy;
-  releaseReservationsForTask(orderId);
+  // D6 AC#1 — cancel does NOT auto-release the reservation: the reserved qty stays
+  // out of Available until a user explicitly runs "Release Reserved". (No
+  // releaseReservationsForTask here on purpose.)
   persistOutgoing();
+}
+
+/** D2 cancel gate — an outbound order can be cancelled while NOTHING has truly
+ *  shipped (shippedQty is only posted once a shipment is COMPLETED). A partially/
+ *  fully shipped order is terminal for cancel (posting guard). */
+export function canCancelOutboundOrder(order: OutgoingOrder): boolean {
+  return order.status !== "canceled" && (order.shippedQty ?? 0) === 0;
+}
+
+/** D6 — can this cancelled order's reserved stock still be released? Only when it's
+ *  cancelled, nothing shipped, the release hasn't already run, and it actually still
+ *  holds a reservation. */
+export function canReleaseReservedForOrder(orderId: string): boolean {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return false;
+  return (
+    order.status === "canceled" &&
+    !order.reservedReleasedDate &&
+    (order.shippedQty ?? 0) === 0 &&
+    hasReservationsForTask(orderId)
+  );
+}
+
+/** D6 — return a cancelled order's still-held (un-shipped) reserved qty to Available.
+ *  On-hand never moves (nothing was ever deducted for a reservation); no JE. Records
+ *  actor/timestamp/qty for audit and is idempotent (a second call is a no-op). Returns
+ *  true only when it actually released something. */
+export function releaseReservedForCancelledOrder(orderId: string, releasedBy = "Rizal Candra"): boolean {
+  if (!canReleaseReservedForOrder(orderId)) return false;
+  const order = outgoingOrders.find((o) => o.id === orderId)!;
+  const releasedQty = reservedQtyForTask(orderId);
+  releaseReservationsForTask(orderId);
+  order.reservedReleasedQty = releasedQty;
+  order.reservedReleasedDate = new Date().toISOString();
+  order.reservedReleasedBy = releasedBy;
+  persistOutgoing();
+  return true;
 }
 
 // status → stage label (used by tabs / sidebar panel)

@@ -100,9 +100,10 @@ const warehouseOptions = computed(() => {
   return src.map(w => ({ label: w.name, value: w.id }))
 })
 const statusOptions = [
-  { label: 'Ready to ship', value: 'ready to ship' },
-  { label: 'Shipped',         value: 'shipped' },
-  { label: 'Canceled',        value: 'canceled' },
+  { label: 'Ready to ship',     value: 'ready to ship' },
+  { label: 'Out for delivery',  value: 'out for delivery' },
+  { label: 'Shipped',           value: 'shipped' },
+  { label: 'Canceled',          value: 'canceled' },
 ]
 const warehouseLabel = computed(() => {
   const n = warehouseFilter.value.length

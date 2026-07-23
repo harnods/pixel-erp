@@ -1,7 +1,57 @@
-import { outgoingOrders, reserveAllPickableOrders } from "./outgoing";
-import { getPickingForOrder } from "./pickingTasks";
-import { getPackingForOrder } from "./packingTasks";
-import { deliveryTasks } from "./deliveryTasks";
+import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder } from "./outgoing";
+import { getPickingForOrder, cancelPickingTask, removeOrderFromPickingTask } from "./pickingTasks";
+import { getPackingForOrder, cancelPackingTask } from "./packingTasks";
+import { deliveryTasks, getDeliveryForOrder, canCancelDeliveryTask, cancelDeliveryTask, shippedQtyBySkuForOrder } from "./deliveryTasks";
+
+export type CancelOutboundResult =
+  | { ok: true }
+  | { ok: false; reason: "NOT_FOUND" | "OUTBOUND_ALREADY_SHIPPED" | "OUTBOUND_CANNOT_CANCEL_COMPLETED" };
+
+/** D2 AC#5/AC#6 — cancel an outbound order (terminal, kept & auditable) and cascade
+ *  across its tasks. Cancel is allowed only while NOTHING has shipped (posting guard):
+ *  a partially-shipped/completed order is rejected. On success:
+ *   - a picking task serving ONLY this order → CANCELLED whatever its status
+ *     (open / in progress / partially picked / completed) — there's no live order
+ *     left for it to serve; it's stamped with a "sales order was cancelled" reason;
+ *   - a picking task SHARED with other still-live orders → NOT cancelled: this
+ *     order's lines are dropped (or, if the task is already completed, kept as an
+ *     audit record — packableOrderIds() excludes the cancelled order either way);
+ *   - a packing task (always 1 order) → CANCELLED whatever its status, with reason;
+ *   - delivery/shipping task → cancelled if still ready-to-ship;
+ *   - the reservation is KEPT (order-owned) and returned via the manual Release Reserved (D6).
+ *  Lives in outboundSync (above picking/packing) to avoid a load-time circular import. */
+export function cancelOutboundOrder(orderId: string, reason?: string): CancelOutboundResult {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return { ok: false, reason: "NOT_FOUND" };
+  // Posting guard: once anything shipped, cancel is rejected.
+  if (!canCancelOutboundOrder(order)) {
+    return { ok: false, reason: order.status === "completed" ? "OUTBOUND_CANNOT_CANCEL_COMPLETED" : "OUTBOUND_ALREADY_SHIPPED" };
+  }
+  // Auto reason stamped on every cascaded task so its detail page explains WHY it
+  // was cancelled (the operator never cancelled the task directly).
+  const taskReason = `Sales order ${order.salesNo} was cancelled${reason ? ` — ${reason}` : ""}`;
+  const isCanceled = (id: string) => outgoingOrders.find((o) => o.id === id)?.status === "canceled";
+  // Picking cascade.
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    const hasOtherLiveOrder = t.salesOrderIds.some((id) => id !== orderId && !isCanceled(id));
+    if (t.salesOrderIds.length > 1 && hasOtherLiveOrder) {
+      // Shared task still serving another live order — keep it running. Drop this
+      // order's lines while unfinished; a completed shared task keeps its lines as
+      // an audit record (packableOrderIds() already excludes the cancelled order).
+      if (t.status !== "completed") removeOrderFromPickingTask(t.id, orderId);
+    } else {
+      // This cancelled order is the task's only (remaining) live order → void it,
+      // regardless of how far picking got.
+      cancelPickingTask(t.id, taskReason, true);
+    }
+  }
+  // Packing (1 per order) → always void; delivery/shipping (ready-to-ship only) cancel.
+  for (const t of getPackingForOrder(orderId)) cancelPackingTask(t.id, taskReason, true);
+  for (const d of getDeliveryForOrder(orderId)) if (canCancelDeliveryTask(d)) cancelDeliveryTask(d.id, taskReason);
+  cancelOutgoingOrder(orderId, reason);
+  return { ok: true };
+}
 
 /**
  * Make each outbound order's status + shippedQty AGREE with its actual tasks.
@@ -38,6 +88,9 @@ export function syncOutboundOrderStatuses(): void {
       .filter((d) => d.status === "shipped")
       .reduce((s, d) => s + d.shippedQty, 0);
     o.shippedQty = shippedTotal;
+    // Per-SKU shipped, so reserveAllPickableOrders (called at the end of this pass)
+    // doesn't re-reserve stock that already left on a partially-shipped order.
+    o.shippedBySku = shippedQtyBySkuForOrder(o.id);
 
     if (shippedTotal > 0) {
       o.status = shippedTotal >= o.orderQty ? "completed" : "partially shipped";

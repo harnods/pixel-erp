@@ -65,11 +65,10 @@ const columnItems = [baseColumnItems[0]!, { key: 'memo', label: 'Memo' }, ...bas
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
-// Status — multi-select. Completed & Canceled are terminal, hidden by default, so
-// the default view shows only the actionable stages.
-const STATUS_OPTIONS = ['Pending', 'Open', 'In progress', 'Partial reception', 'Completed', 'Canceled']
-const DEFAULT_STATUSES = ['Pending', 'Open', 'In progress', 'Partial reception']
-const statusFilter = ref<string[]>([...DEFAULT_STATUSES])
+// Status — multi-select, nothing pre-selected: the default view shows ALL statuses
+// (empty filter = show everything). Pick specific statuses to narrow it down.
+const STATUS_OPTIONS = ['Pending', 'Open', 'In progress', 'Partial reception', 'Pending put-away', 'Completed', 'Canceled']
+const statusFilter = ref<string[]>([])
 function toggleStatus(s: string) {
   statusFilter.value = statusFilter.value.includes(s)
     ? statusFilter.value.filter(x => x !== s)
@@ -82,11 +81,8 @@ const statusLabel = computed(() => {
   if (n === 1) return statusFilter.value[0]
   return `${n} statuses`
 })
-const statusIsDefault = computed(() =>
-  statusFilter.value.length === DEFAULT_STATUSES.length
-  && DEFAULT_STATUSES.every(s => statusFilter.value.includes(s)),
-)
-function resetStatus() { statusFilter.value = [...DEFAULT_STATUSES] }
+const statusIsDefault = computed(() => statusFilter.value.length === 0)
+function resetStatus() { statusFilter.value = [] }
 
 const warehouseFilter = ref<string[]>([])
 // Mirror into the shared singleton so the tab bar's count badges (Receipts (N),
@@ -191,7 +187,7 @@ const {
       || row.purchaseNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
       || (row.vendor ?? '').toLowerCase().includes(s)
-    const matchesStatus = statusFilter.value.includes(receiptStage(row))
+    const matchesStatus = !statusFilter.value.length || statusFilter.value.includes(receiptStage(row))
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     let matchesArrival = true
     const range = arrivalRange.value

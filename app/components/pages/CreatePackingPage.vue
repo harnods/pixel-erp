@@ -4,6 +4,7 @@ import {
   MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon, MpBadge,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
+  toast,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
@@ -68,7 +69,7 @@ const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assignee
 
 // ─── Picked items per sales order (what's available to pack) ─────────────────────
 interface PackLine { key: string; sku: string; product: string; desc: string; img: string; unit: string; order: number; picked: number }
-interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; packable: boolean; lines: PackLine[] }
+interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; canceled: boolean; packable: boolean; lines: PackLine[] }
 
 // Which non-canceled picking lists for this order still have something new to
 // pack — excludes any list that already has its OWN (non-canceled) packing task,
@@ -98,7 +99,8 @@ const orderTables = computed<OrderTable[]>(() => {
     }))
     return [{
       orderId: o.id, salesNo: o.salesNo, customer: o.customer ?? '', source: o.source,
-      isMarketplace: false, fullyPicked: true, alreadyPacked: false, packable: lines.length > 0,
+      isMarketplace: false, fullyPicked: true, alreadyPacked: false,
+      canceled: o.status === 'canceled', packable: o.status !== 'canceled' && lines.length > 0,
       lines,
     }]
   }
@@ -127,6 +129,7 @@ const orderTables = computed<OrderTable[]>(() => {
         }))
       : []
     const isMarketplace = isMarketplaceOrder(o)
+    const canceled = o?.status === 'canceled'
     const fullyPicked = lines.length > 0 && lines.every(l => l.picked >= l.order)
     const pickedAny = lines.some(l => l.picked > 0)
     // "Already packed" = genuinely nothing NEW left — something was picked at some
@@ -138,20 +141,26 @@ const orderTables = computed<OrderTable[]>(() => {
     )
     // Marketplace ⇒ packable only when fully picked (across lists); others ⇒ any picked
     // unit. Never twice — a picking list that already has a packing task is excluded.
-    const packable = !alreadyPacked && pickedAny && (isMarketplace ? fullyPicked : true)
+    // A cancelled order is never packable, whatever was picked for it.
+    const packable = !canceled && !alreadyPacked && pickedAny && (isMarketplace ? fullyPicked : true)
     return {
       orderId,
       salesNo: o?.salesNo ?? salesNoFallback,
       customer: o?.customer ?? '',
       source: o?.source ?? '',
-      isMarketplace, fullyPicked, alreadyPacked, packable,
+      isMarketplace, fullyPicked, alreadyPacked, canceled, packable,
       lines,
     }
   })
 })
 const packableTables = computed(() => orderTables.value.filter(t => t.packable))
+// Orders on a selected picking list that got cancelled after this form was opened —
+// surfaced as a note and blocked at Save. NOT gated on picked>0: cancelling the
+// order force-cancels its picking task, which zeroes its picked qty here, so a
+// picked>0 check would miss exactly the case we need to warn about.
+const canceledTables = computed(() => orderTables.value.filter(t => t.canceled))
 // Marketplace orders held back (not fully picked across lists), and orders already packed.
-const blockedTables = computed(() => orderTables.value.filter(t => !t.packable && !t.alreadyPacked && t.isMarketplace && t.lines.some(l => l.picked > 0)))
+const blockedTables = computed(() => orderTables.value.filter(t => !t.packable && !t.canceled && !t.alreadyPacked && t.isMarketplace && t.lines.some(l => l.picked > 0)))
 const packedTables = computed(() => orderTables.value.filter(t => t.alreadyPacked))
 // Every picking list that contributed to the packable orders (an order split across
 // several still-unpacked lists shows them all, not just the one this form was
@@ -410,6 +419,18 @@ function goPacking() {
 
 async function handleCreate() {
   if (!hasSource.value) return
+  // Re-validate at Save: an order cancelled after this form was opened must never
+  // get a packing task. packableTables already drops it reactively — surface WHY so
+  // the save isn't silently short of what the operator selected, then let them retry.
+  if (!isDirectMode.value && canceledTables.value.length) {
+    const nos = canceledTables.value.map(t => t.salesNo).join(', ')
+    toast.notify({
+      variant: 'error',
+      title: `${nos} ${canceledTables.value.length > 1 ? 'were' : 'was'} cancelled and can’t be packed — removed from this packing`,
+      maxWidth: 'max-content',
+    })
+    return
+  }
   let valid = true
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
   if (isDirectMode.value) {
@@ -601,6 +622,9 @@ async function handleCreate() {
           </p>
           <p v-if="packedTables.length" class="pk-tasks-note">
             Note: {{ packedTables.map(t => t.salesNo).join(', ') }} already {{ packedTables.length > 1 ? 'have' : 'has a' }} packing task, so {{ packedTables.length > 1 ? 'they’re' : 'it’s' }} not shown here.
+          </p>
+          <p v-if="canceledTables.length" class="pk-tasks-note">
+            Note: {{ canceledTables.map(t => t.salesNo).join(', ') }} {{ canceledTables.length > 1 ? 'were' : 'was' }} cancelled, so {{ canceledTables.length > 1 ? 'they’re' : 'it’s' }} not shown here — {{ canceledTables.length > 1 ? 'their' : 'its' }} reserved stock can be returned via Release reserved.
           </p>
           <p v-if="orderError" class="pk-tasks-error">
             {{ !isDirectMode && packableTables.length === 0

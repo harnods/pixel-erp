@@ -64,6 +64,7 @@ const statusConfig: Record<string, StatusConfig> = {
   receiving:  { type: 'warning',      label: 'Receiving'  },
   'ready to pack':{ type: 'warning',  label: 'Ready to pack' },
   'ready to ship':{ type: 'warning',  label: 'Ready to ship' },
+  'out for delivery':{ type: 'information', label: 'Out for delivery' },
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
