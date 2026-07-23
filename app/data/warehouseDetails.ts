@@ -612,7 +612,10 @@ function generateStock(products: Product[], seed: number, warehouseId: string): 
     const onHandBase = isSerial
       ? ((i * 7 + seed * 3 + 2) % 9) + 1
       : ((i * 53 + seed * 7 + 17) % 21) + 5
-    const onHand = Math.max(onHandBase, MIN_ONHAND_OVERRIDE[`${warehouseId}::${c.sku}`] ?? 0)
+    // Gudang Makassar Selatan (wh-006) is the demo/QA warehouse — floor every product
+    // to at least 10 on hand so nothing shows up empty there.
+    const wh006Floor = warehouseId === "wh-006" ? 10 : 0
+    const onHand = Math.max(onHandBase, MIN_ONHAND_OVERRIDE[`${warehouseId}::${c.sku}`] ?? 0, wh006Floor)
     const reservedRaw = isSerial
       ? (((i * 5 + seed * 2) % 4 === 0) ? 0 : (i + seed) % 4)
       : (onHand > 8 ? (i * 13 + seed) % Math.max(1, Math.floor(onHand / 3)) : 0)
