@@ -8,7 +8,6 @@ import {
   linkPutAway,
   revertPutAwayLink,
   completeReceivingWithoutPutAway,
-  forceCancelEndedTask,
 } from "./receivingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { getWarehouseDetail, registerNewBatch, receiveNewSerials, applyStockInOut } from "./warehouseDetails";
@@ -317,11 +316,11 @@ export function flagPutAwayCanceledPoAck(taskId: string): void {
 }
 
 /**
- * Operator acknowledges that this put-away's source PO was canceled.
- * Cancels the put-away itself AND its linked receiving task(s) — there's
- * nothing left to receive or put away once the one PO behind them is gone.
- * No stock reversal needed: endPutAway never ran for this task, so nothing
- * real was ever committed. A no-op if the task isn't actually flagged.
+ * Operator acknowledges that this put-away's source PO was canceled. Cancels ONLY the
+ * put-away itself. Its linked receiving task(s) already reached "completed" (real
+ * receiving work happened) — a done task is a permanent record and MUST stay completed,
+ * never flip to canceled just because the PO was voided. No stock reversal needed:
+ * endPutAway never ran for this task, so nothing was ever committed. No-op if unflagged.
  */
 export function acknowledgeCanceledPutAway(taskId: string): void {
   const t = getPutAwayTask(taskId);
@@ -332,9 +331,8 @@ export function acknowledgeCanceledPutAway(taskId: string): void {
   t.canceledBy = "Rizal Candra";
   t.canceledReason = 'Purchase order was canceled';
   persistPutAways();
-  for (const rid of t.receivingTaskIds) {
-    forceCancelEndedTask(rid, 'Purchase order was canceled');
-  }
+  // The source receiving task(s) stay "completed" — done work is never reverted. The
+  // canceled put-away remains in their linked transactions as an audit record.
 }
 
 /**

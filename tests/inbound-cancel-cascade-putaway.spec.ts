@@ -145,7 +145,7 @@ describe('Inbound PO cancel cascade — unfinished put-away is flagged, not the 
 })
 
 describe('Inbound PO cancel cascade — acknowledging an unfinished put-away', () => {
-  it('cancels the put-away AND its linked receiving task, with a reason, no stock reversal', () => {
+  it('cancels the put-away but the completed receiving task STAYS completed (done work is never reverted)', () => {
     const receipt = makeReceipt(10)
     const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
     startReceiving(task.id)
@@ -166,9 +166,9 @@ describe('Inbound PO cancel cascade — acknowledging an unfinished put-away', (
     expect(paAfter.canceledDate).toBeTruthy()
 
     const rAfter = getReceivingTask(task.id)!
-    expect(rAfter.status).toBe('canceled') // cascaded — nothing left to receive either
-    expect(rAfter.canceledReason).toBe('Purchase order was canceled')
-    // Terminal — can never be started/continued again.
+    expect(rAfter.status).toBe('completed') // done work is never reverted — stays completed
+    expect(rAfter.canceledReason).toBeUndefined() // not canceled
+    // Terminal — the put-away can never be started/continued again.
     expect(canCancelPutAway(paAfter)).toBe(false)
   })
 

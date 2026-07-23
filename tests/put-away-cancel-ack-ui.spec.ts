@@ -96,12 +96,12 @@ describe('PutAwayDetailsPage — canceled-PO acknowledge banner/modal', () => {
     const paAfter = getPutAwayTask(pa.id)!
     expect(paAfter.status).toBe('canceled')
     expect(paAfter.needsCancelAck).toBe(false)
-    expect(getReceivingTask(task.id)!.status).toBe('canceled') // cascaded
+    expect(getReceivingTask(task.id)!.status).toBe('completed') // done work stays completed
 
     wrapper.unmount()
   })
 
-  it('confirming Acknowledge in the modal (reached via Start put-away) cancels the put-away + receiving task', async () => {
+  it('confirming Acknowledge in the modal (reached via Start put-away) cancels the put-away; receiving stays completed', async () => {
     const { pa, task } = makeFlaggedPutAway()
 
     const wrapper = mount(PutAwayDetailsPage, { props: { orderId: pa.id } })
@@ -114,7 +114,7 @@ describe('PutAwayDetailsPage — canceled-PO acknowledge banner/modal', () => {
 
     const paAfter = getPutAwayTask(pa.id)!
     expect(paAfter.status).toBe('canceled')
-    expect(getReceivingTask(task.id)!.status).toBe('canceled')
+    expect(getReceivingTask(task.id)!.status).toBe('completed') // done work stays completed
 
     wrapper.unmount()
   })
