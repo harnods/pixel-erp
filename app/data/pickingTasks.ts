@@ -75,6 +75,17 @@ export interface PickingTask {
   canceledDate?: string;
   /** Why this task was canceled — shown on the task detail page. */
   canceledReason?: string;
+  /** Who canceled it — shown on the task detail page. */
+  canceledBy?: string;
+  /** A SHARED order on this task was cancelled and the operator hasn't acknowledged
+   *  it yet — the pick list still shows the original numbers; a banner prompts the
+   *  operator to acknowledge, which drops the cancelled order's lines from the pick
+   *  work (acknowledgeCanceledPickingOrders). The cancelled order stays LINKED
+   *  (visible in the task's Sales orders list) either way. */
+  needsCancelAck?: boolean;
+  /** Orders whose cancellation has been acknowledged — their lines are excluded from
+   *  the pick work (Qty to pick / rows) but they remain in salesOrderIds for linking. */
+  canceledAckedOrderIds?: string[];
   /** planned pick lines (per SKU per order) */
   lines?: PickingLine[];
   /** picked qty per line key (set as the operator picks) */
@@ -186,7 +197,11 @@ function seedTasks(): PickingTask[] {
   // isn't packable anyway.
   const cands = PICKING_WAREHOUSES.map((w) => ({
     w,
-    orders: pickableOrders([w.id]).filter((o) => o.source !== "Outbound delivery"),
+    // out-demo-multi-* are reserved for seedMultiOrderPickingDemo() below — kept
+    // out of this generic single-order pool so they're never accidentally
+    // consumed by it first (they'd otherwise be prime candidates: wh-001 is
+    // comfortably stocked, so it's a likely "richest warehouse" pick).
+    orders: pickableOrders([w.id]).filter((o) => o.source !== "Outbound delivery" && !o.id.startsWith("out-demo-multi")),
   })).sort((a, b) => b.orders.length - a.orders.length);
   const pool = cands.flatMap((c) => c.orders); // richest warehouse's orders come first
   if (pool.length) {
@@ -245,6 +260,7 @@ function seedTasks(): PickingTask[] {
     });
   }
   out.push(...seedShippedPicks(seq));
+  out.push(seedMultiOrderPickingDemo());
   return out;
 }
 
@@ -340,6 +356,41 @@ function seedShippedPicks(startSeq: number): PickingTask[] {
   return out;
 }
 
+/**
+ * Seed: ONE Open picking task bundling 2 sales orders from the same warehouse —
+ * one regular ERP order (out-demo-multi-a), one Desty marketplace order
+ * (out-demo-multi-b) — demoing the Combined/By orders toggle on
+ * PickingTaskDetailsPage.vue with a real multi-order task. Qty and stock
+ * reservation both come straight from buildPickingLines()/
+ * assignmentsFromReservations() — the exact same functions addPickingTask()
+ * itself uses — so nothing here is hand-faked; the reservation was already
+ * made automatically by reserveAllPickableOrders() (outgoing.ts) the moment
+ * these two orders were seeded as "pending", same as any other pickable order.
+ */
+function seedMultiOrderPickingDemo(): PickingTask {
+  const orderA = outgoingOrders.find((o) => o.id === "out-demo-multi-a")!;
+  const orderB = outgoingOrders.find((o) => o.id === "out-demo-multi-b")!;
+  const lines = buildPickingLines([orderA.id, orderB.id], [orderA.salesNo, orderB.salesNo]);
+  const toPickQty = lines.reduce((s, l) => s + l.qty, 0);
+  const { batchPicks, serialPicks } = assignmentsFromReservations(lines, orderA.warehouseId);
+  return {
+    id: "pick-demo-multi-001",
+    taskNo: "Picking #30500", // clearly outside the 30090+ range other seeds use, so it can never collide
+    salesOrderIds: [orderA.id, orderB.id],
+    salesNos: [orderA.salesNo, orderB.salesNo],
+    warehouseId: orderA.warehouseId,
+    warehouseName: orderA.warehouseName,
+    assignee: operatorForWarehouse(orderA.warehouseId, 0),
+    skuQty: new Set(lines.map((l) => l.sku)).size,
+    toPickQty,
+    pickedQty: 0,
+    status: "open",
+    lines,
+    ...(Object.keys(batchPicks).length ? { batchPicks, plannedBatchPicks: clonePicks(batchPicks) } : {}),
+    ...(Object.keys(serialPicks).length ? { serialPicks, plannedSerialPicks: clonePicks(serialPicks) } : {}),
+  };
+}
+
 function isoAt(dayOffset: number, hour: number, minute: number): string {
   const d = new Date(TODAY);
   d.setDate(d.getDate() + dayOffset);
@@ -353,6 +404,13 @@ export const pickingTasks = reactive<PickingTask[]>(snapshot ?? seedTasks());
 function persistPicking(): void {
   saveSnapshot("picking", pickingTasks);
 }
+
+// Freeze the freshly-generated seed on first client load. The demo picking tasks
+// bind to whatever pickableOrders() returns AT SEED TIME; that pool shifts as
+// orders get cancelled/shipped, so without freezing, a reload with no snapshot yet
+// would re-run seedTasks() against the changed pool and silently RE-BIND a demo
+// task to a DIFFERENT sales order. Persisting immediately makes the binding stable.
+if (!snapshot) persistPicking();
 
 let nextSeq = 30090 + pickingTasks.length;
 function freshSeq(): number {
@@ -582,6 +640,88 @@ export function pickedQtyForOrderSku(orderId: string, sku: string): number {
   return sum;
 }
 
+/** Qty of one order+SKU that is LOCKED into an already-started picking task
+ *  (in progress / partially picked / completed) — this much can't be removed or
+ *  reduced when the order is edited (D7 AC#4). A SKU only on Pending/Open picking
+ *  tasks (or none) is not locked, so it can still be freely reduced/removed. */
+export function lockedOutboundQtyForSku(orderId: string, sku: string): number {
+  const STARTED = new Set(["in progress", "partially picked", "completed"]);
+  let sum = 0;
+  for (const t of getPickingForOrder(orderId)) {
+    if (!STARTED.has(t.status)) continue;
+    for (const l of pickingLinesOf(t)) {
+      if (l.orderId === orderId && l.sku === sku) sum += l.qty;
+    }
+  }
+  return sum;
+}
+
+/** One order+SKU's qty on each PENDING (open) picking task — the tasks a D7 reduction
+ *  can drain from, per task (D7 allocation step). Started tasks are excluded (locked). */
+export function pendingPickingLinesForSku(orderId: string, sku: string): { taskId: string; taskNo: string; qty: number }[] {
+  const out: { taskId: string; taskNo: string; qty: number }[] = [];
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status !== "open") continue;
+    const qty = pickingLinesOf(t).filter((l) => l.orderId === orderId && l.sku === sku).reduce((s, l) => s + l.qty, 0);
+    if (qty > 0) out.push({ taskId: t.id, taskNo: t.taskNo, qty });
+  }
+  return out;
+}
+
+/** Would reducing (orderId, sku) to 0 on this task leave the task with NO lines at all?
+ *  (Used to flag "will be cancelled" and to decide auto-cancel — a task still holding
+ *  another SKU or another order's line is kept; only the emptied line is removed.) */
+export function pickingTaskEmptiedByRemoving(taskId: string, orderId: string, sku: string): boolean {
+  const t = getPickingTask(taskId);
+  if (!t) return false;
+  return pickingLinesOf(t).every((l) => l.orderId === orderId && l.sku === sku);
+}
+
+/** D7 allocation step — reduce (orderId, sku)'s line qty on ONE pending picking task
+ *  by `reduceBy`. If the line hits 0 it's removed (its batch/serial/picked entries
+ *  cleared); if the task then holds NO lines at all it auto-cancels (AC#5) and its
+ *  reservation-owned bin-lines return to the claimable pool. A task still holding
+ *  other SKUs / other orders' lines is kept — only the emptied line goes. */
+export function reduceOrderSkuOnPickingTask(taskId: string, orderId: string, sku: string, reduceBy: number): void {
+  const t = getPickingTask(taskId);
+  if (!t || t.status !== "open" || reduceBy <= 0) return;
+  const lines = t.lines?.length ? t.lines : buildPickingLines(t.salesOrderIds, t.salesNos);
+  const key = `${orderId}::${sku}`;
+  let remaining = reduceBy;
+  const next: PickingLine[] = [];
+  for (const l of lines) {
+    if (l.orderId === orderId && l.sku === sku && remaining > 0) {
+      const take = Math.min(l.qty, remaining);
+      remaining -= take;
+      const nq = l.qty - take;
+      if (nq > 0) next.push({ ...l, qty: nq });
+      // else: line fully removed
+    } else next.push(l);
+  }
+  t.lines = next;
+  const stillHasLine = next.some((l) => l.orderId === orderId && l.sku === sku);
+  if (!stillHasLine) {
+    for (const map of [t.batchPicks, t.serialPicks, t.plannedBatchPicks, t.plannedSerialPicks, t.pickedByKey]) {
+      if (map) delete (map as Record<string, unknown>)[key];
+    }
+  }
+  t.skuQty = new Set(next.map((l) => l.sku)).size;
+  t.toPickQty = next.reduce((s, l) => s + l.qty, 0);
+  // Drop this order from the task's order list if it no longer has any line here.
+  if (!next.some((l) => l.orderId === orderId)) {
+    const keep = t.salesOrderIds.map((id, i) => (id === orderId ? -1 : i)).filter((i) => i >= 0);
+    t.salesOrderIds = keep.map((i) => t.salesOrderIds[i]!);
+    t.salesNos = keep.map((i) => t.salesNos[i]!);
+  }
+  if (next.length === 0) {
+    t.status = "canceled";
+    t.canceledDate = nowIso();
+    t.canceledReason = "Emptied by order edit";
+    t.canceledBy = "Rizal Candra";
+  }
+  persistPicking();
+}
+
 /** Merge a batch-pick array down to one entry per batchNo, summing qty — a task's
  *  own batchPicks[key], or several tasks' concatenated, can otherwise carry the same
  *  batch as 2+ separate entries (a stale reservation duplicate, a re-pin followed by
@@ -784,16 +924,89 @@ export function canCancelPickingTask(t: PickingTask): boolean {
   return t.status === "open" || t.status === "in progress";
 }
 
-/** Cancel a not-yet-finished picking task — the order(s) it covered keep their
- *  reservation (they still need picking, just via a different list later).
- *  Terminal state; the record itself is kept (never deleted) so it stays in
- *  the audit trail. */
-export function cancelPickingTask(taskId: string, reason?: string): void {
+/** Cancel a picking task. Terminal state; the record is kept (never deleted) so it
+ *  stays in the audit trail.
+ *
+ *  `force` skips the open/in-progress gate: a MANUAL cancel from the picking detail
+ *  is only allowed while unfinished (canCancelPickingTask), but when the underlying
+ *  ORDER is cancelled the whole task is void regardless of how far picking got
+ *  (partially picked / completed included) — there's no live order left for it to
+ *  serve, and its reserved stock is order-owned and returned via Release reserved,
+ *  so nothing goes unaccounted. */
+export function cancelPickingTask(taskId: string, reason?: string, force = false): void {
   const t = getPickingTask(taskId);
-  if (!t || !canCancelPickingTask(t)) return;
+  if (!t || t.status === "canceled") return;
+  if (!force && !canCancelPickingTask(t)) return;
   t.status = "canceled";
   t.canceledDate = nowIso();
   if (reason) t.canceledReason = reason;
+  t.canceledBy = "Rizal Candra";
+  persistPicking();
+}
+
+/** Flag a shared picking task that just had one of its orders cancelled — the pick
+ *  list still shows the original numbers; the operator must acknowledge (below) to
+ *  drop the cancelled order's lines from the pick work. No-op if there's nothing
+ *  left un-acknowledged. */
+export function markPickingNeedsCancelAck(taskId: string): void {
+  const t = getPickingTask(taskId);
+  if (!t || t.status === "canceled") return;
+  if (pendingCanceledOrderIds(t).length === 0) return;
+  t.needsCancelAck = true;
+  persistPicking();
+}
+
+/** Orders on this task that are cancelled but whose cancellation the operator hasn't
+ *  acknowledged yet (still counted in the pick work + driving the ack banner). */
+export function pendingCanceledOrderIds(t: PickingTask): string[] {
+  const acked = new Set(t.canceledAckedOrderIds ?? []);
+  return t.salesOrderIds.filter((id) => {
+    if (acked.has(id)) return false;
+    const o = outgoingOrders.find((x) => x.id === id);
+    return o?.status === "canceled";
+  });
+}
+
+/** Operator acknowledges the cancelled order(s) on a SHARED picking task: their lines
+ *  drop out of the pick work (Qty to pick / SKU qty / rows recomputed for the LIVE
+ *  orders only), but they stay in salesOrderIds so they remain visible in the task's
+ *  Sales orders list (linked transactions). The task keeps running for its live orders. */
+export function acknowledgeCanceledPickingOrders(taskId: string): void {
+  const t = getPickingTask(taskId);
+  if (!t) return;
+  const pending = pendingCanceledOrderIds(t);
+  if (pending.length === 0) { if (t.needsCancelAck) { t.needsCancelAck = false; persistPicking(); } return; }
+  t.canceledAckedOrderIds = [...new Set([...(t.canceledAckedOrderIds ?? []), ...pending])];
+  t.needsCancelAck = false;
+  // Recompute the pick-work stats from the remaining (non-acknowledged) lines only.
+  const acked = new Set(t.canceledAckedOrderIds);
+  const liveLines = (t.lines?.length ? t.lines : buildPickingLines(t.salesOrderIds, t.salesNos))
+    .filter((l) => !acked.has(l.orderId));
+  t.skuQty = new Set(liveLines.map((l) => l.sku)).size;
+  t.toPickQty = liveLines.reduce((s, l) => s + l.qty, 0);
+  persistPicking();
+}
+
+/** D2 AC#6 — when a SHARED (multi-order) picking task's ONE outbound is cancelled,
+ *  the task is NOT cancelled: it drops that order's lines and continues picking the
+ *  remaining orders. Removes the order from salesOrderIds/salesNos, rebuilds the
+ *  line set + skuQty/toPickQty, and clears that order's batch/serial/picked entries.
+ *  The order-owned reservation is untouched here (returned via manual Release Reserved). */
+export function removeOrderFromPickingTask(taskId: string, orderId: string): void {
+  const t = getPickingTask(taskId);
+  if (!t || !t.salesOrderIds.includes(orderId)) return;
+  const fullLines = t.lines?.length ? t.lines : buildPickingLines(t.salesOrderIds, t.salesNos);
+  const remaining = fullLines.filter((l) => l.orderId !== orderId);
+  const keepIdx = t.salesOrderIds.map((id, i) => (id === orderId ? -1 : i)).filter((i) => i >= 0);
+  t.salesOrderIds = keepIdx.map((i) => t.salesOrderIds[i]!);
+  t.salesNos = keepIdx.map((i) => t.salesNos[i]!);
+  t.lines = remaining;
+  t.skuQty = new Set(remaining.map((l) => l.sku)).size;
+  t.toPickQty = remaining.reduce((s, l) => s + l.qty, 0);
+  const prefix = `${orderId}::`;
+  for (const map of [t.batchPicks, t.serialPicks, t.plannedBatchPicks, t.plannedSerialPicks, t.pickedByKey]) {
+    if (map) for (const k of Object.keys(map)) if (k.startsWith(prefix)) delete (map as Record<string, unknown>)[k];
+  }
   persistPicking();
 }
 
@@ -869,7 +1082,10 @@ export function orderFullyPickedAcrossTasks(orderId: string): boolean {
 export function packableOrderIds(t: PickingTask): string[] {
   return t.salesOrderIds.filter((id) => {
     const o = outgoingOrders.find((x) => x.id === id);
-    const marketplace = o ? isMarketplaceOrder(o) : false;
+    // A cancelled order can NEVER be packed or shipped again — exclude it whatever
+    // state its (kept-for-audit) partially-picked/completed picking task is left in.
+    if (!o || o.status === "canceled") return false;
+    const marketplace = isMarketplaceOrder(o);
     return marketplace ? orderFullyPickedAcrossTasks(id) : orderPickedTotal(id) > 0;
   });
 }

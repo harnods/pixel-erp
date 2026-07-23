@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { defineAsyncComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton } from '@mekari/pixel3'
+
+// Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
+const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
+function asyncPage(loader: () => Promise<{ default: Component }>): Component {
+  return defineAsyncComponent({ loader, loadingComponent: PageLoader, delay: 200 })
+}
 import { receiptCountsByStage, receipts } from '~/data/receipts'
 import { productionRequestPendingCount } from '~/data/productionRequests'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { outgoingOpenCount } from '~/data/outgoing'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { pendingApprovalCount } from '~/data/productsIndex'
 import { pickingOpenCount } from '~/data/pickingTasks'
 
 // Keep outbound order statuses derived from their tasks (coherent everywhere).
@@ -14,6 +21,8 @@ syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
+import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
+import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -41,6 +50,7 @@ const pageRegistry: Record<string, Component> = {
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
+  'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
   'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
@@ -61,61 +71,66 @@ const pageRegistry: Record<string, Component> = {
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
-const SalesOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
-const ImportWarehousesPage = defineAsyncComponent(() => import('~/components/pages/ImportWarehousesPage.vue'))
-const NewWarehousePage = defineAsyncComponent(() => import('~/components/pages/NewWarehousePage.vue'))
-const WarehouseDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseDetailsPage.vue'))
-const ConfigureWarehousePage = defineAsyncComponent(() => import('~/components/pages/ConfigureWarehousePage.vue'))
-const StorageLocationDetailsPage = defineAsyncComponent(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
-const PlaceholderPage = defineAsyncComponent(() => import('~/components/pages/PlaceholderPage.vue'))
-const ReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue'))
-const ReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceiptDetailsPage.vue'))
-const PartialReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
-const CompletedReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptDetailsPage.vue'))
-const CanceledReceiptDetailsPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptDetailsPage.vue'))
-const OutgoingIndexPage = defineAsyncComponent(() => import('~/components/pages/OutgoingIndexPage.vue'))
-const PickingIndexPage = defineAsyncComponent(() => import('~/components/pages/PickingIndexPage.vue'))
-const PackingIndexPage = defineAsyncComponent(() => import('~/components/pages/PackingIndexPage.vue'))
-const DeliveryIndexPage = defineAsyncComponent(() => import('~/components/pages/DeliveryIndexPage.vue'))
-const ShippedIndexPage = defineAsyncComponent(() => import('~/components/pages/ShippedIndexPage.vue'))
-const CreatePickingPage = defineAsyncComponent(() => import('~/components/pages/CreatePickingPage.vue'))
-const CreatePackingPage = defineAsyncComponent(() => import('~/components/pages/CreatePackingPage.vue'))
-const PickingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PickingTaskDetailsPage.vue'))
-const PickItemsPage = defineAsyncComponent(() => import('~/components/pages/PickItemsPage.vue'))
-const PackingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/PackingTaskDetailsPage.vue'))
-const PackItemsPage = defineAsyncComponent(() => import('~/components/pages/PackItemsPage.vue'))
-const DeliveryTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
-const HandoverToCourierPage = defineAsyncComponent(() => import('~/components/pages/HandoverToCourierPage.vue'))
-const NewShipmentPage = defineAsyncComponent(() => import('~/components/pages/NewShipmentPage.vue'))
-const ShipmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/ShipmentDetailsPage.vue'))
-const OutgoingOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
-const WarehouseTransferDetailsPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
-const WarehouseTransferFormPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
-const ReceivingIndexPage = defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue'))
-const PutAwayIndexPage = defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue'))
-const PartialReceptionIndexPage = defineAsyncComponent(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
-const CompletedReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CompletedReceiptIndexPage.vue'))
-const CanceledReceiptIndexPage = defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue'))
-const ReceivingTaskDetailsPage = defineAsyncComponent(() => import('~/components/pages/ReceivingTaskDetailsPage.vue'))
-const ReceiveItemsPage = defineAsyncComponent(() => import('~/components/pages/ReceiveItemsPage.vue'))
-const CreatePurchaseReceivingPage = defineAsyncComponent(() => import('~/components/pages/CreatePurchaseReceivingPage.vue'))
-const CreatePutAwayPage = defineAsyncComponent(() => import('~/components/pages/CreatePutAwayPage.vue'))
-const CreateReceiptPage = defineAsyncComponent(() => import('~/components/pages/CreateReceiptPage.vue'))
-const CreateDeliveryOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateDeliveryOrderPage.vue'))
-const PutAwayDetailsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayDetailsPage.vue'))
-const PutAwayItemsPage = defineAsyncComponent(() => import('~/components/pages/PutAwayItemsPage.vue'))
-const CreateWorkOrderPage = defineAsyncComponent(() => import('~/components/pages/CreateWorkOrderPage.vue'))
-const WorkOrderDetailsPage = defineAsyncComponent(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
-const BillOfMaterialsDetailsPage = defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
-const CreateBillOfMaterialsPage = defineAsyncComponent(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
-const ProductionRequestIndexPage = defineAsyncComponent(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
-const WarehouseTransfersPage = defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue'))
-const StockAdjustmentsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue'))
-const StockAdjustmentDetailsPage = defineAsyncComponent(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
-const StockCountFormPage = defineAsyncComponent(() => import('~/components/pages/StockCountFormPage.vue'))
-const StockCountingPage = defineAsyncComponent(() => import('~/components/pages/StockCountingPage.vue'))
-const StockInOutFormPage = defineAsyncComponent(() => import('~/components/pages/StockInOutFormPage.vue'))
-const CycleCountRecommendationPage = defineAsyncComponent(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
+const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
+const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
+const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
+const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
+const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
+const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
+const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
+const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
+const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
+const PartialReceiptDetailsPage = asyncPage(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
+const CompletedReceiptDetailsPage = asyncPage(() => import('~/components/pages/CompletedReceiptDetailsPage.vue'))
+const CanceledReceiptDetailsPage = asyncPage(() => import('~/components/pages/CanceledReceiptDetailsPage.vue'))
+const OutgoingIndexPage = asyncPage(() => import('~/components/pages/OutgoingIndexPage.vue'))
+const PickingIndexPage = asyncPage(() => import('~/components/pages/PickingIndexPage.vue'))
+const PackingIndexPage = asyncPage(() => import('~/components/pages/PackingIndexPage.vue'))
+const DeliveryIndexPage = asyncPage(() => import('~/components/pages/DeliveryIndexPage.vue'))
+const ShippedIndexPage = asyncPage(() => import('~/components/pages/ShippedIndexPage.vue'))
+const CreatePickingPage = asyncPage(() => import('~/components/pages/CreatePickingPage.vue'))
+const CreatePackingPage = asyncPage(() => import('~/components/pages/CreatePackingPage.vue'))
+const PickingTaskDetailsPage = asyncPage(() => import('~/components/pages/PickingTaskDetailsPage.vue'))
+const PickItemsPage = asyncPage(() => import('~/components/pages/PickItemsPage.vue'))
+const PackingTaskDetailsPage = asyncPage(() => import('~/components/pages/PackingTaskDetailsPage.vue'))
+const PackItemsPage = asyncPage(() => import('~/components/pages/PackItemsPage.vue'))
+const DeliveryTaskDetailsPage = asyncPage(() => import('~/components/pages/DeliveryTaskDetailsPage.vue'))
+const HandoverToCourierPage = asyncPage(() => import('~/components/pages/HandoverToCourierPage.vue'))
+const NewShipmentPage = asyncPage(() => import('~/components/pages/NewShipmentPage.vue'))
+const ShipmentDetailsPage = asyncPage(() => import('~/components/pages/ShipmentDetailsPage.vue'))
+const OutgoingOrderDetailsPage = asyncPage(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
+const WarehouseTransferDetailsPage = asyncPage(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
+const WarehouseTransferFormPage = asyncPage(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
+const ReceivingIndexPage = asyncPage(() => import('~/components/pages/ReceivingIndexPage.vue'))
+const PutAwayIndexPage = asyncPage(() => import('~/components/pages/PutAwayIndexPage.vue'))
+const PartialReceptionIndexPage = asyncPage(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
+const CompletedReceiptIndexPage = asyncPage(() => import('~/components/pages/CompletedReceiptIndexPage.vue'))
+const CanceledReceiptIndexPage = asyncPage(() => import('~/components/pages/CanceledReceiptIndexPage.vue'))
+const ReceivingTaskDetailsPage = asyncPage(() => import('~/components/pages/ReceivingTaskDetailsPage.vue'))
+const ReceiveItemsPage = asyncPage(() => import('~/components/pages/ReceiveItemsPage.vue'))
+const CreatePurchaseReceivingPage = asyncPage(() => import('~/components/pages/CreatePurchaseReceivingPage.vue'))
+const CreatePutAwayPage = asyncPage(() => import('~/components/pages/CreatePutAwayPage.vue'))
+const CreateReceiptPage = asyncPage(() => import('~/components/pages/CreateReceiptPage.vue'))
+const CreateDeliveryOrderPage = asyncPage(() => import('~/components/pages/CreateDeliveryOrderPage.vue'))
+const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDetailsPage.vue'))
+const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
+const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
+const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
+const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
+const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
+const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
+const WarehouseTransfersPage = asyncPage(() => import('~/components/pages/WarehouseTransfersPage.vue'))
+const StockAdjustmentsPage = asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue'))
+const ProductsPage = asyncPage(() => import('~/components/pages/ProductsPage.vue'))
+const ProductDetailsPage = asyncPage(() => import('~/components/pages/ProductDetailsPage.vue'))
+const BatchDetailsPage = asyncPage(() => import('~/components/pages/BatchDetailsPage.vue'))
+const NewProductPage = asyncPage(() => import('~/components/pages/NewProductPage.vue'))
+const StockAdjustmentDetailsPage = asyncPage(() => import('~/components/pages/StockAdjustmentDetailsPage.vue'))
+const StockCountFormPage = asyncPage(() => import('~/components/pages/StockCountFormPage.vue'))
+const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTaskPage.vue'))
+const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
+const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
+const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -141,6 +156,18 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: WarehouseTransferFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: WarehouseTransferFormPage, id: segs[1]! }
     return { component: WarehouseTransferDetailsPage, id: segs[1]! }
+  }
+  // /cycle-counts/new → dedicated count-task creation page (not the shared stock-count form)
+  if (segs.length >= 2 && segs[0] === 'cycle-counts' && segs[1] === 'new') {
+    return { component: NewCountTaskPage, id: 'new' }
+  }
+  // /cycle-counts/:id → detail; /:id/count → counting flow; /:id/edit → edit (TBD → placeholder).
+  // Cycle count tasks live at their own URL (not /stock-adjustments/:id) so the sidebar
+  // and breadcrumb reflect where they actually belong.
+  if (segs.length >= 2 && segs[0] === 'cycle-counts' && segs[1] !== 'new') {
+    if (segs.length >= 3 && segs[2] === 'count') return { component: StockCountingPage, id: segs[1]! }
+    if (segs[2] === 'edit') return { component: PlaceholderPage, id: segs[1]! }
+    return { component: StockAdjustmentDetailsPage, id: segs[1]! }
   }
   // /stock-adjustments/:id → detail; /new & /:id/edit → create/edit form (TBD → placeholder)
   if (segs.length >= 2 && segs[0] === 'stock-adjustments') {
@@ -173,6 +200,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment') {
     return { component: ShipmentDetailsPage, id: segs[2]! }
   }
+  // /outbound-delivery/:id/edit → edit the outbound order (reuses the create form in edit mode)
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[2] === 'edit') {
+    return { component: CreateDeliveryOrderPage, id: segs[1] }
+  }
   // /outbound-delivery/:id → outgoing sales order detail (not the picking/packing/handover/shipment sub-routes)
   if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing' && segs[1] !== 'handover' && segs[1] !== 'new-shipment' && segs[1] !== 'shipment' && segs[1] !== 'new') {
     return { component: OutgoingOrderDetailsPage, id: segs[1] }
@@ -199,6 +230,25 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
+    return { component: NewProductPage, id: 'new' }
+  }
+  // /product-list/:sku/edit → reuse the product form in edit mode
+  if (segs.length >= 3 && segs[0] === 'product-list' && segs[2] === 'edit') {
+    return { component: NewProductPage, id: segs[1]! }
+  }
+  // /product-list/:sku/batches/:batchNo → batch detail (a batch-tracked product's
+  // "Stock by batches" tab row); id is "sku::batchNo", same convention as the
+  // warehouse/location nested route below. batchNo (e.g. "Batch #001") is
+  // encodeURIComponent'd by the caller since "#" would otherwise start a URL
+  // fragment — decode it back here.
+  if (segs.length >= 4 && segs[0] === 'product-list' && segs[2] === 'batches') {
+    return { component: BatchDetailsPage, id: `${segs[1]}::${decodeURIComponent(segs[3]!)}` }
+  }
+  // /product-list/:sku → product detail
+  if (segs.length >= 2 && segs[0] === 'product-list') {
+    return { component: ProductDetailsPage, id: segs[1] }
   }
   // /inbound-delivery/:id → inbound PO detail (kept under the section path so the
   // level-2 sidebar submenu stays active, like /sales-orders/:id).
@@ -272,17 +322,18 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipped'],
+  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
-  'Stock counts':      ['All stock counts', 'Awaiting approval', 'Recommendations'],
-  'Cycle counts':      ['Count task', 'Recommendations'],
+  'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
+  'Product list':      ['All products', 'Awaiting approval'],
 }
 // Per-tab count badges — derived live from the data so they match the table.
-// The Receipts tab badges the default-visible (actionable) receipts: On the way +
-// Partial reception (Completed / Canceled are terminal, hidden by default).
+// The Receipts tab badges the default-visible (actionable) receipts: Pending +
+// Open + In progress + Partial reception (Completed / Canceled are terminal,
+// hidden by default).
 //
 // Scoped to whatever warehouse(s) the currently-visible tab's own "Warehouse"
 // filter is set to (activeWarehouseFilter, mirrored up by each index page) —
@@ -294,7 +345,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
-    const receipts = (counts['On the way'] ?? 0) + (counts['Partial reception'] ?? 0)
+    const receipts = (counts['Pending'] ?? 0) + (counts['Open'] ?? 0) + (counts['In progress'] ?? 0) + (counts['Partial reception'] ?? 0)
     if (receipts) out['Receipts'] = receipts
     // Receiving / Put-away are task-based (a different dataset than the PO stages)
     const recv = receivingOpenCount(wh)
@@ -329,8 +380,18 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const pending = productionRequestPendingCount()
     return pending ? { 'Awaiting': pending } : {}
   }
-  if (currentPageKey.value === 'Stock counts') {
-    const awaiting = awaitingAdjustmentCount()
+  if (currentPageKey.value === 'Cycle counts') {
+    const out: Record<string, number> = {}
+    const openTasks = openWmsCountTaskCount()
+    if (openTasks) out['Count task'] = openTasks
+    const awaiting = awaitingWmsCountApprovalCount()
+    if (awaiting) out['Awaiting approval'] = awaiting
+    const recommendations = recommendationCount()
+    if (recommendations) out['Recommendations'] = recommendations
+    return out
+  }
+  if (currentPageKey.value === 'Product list') {
+    const awaiting = pendingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
   return {}
@@ -341,18 +402,27 @@ const currentTabCounts = computed<Record<string, number>>(() => {
 // Multi-warehouse views (ERP/WMS Standalone) keep every tab — a disabled
 // warehouse's tasks just never appear in it, no need to hide the tab itself.
 const { hasWarehouseContext, activeWarehouse } = useWarehouseContext()
+const { activeScenario } = useScenario()
 const currentTabs = computed<string[]>(() => {
   const tabs = pageTabs[currentPageKey.value] ?? []
-  if (!hasWarehouseContext.value || !activeWarehouse.value) return tabs
-  const config = getWarehouseConfig(activeWarehouse.value.id)
+  const config = (hasWarehouseContext.value && activeWarehouse.value) ? getWarehouseConfig(activeWarehouse.value.id) : null
   return tabs.filter((tab) => {
-    if (currentPageKey.value === 'Inbound delivery' && tab === 'Put-away') return config.putAwayEnabled
-    if (currentPageKey.value === 'Outbound delivery' && tab === 'Picking') return config.pickingEnabled
+    if (config) {
+      if (currentPageKey.value === 'Inbound delivery' && tab === 'Put-away') return config.putAwayEnabled
+      if (currentPageKey.value === 'Outbound delivery' && tab === 'Picking') return config.pickingEnabled
+    }
+    // WMS doesn't deal in the ERP-side product approval workflow.
+    if (currentPageKey.value === 'Product list' && tab === 'Awaiting approval') return activeScenario.value === 'ERP'
     return true
   })
 })
 const activeTab = ref('')
-watch([currentPageKey, () => route.query.tab], () => {
+watch([currentPageKey, () => route.query.tab, detailMatch], () => {
+  // Detail routes (e.g. /stock-adjustments/:id) render via `detailMatch`, bypassing
+  // the tab bar entirely — don't stamp a `?tab=` query onto them just because their
+  // first URL segment happens to match an index page that has tabs (e.g. a WMS
+  // Cycle count detail sharing the /stock-adjustments/:id prefix with ERP records).
+  if (detailMatch.value) return
   const tabs = currentTabs.value
   const queryTab = route.query.tab as string | undefined
   const resolved = (queryTab && tabs.includes(queryTab)) ? queryTab : (tabs[0] ?? '')
@@ -370,6 +440,13 @@ function selectTab(tab: string) {
   router.push({ query: { ...route.query, tab } })
 }
 
+// Daily banner (Cycle counts index, all tabs) — top 3 recommended product names,
+// only shown once the Recommendations tab actually has SKUs flagged for counting.
+const cycleCountBannerNames = computed(() => topRecommendedProductNames(3))
+const cycleCountBannerVisible = computed(() =>
+  currentPageKey.value === 'Cycle counts' && cycleCountBannerNames.value.length > 0,
+)
+
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {
   'Inbound delivery': {
@@ -382,7 +459,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Picking': PickingIndexPage,
     'Packing': PackingIndexPage,
     'Ready to ship': DeliveryIndexPage,
-    'Shipped': ShippedIndexPage,
+    'Shipments': ShippedIndexPage,
   },
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,
@@ -398,14 +475,14 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Completed': () => h(ProductionRequestIndexPage, { tab: 'completed' }),
     'Rejected':  () => h(ProductionRequestIndexPage, { tab: 'rejected' }),
   },
-  'Stock counts': {
-    'All stock counts': StockAdjustmentsPage,
+  'Cycle counts': {
+    'Count task': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
     'Recommendations': CycleCountRecommendationPage,
   },
-  'Cycle counts': {
-    'Count task': StockAdjustmentsPage,
-    'Recommendations': CycleCountRecommendationPage,
+  'Product list': {
+    'All products': ProductsPage,
+    'Awaiting approval': ProductsPage,
   },
 }
 const activeTabComponent = computed<Component | null>(
@@ -414,7 +491,6 @@ const activeTabComponent = computed<Component | null>(
 
 // New PO / Import buttons — POs are manually created from the WMS module (→ Draft),
 // so these show only in WMS Standalone, on Inbound delivery pages.
-const { activeScenario } = useScenario()
 const BARANG_MASUK_PAGES = [
   'Inbound delivery', 'Draft', 'On the way', 'Receiving', 'Partial reception', 'Inbound completed', 'Canceled',
 ]
@@ -457,7 +533,6 @@ function newStockAdjustment(kind: 'count' | 'in-out') {
   stockActionsOpen.value = false
   router.push({ path: '/stock-adjustments/new', query: { type: kind } })
 }
-function newStockCount()  { router.push({ path: '/stock-adjustments/new', query: { type: 'count' } }) }
 function newStockInOut()  { router.push({ path: '/stock-adjustments/new', query: { type: 'in-out' } }) }
 
 // ── Chat sessions + history ───────────────────────────────────────────────
@@ -853,6 +928,17 @@ function startResize(e: MouseEvent) {
             New bill of materials
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Product list'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/product-list/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New product
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Inbound delivery'" class="page-title-actions">
           <template v-if="activeTab === 'Put-away'">
             <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/inbound-delivery/put-away/create')">
@@ -970,9 +1056,9 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cycle counts' && activeTab === 'Count task'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockCount">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/cycle-counts/new')">
             <MpIcon name="add" size="md" color="icon.inverse" />
-            New stock count
+            New count task
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock counts'" class="page-title-actions">
@@ -1027,8 +1113,10 @@ function startResize(e: MouseEvent) {
         </div>
       </div>
 
-      <!-- Status tabs (below the title, outside the stage) -->
-      <div v-if="currentTabs.length" class="page-tabs" role="tablist">
+      <!-- Status tabs (below the title, outside the stage) — hidden when there's
+           nothing to switch between (e.g. WMS's Product list, once Awaiting
+           approval is filtered out, is left with only "All products"). -->
+      <div v-if="currentTabs.length > 1" class="page-tabs" role="tablist">
         <button
           v-for="tab in currentTabs"
           :key="tab"
@@ -1044,6 +1132,14 @@ function startResize(e: MouseEvent) {
       </div>
 
       <div class="stage">
+        <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
+          <MpBannerIcon name="info" />
+          <MpBannerTitle>Recommended for counting today</MpBannerTitle>
+          <MpBannerDescription>{{ cycleCountBannerNames.join(', ') }}</MpBannerDescription>
+          <MpBannerLink>
+            <MpButton variant="textLink" size="sm" @click="selectTab('Recommendations')">View all recommendations</MpButton>
+          </MpBannerLink>
+        </MpBanner>
         <component v-if="activeTabComponent" :is="activeTabComponent" />
         <div v-else-if="currentTabs.length" class="tab-stage-placeholder">
           <p class="tab-stage-placeholder__title">{{ activeTab }}</p>
@@ -1510,6 +1606,10 @@ function startResize(e: MouseEvent) {
   gap: var(--mp-spacing-5);
   padding: 0 var(--mp-spacing-6);
   background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0;
+}
+
+.cycle-count-banner {
   flex-shrink: 0;
 }
 

@@ -191,7 +191,7 @@ describe('ReceiveItemsPage — Outstanding qty is floored at 0 against Expected 
 
     await scanSku(wrapper, sku, 8) // > targetQty (5), <= expectedQty/Purchase qty (87)
 
-    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Outstanding qty'))!
+    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Remaining qty to receive'))!
     expect(outstandingStat.find('.ri-stat-val').text()).toBe('0')
     wrapper.unmount()
   })
@@ -210,7 +210,7 @@ describe('ReceiveItemsPage — Outstanding qty is floored at 0 against Expected 
 
     await scanSku(wrapper, sku, 3) // < targetQty (5)
 
-    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Outstanding qty'))!
+    const outstandingStat = wrapper.findAll('.ri-stat').find((s) => s.text().includes('Remaining qty to receive'))!
     expect(outstandingStat.find('.ri-stat-val').text()).toBe('2')
     wrapper.unmount()
   })

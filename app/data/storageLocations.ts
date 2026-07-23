@@ -59,64 +59,50 @@ interface WhStorageProfile {
 }
 
 export const WH_STORAGE_PROFILES: Record<string, WhStorageProfile> = {
-  // ── Large warehouse, 30 SKUs — full 6-level tree; 3 products multi-location ──
+  // ── Flat single-level (Bin only, "Bin 01" 2-digit) — every warehouse uses
+  // this simple demo shape EXCEPT wh-004, the one deliberately left with the
+  // full 7-level tree (Floor/Zone/Aisle/Row/Rack/Shelf/Bin) so there's still a
+  // deep hierarchy available to demo scanning against. Each warehouse keeps
+  // its own original multi-location SKUs (still meaningful even at 1 level —
+  // a flat tree can still have 2+ sibling Bin nodes) so existing "split
+  // storage location per bin" behavior still has somewhere to demo from. ──
   'wh-001': {
-    levels: ['Floor', 'Zone', 'Aisle', 'Rack', 'Shelf', 'Bin'],
+    levels: ['Bin'], binPad: 2,
     multiLoc: [
-      { idx: 1,  count: 2 },  // 2nd product stored in 2 bins
-      { idx: 4,  count: 2 },  // 5th product stored in 2 bins
-      { idx: 12, count: 3 },  // 13th product spread across 3 bins
+      { idx: 1,  count: 2 },
+      { idx: 4,  count: 2 },
+      { idx: 12, count: 3 },
     ],
   },
-  // ── Medium-large, 19 SKUs — 4-level (Zone/Aisle/Rack/Bin); 2 multi-loc ──
   'wh-002': {
-    levels: ['Zone', 'Aisle', 'Rack', 'Bin'],
+    levels: ['Bin'], binPad: 2,
     multiLoc: [
       { idx: 3, count: 2 },
       { idx: 9, count: 2 },
     ],
   },
-  // ── Medium industrial, 12 SKUs — 4-level (Zone/Rack/Shelf/Bin); no multi-loc ──
-  'wh-003': {
-    levels: ['Zone', 'Rack', 'Shelf', 'Bin'],
-    multiLoc: [],
-  },
-  // ── Medium-large, 21 SKUs — 5-level (Floor/Zone/Row/Rack/Bin); 2 multi-loc ──
+  'wh-003': { levels: ['Bin'], multiLoc: [], binPad: 2 },
+  // ── The one warehouse kept at the full 7-level tree, for scanning demos ──
   'wh-004': {
-    levels: ['Floor', 'Zone', 'Row', 'Rack', 'Bin'],
+    levels: ['Floor', 'Zone', 'Aisle', 'Row', 'Rack', 'Shelf', 'Bin'],
     multiLoc: [
       { idx: 2, count: 2 },
       { idx: 7, count: 2 },
     ],
   },
-  // ── Medium, 16 SKUs — 3-level (Aisle/Rack/Bin); no multi-loc ──
-  'wh-005': {
-    levels: ['Aisle', 'Rack', 'Bin'],
-    multiLoc: [],
-  },
-  // ── Small, 9 SKUs — flat single-level (Bin only, "Bin 01" 2-digit); no multi-loc ──
-  'wh-006': {
-    levels: ['Bin'],
-    multiLoc: [],
-    binPad: 2,
-  },
-  // ── Small archived, 8 SKUs — single-level (Bin only); no multi-loc ──
-  'wh-007': {
-    levels: ['Bin'],
-    multiLoc: [],
-  },
-  // ── Large fulfillment, 23 SKUs — 5-level (Floor/Zone/Aisle/Rack/Bin); 3 multi-loc ──
+  'wh-005': { levels: ['Bin'], multiLoc: [], binPad: 2 },
+  'wh-006': { levels: ['Bin'], multiLoc: [], binPad: 2 },
+  'wh-007': { levels: ['Bin'], multiLoc: [], binPad: 2 },
   'wh-009': {
-    levels: ['Floor', 'Zone', 'Aisle', 'Rack', 'Bin'],
+    levels: ['Bin'], binPad: 2,
     multiLoc: [
       { idx: 1,  count: 2 },
-      { idx: 5,  count: 3 },  // 1 product across 3 bins
+      { idx: 5,  count: 3 },
       { idx: 11, count: 2 },
     ],
   },
-  // ── Medium, 14 SKUs — 3-level (Zone/Aisle/Bin); 1 multi-loc ──
   'wh-010': {
-    levels: ['Zone', 'Aisle', 'Bin'],
+    levels: ['Bin'], binPad: 2,
     multiLoc: [
       { idx: 4, count: 2 },
     ],
@@ -193,8 +179,9 @@ function buildTree(seed: number, skuTotal: number, levels: string[], binPad = 3)
 // ── Snapshot store ───────────────────────────────────────────────────────────
 
 interface WhTree { warehouseId: string; tree: LocNode[] }
-// Bumped to v9 — tree shape changed (per-warehouse depth profiles)
-const KEY = 'storage-locations-v9'
+// Bumped to v10 — every warehouse flattened to 1-level (Bin only) except
+// wh-004, the one deliberately kept at the full 7-level tree
+const KEY = 'storage-locations-v10'
 const store = reactive<Record<string, LocNode[]>>({})
 const snapshot = loadSnapshot<WhTree>(KEY)
 if (snapshot) for (const e of snapshot) store[e.warehouseId] = e.tree

@@ -4,16 +4,17 @@ import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpDatePicker, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpInput, css,
+  MpModalOverlay, MpModalCloseButton, MpInput, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { receiptsForStages, receiptStage, cancelReceipt, canCancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
+import { receiptsForStages, receiptStage, canCancelReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
+import { cancelInboundReceipt } from '~/data/inboundSync'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -64,14 +65,10 @@ const columnItems = [baseColumnItems[0]!, { key: 'memo', label: 'Memo' }, ...bas
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
-// Status — multi-select. Completed & Canceled are terminal, hidden by default, so
-// the default view shows only the actionable stages.
-const STATUS_OPTIONS = ['On the way', 'Partial reception', 'Completed', 'Canceled']
-const DEFAULT_STATUSES = ['On the way', 'Partial reception']
-// Display label per stage value — "On the way" shows as "Open" (value stays internal).
-const STATUS_LABELS: Record<string, string> = { 'On the way': 'Open' }
-function statusOptionLabel(s: string) { return STATUS_LABELS[s] ?? s }
-const statusFilter = ref<string[]>([...DEFAULT_STATUSES])
+// Status — multi-select, nothing pre-selected: the default view shows ALL statuses
+// (empty filter = show everything). Pick specific statuses to narrow it down.
+const STATUS_OPTIONS = ['Pending', 'Open', 'In progress', 'Partial reception', 'Completed', 'Canceled']
+const statusFilter = ref<string[]>([])
 function toggleStatus(s: string) {
   statusFilter.value = statusFilter.value.includes(s)
     ? statusFilter.value.filter(x => x !== s)
@@ -81,14 +78,11 @@ const statusLabel = computed(() => {
   const n = statusFilter.value.length
   if (n === 0) return ''
   if (n === STATUS_OPTIONS.length) return 'All statuses'
-  if (n === 1) return statusOptionLabel(statusFilter.value[0])
+  if (n === 1) return statusFilter.value[0]
   return `${n} statuses`
 })
-const statusIsDefault = computed(() =>
-  statusFilter.value.length === DEFAULT_STATUSES.length
-  && DEFAULT_STATUSES.every(s => statusFilter.value.includes(s)),
-)
-function resetStatus() { statusFilter.value = [...DEFAULT_STATUSES] }
+const statusIsDefault = computed(() => statusFilter.value.length === 0)
+function resetStatus() { statusFilter.value = [] }
 
 const warehouseFilter = ref<string[]>([])
 // Mirror into the shared singleton so the tab bar's count badges (Receipts (N),
@@ -193,7 +187,7 @@ const {
       || row.purchaseNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
       || (row.vendor ?? '').toLowerCase().includes(s)
-    const matchesStatus = statusFilter.value.includes(receiptStage(row))
+    const matchesStatus = !statusFilter.value.length || statusFilter.value.includes(receiptStage(row))
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     let matchesArrival = true
     const range = arrivalRange.value
@@ -287,8 +281,11 @@ function openBulkCancelModal(selectedRows: Set<number>, deselectAll: () => void)
 }
 function closeCancelModal() { cancelModalOpen.value = false; receiptsToCancel.value = [] }
 function confirmCancel() {
-  for (const r of receiptsToCancel.value) cancelReceipt(r.id)
+  const failed = receiptsToCancel.value.filter((r) => !cancelInboundReceipt(r.id).ok)
   closeCancelModal()
+  if (failed.length) {
+    toast.notify({ variant: 'error', title: `${failed.length} receipt${failed.length > 1 ? 's' : ''} could not be canceled`, maxWidth: 'max-content' })
+  }
 }
 
 // Delete confirmation — manually-created receipts only (no real PO behind them).
@@ -372,8 +369,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="warehouseFilter.includes(opt.value)"
                   @change="toggleWarehouse(opt.value)"
                   @click.stop
-                />
-                <span>{{ opt.label }}</span>
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -397,8 +395,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="statusFilter.includes(s)"
                   @change="toggleStatus(s)"
                   @click.stop
-                />
-                <span>{{ statusOptionLabel(s) }}</span>
+                >
+                  {{ s }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -501,7 +500,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ value }">
-      <ErpStatusBadge :status="(value as string)" />
+      <ErpStatusBadge :status="(value as string)" :type="value === 'pending' ? 'announcement' : undefined" />
     </template>
 
     <!-- ── Icon indicator — purchase receiving task badge ── -->

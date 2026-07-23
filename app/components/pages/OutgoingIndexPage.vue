@@ -13,11 +13,11 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { outgoingForStages, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, cancelOutgoingOrder, type OutgoingOrder } from '~/data/outgoing'
+import { outgoingForStages, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, canCancelOutboundOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder, type OutgoingOrder } from '~/data/outgoing'
 import { canPickOrder, getPickingForOrder } from '~/data/pickingTasks'
 import { addPackingTaskFromOrder, canCreatePackingDirectlyForOrder, getPackingForOrder } from '~/data/packingTasks'
 import { getDeliveryForOrder } from '~/data/deliveryTasks'
-import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { syncOutboundOrderStatuses, cancelOutboundOrder } from '~/data/outboundSync'
 import { warehouses } from '~/data/warehouses'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 
@@ -67,13 +67,12 @@ const columnItems = [baseColumnItems[0]!, { key: 'memo', label: 'Memo' }, ...bas
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
-// Status — multi-select. Completed & Canceled are terminal, hidden by default, so
-// the default view shows only the actionable stages.
-const STATUS_OPTIONS = ['Open', 'In process', 'Partially shipped', 'Completed', 'Canceled']
-const DEFAULT_STATUSES = ['Open', 'In process', 'Partially shipped']
+// Status — multi-select, nothing pre-selected: the default view shows ALL statuses
+// (empty filter = show everything). Pick specific statuses to narrow it down.
+const STATUS_OPTIONS = ['Pending', 'Open', 'In process', 'Partially shipped', 'Completed', 'Canceled']
 const STATUS_LABELS: Record<string, string> = {}
 function statusOptionLabel(s: string) { return STATUS_LABELS[s] ?? s }
-const statusFilter = ref<string[]>([...DEFAULT_STATUSES])
+const statusFilter = ref<string[]>([])
 function toggleStatus(s: string) {
   statusFilter.value = statusFilter.value.includes(s)
     ? statusFilter.value.filter(x => x !== s)
@@ -86,11 +85,8 @@ const statusLabel = computed(() => {
   if (n === 1) return statusOptionLabel(statusFilter.value[0])
   return `${n} statuses`
 })
-const statusIsDefault = computed(() =>
-  statusFilter.value.length === DEFAULT_STATUSES.length
-  && DEFAULT_STATUSES.every(s => statusFilter.value.includes(s)),
-)
-function resetStatus() { statusFilter.value = [...DEFAULT_STATUSES] }
+const statusIsDefault = computed(() => statusFilter.value.length === 0)
+function resetStatus() { statusFilter.value = [] }
 
 const warehouseFilter = ref<string[]>([])
 // Mirror into the shared singleton so the tab bar's count badges (Requests (N),
@@ -194,7 +190,7 @@ const {
     const matchesSearch = !s
       || row.salesNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
-    const matchesStatus = statusFilter.value.includes(outgoingStage(row))
+    const matchesStatus = !statusFilter.value.length || statusFilter.value.includes(outgoingStage(row))
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     let matchesDue = true
     const range = dueRange.value
@@ -324,8 +320,11 @@ function bulkCreatePicking(selectedRows: Set<number>, deselectAll: () => void) {
   router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: wh, orderIds: eligible.map(o => o.id).join(','), from: 'requests' } })
 }
 
-// Only open orders can be cancelled.
-function canCancelOrder(o: OutgoingOrder) { return o.status === 'open' }
+// Only orders with no work started yet can be cancelled (previously just "open" —
+// now split into Pending/Open, both still count as "nothing started").
+// D2 AC#5 — cancellable as long as nothing has shipped (pending/open/in-progress);
+// blocked once partially shipped or completed.
+function canCancelOrder(o: OutgoingOrder) { return canCancelOutboundOrder(o) }
 function cancelableSelection(selectedRows: Set<number>) { return selectedOrdersOf(selectedRows).filter(canCancelOrder) }
 function bulkCancelable(selectedRows: Set<number>) { return cancelableSelection(selectedRows).length > 0 }
 
@@ -342,8 +341,8 @@ function askBulkCancel(selectedRows: Set<number>, deselectAll: () => void) {
 }
 function confirmBulkCancel() {
   const n = _bulkCancelOrders.length
-  for (const o of _bulkCancelOrders) cancelOutgoingOrder(o.id)
-  toast.notify({ variant: 'success', title: `${n} order${n > 1 ? 's' : ''} cancelled` })
+  for (const o of _bulkCancelOrders) cancelOutboundOrder(o.id)
+  toast.notify({ variant: 'success', title: `${n} order${n > 1 ? 's' : ''} cancelled`, maxWidth: 'max-content' })
   _bulkCancelOrders = []
   _bulkDeselect?.()
   _bulkDeselect = null
@@ -352,12 +351,21 @@ function confirmBulkCancel() {
 
 const cancelModalOpen = ref(false)
 const orderToCancel = ref<OutgoingOrder | null>(null)
+function releaseReserved(row: OutgoingOrder) {
+  if (releaseReservedForCancelledOrder(row.id)) {
+    toast.notify({ variant: 'success', title: `Reserved stock released back to available for ${row.number}`, maxWidth: 'max-content' })
+  }
+}
 function openCancelModal(row: OutgoingOrder) { orderToCancel.value = row; cancelModalOpen.value = true }
 function closeCancelModal() { cancelModalOpen.value = false; orderToCancel.value = null }
 function confirmCancelOrder() {
   if (orderToCancel.value) {
-    cancelOutgoingOrder(orderToCancel.value.id)
-    toast.notify({ variant: 'success', title: `Order ${orderToCancel.value.number} cancelled` })
+    const res = cancelOutboundOrder(orderToCancel.value.id)
+    if (res.ok) {
+      toast.notify({ variant: 'success', title: `Order ${orderToCancel.value.number} cancelled`, maxWidth: 'max-content' })
+    } else {
+      toast.notify({ variant: 'error', title: 'Cannot cancel — a package has already shipped', maxWidth: 'max-content' })
+    }
   }
   closeCancelModal()
 }
@@ -430,8 +438,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="warehouseFilter.includes(opt.value)"
                   @change="toggleWarehouse(opt.value)"
                   @click.stop
-                />
-                <span>{{ opt.label }}</span>
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -455,8 +464,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="statusFilter.includes(s)"
                   @change="toggleStatus(s)"
                   @click.stop
-                />
-                <span>{{ statusOptionLabel(s) }}</span>
+                >
+                  {{ statusOptionLabel(s) }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -559,7 +569,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ value }">
-      <ErpStatusBadge :status="(value as string)" />
+      <ErpStatusBadge :status="(value as string)" :type="value === 'pending' ? 'announcement' : undefined" />
     </template>
 
     <!-- ── Icon indicators — picking list + packing task badges ── -->
@@ -658,6 +668,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as OutgoingOrder)"
             >Cancel order</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canReleaseReservedForOrder((row as unknown as OutgoingOrder).id)"
+              @click="releaseReserved(row as unknown as OutgoingOrder)"
+            >Release reserved</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>

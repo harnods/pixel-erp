@@ -3,7 +3,7 @@ import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY } from './master'
 import { getWarehouseConfig } from './warehouseConfig'
-import { orderSkuLines } from './inventory'
+import { orderSkuLines, productBySku } from './inventory'
 import {
   getWarehouseDetail,
   autoSelectLocationBins,
@@ -12,10 +12,15 @@ import {
   reserveStock,
   releaseReservationsForTask,
   getReservationsForOrder,
+  hasReservationsForTask,
+  reservedQtyForTask,
 } from './warehouseDetails'
 
-/** Outbound order status. */
+/** Pending = no picking/packing task yet · Open = task(s) created, none started ·
+ *  In progress = at least one task started · Partially shipped = some qty shipped,
+ *  short of full · Completed = fully shipped · Canceled = voided. */
 export type OutgoingStatus =
+  | "pending"
   | "open"
   | "in progress"
   | "partially shipped"
@@ -43,7 +48,11 @@ export interface OutgoingOrder {
   orderQty: number;
   /** units shipped so far (0 = none, < orderQty = partial, = orderQty = full) */
   shippedQty: number;
-  status: string;
+  /** shipped units PER SKU (derived by syncOutboundOrderStatuses from completed
+   *  shipments) — lets reserveOrder avoid re-reserving stock that has already left
+   *  when a partially-shipped order is re-evaluated (it's still "pickable"). */
+  shippedBySku?: Record<string, number>;
+  status: OutgoingStatus;
   /** ISO date the goods fully left the warehouse (completed orders only) */
   shippedDate?: string;
   /** ISO date the order was canceled (canceled orders only) */
@@ -52,6 +61,13 @@ export interface OutgoingOrder {
   canceledReason?: string;
   /** who canceled the order (canceled orders only) */
   canceledBy?: string;
+  /** D6 — reserved-stock release audit. A cancelled order does NOT auto-release its
+   *  reservation; a user triggers "Release Reserved" to return the still-held
+   *  (un-shipped) reserved qty to Available. These record that release for audit and
+   *  prevent re-release (a released reservation can't be re-held). */
+  reservedReleasedDate?: string;
+  reservedReleasedBy?: string;
+  reservedReleasedQty?: number;
   /** ISO date the order is due to leave the warehouse */
   dueDate: string;
   /** free-text memo the back-office writes on the order (optional) — e.g.
@@ -65,6 +81,16 @@ export interface OutgoingOrder {
   createdAt?: string;
   /** Actual line items — stored for user-created orders; seed orders derive via orderSkuLines(). */
   lines?: StoredOrderLine[];
+  /** D7 — audit trail of edits to the order (newest last). Each entry lists the
+   *  field changes as "old → new" so the activity log shows exactly what changed. */
+  editLog?: OutgoingEditEntry[];
+}
+
+/** One recorded edit: who, when, and the individual field changes ("apa ke apa"). */
+export interface OutgoingEditEntry {
+  at: string;
+  by: string;
+  changes: { label: string; value: string }[];
 }
 
 export interface StoredOrderLine {
@@ -102,10 +128,10 @@ function generateMemo(i: number, dueIso: string): string | undefined {
 }
 
 // Units shipped so far, derived from the status:
-//  - open / in progress → 0 (nothing has left yet)
+//  - pending/open/in progress → 0 (nothing has left yet)
 //  - partially shipped → shipped short of the full qty (varied, never full)
 //  - completed → shipped in full (or accepted short)
-function computeShipped(i: number, status: string, orderQty: number): number {
+function computeShipped(i: number, status: OutgoingStatus, orderQty: number): number {
   switch (status) {
     case "completed":
       // ~4 of 10 completed orders shipped short (accepted as partial)
@@ -122,7 +148,7 @@ function computeShipped(i: number, status: string, orderQty: number): number {
       return Math.min(orderQty - 1, Math.max(1, Math.round(orderQty * f)));
     }
     default:
-      return 0; // open / in progress
+      return 0; // pending / open / in progress
   }
 }
 
@@ -172,12 +198,16 @@ const CUSTOMERS = [
 ]
 
 /**
- * Status for order i — weighted to feel like a real outbound queue: mostly Open +
+ * Status for order i — weighted to feel like a real outbound queue: mostly Pending +
  * Completed, fewer In progress / Partially shipped. Canceled is appended separately.
+ * This is the PRE-task seed value; seedTasks() (pickingTasks.ts/packingTasks.ts) reads
+ * it to decide what tasks to attach, then syncOutboundOrderStatuses() re-derives the
+ * real status (Pending/Open/In progress/Partially shipped/Completed) from those tasks
+ * on every page mount — so "pending" here just means "no task ended (or started) yet".
  */
-function statusFor(i: number): string {
+function statusFor(i: number): OutgoingStatus {
   const h = hash100(i);
-  if (h < 30) return "open";              // ~30% awaiting fulfillment
+  if (h < 30) return "pending";           // ~30% awaiting fulfillment
   if (h < 52) return "in progress";       // ~22% being picked/packed
   if (h < 67) return "partially shipped"; // ~15% shipped short
   return "completed";                     // ~33% fully shipped
@@ -360,7 +390,11 @@ function reserveOrder(order: OutgoingOrder): void {
       // Plain SKU — a bare qty reservation, nothing to validate it against.
       return sum + r.qty;
     }, 0);
-    const remaining = line.qty - already;
+    // Subtract units that already SHIPPED (goods gone, reservation consumed at
+    // shipment completion) — a partially-shipped order is still "pickable", so
+    // without this it would re-reserve the shipped-and-gone quantity.
+    const shipped = order.shippedBySku?.[line.sku] ?? 0;
+    const remaining = line.qty - shipped - already;
     if (remaining <= 0) continue;
     const preferredLocations = autoSelectLocationBins(order.warehouseId, line.sku, remaining).map((b) => b.location);
     if (item.batches?.length) {
@@ -398,7 +432,7 @@ function generateTrackingScenario(): OutgoingOrder[] {
       skuQty: 3,
       orderQty: 9,
       shippedQty: 0,
-      status: "open",
+      status: "pending",
       dueDate: isoOffset(7),
       memo: "For demo 001",
       customer: "Anomali Coffee",
@@ -432,22 +466,109 @@ function generateTrackingScenario(): OutgoingOrder[] {
   ];
 }
 
+/**
+ * Demo scenario: TWO sales orders at Gudang Jakarta Pusat (wh-001) — one
+ * regular ERP order, one Desty marketplace order — meant to be bundled into a
+ * single Open picking task (see seedMultiOrderPickingDemo() in
+ * pickingTasks.ts), exercising the Combined/By orders toggle on
+ * PickingTaskDetailsPage.vue with a real multi-order task. Each order draws
+ * from its own distinct SKUs (no SKU shared between the two) so their demand
+ * never compounds against the same stock line. Verified via
+ * tests/data-integrity.spec.ts (available ≥ demand for every SKU/warehouse
+ * pair, post-reservation) against the live seed at wh-001: 3001 available 9,
+ * 3002 available 20, 3005 available 21, 3006 available 22 — this demo only
+ * ever claims 3 of 3001, 2 of 3002, 3 of 3005, 2 of 3006.
+ */
+function generateMultiOrderPickingScenario(): OutgoingOrder[] {
+  return [
+    {
+      id: "out-demo-multi-a",
+      number: "OUT-2026-0701",
+      salesNo: "Sales Order #10200",
+      source: "Sales Order",
+      warehouseId: "wh-001",
+      warehouseName: "Gudang Jakarta Pusat",
+      skuQty: 2,
+      orderQty: 6,
+      shippedQty: 0,
+      status: "pending",
+      dueDate: isoOffset(5),
+      memo: "For demo multi-order picking (regular)",
+      customer: "Hotel Mulia Senayan",
+      lines: [
+        {
+          sku: "3001",
+          productName: "Milk Frothing Pitcher 600ml",
+          desc: "Stainless steel, sharp spout, latte art",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/products/milk-steaming-pitcher_7a0b6d9d-dc2f-410b-83e8-0c0caf6403e5.jpg",
+          unit: "Unit",
+          qty: 3,
+        },
+        {
+          sku: "3005",
+          productName: "Paper Filter V60 02 (100 pcs)",
+          desc: "Natural unbleached, cone shape",
+          img: "https://cdn.shopify.com/s/files/1/0801/9439/files/0129_hariometeo_112_2485daae-afa0-42da-b4d9-97fb436ffc99.jpg",
+          unit: "Box",
+          qty: 3,
+        },
+      ],
+    },
+    {
+      id: "out-demo-multi-b",
+      number: "OUT-2026-0702",
+      salesNo: "#SO201",
+      source: "Shopee: Central Perk",
+      warehouseId: "wh-001",
+      warehouseName: "Gudang Jakarta Pusat",
+      skuQty: 2,
+      orderQty: 4,
+      shippedQty: 0,
+      status: "pending",
+      dueDate: `${isoOffset(1)}T23:59:00`,
+      memo: "For demo multi-order picking (marketplace)",
+      customer: "Fore Coffee Thamrin",
+      lines: [
+        {
+          sku: "3002",
+          productName: "Tamper 58mm Flat Base",
+          desc: "Anodized aluminium handle, calibrated",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/products/Lucca-Stainless-Steel-Espresso-Tamper-05.jpg",
+          unit: "Unit",
+          qty: 2,
+        },
+        {
+          sku: "3006",
+          productName: "Knock Box Drawer Stainless",
+          desc: "2.4 L capacity, rubber knock bar",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/files/LUCCA-Knock-Box-Small-Black-by-Clive-Coffee.jpg",
+          unit: "Unit",
+          qty: 2,
+        },
+      ],
+    },
+  ];
+}
+
 // The outbound graph (orders + picking + packing + delivery) is persisted as a
 // full snapshot so seed records mutated by the flow (status derivation, shipped
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
 const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
-  outgoingSnapshot ?? [...generateTrackingScenario(), ...generateOrders(), ...generateShipped(3), ...generateCanceled()],
+  outgoingSnapshot ?? [
+    ...generateTrackingScenario(), ...generateMultiOrderPickingScenario(),
+    ...generateOrders(), ...generateShipped(3), ...generateCanceled(),
+  ],
 );
 
-// Open / in-process / partially-shipped orders are pickable. (A partially shipped
-// order flips to that status the moment ANY of it ships — even if most of it was
-// never picked at all — so it still needs to allow further pick lists for whatever
+// Pending / open / in-process / partially-shipped orders are pickable. (A partially
+// shipped order flips to that status the moment ANY of it ships — even if most of it
+// was never picked at all — so it still needs to allow further pick lists for whatever
 // SKU/qty remains uncovered; the per-SKU/qty check lives in pickingTasks.canPickOrder.
 // "completed" is excluded on purpose: shippedTotal >= orderQty there, so nothing
 // can possibly be left to pick.)
-const PICKABLE_STATUSES = ["open", "in progress", "partially shipped"];
+const PICKABLE_STATUSES = ["pending", "open", "in progress", "partially shipped"];
 
 /**
  * Reserve every currently pickable (open / in-process) order — stands in for
@@ -516,12 +637,107 @@ export function cancelOutgoingOrder(orderId: string, reason?: string, canceledBy
   order.canceledDate = isoOffset(0);
   if (reason) order.canceledReason = reason;
   order.canceledBy = canceledBy;
-  releaseReservationsForTask(orderId);
+  // D6 AC#1 — cancel does NOT auto-release the reservation: the reserved qty stays
+  // out of Available until a user explicitly runs "Release Reserved". (No
+  // releaseReservationsForTask here on purpose.)
   persistOutgoing();
+}
+
+/** D2 cancel gate — an outbound order can be cancelled while NOTHING has truly
+ *  shipped (shippedQty is only posted once a shipment is COMPLETED). A partially/
+ *  fully shipped order is terminal for cancel (posting guard). */
+export function canCancelOutboundOrder(order: OutgoingOrder): boolean {
+  return order.status !== "canceled" && (order.shippedQty ?? 0) === 0;
+}
+
+/** D7 edit gate — an outbound order is editable while nothing has shipped and it
+ *  isn't cancelled. (Prototype: all sources editable; the PRD restricts this to
+ *  Direct outbound, but the demo allows any.) The per-SKU add/remove rules vs
+ *  picking state are enforced in editOutboundOrder (outboundSync). */
+export function canEditOutboundOrder(order: OutgoingOrder): boolean {
+  return order.status !== "canceled" && (order.shippedQty ?? 0) === 0;
+}
+
+/** Apply an edit's new SKU lines (+ optional header fields) to an order and persist.
+ *  Reservation sync (reserve added / release removed) is orchestrated by
+ *  editOutboundOrder in outboundSync — this only writes the order record. */
+export function updateOutgoingOrderLines(
+  orderId: string,
+  lines: { sku: string; qty: number }[],
+  header?: { customer?: string; dueDate?: string; memo?: string },
+): void {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  order.lines = lines
+    .filter((l) => l.qty > 0)
+    .map((l) => {
+      const p = productBySku(l.sku);
+      return {
+        sku: l.sku,
+        productName: p?.name ?? l.sku,
+        desc: p?.desc ?? "",
+        img: p?.img ?? "",
+        unit: p?.unit ?? "Unit",
+        qty: l.qty,
+      };
+    });
+  order.orderQty = order.lines.reduce((s, l) => s + l.qty, 0);
+  order.skuQty = order.lines.length;
+  if (header) {
+    if (header.customer !== undefined) order.customer = header.customer;
+    if (header.dueDate !== undefined) order.dueDate = header.dueDate;
+    if (header.memo !== undefined) order.memo = header.memo;
+  }
+  persistOutgoing();
+}
+
+/** D7 — append an edit entry to the order's audit trail. `changes` is the list of
+ *  "apa ke apa" field diffs (empty → no-op, so a no-change save records nothing). */
+export function recordOutgoingEdit(
+  orderId: string,
+  changes: { label: string; value: string }[],
+  by = "Rizal Candra",
+): void {
+  if (!changes.length) return;
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  (order.editLog ??= []).push({ at: new Date().toISOString(), by, changes });
+  persistOutgoing();
+}
+
+/** D6 — can this cancelled order's reserved stock still be released? Only when it's
+ *  cancelled, nothing shipped, the release hasn't already run, and it actually still
+ *  holds a reservation. */
+export function canReleaseReservedForOrder(orderId: string): boolean {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return false;
+  return (
+    order.status === "canceled" &&
+    !order.reservedReleasedDate &&
+    (order.shippedQty ?? 0) === 0 &&
+    hasReservationsForTask(orderId)
+  );
+}
+
+/** D6 — return a cancelled order's still-held (un-shipped) reserved qty to Available.
+ *  On-hand never moves (nothing was ever deducted for a reservation); no JE. Records
+ *  actor/timestamp/qty for audit and is idempotent (a second call is a no-op). Returns
+ *  true only when it actually released something. */
+export function releaseReservedForCancelledOrder(orderId: string, releasedBy = "Rizal Candra"): boolean {
+  if (!canReleaseReservedForOrder(orderId)) return false;
+  const order = outgoingOrders.find((o) => o.id === orderId)!;
+  const releasedQty = reservedQtyForTask(orderId);
+  releaseReservationsForTask(orderId);
+  order.reservedReleasedQty = releasedQty;
+  order.reservedReleasedDate = new Date().toISOString();
+  order.reservedReleasedBy = releasedBy;
+  persistOutgoing();
+  return true;
 }
 
 // status → stage label (used by tabs / sidebar panel)
 const STATUS_TO_STAGE: Record<string, string> = {
+  pending: "Pending",
   open: "Open",
   "in progress": "In process",
   "partially shipped": "Partially shipped",

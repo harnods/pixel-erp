@@ -109,7 +109,7 @@ function formatWhen(iso: string) {
       </MpModalHeader>
       <MpModalBody>
         <h2 class="al-subject">{{ subject }}</h2>
-        <section class="al-table-section">
+        <section class="al-table-section" :class="{ 'al-table-section--bordered': isProgressive }">
           <div ref="scrollEl" class="al-scroll" :class="{ 'al-scroll--tall': isProgressive }">
             <table class="al-table">
               <colgroup>
@@ -165,7 +165,9 @@ function formatWhen(iso: string) {
   color: var(--mp-text-default);
 }
 /* outside border of a table is the BOLD border colour */
-.al-table-section {
+/* Frame only when the list is longer than one page (matches the scroll + count
+   gating). A short log renders borderless. */
+.al-table-section--bordered {
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
   overflow: hidden;

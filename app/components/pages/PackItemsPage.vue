@@ -320,7 +320,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
         <div class="pak-stat"><span class="pak-stat-label">SKU qty</span><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span></div>
         <div v-if="!skippedPicking" class="pak-stat"><span class="pak-stat-label">Picked qty</span><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span></div>
         <div class="pak-stat"><span class="pak-stat-label">Packed qty</span><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span></div>
-        <div class="pak-stat"><span class="pak-stat-label">Outstanding qty</span><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">Remaining qty to pack</span><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pak-sku-section">
@@ -354,7 +354,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <th class="pak-th pak-th--num">Order qty</th>
                   <th v-if="!skippedPicking" class="pak-th pak-th--num">Picked qty</th>
                   <th class="pak-th pak-th--num">Packed qty</th>
-                  <th class="pak-th pak-th--num">Outstanding qty</th>
+                  <th class="pak-th pak-th--num">Remaining qty to pack</th>
                   <th class="pak-th">Unit</th>
                   <th class="pak-th pak-th--action"></th>
                 </tr>
@@ -581,7 +581,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pak-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; transition: background 0.15s; }
 .pak-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .pak-btn--primary:disabled:hover { background: var(--mp-background-brand-bold, #029861); }
-.pak-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-secondary); }
+.pak-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-secondary); font-weight: var(--mp-font-weights-regular); }
 .pak-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .pak-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }
 .pak-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }

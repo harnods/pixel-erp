@@ -23,7 +23,7 @@ import {
 } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { getShipment, marketplaceShipping, type ShipmentSummary } from '~/data/deliveryTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePackingListPdf } from '~/utils/packingListPdf'
 import { productBySku } from '~/data/inventory'
@@ -130,8 +130,22 @@ function confirmCancel() {
   if (!task.value) return
   cancelPackingTask(task.value.id)
   cancelOpen.value = false
+  localStatus.value = 'canceled' // stay on this detail page, now showing the canceled state
   toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
-  goBack()
+}
+
+// Release reserved — text link on the Reason line when this task was cancelled
+// because its order was cancelled and that order still holds reserved stock.
+// Disappears once released (canReleaseReservedForOrder = false).
+const canReleaseReserved = computed(() => {
+  const id = task.value?.salesOrderId
+  return !!id && canReleaseReservedForOrder(id)
+})
+function releaseReservedFromTask() {
+  const id = task.value?.salesOrderId
+  if (id && releaseReservedForCancelledOrder(id)) {
+    toast.notify({ variant: 'success', title: 'Reserved stock released', maxWidth: 'max-content' })
+  }
 }
 
 const pdfPreviewOpen = ref(false)
@@ -199,7 +213,7 @@ const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.valu
  *  "reservation not yet confirmed" gate is needed here. Packing has no
  *  per-bin PACKED breakdown anywhere in its data model (packedByKey is a
  *  flat total per line) — only Storage location/Picked qty ever split;
- *  Packed qty/Outstanding qty/Unit stay merged regardless. */
+ *  Packed qty/Remaining qty to pack/Unit stay merged regardless. */
 /** Storage location(s) to DISPLAY for a batch/serial-tracked line — real bin(s)
  *  it was actually picked from, replacing the old generic binForSku()
  *  fallback (a warehouse-wide default location for the SKU, unrelated to
@@ -236,7 +250,7 @@ interface PackRowWithMeta {
   groupSize: number
 }
 /** Expands each visible line into one row per bin actually used (Storage
- *  location/Picked qty split per bin, Product/SKU/Packed qty/Outstanding qty/
+ *  location/Picked qty split per bin, Product/SKU/Packed qty/Remaining qty to pack/
  *  Unit/Action merged via groupIndex/groupSize) — or a single row when
  *  there's nothing to split (0 or 1 bin used), matching Picking's same
  *  pattern. */
@@ -310,7 +324,6 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         <button class="detail-breadcrumb" @click="goBack">Packing</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
-          <span v-if="isInProgress" class="pck-pulse" aria-label="In process" />
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="pck-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
@@ -371,7 +384,13 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <template v-if="localStatus === 'canceled'">
             <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
-            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+            <ContentList label="Reason">
+              <span class="pck-reason">
+                <span>{{ task.canceledReason ?? '—' }}</span>
+                <button v-if="canReleaseReserved" type="button" class="pck-reason-release" @click="releaseReservedFromTask">Release reserved</button>
+              </span>
+            </ContentList>
+            <ContentList label="Canceled by" :value="task.canceledBy ?? '—'" />
           </template>
           <ContentList v-else label="End date">
             <span class="pck-end-cell">
@@ -386,7 +405,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         <div class="pck-progress-stat"><span class="pck-progress-label">SKU qty</span><span class="pck-progress-val">{{ task.skuQty }}</span></div>
         <div v-if="!skippedPicking" class="pck-progress-stat"><span class="pck-progress-label">Picked qty</span><span class="pck-progress-val">{{ fmt(pickedTotal) }}</span></div>
         <div class="pck-progress-stat"><span class="pck-progress-label">Packed qty</span><span class="pck-progress-val">{{ fmt(packedTotal) }}</span></div>
-        <div class="pck-progress-stat"><span class="pck-progress-label">Outstanding qty</span><span class="pck-progress-val">{{ fmt(outstandingTotal) }}</span></div>
+        <div class="pck-progress-stat"><span class="pck-progress-label">Remaining qty to pack</span><span class="pck-progress-val">{{ fmt(outstandingTotal) }}</span></div>
       </section>
 
       <div class="pck-table-wrap">
@@ -413,7 +432,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
                   <th class="detail-th">Storage location</th>
                   <th v-if="!skippedPicking" class="detail-th detail-th--num">Picked qty</th>
                   <th class="detail-th detail-th--num">Packed qty</th>
-                  <th class="detail-th detail-th--num">Outstanding qty</th>
+                  <th class="detail-th detail-th--num">Remaining qty to pack</th>
                   <th class="detail-th">Unit</th>
                   <th class="detail-th detail-th--action"></th>
                 </tr>
@@ -621,15 +640,40 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
-        Cancel
-      </button>
-      <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startPackingAndNavigate">
-        Match order
-      </button>
-      <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/packing/${orderId}/pack`)">
-        Continue matching
-      </button>
+      <!-- Cancel task lives in the primary action's split-button dropdown, never as a
+           standalone "Cancel" footer button. -->
+      <template v-if="localStatus === 'open'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startPackingAndNavigate">Match order</button>
+          <MpPopover id="pck-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="startPackingAndNavigate">Match order</button>
+      </template>
+      <template v-else-if="localStatus === 'in progress'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="router.push(`/packing/${orderId}/pack`)">Continue matching</button>
+          <MpPopover id="pck-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="router.push(`/packing/${orderId}/pack`)">Continue matching</button>
+      </template>
       <button v-else-if="localStatus === 'completed' && linkedDelivery.length" class="detail-btn detail-btn--primary" @click="viewDelivery">
         View delivery
       </button>
@@ -707,10 +751,6 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 
-@keyframes pck-pulse-ring { 0% { transform: scale(0.85); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
-.pck-pulse { position: relative; display: inline-flex; width: var(--mp-sizes-2, 8px); height: var(--mp-sizes-2, 8px); border-radius: var(--mp-radii-full, 999px); background: var(--mp-colors-emerald-500, #10b981); flex-shrink: 0; }
-.pck-pulse::after { content: ''; position: absolute; inset: 0; border-radius: var(--mp-radii-full, 999px); background: var(--mp-colors-emerald-500, #10b981); animation: pck-pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-
 .detail-bar-right { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5); flex-shrink: 0; }
 .pck-last-updated-label { font-size: var(--mp-font-sizes-xs, 11px); color: var(--mp-text-secondary); }
 .pck-last-updated-val { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
@@ -743,6 +783,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .content-list-col { display: flex; flex-direction: column; }
 .pck-end-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .pck-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #f1f5f9); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
+.pck-reason { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.pck-reason-release { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
+.pck-reason-release:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 .pck-progress { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pck-progress-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-28, 112px); }
@@ -826,6 +869,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 .detail-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; }

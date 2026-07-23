@@ -13,7 +13,7 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
-import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
+import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, acknowledgeCanceledReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
@@ -335,7 +335,7 @@ const showConfirm = ref(false)
 function endReceiving() {
   if (draftReceivedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'error', title: 'You must fill in received qty for at least one item', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: 'Receive at least one item to finish, or cancel the task instead.', maxWidth: 'max-content' })
     return
   }
   showConfirm.value = true
@@ -416,6 +416,20 @@ const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
 function goBack()      { router.push(`/receiving/${props.orderId}`) }
 function goReceiving() { router.push('/inbound-delivery?tab=Receiving') }
 
+// Defense in depth — the details page already blocks navigating here via
+// Continue receiving until acknowledged, but a direct URL visit must be
+// blocked the same way. Since this task belongs to exactly ONE PO,
+// acknowledging cancels the task itself (nothing left to receive once its
+// one-and-only PO is gone) — there's no receive UI to fall back into here,
+// so this navigates back to the task details page instead.
+function acknowledgeAndCancel() {
+  if (!task.value) return
+  const taskNo = task.value.taskNo
+  acknowledgeCanceledReceipt(task.value.id)
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
+  goBack()
+}
+
 // ── Footer divider ────────────────────────────────────────────────────────────
 const stageEl          = ref<HTMLElement | null>(null)
 const stageOverflowing = ref(false)
@@ -448,7 +462,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 </script>
 
 <template>
-  <div v-if="task && po" class="detail-page">
+  <div v-if="task && po && task.needsCancelAck" class="ri-not-found">
+    <p>The purchase order behind this task ({{ task.purchaseNo }}) was canceled.</p>
+    <p>There's nothing left to receive for it — acknowledging will cancel this task too.</p>
+    <button class="ri-btn ri-btn--primary" type="button" @click="acknowledgeAndCancel">Acknowledge</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to task</button>
+  </div>
+
+  <div v-else-if="task && po" class="detail-page">
 
     <!-- ── Title bar ── -->
     <header class="detail-bar">
@@ -491,10 +512,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         </div>
         <div class="ri-stat">
           <span class="ri-stat-label">
-            Outstanding qty
+            Remaining qty to receive
             <MpTooltip
               id="ri-tt-outstanding"
-              label="Against Expected qty, floored at 0 — receiving more than expected (up to Purchase qty) never shows as a negative outstanding."
+              label="Against Expected qty, floored at 0 — receiving more than expected (up to Purchase qty) never shows as a negative remaining qty."
               placement="top"
               use-portal
             >
@@ -534,14 +555,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
           <div ref="itemsScrollEl" class="ri-items-scroll">
             <table class="ri-items">
               <colgroup>
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
+                <col style="width: 26%" />
+                <col style="width: 10%" />
+                <col style="width: 11%" />
+                <col style="width: 11%" />
+                <col style="width: 11%" />
+                <col style="width: 15%" />
+                <col style="width: 8%" />
+                <col style="width: 56px" />
               </colgroup>
               <thead>
                 <tr>
@@ -550,7 +571,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <th class="ri-th ri-th--num">Purchase qty</th>
                   <th class="ri-th ri-th--num">Expected qty</th>
                   <th class="ri-th ri-th--num">Received qty</th>
-                  <th class="ri-th ri-th--num">Outstanding qty</th>
+                  <th class="ri-th ri-th--num">Remaining qty to receive</th>
                   <th class="ri-th">Unit</th>
                   <th class="ri-th"></th>
                 </tr>
@@ -864,7 +885,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .ri-items thead .ri-th { position: sticky; top: 0; z-index: 1; }
 
-.ri-items { width: 100%; border-collapse: collapse; table-layout: auto; }
+.ri-items { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .ri-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
@@ -955,6 +976,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 }
 .ri-btn--ghost {
   background: transparent; border-color: transparent; color: var(--mp-text-secondary);
+  font-weight: var(--mp-font-weights-regular);
 }
 .ri-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .ri-btn--secondary {

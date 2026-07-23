@@ -74,6 +74,7 @@
             v-for="sub in group"
             :key="sub.label"
             class="submenu-item"
+            :class="{ active: activePanelSubItem === sub.label }"
             @click="handleFlyoutSubItemClick(sub)"
           >
             <span>{{ sub.label }}</span>
@@ -129,6 +130,12 @@ interface NavItem {
    * slug — e.g. WMS Ops "Warehouses" opens a specific warehouse's detail directly.
    */
   path?: string
+  /**
+   * Navigation identity (page label) when it must differ from the display name —
+   * e.g. WMS Standalone's "Products" leaf routes to the "Product list" page.
+   * Defaults to `name`.
+   */
+  to?: string
 }
 
 interface ActivePanel {
@@ -164,7 +171,7 @@ const toggleIcon = toggleIconUrl
 const shortcutIcon = shortcutIconUrl
 const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
-const { navigate, currentPageKey, setActiveMenuLabel } = useNavigation()
+const { navigate, currentPageKey, setActiveMenuLabel, activeSectionOverride } = useNavigation()
 const router = useRouter()
 
 const flyoutItem = ref<NavItem | null>(null)
@@ -191,7 +198,7 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Sales' },
     { label: 'Purchases' },
     { label: 'Inventory' },
-    { label: 'Warehouses' },
+    { label: 'Warehouses', to: 'Warehouse settings' },
     { label: 'Production' },
     { label: 'Default accounts' },
   ],
@@ -301,7 +308,7 @@ const erpNavGroups: NavItem[][] = [
             label: 'Products',
             panelSubmenu: [
               [
-                { label: 'Products' },
+                { label: 'Products', to: 'Product list' },
                 { label: 'Categories' },
                 { label: 'Variant options' },
                 { label: 'Units' },
@@ -329,13 +336,12 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
           { label: 'Warehouse transfers' },
-          { label: 'Cycle counts' },
           { label: 'Stock adjustments' },
         ],
         [
           { label: 'Storage locations' },
           { label: 'Warehouse reports', iconType: 'shortcut' },
-          { label: 'Warehouse settings', iconType: 'settings' },
+          { label: 'Warehouse settings', iconType: 'shortcut' },
         ],
       ],
     },
@@ -429,7 +435,8 @@ function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean):
   const c = receiptCountsByStage(scopeIds)
   const items: PanelSubItem[] = []
   if (withDraft) items.push({ label: 'Draft' })
-  items.push({ label: 'On the way', count: c['On the way'] })
+  const onTheWayCount = (c['Pending'] ?? 0) + (c['Open'] ?? 0) + (c['In progress'] ?? 0) || undefined
+  items.push({ label: 'On the way', count: onTheWayCount })
   items.push({ label: 'Receiving', count: receivingOpenCount(scopeIds) || undefined })
   items.push({ label: 'Put-away', count: putAwayOpenCount(scopeIds) || undefined })
   items.push({ label: 'Partial reception', count: c['Partial reception'] })
@@ -439,7 +446,7 @@ function barangMasukNavItem(scopeIds: string[] | undefined, withDraft: boolean):
 }
 const stockCountNav: NavItem[] = [
   { name: 'Stock count', icon: 'table-view-list' },
-  { name: 'Cycle count', icon: 'chart-of-account' },
+  { name: 'Cycle counts', icon: 'chart-of-account' },
   { name: 'Stock in/out', icon: 'fulfillment' },
 ]
 
@@ -455,7 +462,18 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Reports', icon: 'reports' },
   ],
   [
-    { name: 'Inventory', icon: 'products' },
+    // Inventory carries a level-2 panel (Products, Categories, …) — mirrors the ERP
+    // "Inventory" menu instead of a flat "Products" leaf.
+    {
+      name: 'Inventory', icon: 'products',
+      panelSubmenu: [[
+        { label: 'Products', to: 'Product list' },
+        { label: 'Categories' },
+        { label: 'Variant options' },
+        { label: 'Units' },
+        { label: 'Price rules' },
+      ]],
+    },
     { name: 'Warehouses', icon: 'warehouse' },
   ],
   [
@@ -511,16 +529,23 @@ const navGroups = computed<NavItem[][]>(() => {
 // lives inside a level-2 panel — the panel that should be open. Returning the
 // panel lets us restore it on refresh (otherwise the panel only ever opens via
 // a click handler, so a hard reload on a panel sub-page would lose it).
-function resolveActive(pageKey: string): {
+// A `shortcut`-flagged panel item (e.g. Inventory > Products > "Stock
+// adjustments") is a pointer INTO another section's real page, not an owner of
+// its own — e.g. WMS's own "Stock adjustments" shares that exact label. Search
+// non-shortcut items first so the real owning section (WMS) always wins the
+// sidebar highlight, regardless of which of the two identically-labeled items
+// was actually clicked; only fall back to a shortcut match if nothing else
+// claims the label (so standalone shortcuts, e.g. "Products reports", still work).
+function findActive(pageKey: string, allowShortcuts: boolean): {
   nav: string
   sub: string | null
   panel: ActivePanel | null
-} {
+} | null {
   for (const group of navGroups.value) {
     for (const item of group) {
       // slug-based match so names with caps/slashes (e.g. 'Stock in/out') still
       // resolve through the URL round-trip
-      if (labelToPath(item.name) === labelToPath(pageKey)) {
+      if (labelToPath(item.to ?? item.name) === labelToPath(pageKey)) {
         // If the matched nav item owns a level-2 panel, return it so the panel
         // stays open on refresh of a detail page (e.g. /stock-adjustments/wsa-001
         // resolves to 'Stock adjustments', which has a panelSubmenu).
@@ -531,9 +556,14 @@ function resolveActive(pageKey: string): {
       }
       for (const subGroup of item.submenu ?? []) {
         for (const sub of subGroup) {
+          // Shortcut flyout items (e.g. WMS → "Warehouse settings") are pointers
+          // into another module's page, not owners — skip on the first pass so the
+          // real owning section (Settings) wins the active highlight.
+          if (!allowShortcuts && sub.iconType === 'shortcut') continue
           if (sub.label === pageKey) return { nav: item.name, sub: sub.label, panel: null }
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
+              if (!allowShortcuts && p.iconType === 'shortcut') continue
               if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
                 return {
                   nav: item.name,
@@ -552,6 +582,7 @@ function resolveActive(pageKey: string): {
       }
       for (const pGroup of item.panelSubmenu ?? []) {
         for (const p of pGroup) {
+          if (!allowShortcuts && p.iconType === 'shortcut') continue
           if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
             return {
               nav: item.name,
@@ -564,7 +595,15 @@ function resolveActive(pageKey: string): {
       }
     }
   }
-  return { nav: 'Home', sub: null, panel: null }
+  return null
+}
+
+function resolveActive(pageKey: string): {
+  nav: string
+  sub: string | null
+  panel: ActivePanel | null
+} {
+  return findActive(pageKey, false) ?? findActive(pageKey, true) ?? { nav: 'Home', sub: null, panel: null }
 }
 
 // Map URL-first-segment keys that don't appear directly in the nav tree to their
@@ -579,7 +618,8 @@ const SECTION_PARENT: Record<string, string> = {
   'Put away': 'Inbound delivery',
 }
 
-watch(currentPageKey, (key) => {
+watch([currentPageKey, activeSectionOverride], ([urlKey, override]) => {
+  const key = override ?? urlKey
   let { nav, sub, panel } = resolveActive(key)
   // When the URL key isn't in this scenario's nav tree, try the canonical parent
   // section instead so the sidebar stays anchored (and the level-2 panel stays open).
@@ -673,7 +713,7 @@ function handleNavClick(item: NavItem) {
     // Simple leaf nav item (e.g. Home, Expenses, Settings)
     activeItem.value = item.name
     if (item.path) router.push(item.path)
-    else navigate(item.name)
+    else navigate(item.to ?? item.name)
     closePanel()
   }
   // Items with submenu: flyout opens on hover, click does nothing
@@ -1007,6 +1047,12 @@ function cancelClose() {
 }
 
 .submenu-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
+
+.submenu-item.active {
+  background-color: #E2E8F0;
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-link, #165082);
+}
 
 .submenu-item-icon { width: var(--mp-sizes-5); height: var(--mp-sizes-5); flex-shrink: 0; filter: brightness(0) opacity(0.5); }
 .submenu-item-icon--shortcut { width: var(--mp-sizes-4); height: var(--mp-sizes-4); }

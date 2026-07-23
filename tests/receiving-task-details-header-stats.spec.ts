@@ -31,7 +31,7 @@ describe('ReceivingTaskDetailsPage — header summary stats', () => {
       purchaseNo: 'PO-TEST-HEADER-STATS',
       warehouseId: 'wh-006', warehouseName: 'Gudang Makassar Selatan',
       skuQty: 1, purchaseQty: 10, receivedQty: 0,
-      status: 'on the way',
+      status: 'pending',
       estimatedArrival: '2026-08-01',
       trackingNos: [],
     })
@@ -62,7 +62,7 @@ describe('ReceivingTaskDetailsPage — Outstanding qty is Expected qty minus Rec
       purchaseNo: 'PO-TEST-OUTSTANDING',
       warehouseId: 'wh-006', warehouseName: 'Gudang Makassar Selatan',
       skuQty: 1, purchaseQty: 10, receivedQty: 0,
-      status: 'on the way',
+      status: 'pending',
       estimatedArrival: '2026-08-01',
       trackingNos: [],
     })
@@ -78,7 +78,7 @@ describe('ReceivingTaskDetailsPage — Outstanding qty is Expected qty minus Rec
     await flushPromises()
 
     // 6 (Expected qty) - 4 (Received) = 2 — NOT 10 (Purchase qty) - 4 = 6.
-    expect(statValue(wrapper, 'Outstanding qty')).toBe('2')
+    expect(statValue(wrapper, 'Remaining qty to receive')).toBe('2')
 
     const row = wrapper.find('tr.detail-item-row')
     const numCells = row.findAll('td.detail-td--num').map((c) => c.text())
@@ -92,7 +92,7 @@ describe('ReceivingTaskDetailsPage — Outstanding qty is Expected qty minus Rec
       purchaseNo: 'PO-TEST-OUTSTANDING-FLOOR',
       warehouseId: 'wh-006', warehouseName: 'Gudang Makassar Selatan',
       skuQty: 1, purchaseQty: 10, receivedQty: 0,
-      status: 'on the way',
+      status: 'pending',
       estimatedArrival: '2026-08-01',
       trackingNos: [],
     })
@@ -107,7 +107,7 @@ describe('ReceivingTaskDetailsPage — Outstanding qty is Expected qty minus Rec
     const wrapper = mount(ReceivingTaskDetailsPage, { props: { orderId: task.id } })
     await flushPromises()
 
-    expect(statValue(wrapper, 'Outstanding qty')).toBe('0')
+    expect(statValue(wrapper, 'Remaining qty to receive')).toBe('0')
     const row = wrapper.find('tr.detail-item-row')
     const numCells = row.findAll('td.detail-td--num').map((c) => c.text())
     expect(numCells).toEqual(['10', '6', '8', '0'])

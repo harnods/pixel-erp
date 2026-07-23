@@ -1,7 +1,18 @@
 <script setup lang="ts">
-import { MpIcon, MpSpinner } from '@mekari/pixel3'
-import { getReservationForSerial, type WarehouseStockItem } from '~/data/warehouseDetails'
+import {
+  MpIcon, MpSpinner,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
+import {
+  getReservationForSerial, type WarehouseStockItem, type SerialUnit,
+} from '~/data/warehouseDetails'
 import { outgoingOrders } from '~/data/outgoing'
+import { warehouses } from '~/data/warehouses'
+import ContentList from '~/components/patterns/ContentList.vue'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
+import type jsPDF from 'jspdf'
 
 const props = defineProps<{
   open: boolean
@@ -11,8 +22,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean] }>()
-
-type SerialUnit = { serial: string; location: string }
 
 const list = computed<SerialUnit[]>(() =>
   props.initialTab === 'reserved'
@@ -69,6 +78,7 @@ watch(() => props.open, (v) => {
   if (!v) return
   shown.value  = PAGE
   search.value = ''
+  step.value = 'list'
   nextTick(setupObserver)
 })
 
@@ -80,11 +90,63 @@ watch(search, () => {
 onUnmounted(() => scrollObserver?.disconnect())
 
 const title = computed(() =>
-  props.initialTab === 'reserved' ? 'Reserved serials' : 'Available serials'
+  props.initialTab === 'reserved' ? 'Reserved serial numbers' : 'Available serial numbers'
 )
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 function close() { emit('update:open', false) }
+
+// ── Serial number details — a second STEP within this same drawer (not a second
+// drawer): picking a row swaps the panel's content in place; "back" returns to
+// the list, close (X) always closes the whole drawer regardless of step. ──
+const step = ref<'list' | 'detail'>('list')
+const detailSerial = ref<SerialUnit | null>(null)
+const warehouseName = computed(() => warehouses.find(w => w.id === props.warehouseId)?.name ?? '')
+function openDetail(row: SerialUnit) {
+  detailSerial.value = row
+  step.value = 'detail'
+}
+function backToList() { step.value = 'list' }
+// A serial number's barcode IS the serial number itself — no separate generated code.
+const detailBarcode = computed(() => detailSerial.value?.serial ?? '')
+
+// ── Print barcode — options modal (qty + columns) then the shared PDF preview ──
+const printBarcodeOptionsOpen = ref(false)
+const printBarcodeTarget = ref<SerialUnit | null>(null)
+function printSerialBarcode(row: SerialUnit) {
+  printBarcodeTarget.value = row
+  printBarcodeOptionsOpen.value = true
+}
+
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  const row = printBarcodeTarget.value
+  if (!props.product || !row) return
+  printBarcodeOptionsOpen.value = false
+  barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+    barcode: row.serial,
+    batchNo: row.serial,
+    productName: props.product.name,
+    sku: props.product.sku,
+  }, qty, columns)
+  barcodePreviewFilename.value = `Barcode - ${row.serial}.pdf`
+  barcodePreviewOpen.value = true
+}
+
+function formatDate(iso: string) {
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
+}
+function seedFrom(s: string): number {
+  let h = 0
+  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return h
+}
+// The one transaction every serial has — the receipt that brought it into stock.
+const receiptNumber = computed(() =>
+  detailSerial.value ? `Stock In/Out #${10050 - (seedFrom(detailSerial.value.serial) % 40)}` : ''
+)
 </script>
 
 <template>
@@ -93,12 +155,45 @@ function close() { emit('update:open', false) }
     <div class="ssd-panel" role="dialog" :aria-label="title">
 
       <header class="ssd-header">
-        <h2 class="ssd-title">{{ title }}</h2>
+        <div class="ssd-header-left">
+          <button v-if="step === 'detail'" class="ssd-back" type="button" aria-label="Back to list" @click="backToList">
+            <MpIcon name="chevrons-left" size="md" />
+          </button>
+          <h2 class="ssd-title">{{ step === 'detail' ? 'Serial number details' : title }}</h2>
+        </div>
         <button class="ssd-close" type="button" aria-label="Close" @click="close">
           <MpIcon name="close" size="md" />
         </button>
       </header>
 
+      <!-- Step: detail — one serial's own record, replacing the list in place -->
+      <div v-if="step === 'detail' && detailSerial" class="ssd-content">
+        <ContentList label="Serial number" :value="detailSerial.serial" />
+        <ContentList label="Barcode" :value="detailBarcode" />
+        <ContentList label="Warehouse" :value="warehouseName" />
+        <ContentList label="Location" :value="detailSerial.location" />
+
+        <h3 class="ssd-section-title">Transactions</h3>
+        <div class="ssd-table-wrap">
+          <table class="ssd-table">
+            <thead>
+              <tr>
+                <th class="ssd-th">Date</th>
+                <th class="ssd-th">Number</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="ssd-tr">
+                <td class="ssd-td">{{ formatDate(detailSerial.createdAt) }}</td>
+                <td class="ssd-td">{{ receiptNumber }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Step: list -->
+      <template v-else>
       <!-- Product info bar -->
       <div class="ssd-infobar">
         <div class="ssd-infobar-product">
@@ -131,34 +226,64 @@ function close() { emit('update:open', false) }
               <col style="width: 200px" />
               <col />
               <col v-if="initialTab === 'reserved'" style="width: 200px" />
+              <col style="width: 56px" />
             </colgroup>
             <thead>
               <tr>
                 <th class="ssd-th">Serial number</th>
                 <th class="ssd-th">Storage location</th>
                 <th v-if="initialTab === 'reserved'" class="ssd-th">Sales order</th>
+                <th class="ssd-th"></th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in visibleRows" :key="row.serial" class="ssd-tr">
-                <td class="ssd-td">{{ row.serial }}</td>
+                <td class="ssd-td">
+                  <div class="cell-with-action">
+                    <span class="cell-text">{{ row.serial }}</span>
+                    <button class="row-hover-btn" type="button" @click.stop="openDetail(row)">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                        <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span class="row-hover-btn__label">VIEW DETAILS</span>
+                    </button>
+                  </div>
+                </td>
                 <td class="ssd-td ssd-td--muted">{{ row.location }}</td>
                 <td v-if="initialTab === 'reserved'" class="ssd-td">{{ salesNoFor(row.serial) }}</td>
+                <td class="ssd-td ssd-td--action">
+                  <MpPopover :id="`ssd-actions-${row.serial}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <button class="row-kebab" aria-label="More actions" @click.stop>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+                        </svg>
+                      </button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem @click="openDetail(row)">View details</MpPopoverListItem>
+                        <MpPopoverListItem @click="printSerialBarcode(row)">Print barcode</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </td>
               </tr>
               <tr v-if="!filtered.length">
-                <td :colspan="initialTab === 'reserved' ? 3 : 2" class="ssd-td ssd-td--empty">
+                <td :colspan="initialTab === 'reserved' ? 4 : 3" class="ssd-td ssd-td--empty">
                   {{ search ? 'No matching serial numbers.' : 'No serial numbers.' }}
                 </td>
               </tr>
               <!-- sentinel row at end of tbody triggers progressive load -->
               <tr aria-hidden="true" class="ssd-sentinel-row">
-                <td :colspan="initialTab === 'reserved' ? 3 : 2"><div ref="sentinelEl" /></td>
+                <td :colspan="initialTab === 'reserved' ? 4 : 3"><div ref="sentinelEl" /></td>
               </tr>
             </tbody>
             <!-- sticky count/loading bar at the bottom of the table -->
             <tfoot>
               <tr>
-                <td :colspan="initialTab === 'reserved' ? 3 : 2" class="ssd-td--count">
+                <td :colspan="initialTab === 'reserved' ? 4 : 3" class="ssd-td--count">
                   <span v-if="loadingMore" class="ssd-td--count-loading">
                     <MpSpinner size="sm" /> Loading…
                   </span>
@@ -171,7 +296,21 @@ function close() { emit('update:open', false) }
           </table>
         </div>
       </div>
+      </template>
 
+      <PrintBarcodeOptionsModal
+        :open="printBarcodeOptionsOpen"
+        @close="printBarcodeOptionsOpen = false"
+        @confirm="confirmPrintBarcode"
+      />
+
+      <PdfPreviewModal
+        :open="barcodePreviewOpen"
+        :doc="barcodePreviewDoc"
+        :filename="barcodePreviewFilename"
+        title="Barcode preview"
+        @close="barcodePreviewOpen = false"
+      />
 
     </div>
   </div>
@@ -209,14 +348,23 @@ function close() { emit('update:open', false) }
   background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default);
 }
+.ssd-header-left { display: flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; }
 .ssd-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ssd-back,
 .ssd-close {
   display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9); height: var(--mp-sizes-9);
+  width: var(--mp-sizes-9); height: var(--mp-sizes-9); flex-shrink: 0;
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-icon-default);
 }
+.ssd-back:hover,
 .ssd-close:hover { background: var(--mp-background-neutral-hovered); }
+
+/* Serial number detail step */
+.ssd-section-title {
+  margin: var(--mp-spacing-4) 0 var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+}
 
 /* Info bar */
 .ssd-infobar {
@@ -234,8 +382,9 @@ function close() { emit('update:open', false) }
 
 /* Search toolbar — no border/bg, search on right */
 .ssd-toolbar {
-  flex-shrink: 0; display: flex; justify-content: flex-end;
+  flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  margin-bottom: 20px;
 }
 .ssd-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
@@ -264,6 +413,11 @@ function close() { emit('update:open', false) }
 .ssd-content {
   flex: 1; min-height: 0; overflow-y: auto;
   padding: var(--mp-spacing-4);
+}
+
+/* List step: toolbar's own margin-bottom already sets the gap to the table, so drop the duplicate top padding */
+.ssd-toolbar + .ssd-content {
+  padding-top: 0;
 }
 
 /* Table-wrap hugs content height; overflow: clip lets sticky thead/tfoot work through it */
@@ -295,7 +449,26 @@ function close() { emit('update:open', false) }
   background: var(--mp-background-neutral); white-space: nowrap;
 }
 .ssd-td--muted { color: var(--mp-text-secondary); }
+.ssd-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
+.row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 .ssd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
+
+/* Serial number cell — "View details" chip on row hover, switches to the detail step */
+.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+.cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.row-hover-btn {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.row-hover-btn__label {
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+}
+.ssd-tr:hover .row-hover-btn { display: flex; }
 
 /* Sentinel row — zero height, invisible */
 .ssd-sentinel-row td { padding: 0; height: 0; border: none; background: transparent; }

@@ -270,6 +270,7 @@ function addSubLoc(node: LocNode) {
   newLocParentId.value = node.id
   newLocOpen.value = true
 }
+
 function onLocSaved(parentId: string | null) {
   if (parentId) expandedLoc.value = new Set([...expandedLoc.value, parentId])
 }

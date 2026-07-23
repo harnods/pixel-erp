@@ -14,7 +14,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { getWmsAdjustment, saveWmsCountDraft, finishWmsCount } from '~/data/wmsStockAdjustments'
-import { addAdjustment, adjustmentLineItems, type AdjustmentLine } from '~/data/stockAdjustments'
+import { adjustmentLineItems, type AdjustmentLine } from '~/data/stockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { PRODUCTS } from '~/data/inventory'
 import { formatDateTimeLong } from '~/utils/date'
@@ -408,7 +408,7 @@ function saveDraft() {
   saveWmsCountDraft(props.orderId, buildLines())
   toast.notify({ variant: 'success', title: 'Draft saved' , maxWidth: 'max-content'})
   disableUnsavedChangesGuard()
-  router.push(`/stock-adjustments/${props.orderId}`)
+  router.push(`/cycle-counts/${props.orderId}`)
 }
 
 // ── Warn before losing unsaved counting progress — refresh/close-tab (native
@@ -458,36 +458,10 @@ function clickFinish() {
 function commitFinish() {
   showConfirm.value = false
   const lines = buildLines()
-
-  // Snapshot prevOnHand per SKU BEFORE finishWmsCount updates warehouse stock
-  const prevBySkuMap = new Map<string, number>()
-  for (const item of wmsCountLines.value) {
-    prevBySkuMap.set(item.sku, (prevBySkuMap.get(item.sku) ?? 0) + item.prevOnHand)
-  }
-  // Added SKUs not in wmsCountLines: look up their actual warehouse on-hand
-  for (const rows of Object.values(addedByLoc.value)) {
-    for (const r of rows) {
-      if (r.sku && !prevBySkuMap.has(r.sku)) {
-        const stock = warehouseStockMap.value[r.sku]
-        if (stock) prevBySkuMap.set(r.sku, stock.onHand)
-      }
-    }
-  }
-
-  const wmsAdj = finishWmsCount(props.orderId, lines)
-  if (wmsAdj) {
-    addAdjustment({
-      kind: 'count',
-      date: new Date().toISOString().slice(0, 10),
-      warehouseId: wmsAdj.warehouseId,
-      warehouseName: wmsAdj.warehouseName,
-      category: 'Stock count',
-      tags: [],
-      lines: lines.map(l => ({ ...l, prevQty: prevBySkuMap.get(l.sku) ?? 0 })),
-      linkedCycleCountId: wmsAdj.id,
-    })
-  }
-  toast.notify({ variant: 'success', title: 'Cycle count completed', maxWidth: 'max-content' })
+  // Status becomes 'counted' (Awaiting approval) — the linked ERP Stock counts
+  // row is only mirrored once a manager approves it (see approveWmsAdjustment).
+  finishWmsCount(props.orderId, lines)
+  toast.notify({ variant: 'success', title: 'Cycle count submitted for approval', maxWidth: 'max-content' })
   // Already committed — the router.push below is this function's own doing,
   // not the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
@@ -495,7 +469,7 @@ function commitFinish() {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-function goBack() { router.push(`/stock-adjustments/${props.orderId}`) }
+function goBack() { router.push(`/cycle-counts/${props.orderId}`) }
 function goList() { router.push('/cycle-counts') }
 
 // ── Footer overflow ───────────────────────────────────────────────────────────
@@ -796,7 +770,7 @@ onUnmounted(() => {
       <MpModalHeader>Finish counting?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         <p class="sc-confirm-text">
-          Counted <strong>{{ fmt(countedTotal) }}</strong> units across <strong>{{ fmt(skuCount) }}</strong> SKUs. This will post the count and update stock on hand.
+          Counted <strong>{{ fmt(countedTotal) }}</strong> units across <strong>{{ fmt(skuCount) }}</strong> SKUs. This will send the count for manager approval before stock on hand is updated.
         </p>
       </MpModalBody>
       <MpModalFooter>
@@ -1046,9 +1020,11 @@ onUnmounted(() => {
 /* ── Table ───────────────────────────────────────────────────────────────────── */
 .sc-loc-scroll { overflow-x: auto; }
 .sc-loc-scroll--split .sc-row--serial .sc-td { vertical-align: top; }
-.sc-loc-scroll--split .sc-td { border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
-.sc-loc-scroll--split .sc-td:first-child { border-left: none; }
-.sc-loc-scroll--split .sc-td:last-child { border-right: none; }
+/* Form table (Counted qty input) → column dividers in every mode, not just the
+   serial-split one. Right divider on each cell, edges trimmed. */
+.sc-loc-scroll .sc-td { border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
+.sc-loc-scroll .sc-td:first-child { border-left: none; }
+.sc-loc-scroll .sc-td:last-child { border-right: none; }
 
 .sc-items { width: 100%; border-collapse: collapse; }
 .sc-items--fixed { table-layout: fixed; width: 100%; }
@@ -1249,7 +1225,7 @@ onUnmounted(() => {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   cursor: pointer; border: 1px solid transparent; white-space: nowrap;
 }
-.sc-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-default); }
+.sc-btn--ghost { background: transparent; border-color: transparent; color: var(--mp-text-default); font-weight: var(--mp-font-weights-regular); }
 .sc-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }
 .sc-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }
 .sc-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }

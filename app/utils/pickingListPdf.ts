@@ -22,10 +22,12 @@ export interface PickingListPrintItem {
   plannedSerialPicks?: PickingSerialPick[]
 }
 
-/** One printable line — a plain SKU is one row; a batch/serial-tracked SKU expands
- *  to one row per batch/serial actually assigned to it, so the operator knows
- *  exactly where each unit sits, not just the SKU's total. */
-interface PickingListRow {
+/** One printable line per SKU — a batch/serial-tracked SKU still lists every
+ *  batch/serial actually assigned to it (so the operator knows exactly where
+ *  each unit sits), but as multiple lines within that SAME row's Batch/Serial
+ *  no. and Bin location cells, not as separate rows — Total SKU already counts
+ *  it once, so the table shouldn't visually split it into 2+ rows. */
+export interface PickingListRow {
   no: number
   sku: string
   product: string
@@ -40,20 +42,31 @@ const PHOTO_COL_WIDTH = 48
 const PHOTO_SIZE = 38
 const PHOTO_ROW_HEIGHT = 46
 
-function buildRows(lineItems: PickingListPrintItem[]): PickingListRow[] {
+/** Exported so tests can assert row-count/merge behavior directly — the printed
+ *  PDF's own pixel content isn't practically inspectable, but this is the exact
+ *  data the table renders from, one array entry per printed row. */
+export function buildRows(lineItems: PickingListPrintItem[]): PickingListRow[] {
   const rows: PickingListRow[] = []
   let no = 1
   for (const item of lineItems) {
     const batches = item.plannedBatchPicks?.length ? item.plannedBatchPicks : item.batchPicks
     const serials = item.plannedSerialPicks?.length ? item.plannedSerialPicks : item.serialPicks
     if (batches?.length) {
-      for (const b of batches) {
-        rows.push({ no: no++, sku: item.skuCode, product: item.productName, img: item.image, batchOrSerial: b.batchNo, bin: b.location || '-', qty: b.qty, unit: b.unit || item.unit })
-      }
+      rows.push({
+        no: no++, sku: item.skuCode, product: item.productName, img: item.image,
+        batchOrSerial: batches.map((b) => b.batchNo).join('\n'),
+        bin: [...new Set(batches.map((b) => b.location || '-'))].join('\n'),
+        qty: batches.reduce((s, b) => s + b.qty, 0),
+        unit: batches[0]?.unit || item.unit,
+      })
     } else if (serials?.length) {
-      for (const s of serials) {
-        rows.push({ no: no++, sku: item.skuCode, product: item.productName, img: item.image, batchOrSerial: s.serial, bin: s.location || '-', qty: 1, unit: item.unit })
-      }
+      rows.push({
+        no: no++, sku: item.skuCode, product: item.productName, img: item.image,
+        batchOrSerial: serials.map((s) => s.serial).join('\n'),
+        bin: [...new Set(serials.map((s) => s.location || '-'))].join('\n'),
+        qty: serials.length,
+        unit: item.unit,
+      })
     } else {
       rows.push({ no: no++, sku: item.skuCode, product: item.productName, img: item.image, batchOrSerial: '-', bin: item.binLocation || '-', qty: item.expectedQty, unit: item.unit })
     }

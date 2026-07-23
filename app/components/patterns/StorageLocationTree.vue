@@ -14,7 +14,13 @@ import {
 } from '@mekari/pixel3'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import { getStorageTree, findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { ensureLocationBarcode } from '~/data/warehouseDetails'
+import { warehouses } from '~/data/warehouses'
 import { useUrlModal } from '@ds/proto-review'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
+import type jsPDF from 'jspdf'
 
 const props = withDefaults(defineProps<{
   warehouseId: string
@@ -93,6 +99,35 @@ function editLoc(n: LocNode) { drawerEditId.value = n.id; drawerParentId.value =
 function onSaved(pid: string | null) {
   if (pid && pid !== props.parentId) expanded.value = new Set([...expanded.value, pid])
 }
+
+// ── Print barcode (Storage-type locations only) — options modal then shared PDF preview ──
+const warehouseName = computed(() => warehouses.find(w => w.id === props.warehouseId)?.name ?? '')
+const printBarcodeOptionsOpen = ref(false)
+const printBarcodeTarget = ref<LocNode | null>(null)
+function printLocationBarcode(n: LocNode) {
+  printBarcodeTarget.value = n
+  printBarcodeOptionsOpen.value = true
+}
+
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  const n = printBarcodeTarget.value
+  if (!n) return
+  printBarcodeOptionsOpen.value = false
+  const path = findLocation(props.warehouseId, n.id)?.path ?? []
+  const breadcrumb = path.slice(0, -1).map(p => p.name).join(' / ')
+  barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+    barcode: ensureLocationBarcode(props.warehouseId, n.id),
+    batchNo: n.name,
+    productName: warehouseName.value,
+    sku: breadcrumb,
+  }, qty, columns)
+  barcodePreviewFilename.value = `Barcode - ${n.name}.pdf`
+  barcodePreviewOpen.value = true
+}
+
 </script>
 
 <template>
@@ -179,6 +214,7 @@ function onSaved(pid: string | null) {
                 <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                   <MpPopoverList>
                     <MpPopoverListItem @click="editLoc(row.node)">Edit</MpPopoverListItem>
+                    <MpPopoverListItem v-if="row.node.type === 'Storage'" @click="printLocationBarcode(row.node)">Print barcode</MpPopoverListItem>
                     <MpPopoverListItem @click="addSub(row.node)">Add sub-location</MpPopoverListItem>
                     <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askDelete(row.node)">Delete</MpPopoverListItem>
                   </MpPopoverList>
@@ -236,6 +272,20 @@ function onSaved(pid: string | null) {
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
+
+    <PrintBarcodeOptionsModal
+      :open="printBarcodeOptionsOpen"
+      @close="printBarcodeOptionsOpen = false"
+      @confirm="confirmPrintBarcode"
+    />
+
+    <PdfPreviewModal
+      :open="barcodePreviewOpen"
+      :doc="barcodePreviewDoc"
+      :filename="barcodePreviewFilename"
+      title="Barcode preview"
+      @close="barcodePreviewOpen = false"
+    />
   </div>
 </template>
 

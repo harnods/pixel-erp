@@ -8,11 +8,12 @@ import {
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
-import { pickableOrders, type OutgoingOrder } from '~/data/outgoing'
+import { pickableOrders, isMarketplaceOrder, type OutgoingOrder } from '~/data/outgoing'
 import {
   addPickingTask, pickedQtyForOrderSku, pickedKeysForOrder, type PickingLine,
   type PickingBatchPick, type PickingSerialPick,
 } from '~/data/pickingTasks'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { orderSkuLines, productBySku } from '~/data/inventory'
 import { binForSku, getWarehouseDetail, getReservationsForOrder } from '~/data/warehouseDetails'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -85,7 +86,6 @@ function isSerialTrackedSku(sku: string): boolean {
   const p = productBySku(sku)
   return p ? SERIAL_CATS.has(p.category) : false
 }
-
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
 const assigneeError = ref(false)
@@ -158,7 +158,8 @@ const orderTables = computed<OrderTable[]>(() =>
 // ─── Supervisor edits: include/exclude ANY SKU (checkbox, default on) + edit qty ──
 // A picking list can cover any subset of SKUs regardless of whether an order is a
 // marketplace order — the marketplace "must be complete" rule is enforced later, at
-// packing-task creation, not here.
+// packing-task creation, not here. Row-level (per SKU) only — By-orders is a
+// read-only breakdown of the same rows; edits only ever happen here, in Combined.
 const excludedKeys = ref(new Set<string>())
 const qtyOverrides = ref<Record<string, number>>({})
 // When the warehouse doesn't allow partial picking, every SKU must be picked in
@@ -420,6 +421,56 @@ function capForSku(sku: string): number {
   return row ? stockOf(row.key).cap : 0
 }
 
+/** How much of a merged row's qty-to-pick lands on each contributing order —
+ *  filled member-by-member in order (same rule doCreate() uses to split the
+ *  saved PickingLines), so the By-orders view always matches what gets saved. */
+function memberAllocations(row: MergedRow): Map<string, number> {
+  const map = new Map<string, number>()
+  let remaining = qtyToPick(row)
+  for (const m of row.members) {
+    const alloc = Math.min(m.qty, remaining)
+    map.set(m.orderId, (map.get(m.orderId) ?? 0) + alloc)
+    remaining -= alloc
+  }
+  return map
+}
+
+// ─── Picking list — by orders view (read-only breakdown of the same rows) ───────
+// Combined stays the single place edits (qty, exclude, batch/serial) happen;
+// By orders just re-renders those same rows split per contributing sales order,
+// mirroring CreatePackingPage.vue's order grouping (order no./customer/source).
+type ViewMode = 'combined' | 'orders'
+const viewMode = ref<ViewMode>('combined')
+interface ByOrderLine {
+  key: string; sku: string; product: string; desc: string; img: string; unit: string; bin: string
+  orderQty: number; pickedQty: number; toPick: number; excluded: boolean
+}
+interface OrderGroup { order: OutgoingOrder; source: string; isMarketplace: boolean; lines: ByOrderLine[] }
+const orderGroups = computed<OrderGroup[]>(() => {
+  const map = new Map<string, OrderGroup>()
+  for (const o of selectedOrders.value) {
+    map.set(o.id, { order: o, source: o.source, isMarketplace: isMarketplaceOrder(o), lines: [] })
+  }
+  for (const row of pickRows.value) {
+    const allocByOrder = memberAllocations(row)
+    for (const m of row.members) {
+      const g = map.get(m.orderId)
+      if (!g) continue
+      g.lines.push({
+        key: `${m.orderId}::${row.sku}`,
+        sku: row.sku, product: row.product, desc: row.desc, img: row.img, unit: row.unit, bin: row.bin,
+        orderQty: m.qty,
+        pickedQty: pickedQtyForOrderSku(m.orderId, row.sku),
+        toPick: isSelected(row.key) ? (allocByOrder.get(m.orderId) ?? 0) : 0,
+        excluded: !isSelected(row.key),
+      })
+    }
+  }
+  return [...map.values()]
+    .map(g => ({ ...g, lines: g.lines.sort((a, b) => a.bin.localeCompare(b.bin)) }))
+    .filter(g => g.lines.length)
+})
+
 const selectedRows    = computed(() => pickRows.value.filter(g => isSelected(g.key)))
 const totalSkus       = computed(() => selectedRows.value.length)
 const totalToPick     = computed(() => selectedRows.value.reduce((a, g) => a + qtyToPick(g), 0))
@@ -541,8 +592,8 @@ async function doCreate() {
   const serialPicks: Record<string, PickingSerialPick[]> = {}
   for (const g of pickRows.value) {
     if (!isSelected(g.key)) continue
-    let remaining = qtyToPick(g)
-    if (remaining <= 0) continue
+    if (qtyToPick(g) <= 0) continue
+    const allocByOrder = memberAllocations(g)
 
     const batchChunks = (batchLinesBySku.value[g.sku] ?? [])
       .filter(b => (b.counted ?? 0) > 0)
@@ -552,9 +603,8 @@ async function doCreate() {
     let serialIdx = 0
 
     for (const m of g.members) {
-      const alloc = Math.min(m.qty, remaining)
+      const alloc = allocByOrder.get(m.orderId) ?? 0
       if (alloc <= 0) continue
-      remaining -= alloc
       const lineKey = `${m.orderId}::${g.sku}`
       lines.push({
         key: lineKey, orderId: m.orderId, salesNo: m.salesNo,
@@ -698,11 +748,14 @@ async function doCreate() {
         </div>
 
         <div class="pk-filter-bar">
-          <span class="pk-sku-count">{{ totalSkus }} of {{ pickRows.length }} included</span>
+          <div class="detail-loc-toggle">
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">Combined</button>
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">By orders</button>
+          </div>
           <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">Reset</MpButton>
         </div>
 
-        <section class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
+        <section v-if="viewMode === 'combined'" class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="pk-items-scroll">
             <table class="pk-items pk-items--split">
               <colgroup>
@@ -853,6 +906,74 @@ async function doCreate() {
             </div>
           </div>
         </section>
+
+        <!-- By orders view — read-only breakdown of the same rows, one section +
+             table per contributing sales order, header mirrors CreatePackingPage.vue's
+             order grouping (order no./customer/source). Editing (qty, exclude,
+             batch/serial) only ever happens in Combined; this view just reflects
+             whatever memberAllocations() (the same split doCreate() saves) works
+             out per order for the current Combined total. -->
+        <div v-else class="pk-orders-scroll">
+          <div v-for="group in orderGroups" :key="group.order.id" class="pk-order-block">
+            <div class="pk-order-head">
+              <span class="pk-order-no">{{ group.order.salesNo }}</span>
+              <span v-if="group.order.customer" class="pk-order-cust">{{ group.order.customer }}</span>
+              <span v-if="group.source" class="pk-order-source">
+                <SourceLabel :source="group.source" />
+                <MpTooltip
+                  v-if="group.isMarketplace"
+                  :id="`pk-mkt-${group.order.id}`"
+                  label="Marketplace orders must be picked in full. Items can't be removed."
+                  placement="top"
+                  use-portal
+                >
+                  <span class="pk-source-info"><MpIcon name="info" size="sm" /></span>
+                </MpTooltip>
+              </span>
+            </div>
+            <section class="pk-items-section">
+              <div class="pk-items-scroll">
+                <table class="pk-items pk-items--split pk-items--order">
+                  <colgroup>
+                    <col /><!-- Product (only unfixed column — fills the rest, same width every table since every other column below is fixed) -->
+                    <col style="width: 120px" /><!-- SKU -->
+                    <col style="width: 110px" /><!-- Order qty -->
+                    <col v-if="hasPriorPicks" style="width: 110px" /><!-- Picked qty -->
+                    <col style="width: 130px" /><!-- Qty to pick -->
+                    <col style="width: 100px" /><!-- Unit -->
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="pk-th">Product</th>
+                      <th class="pk-th">SKU</th>
+                      <th class="pk-th pk-th--num">Order qty</th>
+                      <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
+                      <th class="pk-th pk-th--num">Qty to pick</th>
+                      <th class="pk-th">Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="line in group.lines"
+                      :key="line.key"
+                      class="pk-item-row"
+                      :class="{ 'pk-item-row--off': line.excluded }"
+                    >
+                      <td class="pk-td">
+                        <ProductCell :name="line.product" :desc="line.desc" :image="line.img" />
+                      </td>
+                      <td class="pk-td"><span class="pk-sku-text">{{ line.sku }}</span></td>
+                      <td class="pk-td pk-td--num">{{ formatNum(line.orderQty) }}</td>
+                      <td v-if="hasPriorPicks" class="pk-td pk-td--num">{{ formatNum(line.pickedQty) }}</td>
+                      <td class="pk-td pk-td--num">{{ formatNum(line.toPick) }}</td>
+                      <td class="pk-td">{{ line.unit }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
 
     </div><!-- /detail-stage -->
@@ -1022,17 +1143,28 @@ async function doCreate() {
 .pk-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }
 .pk-stat-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pk-stat-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
-.pk-filter-bar { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-3); }
-.pk-sku-count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
+
+/* ── Combined / By orders toggle (copied verbatim from StockAdjustmentDetailsPage.vue / PickingTaskDetailsPage.vue) ── */
+.detail-loc-toggle { display: flex; align-items: center; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; gap: 2px; }
+.detail-loc-toggle-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.detail-loc-toggle-btn:hover { color: var(--mp-text-default); }
+.detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
 /* ── Picking list — per-order blocks ─────────────────────────────────────────── */
+/* By orders can stack many order blocks — unlike Combined's single section
+   (which fills the stage and scrolls internally), each block here just takes
+   its natural content height, and THIS wrapper is the one that scrolls. */
+.pk-orders-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; }
 .pk-order-block { margin-bottom: var(--mp-spacing-5); }
 .pk-order-head {
-  display: flex; align-items: baseline; gap: var(--mp-spacing-2);
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
   margin-bottom: var(--mp-spacing-2);
 }
 .pk-order-no { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pk-order-cust { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
+.pk-source-info { display: inline-flex; color: var(--mp-text-secondary); cursor: help; }
 .pk-short { color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-semi-bold); }
 
 /* ── Picking list table ──────────────────────────────────────────────────────── */
@@ -1061,6 +1193,12 @@ async function doCreate() {
    column gets left/right borders — no double border, no outer border on the ends. */
 .pk-items--split .pk-td { border-right: 1px solid var(--mp-border-default); }
 .pk-items--split .pk-td:last-child { border-right: none; }
+
+/* By orders: every order gets its own <table>, so table-layout: auto would size
+   each one's columns independently off its own content (misaligned widths across
+   orders). Forcing fixed layout + identical explicit widths on every column but
+   Product keeps every order's table lined up the same. */
+.pk-items--order { table-layout: fixed; }
 
 /* Form-table look: grey read-only cells, white editable cell */
 .pk-items .pk-td {

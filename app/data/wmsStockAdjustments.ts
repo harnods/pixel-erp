@@ -2,11 +2,11 @@ import { reactive } from 'vue'
 import { warehouses } from './warehouses'
 import { operatorForWarehouse } from './warehouseTeam'
 import { warehouseProducts, PRODUCTS } from './inventory'
-import { applyStockCount, applyStockInOut } from './warehouseDetails'
+import { applyStockCount, applyStockInOut, getWarehouseDetail } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { TODAY } from './master'
 import {
-  accountForCategory, accountCodeFor,
+  accountForCategory, accountCodeFor, addAdjustment,
   type AdjustmentKind, type AdjustmentCategory, type AdjustmentStatus,
   type StockAdjustment, type AdjustmentInput, type AdjustmentLine,
   IN_OUT_CATEGORIES, adjustmentLineItems,
@@ -60,6 +60,7 @@ function countStatusFor(i: number): AdjustmentStatus {
   const v = hash100(i * 41 + 11)
   if (v < 25) return 'not_started'
   if (v < 55) return 'in_progress'
+  if (v < 80) return 'counted'
   return 'completed'
 }
 
@@ -85,7 +86,7 @@ function generate(count = 24): StockAdjustment[] {
     const durationDays = (hash100(i * 7 + 3) % 5) + 1
     const status = kind === 'count' ? countStatusFor(i) : 'completed'
     const record: StockAdjustment = {
-      id: `wsa-${String(i + 1).padStart(3, '0')}`,
+      id: `${kind === 'count' ? 'cc' : 'wsa'}-${String(i + 1).padStart(3, '0')}`,
       kind,
       number: `${kind === 'count' ? 'Cycle Count' : 'Stock In/Out'} #${seq}`,
       date: isoOffset(-startDaysAgo),
@@ -102,10 +103,10 @@ function generate(count = 24): StockAdjustment[] {
       const startMin = (hash100(i * 29 + 2) % 4) * 15
       const endHour = 14 + (hash100(i * 31 + 3) % 5)
       const endMin = (hash100(i * 37 + 4) % 4) * 15
-      if (status === 'in_progress' || status === 'completed') {
+      if (status === 'in_progress' || status === 'counted' || status === 'completed') {
         record.startDate = isoOffsetTs(-startDaysAgo, startHour, startMin)
       }
-      if (status === 'completed') {
+      if (status === 'counted' || status === 'completed') {
         record.endDate = isoOffsetTs(-startDaysAgo + durationDays, endHour, endMin)
       }
     }
@@ -114,7 +115,7 @@ function generate(count = 24): StockAdjustment[] {
   return out
 }
 
-const KEY = 'wms-stock-adjustments-v6'
+const KEY = 'wms-stock-adjustments-v7'
 const snapshot = loadSnapshot<StockAdjustment>(KEY)
 export const wmsStockAdjustments = reactive<StockAdjustment[]>(snapshot ?? generate())
 
@@ -130,6 +131,16 @@ export function wmsAdjustmentWarehouseOptions(): { value: string; label: string 
   const seen = new Map<string, string>()
   for (const a of wmsStockAdjustments) seen.set(a.warehouseId, a.warehouseName)
   return [...seen.entries()].map(([value, label]) => ({ value, label }))
+}
+
+/** Count tasks still open (not yet counted or completed) — badge for the "Count task" tab. */
+export function openWmsCountTaskCount(): number {
+  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status !== 'completed' && a.status !== 'counted').length
+}
+
+/** Count tasks counted but not yet reviewed by a manager — badge for the "Awaiting approval" tab. */
+export function awaitingWmsCountApprovalCount(): number {
+  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status === 'counted').length
 }
 
 /** A WMS Stock In/Out record is completed the instant it's created (stock applies
@@ -161,11 +172,16 @@ function nextSeqFor(kind: AdjustmentKind): number {
   return Math.max(20089, ...used) + 1
 }
 
-/** Create a WMS adjustment — applied to stock immediately, no approval step. */
-export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
+/** Create a WMS adjustment — applied to stock immediately, no approval step.
+ *  `skipStockMutation`: the caller already mutated stock itself (e.g. the
+ *  inbound PO-cancellation cascade, which must reverse batch/serial-tracked
+ *  SKUs via their own dedicated primitives — applyStockInOut only touches the
+ *  aggregate onHand and would desync a batch/serial SKU's per-unit bookkeeping)
+ *  — this just records the audited adjustment without mutating stock again. */
+export function addWmsAdjustment(input: AdjustmentInput & { skipStockMutation?: boolean }): StockAdjustment {
   const n = addSeq++
   const adj: StockAdjustment = {
-    id: `wsa-new-${n}`,
+    id: `${input.kind === 'count' ? 'cc' : 'wsa'}-new-${n}`,
     kind: input.kind,
     number: `${input.kind === 'count' ? 'Cycle Count' : 'Stock In/Out'} #${nextSeqFor(input.kind)}`,
     date: input.date,
@@ -182,7 +198,7 @@ export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
     endDate: input.endDate,
   }
   // Count tasks: stock applied when counting is completed, not on creation.
-  if (input.kind === 'in-out') {
+  if (input.kind === 'in-out' && !input.skipStockMutation) {
     applyStockInOut(input.warehouseId, input.lines)
   }
   wmsStockAdjustments.unshift(adj)
@@ -207,14 +223,48 @@ export function saveWmsCountDraft(id: string, lines: { sku: string; qty: number;
   return a
 }
 
+// Finishing a count doesn't apply stock yet — it moves the task to "Counted"
+// (Awaiting approval tab) and waits for a manager to review it. Stock only
+// changes once approveWmsAdjustment runs.
 export function finishWmsCount(id: string, lines: { sku: string; qty: number; location?: string }[]): StockAdjustment | undefined {
   const a = wmsStockAdjustments.find(x => x.id === id)
   if (!a || a.kind !== 'count') return a
-  a.status = 'completed'
+  a.status = 'counted'
   a.endDate = new Date().toISOString()
   a.lines = lines
-  applyStockCount(a.warehouseId, lines)
   persist()
+  return a
+}
+
+const ACTOR = 'Rizal Candra'
+
+/** Manager approves a "Counted" task — applies the count to stock, marks it completed,
+ *  and mirrors it into the ERP Stock counts index as a completed record. */
+export function approveWmsAdjustment(id: string): StockAdjustment | undefined {
+  const a = wmsStockAdjustments.find((x) => x.id === id)
+  if (!a || a.status !== 'counted') return a
+  const lines = a.lines ?? adjustmentLineItems(a).map((l) => ({ sku: l.sku, qty: l.counted }))
+  // Snapshot on-hand BEFORE applying the count — this is the "previous qty" the
+  // mirrored ERP record shows, same as the real state at the moment of approval.
+  const prevBySku = new Map((getWarehouseDetail(a.warehouseId)?.stock ?? []).map((s) => [s.sku, s.onHand]))
+  applyStockCount(a.warehouseId, lines)
+  a.status = 'completed'
+  a.approvedBy = ACTOR
+  a.approvedAt = new Date().toISOString()
+  persist()
+  addAdjustment({
+    kind: 'count',
+    date: new Date().toISOString().slice(0, 10),
+    warehouseId: a.warehouseId,
+    warehouseName: a.warehouseName,
+    category: 'Stock count',
+    tags: [],
+    lines: lines.map((l) => ({ ...l, prevQty: prevBySku.get(l.sku) ?? 0 })),
+    linkedCycleCountId: a.id,
+    status: 'completed',
+    approvedBy: a.approvedBy,
+    approvedAt: a.approvedAt,
+  })
   return a
 }
 

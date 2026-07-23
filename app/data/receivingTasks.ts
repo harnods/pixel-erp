@@ -7,6 +7,10 @@ import { lineItemsForReceipt } from "./receiptLineItems";
 import { TODAY } from "./master";
 import { CATALOG } from "./catalog";
 import { getWarehouseConfig } from "./warehouseConfig";
+import {
+  applyStockInOut, registerNewBatch, receiveNewSerials, unregisterBatch, removeReceivedSerials, binForSku,
+} from "./warehouseDetails";
+import { addWmsAdjustment } from "./wmsStockAdjustments";
 
 const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment']);
 const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans']);
@@ -121,6 +125,30 @@ export interface ReceivingTask {
   putAwayTaskId?: string;
   canceledDate?: string;
   canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
+  /** This task's OWN receipt (PO) was canceled while the task was already "in
+   *  progress" — real receiving work may already exist, so it is NOT
+   *  auto-canceled immediately the way an "open" task on the same PO would be
+   *  (see cancelInboundReceipt in inboundSync.ts). Instead, Continue receiving
+   *  is blocked until the operator explicitly acknowledges the PO is gone —
+   *  acknowledging (see acknowledgeCanceledReceipt below) then cancels the
+   *  task itself, since there's nothing left to receive once its one-and-only
+   *  PO is gone. */
+  needsCancelAck?: boolean;
+  /** True once this task's goods are ACTUALLY reflected in real, tracked
+   *  on-hand stock — via a genuinely completed put-away (endPutAway calls
+   *  markStockCommitted below) or via commitReceivingStock (put-away disabled
+   *  for the warehouse, so receiving itself commits it directly). NOT the same
+   *  as status === "completed": a put-away task can be created (which flips
+   *  its source receiving task to "completed" immediately) long before that
+   *  put-away actually runs — no stock exists yet at that point. Also
+   *  deliberately left unset on seed/demo data, whose on-hand numbers are
+   *  purely deterministic mock generation, never a real tracked mutation —
+   *  reversing "stock" that was never actually added this way would corrupt
+   *  unrelated numbers. Read by the PO-cancellation cascade to decide whether
+   *  acknowledging must also reverse stock (see acknowledgeCanceledReceipt). */
+  stockCommitted?: boolean;
 }
 
 /** A PO with its receiving task(s) — a grouping view derived from the flat store. */
@@ -274,7 +302,10 @@ function seedTasks(): ReceivingTask[] {
         out.push(make(r, lines.slice(cut), "zero", "open", 1, false, false));
       }
     } else {
-      // "on the way" (Open). Most → no task (state A); a few → B/C.
+      // Pre-task seed status "pending" (no ended task yet). Most → no task at
+      // all, so recomputeReceiptStatus() below leaves the PO at Pending (state
+      // A); a few get an Open (state B) or In progress (state C) task instead —
+      // recomputeReceiptStatus() bumps the PO to match once initInbound() runs.
       const bucket = h % 5;
       if (bucket === 0) out.push(make(r, lines, "zero", "open", 0, false, false)); // B
       else if (bucket === 1) out.push(make(r, lines, "partial", "in progress", 0, true, false)); // C
@@ -382,7 +413,24 @@ function initInbound(): void {
 }
 
 // ── PO status derivation ─────────────────────────────────────────────────────────
-/** Re-derive a receipt's status (Open / Partial reception / Completed) from its tasks. */
+/**
+ * Re-derive a receipt's status from its tasks — Pending / Open / In progress
+ * once no task has ended yet, Partial reception / In progress / Completed
+ * once at least one has. A receipt with ended tasks never falls back to
+ * Pending/Open even if a later, still-active task exists on it (e.g. a second
+ * receiving task covering the remainder) — completeness is judged by
+ * cumulative received qty, not by what's currently in flight.
+ *
+ * Fully received does NOT immediately mean Completed: for a warehouse using
+ * put-away, the PO stays "In progress" (still cancelable) until put-away has
+ * genuinely finished — i.e. every ended task's stockCommitted is true (set by
+ * markStockCommitted/commitReceivingStock, NOT merely by reaching receiving
+ * status "completed", which a put-away task being CREATED — not finished —
+ * already causes). "Pending put-away" itself is a ReceivingTask status, not a
+ * Receipt one — at the PO level this is just more "In progress" work.
+ * Put-away-disabled tasks reach stockCommitted immediately when they end, so
+ * they go straight to Completed as before.
+ */
 export function recomputeReceiptStatus(receiptId: string): void {
   const r = receipts.find((x) => x.id === receiptId);
   if (!r || r.status === "canceled") return;
@@ -390,19 +438,33 @@ export function recomputeReceiptStatus(receiptId: string): void {
   const tasks = receivingTasks.filter((t) => t.receiptId === receiptId);
   const ended = tasks.filter((t) => t.status === "pending put-away" || t.status === "completed");
 
-  const received: Record<string, number> = {};
-  for (const t of ended)
-    for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
+  if (ended.length > 0) {
+    const received: Record<string, number> = {};
+    for (const t of ended)
+      for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
 
-  r.receivedQty = Object.values(received).reduce((s, n) => s + n, 0);
+    r.receivedQty = Object.values(received).reduce((s, n) => s + n, 0);
 
-  if (ended.length === 0) {
-    r.status = "on the way"; // Open — nothing ended yet
-  } else if (lines.every((l) => (received[l.sku] ?? 0) >= l.purchaseQty)) {
-    r.status = "completed";
-    r.receivedDate = r.receivedDate ?? nowIso().slice(0, 10);
+    if (lines.every((l) => (received[l.sku] ?? 0) >= l.purchaseQty)) {
+      if (ended.every((t) => t.stockCommitted)) {
+        r.status = "completed";
+        r.receivedDate = r.receivedDate ?? nowIso().slice(0, 10);
+      } else {
+        r.status = "in progress"; // fully received, still waiting on real put-away
+      }
+    } else {
+      r.status = "partial reception";
+    }
   } else {
-    r.status = "partial reception";
+    r.receivedQty = 0;
+    const active = tasks.filter((t) => t.status === "open" || t.status === "in progress");
+    if (active.some((t) => t.status === "in progress")) {
+      r.status = "in progress";
+    } else if (active.length > 0) {
+      r.status = "open";
+    } else {
+      r.status = "pending";
+    }
   }
   persistReceipts();
 }
@@ -471,7 +533,9 @@ function freshSeq(): number {
 
 /**
  * Admin creates an Open receiving task covering the given SKUs (a subset of the
- * receipt's uncovered SKUs). PO status is unchanged. Returns the new task.
+ * receipt's uncovered SKUs). Bumps the PO to Open — unless it already has an
+ * ended task, in which case recomputeReceiptStatus keeps it at Partial
+ * reception/Completed instead. Returns the new task.
  */
 export function createReceivingTask(opts: {
   receiptId: string;
@@ -525,6 +589,7 @@ export function createReceivingTask(opts: {
   syncTaskTotals(task, lines.length);
   receivingTasks.unshift(task);
   persistTasks();
+  recomputeReceiptStatus(r.id);
   return task;
 }
 
@@ -532,13 +597,14 @@ export function getReceivingTask(taskId: string): ReceivingTask | undefined {
   return receivingTasks.find((t) => t.id === taskId);
 }
 
-/** Operator starts receiving → In progress + start timestamp. */
+/** Operator starts receiving → In progress + start timestamp; PO follows to In progress. */
 export function startReceiving(taskId: string): void {
   const t = getReceivingTask(taskId);
   if (!t || t.status !== "open") return;
   t.status = "in progress";
   t.startDate = nowIso();
   persistTasks();
+  recomputeReceiptStatus(t.receiptId);
 }
 
 /** A receiving task can only be canceled while receiving hasn't finished yet —
@@ -554,13 +620,165 @@ export function canCancelReceivingTask(t: ReceivingTask): boolean {
 /** Cancel a not-yet-finished receiving task — its SKUs simply become uncovered
  *  again (uncoveredLineItems only excludes open/in-progress tasks), so a new
  *  receiving task can be created for them. Terminal state; the record itself is
- *  kept (never deleted) so it stays in the audit trail. */
+ *  kept (never deleted) so it stays in the audit trail. PO status is re-derived
+ *  afterward — it drops back to Open (another active task remains), or all the
+ *  way to Pending if this was the last one and none has ever ended. */
 export function cancelReceivingTask(taskId: string, reason?: string): void {
   const t = getReceivingTask(taskId);
   if (!t || !canCancelReceivingTask(t)) return;
   t.status = "canceled";
   t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
   if (reason) t.canceledReason = reason;
+  persistTasks();
+  recomputeReceiptStatus(t.receiptId);
+}
+
+/**
+ * This task's own PO was just canceled while the task was already "in
+ * progress", "pending put-away", or "completed" WITH real committed stock
+ * (stockCommitted) — called only from cancelInboundReceipt (inboundSync.ts),
+ * never directly. Unlike an "open" task on the same PO (auto-canceled
+ * outright, nothing to reconcile) or an ended task with NO real stock
+ * committed yet (also auto-canceled — see forceCancelEndedTask below), any of
+ * these three cases may have real, consequential state (draft receivedQty, or
+ * genuine on-hand stock) that shouldn't be silently discarded — so this just
+ * flags it, blocking Continue receiving until the operator explicitly
+ * acknowledges via acknowledgeCanceledReceipt below.
+ */
+export function flagTaskCanceledPoAck(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t) return;
+  t.needsCancelAck = true;
+  persistTasks();
+}
+
+/**
+ * Cancel an ALREADY-ENDED task ("pending put-away", or "completed" with no
+ * real stock committed yet) when its PO gets canceled — bypasses the normal
+ * open/in-progress-only cancel guard (canCancelReceivingTask), since this is
+ * the one sanctioned path allowed to cancel a task past that point. Safe:
+ * neither state has real on-hand stock tied to it yet (see stockCommitted's
+ * own doc comment for why "completed" doesn't necessarily mean stock exists),
+ * so there's nothing to reverse — no acknowledgment needed either.
+ */
+export function forceCancelEndedTask(taskId: string, reason: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || (t.status !== "pending put-away" && t.status !== "completed") || t.stockCommitted) return;
+  t.status = "canceled";
+  t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
+  t.canceledReason = reason;
+  persistTasks();
+}
+
+/**
+ * Commit a receiving task's items into REAL, tracked on-hand stock — the
+ * put-away-disabled equivalent of what endPutAway() does for a real put-away
+ * task, per-SKU tracking type. Without this, a warehouse with put-away
+ * disabled would reach "completed" receiving without ever actually adding
+ * anything to on-hand — this closes that gap. Marks stockCommitted so a
+ * later PO cancellation cascade knows there's real stock to reverse.
+ */
+function commitReceivingStock(t: ReceivingTask): void {
+  for (const it of t.items) {
+    if (it.receivedQty <= 0) continue;
+    if (it.batchLines?.length) {
+      for (const b of it.batchLines) {
+        registerNewBatch(t.warehouseId, it.sku, {
+          batchNo: b.batchNo, expiryDate: b.expiryDate, onHand: b.qty,
+          location: binForSku(t.warehouseId, it.sku),
+        });
+      }
+    } else if (it.serialNumbers?.length) {
+      receiveNewSerials(t.warehouseId, it.sku, it.serialNumbers);
+    } else {
+      applyStockInOut(t.warehouseId, [{ sku: it.sku, qty: it.receivedQty }]);
+    }
+  }
+  t.stockCommitted = true;
+}
+
+/** A completed put-away task just committed real stock for these receiving
+ *  tasks — called by endPutAway() (putAwayTasks.ts) so a later PO
+ *  cancellation knows there's real, reversible stock behind them. Deliberately
+ *  NOT set merely by linkPutAway (put-away task CREATED, receiving flipped to
+ *  "completed" immediately) — that happens before the put-away actually runs,
+ *  long before any stock is real. */
+export function markStockCommitted(taskIds: string[]): void {
+  let changed = false;
+  const receiptIds = new Set<string>();
+  for (const id of taskIds) {
+    const t = getReceivingTask(id);
+    if (t && !t.stockCommitted) { t.stockCommitted = true; changed = true; receiptIds.add(t.receiptId); }
+  }
+  if (changed) {
+    persistTasks();
+    // Re-derive each affected PO's status now that its goods are genuinely
+    // committed — this is what actually flips a "Pending put-away" PO to
+    // "Completed" once put-away truly finishes (nothing else does).
+    for (const receiptId of receiptIds) recomputeReceiptStatus(receiptId);
+  }
+}
+
+/**
+ * Reverse a receiving task's committed stock — used when its PO is canceled
+ * after receiving already put real stock on-hand (stockCommitted). Batch/
+ * serial-tracked SKUs go through their own dedicated reversal primitives
+ * (unregisterBatch/removeReceivedSerials) rather than a plain aggregate
+ * stock adjustment — applyStockInOut only touches the aggregate onHand and
+ * would desync it from the sum of item.batches, breaking the batch-sum
+ * invariant. Also records ONE audited stock adjustment reflecting the full
+ * reversal (skipStockMutation — the mutation already happened above; this is
+ * purely the audit trail).
+ */
+function reverseReceivingStock(t: ReceivingTask): void {
+  const lines: { sku: string; qty: number }[] = [];
+  for (const it of t.items) {
+    if (it.receivedQty <= 0) continue;
+    if (it.batchLines?.length) {
+      for (const b of it.batchLines) unregisterBatch(t.warehouseId, it.sku, b.batchNo, b.qty);
+    } else if (it.serialNumbers?.length) {
+      removeReceivedSerials(t.warehouseId, it.sku, it.serialNumbers);
+    } else {
+      applyStockInOut(t.warehouseId, [{ sku: it.sku, qty: -it.receivedQty }]);
+    }
+    lines.push({ sku: it.sku, qty: -it.receivedQty });
+  }
+  if (!lines.length) return;
+  addWmsAdjustment({
+    kind: "in-out",
+    category: "General",
+    warehouseId: t.warehouseId,
+    warehouseName: t.warehouseName,
+    date: nowIso().slice(0, 10),
+    tags: [],
+    memo: `Reversed — purchase order ${t.purchaseNo} was canceled (${t.taskNo}).`,
+    lines,
+    skipStockMutation: true,
+  });
+}
+
+/**
+ * Operator acknowledges that this task's source PO was canceled. Since a
+ * receiving task always belongs to exactly ONE PO (no cross-PO bundling),
+ * there is nothing left to receive once that PO is gone — acknowledging
+ * therefore cancels the task itself (same terminal state a manual Cancel
+ * would reach). If real stock had already been committed for it
+ * (stockCommitted), that stock is reversed first (and audited via a stock
+ * adjustment) — otherwise (an in-progress task's draft qty never touched
+ * real stock) there's nothing to reverse, it just cancels. A no-op if the
+ * task isn't actually flagged (nothing to acknowledge).
+ */
+export function acknowledgeCanceledReceipt(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || !t.needsCancelAck) return;
+  t.needsCancelAck = false;
+  if (t.stockCommitted) reverseReceivingStock(t);
+  t.status = "canceled";
+  t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
+  t.canceledReason = "Purchase order was canceled";
   persistTasks();
 }
 
@@ -606,8 +824,12 @@ export function endReceiving(
   if (received) applyReceivingDetail(t, received, detail);
   const lines = lineItemsForReceipt(receipts.find((x) => x.id === t.receiptId)!);
   syncTaskTotals(t, lines.length);
-  t.status = getWarehouseConfig(t.warehouseId).putAwayEnabled ? "pending put-away" : "completed";
+  const putAwayEnabled = getWarehouseConfig(t.warehouseId).putAwayEnabled;
+  t.status = putAwayEnabled ? "pending put-away" : "completed";
   t.endDate = nowIso();
+  // Put-away disabled → there's no separate put-away step left to commit the
+  // goods to on-hand, so receiving itself must do it right here.
+  if (!putAwayEnabled) commitReceivingStock(t);
   persistTasks();
   recomputeReceiptStatus(t.receiptId);
 }
@@ -624,13 +846,16 @@ export function linkPutAway(taskId: string, putAwayTaskId: string): void {
 /**
  * Put-away was just disabled for this task's warehouse while it sat in
  * "pending put-away" with no put-away task ever created — finish it directly,
- * matching the new normal for that warehouse (no putAwayTaskId to link).
+ * matching the new normal for that warehouse (no putAwayTaskId to link), and
+ * commit its stock now since no put-away step will ever run for it.
  */
 export function completeReceivingWithoutPutAway(taskId: string): void {
   const t = getReceivingTask(taskId);
   if (!t) return;
   t.status = "completed";
+  commitReceivingStock(t);
   persistTasks();
+  recomputeReceiptStatus(t.receiptId);
 }
 
 /**

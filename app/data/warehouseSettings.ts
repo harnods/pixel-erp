@@ -26,16 +26,53 @@ export const SERIAL_RULE_OPTIONS: { id: SerialSelectionRule; name: string }[] = 
   { id: 'serial_created_asc', name: 'Serial created date (earliest first)' },
 ]
 
+// Which symbology "Print barcode" (SKU/batch/serial/bin labels) renders — a
+// display choice, not a data change, so switching it never touches barcode
+// values already assigned.
+export type BarcodeStyle = 'barcode' | 'qrcode'
+export const BARCODE_STYLE_OPTIONS: { id: BarcodeStyle; name: string }[] = [
+  { id: 'barcode', name: 'Barcode (Code 128)' },
+  { id: 'qrcode', name: 'QR code' },
+]
+
 export interface WarehouseSettings {
   multiLocationStorage: boolean
   batchSelectionRule:   BatchSelectionRule
   serialSelectionRule:  SerialSelectionRule
+  barcodeStyle:         BarcodeStyle
+  // Cycle counts — WMS Standalone only (no equivalent in ERP).
+  cycleCountRec: boolean
+  cycleCountAutoTask: boolean
+  cycleCountRuleNeg: boolean
+  cycleCountRuleVar: boolean
+  cycleCountRuleMin: boolean
+  /** Priority order for recommendation rules — highest priority first. */
+  cycleCountRuleOrder: ('neg' | 'var' | 'min')[]
+  /** Negative stock rule — how many days back to look for a negative-stock event. */
+  cycleCountNegLookbackDays: number
+  /** Variance signal rule — variance % (vs. last count) that trips the flag. */
+  cycleCountVarianceThreshold: number
+  /** Min stock rule — days a watch-listed SKU must stay at/below minimum before it's flagged. */
+  cycleCountMinGuardDays: number
+  /** SKUs that always show on the cycle count recommendation list — the "watch list" the Min stock rule flags against. */
+  cycleCountWatchList: string[]
 }
 
 const DEFAULTS: WarehouseSettings = {
   multiLocationStorage: true,
   batchSelectionRule:   'fefo',
   serialSelectionRule:  'serial_created_asc',
+  barcodeStyle:         'barcode',
+  cycleCountRec: false,
+  cycleCountAutoTask: false,
+  cycleCountRuleNeg: true,
+  cycleCountRuleVar: true,
+  cycleCountRuleMin: true,
+  cycleCountRuleOrder: ['neg', 'var', 'min'],
+  cycleCountNegLookbackDays: 30,
+  cycleCountVarianceThreshold: 20,
+  cycleCountMinGuardDays: 14,
+  cycleCountWatchList: [],
 }
 
 export function getWarehouseSettings(): WarehouseSettings {
@@ -47,6 +84,17 @@ export function getWarehouseSettings(): WarehouseSettings {
       multiLocationStorage: parsed.multiLocationStorage ?? DEFAULTS.multiLocationStorage,
       batchSelectionRule:   parsed.batchSelectionRule   ?? DEFAULTS.batchSelectionRule,
       serialSelectionRule:  parsed.serialSelectionRule  ?? DEFAULTS.serialSelectionRule,
+      barcodeStyle:         parsed.barcodeStyle         ?? DEFAULTS.barcodeStyle,
+      cycleCountRec:        parsed.cycleCountRec        ?? DEFAULTS.cycleCountRec,
+      cycleCountAutoTask:   parsed.cycleCountAutoTask   ?? DEFAULTS.cycleCountAutoTask,
+      cycleCountRuleNeg:    parsed.cycleCountRuleNeg    ?? DEFAULTS.cycleCountRuleNeg,
+      cycleCountRuleVar:    parsed.cycleCountRuleVar    ?? DEFAULTS.cycleCountRuleVar,
+      cycleCountRuleMin:    parsed.cycleCountRuleMin    ?? DEFAULTS.cycleCountRuleMin,
+      cycleCountRuleOrder:  parsed.cycleCountRuleOrder  ?? DEFAULTS.cycleCountRuleOrder,
+      cycleCountNegLookbackDays:    parsed.cycleCountNegLookbackDays    ?? DEFAULTS.cycleCountNegLookbackDays,
+      cycleCountVarianceThreshold:  parsed.cycleCountVarianceThreshold  ?? DEFAULTS.cycleCountVarianceThreshold,
+      cycleCountMinGuardDays:       parsed.cycleCountMinGuardDays       ?? DEFAULTS.cycleCountMinGuardDays,
+      cycleCountWatchList:          parsed.cycleCountWatchList          ?? DEFAULTS.cycleCountWatchList,
     }
   } catch { return { ...DEFAULTS } }
 }

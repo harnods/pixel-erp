@@ -4,6 +4,7 @@ import {
   MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon, MpBadge,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
+  toast,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
@@ -68,7 +69,7 @@ const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assignee
 
 // ─── Picked items per sales order (what's available to pack) ─────────────────────
 interface PackLine { key: string; sku: string; product: string; desc: string; img: string; unit: string; order: number; picked: number }
-interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; packable: boolean; lines: PackLine[] }
+interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; canceled: boolean; packable: boolean; lines: PackLine[] }
 
 // Which non-canceled picking lists for this order still have something new to
 // pack — excludes any list that already has its OWN (non-canceled) packing task,
@@ -98,7 +99,8 @@ const orderTables = computed<OrderTable[]>(() => {
     }))
     return [{
       orderId: o.id, salesNo: o.salesNo, customer: o.customer ?? '', source: o.source,
-      isMarketplace: false, fullyPicked: true, alreadyPacked: false, packable: lines.length > 0,
+      isMarketplace: false, fullyPicked: true, alreadyPacked: false,
+      canceled: o.status === 'canceled', packable: o.status !== 'canceled' && lines.length > 0,
       lines,
     }]
   }
@@ -127,6 +129,7 @@ const orderTables = computed<OrderTable[]>(() => {
         }))
       : []
     const isMarketplace = isMarketplaceOrder(o)
+    const canceled = o?.status === 'canceled'
     const fullyPicked = lines.length > 0 && lines.every(l => l.picked >= l.order)
     const pickedAny = lines.some(l => l.picked > 0)
     // "Already packed" = genuinely nothing NEW left — something was picked at some
@@ -138,20 +141,26 @@ const orderTables = computed<OrderTable[]>(() => {
     )
     // Marketplace ⇒ packable only when fully picked (across lists); others ⇒ any picked
     // unit. Never twice — a picking list that already has a packing task is excluded.
-    const packable = !alreadyPacked && pickedAny && (isMarketplace ? fullyPicked : true)
+    // A cancelled order is never packable, whatever was picked for it.
+    const packable = !canceled && !alreadyPacked && pickedAny && (isMarketplace ? fullyPicked : true)
     return {
       orderId,
       salesNo: o?.salesNo ?? salesNoFallback,
       customer: o?.customer ?? '',
       source: o?.source ?? '',
-      isMarketplace, fullyPicked, alreadyPacked, packable,
+      isMarketplace, fullyPicked, alreadyPacked, canceled, packable,
       lines,
     }
   })
 })
 const packableTables = computed(() => orderTables.value.filter(t => t.packable))
+// Orders on a selected picking list that got cancelled after this form was opened —
+// surfaced as a note and blocked at Save. NOT gated on picked>0: cancelling the
+// order force-cancels its picking task, which zeroes its picked qty here, so a
+// picked>0 check would miss exactly the case we need to warn about.
+const canceledTables = computed(() => orderTables.value.filter(t => t.canceled))
 // Marketplace orders held back (not fully picked across lists), and orders already packed.
-const blockedTables = computed(() => orderTables.value.filter(t => !t.packable && !t.alreadyPacked && t.isMarketplace && t.lines.some(l => l.picked > 0)))
+const blockedTables = computed(() => orderTables.value.filter(t => !t.packable && !t.canceled && !t.alreadyPacked && t.isMarketplace && t.lines.some(l => l.picked > 0)))
 const packedTables = computed(() => orderTables.value.filter(t => t.alreadyPacked))
 // Every picking list that contributed to the packable orders (an order split across
 // several still-unpacked lists shows them all, not just the one this form was
@@ -410,6 +419,18 @@ function goPacking() {
 
 async function handleCreate() {
   if (!hasSource.value) return
+  // Re-validate at Save: an order cancelled after this form was opened must never
+  // get a packing task. packableTables already drops it reactively — surface WHY so
+  // the save isn't silently short of what the operator selected, then let them retry.
+  if (!isDirectMode.value && canceledTables.value.length) {
+    const nos = canceledTables.value.map(t => t.salesNo).join(', ')
+    toast.notify({
+      variant: 'error',
+      title: `${nos} ${canceledTables.value.length > 1 ? 'were' : 'was'} cancelled and can’t be packed — removed from this packing`,
+      maxWidth: 'max-content',
+    })
+    return
+  }
   let valid = true
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
   if (isDirectMode.value) {
@@ -602,6 +623,9 @@ async function handleCreate() {
           <p v-if="packedTables.length" class="pk-tasks-note">
             Note: {{ packedTables.map(t => t.salesNo).join(', ') }} already {{ packedTables.length > 1 ? 'have' : 'has a' }} packing task, so {{ packedTables.length > 1 ? 'they’re' : 'it’s' }} not shown here.
           </p>
+          <p v-if="canceledTables.length" class="pk-tasks-note">
+            Note: {{ canceledTables.map(t => t.salesNo).join(', ') }} {{ canceledTables.length > 1 ? 'were' : 'was' }} cancelled, so {{ canceledTables.length > 1 ? 'they’re' : 'it’s' }} not shown here — {{ canceledTables.length > 1 ? 'their' : 'its' }} reserved stock can be returned via Release reserved.
+          </p>
           <p v-if="orderError" class="pk-tasks-error">
             {{ !isDirectMode && packableTables.length === 0
               ? 'Marketplace orders must be fully picked (across their picking lists) before a packing task can be created.'
@@ -634,7 +658,7 @@ async function handleCreate() {
             </div>
             <section class="pk-items-section" :class="{ 'pk-items-section--bordered': overflowingOrders.has(t.orderId) }">
               <div :ref="el => setScrollRef(t.orderId, el)" class="pk-items-scroll">
-                <table class="pk-items">
+                <table class="pk-items" :class="{ 'pk-items--form': isDirectMode }">
                   <colgroup>
                     <col v-if="isDirectMode" style="width: 6%" />
                     <col :style="{ width: isDirectMode ? '26%' : '32%' }" />
@@ -904,13 +928,15 @@ async function handleCreate() {
 .pk-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-/* Every column gets a right border since a bin-split line renders fewer
-   <td>s per row than the header; the Action column (the true rightmost) is
-   explicitly excepted. */
-.pk-items .pk-th,
+/* Body cells get a right divider since a bin-split line renders fewer <td>s per
+   row than the header; the Action column (the true rightmost) is excepted. The
+   form-table header stays white with border-bottom only (no side dividers). */
 .pk-items .pk-td { border-right: 1px solid var(--mp-border-default); }
-.pk-items .pk-th--action,
 .pk-items .pk-td--action { border-right: none; }
+/* Direct mode has no sticky action column, so the true last cell (Unit) must drop
+   its right border to avoid an outer frame. Direct rows never bin-split, so
+   :last-child reliably lands on the real last column here. */
+.pk-items--form .pk-td:last-child { border-right: none; }
 .pk-td--location { min-width: 160px; max-width: 200px; }
 /* Stacked list of 2+ known bins in one cell (a line's picks span 2+ bins but
    the row isn't split) — the wrapping <td> gets padding:0 so each item can
@@ -928,6 +954,12 @@ async function handleCreate() {
 /* Editable Pack qty cell — white, input fills edge-to-edge, focus ring */
 .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
 .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+/* Direct/skip-picking mode is a FORM table (Pack qty input) → read-only cells go
+   gray, the input + sticky action stay white. From-picking mode is a plain read-only
+   table, so it keeps default (no gray). */
+.pk-items--form .pk-td { background: var(--mp-background-neutral-subtle); }
+.pk-items--form .pk-td--input,
+.pk-items--form .pk-td--action { background: var(--mp-background-neutral, #fff); }
 .pk-qty-input {
   display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box; text-align: right;
   padding: 0 var(--mp-spacing-2);

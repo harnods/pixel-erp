@@ -882,7 +882,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default);
   white-space: nowrap;
 }
 .wtf-th--group { text-align: center; padding: var(--mp-spacing-1) var(--mp-spacing-2); }
@@ -1038,7 +1038,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-loc-col-del { width: 44px; }
 .wtf-loc-th {
   height: 28px; padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase; text-align: left;
   border-bottom: 1px solid var(--mp-border-default);

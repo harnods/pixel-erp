@@ -984,7 +984,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .bf-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
@@ -1002,6 +1002,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: middle;
+  background: var(--mp-background-neutral-subtle);
 }
 .bf-td:last-child { border-right: none; }
 .bf-tr:last-child .bf-td { border-bottom: none; }
@@ -1011,10 +1012,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .bf-tr--dragging { opacity: 0.4; }
 .bf-tr--over-above .bf-td { border-top: 2px solid var(--mp-border-selected, #2563eb); }
 .bf-tr--over-below .bf-td { border-bottom: 2px solid var(--mp-border-selected, #2563eb); }
-.bf-td--input { padding: 0; vertical-align: middle; }
-.bf-td--num-input { padding: 0; }
+.bf-td--input { padding: 0; vertical-align: middle; background: var(--mp-background-neutral, #fff); }
+.bf-td--num-input { padding: 0; background: var(--mp-background-neutral, #fff); }
 .bf-td--num-input :deep(input) { text-align: right; }
-.bf-td--pct { padding: 0; }
+.bf-td--pct { padding: 0; background: var(--mp-background-neutral, #fff); }
 .bf-td--input :deep([class*='input']),
 .bf-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .bf-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); z-index: 1; }

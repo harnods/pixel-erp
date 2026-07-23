@@ -29,8 +29,13 @@ const props = withDefaults(
      *  Use when the same status value needs different wording per module (e.g. an
      *  'in progress' order reads "In process" but a work order reads "In progress"). */
     label?: string
+    /** Explicit colour-type override — keeps the mapped label but uses this MpBadge
+     *  type instead. Use when the same status value needs a different colour per
+     *  module (e.g. 'pending' reads warning/yellow for Production requests, but
+     *  announcement/gray for Purchase orders). */
+    type?: 'completed' | 'announcement' | 'information' | 'warning' | 'critical'
   }>(),
-  { size: undefined, badgeFor: 'tableStatus', label: undefined },
+  { size: undefined, badgeFor: 'tableStatus', label: undefined, type: undefined },
 )
 
 interface StatusConfig { type: string; label: string }
@@ -41,6 +46,7 @@ const statusConfig: Record<string, StatusConfig> = {
   approved:   { type: 'completed',    label: 'Approved'   },
   active:     { type: 'completed',    label: 'Active'     },
   completed:  { type: 'completed',    label: 'Completed'  },
+  counted:    { type: 'completed',    label: 'Counted'    },
   verified:   { type: 'completed',    label: 'Verified'   },
   success:    { type: 'completed',    label: 'Success'    },
   delivered:  { type: 'completed',    label: 'Delivered'  },
@@ -56,13 +62,14 @@ const statusConfig: Record<string, StatusConfig> = {
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
   receiving:  { type: 'warning',      label: 'Receiving'  },
-  'on the way':{ type: 'warning',     label: 'Open'       },
   'ready to pack':{ type: 'warning',  label: 'Ready to pack' },
   'ready to ship':{ type: 'warning',  label: 'Ready to ship' },
+  'out for delivery':{ type: 'information', label: 'Out for delivery' },
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
+  recommended:{ type: 'warning',      label: 'Recommended'},
 
   // ── critical — red ────────────────────────────────
   overdue:    { type: 'critical',     label: 'Overdue'    },
@@ -98,6 +105,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'partially fulfilled': { type: 'information', label: 'Partially fulfilled' },
   'in progress':{ type: 'information',  label: 'In progress' },
   in_progress:{ type: 'information',  label: 'In progress' },
+  'task created':{ type: 'information', label: 'Task created' },
   new:        { type: 'information',  label: 'New'        },
   beta:       { type: 'information',  label: 'Beta'       },
   vip:        { type: 'information',  label: 'VIP'        },
@@ -107,7 +115,7 @@ const statusConfig: Record<string, StatusConfig> = {
 const config = computed<StatusConfig>(() => {
   const key = props.status?.toLowerCase() ?? ''
   const base = statusConfig[key] ?? { type: 'information', label: props.status }
-  return props.label ? { ...base, label: props.label } : base
+  return { ...base, ...(props.label ? { label: props.label } : {}), ...(props.type ? { type: props.type } : {}) }
 })
 </script>
 

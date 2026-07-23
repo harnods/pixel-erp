@@ -212,11 +212,11 @@ async function handleSave() {
     maxWidth: 'max-content',
   })
   // A mixed-courier batch splits into several shipments, so there's no single
-  // details page to land on — go back to the Shipped tab instead.
+  // details page to land on — go back to the Shipments tab instead.
   if (shipments.length === 1) {
     router.push(`/outbound-delivery/shipment/${shipments[0]!.shipmentSeq}`)
   } else {
-    router.push({ path: '/outbound-delivery', query: { tab: 'Shipped' } })
+    router.push({ path: '/outbound-delivery', query: { tab: 'Shipments' } })
   }
 }
 </script>

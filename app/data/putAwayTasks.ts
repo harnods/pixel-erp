@@ -7,9 +7,11 @@ import {
   getReceivingTask,
   linkPutAway,
   completeReceivingWithoutPutAway,
+  forceCancelEndedTask,
 } from "./receivingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { getWarehouseDetail, registerNewBatch, receiveNewSerials, applyStockInOut } from "./warehouseDetails";
+import { markStockCommitted } from "./receivingTasks";
 
 /**
  * A put-away task — once goods are received they must be moved from the receiving
@@ -51,6 +53,8 @@ export interface PutAwayTask {
   canceledDate?: string;
   /** Why this task was canceled — shown on the task detail page. */
   canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
   /** A SKU shared by 2+ bundled receiving tasks is ONE merged entry (qty
    *  summed) — put-away doesn't track which specific receiving task a unit
    *  came from, only which bin it ends up in. */
@@ -59,6 +63,16 @@ export interface PutAwayTask {
   batchAssignments?: Record<string, PutAwayBatchAssignment[]>;
   /** Per-SKU serial destination assignments (serial-tracked SKUs), draft or final. */
   serialAssignments?: Record<string, PutAwaySerialAssignment[]>;
+  /** This task's source receiving task's OWN PO was canceled while this
+   *  put-away was still open/in progress — endPutAway (the only thing that
+   *  commits real stock) never ran, so nothing needs reversing. Blocks
+   *  Start/Continue put-away until the operator explicitly acknowledges (see
+   *  acknowledgeCanceledPutAway below), which cancels this task AND its
+   *  linked receiving task(s) too — nothing left to put away once the PO is
+   *  gone. Never set once this task is already "completed" (see
+   *  cancelInboundReceipt in inboundSync.ts — a completed put-away's
+   *  receiving task gets flagged directly instead, since real stock exists). */
+  needsCancelAck?: boolean;
 }
 
 const ZONES = ["A", "B", "C", "D"];
@@ -263,6 +277,7 @@ export function endPutAway(
     }
   }
   persistPutAways();
+  markStockCommitted(t.receivingTaskIds);
 }
 
 /** A put-away task can only be canceled while not yet completed — endPutAway()
@@ -277,8 +292,45 @@ export function cancelPutAway(taskId: string, reason?: string): void {
   if (!t || !canCancelPutAway(t)) return;
   t.status = 'canceled';
   t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
   if (reason) t.canceledReason = reason;
   persistPutAways();
+}
+
+/**
+ * This task's source receiving task's own PO was just canceled while the
+ * put-away was still open/in progress — called only from cancelInboundReceipt
+ * (inboundSync.ts). Since endPutAway (the only thing that commits real stock)
+ * never ran, there's nothing to reconcile — but real work (Start/Continue put-
+ * away) may already be underway, so it isn't silently auto-canceled. Blocks
+ * Start/Continue put-away until the operator explicitly acknowledges.
+ */
+export function flagPutAwayCanceledPoAck(taskId: string): void {
+  const t = getPutAwayTask(taskId);
+  if (!t) return;
+  t.needsCancelAck = true;
+  persistPutAways();
+}
+
+/**
+ * Operator acknowledges that this put-away's source PO was canceled.
+ * Cancels the put-away itself AND its linked receiving task(s) — there's
+ * nothing left to receive or put away once the one PO behind them is gone.
+ * No stock reversal needed: endPutAway never ran for this task, so nothing
+ * real was ever committed. A no-op if the task isn't actually flagged.
+ */
+export function acknowledgeCanceledPutAway(taskId: string): void {
+  const t = getPutAwayTask(taskId);
+  if (!t || !t.needsCancelAck) return;
+  t.needsCancelAck = false;
+  t.status = 'canceled';
+  t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
+  t.canceledReason = 'Purchase order was canceled';
+  persistPutAways();
+  for (const rid of t.receivingTaskIds) {
+    forceCancelEndedTask(rid, 'Purchase order was canceled');
+  }
 }
 
 /**

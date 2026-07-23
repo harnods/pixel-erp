@@ -13,9 +13,17 @@
  * Exercises the flow across TWO receiving/put-away passes per SKU (a genuine
  * partial receiving cycle: 1 of 2 units, then the remaining 1), asserting at every
  * step that:
- *   - the receipt's derived status walks "on the way" → "partial reception" →
- *     "completed" only once EVERY line's cumulative received qty reaches its
- *     purchase qty (not as soon as any one SKU does);
+ *   - the receipt's derived status walks "pending" → "open" (task created) →
+ *     "in progress" (task started) → "partial reception" → back to "in
+ *     progress" (every line's cumulative received qty reaches its purchase
+ *     qty, but put-away hasn't genuinely finished for wh-006, which has it
+ *     enabled — "pending put-away" itself is the receiving TASK's own status,
+ *     not the PO's) → "completed" only once put-away has ACTUALLY finished
+ *     for every task covering that qty (ReceivingTask.stockCommitted, set by
+ *     markStockCommitted — not merely by reaching receiving status
+ *     "completed"); a second task created/started while the PO already sits
+ *     at "partial reception" does NOT revert it to open/in progress — it
+ *     stays "partial reception" until that task also ends;
  *   - on-hand qty for every SKU increases by exactly what was put away, each pass;
  *   - the batch-tracked SKU gets a genuinely NEW batch row per pass (two separate
  *     lots, matching two separate shipments — not one batch double-counted), each
@@ -51,7 +59,7 @@ describe('Inbound flow — receiving + put-away keep on-hand/batch/serial/locati
     const receipt = receipts.find((r) => r.id === DEMO_RECEIPT_ID)!
     expect(receipt).toBeTruthy()
     expect(receipt.warehouseId).toBe(WAREHOUSE_ID)
-    expect(receipt.status).toBe('on the way')
+    expect(receipt.status).toBe('pending')
     expect(receipt.receivedQty).toBe(0)
 
     const baseline = Object.fromEntries(ALL_SKUS.map((sku) => [sku, stockOf(sku).onHand]))
@@ -65,9 +73,13 @@ describe('Inbound flow — receiving + put-away keep on-hand/batch/serial/locati
       expect(it.receivedQty).toBe(0)
     }
     expect(task1.status).toBe('open')
+    // Creating the first receiving task bumps the PO from Pending to Open.
+    expect(receipt.status).toBe('open')
 
     startReceiving(task1.id)
     expect(getReceivingTask(task1.id)!.status).toBe('in progress')
+    // Starting it bumps the PO from Open to In progress.
+    expect(receipt.status).toBe('in progress')
 
     endReceiving(task1.id, { [BATCH_SKU]: 1, [SERIAL_SKU]: 1, [PLAIN_SKU]: 1 }, {
       [BATCH_SKU]: { batchLines: [{ batchNo: 'PA-DEMO-B1', expiryDate: '2027-01-01', desc: 'Demo lot 1', qty: 1, unit: 'Sack' }] },
@@ -133,19 +145,27 @@ describe('Inbound flow — receiving + put-away keep on-hand/batch/serial/locati
     const task2 = createReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator', skus: ALL_SKUS })!
     expect(task2).toBeTruthy()
     expect(task2.id).not.toBe(task1.id)
+    // task1 already ended (pending put-away/completed), so creating task2 does
+    // NOT revert the PO back to Open — it stays Partial reception.
+    expect(receipt.status).toBe('partial reception')
 
     startReceiving(task2.id)
+    // Same for starting it — an ended task still takes priority over an active one.
+    expect(receipt.status).toBe('partial reception')
     endReceiving(task2.id, { [BATCH_SKU]: 1, [SERIAL_SKU]: 1, [PLAIN_SKU]: 1 }, {
       [BATCH_SKU]: { batchLines: [{ batchNo: 'PA-DEMO-B2', expiryDate: '2027-02-01', desc: 'Demo lot 2', qty: 1, unit: 'Sack' }] },
       [SERIAL_SKU]: { serialNumbers: ['SNDEMO0002'] },
     })
     expect(getReceivingTask(task2.id)!.status).toBe('pending put-away')
 
-    // NOW every line's cumulative received (1 + 1 = 2) reaches its purchase qty (2)
-    // — the PO must finally read "completed".
-    expect(receipt.status).toBe('completed')
+    // Every line's cumulative received (1 + 1 = 2) now reaches its purchase qty
+    // (2) — but the PO does NOT jump straight to "completed": put-away for
+    // wh-006 is enabled, and neither pass's put-away has genuinely finished
+    // yet (stockCommitted is still false on both receiving tasks). It stays
+    // "in progress" — fully received, still waiting on real put-away.
+    expect(receipt.status).toBe('in progress')
     expect(receipt.receivedQty).toBe(6) // 2 + 2 + 2
-    expect(receipt.receivedDate).toBeTruthy()
+    expect(receipt.receivedDate).toBeUndefined() // not "completed" yet — no completion date stamped
 
     // ── Put away pass 2 — a SECOND, independent lot/serial, not a re-registration ──
     const pa2 = addPutAwayTask({
@@ -162,6 +182,14 @@ describe('Inbound flow — receiving + put-away keep on-hand/batch/serial/locati
       serialAssignments: { [SERIAL_SKU]: [{ serial: 'SNDEMO0002' }] },
     })
     expect(getPutAwayTask(pa2.id)!.status).toBe('completed')
+
+    // NOW — put-away pass 2 genuinely finished, so BOTH receiving tasks'
+    // goods are truly committed (pass 1's put-away already finished earlier;
+    // pass 2's just did) — the PO finally reads "completed".
+    expect(getReceivingTask(task1.id)!.stockCommitted).toBe(true)
+    expect(getReceivingTask(task2.id)!.stockCommitted).toBe(true)
+    expect(receipt.status).toBe('completed')
+    expect(receipt.receivedDate).toBeTruthy()
 
     // Batch SKU: on-hand now +2 total, TWO distinct lots each worth 1 (never merged
     // into/overwriting one another), summing to exactly the 2 units received.

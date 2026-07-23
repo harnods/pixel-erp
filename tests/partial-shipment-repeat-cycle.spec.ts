@@ -19,7 +19,7 @@ import {
   addPackingTask, startPacking, endPacking, getPackingTask, orderPackedFromPickingTask,
 } from '~/data/packingTasks'
 import { getPackingLineItems } from '~/data/packingTaskDetails'
-import { addDeliveryTaskFromPackingTasks, handoverToCourierBulk } from '~/data/deliveryTasks'
+import { addDeliveryTaskFromPackingTasks, handoverToCourierBulk, completeShipment } from '~/data/deliveryTasks'
 import { getDeliveryLineItems } from '~/data/deliveryTaskDetails'
 import { syncOutboundOrderStatuses } from '~/data/outboundSync'
 
@@ -68,7 +68,7 @@ describe('Partially shipped order → new picking cycle → Create packing must 
     expect(getPackingTask(pack1.id)!.status).toBe('completed')
 
     const delivery1 = addDeliveryTaskFromPackingTasks([getPackingTask(pack1.id)!], { assignee: 'Test Operator' })
-    handoverToCourierBulk([delivery1.id], { assignee: 'Test Operator', transactionDate: '2026-07-11' })
+    { const [s] = handoverToCourierBulk([delivery1.id], { assignee: 'Test Operator', transactionDate: '2026-07-11' }); completeShipment(s!.shipmentSeq, { receivedDate: '2026-07-11', receivedBy: 'Rina' }) }
     syncOutboundOrderStatuses()
     expect(order.status).toBe('partially shipped')
     expect(order.shippedQty).toBe(1)
@@ -141,7 +141,7 @@ describe('Partially shipped order → new picking cycle → Create packing must 
     expect(delivery2Item.qty).toBe(2) // this cycle's own packed/to-ship qty
     expect(delivery2Item.shippedElsewhere).toBe(1) // cycle 1's already-shipped unit
 
-    handoverToCourierBulk([delivery2.id], { assignee: 'Test Operator', transactionDate: '2026-07-12' })
+    { const [s] = handoverToCourierBulk([delivery2.id], { assignee: 'Test Operator', transactionDate: '2026-07-12' }); completeShipment(s!.shipmentSeq, { receivedDate: '2026-07-12', receivedBy: 'Rina' }) }
 
     syncOutboundOrderStatuses()
     expect(order.status).toBe('completed')
