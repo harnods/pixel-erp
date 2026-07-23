@@ -562,19 +562,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               v-if="canCreateReceivingTask((row as unknown as Receipt).id)"
               @click="purchaseReceiving(row as unknown as Receipt)"
             >Create purchase receiving</MpPopoverListItem>
-            <!-- Manually-created receipts (New receipt form) have no real PO behind
-                 them, so they can be deleted outright; PO-derived ones can only be
-                 canceled. -->
+            <!-- Manually-created receipts (New receipt form) can be Deleted outright
+                 (hard-remove, no real PO behind them) AND Cancelled (void-and-keep as a
+                 record) — same as the detail page. PO-derived ones can only be canceled. -->
+            <MpPopoverListItem
+              v-if="canCancelReceipt(row as unknown as Receipt)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="openCancelModal(row as unknown as Receipt)"
+            >Cancel receipt</MpPopoverListItem>
             <MpPopoverListItem
               v-if="isManualReceipt(row as unknown as Receipt)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openDeleteModal(row as unknown as Receipt)"
             >Delete</MpPopoverListItem>
-            <MpPopoverListItem
-              v-else-if="canCancelReceipt(row as unknown as Receipt)"
-              :class="css({ color: 'var(--mp-text-critical)' })"
-              @click="openCancelModal(row as unknown as Receipt)"
-            >Cancel receipt</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
