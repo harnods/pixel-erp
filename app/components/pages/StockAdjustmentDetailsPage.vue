@@ -561,8 +561,8 @@ onUnmounted(() => {
       <!-- Line items: WMS stock count → accordion grouped by storage location -->
       <div v-if="isWmsCount && locViewMode === 'location' && !groupedByLocation.length" class="empty-inline">
         <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
-        <p class="empty-inline-title">No results found</p>
-        <p class="empty-inline-desc">Try adjusting your search or filters.</p>
+        <p class="empty-inline-title">No results match your filters</p>
+        <p class="empty-inline-desc">Recheck the filters you have applied and try filtering again.</p>
         <a class="empty-inline-clear" @click="locSearch = ''">Clear all filters</a>
       </div>
       <MpAccordion v-if="isWmsCount && locViewMode === 'location' && groupedByLocation.length" is-allow-multiple is-allow-toggle class="detail-loc-accordions">
