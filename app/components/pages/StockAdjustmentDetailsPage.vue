@@ -60,6 +60,17 @@ const linkedCycleCount = computed(() => {
   const wmsAdj = getWmsAdjustment(id)
   return wmsAdj?.kind === 'count' ? wmsAdj : null
 })
+
+// ── Linked stock count (WMS Cycle count only, once Completed) — the reverse of
+// linkedCycleCount above: approveWmsAdjustment() mirrors a completed cycle count
+// into the ERP Stock counts index as a single new record, tagged back to this one. ──
+const linkedStockCount = computed(() => {
+  if (!isWmsCount.value || adjustment.value?.status !== 'completed') return null
+  const id = adjustment.value?.id
+  if (!id) return null
+  return stockAdjustments.find((a) => a.linkedCycleCountId === id) ?? null
+})
+const linkedStockCountAccountCode = computed(() => linkedStockCount.value ? accountCodeFor(linkedStockCount.value.account) : '')
 function agingLabel(startIso?: string, endIso?: string): string {
   if (!startIso) return ''
   const start = new Date(startIso).getTime()
@@ -842,6 +853,46 @@ onUnmounted(() => {
                     <span v-if="linkedCycleCount.startDate" class="linked-aging">{{ agingLabel(linkedCycleCount.startDate, linkedCycleCount.endDate) }}</span>
                   </span>
                 </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Linked stock count (WMS Cycle count only, once Completed) -->
+      <section v-if="linkedStockCount" class="detail-linked-section">
+        <h3 class="detail-linked-heading">Stock counts (1)</h3>
+        <div class="detail-linked-wrap">
+          <table class="detail-linked">
+            <thead>
+              <tr>
+                <th class="detail-th">Number</th>
+                <th class="detail-th">Date</th>
+                <th class="detail-th">Warehouse</th>
+                <th class="detail-th">Category</th>
+                <th class="detail-th">Account</th>
+                <th class="detail-th">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="detail-item-row">
+                <td class="detail-td detail-td--number">
+                  <div class="cell-with-action">
+                    <span class="linked-num">{{ linkedStockCount.number }}</span>
+                    <button class="row-hover-btn" @click.stop="router.push(`/stock-adjustments/${linkedStockCount.id}`)">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                        <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span class="row-hover-btn__label">VIEW DETAILS</span>
+                    </button>
+                  </div>
+                </td>
+                <td class="detail-td">{{ formatDateLong(linkedStockCount.date) }}</td>
+                <td class="detail-td">{{ linkedStockCount.warehouseName }}</td>
+                <td class="detail-td">{{ linkedStockCount.category }}</td>
+                <td class="detail-td">{{ linkedStockCountAccountCode ? `${linkedStockCountAccountCode} ${linkedStockCount.account}` : linkedStockCount.account }}</td>
+                <td class="detail-td"><ErpStatusBadge :status="linkedStockCount.status" /></td>
               </tr>
             </tbody>
           </table>

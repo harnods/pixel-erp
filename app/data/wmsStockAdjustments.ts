@@ -6,7 +6,7 @@ import { applyStockCount, applyStockInOut, getWarehouseDetail } from './warehous
 import { loadSnapshot, saveSnapshot } from './persist'
 import { TODAY } from './master'
 import {
-  accountForCategory, accountCodeFor, addAdjustment,
+  accountForCategory, accountCodeFor, addAdjustment, stockAdjustments,
   type AdjustmentKind, type AdjustmentCategory, type AdjustmentStatus,
   type StockAdjustment, type AdjustmentInput, type AdjustmentLine,
   IN_OUT_CATEGORIES, adjustmentLineItems,
@@ -123,6 +123,36 @@ function persist(): void {
   saveSnapshot(KEY, wmsStockAdjustments)
 }
 
+const ACTOR = 'Rizal Candra'
+
+// approveWmsAdjustment() guarantees every completed cycle count mirrors into the
+// ERP Stock counts index (see below). Seed data generated directly as 'completed'
+// skips that runtime flow, so without this backfill a cycle count that's
+// "always been" completed (never actually approved this session) would show no
+// linked Stock count — breaking that same guarantee. Idempotent: only fills in
+// records that don't already have a mirror (from a prior run or real approval).
+function backfillCompletedMirrors(): void {
+  for (const a of wmsStockAdjustments) {
+    if (a.kind !== 'count' || a.status !== 'completed') continue
+    if (stockAdjustments.some((sa) => sa.linkedCycleCountId === a.id)) continue
+    const lines = a.lines ?? adjustmentLineItems(a).map((l) => ({ sku: l.sku, qty: l.counted }))
+    addAdjustment({
+      kind: 'count',
+      date: (a.endDate ?? a.date).slice(0, 10),
+      warehouseId: a.warehouseId,
+      warehouseName: a.warehouseName,
+      category: 'Stock count',
+      tags: [],
+      lines,
+      linkedCycleCountId: a.id,
+      status: 'completed',
+      approvedBy: a.approvedBy ?? ACTOR,
+      approvedAt: a.approvedAt ?? a.endDate ?? a.date,
+    })
+  }
+}
+backfillCompletedMirrors()
+
 export function getWmsAdjustment(id: string): StockAdjustment | undefined {
   return wmsStockAdjustments.find((a) => a.id === id)
 }
@@ -230,8 +260,6 @@ export function finishWmsCount(id: string, lines: { sku: string; qty: number; lo
   persist()
   return a
 }
-
-const ACTOR = 'Rizal Candra'
 
 /** Manager approves a "Counted" task — applies the count to stock, marks it completed,
  *  and mirrors it into the ERP Stock counts index as a completed record. */

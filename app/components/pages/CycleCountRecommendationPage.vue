@@ -9,7 +9,7 @@ import ClampText from '~/components/patterns/ClampText.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { getWarehouseSettings } from '~/data/warehouseSettings'
+import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { TODAY } from '~/data/master'
 import { MIN_STOCK_LIMIT, hashStr, recommendationReasons, type Reason } from '~/data/cycleCountRecommendations'
 import { formatDate } from '~/utils/date'
@@ -22,7 +22,7 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
 // ── Warehouses in scope — all active, non-default (no warehouse filter anymore) ──
 const wmsWarehouses = computed(() => warehouses.filter(w => w.status === 'active' && !w.isDefault))
-const anyRecEnabled = computed(() => getWarehouseSettings().cycleCountRec)
+const anyRecEnabled = computed(() => wmsWarehouses.value.some(w => getWarehouseConfig(w.id).cycleCountRec))
 
 // ── Columns ─────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
@@ -39,9 +39,9 @@ const columns: TableColumn[] = [
 //   Weights derive from the active-signal count + order (cycleCountRuleOrder):
 //   3 active → 0.5/0.3/0.2, 2 active → 0.6/0.4, 1 active → 1.0
 // (reason logic shared with the "Cycle counts" tab badge count — see ~/data/cycleCountRecommendations)
-// The whole table is driven by the global Cycle counts settings (Warehouse settings,
-// WMS Standalone): OFF → no rows at all; the active rules + their order decide which
-// SKUs qualify and how they rank; "Auto-create cycle count tasks" decides the Status.
+// Each warehouse has its own Cycle counts settings (Configure warehouse, WMS
+// Standalone): a warehouse with the master toggle OFF contributes no rows at all;
+// its own active rules + their order decide which of its SKUs qualify and how they rank.
 
 interface Recommendation {
   warehouseId: string
@@ -76,20 +76,20 @@ function lastCountDateFor(warehouseId: string, sku: string): string | null {
 
 const baseRows = computed<Recommendation[]>(() => {
   const results: Recommendation[] = []
-  const cfg = getWarehouseSettings()
-  if (!cfg.cycleCountRec) return results
-
-  // Active signals in the user-configured priority order → positional weights.
-  const activeOrder = cfg.cycleCountRuleOrder.filter(r => cfg[RULE_KEY[r]])
-  const weights = WEIGHT_TABLE[activeOrder.length] ?? []
-  const weightFor = (rule: 'neg' | 'min' | 'var') => {
-    const i = activeOrder.indexOf(rule)
-    return i === -1 ? 0 : (weights[i] ?? 0)
-  }
 
   for (const wh of wmsWarehouses.value) {
+    const cfg = getWarehouseConfig(wh.id)
+    if (!cfg.cycleCountRec) continue
     const detail = getWarehouseDetail(wh.id)
     if (!detail) continue
+
+    // Active signals in this warehouse's own priority order → positional weights.
+    const activeOrder = cfg.cycleCountRuleOrder.filter(r => cfg[RULE_KEY[r]])
+    const weights = WEIGHT_TABLE[activeOrder.length] ?? []
+    const weightFor = (rule: 'neg' | 'min' | 'var') => {
+      const i = activeOrder.indexOf(rule)
+      return i === -1 ? 0 : (weights[i] ?? 0)
+    }
 
     for (const stock of detail.stock) {
       // Continuous, deterministic normalized variance (0–1) — same source used both to
@@ -296,7 +296,7 @@ function createCountTaskForRow(row: Recommendation) {
         </p>
         <p class="empty-full-desc">
           {{ !anyRecEnabled
-            ? 'Turn on cycle count recommendations in Warehouse settings to see which SKUs need counting.'
+            ? 'Turn on cycle count recommendations in Configure warehouse to see which SKUs need counting.'
             : 'All SKUs are within their target stock levels.' }}
         </p>
       </div>
