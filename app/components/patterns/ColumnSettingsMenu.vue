@@ -9,12 +9,15 @@ import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpCheckbox, css } from '
 
 export interface ColumnSettingItem { key: string; label: string; disabled?: boolean }
 
-const props = defineProps<{
+// `tooltip` must always be a string: Pixel's v-tooltip directive reads `value.label`
+// in its mounted hook and throws on `undefined` (crashes the whole page). Default it
+// so every table's gear button is safe even when a page doesn't pass one.
+const props = withDefaults(defineProps<{
   id: string
   items: ColumnSettingItem[]
   visibility: Record<string, boolean>
   tooltip?: string
-}>()
+}>(), { tooltip: 'Column settings' })
 
 function toggle(item: ColumnSettingItem) {
   if (item.disabled) return

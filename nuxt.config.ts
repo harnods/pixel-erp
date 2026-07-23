@@ -31,7 +31,12 @@ export default defineNuxtConfig({
   },
   vite: {
     optimizeDeps: {
-      include: ['@mekari/pixel3'],
+      // Pre-bundle everything up front. If Vite discovers a dep at RUNTIME instead
+      // (e.g. @supabase/supabase-js pulled via proto-review, or the devtools client),
+      // it re-optimizes mid-session — which swaps Pixel3's module identity and makes
+      // its popover/tooltip directives read undefined state on unmount ("Cannot read
+      // properties of undefined (reading 'show')" → 500). Listing them here avoids that.
+      include: ['@mekari/pixel3', '@vue/devtools-core', '@vue/devtools-kit', '@supabase/supabase-js'],
     },
     css: {
       devSourcemap: false,
