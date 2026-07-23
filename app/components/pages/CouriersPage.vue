@@ -54,6 +54,13 @@ function openAdd() {
   editName.value = ''
   editOpen.value = true
 }
+
+// "Add courier" lives in the page title bar ([...slug].vue), not this page's own
+// filter bar — same as every other index page's primary create action. The title
+// bar has no direct handle on this page's modal state, so it provides a signal
+// ref (same provide/inject mechanism as toggleAirene) that this page watches.
+const courierAddSignal = inject<Ref<number>>('courierAddSignal')
+if (courierAddSignal) watch(courierAddSignal, () => openAdd())
 function openEdit(c: Courier) {
   editingId.value = c.id
   editName.value = c.name
@@ -123,12 +130,6 @@ function confirmDelete() {
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
         </div>
-        <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="openAdd">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Add courier
-        </button>
       </div>
     </template>
 
