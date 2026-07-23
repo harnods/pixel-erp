@@ -457,7 +457,7 @@ onUnmounted(() => {
                     <span class="detail-jump-item-number">{{ a.number }}</span>
                     <span class="detail-jump-item-customer">{{ a.warehouseName }} · {{ a.category }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -576,7 +576,7 @@ onUnmounted(() => {
           <MpAccordionHeader>
             <MpAccordionIcon />
             <span class="detail-acc-label">{{ group.location === '—' ? 'No location assigned' : group.location }}</span>
-            <span class="detail-acc-meta">SKU Qty: {{ new Set(group.items.map(i => i.sku)).size }}</span>
+            <span class="detail-acc-meta">SKUs: {{ new Set(group.items.map(i => i.sku)).size }}</span>
           </MpAccordionHeader>
           <MpAccordionPanel>
             <div class="detail-acc-body">
@@ -626,7 +626,7 @@ onUnmounted(() => {
                         <MpPopover v-if="hasVariance(item.difference)" :id="`reason-loc-${item.key}`" is-close-on-select use-portal placement="bottom-start">
                           <MpPopoverTrigger>
                             <MpSelect
-                              :id="`reason-loc-sel-${item.key}`" placeholder="Select reason..." is-full-width size="sm"
+                              :id="`reason-loc-sel-${item.key}`" placeholder="Select reason" is-full-width size="sm"
                               :model-value="varianceReasons[item.sku] || undefined"
                               @mousedown.prevent
                             >
@@ -642,7 +642,7 @@ onUnmounted(() => {
                             </MpPopoverList>
                           </MpPopoverContent>
                         </MpPopover>
-                        <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width size="sm" />
+                        <MpSelect v-else placeholder="Select reason" is-disabled is-full-width size="sm" />
                       </td>
                     </tr>
                   </tbody>
@@ -698,7 +698,7 @@ onUnmounted(() => {
                   <MpPopover v-if="hasVariance(row.difference)" :id="`reason-sku-${row.sku}`" is-close-on-select use-portal placement="bottom-start">
                     <MpPopoverTrigger>
                       <MpSelect
-                        :id="`reason-sku-sel-${row.sku}`" placeholder="Select reason..." is-full-width size="sm"
+                        :id="`reason-sku-sel-${row.sku}`" placeholder="Select reason" is-full-width size="sm"
                         :model-value="varianceReasons[row.sku] || undefined"
                         @mousedown.prevent
                       >
@@ -714,7 +714,7 @@ onUnmounted(() => {
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
-                  <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width size="sm" />
+                  <MpSelect v-else placeholder="Select reason" is-disabled is-full-width size="sm" />
                 </td>
                 <td class="detail-td">
                   <div class="detail-loc-tags">
@@ -739,7 +739,7 @@ onUnmounted(() => {
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
                 <template v-if="isCount">
-                  <th class="detail-th detail-th--num">Prev. on hand</th>
+                  <th class="detail-th detail-th--num">Prev. on hand qty</th>
                   <th class="detail-th detail-th--num">Counted</th>
                   <th class="detail-th detail-th--num">Difference</th>
                 </template>
