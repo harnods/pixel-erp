@@ -89,9 +89,10 @@ describe('Inbound flow — receiving + put-away keep on-hand/batch/serial/locati
     expect(task1Done.status).toBe('pending put-away') // wh-006 has put-away enabled
     for (const it of task1Done.items) expect(it.receivedQty).toBe(1)
 
-    // Only 1 of 2 received so far, for EVERY line — the PO must read "partial
-    // reception", not flip early just because some line looks done.
-    expect(receipt.status).toBe('partial reception')
+    // Received 1 of 2 but NO put-away has run yet → no stock on-hand, so per WMS PRD 1.1
+    // C1 AC#7 the PO is still "in progress" (not Partially Completed — that needs on-hand
+    // stock). It only becomes "partial reception" after the first put-away posts stock.
+    expect(receipt.status).toBe('in progress')
     expect(receipt.receivedQty).toBe(3) // 1 + 1 + 1
 
     // ── Put away pass 1 — this is what used to be a no-op on real stock ──

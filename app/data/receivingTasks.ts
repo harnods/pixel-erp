@@ -452,8 +452,15 @@ export function recomputeReceiptStatus(receiptId: string): void {
       } else {
         r.status = "in progress"; // fully received, still waiting on real put-away
       }
-    } else {
+    } else if (ended.some((t) => t.stockCommitted)) {
+      // Received short AND stock is genuinely on-hand — a put-away has completed
+      // (put-away enabled) or receiving committed directly (put-away disabled). Per WMS
+      // PRD 1.1 C1 AC#7, "Partially Completed" requires on-hand stock.
       r.status = "partial reception";
+    } else {
+      // Received short but NO stock on-hand yet (put-away enabled, none finished) — the
+      // inbound is still In Progress and remains cancelable (not yet Partially Completed).
+      r.status = "in progress";
     }
   } else {
     r.receivedQty = 0;

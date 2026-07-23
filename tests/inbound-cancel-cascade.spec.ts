@@ -180,9 +180,11 @@ describe('Inbound PO cancel cascade — ended tasks & unrelated POs are never to
     const receipt = makeReceipt(20, [{ productId: SKU_A.productId, qty: 10 }, { productId: SKU_B.productId, qty: 10 }])
     const endedTask = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator', skus: [SKU_A.sku] })!
     startReceiving(endedTask.id)
-    endReceiving(endedTask.id, { [SKU_A.sku]: 5 }) // short — receipt becomes "partial reception"
-    expect(receipt.status).toBe('partial reception')
-    expect(canCancelReceipt(receipt)).toBe(true) // partial reception is still cancelable
+    endReceiving(endedTask.id, { [SKU_A.sku]: 5 }) // short, no put-away → no stock on-hand yet
+    // Per WMS PRD 1.1 C1 AC#7, without on-hand stock this is still "in progress" (not
+    // Partially Completed) — and In Progress is cancelable.
+    expect(receipt.status).toBe('in progress')
+    expect(canCancelReceipt(receipt)).toBe(true)
     expect(getReceivingTask(endedTask.id)!.stockCommitted).toBeFalsy() // no put-away ever ran for it
 
     const openTask = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator', skus: [SKU_B.sku] })!
