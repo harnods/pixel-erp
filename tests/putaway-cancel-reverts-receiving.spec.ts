@@ -1,7 +1,7 @@
 /**
  * Cancelling a put-away must send its source receiving task back to "pending put-away"
- * (the goods still need putting away, so a fresh put-away can be created) — and the
- * canceled put-away must NOT linger in the receiving task's linked transactions.
+ * (the goods still need putting away, so a fresh put-away can be created). The canceled
+ * put-away STAYS in the receiving task's linked transactions as an audit record.
  */
 import { describe, it, expect } from 'vitest'
 import { addReceipt, type Receipt } from '~/data/receipts'
@@ -33,7 +33,7 @@ function receivedTask() {
 }
 
 describe('Put-away cancel → receiving reverts to "pending put-away"', () => {
-  it('reverts the receiving task and drops the canceled put-away from linked transactions', () => {
+  it('reverts the receiving task but KEEPS the canceled put-away in linked transactions', () => {
     const task = receivedTask()
     expect(getReceivingTask(task.id)!.status).toBe('pending put-away')
 
@@ -54,9 +54,12 @@ describe('Put-away cancel → receiving reverts to "pending put-away"', () => {
     const rt = getReceivingTask(task.id)!
     expect(rt.status).toBe('pending put-away')
     expect(rt.putAwayTaskId).toBeUndefined()
-    // ...and the canceled put-away no longer shows in the receiving's linked transactions.
-    expect(getPutAwayForTask(rt).map((p) => p.id)).not.toContain(pa.id)
-    expect(getPutAwayForTask(rt)).toHaveLength(0)
+    // ...and the canceled put-away STAYS in the receiving's linked transactions (audit),
+    // shown with its canceled status.
+    const linked = getPutAwayForTask(rt)
+    const canceledRow = linked.find((p) => p.id === pa.id)
+    expect(canceledRow).toBeTruthy()
+    expect(canceledRow!.status).toBe('canceled')
   })
 
   it('a fresh put-away can be created after the revert, and it links cleanly', () => {
@@ -75,9 +78,9 @@ describe('Put-away cancel → receiving reverts to "pending put-away"', () => {
     const rt = getReceivingTask(task.id)!
     expect(rt.status).toBe('completed')
     expect(rt.putAwayTaskId).toBe(pa2.id)
-    // Only the live put-away shows; the canceled one stays out.
+    // Both show in linked transactions: the new live put-away AND the earlier canceled one.
     const linkedIds = getPutAwayForTask(rt).map((p) => p.id)
     expect(linkedIds).toContain(pa2.id)
-    expect(linkedIds).not.toContain(pa1.id)
+    expect(linkedIds).toContain(pa1.id)
   })
 })

@@ -70,10 +70,11 @@ export interface PutAwayLink {
  */
 export function getPutAwayForTask(task: ReceivingTask): PutAwayLink[] {
   if (task.status !== 'completed' && task.status !== 'pending put-away') return []
-  // A canceled put-away is not a live downstream transaction — once it's canceled the
-  // receiving task reverts to "pending put-away" and awaits a fresh put-away, so the
-  // canceled one shouldn't linger in the linked-transactions list.
-  const matching = putAwayTasks.filter((pt) => pt.receivingTaskIds.includes(task.id) && pt.status !== 'canceled')
+  // Keep ALL put-aways for this receiving task — including canceled ones — so the
+  // linked-transactions list stays a full audit trail (a canceled put-away shows with a
+  // "Canceled" badge; the receiving task itself has reverted to "pending put-away" and a
+  // fresh put-away can be created alongside it).
+  const matching = putAwayTasks.filter((pt) => pt.receivingTaskIds.includes(task.id))
   return matching.map((pt) => ({
     id: pt.id,
     taskNo: pt.taskNo,
