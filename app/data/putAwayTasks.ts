@@ -6,6 +6,7 @@ import {
   receivingTasksForReceipt,
   getReceivingTask,
   linkPutAway,
+  revertPutAwayLink,
   completeReceivingWithoutPutAway,
   forceCancelEndedTask,
 } from "./receivingTasks";
@@ -294,6 +295,9 @@ export function cancelPutAway(taskId: string, reason?: string): void {
   t.canceledDate = nowIso();
   t.canceledBy = "Rizal Candra";
   if (reason) t.canceledReason = reason;
+  // Send each source receiving task back to "pending put-away" — the goods still need
+  // putting away, so the operator can create a fresh put-away for them.
+  for (const rid of t.receivingTaskIds) revertPutAwayLink(rid, t.id);
   persistPutAways();
 }
 

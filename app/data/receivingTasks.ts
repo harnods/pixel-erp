@@ -844,6 +844,20 @@ export function linkPutAway(taskId: string, putAwayTaskId: string): void {
 }
 
 /**
+ * A put-away was CANCELED — send its source receiving task back to "pending put-away"
+ * so a new put-away can be created for it. Only reverts a task that actually pointed at
+ * THIS put-away and never committed real stock (an open/in-progress put-away — the only
+ * cancelable states — never runs endPutAway, so nothing is on-hand yet). No-op otherwise.
+ */
+export function revertPutAwayLink(taskId: string, putAwayTaskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || t.putAwayTaskId !== putAwayTaskId || t.stockCommitted) return;
+  t.putAwayTaskId = undefined;
+  t.status = "pending put-away";
+  persistTasks();
+}
+
+/**
  * Put-away was just disabled for this task's warehouse while it sat in
  * "pending put-away" with no put-away task ever created — finish it directly,
  * matching the new normal for that warehouse (no putAwayTaskId to link), and
