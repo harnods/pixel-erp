@@ -76,6 +76,10 @@ const props = defineProps<{
    *  inherited as this drawer's own active bin when it opens, so the operator
    *  doesn't have to rescan a bin they already scanned on the page. */
   initialActiveBin?: string | null
+  /** Count mode only — a batch/serial barcode that triggered this drawer to
+   *  auto-open (page-level scan of a tracked SKU's specific code) is replayed
+   *  here on open, so that first scan isn't lost/needs re-scanning inside. */
+  initialScan?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -213,7 +217,15 @@ function seedRows(): void {
   locActiveKey.value = null
 }
 
-watch(() => props.open, (isOpen) => { if (isOpen) seedRows() }, { immediate: true })
+watch(() => props.open, (isOpen) => {
+  if (!isOpen) return
+  seedRows()
+  // Deferred: handleDrawerScan closes over consts (flashScanned's lastScannedKey,
+  // etc.) declared further down the script — calling it synchronously from this
+  // {immediate:true} watcher (which fires mid-setup, on first open) would hit
+  // those before their declarations run and throw a TDZ ReferenceError.
+  if (props.initialScan) nextTick(() => handleDrawerScan(props.initialScan!))
+}, { immediate: true })
 
 const product = computed(() => productBySku(props.sku))
 const warehouseStock = computed(() => {
@@ -575,7 +587,7 @@ async function handleSave() {
       saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers selected — that's more than the qty to pick.`
       return
     }
-  } else if (!isReceiving.value && countedCount.value !== effectiveTargetCount.value) {
+  } else if (!isReceiving.value && !isCountMode.value && countedCount.value !== effectiveTargetCount.value) {
     saveError.value = `${countedCount.value} of ${effectiveTargetCount.value} serial numbers specified. Add or remove serial numbers to match the counted quantity.`
     return
   }
