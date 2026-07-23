@@ -12,7 +12,10 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
-import { putAwayTasks, startPutAway as startPutAwayTask, canCancelPutAway, cancelPutAway } from '~/data/putAwayTasks'
+import {
+  putAwayTasks, startPutAway as startPutAwayTask, canCancelPutAway, cancelPutAway,
+  acknowledgeCanceledPutAway,
+} from '~/data/putAwayTasks'
 import { getPutAwayLineItems, allPutAwayTasksFlat, type PutAwayLineItem } from '~/data/putAwayTaskDetails'
 import { findTaskWithPO } from '~/data/receivingTaskDetails'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -237,8 +240,25 @@ onUnmounted(() => {
 })
 watch(() => props.orderId, () => nextTick(checkStageOverflow))
 
+// This task's source receiving task's own PO was canceled while the put-away
+// was still open/in progress — endPutAway (the only thing that commits real
+// stock) never ran, so nothing needs reversing, but real work (Start/Continue
+// put-away) may already be underway. Continue/Start is blocked until the
+// operator explicitly acknowledges via the modal below — acknowledging then
+// cancels this task AND its linked receiving task(s) too.
+const needsCancelAck = computed(() => !!task.value?.needsCancelAck)
+const ackCancelOpen = ref(false)
+function confirmAcknowledgeCancel() {
+  if (!task.value) return
+  const taskNo = task.value.taskNo
+  acknowledgeCanceledPutAway(task.value.id)
+  ackCancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
+}
+
 // ── Footer actions ─────────────────────────────────────────────────────────
 function startPutAway() {
+  if (needsCancelAck.value) { ackCancelOpen.value = true; return }
   if (task.value?.status === 'open') startPutAwayTask(props.orderId)
   router.push(`/put-away/${props.orderId}/store`)
 }
@@ -313,6 +333,21 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
     <!-- ── Scrollable stage ── -->
     <div ref="stageEl" class="detail-stage">
+
+      <!-- The receiving task behind this put-away had its PO canceled while
+           this put-away was still open/in progress — real work may already
+           exist, so it isn't silently auto-canceled. Acknowledging cancels
+           this task AND its linked receiving task(s) too. -->
+      <div v-if="needsCancelAck" class="pad-cancel-banner">
+        <svg class="pad-cancel-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="pad-cancel-banner-text">
+          The purchase order behind this task's receiving was canceled. Nothing has been stored yet — acknowledging will cancel this put-away and its linked receiving task.
+        </span>
+        <button class="pad-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">Acknowledge</button>
+      </div>
 
       <!-- ── Summary grid (2 cols) ── -->
       <section class="pad-summary">
@@ -566,6 +601,26 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       <MpModalOverlay />
     </MpModal>
 
+    <!-- ── Acknowledge canceled-PO confirmation (reached via Start/Continue
+         put-away while blocked) ── -->
+    <MpModal id="pad-ack-cancel" :is-open="ackCancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackCancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Acknowledge canceled purchase order?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          The purchase order behind this put-away's receiving task was canceled. Nothing has been stored yet —
+          acknowledging will cancel {{ task?.taskNo }} and its linked receiving task. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">Review</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">Acknowledge</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
   </div>
 
   <!-- ── Not found ── -->
@@ -675,6 +730,23 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
   padding: var(--mp-spacing-6);
   display: flex; flex-direction: column; gap: var(--mp-spacing-8);
 }
+
+.pad-cancel-banner {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-warning-subtle, #fffbeb);
+  border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.pad-cancel-banner-icon { color: var(--mp-icon-warning, #d97706); flex-shrink: 0; }
+.pad-cancel-banner-text { flex: 1; }
+.pad-cancel-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.pad-cancel-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .pad-summary {
   display: grid;

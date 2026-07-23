@@ -10,8 +10,16 @@
  *    is blocked until the operator explicitly acknowledges the PO is gone.
  *    Acknowledging then cancels the task too (nothing left to receive once
  *    its one-and-only PO is gone) — real receivedQty stays on the record.
- *  - pending put-away / completed (already ended) → untouched; those goods
- *    are already real and accounted for regardless of the PO's fate.
+ *  - pending put-away / completed (already ended) → cascade further depends on
+ *    whether real, tracked on-hand stock actually exists for it yet
+ *    (ReceivingTask.stockCommitted — NOT the same as status === "completed",
+ *    see its doc comment in receivingTasks.ts): if no real stock was
+ *    committed (the common case — a put-away task was merely created, not
+ *    finished, or this is seed/demo data), it's auto-canceled outright, same
+ *    as "open". If real stock WAS committed (a genuinely finished put-away,
+ *    or receiving committed it directly because put-away is disabled for the
+ *    warehouse), it's flagged instead, same as "in progress" — acknowledging
+ *    reverses that stock (see tests/inbound-cancel-cascade-stock.spec.ts).
  *  - a task on a DIFFERENT, unrelated PO → completely untouched.
  *
  * cancelInboundReceipt() (inboundSync.ts) is the orchestrator — it sits above
@@ -22,7 +30,7 @@ import { describe, it, expect } from 'vitest'
 import { addReceipt, canCancelReceipt, type Receipt } from '~/data/receipts'
 import {
   addReceivingTask, getReceivingTask, startReceiving, endReceiving, saveReceivingDraft,
-  canCancelReceivingTask, acknowledgeCanceledReceipt,
+  canCancelReceivingTask, acknowledgeCanceledReceipt, completeReceivingWithoutPutAway,
 } from '~/data/receivingTasks'
 import { cancelInboundReceipt } from '~/data/inboundSync'
 import '~/data/warehouseDetails'
@@ -168,13 +176,14 @@ describe('Inbound PO cancel cascade — in-progress receiving task', () => {
 })
 
 describe('Inbound PO cancel cascade — ended tasks & unrelated POs are never touched', () => {
-  it('"state G"-style PO (one ended task + one still-open task): ended task untouched, open task canceled', () => {
+  it('"state G"-style PO (one ended task + one still-open task): ended task auto-canceled (no real stock committed yet), open task canceled', () => {
     const receipt = makeReceipt(20, [{ productId: SKU_A.productId, qty: 10 }, { productId: SKU_B.productId, qty: 10 }])
     const endedTask = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator', skus: [SKU_A.sku] })!
     startReceiving(endedTask.id)
     endReceiving(endedTask.id, { [SKU_A.sku]: 5 }) // short — receipt becomes "partial reception"
     expect(receipt.status).toBe('partial reception')
     expect(canCancelReceipt(receipt)).toBe(true) // partial reception is still cancelable
+    expect(getReceivingTask(endedTask.id)!.stockCommitted).toBeFalsy() // no put-away ever ran for it
 
     const openTask = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator', skus: [SKU_B.sku] })!
     expect(openTask.status).toBe('open')
@@ -184,8 +193,10 @@ describe('Inbound PO cancel cascade — ended tasks & unrelated POs are never to
     expect(receipt.status).toBe('canceled')
 
     const endedAfter = getReceivingTask(endedTask.id)!
-    expect(['pending put-away', 'completed']).toContain(endedAfter.status) // untouched
-    expect(endedAfter.receivedQty).toBe(5) // untouched — real goods stay accounted for
+    expect(endedAfter.status).toBe('canceled') // auto-canceled — nothing real to reconcile
+    expect(endedAfter.canceledReason).toBe('Purchase order was canceled')
+    expect(endedAfter.needsCancelAck).toBeFalsy()
+    expect(endedAfter.receivedQty).toBe(5) // untouched — real goods stay accounted for on the record
 
     const openAfter = getReceivingTask(openTask.id)!
     expect(openAfter.status).toBe('canceled')
@@ -250,11 +261,31 @@ describe('Inbound PO cancel cascade — guard rails', () => {
     expect(after.needsCancelAck).toBe(false)
   })
 
-  it('returns CANNOT_CANCEL for a fully completed receipt', () => {
+  it('a fully received PO is NOT "completed" (still cancelable) until put-away genuinely finishes', () => {
+    // Fully receiving a PO no longer immediately marks it "completed" for a
+    // warehouse using put-away — it stays "in progress" (still cancelable)
+    // until real stock is genuinely committed. ("Pending put-away" itself is
+    // the receiving TASK's own status, not the PO's.)
     const receipt = makeReceipt(10)
     const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
     startReceiving(task.id)
     endReceiving(task.id, { [SKU_A.sku]: 10 })
+    expect(getReceivingTask(task.id)!.status).toBe('pending put-away')
+    expect(receipt.status).toBe('in progress')
+    expect(canCancelReceipt(receipt)).toBe(true)
+
+    const result = cancelInboundReceipt(receipt.id)
+    expect(result.ok).toBe(true)
+  })
+
+  it('returns CANNOT_CANCEL for a fully completed receipt (put-away genuinely finished)', () => {
+    const receipt = makeReceipt(10)
+    const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
+    startReceiving(task.id)
+    endReceiving(task.id, { [SKU_A.sku]: 10 })
+    expect(receipt.status).toBe('in progress')
+
+    completeReceivingWithoutPutAway(task.id) // simulates real stock genuinely committed
     expect(receipt.status).toBe('completed')
 
     const result = cancelInboundReceipt(receipt.id)

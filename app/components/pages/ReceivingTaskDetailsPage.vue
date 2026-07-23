@@ -62,6 +62,7 @@ watch([() => props.orderId, lineItems], () => {
 }, { immediate: true })
 
 const isInProgress = computed(() => localStatus.value === 'in progress')
+const isCanceled = computed(() => localStatus.value === 'canceled')
 // Open tasks haven't started receiving yet — show only Purchase qty (no Received /
 // Outstanding columns, which are meaningless until receiving begins).
 const showReceivedCols = computed(() => localStatus.value !== 'open')
@@ -166,8 +167,8 @@ function confirmAcknowledgeCancel() {
   const taskNo = task.value.taskNo
   acknowledgeCanceledReceipt(task.value.id)
   ackCancelOpen.value = false
+  localStatus.value = 'canceled'
   toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
-  goBack()
 }
 
 // Cancel — only while receiving hasn't finished yet (open/in progress). Once
@@ -376,19 +377,24 @@ function goBack() {
     <!-- ── Scrollable stage ── -->
     <div ref="stageEl" class="detail-stage">
 
-      <!-- Purchase order behind this task was canceled while it was already in
-           progress — real receiving work may already exist, so it isn't
-           silently auto-canceled. Continue receiving is blocked until this is
-           acknowledged. -->
+      <!-- Purchase order behind this task was canceled while real work already
+           exists for it (in progress, or already-committed on-hand stock from
+           pending put-away/completed) — so it isn't silently auto-canceled.
+           Continuing/acknowledging is blocked until this is acknowledged. -->
       <div v-if="needsCancelAck" class="rcvgd-cancel-banner">
         <svg class="rcvgd-cancel-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
         </svg>
         <span class="rcvgd-cancel-banner-text">
-          The purchase order behind this task ({{ task.purchaseNo }}) was canceled. This task can no longer be continued.
+          <template v-if="task.stockCommitted">
+            The purchase order behind this task ({{ task.purchaseNo }}) was canceled. Its goods are already on-hand — acknowledging will cancel this task and reverse that stock via a stock adjustment.
+          </template>
+          <template v-else>
+            The purchase order behind this task ({{ task.purchaseNo }}) was canceled. This task can no longer be continued.
+          </template>
         </span>
-        <button class="rcvgd-cancel-banner-btn" type="button" @click="ackCancelOpen = true">Acknowledge</button>
+        <button class="rcvgd-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">Acknowledge</button>
       </div>
 
       <!-- ── Summary grid ── -->
@@ -417,6 +423,10 @@ function goBack() {
               <span v-if="agingLabel()" class="rcvgd-aging">{{ agingLabel() }}</span>
             </span>
           </ContentList>
+        </div>
+        <div v-if="isCanceled" class="content-list-col">
+          <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+          <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
         </div>
       </section>
 
@@ -697,8 +707,15 @@ function goBack() {
       <MpModalContent>
         <MpModalHeader>Acknowledge canceled purchase order?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          The purchase order behind this task ({{ task?.purchaseNo }}) was canceled. There's nothing left to
-          receive for it — acknowledging will cancel {{ task?.taskNo }} too. This can't be undone.
+          <template v-if="task?.stockCommitted">
+            The purchase order behind this task ({{ task?.purchaseNo }}) was canceled. Its goods were already
+            received into on-hand stock — acknowledging will cancel {{ task?.taskNo }} and reverse that stock via
+            a stock adjustment. This can't be undone.
+          </template>
+          <template v-else>
+            The purchase order behind this task ({{ task?.purchaseNo }}) was canceled. There's nothing left to
+            receive for it — acknowledging will cancel {{ task?.taskNo }} too. This can't be undone.
+          </template>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
@@ -859,7 +876,7 @@ function goBack() {
 
 /* ── Summary grid ────────────────────────────────────────────────────────── */
 .rcvgd-summary {
-  display: grid; grid-template-columns: 244px 244px; column-gap: var(--mp-spacing-6); row-gap: 0;
+  display: grid; grid-template-columns: 244px 244px 244px; column-gap: var(--mp-spacing-6); row-gap: 0;
 }
 .content-list-col { display: flex; flex-direction: column; }
 

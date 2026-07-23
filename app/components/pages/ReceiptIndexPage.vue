@@ -67,7 +67,7 @@ function hideColumn(key: string) { colVis[key] = false }
 // ─── Filters ───────────────────────────────────────────────────────────────────
 // Status — multi-select, nothing pre-selected: the default view shows ALL statuses
 // (empty filter = show everything). Pick specific statuses to narrow it down.
-const STATUS_OPTIONS = ['Pending', 'Open', 'In progress', 'Partial reception', 'Pending put-away', 'Completed', 'Canceled']
+const STATUS_OPTIONS = ['Pending', 'Open', 'In progress', 'Partial reception', 'Completed', 'Canceled']
 const statusFilter = ref<string[]>([])
 function toggleStatus(s: string) {
   statusFilter.value = statusFilter.value.includes(s)

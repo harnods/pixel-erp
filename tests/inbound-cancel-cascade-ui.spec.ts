@@ -2,13 +2,16 @@
 /**
  * UI side of the inbound PO cancel cascade (see inbound-cancel-cascade.spec.ts
  * for the data-layer behavior). An in-progress receiving task whose PO was
- * just canceled must show the acknowledge banner and block Continue
- * receiving with a confirmation modal — both from the task details page AND
- * from a direct visit to the receive-execution page (defense in depth, in
- * case someone navigates there directly without going through the details
- * page's own gating). Confirming acknowledges AND cancels the task (there's
- * nothing left to receive once its one-and-only PO is gone) — it must never
- * be possible to "Start receiving" on it again afterward.
+ * just canceled must show the acknowledge banner — clicking its own
+ * Acknowledge button acknowledges directly (no extra confirmation modal).
+ * Continue receiving is still blocked by a confirmation modal (reached only
+ * via that button, not the banner) — and there's a direct visit to the
+ * receive-execution page too (defense in depth, in case someone navigates
+ * there directly without going through the details page's own gating).
+ * Acknowledging (from either the banner or the modal) AND cancels the task
+ * (there's nothing left to receive once its one-and-only PO is gone) and
+ * stays on the current page — it must never be possible to "Start receiving"
+ * on it again afterward.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -79,7 +82,7 @@ describe('ReceivingTaskDetailsPage — canceled-PO acknowledge modal', () => {
     wrapper.unmount()
   })
 
-  it('confirming Acknowledge in the modal cancels the task and navigates back — real receivedQty preserved', async () => {
+  it('clicking Acknowledge in the banner acknowledges directly — no modal, stays on the page', async () => {
     const receipt = makeReceipt()
     const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
     startReceiving(task.id)
@@ -88,8 +91,28 @@ describe('ReceivingTaskDetailsPage — canceled-PO acknowledge modal', () => {
     const wrapper = mount(ReceivingTaskDetailsPage, { props: { orderId: task.id } })
     await flushPromises()
 
-    // Open via the banner's own Acknowledge button this time.
+    pushMock.mockClear()
     await wrapper.find('.rcvgd-cancel-banner-btn').trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('#modal-rcvgd-ack-cancel')).toBeNull() // no confirmation modal
+    const after = getReceivingTask(task.id)!
+    expect(after.status).toBe('canceled') // acknowledging CANCELS the task
+    expect(after.needsCancelAck).toBe(false)
+    expect(pushMock).not.toHaveBeenCalled() // stays on the details page, no navigation
+
+    wrapper.unmount()
+  })
+
+  it('confirming Acknowledge in the modal (reached via Continue receiving) cancels the task and stays on the page', async () => {
+    const receipt = makeReceipt()
+    const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
+    startReceiving(task.id)
+    cancelInboundReceipt(receipt.id)
+
+    const wrapper = mount(ReceivingTaskDetailsPage, { props: { orderId: task.id } })
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text() === 'Continue receiving')!.trigger('click')
     await flushPromises()
     expect(document.querySelector('#modal-rcvgd-ack-cancel')).not.toBeNull()
 
@@ -100,7 +123,7 @@ describe('ReceivingTaskDetailsPage — canceled-PO acknowledge modal', () => {
     const after = getReceivingTask(task.id)!
     expect(after.status).toBe('canceled') // acknowledging CANCELS the task
     expect(after.needsCancelAck).toBe(false)
-    expect(pushMock).toHaveBeenCalled() // navigated away (goBack)
+    expect(pushMock).not.toHaveBeenCalled() // stays on the details page, no navigation
 
     wrapper.unmount()
   })

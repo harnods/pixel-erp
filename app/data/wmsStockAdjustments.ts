@@ -172,8 +172,13 @@ function nextSeqFor(kind: AdjustmentKind): number {
   return Math.max(20089, ...used) + 1
 }
 
-/** Create a WMS adjustment — applied to stock immediately, no approval step. */
-export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
+/** Create a WMS adjustment — applied to stock immediately, no approval step.
+ *  `skipStockMutation`: the caller already mutated stock itself (e.g. the
+ *  inbound PO-cancellation cascade, which must reverse batch/serial-tracked
+ *  SKUs via their own dedicated primitives — applyStockInOut only touches the
+ *  aggregate onHand and would desync a batch/serial SKU's per-unit bookkeeping)
+ *  — this just records the audited adjustment without mutating stock again. */
+export function addWmsAdjustment(input: AdjustmentInput & { skipStockMutation?: boolean }): StockAdjustment {
   const n = addSeq++
   const adj: StockAdjustment = {
     id: `${input.kind === 'count' ? 'cc' : 'wsa'}-new-${n}`,
@@ -193,7 +198,7 @@ export function addWmsAdjustment(input: AdjustmentInput): StockAdjustment {
     endDate: input.endDate,
   }
   // Count tasks: stock applied when counting is completed, not on creation.
-  if (input.kind === 'in-out') {
+  if (input.kind === 'in-out' && !input.skipStockMutation) {
     applyStockInOut(input.warehouseId, input.lines)
   }
   wmsStockAdjustments.unshift(adj)

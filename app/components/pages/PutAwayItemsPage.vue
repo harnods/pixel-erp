@@ -12,7 +12,7 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import {
-  getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask,
+  getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask, acknowledgeCanceledPutAway,
   type PutAwayBatchAssignment, type PutAwaySerialAssignment,
 } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
@@ -623,6 +623,19 @@ const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
 function goBack()    { router.push(`/put-away/${props.orderId}`) }
 function goPutAway() { router.push('/inbound-delivery?tab=Put-away') }
 
+// Defense in depth — the details page already blocks navigating here via
+// Start/Continue put-away until acknowledged, but a direct URL visit must be
+// blocked the same way. Acknowledging cancels this task AND its linked
+// receiving task(s) too — there's no put-away UI to fall back into here, so
+// this navigates back to the task details page instead.
+function acknowledgeAndCancel() {
+  if (!task.value) return
+  const taskNo = task.value.taskNo
+  acknowledgeCanceledPutAway(task.value.id)
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
+  goBack()
+}
+
 // ── Start date label ──────────────────────────────────────────────────────────
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
@@ -658,7 +671,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 </script>
 
 <template>
-  <div v-if="task" class="detail-page">
+  <div v-if="task && task.needsCancelAck" class="pi-not-found">
+    <p>The purchase order behind this put-away's receiving task was canceled.</p>
+    <p>Nothing has been stored yet — acknowledging will cancel this put-away and its linked receiving task.</p>
+    <button class="pi-btn pi-btn--primary" type="button" @click="acknowledgeAndCancel">Acknowledge</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to task</button>
+  </div>
+
+  <div v-else-if="task" class="detail-page">
 
     <!-- ── Title bar ── -->
     <header class="detail-bar">

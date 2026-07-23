@@ -4,8 +4,11 @@ import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY, VENDORS } from './master'
 
 /** Pending = no receiving task yet · Open = task(s) created, none started ·
- *  In progress = at least one task started · Partial reception = at least one
- *  task ended short of full qty · Completed = full qty received ·
+ *  In progress = at least one task started, OR every line is fully received
+ *  but put-away hasn't genuinely finished yet (see ReceivingTask.stockCommitted
+ *  — "Pending put-away" itself is a receiving-task status, not a PO one) ·
+ *  Partial reception = at least one task ended short of full qty · Completed =
+ *  full qty received AND (put-away disabled, or put-away genuinely finished) ·
  *  Canceled = voided. */
 export type ReceiptStatus =
   | "pending"
