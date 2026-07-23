@@ -34,7 +34,7 @@ import {
   packableOrderIds, canCreatePackingFrom, orderFullyPickedAcrossTasks, orderPickedTotal,
   orderPickedQtyInTask, acknowledgeCanceledPickingOrders,
 } from '~/data/pickingTasks'
-import { getPickingLineItems } from '~/data/pickingTaskDetails'
+import { getPickingLineItems, getPickingGroupedItems } from '~/data/pickingTaskDetails'
 import { addPackingTask, endPacking, getPackingTask, getPackingForOrder } from '~/data/packingTasks'
 import {
   addDeliveryTaskFromPackingTasks, getDeliveryForOrder, getDeliveryTask, handoverToCourierBulk, completeShipment,
@@ -368,6 +368,24 @@ describe('multi-order picking/packing/shipment — cancel one order, keep the ot
       releaseReservedForCancelledOrder(o.id)
     }
   }
+
+  // Oldest-order-first fill: a scan for a SKU shared by two orders fulfils the
+  // earliest-placed order before the later one, regardless of list insertion order.
+  it('a shared-SKU scan fills the earliest-placed order first (by order date), not list order', () => {
+    const s01 = order([line(A, 2)]); const s02 = order([line(A, 2)])
+    s01.createdAt = '2026-07-01T09:00:00' // placed 9am
+    s02.createdAt = '2026-07-01T10:00:00' // placed 10am
+    // Build the shared picking list with the LATER order FIRST — ordering must key off
+    // the order date, not the sequence they were added to the list.
+    const pt = addPickingTask({
+      salesOrderIds: [s02.id, s01.id], salesNos: [s02.salesNo, s01.salesNo],
+      warehouseId: WH, warehouseName: WH_NAME, assignee: 'Op',
+    })
+    const grp = getPickingGroupedItems(getPickingTask(pt.id)!).find((g) => g.skuCode === A)!
+    expect(grp.memberKeys[0]).toBe(`${s01.id}::${A}`) // 9am order filled first
+    expect(grp.memberKeys[1]).toBe(`${s02.id}::${A}`) // 10am order after
+    cleanup(s01, s02)
+  })
 
   // Q1 — per-order granularity inside ONE picking list.
   it('Q1: a shared picking list tracks picked qty PER ORDER (SKU A split across S01 & S02)', () => {

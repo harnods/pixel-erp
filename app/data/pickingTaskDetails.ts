@@ -3,7 +3,16 @@ import {
   type PickingBatchPick, type PickingSerialPick,
 } from "./pickingTasks";
 import { packingTasks, type PackingTask } from "./packingTasks";
+import { outgoingOrders } from "./outgoing";
 import { binForSku } from "./warehouseDetails";
+
+/** Sort key for fulfilling orders OLDEST-first on a shared picking task: a scan for
+ *  a SKU shared by several orders fills the earliest-placed order before the later
+ *  one. Uses the order's creation timestamp, falling back to transaction/due date. */
+function orderFulfillKey(orderId: string): string {
+  const o = outgoingOrders.find((x) => x.id === orderId);
+  return o?.createdAt ?? o?.transactionDate ?? o?.dueDate ?? "";
+}
 
 /** Enriched picking line for the detail / pick pages. */
 export interface PickLineItem {
@@ -35,7 +44,14 @@ export function getPickingLineItems(task: PickingTask): PickLineItem[] {
   // AFTER the operator acknowledges the cancellation (see acknowledgeCanceledPickingOrders)
   // — until then the task still shows the original numbers plus a "needs ack" banner.
   const acked = new Set(task.canceledAckedOrderIds ?? []);
-  return pickingLinesOf(task).filter((l) => !acked.has(l.orderId)).map((l) => ({
+  // Oldest order first: a scan for a SKU shared by several orders fills the
+  // earliest-placed order before the later one (stable — keeps each order's SKU
+  // lines contiguous and in their original within-order sequence).
+  const ordered = [...pickingLinesOf(task)]
+    .map((l, i) => ({ l, i }))
+    .sort((a, b) => orderFulfillKey(a.l.orderId).localeCompare(orderFulfillKey(b.l.orderId)) || a.i - b.i)
+    .map((x) => x.l);
+  return ordered.filter((l) => !acked.has(l.orderId)).map((l) => ({
     key: l.key,
     orderId: l.orderId,
     salesNo: l.salesNo,
