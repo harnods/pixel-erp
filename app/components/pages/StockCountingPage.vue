@@ -4,16 +4,15 @@ import {
   MpAccordion, MpAccordionItem, MpAccordionHeader, MpAccordionIcon, MpAccordionPanel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpCheckbox,
+  MpDatePicker,
   MpIcon,
-  MpTooltip,
   toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
-import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
-import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWmsAdjustment, saveWmsCountDraft, finishWmsCount } from '~/data/wmsStockAdjustments'
 import { adjustmentLineItems, type AdjustmentLine } from '~/data/stockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -22,8 +21,6 @@ import { formatDateTimeLong } from '~/utils/date'
 import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/SelectProductDrawer.vue'
 import { getStorageLeaves, getStorageTree, type LocNode } from '~/data/storageLocations'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
-import { resolveScan, notifyScanError, sameCode } from '~/utils/scan'
-import { playScanSuccessSound } from '~/utils/sound'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -81,76 +78,19 @@ const wmsCountLines = computed((): AdjustmentLine[] => {
   return result
 })
 
-// ── Merge same-SKU rows within a location into one row — batch splits stay
-// visible only inside the Manage batch drawer, not as separate table rows. ────
-interface MergedCountRow {
-  key: string // `${sku}::${location}` — unique per product per bin
-  sku: string
-  product: AdjustmentLine['product']
-  unit: string
-  storageLocation: string
-  prevOnHand: number
-  sources: AdjustmentLine[] // the underlying (possibly batch-split) wmsCountLines entries
-}
-const mergedCountRows = computed((): MergedCountRow[] => {
-  const map = new Map<string, MergedCountRow>()
-  for (const item of wmsCountLines.value) {
-    const loc = item.storageLocation || '—'
-    const key = `${item.sku}::${loc}`
-    let row = map.get(key)
-    if (!row) {
-      row = { key, sku: item.sku, product: item.product, unit: item.unit, storageLocation: loc, prevOnHand: 0, sources: [] }
-      map.set(key, row)
-    }
-    row.prevOnHand += item.prevOnHand
-    row.sources.push(item)
-  }
-  return [...map.values()]
-})
-function mergedRowFor(sku: string, location: string): MergedCountRow | undefined {
-  return mergedCountRows.value.find(r => r.sku === sku && sameCode(r.storageLocation, location))
-}
-
-// ── Draft counted quantities keyed by MergedCountRow.key (untracked SKUs only —
-// batch/serial-tracked rows are fully managed inside their own drawer) ─────────
+// ── Draft counted quantities keyed by item.key ────────────────────────────────
 const draftCounted = ref<Record<string, number | undefined>>({})
-// Batch-tracked rows: the drawer's own committed breakdown, keyed by row.key.
-const batchLinesByKey = ref<Record<string, CommittedBatch[]>>({})
-// Product rows (system + operator-added) unlock their manual counted-qty input
-// only once scanned at least once — matches picking's "confirm physically
-// present before counting it" model, adapted from a threshold setting to an
-// always-on requirement per the cycle-count flow.
-const scannedKeys = ref<Set<string>>(new Set())
-function markScanned(key: string) {
-  if (scannedKeys.value.has(key)) return
-  scannedKeys.value = new Set(scannedKeys.value).add(key)
-}
 
-function seedCounts() {
-  const draft: Record<string, number | undefined> = {}
-  const batches: Record<string, CommittedBatch[]> = {}
-  for (const row of mergedCountRows.value) {
-    const saved = adjustment.value?.lines?.find(l => l.sku === row.sku)
-    const totalForSku = mergedCountRows.value.filter(r => r.sku === row.sku).reduce((s, r) => s + r.prevOnHand, 0) || 1
-    const seededForRow = saved && saved.qty > 0 ? Math.round(saved.qty * row.prevOnHand / totalForSku) : 0
-    if (isBatchTrackedSku(row.sku)) {
-      const rowTotal = row.sources.reduce((s, src) => s + src.prevOnHand, 0) || 1
-      batches[row.key] = row.sources.map(src => {
-        const seededForSource = seededForRow > 0 ? Math.round(seededForRow * src.prevOnHand / rowTotal) : 0
-        return {
-          key: src.key, batchNo: src.batchNumber!, expiryDate: src.batchExpiry ?? '', desc: '',
-          onHand: src.prevOnHand, counted: seededForSource > 0 ? seededForSource : null,
-          unit: src.unit, location: src.storageLocation,
-        }
-      })
-    } else if (seededForRow > 0) {
-      draft[row.key] = seededForRow
+watch(wmsCountLines, (lines) => {
+  const map: Record<string, number | undefined> = {}
+  for (const item of lines) {
+    const saved = adjustment.value?.lines?.find(l => l.sku === item.sku)
+    if (saved && saved.qty > 0) {
+      map[item.key] = Math.round(saved.qty * item.prevOnHand / (lines.filter(l => l.sku === item.sku).reduce((s, l) => s + l.prevOnHand, 0) || 1))
     }
   }
-  draftCounted.value = draft
-  batchLinesByKey.value = batches
-}
-watch(mergedCountRows, seedCounts, { immediate: true })
+  draftCounted.value = map
+}, { immediate: true })
 
 function onCountedInput(key: string, e: Event) {
   let n = Math.floor(Number((e.target as HTMLInputElement).value))
@@ -158,168 +98,43 @@ function onCountedInput(key: string, e: Event) {
   draftCounted.value = { ...draftCounted.value, [key]: n }
 }
 
-/** Total counted for a merged system row, whichever source backs it. */
-function countedFor(row: MergedCountRow): number {
-  if (isBatchTrackedSku(row.sku)) return (batchLinesByKey.value[row.key] ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
-  return draftCounted.value[row.key] ?? 0
-}
-function batchTotalFor(key: string): number {
-  return (batchLinesByKey.value[key] ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
-}
-
-// ── Page-level scan bar ────────────────────────────────────────────────────────
-// Mirrors picking's active-bin model: scan a bin barcode to make it "active",
-// then a batch/serial/SKU scan only counts as counted once it's confirmed
-// coming FROM that same bin — so counting can't be credited to the wrong
-// physical location. Unlike picking there's no upper-bound qty to cap against
-// (an over-count is meaningful signal, not an error), so re-scans just keep
-// incrementing. A batch/serial-tracked product — whether scanned by its plain
-// SKU or by one of its specific batch/serial codes — always opens that
-// product's manage drawer rather than incrementing inline; only a genuinely
-// untracked SKU increments directly on the page.
-const scanLocations = computed(() => [...new Set(wmsCountLines.value.map(i => i.storageLocation).filter((l): l is string => !!l))])
-const activeBin = ref<string | null>(null)
-const flashRowKey = ref<string | null>(null)
-let flashTimer: ReturnType<typeof setTimeout> | null = null
-function flashRow(key: string) {
-  flashRowKey.value = key
-  if (flashTimer) clearTimeout(flashTimer)
-  flashTimer = setTimeout(() => { flashRowKey.value = null }, 700)
-}
-
-function handleScan(rawValue: string) {
-  const v = rawValue.trim()
-  if (!v || !adjustment.value) return
-
-  const matchedBin = scanLocations.value.find(loc => sameCode(loc, v))
-  if (matchedBin) {
-    activeBin.value = matchedBin
-    playScanSuccessSound()
-    return
-  }
-
-  const resolved = resolveScan(adjustment.value.warehouseId, v)
-  if (!resolved) {
-    notifyScanError(`Barcode not found: "${v}"`)
-    return
-  }
-
-  const addedRows = Object.values(addedByLoc.value).flat()
-  const onThisCount = wmsCountLines.value.some(i => i.sku === resolved.sku) || addedRows.some(r => r.sku === resolved.sku)
-  if (!onThisCount) {
-    notifyScanError(`${v}: SKU ${resolved.sku} isn't on this count`)
-    return
-  }
-
-  if (!activeBin.value) {
-    notifyScanError('Scan a bin first before scanning products')
-    return
-  }
-
-  const row = mergedRowFor(resolved.sku, activeBin.value)
-  const addedRow = Object.entries(addedByLoc.value)
-    .find(([loc]) => sameCode(loc, activeBin.value!))?.[1]
-    ?.find(r => r.sku === resolved.sku)
-
-  if (!row && !addedRow) {
-    notifyScanError(`${resolved.sku}: not stocked at ${activeBin.value}`)
-    return
-  }
-
-  const trackedByBatch = isBatchTrackedSku(resolved.sku)
-  const trackedBySerial = isSerialTrackedSku(resolved.sku)
-
-  if (trackedByBatch || trackedBySerial) {
-    const initialScan = resolved.kind === 'batch' || resolved.kind === 'serial' ? v : undefined
-    if (row) {
-      if (trackedByBatch) openBatchDrawer(row.key, initialScan)
-      else openSerialDrawer(row.key, initialScan)
-    } else if (addedRow) {
-      if (trackedByBatch) openBatchDrawer(addedRow.id, initialScan)
-      else openSerialDrawer(addedRow.id, initialScan)
-    }
-    return
-  }
-
-  // Untracked SKU — plain +1 per scan, unlocked for manual entry going forward.
-  if (row) {
-    markScanned(row.key)
-    draftCounted.value = { ...draftCounted.value, [row.key]: (draftCounted.value[row.key] ?? 0) + 1 }
-    flashRow(row.key)
-  } else if (addedRow) {
-    markScanned(addedRow.id)
-    incrementAddedCounted(activeBin.value, addedRow.id)
-    flashRow(addedRow.id)
-  }
-  showQtyErrors.value = false
-  playScanSuccessSound()
-}
-
-// Scanning is harmless to undo — nothing is persisted until Save draft / Finish
-// counting — so let the operator wipe every unsaved scan/manual entry and start
-// over. Doesn't touch activeBin: the operator's physical location hasn't
-// changed just because the count itself is being redone.
-function resetCount() {
-  seedCounts()
-  serialLinesByKey.value = {}
-  scannedKeys.value = new Set()
-  showQtyErrors.value = false
-}
-
 // ── Serial drawer ────────────────────────────────────────────────────────────
 const serialDrawerKey = ref<string | null>(null)
-const serialDrawerInitialScan = ref<string | undefined>(undefined)
 const serialLinesByKey = ref<Record<string, string[]>>({})
 const serialDrawerOpen = computed({
   get: () => serialDrawerKey.value !== null,
   set: (v: boolean) => { if (!v) serialDrawerKey.value = null },
 })
-function openSerialDrawer(key: string, initialScan?: string) {
-  serialDrawerInitialScan.value = initialScan
+function openSerialDrawer(key: string) {
+  if (!(draftCounted.value[key] ?? 0)) {
+    toast.notify({ variant: 'error', title: 'Enter counted qty first' , maxWidth: 'max-content'})
+    return
+  }
   serialDrawerKey.value = key
+}
+function openSerialDrawerForAdded(id: string, counted: number | undefined) {
+  if (!(counted ?? 0)) {
+    toast.notify({ variant: 'error', title: 'Enter counted qty first', maxWidth: 'max-content' })
+    return
+  }
+  serialDrawerKey.value = id
 }
 const activeSerialSku = computed(() => {
   if (!serialDrawerKey.value) return ''
-  return mergedCountRows.value.find(r => r.key === serialDrawerKey.value)?.sku
+  return wmsCountLines.value.find(i => i.key === serialDrawerKey.value)?.sku
     ?? Object.values(addedByLoc.value).flat().find(r => r.id === serialDrawerKey.value)?.sku
     ?? ''
 })
-const activeSerialOnHand = computed(() => {
+const activeSerialDelta = computed(() => {
   if (!serialDrawerKey.value) return 0
-  return mergedCountRows.value.find(r => r.key === serialDrawerKey.value)?.prevOnHand ?? 0
+  if (draftCounted.value[serialDrawerKey.value] !== undefined) return draftCounted.value[serialDrawerKey.value] ?? 0
+  return Object.values(addedByLoc.value).flat().find(r => r.id === serialDrawerKey.value)?.counted ?? 0
 })
 function serialCount(key: string): number { return serialLinesByKey.value[key]?.length ?? 0 }
 function saveSerialLines(serials: CommittedSerial[]) {
   const key = serialDrawerKey.value
   if (!key) return
   serialLinesByKey.value = { ...serialLinesByKey.value, [key]: serials.map(s => s.serial) }
-}
-
-// ── Batch drawer ─────────────────────────────────────────────────────────────
-const batchDrawerKey = ref<string | null>(null)
-const batchDrawerInitialScan = ref<string | undefined>(undefined)
-const batchDrawerOpen = computed({
-  get: () => batchDrawerKey.value !== null,
-  set: (v: boolean) => { if (!v) batchDrawerKey.value = null },
-})
-function openBatchDrawer(key: string, initialScan?: string) {
-  batchDrawerInitialScan.value = initialScan
-  batchDrawerKey.value = key
-}
-const activeBatchSku = computed(() => {
-  if (!batchDrawerKey.value) return ''
-  return mergedCountRows.value.find(r => r.key === batchDrawerKey.value)?.sku
-    ?? Object.values(addedByLoc.value).flat().find(r => r.id === batchDrawerKey.value)?.sku
-    ?? ''
-})
-const activeBatchLocationOnHand = computed(() => {
-  if (!batchDrawerKey.value) return 0
-  return mergedCountRows.value.find(r => r.key === batchDrawerKey.value)?.prevOnHand ?? 0
-})
-function saveBatchLines(batches: CommittedBatch[]) {
-  const key = batchDrawerKey.value
-  if (!key) return
-  batchLinesByKey.value = { ...batchLinesByKey.value, [key]: batches }
 }
 
 // ── Manually added locations ──────────────────────────────────────────────────
@@ -423,16 +238,9 @@ function confirmLocSelection() {
 }
 
 // ── Operator-added lines per location ─────────────────────────────────────────
-// Batch/serial-tracked added products are managed the same way as system
-// lines — via batchLinesByKey/serialLinesByKey keyed by the added row's own
-// id — so there's only ever one "manage batch/serial" mechanism on this page.
-interface AddedLine { id: string; sku: string; productName: string; counted: number | undefined }
+interface AddedLine { id: string; sku: string; productName: string; batchNumber: string; counted: number | undefined }
 let _addedId = 0
 const addedByLoc = ref<Record<string, AddedLine[]>>({})
-
-function incrementAddedCounted(location: string, id: string) {
-  addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).map(r => r.id === id ? { ...r, counted: (r.counted ?? 0) + 1 } : r) }
-}
 
 // Product picker — one shared drawer, tracks which location triggered it
 const pickerOpen = ref(false)
@@ -457,26 +265,57 @@ function applyPicker(skus: string[]) {
   const next: AddedLine[] = skus.map(sku => {
     if (existing.has(sku)) return existing.get(sku)!
     const p = PRODUCTS.find(x => x.sku === sku)
-    return { id: `added-${++_addedId}`, sku, productName: p?.name ?? sku, counted: undefined }
+    return { id: `added-${++_addedId}`, sku, productName: p?.name ?? sku, batchNumber: '', counted: undefined }
   })
   addedByLoc.value = { ...addedByLoc.value, [loc]: next }
 }
 function removeAddedRow(location: string, id: string) {
   addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).filter(r => r.id !== id) }
 }
+function updateAddedField(location: string, id: string, field: 'batchNumber', value: string) {
+  addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).map(r => r.id === id ? { ...r, [field]: value } : r) }
+}
 function updateAddedQty(location: string, id: string, e: Event) {
   let n = Math.floor(Number((e.target as HTMLInputElement).value))
   if (!Number.isFinite(n) || n < 0) n = 0
   addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).map(r => r.id === id ? { ...r, counted: n } : r) }
 }
-function addedCountedFor(row: AddedLine): number {
-  if (isBatchTrackedSku(row.sku)) return batchTotalFor(row.id)
-  if (isSerialTrackedSku(row.sku)) return serialCount(row.id)
-  return row.counted ?? 0
-}
 const addedCountedTotal = computed(() =>
-  Object.values(addedByLoc.value).flat().reduce((s, r) => s + addedCountedFor(r), 0),
+  Object.values(addedByLoc.value).flat().reduce((s, r) => s + (r.counted ?? 0), 0),
 )
+
+// ── New batch modal (for added rows) ──────────────────────────────────────────
+const newBatchOpen = ref(false)
+const newBatchTarget = ref<{ location: string; id: string } | null>(null)
+const newBatchNo = ref('')
+const newBatchExpiry = ref('')
+const newBatchDesc = ref('')
+const isSaving = ref(false)
+
+function openNewBatchModal(location: string, id: string) {
+  newBatchTarget.value = { location, id }
+  newBatchNo.value = ''
+  newBatchExpiry.value = ''
+  newBatchDesc.value = ''
+  newBatchOpen.value = true
+}
+async function confirmNewBatch() {
+  const nm = newBatchNo.value.trim()
+  if (!nm) { toast.notify({ variant: 'error', title: 'You must fill in batch name', maxWidth: 'max-content' }); return }
+  const t = newBatchTarget.value
+  if (!t) return
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
+  addedByLoc.value = {
+    ...addedByLoc.value,
+    [t.location]: (addedByLoc.value[t.location] ?? []).map(r =>
+      r.id === t.id ? { ...r, batchNumber: nm } : r,
+    ),
+  }
+  isSaving.value = false
+  newBatchOpen.value = false
+  newBatchTarget.value = null
+}
 
 // ── View mode + search ────────────────────────────────────────────────────────
 const viewMode = ref<'location' | 'sku'>('location')
@@ -485,10 +324,11 @@ const search = ref('')
 // ── Group by location ─────────────────────────────────────────────────────────
 const groupedByLocation = computed(() => {
   const q = search.value.trim().toLowerCase()
-  const groups = new Map<string, MergedCountRow[]>()
-  for (const row of mergedCountRows.value) {
-    if (!groups.has(row.storageLocation)) groups.set(row.storageLocation, [])
-    groups.get(row.storageLocation)!.push(row)
+  const groups = new Map<string, AdjustmentLine[]>()
+  for (const item of wmsCountLines.value) {
+    const loc = item.storageLocation || '—'
+    if (!groups.has(loc)) groups.set(loc, [])
+    groups.get(loc)!.push(item)
   }
   for (const loc of addedLocations.value) {
     if (!groups.has(loc)) groups.set(loc, [])
@@ -500,7 +340,7 @@ const groupedByLocation = computed(() => {
       location: g.location,
       items: g.location.toLowerCase().includes(q)
         ? g.items
-        : g.items.filter(i => i.sku.toLowerCase().includes(q) || i.product.name.toLowerCase().includes(q)),
+        : g.items.filter(i => i.sku.toLowerCase().includes(q) || i.product.name.toLowerCase().includes(q) || (i.batchNumber ?? '').toLowerCase().includes(q)),
     }))
     .filter(g => g.items.length > 0 || addedLocations.value.includes(g.location))
 })
@@ -530,7 +370,7 @@ const groupedBySku = computed(() => {
 // ── Summary stats ──────────────────────────────────────────────────────────────
 const skuCount = computed(() => new Set(wmsCountLines.value.map(i => i.sku)).size)
 const onHandTotal = computed(() => wmsCountLines.value.reduce((s, i) => s + i.prevOnHand, 0))
-const countedTotal = computed(() => mergedCountRows.value.reduce((s, row) => s + countedFor(row), 0) + addedCountedTotal.value)
+const countedTotal = computed(() => Object.values(draftCounted.value).reduce((s, v) => s + (v ?? 0), 0) + addedCountedTotal.value)
 const differenceTotal = computed(() => countedTotal.value - onHandTotal.value)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -540,24 +380,23 @@ function diffLabel(n: number) { return n > 0 ? `+${fmt(n)}` : n < 0 ? fmt(n) : '
 // ── Build save lines ──────────────────────────────────────────────────────────
 function buildLines(): { sku: string; qty: number; location?: string }[] {
   const map = new Map<string, { qty: number; location?: string }>()
-  for (const row of mergedCountRows.value) {
-    const qty = countedFor(row)
-    const e = map.get(row.sku)
+  for (const item of wmsCountLines.value) {
+    const qty = draftCounted.value[item.key] ?? 0
+    const e = map.get(item.sku)
     if (e) { e.qty += qty }
-    else { map.set(row.sku, { qty, location: row.storageLocation }) }
+    else { map.set(item.sku, { qty, location: item.storageLocation }) }
   }
   for (const [loc, rows] of Object.entries(addedByLoc.value)) {
     for (const r of rows) {
-      const qty = addedCountedFor(r)
-      if (!r.sku.trim() || !qty) continue
+      if (!r.sku.trim() || !r.counted) continue
       const e = map.get(r.sku)
       if (e) {
-        e.qty += qty
+        e.qty += r.counted
       } else {
         // SKU was not in the count plan: preserve existing on-hand at uncounted
         // locations and add only the newly counted amount on top.
         const existingOnHand = warehouseStockMap.value[r.sku]?.onHand ?? 0
-        map.set(r.sku, { qty: existingOnHand + qty, location: loc })
+        map.set(r.sku, { qty: existingOnHand + r.counted, location: loc })
       }
     }
   }
@@ -598,6 +437,20 @@ function clickFinish() {
     showQtyErrors.value = true
     toast.notify({ variant: 'error', title: 'You must fill in counted qty for at least one item' , maxWidth: 'max-content'})
     return
+  }
+  // Validate serial counts match qty
+  for (const item of wmsCountLines.value) {
+    if (!isSerialTrackedSku(item.sku)) continue
+    const expected = draftCounted.value[item.key] ?? 0
+    const actual = serialCount(item.key)
+    if (expected > 0 && actual !== expected) {
+      toast.notify({
+        variant: 'error',
+        title: `You must fill in all serial numbers for ${item.product.name} (${actual}/${expected})`,
+        maxWidth: 'max-content',
+      })
+      return
+    }
   }
   showConfirm.value = true
 }
@@ -687,24 +540,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Scan bar -->
-      <div class="sc-scanbar-row">
-      <ScanBar placeholder="Scan barcode..." @scan="handleScan">
-        <div v-if="activeBin" class="sc-active-bin">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-          <span>{{ activeBin }}</span>
-          <button class="sc-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-            </svg>
-          </button>
-        </div>
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetCount">Reset count</button>
-      </ScanBar>
-      </div>
-
       <!-- By location: accordion -->
       <div v-if="!groupedByLocation.length" class="sc-empty">
         <p>No items match your search.</p>
@@ -720,27 +555,27 @@ onUnmounted(() => {
             <MpAccordionHeader>
               <MpAccordionIcon />
               <span class="sc-acc-label">{{ group.location === '—' ? 'No location assigned' : group.location }}</span>
-              <span class="sc-acc-meta">{{ group.items.length }} SKU{{ group.items.length !== 1 ? 's' : '' }}</span>
+              <span class="sc-acc-meta">{{ new Set(group.items.map(i => i.sku)).size }} SKU{{ new Set(group.items.map(i => i.sku)).size !== 1 ? 's' : '' }}</span>
             </MpAccordionHeader>
             <MpAccordionPanel>
               <div class="sc-acc-body">
-                <div class="sc-loc-scroll">
+                <div class="sc-loc-scroll" :class="{ 'sc-loc-scroll--split': group.items.some(i => isSerialTrackedSku(i.sku)) }">
                   <table class="sc-items sc-items--fixed">
                     <colgroup>
                       <col class="sc-col-product" />
                       <col class="sc-col-sku" />
+                      <col class="sc-col-batch" />
                       <col class="sc-col-num" />
                       <col class="sc-col-unit" />
-                      <col class="sc-col-manage" />
                       <col class="sc-col-del" />
                     </colgroup>
                     <thead>
                       <tr>
                         <th class="sc-th">Product</th>
                         <th class="sc-th">SKU</th>
+                        <th class="sc-th">Batch no.</th>
                         <th class="sc-th sc-th--num">Counted qty</th>
                         <th class="sc-th">Unit</th>
-                        <th class="sc-th" />
                         <th class="sc-th" />
                       </tr>
                     </thead>
@@ -750,46 +585,38 @@ onUnmounted(() => {
                         v-for="item in group.items"
                         :key="item.key"
                         class="sc-row"
-                        :class="{ 'sc-row--flash': flashRowKey === item.key }"
+                        :class="{ 'sc-row--serial': isSerialTrackedSku(item.sku) }"
                       >
                         <td class="sc-td sc-td--product"><ProductCell :name="item.product.name" :desc="item.product.desc" :image="item.product.img" /></td>
                         <td class="sc-td">{{ item.sku }}</td>
+                        <td class="sc-td">{{ item.batchNumber ?? '—' }}</td>
 
-                        <!-- Batch-tracked → read-only total, managed via the icon button -->
-                        <td v-if="isBatchTrackedSku(item.sku)" class="sc-td sc-td--num">
-                          <span v-if="batchTotalFor(item.key)" class="sc-managed-total">{{ fmt(batchTotalFor(item.key)) }}</span>
-                          <span v-else class="sc-managed-empty">—</span>
-                        </td>
-
-                        <!-- Serial-tracked → read-only total, managed via the icon button -->
-                        <td v-else-if="isSerialTrackedSku(item.sku)" class="sc-td sc-td--num">
-                          <span v-if="serialCount(item.key)" class="sc-managed-total">{{ fmt(serialCount(item.key)) }}</span>
-                          <span v-else class="sc-managed-empty">—</span>
-                        </td>
-
-                        <!-- Untracked → manual input, locked until scanned once -->
-                        <td
-                          v-else
-                          class="sc-td sc-td--input"
-                          :class="{ 'sc-td--error': showQtyErrors && !(draftCounted[item.key] ?? 0) }"
-                        >
-                          <MpTooltip
-                            v-if="!scannedKeys.has(item.key)"
-                            :id="`sc-scan-lock-${item.key}`"
-                            label="Scan this product's barcode before entering a qty manually"
-                            placement="top"
-                            use-portal
-                          >
+                        <!-- Counted qty: serial-tracked → split cell (input + drawer link) -->
+                        <td v-if="isSerialTrackedSku(item.sku)" class="sc-td sc-td--split" :class="{ 'sc-td--error': showQtyErrors && !(draftCounted[item.key] ?? 0) }">
+                          <div class="sc-split-row sc-split-row--top">
                             <input
                               class="sc-qty-input"
                               type="number" min="0"
                               :value="draftCounted[item.key] ?? ''"
                               :aria-label="`Counted qty for ${item.product.name}`"
-                              disabled
+                              @input="onCountedInput(item.key, $event); showQtyErrors = false"
                             />
-                          </MpTooltip>
+                          </div>
+                          <div class="sc-split-row sc-split-row--action">
+                            <button class="sc-link" type="button" @click="openSerialDrawer(item.key)">
+                              Enter serial numbers
+                              <span v-if="serialCount(item.key)" class="sc-serial-count">({{ serialCount(item.key) }})</span>
+                            </button>
+                          </div>
+                        </td>
+
+                        <!-- Counted qty: batch or regular → plain input -->
+                        <td
+                          v-else
+                          class="sc-td sc-td--input"
+                          :class="{ 'sc-td--error': showQtyErrors && !(draftCounted[item.key] ?? 0) }"
+                        >
                           <input
-                            v-else
                             class="sc-qty-input"
                             type="number" min="0"
                             :value="draftCounted[item.key] ?? ''"
@@ -799,24 +626,6 @@ onUnmounted(() => {
                         </td>
 
                         <td class="sc-td">{{ item.unit }}</td>
-
-                        <!-- Manage action column — icon button, batch/serial-tracked only -->
-                        <td v-if="isBatchTrackedSku(item.sku)" class="sc-td sc-td--action">
-                          <MpTooltip :id="`sc-tt-batch-${item.key}`" label="Manage batch" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(item.key)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
-                          </MpTooltip>
-                        </td>
-                        <td v-else-if="isSerialTrackedSku(item.sku)" class="sc-td sc-td--action">
-                          <MpTooltip :id="`sc-tt-serial-${item.key}`" label="Manage serial numbers" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(item.key)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
-                          </MpTooltip>
-                        </td>
-                        <td v-else class="sc-td sc-td--action" />
-
                         <td class="sc-td sc-td--del-placeholder" aria-hidden="true" />
                       </tr>
 
@@ -825,39 +634,65 @@ onUnmounted(() => {
                         v-for="added in (addedByLoc[group.location] ?? [])"
                         :key="added.id"
                         class="sc-row"
-                        :class="{ 'sc-row--flash': flashRowKey === added.id }"
                       >
                         <td class="sc-td sc-td--product">
                           <ProductCell :name="added.productName" :desc="PRODUCTS.find(p => p.sku === added.sku)?.desc ?? ''" :image="PRODUCTS.find(p => p.sku === added.sku)?.img ?? ''" />
                         </td>
                         <td class="sc-td">{{ added.sku }}</td>
-
-                        <td v-if="isBatchTrackedSku(added.sku)" class="sc-td sc-td--num">
-                          <span v-if="batchTotalFor(added.id)" class="sc-managed-total">{{ fmt(batchTotalFor(added.id)) }}</span>
-                          <span v-else class="sc-managed-empty">—</span>
-                        </td>
-                        <td v-else-if="isSerialTrackedSku(added.sku)" class="sc-td sc-td--num">
-                          <span v-if="serialCount(added.id)" class="sc-managed-total">{{ fmt(serialCount(added.id)) }}</span>
-                          <span v-else class="sc-managed-empty">—</span>
-                        </td>
-                        <td v-else class="sc-td sc-td--input">
-                          <MpTooltip
-                            v-if="!scannedKeys.has(added.id)"
-                            :id="`sc-scan-lock-${added.id}`"
-                            label="Scan this product's barcode before entering a qty manually"
-                            placement="top"
+                        <!-- Batch no.: popover picker for batch-tracked, plain dash otherwise -->
+                        <td v-if="isBatchTrackedSku(added.sku)" class="sc-td sc-td--input">
+                          <MpPopover
+                            :id="`sc-batch-pick-${added.id}`"
+                            is-close-on-select
                             use-portal
+                            :is-keep-alive="false"
+                            placement="bottom-start"
                           >
+                            <MpPopoverTrigger>
+                              <button class="sc-batch-trigger" type="button">
+                                <span class="sc-batch-trigger-label">{{ added.batchNumber || 'Select batch' }}</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="sc-batch-trigger-chevron">
+                                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                              </button>
+                            </MpPopoverTrigger>
+                            <MpPopoverContent>
+                              <MpPopoverList>
+                                <MpPopoverListItem
+                                  v-for="b in (warehouseStockMap[added.sku]?.batches ?? [])"
+                                  :key="b.batchNo"
+                                  @click="updateAddedField(group.location, added.id, 'batchNumber', b.batchNo)"
+                                >
+                                  {{ b.batchNo }}
+                                  <span v-if="b.expiryDate" style="color:var(--mp-text-subtle);font-size:var(--mp-font-sizes-sm)"> · exp {{ b.expiryDate }}</span>
+                                </MpPopoverListItem>
+                                <MpPopoverListItem @click="openNewBatchModal(group.location, added.id)">
+                                  + Add new batch
+                                </MpPopoverListItem>
+                              </MpPopoverList>
+                            </MpPopoverContent>
+                          </MpPopover>
+                        </td>
+                        <td v-else class="sc-td">—</td>
+                        <td v-if="isSerialTrackedSku(added.sku)" class="sc-td sc-td--split">
+                          <div class="sc-split-row sc-split-row--top">
                             <input
                               class="sc-qty-input"
                               type="number" min="0"
                               :value="added.counted ?? ''"
                               aria-label="Counted qty for added product"
-                              disabled
+                              @input="updateAddedQty(group.location, added.id, $event)"
                             />
-                          </MpTooltip>
+                          </div>
+                          <div class="sc-split-row sc-split-row--action">
+                            <button class="sc-link" type="button" @click="openSerialDrawerForAdded(added.id, added.counted)">
+                              Enter serial numbers
+                              <span v-if="serialCount(added.id)" class="sc-serial-count">({{ serialCount(added.id) }})</span>
+                            </button>
+                          </div>
+                        </td>
+                        <td v-else class="sc-td sc-td--input">
                           <input
-                            v-else
                             class="sc-qty-input"
                             type="number" min="0"
                             :value="added.counted ?? ''"
@@ -866,24 +701,6 @@ onUnmounted(() => {
                           />
                         </td>
                         <td class="sc-td">{{ PRODUCTS.find(p => p.sku === added.sku)?.unit ?? '—' }}</td>
-
-                        <!-- Manage action column — icon button, batch/serial-tracked only -->
-                        <td v-if="isBatchTrackedSku(added.sku)" class="sc-td sc-td--action">
-                          <MpTooltip :id="`sc-tt-batch-${added.id}`" label="Manage batch" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(added.id)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
-                          </MpTooltip>
-                        </td>
-                        <td v-else-if="isSerialTrackedSku(added.sku)" class="sc-td sc-td--action">
-                          <MpTooltip :id="`sc-tt-serial-${added.id}`" label="Manage serial numbers" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(added.id)">
-                              <MpIcon name="competencies" size="md" />
-                            </button>
-                          </MpTooltip>
-                        </td>
-                        <td v-else class="sc-td sc-td--action" />
-
                         <td class="sc-td sc-td--del">
                           <button class="sc-del-row-btn" type="button" aria-label="Remove product" @click="removeAddedRow(group.location, added.id)">
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -966,6 +783,48 @@ onUnmounted(() => {
     <MpModalOverlay />
   </MpModal>
 
+  <!-- ── New batch modal ── -->
+  <MpModal
+    id="sc-new-batch-modal"
+    :is-open="newBatchOpen"
+    size="md"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="newBatchOpen = false"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        Add new batch
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <div class="sc-new-batch-form">
+          <div class="sc-new-batch-field">
+            <label class="sc-new-batch-label">Batch name <span class="sc-required">*</span></label>
+            <input v-model="newBatchNo" class="sc-new-batch-input" type="text" />
+          </div>
+          <div class="sc-new-batch-field">
+            <label class="sc-new-batch-label">Expiry date</label>
+            <div class="sc-new-batch-datepicker">
+              <MpDatePicker id="sc-new-batch-expiry" v-model="newBatchExpiry" format="DD/MM/YYYY" value-type="format" use-portal />
+            </div>
+          </div>
+          <div class="sc-new-batch-field">
+            <label class="sc-new-batch-label">Description</label>
+            <textarea v-model="newBatchDesc" class="sc-new-batch-textarea" rows="2" maxlength="256" />
+          </div>
+        </div>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="sc-modal-footer">
+          <button class="sc-btn sc-btn--ghost" @click="newBatchOpen = false">Cancel</button>
+          <button class="sc-btn sc-btn--primary" :disabled="isSaving" @click="confirmNewBatch">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- ── Product picker drawer ── -->
   <SelectProductDrawer
@@ -1059,26 +918,12 @@ onUnmounted(() => {
     :sku="activeSerialSku"
     :warehouse-id="adjustment.warehouseId"
     kind="count"
-    :target-count="activeSerialOnHand"
-    :location-on-hand="activeSerialOnHand"
+    :delta="activeSerialDelta"
+    :target-count="activeSerialDelta"
+    :location-on-hand="0"
     :model-value="(serialLinesByKey[serialDrawerKey] ?? []).map(s => ({ serial: s }))"
-    :initial-scan="serialDrawerInitialScan"
     @update:open="serialDrawerOpen = $event"
     @save="saveSerialLines"
-  />
-
-  <!-- ── Batch drawer ── -->
-  <ManageBatchDrawer
-    v-if="batchDrawerKey && adjustment"
-    :open="batchDrawerOpen"
-    :sku="activeBatchSku"
-    :warehouse-id="adjustment.warehouseId"
-    kind="count"
-    :location-on-hand="activeBatchLocationOnHand"
-    :model-value="batchLinesByKey[batchDrawerKey] ?? []"
-    :initial-scan="batchDrawerInitialScan"
-    @update:open="batchDrawerOpen = $event"
-    @save="saveBatchLines"
   />
 </template>
 
@@ -1167,13 +1012,16 @@ onUnmounted(() => {
 /* ── Accordions ──────────────────────────────────────────────────────────────── */
 .sc-accordions { padding: var(--mp-spacing-4) var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .sc-accordions :deep(*:not(td):not(th)) { border-top: none !important; border-bottom: none !important; }
+.sc-accordions :deep(.sc-split-row--top) { border-bottom: 1px solid var(--mp-border-default) !important; }
 .sc-acc-label { flex: 1; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-acc-meta { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap; }
 .sc-acc-body { padding: var(--mp-spacing-4) var(--mp-spacing-4) var(--mp-spacing-4) 0; }
 
 /* ── Table ───────────────────────────────────────────────────────────────────── */
 .sc-loc-scroll { overflow-x: auto; }
-/* Right divider on each cell, edges trimmed. */
+.sc-loc-scroll--split .sc-row--serial .sc-td { vertical-align: top; }
+/* Form table (Counted qty input) → column dividers in every mode, not just the
+   serial-split one. Right divider on each cell, edges trimmed. */
 .sc-loc-scroll .sc-td { border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
 .sc-loc-scroll .sc-td:first-child { border-left: none; }
 .sc-loc-scroll .sc-td:last-child { border-right: none; }
@@ -1181,11 +1029,11 @@ onUnmounted(() => {
 .sc-items { width: 100%; border-collapse: collapse; }
 .sc-items--fixed { table-layout: fixed; width: 100%; }
 
-.sc-col-product { width: 240px; }
-.sc-col-sku     { width: 100px; }
-.sc-col-num     { width: 140px; }
+.sc-col-product { width: 210px; }
+.sc-col-sku     { width: 90px; }
+.sc-col-batch   { width: 120px; }
+.sc-col-num     { width: 110px; }
 .sc-col-unit    { width: 90px; }
-.sc-col-manage  { width: 56px; }
 .sc-col-del     { width: 40px; }
 
 .sc-th {
@@ -1217,45 +1065,17 @@ onUnmounted(() => {
   box-shadow: inset 0 0 0 1px var(--mp-border-bold);
 }
 .sc-td--input.sc-td--error { box-shadow: inset 0 0 0 1px var(--mp-border-danger, #a8352d); }
-.sc-td--input:has(input:disabled) { background: var(--mp-background-neutral-subtle); }
-.sc-qty-input:disabled { color: var(--mp-text-placeholder); cursor: not-allowed; }
 
-/* Batch/serial-tracked → read-only total; managed via the icon-button column */
-.sc-managed-total { font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
-.sc-managed-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-
-/* Manage action column */
-.sc-td--action { text-align: center; white-space: nowrap; background: var(--mp-background-neutral, #fff); }
-.sc-view-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border-radius: var(--mp-radii-md); background: none; border: none;
-  cursor: pointer; color: var(--mp-icon-default);
+/* Serial split cell */
+.sc-td--split {
+  padding: 0;
+  background: var(--mp-background-neutral, #fff);
 }
-.sc-view-btn:hover { background: var(--mp-background-neutral-hovered); }
-
-.sc-scanbar-row { padding: 0 var(--mp-spacing-6) var(--mp-spacing-4); }
-.sc-scanbar-row .scan-bar { margin-bottom: 0; }
-
-/* Active bin chip + row flash on scan */
-.sc-active-bin {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
-  background: #e6f7ef; border: 1px solid #029861;
-  border-radius: var(--mp-radii-full); white-space: nowrap;
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: #027a4e; flex-shrink: 0;
-}
-.sc-active-bin-clear {
-  background: none; border: none; padding: 0; cursor: pointer;
-  color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
-}
-.sc-active-bin-clear:hover { opacity: 1; }
-@keyframes sc-flash {
-  0%   { background-color: var(--mp-background-success-subtle, #dcfce7); }
-  100% { background-color: transparent; }
-}
-.sc-row--flash td { animation: sc-flash 0.7s ease-out forwards; }
+.sc-td--split:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.sc-td--split.sc-td--error { box-shadow: inset 0 0 0 1px var(--mp-border-danger, #a8352d); }
+.sc-split-row { display: flex; align-items: center; padding: 0 var(--mp-spacing-2); }
+.sc-split-row--top { min-height: 40px; border-bottom: 1px solid var(--mp-border-default); justify-content: flex-end; }
+.sc-split-row--action { min-height: 32px; }
 
 .sc-qty-input {
   width: 100%; min-width: 0; height: 100%; padding: var(--mp-spacing-2) var(--mp-spacing-2);
@@ -1266,6 +1086,13 @@ onUnmounted(() => {
 .sc-qty-input::-webkit-outer-spin-button,
 .sc-qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .sc-qty-input[type=number] { -moz-appearance: textfield; }
+
+.sc-link {
+  background: none; border: none; padding: 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; line-height: 1;
+}
+.sc-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.sc-serial-count { color: var(--mp-text-secondary); }
 
 .sc-diff--pos { color: var(--mp-text-success, #1a7a4a); }
 .sc-diff--neg { color: var(--mp-text-danger, #a8352d); }
@@ -1290,6 +1117,17 @@ onUnmounted(() => {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-link);
 }
 .sc-add-sku-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Batch picker trigger */
+.sc-batch-trigger {
+  width: 100%; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2);
+  border: none; background: transparent; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.sc-batch-trigger:hover { background: var(--mp-background-neutral-hovered); }
+.sc-batch-trigger-label { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-batch-trigger-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
 
 /* Add location button */
 .sc-add-loc-row { padding: 0 var(--mp-spacing-6) var(--mp-spacing-4); }
@@ -1344,6 +1182,27 @@ onUnmounted(() => {
 .sc-loc-drw-leave-active .loc-drw-panel { transition: transform 250ms ease-in; }
 .sc-loc-drw-enter-from .loc-drw-panel,
 .sc-loc-drw-leave-to .loc-drw-panel { transform: translateX(calc(100% + 12px)); }
+
+/* New batch modal form */
+.sc-new-batch-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.sc-new-batch-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.sc-new-batch-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.sc-required { color: var(--mp-text-danger, #a8352d); }
+.sc-new-batch-input {
+  height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); background: var(--mp-background-neutral); outline: none;
+}
+.sc-new-batch-input:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
+.sc-new-batch-textarea {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3); resize: vertical;
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); background: var(--mp-background-neutral);
+  font-family: inherit; line-height: 1.5; outline: none;
+}
+.sc-new-batch-textarea:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
+.sc-new-batch-datepicker { width: 100%; }
+.sc-new-batch-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
 /* By SKU section */
 .sc-sku-section { padding: var(--mp-spacing-4) var(--mp-spacing-6); }

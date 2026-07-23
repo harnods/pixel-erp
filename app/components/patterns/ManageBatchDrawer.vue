@@ -78,10 +78,6 @@ const props = defineProps<{
    *  inherited as this drawer's own active bin when it opens, so the operator
    *  doesn't have to rescan a bin they already scanned on the page. */
   initialActiveBin?: string | null
-  /** Count mode only — a batch barcode that triggered this drawer to auto-open
-   *  (page-level scan of a tracked SKU's specific batch code) is replayed here
-   *  on open, so that first scan isn't lost/needs re-scanning inside. */
-  initialScan?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -200,15 +196,7 @@ function seedRows(): void {
 
 // { immediate: true } is required because the component mounts with open=true
 // (parent uses v-if="batchDrawerRow"), so a lazy watch never fires on first open.
-watch(() => props.open, (isOpen) => {
-  if (!isOpen) return
-  seedRows()
-  // Deferred: handleDrawerScan closes over consts (flashScanned's lastScannedKey,
-  // newCounter, etc.) declared further down the script — calling it synchronously
-  // from this {immediate:true} watcher (which fires mid-setup, on first open)
-  // would hit those before their declarations run and throw a TDZ ReferenceError.
-  if (props.initialScan) nextTick(() => handleDrawerScan(props.initialScan!))
-}, { immediate: true })
+watch(() => props.open, (isOpen) => { if (isOpen) seedRows() }, { immediate: true })
 
 // ── Product info ─────────────────────────────────────────────────────────────────
 const product = computed(() => productBySku(props.sku))
