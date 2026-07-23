@@ -201,7 +201,7 @@ async function handleSave() {
   if (shipments.length === 1) {
     router.push(`/outbound-delivery/shipment/${shipments[0]!.shipmentSeq}`)
   } else {
-    router.push({ path: '/outbound-delivery', query: { tab: 'Shipped' } })
+    router.push({ path: '/outbound-delivery', query: { tab: 'Shipments' } })
   }
 }
 </script>

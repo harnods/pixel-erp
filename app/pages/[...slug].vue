@@ -322,7 +322,7 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipped'],
+  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
@@ -459,7 +459,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Picking': PickingIndexPage,
     'Packing': PackingIndexPage,
     'Ready to ship': DeliveryIndexPage,
-    'Shipped': ShippedIndexPage,
+    'Shipments': ShippedIndexPage,
   },
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,

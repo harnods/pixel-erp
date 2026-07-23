@@ -55,7 +55,7 @@ function acknowledgeCancel() {
 }
 
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
-function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Shipped' } }) }
+function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Shipments' } }) }
 function viewSalesOrder(row: Row) { router.push(`/outbound-delivery/${row.salesOrderId}`) }
 function viewPacking(row: Row) { router.push(`/packing/${row.packingTaskId}`) }
 const pdfPreviewOpen = ref(false)
@@ -141,7 +141,7 @@ function confirmComplete() {
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Shipped</button>
+        <button class="detail-breadcrumb" @click="goBack">Shipments</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ shipment.shipmentNo }}</h1>
           <ErpStatusBadge :status="shipment.status" badge-for="additionalInformation" size="md" />
@@ -345,7 +345,7 @@ function confirmComplete() {
 
   <div v-else class="shd-not-found">
     <p>Shipment not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Shipped</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to Shipments</button>
   </div>
 </template>
 

@@ -462,7 +462,18 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Reports', icon: 'reports' },
   ],
   [
-    { name: 'Products', icon: 'products', to: 'Product list' },
+    // Inventory carries a level-2 panel (Products, Categories, …) — mirrors the ERP
+    // "Inventory" menu instead of a flat "Products" leaf.
+    {
+      name: 'Inventory', icon: 'products',
+      panelSubmenu: [[
+        { label: 'Products', to: 'Product list' },
+        { label: 'Categories' },
+        { label: 'Variant options' },
+        { label: 'Units' },
+        { label: 'Price rules' },
+      ]],
+    },
     { name: 'Warehouses', icon: 'warehouse' },
   ],
   [
