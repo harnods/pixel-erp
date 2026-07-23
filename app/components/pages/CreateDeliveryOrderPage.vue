@@ -7,12 +7,13 @@ import {
 } from '@mekari/pixel3'
 import { warehouses } from '~/data/warehouses'
 import { addOutgoing, nextDeliveryOrderNo, outgoingOrders, canEditOutboundOrder } from '~/data/outgoing'
-import { editOutboundOrder } from '~/data/outboundSync'
+import { editOutboundOrder, proposeSkuReduction } from '~/data/outboundSync'
 import { orderSkuLines } from '~/data/inventory'
-import { lockedOutboundQtyForSku } from '~/data/pickingTasks'
+import { lockedOutboundQtyForSku, pendingPickingLinesForSku, getPickingTask } from '~/data/pickingTasks'
 import { CATALOG } from '~/data/catalog'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { scrollToFirstError } from '~/utils/form'
+import AllocateReductionModal, { type SkuReductionGroup } from '~/components/AllocateReductionModal.vue'
 
 const props = defineProps<{ orderId?: string }>()
 const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
@@ -290,9 +291,56 @@ async function persist() {
   })
 }
 
+// ── D7 allocation step (AC#3/#4) ────────────────────────────────────────────
+const allocModalOpen = ref(false)
+const allocGroups = ref<SkuReductionGroup[]>([])
+
+/** Reductions that span ≥2 pending picking tasks need the operator to choose the
+ *  distribution (AC#4). Single-task / unassigned-only reductions apply directly (AC#1). */
+function computeAllocationGroups(): SkuReductionGroup[] {
+  const o = editingOrder.value
+  if (!o) return []
+  const oldBySku = new Map(orderSkuLines(o).map((l) => [l.product.sku, l.qty]))
+  const groups: SkuReductionGroup[] = []
+  for (const r of rows.value.filter((row) => row.productId)) {
+    const oldQty = oldBySku.get(r.productSku) ?? 0
+    const newQty = Number(r.qty) || 0
+    if (newQty >= oldQty) continue
+    const N = oldQty - newQty
+    const proposal = proposeSkuReduction(o.id, r.productSku, N)
+    if (proposal.exceedsRemovable) continue // editOutboundOrder rejects it with a clear toast
+    const R = Math.max(0, N - Math.min(N, proposal.unassigned)) // qty drawn from pending tasks
+    const pending = pendingPickingLinesForSku(o.id, r.productSku)
+    if (pending.length < 2 || R <= 0) continue // AC#1 — direct, no allocation step
+    const defaults = new Map(proposal.taskReductions.map((t) => [t.taskId, t.reduceBy]))
+    groups.push({
+      sku: r.productSku,
+      productName: r.productName,
+      toRemove: R,
+      tasks: pending.map((p) => {
+        const t = getPickingTask(p.taskId)
+        return {
+          taskId: p.taskId, taskNo: p.taskNo, currentQty: p.qty,
+          reduceBy: defaults.get(p.taskId) ?? 0,
+          soleLine: (t?.salesOrderIds.length === 1) && (t?.skuQty === 1),
+        }
+      }),
+    })
+  }
+  return groups
+}
+
+function onAllocConfirm(allocations: Record<string, { taskId: string; reduceBy: number }[]>) {
+  allocModalOpen.value = false
+  const ok = persistEdit(allocations)
+  if (!ok) return
+  toast.notify({ variant: 'success', title: 'Order updated', maxWidth: 'max-content' })
+  router.push(`/outbound-delivery/${props.orderId}`)
+}
+
 /** Edit mode — apply changes via editOutboundOrder (D7 gates). Returns false (and
  *  toasts) on rejection so the caller stays on the form (no partial apply). */
-function persistEdit(): boolean {
+function persistEdit(allocations?: Record<string, { taskId: string; reduceBy: number }[]>): boolean {
   const o = editingOrder.value
   if (!o) return false
   const lines = rows.value.filter((r) => r.productId).map((r) => ({ sku: r.productSku, qty: Number(r.qty) || 0 }))
@@ -300,10 +348,11 @@ function persistEdit(): boolean {
     customer: customer.value,
     dueDate: estimatedDelivery.value ? toISODate(estimatedDelivery.value) : undefined,
     memo: memo.value.trim(),
-  })
+  }, allocations)
   if (!res.ok) {
     const msg = res.reason === 'NO_ALLOCATABLE_STOCK' ? 'Not enough stock to reserve the added quantity'
-      : res.reason === 'SKU_LOCKED' ? 'A SKU already being picked can’t be removed or reduced'
+      : res.reason === 'REDUCTION_EXCEEDS_REMOVABLE' ? `Can’t reduce that much — ${res.locked ?? 0} is locked in active picking (only ${res.removable ?? 0} removable)`
+      : res.reason === 'INVALID_ALLOCATION' ? 'The per-task reduction doesn’t add up'
       : res.reason === 'NOT_EDITABLE' ? 'This order can no longer be edited'
       : 'Could not save the changes'
     toast.notify({ variant: 'error', title: msg, maxWidth: 'max-content' })
@@ -316,8 +365,10 @@ async function handleSave() {
   if (!await validate()) return
   isSaving.value = true
   if (isEdit.value) {
-    const ok = persistEdit()
     isSaving.value = false
+    const groups = computeAllocationGroups()
+    if (groups.length) { allocGroups.value = groups; allocModalOpen.value = true; return } // AC#4 — ask first
+    const ok = persistEdit()
     if (!ok) return
     toast.notify({ variant: 'success', title: 'Order updated', maxWidth: 'max-content' })
     router.push(`/outbound-delivery/${props.orderId}`)
@@ -692,6 +743,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <button v-if="!isEdit" class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}</button>
       <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
     </footer>
+
+    <!-- D7 AC#4 — choose how a multi-task SKU reduction is distributed -->
+    <AllocateReductionModal
+      :open="allocModalOpen"
+      :groups="allocGroups"
+      @close="allocModalOpen = false"
+      @confirm="onAllocConfirm"
+    />
   </div>
 </template>
 

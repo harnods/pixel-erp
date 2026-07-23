@@ -88,11 +88,11 @@ describe('D7 — edit vs picking state (AC#4 lock)', () => {
 
     // reduce → rejected
     let res = editOutboundOrder(o.id, [{ sku: A, qty: 1 }])
-    expect(res.ok).toBe(false); if (!res.ok) expect(res.reason).toBe('SKU_LOCKED')
+    expect(res.ok).toBe(false); if (!res.ok) expect(res.reason).toBe('REDUCTION_EXCEEDS_REMOVABLE')
     expect(orderQty(o.id)).toBe(2)
     // remove → rejected
     res = editOutboundOrder(o.id, [{ sku: B, qty: 1 }]) // A dropped
-    expect(res.ok).toBe(false); if (!res.ok) expect(res.reason).toBe('SKU_LOCKED')
+    expect(res.ok).toBe(false); if (!res.ok) expect(res.reason).toBe('REDUCTION_EXCEEDS_REMOVABLE')
     // increase → allowed
     expect(editOutboundOrder(o.id, [{ sku: A, qty: 5 }]).ok).toBe(true)
     expect(orderQty(o.id)).toBe(5)
