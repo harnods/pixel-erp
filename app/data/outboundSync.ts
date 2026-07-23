@@ -1,8 +1,8 @@
-import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder, canEditOutboundOrder, updateOutgoingOrderLines } from "./outgoing";
+import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder, canEditOutboundOrder, updateOutgoingOrderLines, recordOutgoingEdit } from "./outgoing";
 import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck, lockedOutboundQtyForSku, pendingPickingLinesForSku, reduceOrderSkuOnPickingTask, getPickingTask } from "./pickingTasks";
 import { getPackingForOrder, cancelPackingTask } from "./packingTasks";
 import { deliveryTasks, getDeliveryForOrder, canCancelDeliveryTask, cancelDeliveryTask, shippedQtyBySkuForOrder } from "./deliveryTasks";
-import { orderSkuLines } from "./inventory";
+import { orderSkuLines, productBySku } from "./inventory";
 import { getWarehouseDetail, consumeReservation } from "./warehouseDetails";
 
 export type CancelOutboundResult =
@@ -124,12 +124,32 @@ export function editOutboundOrder(
     reductionPlans.push({ sku, N, taskReductions });
   }
 
+  // ── Build the audit trail ("apa ke apa") BEFORE mutating the order ─────────────
+  const nameOf = (sku: string) =>
+    orderSkuLines(order).find((l) => l.product.sku === sku)?.product.name ?? productBySku(sku)?.name ?? sku;
+  const changes: { label: string; value: string }[] = [];
+  for (const sku of [...skus].sort()) {
+    const oldQty = oldBySku.get(sku) ?? 0;
+    const newQty = newBySku.get(sku) ?? 0;
+    if (oldQty === newQty) continue;
+    if (oldQty === 0) changes.push({ label: `${nameOf(sku)} (${sku})`, value: `Added — qty ${newQty}` });
+    else if (newQty === 0) changes.push({ label: `${nameOf(sku)} (${sku})`, value: `Removed — was ${oldQty}` });
+    else changes.push({ label: `${nameOf(sku)} (${sku}) qty`, value: `${oldQty} → ${newQty}` });
+  }
+  if (header?.customer !== undefined && header.customer !== (order.customer ?? ""))
+    changes.push({ label: "Customer", value: `${order.customer || "—"} → ${header.customer || "—"}` });
+  if (header?.dueDate !== undefined && header.dueDate !== order.dueDate)
+    changes.push({ label: "Estimated delivery", value: `${order.dueDate || "—"} → ${header.dueDate || "—"}` });
+  if (header?.memo !== undefined && header.memo !== (order.memo ?? ""))
+    changes.push({ label: "Memo", value: `${order.memo || "—"} → ${header.memo || "—"}` });
+
   // ── Commit ───────────────────────────────────────────────────────────────────
   for (const plan of reductionPlans) {
     for (const tr of plan.taskReductions) reduceOrderSkuOnPickingTask(tr.taskId, orderId, plan.sku, tr.reduceBy);
     consumeReservation(orderId, wh, plan.sku, plan.N); // release the full reduction back to Available
   }
   updateOutgoingOrderLines(orderId, [...newBySku].map(([sku, qty]) => ({ sku, qty })), header);
+  recordOutgoingEdit(orderId, changes); // D7 — activity log
   reserveAllPickableOrders(); // reserve any increases (order still pickable)
   return { ok: true };
 }

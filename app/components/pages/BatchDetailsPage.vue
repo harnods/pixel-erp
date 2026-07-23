@@ -146,7 +146,6 @@ const pagedWarehouseStock = computed(() => {
         <div class="pd-info-row">
           <div class="pd-field-col" style="width: 368px">
             <ContentList label="Number" :value="batch.batchNo" />
-            <ContentList label="Barcode" :value="batch.barcode" />
             <ContentList label="Expiration date" :value="formatDate(batch.expiryDate)" />
             <ContentList label="Description">
               <ClampText :text="batch.description" :lines="2" />

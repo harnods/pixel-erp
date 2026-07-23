@@ -108,6 +108,47 @@ describe('D7 — edit vs picking state (AC#4 lock)', () => {
   })
 })
 
+describe('D7 — edit activity log (apa ke apa)', () => {
+  function logOf(id: string) { return outgoingOrders.find((o) => o.id === id)!.editLog ?? [] }
+
+  it('records a qty change as "old → new"', () => {
+    const o = makeOrder([{ sku: A, qty: 2 }])
+    expect(editOutboundOrder(o.id, [{ sku: A, qty: 5 }]).ok).toBe(true)
+    const log = logOf(o.id)
+    expect(log).toHaveLength(1)
+    expect(log[0]!.by).toBe('Rizal Candra')
+    expect(log[0]!.changes.some((c) => c.value === '2 → 5')).toBe(true)
+    cancelOutboundOrder(o.id); releaseReservedForCancelledOrder(o.id)
+  })
+
+  it('records an added SKU and a removed SKU', () => {
+    const o = makeOrder([{ sku: A, qty: 2 }])
+    expect(editOutboundOrder(o.id, [{ sku: A, qty: 2 }, { sku: B, qty: 3 }]).ok).toBe(true)
+    expect(logOf(o.id).at(-1)!.changes.some((c) => c.value === 'Added — qty 3')).toBe(true)
+    expect(editOutboundOrder(o.id, [{ sku: A, qty: 2 }]).ok).toBe(true) // drop B
+    expect(logOf(o.id).at(-1)!.changes.some((c) => c.value === 'Removed — was 3')).toBe(true)
+    expect(logOf(o.id)).toHaveLength(2)
+    cancelOutboundOrder(o.id); releaseReservedForCancelledOrder(o.id)
+  })
+
+  it('records header changes (customer / due date / memo)', () => {
+    const o = makeOrder([{ sku: A, qty: 1 }])
+    expect(editOutboundOrder(o.id, [{ sku: A, qty: 1 }], { customer: 'New Cust', dueDate: '2026-09-01', memo: 'rush' }).ok).toBe(true)
+    const c = logOf(o.id).at(-1)!.changes
+    expect(c.some((x) => x.label === 'Customer' && x.value.endsWith('→ New Cust'))).toBe(true)
+    expect(c.some((x) => x.label === 'Estimated delivery' && x.value.endsWith('→ 2026-09-01'))).toBe(true)
+    expect(c.some((x) => x.label === 'Memo' && x.value.endsWith('→ rush'))).toBe(true)
+    cancelOutboundOrder(o.id); releaseReservedForCancelledOrder(o.id)
+  })
+
+  it('a no-op save records nothing', () => {
+    const o = makeOrder([{ sku: A, qty: 2 }])
+    expect(editOutboundOrder(o.id, [{ sku: A, qty: 2 }]).ok).toBe(true) // identical lines, no header
+    expect(logOf(o.id)).toHaveLength(0)
+    cancelOutboundOrder(o.id); releaseReservedForCancelledOrder(o.id)
+  })
+})
+
 describe('D7 — not editable once shipped or cancelled', () => {
   it('a shipped order is NOT editable', () => {
     const o = makeOrder([{ sku: A, qty: 1 }])

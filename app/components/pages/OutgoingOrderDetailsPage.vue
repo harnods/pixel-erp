@@ -137,12 +137,15 @@ const attachments = computed(() => {
   const n = (s % 3) + 1 // always 1–3 files
   return Array.from({ length: n }, (_, i) => ({ name: NOTE_ATTACH[i % NOTE_ATTACH.length]!, sizeKB: 40 + ((s + i * 37) % 220) }))
 })
+const lastEdit = computed(() => order.value?.editLog?.at(-1))
 const lastUpdatedBy = computed(() => {
   if (!order.value) return ''
+  if (lastEdit.value) return lastEdit.value.by
   return order.value.source === 'Outbound delivery' ? 'Rizal Candra' : NOTE_UPDATERS[seedNum(order.value.id) % NOTE_UPDATERS.length]!
 })
 const lastUpdatedAt = computed(() => {
   if (!order.value) return new Date().toISOString()
+  if (lastEdit.value) return lastEdit.value.at
   if (order.value.source === 'Outbound delivery') return order.value.createdAt ?? order.value.transactionDate ?? order.value.dueDate
   return order.value.shippedDate ?? order.value.dueDate ?? new Date().toISOString()
 })
@@ -167,17 +170,27 @@ const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const o = order.value
   if (!o) return []
-  return [{
-    date: lastUpdatedAt.value,
-    user: lastUpdatedBy.value,
-    activity: 'Created',
-    details: [
-      { label: 'Transaction no.', value: o.salesNo },
-      { label: 'Transaction date', value: formatDateLong(transactionDate.value) },
-      { label: 'Customer', value: o.customer ?? '—' },
-      { label: 'Warehouse', value: o.warehouseName },
-    ],
-  }]
+  // Edits first (newest at the top), then the original creation entry.
+  const edits = [...(o.editLog ?? [])].reverse().map((e) => ({
+    date: e.at,
+    user: e.by,
+    activity: 'Edited',
+    details: e.changes.length ? e.changes : [{ label: 'Order', value: 'Updated' }],
+  }))
+  return [
+    ...edits,
+    {
+      date: o.createdAt ?? o.transactionDate ?? o.dueDate,
+      user: lastUpdatedBy.value,
+      activity: 'Created',
+      details: [
+        { label: 'Transaction no.', value: o.salesNo },
+        { label: 'Transaction date', value: formatDateLong(transactionDate.value) },
+        { label: 'Customer', value: o.customer ?? '—' },
+        { label: 'Warehouse', value: o.warehouseName },
+      ],
+    },
+  ]
 })
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 function agingDays(startDate?: string, endDate?: string): number {

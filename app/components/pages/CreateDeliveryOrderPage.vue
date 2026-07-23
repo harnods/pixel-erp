@@ -96,17 +96,20 @@ interface LineRow {
   /** Edit mode — qty already committed to a started picking task: can't remove this
    *  row or set qty below it (D7 AC#4). 0 = freely editable. */
   lockedQty: number
+  /** Edit mode — the SKU's qty on the order when editing began. Its reservation is
+   *  already held, so only the INCREASE beyond it needs fresh Available (create = 0). */
+  origQty: number
 }
 
 let rowSeq = 0
 function makeRow(): LineRow {
-  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false, lockedQty: 0 }
+  return { id: rowSeq++, productId: '', productName: '', productSku: '', productImg: '', description: '', qty: '1', unit: '', qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false, lockedQty: 0, origQty: 0 }
 }
 
 /** Tooltip/error text for an invalid qty cell (edit mode included). */
 function qtyErrorMsg(row: LineRow): string {
   if (row.qtyLocked) return `Can’t go below ${row.lockedQty} — already in a picking task`
-  if (row.qtyInsufficient) return `Insufficient stock (${availableQty(row.productSku)} available)`
+  if (row.qtyInsufficient) return `Insufficient stock (only ${availableQty(row.productSku) + row.origQty} available)`
   return ''
 }
 function qtyInvalid(row: LineRow): boolean { return row.qtyInsufficient || row.qtyLocked }
@@ -121,7 +124,10 @@ function availableQty(sku: string): number {
 
 function checkQtyInsufficient(row: LineRow) {
   if (!row.productSku || !row.qty || Number(row.qty) < 1) { row.qtyInsufficient = false; return }
-  row.qtyInsufficient = Number(row.qty) > availableQty(row.productSku)
+  // Only the INCREASE beyond the already-reserved qty needs fresh Available — a
+  // reduction (or no change) is never insufficient (create mode: origQty = 0).
+  const delta = Number(row.qty) - row.origQty
+  row.qtyInsufficient = delta > 0 && delta > availableQty(row.productSku)
 }
 
 const rows = ref<LineRow[]>([makeRow()])
@@ -185,6 +191,7 @@ function prefillFromOrder() {
       unit: l.product.unit,
       qtyError: false, qtyInsufficient: false, qtyLocked: false, productError: false,
       lockedQty: lockedOutboundQtyForSku(o.id, l.product.sku),
+      origQty: l.qty,
     } as LineRow
   })
   rows.value = lines.length ? [...lines, makeRow()] : [makeRow()]

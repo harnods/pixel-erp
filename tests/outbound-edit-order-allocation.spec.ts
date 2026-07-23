@@ -165,6 +165,72 @@ describe('D7 allocation — AC#5 auto-cancel vs keep', () => {
   })
 })
 
+describe('D7 allocation — combined edits (atomic, multi-SKU in one save)', () => {
+  it('increase SKU X + reduce multi-task SKU Y in a single edit — both apply', () => {
+    const o = makeOrder([{ sku: A, qty: 10 }, { sku: B, qty: 2 }])
+    const p1 = mkTask([line(o, A, 3)]), p2 = mkTask([line(o, A, 2)]), p3 = mkTask([line(o, A, 5)])
+    // A: 10 → 6 (reduce 4, default drain), B: 2 → 5 (increase 3) — one call
+    expect(editOutboundOrder(o.id, [{ sku: A, qty: 6 }, { sku: B, qty: 5 }]).ok).toBe(true)
+    expect(getPickingTask(p2.id)!.status).toBe('canceled') // A drained smallest-first
+    expect(taskQtyForSku(p1.id, o.id, A)).toBe(1)
+    expect(taskQtyForSku(p3.id, o.id, A)).toBe(5)
+    expect(orderQty(o.id)).toBe(11)          // 6 + 5
+    expect(resFor(o.id, A)).toBe(6)          // released 4
+    expect(resFor(o.id, B)).toBe(5)          // reserved +3
+    cleanup(o)
+  })
+
+  it('atomic: if the increase can’t be reserved, the multi-task reduction is NOT applied', () => {
+    const o = makeOrder([{ sku: A, qty: 10 }, { sku: B, qty: 2 }])
+    const p1 = mkTask([line(o, A, 3)]), p2 = mkTask([line(o, A, 2)]), p3 = mkTask([line(o, A, 5)])
+    // A: 10 → 6 (valid reduction) but B: 2 → 100000 (unreservable) → whole edit rejected
+    const res = editOutboundOrder(o.id, [{ sku: A, qty: 6 }, { sku: B, qty: 100000 }])
+    expect(res.ok).toBe(false); if (!res.ok) expect(res.reason).toBe('NO_ALLOCATABLE_STOCK')
+    // nothing committed — A tasks and both order lines untouched
+    expect(taskQtyForSku(p1.id, o.id, A)).toBe(3)
+    expect(taskQtyForSku(p2.id, o.id, A)).toBe(2)
+    expect(taskQtyForSku(p3.id, o.id, A)).toBe(5)
+    expect(getPickingTask(p2.id)!.status).toBe('open')
+    expect(orderQty(o.id)).toBe(12)          // 10 + 2, unchanged
+    expect(resFor(o.id, A)).toBe(10)
+    expect(resFor(o.id, B)).toBe(2)
+    cleanup(o)
+  })
+
+  it('reduce TWO multi-task SKUs in one edit, each with its own override', () => {
+    const o = makeOrder([{ sku: A, qty: 10 }, { sku: B, qty: 6 }])
+    const a1 = mkTask([line(o, A, 3)]), a2 = mkTask([line(o, A, 2)]), a3 = mkTask([line(o, A, 5)])
+    const b1 = mkTask([line(o, B, 2)]), b2 = mkTask([line(o, B, 4)])
+    const res = editOutboundOrder(o.id, [{ sku: A, qty: 6 }, { sku: B, qty: 3 }], undefined, {
+      [A]: [{ taskId: a3.id, reduceBy: 4 }],                    // take all 4 from A's biggest task
+      [B]: [{ taskId: b2.id, reduceBy: 3 }, { taskId: b1.id, reduceBy: 0 }], // take 3 from B's biggest
+    })
+    expect(res.ok).toBe(true)
+    expect(taskQtyForSku(a1.id, o.id, A)).toBe(3); expect(taskQtyForSku(a2.id, o.id, A)).toBe(2)
+    expect(taskQtyForSku(a3.id, o.id, A)).toBe(1) // 5 → 1
+    expect(taskQtyForSku(b1.id, o.id, B)).toBe(2) // untouched
+    expect(taskQtyForSku(b2.id, o.id, B)).toBe(1) // 4 → 1
+    expect(resFor(o.id, A)).toBe(6); expect(resFor(o.id, B)).toBe(3)
+    cleanup(o)
+  })
+
+  it('atomic: a bad override on ONE SKU rejects the whole edit — the other SKU is untouched', () => {
+    const o = makeOrder([{ sku: A, qty: 10 }, { sku: B, qty: 6 }])
+    const a1 = mkTask([line(o, A, 3)]), a2 = mkTask([line(o, A, 2)]), a3 = mkTask([line(o, A, 5)])
+    const b1 = mkTask([line(o, B, 2)]), b2 = mkTask([line(o, B, 4)])
+    const res = editOutboundOrder(o.id, [{ sku: A, qty: 6 }, { sku: B, qty: 3 }], undefined, {
+      [A]: [{ taskId: a3.id, reduceBy: 4 }],                    // valid
+      [B]: [{ taskId: b2.id, reduceBy: 2 }],                    // sums to 2, need 3 → INVALID_ALLOCATION
+    })
+    expect(res.ok).toBe(false); if (!res.ok) expect(res.reason).toBe('INVALID_ALLOCATION')
+    // A must NOT have been drained even though its override was valid (no partial apply)
+    expect(taskQtyForSku(a1.id, o.id, A)).toBe(3); expect(taskQtyForSku(a2.id, o.id, A)).toBe(2); expect(taskQtyForSku(a3.id, o.id, A)).toBe(5)
+    expect(taskQtyForSku(b1.id, o.id, B)).toBe(2); expect(taskQtyForSku(b2.id, o.id, B)).toBe(4)
+    expect(orderQty(o.id)).toBe(16) // 10 + 6, unchanged
+    cleanup(o)
+  })
+})
+
 describe('D7 allocation — unassigned qty', () => {
   it('reduces UNASSIGNED (not-on-a-task) qty first, before touching a pending task', () => {
     const o = makeOrder([{ sku: A, qty: 10 }])

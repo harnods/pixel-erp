@@ -81,6 +81,16 @@ export interface OutgoingOrder {
   createdAt?: string;
   /** Actual line items — stored for user-created orders; seed orders derive via orderSkuLines(). */
   lines?: StoredOrderLine[];
+  /** D7 — audit trail of edits to the order (newest last). Each entry lists the
+   *  field changes as "old → new" so the activity log shows exactly what changed. */
+  editLog?: OutgoingEditEntry[];
+}
+
+/** One recorded edit: who, when, and the individual field changes ("apa ke apa"). */
+export interface OutgoingEditEntry {
+  at: string;
+  by: string;
+  changes: { label: string; value: string }[];
 }
 
 export interface StoredOrderLine {
@@ -678,6 +688,20 @@ export function updateOutgoingOrderLines(
     if (header.dueDate !== undefined) order.dueDate = header.dueDate;
     if (header.memo !== undefined) order.memo = header.memo;
   }
+  persistOutgoing();
+}
+
+/** D7 — append an edit entry to the order's audit trail. `changes` is the list of
+ *  "apa ke apa" field diffs (empty → no-op, so a no-change save records nothing). */
+export function recordOutgoingEdit(
+  orderId: string,
+  changes: { label: string; value: string }[],
+  by = "Rizal Candra",
+): void {
+  if (!changes.length) return;
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  if (!order) return;
+  (order.editLog ??= []).push({ at: new Date().toISOString(), by, changes });
   persistOutgoing();
 }
 
