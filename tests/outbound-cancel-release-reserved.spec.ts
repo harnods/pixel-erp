@@ -21,7 +21,7 @@ import {
   addOutgoing, canReleaseReservedForOrder, canCancelOutboundOrder,
   releaseReservedForCancelledOrder, outgoingOrders, type OutgoingOrder,
 } from '~/data/outgoing'
-import { addPickingTask, startPicking, endPicking, getPickingTask } from '~/data/pickingTasks'
+import { addPickingTask, startPicking, endPicking, getPickingTask, getPickingForOrder, packableOrderIds } from '~/data/pickingTasks'
 import { addPackingTask, endPacking, getPackingTask } from '~/data/packingTasks'
 import { addDeliveryTaskFromPackingTasks, handoverToCourierBulk, completeShipment, deliveryTasks } from '~/data/deliveryTasks'
 import { syncOutboundOrderStatuses, cancelOutboundOrder } from '~/data/outboundSync'
@@ -246,7 +246,7 @@ describe('D6 — Release reserved on cancelled outbound', () => {
     expect(reservedQtyForTask(order.id)).toBe(0)
   })
 
-  it('D2 cascade: a SHARED picking task is NOT cancelled — the cancelled order\'s lines are removed, task continues', () => {
+  it('D2 cascade: a SHARED picking task is NOT cancelled — the cancelled order stays LINKED (visible on both detail pages) but not packable', () => {
     const orderA = makeOrder()
     const orderB = makeOrder()
     const pt = addPickingTask({
@@ -259,10 +259,12 @@ describe('D6 — Release reserved on cancelled outbound', () => {
     const res = cancelOutboundOrder(orderA.id)
     expect(res.ok).toBe(true)
     const t = getPickingTask(pt.id)!
-    expect(t.status).not.toBe('canceled')          // shared task survives
-    expect(t.salesOrderIds).toEqual([orderB.id])    // order A dropped
-    expect((t.lines ?? []).some((l) => l.orderId === orderA.id)).toBe(false) // A's lines gone
-    expect((t.lines ?? []).some((l) => l.orderId === orderB.id)).toBe(true)  // B's lines kept
+    expect(t.status).not.toBe('canceled')                       // shared task survives
+    // Order A is KEPT on the task so it stays under Linked transactions on both A's
+    // order detail and the picking task detail — it's just no longer packable.
+    expect(t.salesOrderIds.sort()).toEqual([orderA.id, orderB.id].sort())
+    expect(getPickingForOrder(orderA.id).map((x) => x.id)).toContain(pt.id) // still linked to A
+    expect(packableOrderIds(t)).not.toContain(orderA.id)        // A excluded (nothing picked here)
 
     releaseReservedForCancelledOrder(orderA.id)
     cancelOutboundOrder(orderB.id); releaseReservedForCancelledOrder(orderB.id)

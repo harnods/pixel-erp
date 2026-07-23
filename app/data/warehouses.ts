@@ -95,7 +95,7 @@ const SEED_WAREHOUSES: Warehouse[] = [
     description: 'Gudang distribusi wilayah Makassar dan Indonesia Timur',
     name: 'Gudang Makassar Selatan',
     code: 'GDG-MKS-01',
-    skuTotal: 9,
+    skuTotal: 30,
     pics: [{ id: 'p10', name: 'Agus Firmansyah' }],
     address: 'Jl. Metro Tanjung Bunga No. 12, Kelurahan Tanjung Merdeka, Kecamatan Tamalate, Kota Makassar, Sulawesi Selatan 90224',
     status: 'active',

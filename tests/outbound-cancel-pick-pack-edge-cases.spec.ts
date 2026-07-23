@@ -161,7 +161,7 @@ describe('cancel + non-marketplace leftover picking task must not be packable', 
 
 // ── Multi-order picking: one order cancelled ───────────────────────────────────
 describe('cancel one order within a SHARED picking task', () => {
-  it('active (partially picked) shared task drops the cancelled order and keeps packing the other', () => {
+  it('active (partially picked) shared task keeps the cancelled order LINKED (visible) but not packable; keeps packing the other', () => {
     const a = makeOrder(2)
     const b = makeOrder(2)
     const pt = addPickingTask({
@@ -174,9 +174,12 @@ describe('cancel one order within a SHARED picking task', () => {
 
     cancelOutboundOrder(a.id)
     const t = getPickingTask(pt.id)!
-    expect(t.status).not.toBe('canceled')       // shared task survives
-    expect(t.salesOrderIds).toEqual([b.id])      // A dropped entirely
-    expect(packableOrderIds(t)).toEqual([b.id])  // only B is packable now
+    expect(t.status).not.toBe('canceled')                  // shared task survives
+    // A is KEPT on the task → stays under Linked transactions on A's order detail AND
+    // in the picking task's own Sales orders list. It's just no longer packable.
+    expect(t.salesOrderIds.sort()).toEqual([a.id, b.id].sort())
+    expect(getPickingForOrder(a.id).map((x) => x.id)).toContain(pt.id) // A still linked
+    expect(packableOrderIds(t)).toEqual([b.id])            // only B is packable now
     expect(canCreatePackingFrom(t)).toBe(true)
 
     releaseReservedForCancelledOrder(a.id)
@@ -361,29 +364,34 @@ describe('multi-order picking/packing/shipment — cancel one order, keep the ot
     ['completed', (pt: string) => { startPicking(pt) }],
   ] as const) void label // (states are exercised explicitly below for clarity)
 
-  it('Q2 open: cancel S02 → task NOT cancelled, S02 lines dropped, S01 continues', () => {
+  // Across all pre-completion states, a shared task keeps BOTH orders LINKED (cancelled
+  // S02 stays visible on its order detail AND in the picking task's Sales orders list),
+  // the task keeps running, and only S01 stays packable.
+  it('Q2 open: cancel S02 → task NOT cancelled, S02 stays linked but not packable, S01 continues', () => {
     const s01 = order([line(A, 2)]); const s02 = order([line(A, 2)], 'Shopee: Central Perk')
     const pt = sharedPick(s01, s02)
     cancelOutboundOrder(s02.id)
     const t = getPickingTask(pt.id)!
     expect(t.status).not.toBe('canceled')
-    expect(t.salesOrderIds).toEqual([s01.id])
-    expect(packableOrderIds(t)).not.toContain(s02.id)
+    expect(t.salesOrderIds.sort()).toEqual([s01.id, s02.id].sort())
+    expect(getPickingForOrder(s02.id).map((x) => x.id)).toContain(pt.id) // S02 still linked
+    expect(packableOrderIds(t)).not.toContain(s02.id) // (nothing picked yet, so neither is packable)
     cleanup(s01, s02)
   })
 
-  it('Q2 in progress: cancel S02 → task keeps running for S01, S02 lines dropped', () => {
+  it('Q2 in progress: cancel S02 → task keeps running for S01, S02 stays linked', () => {
     const s01 = order([line(A, 2)]); const s02 = order([line(A, 2)], 'Shopee: Central Perk')
     const pt = sharedPick(s01, s02)
     startPicking(pt.id)
     cancelOutboundOrder(s02.id)
     const t = getPickingTask(pt.id)!
     expect(t.status).not.toBe('canceled')
-    expect(t.salesOrderIds).toEqual([s01.id])
+    expect(t.salesOrderIds.sort()).toEqual([s01.id, s02.id].sort())
+    expect(getPickingForOrder(s02.id).map((x) => x.id)).toContain(pt.id)
     cleanup(s01, s02)
   })
 
-  it('Q2 partially picked: cancel S02 → task kept for S01, S02 lines dropped', () => {
+  it('Q2 partially picked: cancel S02 → task kept for S01, S02 stays linked but not packable', () => {
     const s01 = order([line(A, 2)]); const s02 = order([line(A, 2)], 'Shopee: Central Perk')
     const pt = sharedPick(s01, s02)
     startPicking(pt.id)
@@ -392,7 +400,8 @@ describe('multi-order picking/packing/shipment — cancel one order, keep the ot
     cancelOutboundOrder(s02.id)
     const t = getPickingTask(pt.id)!
     expect(t.status).not.toBe('canceled')
-    expect(t.salesOrderIds).toEqual([s01.id])
+    expect(t.salesOrderIds.sort()).toEqual([s01.id, s02.id].sort())
+    expect(getPickingForOrder(s02.id).map((x) => x.id)).toContain(pt.id)
     expect(packableOrderIds(t)).toEqual([s01.id])
     cleanup(s01, s02)
   })

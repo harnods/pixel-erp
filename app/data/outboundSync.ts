@@ -1,5 +1,5 @@
 import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder } from "./outgoing";
-import { getPickingForOrder, cancelPickingTask, removeOrderFromPickingTask } from "./pickingTasks";
+import { getPickingForOrder, cancelPickingTask } from "./pickingTasks";
 import { getPackingForOrder, cancelPackingTask } from "./packingTasks";
 import { deliveryTasks, getDeliveryForOrder, canCancelDeliveryTask, cancelDeliveryTask, shippedQtyBySkuForOrder } from "./deliveryTasks";
 
@@ -36,10 +36,10 @@ export function cancelOutboundOrder(orderId: string, reason?: string): CancelOut
     if (t.status === "canceled") continue;
     const hasOtherLiveOrder = t.salesOrderIds.some((id) => id !== orderId && !isCanceled(id));
     if (t.salesOrderIds.length > 1 && hasOtherLiveOrder) {
-      // Shared task still serving another live order — keep it running. Drop this
-      // order's lines while unfinished; a completed shared task keeps its lines as
-      // an audit record (packableOrderIds() already excludes the cancelled order).
-      if (t.status !== "completed") removeOrderFromPickingTask(t.id, orderId);
+      // Shared task still serving another live order — keep it running AND keep the
+      // cancelled order linked (so it stays visible under Linked transactions on the
+      // order's detail page). It simply can't be packed anymore — packableOrderIds()
+      // already excludes a cancelled order. We deliberately do NOT drop its lines.
     } else {
       // This cancelled order is the task's only (remaining) live order → void it,
       // regardless of how far picking got.

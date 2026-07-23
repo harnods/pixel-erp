@@ -96,6 +96,9 @@ const WAREHOUSE_CATEGORIES: Record<string, Set<string>> = {
 export function warehouseProducts(warehouseId: string): Product[] {
   const wh = warehouses.find((w) => w.id === warehouseId)
   if (!wh || wh.isDefault || !wh.skuTotal) return []
+  // wh-006 (Gudang Makassar Selatan) is the demo/QA warehouse — carry the FULL catalog
+  // so ANY product can be ordered/picked/shipped from it (not a 9-SKU subset).
+  if (warehouseId === 'wh-006') return [...PRODUCTS]
   const allowed = WAREHOUSE_CATEGORIES[warehouseId]
   const pool = allowed ? PRODUCTS.filter((p) => allowed.has(p.category)) : PRODUCTS
   const n = Math.min(wh.skuTotal, pool.length)
