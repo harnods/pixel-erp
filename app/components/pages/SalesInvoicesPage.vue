@@ -116,7 +116,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     has-checkbox
     has-ai-chat
-    :context-label="(row) => `Sales Invoice · ${row.number}`"
+    :search="search"
+    :context-label="(row) => `Sales Invoice #${row.number}`"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
