@@ -8,14 +8,20 @@
   <MpPopover
     id="header-quick-create"
     placement="bottom-end"
+    trigger="hover"
     use-portal
-    is-close-on-blur
     is-close-on-escape
-    is-focus-on-close
     v-slot="{ onClosePopover }"
+    @open="menuOpen = true"
+    @close="menuOpen = false"
   >
+    <!-- MpPopoverTrigger allows exactly ONE child node (no sibling comments inside).
+         is-open keeps the hover fill while the popover is open, even after the cursor
+         moves off the button onto the portaled popover (real :hover can't span that).
+         Tracked via the popover's own open/close events — the v-slot isOpen doesn't
+         reliably flip back to false on hover-out. -->
     <MpPopoverTrigger>
-      <button class="quick-create__trigger" type="button" aria-label="Create new">
+      <button class="quick-create__trigger" :class="{ 'is-open': menuOpen }" type="button" aria-label="Create new">
         <MpIcon name="add" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
@@ -38,7 +44,11 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon } from "@mekari/pixel3";
+
+// Whether the popover is currently open — drives the trigger's persistent hover fill.
+const menuOpen = ref(false);
 
 interface QuickCreateItem {
   label: string;
@@ -80,7 +90,8 @@ function go(item: QuickCreateItem, closePopover: () => void) {
   border-radius: var(--mp-radii-lg, 8px);
   cursor: pointer;
 }
-.quick-create__trigger:hover {
+.quick-create__trigger:hover,
+.quick-create__trigger.is-open {
   background: var(--mp-colors-background-surface-bold-hovered, rgba(255, 255, 255, 0.12));
 }
 .quick-create__trigger:active {
