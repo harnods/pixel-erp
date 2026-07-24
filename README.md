@@ -1,17 +1,14 @@
-# Mekari ERP — App Shell Boilerplate
+# Mekari ERP — WMS/ERP Prototype
 
-Boilerplate Nuxt 4 + Mekari Pixel 3 untuk Mekari ERP. Header, sidebar navigasi 3-level, dan dynamic page routing sudah siap — tim cukup fokus mengisi konten per halaman.
+A clickable Nuxt 3 + Vue 3 prototype of Mekari's ERP and WMS (Warehouse
+Management System) product, built on the **Mekari Pixel 3** design system.
+Everything runs in the browser against mock data — there is no real backend,
+so anyone can clone it, run it, and start prototyping new screens or flows
+immediately.
 
----
-
-## Tech Stack
-
-| Layer | Library |
-|-------|---------|
-| Framework | [Nuxt 4](https://nuxt.com) (compat mode) + Vue 3 |
-| Design System | [@mekari/pixel3](https://docs.mekari.design/) |
-| Language | TypeScript |
-| Styling | CSS Variables (Pixel tokens) |
+This is the right repo for: mocking up a new ERP/WMS screen, testing a flow
+end-to-end with realistic (fake) data, or demoing a feature idea before it's
+built for real.
 
 ---
 
@@ -29,211 +26,174 @@ npm install
 npm run dev
 ```
 
-Buka `http://localhost:3000`.
+Open **http://localhost:4321**.
+
+Other scripts: `npm run build` (production build), `npm test` (run the test
+suite), `npm run generate` (static export).
+
+> All data is fake and lives only in your browser's `localStorage` — nothing
+> is shared between people or devices. If a demo gets into a confusing state,
+> open the account menu (top right) → **Reset demo data** to wipe it back to
+> the seed state.
 
 ---
 
-## Cara Tambah Halaman Baru
+## What you're looking at: Scenarios
 
-Untuk mengerjakan halaman baru (misalnya **Sales invoices**), cukup 2 langkah:
+The same app ships four "scenarios" — different slices of the product aimed
+at different audiences. Switch between them from the account menu (top
+right) → **Switch to WMS → Select scenario**:
 
-### Langkah 1 — Buat component
+| Scenario | What it shows |
+|---|---|
+| **ERP** | The full ERP suite — Sales, Purchases, Inventory, Accounting, Production, Contacts, Settings — plus WMS as one menu inside it. This is the default. |
+| **WMS Standalone** | WMS sold as its own product: Home, Reports, Inventory, Warehouses, Inbound/Outbound delivery, Stock adjustments, Settings. |
+| **WMS Ops / WMS Ops 2** | A trimmed-down, single-warehouse operator view (what a warehouse worker would actually use day to day) — scoped to whichever warehouse and flows (inbound/outbound) that operator is assigned. |
 
-Buat file di `app/components/pages/`:
-
-```
-app/components/pages/SalesInvoicesPage.vue
-```
-
-```vue
-<template>
-  <div>
-    <!-- konten halaman di sini -->
-  </div>
-</template>
-```
-
-### Langkah 2 — Daftarkan di registry
-
-Buka `app/pages/index.vue`, tambahkan entry di `pageRegistry`:
-
-```ts
-const pageRegistry: Record<string, Component> = {
-  'Home': defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
-
-  // Tambahkan halaman baru di bawah ini:
-  'Sales invoices': defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
-}
-```
-
-> **Key harus sama persis** dengan label menu di sidebar (case-sensitive).
-> Halaman yang belum didaftarkan akan otomatis tampil `PlaceholderPage`.
+Your choice is remembered (in `localStorage`), so refreshing stays on the
+same scenario until you switch again.
 
 ---
 
-## Daftar Key Navigasi
+## Design rules — read this before building a screen
 
-Berikut semua key yang bisa didaftarkan di `pageRegistry`:
+**[DESIGN.md](DESIGN.md)** is the single source of truth for how things
+should look and behave: the Enterprise Pixel theme, page layout (stage
+padding, the 72px page title bar), which Pixel components to use, button
+rules (secondary vs. ghost, "Save" vs. "Save changes"), status badge
+mapping, and a pre-coding checklist.
 
-### Home
-| Key | Menu |
-|-----|------|
-| `'Home'` | Home |
-
-### Reports
-| Key | Menu |
-|-----|------|
-| `'Financials'` | Reports → Financials |
-| `'Sales'` | Reports → Sales |
-| `'Purchases'` | Reports → Purchases |
-| `'Inventory'` | Reports → Inventory |
-| `'Tax'` | Reports → Tax |
-| `'Cash & bank'` | Reports → Cash & bank |
-| `'Production'` | Reports → Production |
-| `'Fixed assets'` | Reports → Fixed assets |
-
-### Accounting
-| Key | Menu |
-|-----|------|
-| `'Cash management'` | Accounting → Cash management |
-| `'Reconciliations'` | Accounting → Reconciliations |
-| `'Consolidation'` | Accounting → Consolidation |
-| `'Chart of accounts'` | Accounting → Chart of accounts |
-| `'Close books'` | Accounting → Close books |
-| `'Fixed assets'` | Accounting → Fixed assets |
-| `'Bank rules'` | Accounting → Bank rules |
-
-### Sales
-| Key | Menu |
-|-----|------|
-| `'Sales invoices'` | Sales → Sales invoices |
-| `'Sales deliveries'` | Sales → Sales deliveries |
-| `'Sales orders'` | Sales → Sales orders |
-| `'Sales quotes'` | Sales → Sales quotes |
-
-### Purchases
-| Key | Menu |
-|-----|------|
-| `'Purchase invoices'` | Purchases → Purchase invoices |
-| `'Purchase deliveries'` | Purchases → Purchase deliveries |
-| `'Purchase orders'` | Purchases → Purchase orders |
-| `'Purchase quotes'` | Purchases → Purchase quotes |
-| `'Purchase requests'` | Purchases → Purchase requests |
-
-### Expenses
-| Key | Menu |
-|-----|------|
-| `'Expenses'` | Expenses |
-
-### Inventory
-| Key | Menu |
-|-----|------|
-| `'Products'` | Inventory → Products → Products |
-| `'Categories'` | Inventory → Products → Categories |
-| `'Variant options'` | Inventory → Products → Variant options |
-| `'Units'` | Inventory → Products → Units |
-| `'Price rules'` | Inventory → Products → Price rules |
-| `'Stock adjustments'` | Inventory → Products → Stock adjustments |
-
-### Warehouses
-| Key | Menu |
-|-----|------|
-| `'All warehouses'` | Warehouses → Warehouse → All warehouses |
-| `'Stock adjustments'` | Warehouses → Warehouse → Stock adjustments |
-| `'Warehouse transfers'` | Warehouses → Warehouse → Warehouse transfers |
-| `'Stock requests'` | Warehouses → Warehouse → Stock requests |
-| `'Storage locations'` | Warehouses → Warehouse → Storage locations |
-| `'Sales orders'` | Warehouses → Fulfillments → Sales orders |
-| `'Purchase orders'` | Warehouses → Fulfillments → Purchase orders |
-
-### Production
-| Key | Menu |
-|-----|------|
-| `'Production plans'` | Production → Production plans |
-| `'Work orders'` | Production → Work orders |
-| `'Bill of materials'` | Production → Bill of materials |
-
-### Contacts
-| Key | Menu |
-|-----|------|
-| `'Customers'` | Contacts → Customers → Customers |
-| `'Contact groups'` | Contacts → Customers → Contact groups |
-| `'Vendors'` | Contacts → Vendors → Vendors |
-| `'Employees'` | Contacts → Employees → Employees |
-| `'Other contacts'` | Contacts → Other contacts → Other contacts |
-
-### Settings
-| Key | Menu |
-|-----|------|
-| `'Company profile'` | Settings → Company profile |
-| `'Users & roles'` | Settings → Users & roles |
-| `'Billing'` | Settings → Billing |
-| `'Default accounts'` | Settings → Default accounts |
-| `'Templates'` | Settings → Templates |
-| `'Custom fields'` | Settings → Custom fields |
-| `'Approval workflows'` | Settings → Approval workflows |
-| `'Tagging rules'` | Settings → Tagging rules |
-| `'Tax rates'` | Settings → Tax rates |
-| `'Currencies'` | Settings → Currencies |
-| `'Payment terms'` | Settings → Payment terms |
-| `'Payment methods'` | Settings → Payment methods |
-| `'Tags'` | Settings → Tags |
+**[docs/](docs/README.md)** goes deeper on specific patterns — page title
+bar, index page format, detail page format, the custom `ErpTablePage` /
+`ErpFilterBar` / `ErpPagination` / `ErpStatusBadge` components, forms, modals,
+drawers, toasts, and date formatting. Check here before inventing a new UI
+pattern — there's almost always an existing one to reuse.
 
 ---
 
-## Struktur File
+## How the app is put together
 
 ```
 erp-app/
 ├── app/
-│   ├── app.vue                        # Entry point
-│   ├── layouts/
-│   │   └── default.vue                # Shell: Header + Sidebar (jangan diubah)
+│   ├── app.vue                        # Entry point (sets the Pixel Enterprise theme)
+│   ├── layouts/default.vue            # Shell: header + sidebar (don't change)
 │   ├── pages/
-│   │   └── index.vue                  # Page title bar + stage + pageRegistry ← tambah halaman di sini
+│   │   └── [...slug].vue              # ALL routing lives here — see below
 │   ├── components/
-│   │   ├── ErpHeader.vue              # Header bar (jangan diubah)
-│   │   ├── ErpSidebar.vue             # Navigasi 3-level (jangan diubah)
-│   │   └── pages/
-│   │       ├── HomePage.vue           # ✅ Contoh halaman
-│   │       ├── PlaceholderPage.vue    # Fallback (jangan diubah)
-│   │       └── YourPage.vue           # ← buat file baru di sini
-│   ├── composables/
-│   │   └── useNavigation.ts           # Shared nav state (jangan diubah)
-│   ├── assets/
-│   │   └── css/pixel.css              # Pixel design tokens
-│   └── public/
-│       ├── mekari-erp-logo.svg
-│       ├── sidebar-toggle.svg
-│       └── shortcut-icon.svg
-├── nuxt.config.ts
+│   │   ├── ErpHeader.vue              # Top header bar, scenario switcher, reset-data control
+│   │   ├── ErpSidebar.vue             # 3-level nav — add new menu items here
+│   │   └── pages/                     # One .vue file per screen (this is where you'll spend most of your time)
+│   │       ├── HomePage.vue
+│   │       ├── PlaceholderPage.vue     # Shown for any screen not yet built
+│   │       └── ...
+│   ├── components/patterns/           # Reusable ERP building blocks: ErpTablePage, ErpFilterBar, ConfirmModal, etc.
+│   ├── data/                          # Mock "database" — one file per entity (warehouses.ts, couriers.ts, ...)
+│   └── composables/
+│       ├── useNavigation.ts           # Sidebar ↔ URL mapping (don't change)
+│       └── useScenario.ts             # Which of the 4 scenarios is active
+├── tests/                             # Vitest specs (93+ files) — data-layer logic, not UI snapshots
+├── docs/                              # Pattern-level design docs (see above)
+├── DESIGN.md                          # Design rules (see above)
 └── package.json
 ```
 
+### Routing: `app/pages/[...slug].vue`
+
+Every URL in the app is handled by this one file, via two mechanisms:
+
+1. **`pageRegistry`** — a simple lookup keyed by the exact page label shown
+   in the sidebar, for plain pages with no dynamic ID:
+   ```ts
+   const pageRegistry: Record<string, Component> = {
+     'Couriers': defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
+     // ...
+   }
+   ```
+   A page not yet in this list just shows a placeholder — nothing breaks.
+
+2. **Detail routes** (anything with a dynamic `:id`, like `/warehouses/wh-001`
+   or `/product-list/SKU-1/edit`) are matched by hand further down the same
+   file, by inspecting the URL's path segments.
+
+### Mock data: `app/data/`
+
+There's no backend — every entity (warehouses, products, purchase orders,
+couriers, ...) is a plain reactive array in `app/data/*.ts`, seeded with
+realistic fake data on load. Anything a user creates or edits is persisted to
+`localStorage` so it survives a refresh, but **Reset demo data** (account
+menu) wipes it all back to the original seed. Never hardcode data inside a
+`.vue` component — add or extend a file in `app/data/` instead.
+
 ---
 
-## Navigasi
+## Adding a new screen — the actual steps
 
-Sidebar mendukung 3 level navigasi:
+Using a simple example, e.g. adding **"Couriers"** as a new page under WMS:
 
+**1. Add the mock data** (`app/data/couriers.ts`):
+```ts
+export const couriers = reactive<Courier[]>(seedOrLoadedData)
+export function addCourier(name: string) { /* ... */ }
 ```
-Level 1  Nav icon (selalu visible, collapsed/expanded)
-Level 2  Flyout popover (muncul saat hover) — untuk menu dengan sub-item
-Level 3  Panel sidebar (muncul saat klik item di flyout) — untuk section dengan banyak halaman
+
+**2. Build the page** (`app/components/pages/CouriersPage.vue`) — reuse
+`ErpTablePage` for any list/index screen (see
+[docs/patterns/ErpTablePage.md](docs/patterns/ErpTablePage.md)), don't build
+a table from scratch.
+
+**3. Add it to the sidebar** (`app/components/ErpSidebar.vue`):
+```js
+{ label: 'Couriers' },
 ```
 
-Menu yang langsung buka panel tanpa flyout: **Reports** dan **Settings**.
+**4. Register the route** (`app/pages/[...slug].vue`):
+```js
+'Couriers': defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
+```
+The key must match the sidebar label **exactly**.
+
+**5. (Optional) Title-bar button** — if the page needs a primary action like
+"Add courier" next to the page title, add a small conditional block keyed on
+`currentPageKey === 'Couriers'` in the title-bar section of `[...slug].vue`
+(search for an existing one, e.g. `'Bill of materials'`, and copy its shape).
+
+That's it — no build step, no backend, no migration. Refresh the browser and
+the new page is live in the sidebar.
+
+---
+
+## Testing
+
+```bash
+npm test
+```
+
+Runs the Vitest suite (`tests/*.spec.ts`) — these mostly check the mock
+data layer's business logic (stock math, status transitions, validation
+rules), not visual UI. Worth running after changing anything in `app/data/`.
+
+---
+
+## Deployment
+
+Deployed to **Vercel** as a static SPA (`vercel.json` handles client-side
+routing). Pushing to `main` triggers a deploy — there's no separate backend
+or database to provision.
 
 ---
 
 ## Pixel Design System
 
-Semua komponen dan token tersedia dari `@mekari/pixel3`.
+All UI components and design tokens come from `@mekari/pixel3` (Enterprise
+theme):
 
 ```vue
 <script setup lang="ts">
-import { MpButton, MpTable } from '@mekari/pixel3'
+import { MpButton } from '@mekari/pixel3'
 </script>
 ```
 
-Dokumentasi: [docs.mekari.design](https://docs.mekari.design/)
+Docs: [docs.mekari.design](https://docs.mekari.design/). Check
+[DESIGN.md](DESIGN.md) first for this project's specific rules before
+reaching for a Pixel component directly.
