@@ -87,12 +87,14 @@ describe('WMS stock adjustment — cancel replaces delete', () => {
     expect(getWmsAdjustment(a.id)!.status).toBe('in_progress')
     expect(canCancelWmsAdjustment(getWmsAdjustment(a.id)!)).toBe(true)
 
+    // Finishing a count now sends it for manager approval → "counted" (approval then
+    // makes it "completed"). Either way it's FINISHED and no longer cancelable.
     finishWmsCount(a.id, [{ sku: '1001', qty: 5 }])
-    expect(getWmsAdjustment(a.id)!.status).toBe('completed')
+    expect(getWmsAdjustment(a.id)!.status).toBe('counted')
     expect(canCancelWmsAdjustment(getWmsAdjustment(a.id)!)).toBe(false)
 
-    cancelWmsAdjustment(a.id) // no-op — already completed
-    expect(getWmsAdjustment(a.id)!.status).toBe('completed')
+    cancelWmsAdjustment(a.id) // no-op — already finished (counted, awaiting approval)
+    expect(getWmsAdjustment(a.id)!.status).toBe('counted')
   })
 
   it('canceling a not-yet-finished cycle count keeps the record (not deleted)', () => {
