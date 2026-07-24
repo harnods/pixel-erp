@@ -2,10 +2,10 @@ import {
   receipts, cancelReceipt, canCancelReceipt, canEditReceipt, updateReceiptLines, appendReceiptEditLog,
 } from "./receipts";
 import {
-  receivingTasksForReceipt, cancelReceivingTask, flagTaskCanceledPoAck, forceCancelEndedTask,
-  lockedReceivingQtyForSku, recomputeReceiptStatus,
+  receivingTasksForReceipt, getReceivingTask, cancelReceivingTask, flagTaskCanceledPoAck,
+  forceCancelEndedTask, lockedReceivingQtyForSku, recomputeReceiptStatus,
 } from "./receivingTasks";
-import { getPutAwayTask, flagPutAwayCanceledPoAck, cancelPutAway } from "./putAwayTasks";
+import { getPutAwayTask, flagPutAwayCanceledPoAck, cancelPutAway, removeReceivingTasksFromPutAway } from "./putAwayTasks";
 import { lineItemsForReceipt } from "./receiptLineItems";
 import { CATALOG } from "./catalog";
 
@@ -134,35 +134,60 @@ export function cancelInboundReceipt(receiptId: string, reason?: string): Cancel
   if (!canCancelReceipt(r)) return { ok: false, reason: "CANNOT_CANCEL" };
 
   const cancelReason = reason ?? "Purchase order was canceled";
-  for (const t of receivingTasksForReceipt(receiptId)) {
-    if (t.status === "open") {
-      cancelReceivingTask(t.id, cancelReason);
-      continue;
-    }
-    if (t.status === "in progress") {
-      flagTaskCanceledPoAck(t.id);
-      continue;
-    }
+  const myTasks = receivingTasksForReceipt(receiptId);
+  // Put-aways referenced by THIS receipt's completed receiving tasks — handled ONCE below
+  // (a single put-away can serve several of this receipt's receiving tasks, or be shared
+  // with other orders), never once-per-receiving-task.
+  const putAwaysToResolve = new Set<string>();
+
+  for (const t of myTasks) {
+    if (t.status === "open") { cancelReceivingTask(t.id, cancelReason); continue; }
+    if (t.status === "in progress") { flagTaskCanceledPoAck(t.id); continue; }
     if (t.status !== "pending put-away" && t.status !== "completed") continue; // canceled: untouched.
 
     if (t.status === "completed" && t.putAwayTaskId) {
       const pa = getPutAwayTask(t.putAwayTaskId);
-      if (pa && pa.status === "open") {
-        // Put-away not started yet → auto-cancel outright, no ack needed. The receiving
-        // task already finished, so it STAYS completed (revertReceiving:false).
-        cancelPutAway(pa.id, cancelReason, { revertReceiving: false });
-        continue;
-      }
-      if (pa && pa.status === "in progress") {
-        // Real put-away work underway → flag it so the operator acknowledges before it's
-        // canceled; the receiving task is left alone (stays completed) either way.
-        flagPutAwayCanceledPoAck(pa.id);
+      if (pa && pa.status !== "completed" && pa.status !== "canceled") {
+        // A live put-away holds this completed receiving task. Leave the receiving task
+        // alone (Completed stays) — the put-away's fate is resolved once, below.
+        putAwaysToResolve.add(pa.id);
         continue;
       }
     }
+    // Ended task with no live put-away: pending put-away (no stock) → auto-cancel; completed
+    // WITH committed stock → flag for ack (stock reversal). Received qty stays on the record.
     if (t.stockCommitted) flagTaskCanceledPoAck(t.id);
     else forceCancelEndedTask(t.id, cancelReason);
   }
+
+  // Resolve each affected put-away exactly once.
+  const myTaskIds = new Set(myTasks.map((t) => t.id));
+  for (const paId of putAwaysToResolve) {
+    const pa = getPutAwayTask(paId);
+    if (!pa) continue;
+    // SHARED with another still-live order? (a receiving task belonging to a different,
+    // not-yet-cancelled receipt). This receipt isn't marked canceled until the end, so
+    // "other receipt, not canceled" reliably means a live sibling order.
+    const sharedWithLiveOrder = pa.receivingTaskIds.some((rid) => {
+      if (myTaskIds.has(rid)) return false;
+      const other = getReceivingTask(rid);
+      if (!other || other.receiptId === receiptId) return false;
+      return receipts.find((r) => r.id === other.receiptId)?.status !== "canceled";
+    });
+    if (sharedWithLiveOrder) {
+      // Drop only THIS order's lines; keep the put-away for the others; flag so the
+      // operator acknowledges before Start/Continue (PRD C1 AC#6 shared-task rule).
+      removeReceivingTasksFromPutAway(pa.id, pa.receivingTaskIds.filter((rid) => myTaskIds.has(rid)));
+      flagPutAwayCanceledPoAck(pa.id);
+    } else if (pa.status === "open") {
+      // Not shared, not started → auto-cancel outright. Receiving stays completed.
+      cancelPutAway(pa.id, cancelReason, { revertReceiving: false });
+    } else {
+      // Not shared, in progress → flag for ack; ack then cancels it (no live order left).
+      flagPutAwayCanceledPoAck(pa.id);
+    }
+  }
+
   cancelReceipt(receiptId);
   return { ok: true };
 }

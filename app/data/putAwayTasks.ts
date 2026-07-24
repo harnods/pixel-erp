@@ -1,6 +1,7 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
 import { operatorForWarehouse } from "./warehouseTeam";
+import { receipts } from "./receipts";
 import {
   receivingTaskRefsForWarehouse,
   receivingTasksForReceipt,
@@ -287,6 +288,37 @@ export function canCancelPutAway(t: PutAwayTask): boolean {
   return t.status === 'open' || t.status === 'in progress';
 }
 
+/** Whether the receipt (Inbound parent) behind a receiving task has been cancelled. */
+function receiptIsCanceled(receiptId: string | undefined): boolean {
+  return !!receiptId && receipts.find((r) => r.id === receiptId)?.status === "canceled";
+}
+
+/** Does this put-away still serve at least one LIVE (non-cancelled) order? */
+function putAwayHasLiveOrder(t: PutAwayTask): boolean {
+  return t.receivingTaskIds.some((rid) => {
+    const rt = getReceivingTask(rid);
+    return rt && !receiptIsCanceled(rt.receiptId);
+  });
+}
+
+/**
+ * A SHARED put-away just had one of its Inbounds cancelled — drop that Inbound's receiving
+ * task(s) so the task proceeds with the remaining orders' lines (WMS PRD 1.1 C1 AC#6:
+ * "the other Inbounds sharing the putaway task are never affected"). Recomputes itemQty.
+ */
+export function removeReceivingTasksFromPutAway(putAwayId: string, taskIds: string[]): void {
+  const t = getPutAwayTask(putAwayId);
+  if (!t) return;
+  const drop = new Set(taskIds);
+  const pairs = t.receivingTaskIds.map((id, i) => ({ id, no: t.receivingTaskNos[i]! }));
+  const kept = pairs.filter((p) => !drop.has(p.id));
+  if (kept.length === t.receivingTaskIds.length) return; // nothing to remove
+  t.receivingTaskIds = kept.map((p) => p.id);
+  t.receivingTaskNos = kept.map((p) => p.no);
+  t.itemQty = receivedUnits(t.receivingTaskIds);
+  persistPutAways();
+}
+
 export function cancelPutAway(
   taskId: string,
   reason?: string,
@@ -333,13 +365,21 @@ export function acknowledgeCanceledPutAway(taskId: string): void {
   const t = getPutAwayTask(taskId);
   if (!t || !t.needsCancelAck) return;
   t.needsCancelAck = false;
+  // SHARED put-away: the cancelled order's receiving lines were already dropped at cancel
+  // time, and other live orders remain → keep the task running (do NOT cancel it). The
+  // operator can Start/Continue put-away for the surviving orders (PRD C1 AC#6).
+  if (putAwayHasLiveOrder(t)) {
+    persistPutAways();
+    return;
+  }
+  // No live order left → cancel the whole put-away. Its source receiving task(s) stay
+  // "completed" (done work is never reverted); the canceled put-away remains in their
+  // linked transactions as an audit record.
   t.status = 'canceled';
   t.canceledDate = nowIso();
   t.canceledBy = "Rizal Candra";
   t.canceledReason = 'Purchase order was canceled';
   persistPutAways();
-  // The source receiving task(s) stay "completed" — done work is never reverted. The
-  // canceled put-away remains in their linked transactions as an audit record.
 }
 
 /**
