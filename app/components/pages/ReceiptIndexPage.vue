@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpDatePicker, MpCheckbox,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpInput, css,
+  MpModalOverlay, MpModalCloseButton, MpInput, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { useTableState } from '~/composables/useTableState'
-import { receiptsForStages, receiptStage, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
+import { receiptsForStages, receiptStage, canCancelReceipt, canCloseReceipt, closeReceipt, isManualReceipt, deleteReceipt, RECEIPT_TODAY, type Receipt } from '~/data/receipts'
 import { warehouses } from '~/data/warehouses'
+import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
+import { cancelInboundReceipt } from '~/data/inboundSync'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -41,7 +43,9 @@ function setDemoState(s: DemoState) {
 const columns: TableColumn[] = [
   { key: 'purchaseNo',       label: 'Number',            width: '260px', sortType: 'text' },
   { key: 'warehouseName',    label: 'Warehouse',         width: '180px', sortType: 'text' },
+  { key: 'vendor',           label: 'Vendor',            width: '200px', sortType: 'text' },
   { key: 'status',           label: 'Status',            width: '150px', sortType: 'text' },
+  { key: 'icons',            label: '',                  width: '100px', noHeader: true },
   { key: 'trackingNos',      label: 'Tracking no.',      width: '150px' },
   { key: 'skuQty',           label: 'SKU qty',           width: '100px', align: 'right', sortType: 'number' },
   { key: 'purchaseQty',      label: 'Purchase qty',      width: '120px', align: 'right', sortType: 'number' },
@@ -49,20 +53,22 @@ const columns: TableColumn[] = [
 ]
 // Column show/hide — first column stays on; the sort menu's "Hide column" flips
 // these off, the ColumnSettings menu turns them back on.
-const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+// trackingNos is hidden by default — user can enable it via column settings.
+// `memo` is a sub-row of Number, not a real column, so it lives in colVis only.
+const colVis = reactive<Record<string, boolean>>({
+  ...Object.fromEntries(columns.map(c => [c.key, c.key !== 'trackingNos'])),
+  memo: true,
+})
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
-const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const baseColumnItems = columns.filter(c => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columnItems = [baseColumnItems[0]!, { key: 'memo', label: 'Memo' }, ...baseColumnItems.slice(1)]
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
-// Status — multi-select. Completed & Canceled are terminal, hidden by default, so
-// the default view shows only the actionable stages.
-const STATUS_OPTIONS = ['On the way', 'Partial reception', 'Completed', 'Canceled']
-const DEFAULT_STATUSES = ['On the way', 'Partial reception']
-// Display label per stage value — "On the way" shows as "Open" (value stays internal).
-const STATUS_LABELS: Record<string, string> = { 'On the way': 'Open' }
-function statusOptionLabel(s: string) { return STATUS_LABELS[s] ?? s }
-const statusFilter = ref<string[]>([...DEFAULT_STATUSES])
+// Status — multi-select, nothing pre-selected: the default view shows ALL statuses
+// (empty filter = show everything). Pick specific statuses to narrow it down.
+const STATUS_OPTIONS = ['Pending', 'Open', 'In progress', 'Partial reception', 'Completed', 'Canceled']
+const statusFilter = ref<string[]>([])
 function toggleStatus(s: string) {
   statusFilter.value = statusFilter.value.includes(s)
     ? statusFilter.value.filter(x => x !== s)
@@ -72,16 +78,19 @@ const statusLabel = computed(() => {
   const n = statusFilter.value.length
   if (n === 0) return ''
   if (n === STATUS_OPTIONS.length) return 'All statuses'
-  if (n === 1) return statusOptionLabel(statusFilter.value[0])
+  if (n === 1) return statusFilter.value[0]
   return `${n} statuses`
 })
-const statusIsDefault = computed(() =>
-  statusFilter.value.length === DEFAULT_STATUSES.length
-  && DEFAULT_STATUSES.every(s => statusFilter.value.includes(s)),
-)
-function resetStatus() { statusFilter.value = [...DEFAULT_STATUSES] }
+const statusIsDefault = computed(() => statusFilter.value.length === 0)
+function resetStatus() { statusFilter.value = [] }
 
-const warehouseFilter = ref('')
+const warehouseFilter = ref<string[]>([])
+// Mirror into the shared singleton so the tab bar's count badges (Receipts (N),
+// Receiving (N), Put-away (N)) scope to whatever warehouse this table is
+// actually filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
 const arrivalPreset = ref('') // '' | today | tomorrow | next7 | thismonth | custom
 const customFrom = ref('')    // DD/MM/YYYY
 const customTo = ref('')
@@ -107,7 +116,17 @@ const arrivalPresets = [
   { label: 'Custom date range', value: 'custom' },
 ]
 
-const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
 const arrivalLabel = computed(() => {
   if (arrivalPreset.value === 'custom') {
     return customFrom.value && customTo.value ? `${customFrom.value} – ${customTo.value}` : 'Custom date range'
@@ -167,8 +186,9 @@ const {
     const matchesSearch = !s
       || row.purchaseNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
-    const matchesStatus = statusFilter.value.includes(receiptStage(row))
-    const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
+      || (row.vendor ?? '').toLowerCase().includes(s)
+    const matchesStatus = !statusFilter.value.length || statusFilter.value.includes(receiptStage(row))
+    const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     let matchesArrival = true
     const range = arrivalRange.value
     if (range) {
@@ -183,32 +203,34 @@ const {
 watch([statusFilter, warehouseFilter, arrivalRange], () => setPage(1))
 
 const hasActiveFilter = computed(
-  () => !!search.value || !statusIsDefault.value || !!warehouseFilter.value || !!arrivalPreset.value,
+  () => !!search.value || !statusIsDefault.value || warehouseFilter.value.length > 0 || !!arrivalPreset.value,
 )
 function clearFilters() {
   search.value = ''
   resetStatus()
-  warehouseFilter.value = ''
+  warehouseFilter.value = []
   clearArrival()
 }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
+// ─── Icon indicator — purchase receiving task badge ─────────────────────────
+function hasReceivingTask(receiptId: string): boolean {
+  return receivingTasksForReceipt(receiptId).length > 0
+}
+
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
-function viewDetails(row: Receipt) { router.push(`/barang-masuk/${row.id}`) }
+function viewDetails(row: Receipt) { router.push(`/inbound-delivery/${row.id}`) }
 
-function purchaseReceiving(row: Receipt) { router.push(`/barang-masuk/${row.id}/receive`) }
-
-// Bulk actions (stubs) — clear the selection after acting.
-function bulkPurchaseReceiving(deselectAll: () => void) { deselectAll() }
-function bulkAction(_kind: 'edit-tracking' | 'set-arrival' | 'cancel', deselectAll: () => void) { deselectAll() }
+function purchaseReceiving(row: Receipt) { router.push(`/inbound-delivery/${row.id}/receive`) }
 
 // ─── Edit tracking no. modal (single row, or bulk grouped by PO) ────────────────
 interface TrackingGroup { receipt: Receipt; nos: string[] }
 const trackingModalOpen = ref(false)
 const trackingGroups = ref<TrackingGroup[]>([])
+const isSaving = ref(false)
 
 function openTrackingModal(rowOrRows: Receipt | Receipt[]) {
   const rows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
@@ -222,10 +244,13 @@ function openTrackingModal(rowOrRows: Receipt | Receipt[]) {
 function closeTrackingModal() { trackingModalOpen.value = false; trackingGroups.value = [] }
 function addTracking(gi: number) { trackingGroups.value[gi].nos.push('') }
 function removeTracking(gi: number, i: number) { trackingGroups.value[gi].nos.splice(i, 1) }
-function saveTracking() {
+async function saveTracking() {
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   for (const g of trackingGroups.value) {
     g.receipt.trackingNos = g.nos.map(t => t.trim()).filter(Boolean)
   }
+  isSaving.value = false
   closeTrackingModal()
 }
 
@@ -236,10 +261,55 @@ function bulkEditTracking(selectedRows: Set<number>, deselectAll: () => void) {
   deselectAll()
 }
 
+// Cancel confirmation — shared by the single-row action and the bulk action.
+// Only receipts not yet completed/canceled are eligible — once fully received,
+// the PO is a permanent record. Partial reception is excluded: it's *closed*
+// (accept-as-final), not cancelled (PRD C1 AC#5).
+function cancelableSelection(selectedRows: Set<number>): Receipt[] {
+  const rows = [...selectedRows].map(i => paginated.value[i]).filter(Boolean) as Receipt[]
+  return rows.filter((r) => canCancelReceipt(r) && !canCloseReceipt(r))
+}
+function bulkCancelable(selectedRows: Set<number>): boolean {
+  return cancelableSelection(selectedRows).length > 0
+}
 const cancelModalOpen = ref(false)
-const receiptToCancel = ref<Receipt | null>(null)
-function openCancelModal(row: Receipt) { receiptToCancel.value = row; cancelModalOpen.value = true }
-function closeCancelModal() { cancelModalOpen.value = false; receiptToCancel.value = null }
+const receiptsToCancel = ref<Receipt[]>([])
+function openCancelModal(row: Receipt) { receiptsToCancel.value = [row]; cancelModalOpen.value = true }
+function openBulkCancelModal(selectedRows: Set<number>, deselectAll: () => void) {
+  const rows = cancelableSelection(selectedRows)
+  if (rows.length) { receiptsToCancel.value = rows; cancelModalOpen.value = true }
+  deselectAll()
+}
+function closeCancelModal() { cancelModalOpen.value = false; receiptsToCancel.value = [] }
+function confirmCancel() {
+  const failed = receiptsToCancel.value.filter((r) => !cancelInboundReceipt(r.id).ok)
+  closeCancelModal()
+  if (failed.length) {
+    toast.notify({ variant: 'error', title: `${failed.length} receipt${failed.length > 1 ? 's' : ''} could not be canceled`, maxWidth: 'max-content' })
+  }
+}
+
+// Close confirmation — a partially-received receipt is accepted as final (close-forward),
+// never cancelled (PRD C1 AC#5). Keeps what was received; abandons the remaining qty.
+const closeModalOpen = ref(false)
+const receiptToClose = ref<Receipt | null>(null)
+function openCloseModal(row: Receipt) { receiptToClose.value = row; closeModalOpen.value = true }
+function closeCloseModal() { closeModalOpen.value = false; receiptToClose.value = null }
+function confirmClose() {
+  if (receiptToClose.value) closeReceipt(receiptToClose.value.id)
+  closeCloseModal()
+  toast.notify({ variant: 'success', title: 'Receipt closed', maxWidth: 'max-content' })
+}
+
+// Delete confirmation — manually-created receipts only (no real PO behind them).
+const deleteModalOpen = ref(false)
+const receiptToDelete = ref<Receipt | null>(null)
+function openDeleteModal(row: Receipt) { receiptToDelete.value = row; deleteModalOpen.value = true }
+function closeDeleteModal() { deleteModalOpen.value = false; receiptToDelete.value = null }
+function confirmDelete() {
+  if (receiptToDelete.value) deleteReceipt(receiptToDelete.value.id)
+  closeDeleteModal()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -265,13 +335,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @clear-filters="clearFilters"
   >
     <!-- ── Bulk actions ── -->
+    <!-- Purchase receiving is only ever created per-PO (its own form walks the
+         operator through picking SKUs/assignee for that one receipt) — no bulk
+         "create from multiple POs" action here, just Edit tracking no. / Cancel. -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
-      <button
-        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-        @click="bulkPurchaseReceiving(deselectAll)"
-      >
-        Purchase receiving
-      </button>
       <MpPopover id="rcv-bulk-actions" is-close-on-select placement="bottom-start" use-portal>
         <MpPopoverTrigger>
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-after">
@@ -284,11 +351,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="bulkEditTracking(selectedRows as Set<number>, deselectAll)">Edit tracking no.</MpPopoverListItem>
-            <MpPopoverListItem @click="bulkAction('set-arrival', deselectAll)">Set estimated arrival time</MpPopoverListItem>
             <MpPopoverListItem
-              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
-              @click="bulkAction('cancel', deselectAll)"
-            >Cancel</MpPopoverListItem>
+              v-if="bulkCancelable(selectedRows as Set<number>)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="openBulkCancelModal(selectedRows as Set<number>, deselectAll)"
+            >Cancel receipt</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -297,22 +364,29 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #filters>
       <div class="filter-left">
         <!-- Warehouse (hidden in WMS Ops — already scoped to the user's warehouse) -->
-        <MpPopover v-if="!isScoped" id="rcv-wh-filter" is-close-on-select>
+        <MpPopover v-if="!isScoped" id="rcv-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="rcv-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = ''"
+              id="rcv-wh-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
-              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`rcv-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
@@ -334,8 +408,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   :is-checked="statusFilter.includes(s)"
                   @change="toggleStatus(s)"
                   @click.stop
-                />
-                <span>{{ statusOptionLabel(s) }}</span>
+                >
+                  {{ s }}
+                </MpCheckbox>
               </label>
             </div>
           </MpPopoverContent>
@@ -370,7 +445,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="rcv-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-rcv-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -379,6 +453,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="rcv-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-rcv-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export">
               <MpIcon name="download" size="md" />
@@ -391,6 +466,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -400,7 +480,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="cell-with-action">
         <span class="rcv-po">
           <span class="cell-text rcv-po__no">{{ value }}</span>
-          <span v-if="(row as unknown as Receipt).memo" class="rcv-po__memo">{{ (row as unknown as Receipt).memo }}</span>
+          <span v-if="colVis.memo && (row as unknown as Receipt).memo" class="rcv-po__memo">{{ (row as unknown as Receipt).memo }}</span>
         </span>
         <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as Receipt)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -412,14 +492,45 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Warehouse — wrap to 2 lines instead of bleeding ── -->
-    <template #cell-warehouseName="{ value }">
-      <span class="rcv-warehouse">{{ value }}</span>
+    <!-- ── Warehouse — wrap to 2 lines instead of bleeding; View details chip on hover ── -->
+    <template #cell-warehouseName="{ value, row }">
+      <div class="cell-with-action">
+        <span class="rcv-warehouse">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as Receipt).warehouseId}`)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
+    </template>
+
+    <!-- ── Vendor ── -->
+    <template #cell-vendor="{ value }">
+      <span class="rcv-warehouse">{{ value ?? '—' }}</span>
     </template>
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ value }">
-      <ErpStatusBadge :status="(value as string)" />
+      <ErpStatusBadge :status="(value as string)" :type="value === 'pending' ? 'announcement' : undefined" />
+    </template>
+
+    <!-- ── Icon indicator — purchase receiving task badge ── -->
+    <template #cell-icons="{ row }">
+      <div class="rcv-icons-cell">
+        <MpTooltip
+          v-if="hasReceivingTask((row as unknown as Receipt).id)"
+          :id="`tt-recvtask-${row.id}`"
+          label="Purchase receiving created"
+          placement="top"
+          use-portal
+        >
+          <span class="rcv-icon-indicator" aria-label="Purchase receiving created">
+            <MpIcon name="doc" size="20px" />
+          </span>
+        </MpTooltip>
+      </div>
     </template>
 
     <!-- ── Tracking no. (one PO may have several) — edit on hover ── -->
@@ -460,11 +571,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as Receipt)">View details</MpPopoverListItem>
-            <MpPopoverListItem @click="purchaseReceiving(row as unknown as Receipt)">Purchase receiving</MpPopoverListItem>
             <MpPopoverListItem
-              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
+              v-if="canCreateReceivingTask((row as unknown as Receipt).id)"
+              @click="purchaseReceiving(row as unknown as Receipt)"
+            >Create purchase receiving</MpPopoverListItem>
+            <!-- A partially-received receipt is CLOSED (accept-as-final), never cancelled
+                 (PRD C1 AC#5). Not-yet-received receipts can be Cancelled. Manual receipts
+                 (no real PO) can also be Deleted outright. -->
+            <MpPopoverListItem
+              v-if="canCloseReceipt(row as unknown as Receipt)"
+              @click="openCloseModal(row as unknown as Receipt)"
+            >Close receipt</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancelReceipt(row as unknown as Receipt) && !canCloseReceipt(row as unknown as Receipt)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as Receipt)"
-            >Cancel</MpPopoverListItem>
+            >Cancel receipt</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="isManualReceipt(row as unknown as Receipt)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="openDeleteModal(row as unknown as Receipt)"
+            >Delete</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -482,18 +609,64 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Cancel confirmation modal ── -->
   <MpModal
-    id="rcv-cancel-modal" :is-open="cancelModalOpen" size="sm"
+    id="rcv-cancel-modal" :is-open="cancelModalOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
   >
     <MpModalContent>
       <MpModalHeader>Cancel receipt?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        Receipt {{ receiptToCancel?.number }} will be cancelled. This can't be undone.
+        <template v-if="receiptsToCancel.length === 1">
+          Receipt {{ receiptsToCancel[0]?.number }} will be cancelled. This can't be undone.
+        </template>
+        <template v-else>
+          {{ receiptsToCancel.length }} receipts will be cancelled. This can't be undone.
+        </template>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep receipt</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="closeCancelModal">Cancel receipt</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel receipt</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Close confirmation modal (partial reception → accept as final) ── -->
+  <MpModal
+    id="rcv-close-modal" :is-open="closeModalOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCloseModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>Close receipt?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        Receipt {{ receiptToClose?.number }} will be closed and accepted as final. What's
+        already received is kept; the remaining quantity is abandoned. This can't be undone.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCloseModal">Keep open</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmClose">Close receipt</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Delete confirmation modal (manually-created receipts only) ── -->
+  <MpModal
+    id="rcv-delete-modal" :is-open="deleteModalOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>Delete receipt?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        Receipt {{ receiptToDelete?.number }} will be permanently deleted. This can't be undone.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Keep receipt</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -536,7 +709,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <MpModalFooter>
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--ghost" @click="closeTrackingModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="saveTracking">Save changes</button>
+          <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTracking">{{ isSaving ? 'Saving…' : 'Save changes' }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -589,6 +762,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Status multi-select list */
 .status-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
@@ -598,6 +779,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .status-filter-item:hover { background: var(--mp-background-neutral-subtle); }
+
+/* Warehouse multi-select list */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 
 /* Arrival custom range */
 .arrival-custom {
@@ -619,8 +809,22 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   white-space: normal;
 }
 
+/* Icon indicator cell — purchase receiving task badge */
+.rcv-icons-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--mp-spacing-2);
+}
+.rcv-icon-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mp-text-subtle);
+}
+
 /* Tracking no. — one or more, stacked; edit icon sits right next to the text (row hover) */
-.rcv-track-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); min-width: 0; }
+.rcv-track-cell { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }
 .rcv-tracking { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .rcv-tracking__no { color: var(--mp-text-default); white-space: nowrap; }
 .rcv-tracking__empty { color: var(--mp-text-secondary); }
@@ -674,7 +878,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   overflow: hidden;
 }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -689,15 +893,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Kebab — 20px tall so the actions cell stays within the 40px text-only row
    (10px vertical padding + 20px control = 40px → row stays middle-aligned). */
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
   margin-left: auto; /* keep it right-aligned in the actions cell */
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary);
 }
 /* block svg → no inline descender, so the cell stays within the 40px row */
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 /* Empty state */
 .empty-full { display: flex; flex-direction: column; align-items: center; }

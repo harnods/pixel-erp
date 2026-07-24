@@ -1,8 +1,9 @@
 import { reactive } from 'vue'
 import { warehouses } from './warehouses'
-import { warehouseProducts, PRODUCTS, type Product } from './inventory'
+import { warehouseProducts, productBySku, PRODUCTS, type Product } from './inventory'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { TODAY } from './master'
+import { applyTransfer } from './warehouseDetails'
 
 /**
  * Warehouse transfers (ERP only) — stock moved between two of the company's own
@@ -11,11 +12,12 @@ import { TODAY } from './master'
  * demo data" regenerates), and resettable.
  */
 export type TransferStatus =
-  | 'awaiting approval'
+  | 'draft'
   | 'approved'
   | 'in transit'
   | 'completed'
   | 'rejected'
+  | 'canceled'
 
 export interface WarehouseTransfer {
   id: string
@@ -29,6 +31,21 @@ export interface WarehouseTransfer {
   destinationName: string
   status: TransferStatus
   tags: string[]
+  /** User-entered memo (create form). Absent → a deterministic demo memo is shown. */
+  memo?: string
+  /** User-entered product lines (create form). Absent → lines are derived from stock. */
+  lines?: { sku: string; qty: number; serials?: string[] }[]
+  /** Audit trail (chronological) — created/edited events from the form. */
+  activity?: TransferActivity[]
+  canceledDate?: string
+  canceledReason?: string
+}
+
+export interface TransferActivity {
+  date: string
+  user: string
+  activity: string
+  details: { label: string; value: string }[]
 }
 
 // Transfers move between real (non-default, active) warehouses.
@@ -51,11 +68,11 @@ function isoOffset(days: number): string {
 
 const TAG_POOL = ['Restock', 'Rebalancing', 'Urgent', 'Seasonal', 'Overstock', 'Damaged return', 'New store opening']
 
-// Weighted status — a healthy queue leans to awaiting approval / in transit, fewer
+// Weighted status — a healthy queue leans to draft / in transit, fewer
 // completed / rejected, so both tabs have plenty to show.
 function statusFor(i: number): TransferStatus {
   const h = hash100(i * 7 + 3)
-  if (h < 34) return 'awaiting approval' // ~34% pending sign-off
+  if (h < 34) return 'draft' // ~34% pending sign-off
   if (h < 54) return 'approved'
   if (h < 74) return 'in transit'
   if (h < 92) return 'completed'
@@ -95,7 +112,7 @@ function generate(count = 24): WarehouseTransfer[] {
   return out
 }
 
-const KEY = 'warehouse-transfers'
+const KEY = 'warehouse-transfers-v2'
 const snapshot = loadSnapshot<WarehouseTransfer>(KEY)
 export const warehouseTransfers = reactive<WarehouseTransfer[]>(snapshot ?? generate())
 
@@ -127,6 +144,15 @@ export interface TransferLine {
  * 3–16 lines so some transfers exercise the table's progressive pagination.
  */
 export function transferLineItems(t: WarehouseTransfer): TransferLine[] {
+  // A transfer created via the form carries its own lines — use them verbatim.
+  if (t.lines?.length) {
+    return t.lines
+      .map((l) => {
+        const product = productBySku(l.sku)
+        return product ? { key: l.sku, sku: l.sku, product, qty: l.qty, unit: product.unit } : null
+      })
+      .filter(Boolean) as TransferLine[]
+  }
   // Prefer the origin's stock; fall back to the destination's, then the full catalog,
   // so a transfer whose origin holds no SKUs still shows a coherent product list.
   const pool = (() => {
@@ -154,8 +180,9 @@ const MEMO_POOL = [
   'Restock retail floor from the central warehouse',
   '',
 ]
-/** Deterministic memo (may be empty). */
+/** Memo — the user-entered value if present, else a deterministic demo memo. */
 export function transferMemo(t: WarehouseTransfer): string {
+  if (t.memo !== undefined) return t.memo
   return MEMO_POOL[seedNum(t.id) % MEMO_POOL.length]!
 }
 
@@ -172,14 +199,89 @@ export function transferAttachments(t: WarehouseTransfer): TransferAttachment[] 
 }
 
 const UPDATERS = ['Rizal Candra', 'Dewi Rahayu', 'Agus Firmansyah', 'Sari Indah']
-export function transferUpdatedBy(t: WarehouseTransfer): string {
+/** Acting user for create/edit actions (matches the app header). */
+const ACTOR = 'Rizal Candra'
+
+function derivedUpdatedBy(t: WarehouseTransfer): string {
   return UPDATERS[seedNum(t.id) % UPDATERS.length]!
 }
-/** Last-updated timestamp — the transfer date at a fixed-ish business hour. */
-export function transferUpdatedAt(t: WarehouseTransfer): string {
+function derivedUpdatedAt(t: WarehouseTransfer): string {
   const d = new Date(t.date)
   d.setHours(9 + (seedNum(t.id) % 8), (seedNum(t.id) * 7) % 60, 0, 0)
   return d.toISOString()
+}
+/** Last-updated author — the latest activity entry, else a deterministic demo value. */
+export function transferUpdatedBy(t: WarehouseTransfer): string {
+  const a = t.activity
+  return a?.length ? a[a.length - 1]!.user : derivedUpdatedBy(t)
+}
+/** Last-updated timestamp — the latest activity entry, else a deterministic demo value. */
+export function transferUpdatedAt(t: WarehouseTransfer): string {
+  const a = t.activity
+  return a?.length ? a[a.length - 1]!.date : derivedUpdatedAt(t)
+}
+/** Activity-log entries (newest first) for the detail page's "Last updated" modal. */
+export function transferActivityEntries(t: WarehouseTransfer): TransferActivity[] {
+  if (t.activity?.length) return [...t.activity].reverse()
+  return [{
+    date: derivedUpdatedAt(t), user: derivedUpdatedBy(t), activity: 'Created',
+    details: [
+      { label: 'Origin warehouse', value: t.originName },
+      { label: 'Destination warehouse', value: t.destinationName },
+    ],
+  }]
+}
+
+// ── Approval log (Figma "Modal / View / Approval log") ──────────────────────────
+export interface ApprovalStep { user: string; date: string }
+export interface ApprovalStage {
+  title: string
+  /** 'everyone' — every listed approver must sign off; 'anyone' — the first one wins. */
+  rule: 'everyone' | 'anyone'
+  approvers: string[]
+  approvals: ApprovalStep[]
+}
+export interface ApprovalLog {
+  requestedBy: string
+  requestedAt: string
+  stages: ApprovalStage[]
+}
+
+const REQUESTER_POOL = ['Budi Santoso', 'Rizki Pratama', 'Hendra Wijaya', 'Andi Kusuma', 'Ratna Sari', 'Farhan Nugroho', 'Lestari Putri', 'Yusuf Hakim', 'Bayu Pradana']
+const STAGE1_POOL = ['Dewi Rahayu', 'Agus Firmansyah', 'Sari Indah', 'Ni Made Ayu']
+const STAGE2_OTHER_POOL = ['Kevin Surya', 'Christin Purnama Sari']
+
+/**
+ * Two-stage approval chain: stage 1 requires everyone listed to sign off; stage 2 is
+ * "anyone can approve" and always includes the current user (ACTOR) among the eligible
+ * approvers. Stage 1 is deterministically fully approved; stage 2 reflects the real
+ * "Approve" action (from `approveTransfer`) once it's happened, else stays pending.
+ */
+export function transferApprovalLog(t: WarehouseTransfer): ApprovalLog {
+  const s = seedNum(t.id)
+  const requestedBy = REQUESTER_POOL[s % REQUESTER_POOL.length]!
+  const requestedAt = t.activity?.[0]?.date ?? derivedUpdatedAt(t)
+
+  const stage1Approvers = [STAGE1_POOL[s % STAGE1_POOL.length]!, STAGE1_POOL[(s + 1) % STAGE1_POOL.length]!]
+  const reqDate = new Date(requestedAt)
+  const stage1Approvals: ApprovalStep[] = stage1Approvers.map((user, i) => {
+    const d = new Date(reqDate)
+    d.setHours(d.getHours() + 2 + i * 4)
+    return { user, date: d.toISOString() }
+  })
+
+  const stage2Other = STAGE2_OTHER_POOL[s % STAGE2_OTHER_POOL.length]!
+  const approvedEntry = t.activity?.find((a) => a.activity === 'Approved')
+  const stage2Approvals: ApprovalStep[] = approvedEntry ? [{ user: approvedEntry.user, date: approvedEntry.date }] : []
+
+  return {
+    requestedBy,
+    requestedAt,
+    stages: [
+      { title: 'Approval stage 1', rule: 'everyone', approvers: stage1Approvers, approvals: stage1Approvals },
+      { title: 'Approval stage 2', rule: 'anyone', approvers: [stage2Other, ACTOR], approvals: stage2Approvals },
+    ],
+  }
 }
 
 /** Distinct origin/destination warehouses actually used — for the filter dropdown. */
@@ -194,15 +296,55 @@ export function transferWarehouseOptions(): { value: string; label: string }[] {
 
 /** Count still awaiting approval — badge for the "Awaiting approval" tab. */
 export function awaitingApprovalCount(): number {
-  return warehouseTransfers.filter((t) => t.status === 'awaiting approval').length
+  return warehouseTransfers.filter((t) => t.status === 'draft').length
 }
 
-/** Delete transfers by id (bulk delete). */
-export function deleteTransfers(ids: string[]): void {
-  const set = new Set(ids)
-  for (let i = warehouseTransfers.length - 1; i >= 0; i--) {
-    if (set.has(warehouseTransfers[i]!.id)) warehouseTransfers.splice(i, 1)
+/** Approve a transfer — moves it out of "Awaiting approval" and logs the activity. */
+export function approveTransfer(id: string): WarehouseTransfer | undefined {
+  const t = warehouseTransfers.find((x) => x.id === id)
+  if (!t || t.status !== 'draft') return t
+  if (!t.activity?.length) {
+    t.activity = [{
+      date: derivedUpdatedAt(t), user: derivedUpdatedBy(t), activity: 'Created',
+      details: [
+        { label: 'Origin warehouse', value: t.originName },
+        { label: 'Destination warehouse', value: t.destinationName },
+      ],
+    }]
   }
+  t.activity.push({ date: new Date().toISOString(), user: ACTOR, activity: 'Approved', details: [{ label: 'Status', value: 'Draft → Approved' }] })
+  t.status = 'approved'
+  const lines = t.lines ?? transferLineItems(t).map(l => ({ sku: l.sku, qty: l.qty }))
+  applyTransfer(t.originId, t.destinationId, lines)
+  persistTransfers()
+  return t
+}
+
+/** A transfer can only be canceled while still a draft — once approved, stock has
+ *  already moved (applyTransfer runs at approval time), so there's nothing left to
+ *  safely void; the record must stay as a permanent record of what happened. */
+export function canCancelTransfer(t: WarehouseTransfer): boolean {
+  return t.status === 'draft'
+}
+
+/** Cancel a draft transfer — it never gets approved/applied. Terminal state; the
+ *  record itself is kept (never deleted) so it stays visible in the audit trail. */
+export function cancelTransfer(id: string, reason?: string): void {
+  const t = warehouseTransfers.find((x) => x.id === id)
+  if (!t || !canCancelTransfer(t)) return
+  if (!t.activity?.length) {
+    t.activity = [{
+      date: derivedUpdatedAt(t), user: derivedUpdatedBy(t), activity: 'Created',
+      details: [
+        { label: 'Origin warehouse', value: t.originName },
+        { label: 'Destination warehouse', value: t.destinationName },
+      ],
+    }]
+  }
+  t.activity.push({ date: new Date().toISOString(), user: ACTOR, activity: 'Canceled', details: [{ label: 'Status', value: 'Draft → Canceled' }] })
+  t.status = 'canceled'
+  t.canceledDate = new Date().toISOString()
+  if (reason) t.canceledReason = reason
   persistTransfers()
 }
 
@@ -217,9 +359,101 @@ export function duplicateTransfer(id: string): WarehouseTransfer | undefined {
     id: `wt-new-${n}`,
     number: `Warehouse Transfer #${String(90 + n).padStart(4, '0')}`,
     date: isoOffset(0),
-    status: 'awaiting approval',
+    status: 'draft',
   }
   warehouseTransfers.unshift(copy)
   persistTransfers()
   return copy
+}
+
+export interface TransferInput {
+  date: string
+  originId: string
+  originName: string
+  destinationId: string
+  destinationName: string
+  tags: string[]
+  memo?: string
+  lines: { sku: string; qty: number; serials?: string[] }[]
+}
+
+/** Create a new (awaiting-approval) transfer from the create form. */
+export function addTransfer(input: TransferInput): WarehouseTransfer {
+  const n = addSeq++
+  const now = new Date().toISOString()
+  const transfer: WarehouseTransfer = {
+    id: `wt-new-${n}`,
+    number: `Warehouse Transfer #${String(90 + n).padStart(4, '0')}`,
+    date: input.date,
+    originId: input.originId,
+    originName: input.originName,
+    destinationId: input.destinationId,
+    destinationName: input.destinationName,
+    status: 'draft',
+    tags: input.tags,
+    memo: input.memo,
+    lines: input.lines,
+    activity: [{
+      date: now, user: ACTOR, activity: 'Created',
+      details: [
+        { label: 'Origin warehouse', value: input.originName },
+        { label: 'Destination warehouse', value: input.destinationName },
+        { label: 'Products', value: `${input.lines.length} SKU` },
+      ],
+    }],
+  }
+  warehouseTransfers.unshift(transfer)
+  persistTransfers()
+  return transfer
+}
+
+/** Update an existing transfer in place (edit form) — records an "Edited" activity entry. */
+export function updateTransfer(id: string, input: TransferInput): WarehouseTransfer | undefined {
+  const t = warehouseTransfers.find((x) => x.id === id)
+  if (!t) return undefined
+
+  // Diff the changed fields (before overwriting) for the activity log.
+  const details: { label: string; value: string }[] = []
+  if (t.date !== input.date) details.push({ label: 'Transaction date', value: `${t.date} → ${input.date}` })
+  if (t.originName !== input.originName) details.push({ label: 'Origin warehouse', value: `${t.originName} → ${input.originName}` })
+  if (t.destinationName !== input.destinationName) details.push({ label: 'Destination warehouse', value: `${t.destinationName} → ${input.destinationName}` })
+  if ((t.memo ?? '') !== (input.memo ?? '')) details.push({ label: 'Memo', value: input.memo || '—' })
+
+  // Per-line diff: what the user saw before (stored or derived) vs the submitted lines.
+  const nameOf = (sku: string) => productBySku(sku)?.name ?? sku
+  const oldMap = new Map(transferLineItems(t).map((l) => [l.sku, l.qty]))
+  const newMap = new Map(input.lines.map((l) => [l.sku, l.qty]))
+  for (const [sku, q] of newMap) {
+    if (!oldMap.has(sku)) details.push({ label: `Added ${nameOf(sku)} (${sku})`, value: `Transfer qty ${q}` })
+    else if (oldMap.get(sku) !== q) details.push({ label: `${nameOf(sku)} (${sku})`, value: `Transfer qty ${oldMap.get(sku)} → ${q}` })
+  }
+  for (const [sku, q] of oldMap) {
+    if (!newMap.has(sku)) details.push({ label: `Removed ${nameOf(sku)} (${sku})`, value: `was ${q}` })
+  }
+  if (!details.length) details.push({ label: 'No changes', value: '—' })
+
+  // Seed a synthetic "Created" entry for demo transfers that had no log yet.
+  if (!t.activity?.length) {
+    t.activity = [{
+      date: derivedUpdatedAt(t), user: derivedUpdatedBy(t), activity: 'Created',
+      details: [
+        { label: 'Origin warehouse', value: t.originName },
+        { label: 'Destination warehouse', value: t.destinationName },
+      ],
+    }]
+  }
+  t.activity.push({ date: new Date().toISOString(), user: ACTOR, activity: 'Edited', details })
+
+  Object.assign(t, {
+    date: input.date,
+    originId: input.originId,
+    originName: input.originName,
+    destinationId: input.destinationId,
+    destinationName: input.destinationName,
+    tags: input.tags,
+    memo: input.memo,
+    lines: input.lines,
+  })
+  persistTransfers()
+  return t
 }

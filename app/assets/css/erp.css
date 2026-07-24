@@ -15,11 +15,12 @@
   border: 1px solid transparent;
 }
 
-/* Secondary (ERP) — default border, secondary text on a neutral fill. */
+/* Secondary (ERP) — #8c9596 border, black text on a neutral fill. */
 .btn-enterprise--secondary {
   background: var(--mp-background-neutral);
-  border-color: var(--mp-border-default);
-  color: var(--mp-text-secondary);
+  border-color: var(--mp-border-bold);
+  color: var(--mp-text-default);
+  font-weight: var(--mp-font-weights-regular);
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -28,6 +29,7 @@
   background: transparent;
   border-color: transparent;
   color: var(--mp-text-secondary);
+  font-weight: var(--mp-font-weights-regular);
 }
 .btn-enterprise--ghost:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -74,6 +76,32 @@
 }
 .btn-enterprise--plain:hover { background: var(--mp-background-neutral-hovered); }
 
+/* ── MpToggle: disabled+ON state (global ERP override) ──────────────────────
+ * Show brand-selected palette (light green track, dark green knob) when the
+ * toggle is checked (ON) but disabled (read-only view mode).
+ *
+ * Panda's _disabled rule lives in @layer pixel_recipes._base with !important.
+ * @layer pixel_reset !important has higher cascade priority than pixel_recipes,
+ * so this override always wins regardless of specificity.
+ */
+@layer pixel_reset {
+  .mp-toggle__root:is([aria-disabled=true], [data-disabled]):is([aria-checked=true], [data-checked], [data-state=checked]) .mp-toggle__control {
+    background: var(--mp-colors-background-brand-selected, #d6f4e9) !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+  .mp-toggle__root:is([aria-disabled=true], [data-disabled]):is([aria-checked=true], [data-checked], [data-state=checked]) .mp-toggle__control div {
+    background: var(--mp-colors-icon-selected, #029861) !important;
+  }
+}
+
+/* ── Toast: pill shape (global ERP override) ─────────────────────────────────
+ * Pixel's default toast uses a small border-radius. ERP design uses pill shape.
+ */
+[data-pixel-component="MpToast"] {
+  border-radius: var(--mp-radii-full, 999px) !important;
+}
+
 /* ── Form-field focus colour (global ERP override) ────────────────────────────
  * Pixel's default focus border + ring on form fields is the brand emerald green.
  * The ERP wants a neutral focus instead: Color/Gray/Slate400 (#8C9596).
@@ -118,4 +146,230 @@
 .rcvgd-search-wrap:focus-within {
   border-color: #8c9596;
   box-shadow: 0 0 0 1px #8c9596;
+}
+
+/* ── Pixel @latest atomic-CSS gap remediation ─────────────────────────────────
+ * package.json pins @mekari/pixel3* to "latest" with no lockfile, so the pulled
+ * build emits component recipe classes + token vars but NOT the runtime atomic
+ * utilities (mp-bg-c_*, appearance:none, group/nextTheme conditionals). That
+ * leaves MpBadge with no fill/shape and MpSelect showing the native OS arrow +
+ * an always-visible clear (✕). Restore the pieces the ERP relies on here.
+ * erp.css is UNLAYERED, so these beat Pixel's @layer rules without !important. */
+
+/* Form control roots must establish a positioning context so their absolutely-
+   positioned addons (select/autocomplete arrow, datepicker calendar, clear button)
+   stay inside the field instead of escaping to a far ancestor — the `position:
+   relative` atomic isn't reliably emitted (esp. after a cold dev restart). */
+.mp-input__root,
+.mp-input-group__root,
+.mp-select__root,
+.mp-autocomplete__root,
+.mp-datepicker__root {
+  position: relative;
+}
+
+/* …and the addon (arrow / datepicker calendar / prefix-suffix) must be vertically
+   centered in the field. The atomic build leaves it at `top:38px; bottom:-32px`
+   (dropped below the field); re-center it here. */
+.mp-input-addon__root {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
+/* MpSelect — strip the native OS dropdown arrow; Pixel renders its own arrow. */
+.mp-select__control {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* MpSelect — hide the is-clearable (✕) button while the field is empty
+   (the group-conditional utility that normally hides it isn't emitted). */
+.mp-select__root:has(> .mp-select__control[data-value=""]) .mp-select__clear {
+  display: none;
+}
+
+/* MpPopover dropdown/menu (autocomplete, select, kebab, filter menus) — the
+   teleported content panel keeps its position/z-index inline styles, but the
+   list + items render UNSTYLED in this Pixel build: `.mp-popover-list-item`
+   collapses to `display:inline-block; padding:0`, so an opened dropdown shows as
+   a 1-line sliver with the options mashed together. Restore the list/item layout
+   here (the panel's open/close is toggled via inline `display`, untouched). */
+.mp-popover--isUnstyled_false {
+  border-radius: var(--mp-radii-lg, 8px);
+  overflow: auto;
+}
+.mp-popover-list {
+  display: flex;
+  flex-direction: column;
+  padding: var(--mp-spacing-1, 4px);
+  gap: 1px;
+}
+.mp-popover-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: var(--mp-sizes-9, 36px);
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px);
+  border: none;
+  background: transparent;
+  border-radius: var(--mp-radii-md, 6px);
+  font-size: var(--mp-font-sizes-md, 14px);
+  line-height: var(--mp-line-heights-md, 20px);
+  color: var(--mp-text-default);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mp-popover-list-item:hover,
+.mp-popover-list-item[data-active="true"] {
+  background: var(--mp-background-neutral-hovered);
+}
+/* inner label/value wrapper (label + trailing selected-check) — the atomic
+   `mp-d_flex mp-ai_center mp-jc_space-between mp-w_full` utilities may be absent. */
+.mp-popover-list-item > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-2, 8px);
+  width: 100%;
+}
+
+/* MpBadge (status chips) — pill shape + per-type fill/text colour, resolved from
+   --mp-colors-* tokens (the badge's own mp-bg-c_* atomics aren't generated).
+   Covers both `for_tableStatus` (table rows) and `for_additionalInformation`
+   (next to a page-title H1 / detail-page header). */
+:is(.mp-badge--for_tableStatus, .mp-badge--for_additionalInformation) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  min-height: var(--mp-sizes-5, 20px);
+  padding: var(--mp-spacing-0\.5, 2px) var(--mp-spacing-2);
+  border-radius: var(--mp-radii-full, 999px);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-medium, 500);
+  line-height: var(--mp-line-heights-sm);
+  white-space: nowrap;
+}
+:is(.mp-badge--for_tableStatus, .mp-badge--for_additionalInformation).mp-badge--type_warning {
+  background: var(--mp-colors-orange-50, #fbf3dd);
+  color: var(--mp-colors-text-warning, #a14a0b);
+}
+:is(.mp-badge--for_tableStatus, .mp-badge--for_additionalInformation).mp-badge--type_information {
+  background: var(--mp-colors-blue-50, #eaecfb);
+  color: var(--mp-colors-text-information, #4b61dc);
+}
+:is(.mp-badge--for_tableStatus, .mp-badge--for_additionalInformation).mp-badge--type_completed {
+  background: var(--mp-colors-green-50, #e8f5eb);
+  color: var(--mp-colors-text-success, #0f6d4d);
+}
+:is(.mp-badge--for_tableStatus, .mp-badge--for_additionalInformation).mp-badge--type_critical {
+  background: var(--mp-colors-red-50, #fdecee);
+  color: var(--mp-colors-red-700, #c33e35);
+}
+:is(.mp-badge--for_tableStatus, .mp-badge--for_additionalInformation).mp-badge--type_announcement {
+  background: var(--mp-colors-gray-50, #edf0f2);
+  color: var(--mp-colors-text-secondary, #3a4749);
+}
+
+/* MpDatePicker calendar — restore the grid/flex layout the atomic utilities would
+   provide. With the missing atomics, the calendar's wrappers fall back to
+   display:block, so the weekday row and each week collapse into a single vertical
+   column. Re-establish the 7-column grid + side-by-side range panels here. */
+
+/* Range picker: the two month panels sit side by side. */
+.mp-calendarPanelRange { display: flex; gap: var(--mp-spacing-5); }
+
+/* Month header: prev button · label · next button. */
+.mp-tableDate__headerRoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-2);
+  margin-bottom: var(--mp-spacing-2);
+}
+.mp-tableDate__headerLabel {
+  flex: 1;
+  text-align: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+
+/* Weekday header row and each week row: 7 equal columns. */
+.mp-tableDate__dayWrapper,
+.mp-tableDate__dateItemWrapper {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+/* Weekday label cell. */
+.mp-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--mp-sizes-8, 32px);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+
+/* Day cell button — keep it square and centered. */
+.mp-dateItem {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--mp-sizes-8, 32px);
+  height: var(--mp-sizes-8, 32px);
+}
+
+/* Month/year sub-panels (shown when the header label is clicked): grid of cells. */
+.mp-tableMonth__wrapper,
+.mp-tableYear__wrapper {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--mp-spacing-1);
+}
+
+/* ── Table cell form: no input/select border (project-wide rule) ──────────────
+ * Any .mp-select__control inside a cell marked .erp-td-form loses its own
+ * border — the column border is the visual boundary. erp.css is unlayered so
+ * this beats Pixel's @layer pixel_recipes rules without !important.
+ */
+.erp-td-form .mp-select__control {
+  border: none;
+  border-width: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* ── Toast centering fix: when --width is max-content the toaster container
+   collapses to 0px (absolute children have no flow size), so individual toasts
+   must self-center. Also prevent text wrapping so width truly hugs content. ─── */
+[data-sonner-toaster][data-x-position="center"] [data-sonner-toast] {
+  left: 50%;
+  transform: translateX(-50%) var(--y);
+}
+[data-sonner-toast][data-styled="true"] {
+  white-space: nowrap;
+}
+
+/* ── Number inputs — hide the native up/down spinner everywhere in the app.
+   Keeping type="number" (not switching to text) preserves numeric-only input,
+   :min/:max clamping, and the numeric keyboard on mobile — just without the
+   spinner arrows cluttering table cells. ─────────────────────────────────── */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }

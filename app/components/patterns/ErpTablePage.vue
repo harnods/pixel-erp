@@ -6,7 +6,7 @@
  *     This is a CUSTOM implementation using Pixel design tokens.
  *     Request to Pixel team: update MpTable Enterprise to match this spec:
  *       • Header: bg surface (#f1f5f9), 28px height, uppercase 12px semibold, pl-8 pr-16 py-4
- *       • Row: 40px min-height, border-bottom, pl-8 pr-16 py-6, 14px regular
+ *       • Row: 40px min-height, border-bottom, pl-8 pr-16 py-10, 14px regular
  *       • Sticky right column with inset left box-shadow
  *
  * Props:
@@ -73,7 +73,11 @@ const props = withDefaults(defineProps<{
   rowDisabled?: (row: Record<string, unknown>, index: number) => boolean
   /** Singular noun shown in the bulk bar count, e.g. "warehouse" → "2 warehouses selected" */
   bulkLabel?: string
-  /** Width of the sticky actions (kebab) column. Default 44px. */
+  /** Plural override for the bulk bar count — use when the noun isn't just `bulkLabel + 's'`
+   *  (e.g. already-plural "bill of materials", or "entries"). Defaults to `bulkLabel + 's'`. */
+  bulkLabelPlural?: string
+  /** Override the sticky actions column width (default 44px) — use when the #actions
+   *  slot renders more than a single kebab button (several buttons in a row). */
   actionsWidth?: string
 }>(), {
   perPage: 25,
@@ -86,7 +90,8 @@ const props = withDefaults(defineProps<{
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
-  actionsWidth: '44px',
+  bulkLabelPlural: undefined,
+  actionsWidth: undefined,
 })
 
 const emit = defineEmits<{
@@ -332,7 +337,8 @@ const totalCols = computed(() =>
 const bulkCountLabel = computed(() => {
   const n = selectedRows.value.size
   const noun = props.bulkLabel ?? 'item'
-  return `${n} ${n === 1 ? noun : noun + 's'} selected`
+  const plural = props.bulkLabelPlural ?? `${noun}s`
+  return `${n} ${n === 1 ? noun : plural} selected`
 })
 </script>
 
@@ -354,6 +360,7 @@ const bulkCountLabel = computed(() => {
       ref="tableWrapperEl"
       class="erp-table-wrapper"
       :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing }"
+      :style="actionsWidth ? { '--erp-actions-width': actionsWidth } : undefined"
     >
       <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty }">
 
@@ -365,7 +372,7 @@ const bulkCountLabel = computed(() => {
             :key="col.key"
             :style="col.width ? { width: col.width, minWidth: col.width } : {}"
           />
-          <col v-if="$slots.actions" :style="{ width: actionsWidth, minWidth: actionsWidth }" />
+          <col v-if="$slots.actions" :style="{ width: actionsWidth ?? '44px', minWidth: actionsWidth ?? '44px' }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
 
@@ -416,6 +423,7 @@ const bulkCountLabel = computed(() => {
                 'erp-th--center':   col.align === 'center',
                 'erp-th--fixed':    col.isFixed,
               }"
+              :data-col="col.key"
               :style="col.width ? { width: col.width, minWidth: col.width } : {}"
               @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
             >
@@ -429,6 +437,9 @@ const bulkCountLabel = computed(() => {
                   @click.stop
                 />
                 <span v-if="!col.noHeader" class="th-label">{{ col.label }}</span>
+                <!-- Optional per-column header extra (e.g. a settings icon) — opt-in via
+                     #header-<key>; most columns don't provide it, so nothing renders. -->
+                <slot :name="`header-${col.key}`" />
                 <!-- ERP column sort menu: hover reveals the icon; click opens options -->
                 <MpPopover
                   v-if="col.sortType"
@@ -441,7 +452,9 @@ const bulkCountLabel = computed(() => {
                       :class="{ 'erp-sort-btn--active': sortKey === col.key }"
                       aria-label="Sort column" @click.stop
                     >
-                      <MpIcon name="sort-default" size="sm" />
+                      <!-- Literal px, not "sm" — MpIcon's "sm" resolves to ~20px (token
+                           spacing.5), which doesn't fit the 28px-fixed header row. -->
+                      <MpIcon name="sort-default" size="16px" />
                     </button>
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -504,6 +517,7 @@ const bulkCountLabel = computed(() => {
                   'erp-td--center': col.align === 'center',
                   'erp-td--fixed':  col.isFixed,
                 }"
+                :data-col="col.key"
               >
                 <span v-if="hasCheckbox && ci === 0" class="erp-cell-check">
                   <MpCheckbox
@@ -593,10 +607,12 @@ const bulkCountLabel = computed(() => {
               class="erp-td erp-td--empty"
               :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
             >
-              <!-- Inline empty — search/filter eliminated all results (no illustration) -->
+              <!-- Inline empty — search/filter eliminated all results (same illustration as
+                   the full empty state, so both empty states read consistently) -->
               <div v-if="hasActiveFilter" class="empty-inline">
+                <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
                 <p class="empty-inline-title">No results found</p>
-                <p class="empty-inline-desc">Try adjusting your filters.</p>
+                <p class="empty-inline-desc">Try adjusting your search or filters.</p>
                 <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
               </div>
               <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
@@ -749,6 +765,10 @@ const bulkCountLabel = computed(() => {
   top: 0;
   z-index: 2;
   height: var(--mp-sizes-7);
+  /* Table cells otherwise treat `height` as a minimum and let a tall child (e.g. the
+     20px sort icon button) grow the row — this pins it at a hard 28px everywhere. */
+  overflow: hidden;
+  line-height: 1;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-sm);
@@ -775,12 +795,18 @@ const bulkCountLabel = computed(() => {
   padding: var(--mp-spacing-1) var(--mp-spacing-2);
 }
 
-/* Checkbox merged into the first column's cell (header + body) */
+/* Checkbox merged into the first column's cell (body). Fill the cell so a slotted
+   cell (e.g. a Number cell with a right-aligned "View details" chip) spans the full
+   column width instead of shrink-wrapping to the text — otherwise the chip's right:0
+   lands on top of the text. */
 .erp-cell-check {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
+  width: 100%;
+  min-width: 0;
 }
+.erp-cell-check > :last-child { flex: 1 1 auto; min-width: 0; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
@@ -809,10 +835,10 @@ const bulkCountLabel = computed(() => {
   right: var(--mp-sizes-7);
 }
 
-/* Actions header (no label) */
+/* Actions header (no label) — width overridable via --erp-actions-width (actionsWidth prop) */
 .erp-th--actions {
-  width: var(--mp-sizes-11);
-  min-width: var(--mp-sizes-11);
+  width: var(--erp-actions-width, var(--mp-sizes-11));
+  min-width: var(--erp-actions-width, var(--mp-sizes-11));
 }
 
 /* AI chat header column */
@@ -840,7 +866,8 @@ const bulkCountLabel = computed(() => {
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; flex-shrink: 0;
+  /* Must fit inside the 28px header row (28 - 2×4px padding - 1px border ≈ 19px). */
+  width: 18px; height: 18px; flex-shrink: 0;
   border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm);
   color: var(--mp-icon-default, var(--mp-text-secondary));
   visibility: hidden;
@@ -873,15 +900,13 @@ const bulkCountLabel = computed(() => {
 /*
  * Figma spec → Pixel 3 2.4 Enterprise mapping:
  *   min-height : var(--mp-sizes-10)        (40px)
- *   padding    : var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2)
+ *   padding    : var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2)
  *   font       : var(--mp-font-sizes-md) / var(--mp-font-weights-regular)
  *   border-bot : 1px solid var(--mp-border-default)
  */
 
 .erp-tr {
   background: var(--mp-background-neutral);
-}
-.erp-tr:not(:last-child) {
   border-bottom: 1px solid var(--mp-border-default);
 }
 .erp-tr:hover .erp-td {
@@ -907,6 +932,11 @@ const bulkCountLabel = computed(() => {
 .erp-tr--align-top .erp-td {
   vertical-align: top;
 }
+/* ...except the actions cell — a single kebab/button reads oddly pinned to the top
+   of a tall row, so it stays vertically centred regardless of row height. */
+.erp-tr--align-top .erp-td--actions {
+  vertical-align: middle;
+}
 
 /* Right-aligned cells — flip padding */
 .erp-td--right {
@@ -930,18 +960,19 @@ const bulkCountLabel = computed(() => {
 /* Sticky separator border only when the table actually overflows horizontally */
 .erp-table-wrapper.is-overflowing .erp-th--fixed,
 .erp-table-wrapper.is-overflowing .erp-td--fixed {
-  box-shadow: inset 2px 0 var(--mp-border-default);
+  box-shadow: inset 1px 0 0 0 var(--mp-border-default);
 }
 .has-ai .erp-td--fixed {
   right: var(--mp-sizes-7);
 }
 
-/* Actions cell — Figma: px-8 py-6 justify-end */
+/* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width.
+   Vertical padding is 2px so md-size buttons (36px) fit inside a 40px row. */
 .erp-td--actions {
-  width: var(--mp-sizes-11);
-  min-width: var(--mp-sizes-11);
+  width: var(--erp-actions-width, var(--mp-sizes-11));
+  min-width: var(--erp-actions-width, var(--mp-sizes-11));
   text-align: right;
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-2);
+  padding: 2px var(--mp-spacing-2);
 }
 
 /* AI chat cell */
@@ -1073,22 +1104,30 @@ const bulkCountLabel = computed(() => {
   margin: 0;
 }
 
-/* Inline empty (filtered/search → no results) — no illustration */
+/* Inline empty (filtered/search → no results) — illustrated the same as the full
+   empty state, so both read consistently across every index page. */
 .empty-inline {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-10, 40px) 0;
+}
+.empty-inline-illustration {
+  width: 288px;
+  height: 240px;
+  object-fit: contain;
+  margin-bottom: var(--mp-spacing-1);
 }
 .empty-inline-title {
   margin: 0;
-  font-size: var(--mp-font-sizes-md);
+  font-size: var(--mp-font-sizes-lg);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
 .empty-inline-desc {
   margin: 0;
-  font-size: var(--mp-font-sizes-sm);
+  font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
 }
 .empty-inline-clear {

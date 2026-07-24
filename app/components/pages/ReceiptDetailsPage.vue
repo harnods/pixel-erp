@@ -3,24 +3,51 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
-  MpIcon, MpSpinner, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpIcon, MpSpinner, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage, type Receipt } from '~/data/receipts'
+import { receiptsForStages, isManualReceipt, deleteReceipt, canCancelReceipt, canEditReceipt, receipts, type Receipt } from '~/data/receipts'
+import { cancelInboundReceipt } from '~/data/inboundSync'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
+import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
+import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
 const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const d = detail.value
+  if (!d) return []
+  const created = {
+    date: d.lastUpdatedAt,
+    user: d.lastUpdatedBy,
+    activity: 'Created',
+    details: [
+      { label: 'Transaction no.', value: d.purchaseNo },
+      { label: 'Transaction date', value: formatDateLong(d.transactionDate) },
+      { label: 'Vendor', value: d.vendor ?? '—' },
+      { label: 'Warehouse', value: d.warehouseName },
+    ],
+  }
+  // Edit order entries (newest first) — the real before → after diff computed
+  // by editInboundReceipt (inboundSync.ts) when the edit was saved.
+  const edits = (currentReceipt.value?.editHistory ?? []).map((e) => ({
+    date: e.date, user: e.user, activity: 'Edited', details: e.changes,
+  }))
+  return [...edits, created]
+})
 const receipt = computed<Receipt | undefined>(() =>
-  receiptsForStage('On the way').find((r) => r.id === props.orderId),
+  receiptsForStages(['Pending', 'Open', 'In progress']).find((r) => r.id === props.orderId),
 )
+const currentReceipt = computed(() => receipts.find(r => r.id === props.orderId))
 
 // ── Line-items progressive pagination (auto lazy-load on scroll) ───────────────
 const PAGE_SIZE = 10
@@ -91,60 +118,21 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 // ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
 const jumpSearch = ref('')
 const jumpResults = computed(() => {
-  const all = receiptsForStage('On the way')
+  const all = receiptsForStages(['Pending', 'Open', 'In progress'])
   const q = jumpSearch.value.trim().toLowerCase()
   const matched = q ? all.filter(r => r.purchaseNo.toLowerCase().includes(q)) : all
   return matched.slice(0, 5)
 })
-function jumpTo(id: string) { router.push(`/barang-masuk/${id}`) }
+function jumpTo(id: string) { router.push(`/inbound-delivery/${id}`) }
 
 // ── Linked purchase receivings ─────────────────────────────────────────────────
 const linkedReceivings = computed(() => getPurchaseReceivingsForReceipt(props.orderId))
 
-// ── Demo FAB — toggle between "has linked transactions" / "no linked transactions" ──
-type DemoLinked = 'none' | 'with-data'
-const demoLinked = ref<DemoLinked>('none')
-const demoLinkedStates: { value: DemoLinked; label: string }[] = [
-  { value: 'none', label: 'No linked transactions' },
-  { value: 'with-data', label: 'With linked transactions' },
-]
-
-const DEMO_STAFF = ['Budi Santoso', 'Dewi Rahayu', 'Rizki Pratama', 'Agus Firmansyah', 'Sari Indah', 'Hendra Wijaya']
-function idSeed(s: string): number { return s.split('').reduce((a, c) => a + c.charCodeAt(0), 0) }
-function shiftDate(iso: string, days: number): string {
-  const d = new Date(iso); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10)
-}
-
-const demoFakeReceivings = computed(() => {
-  if (demoLinked.value !== 'with-data' || !receipt.value) return []
-  const h = idSeed(props.orderId)
-  const r = receipt.value
-  const skuCount = Math.max(1, Math.ceil(r.skuQty * 0.6))
-  const purchaseQty = Math.round(r.purchaseQty * 0.65)
-  const receivedQty = Math.round(r.purchaseQty * 0.45)
-  const base = r.estimatedArrival ?? '2026-06-20'
-  return [{
-    id: `demo-${props.orderId}-1`,
-    receiptId: props.orderId,
-    receivingNo: `Receiving #${10001 + (h % 99)}`,
-    date: base,
-    assignee: DEMO_STAFF[h % DEMO_STAFF.length],
-    skuScope: String(skuCount),
-    purchaseQty,
-    receivedQty,
-    skuCount,
-    status: 'in progress' as const,
-    startDate: shiftDate(base, -1),
-    endDate: undefined as string | undefined,
-  }]
-})
-
-const displayedReceivings = computed(() =>
-  demoLinked.value === 'with-data' ? demoFakeReceivings.value : linkedReceivings.value,
-)
+const displayedReceivings = computed(() => linkedReceivings.value)
+const linkedPutAways = computed(() => getPutAwayForReceipt(props.orderId))
 
 // ── Create purchase receiving (full page) ───────────────────────────────────────
-function openPurchaseReceiving() { router.push(`/barang-masuk/${props.orderId}/receive`) }
+function openPurchaseReceiving() { router.push(`/inbound-delivery/${props.orderId}/receive`) }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -178,7 +166,51 @@ function agingDays(startDate?: string, endDate?: string): number {
   return Math.max(0, diff) + 1
 }
 
-function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
+function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } }) }
+
+const hasActiveReceivingTasks = computed(() =>
+  receivingTasksForReceipt(props.orderId).some(t => t.status === 'open' || t.status === 'in progress')
+)
+
+const cancelModalOpen = ref(false)
+// A partially-received PO is "closed" (accept partial, stop the rest); any other
+// still-open PO is plainly "cancelled" — same underlying action, different wording.
+const isPartialClose = computed(() => currentReceipt.value?.status === 'partial reception')
+// Cancel-receipt is an order-level action → it lives in the primary split-button's
+// dropdown, never as a standalone footer button (mirrors the outbound order detail).
+// Manual (Direct Inbound) receipts are cancellable too — they keep Delete as well,
+// so an operator can either void-and-keep (Cancel) or hard-remove (Delete).
+const canCancelAction = computed(() => !!currentReceipt.value && canCancelReceipt(currentReceipt.value))
+const cancelActionLabel = computed(() => (isPartialClose.value ? 'Close receipt' : 'Cancel receipt'))
+function openCloseReceiptModal() { cancelModalOpen.value = true }
+// Edit order — order-level action, same dropdown as Cancel/Close (mirrors the
+// outbound order detail's Edit order placement).
+const canEdit = computed(() => !!currentReceipt.value && canEditReceipt(currentReceipt.value))
+function goEdit() { router.push(`/inbound-delivery/${props.orderId}/edit`) }
+function closeCancelModal() { cancelModalOpen.value = false }
+function confirmCancel() {
+  const wasPartial = isPartialClose.value // capture before status flips to 'canceled'
+  const result = cancelInboundReceipt(props.orderId)
+  closeCancelModal()
+  if (!result.ok) {
+    toast.notify({ variant: 'error', title: "This receipt can't be canceled", maxWidth: 'max-content' })
+    return
+  }
+  // Stay on this detail page — currentReceipt is now 'canceled' and the header shows it.
+  toast.notify({ variant: 'success', title: `Receipt ${wasPartial ? 'closed' : 'cancelled'}`, maxWidth: 'max-content' })
+}
+
+// Manually-created receipts (New receipt form) have no real PO behind them, so they
+// can be deleted outright; PO-derived ones can only be canceled (above).
+const isManual = computed(() => !!currentReceipt.value && isManualReceipt(currentReceipt.value))
+const deleteModalOpen = ref(false)
+function openDeleteModal() { deleteModalOpen.value = true }
+function closeDeleteModal() { deleteModalOpen.value = false }
+function confirmDelete() {
+  deleteReceipt(props.orderId)
+  closeDeleteModal()
+  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
+}
 </script>
 
 <template>
@@ -190,7 +222,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
         <button class="detail-breadcrumb" @click="goBack">Receipts</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
-          <ErpStatusBadge v-if="receipt" :status="receipt.status" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge v-if="receipt" :status="receipt.status" :type="receipt.status === 'pending' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">
@@ -203,6 +235,11 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
@@ -232,7 +269,23 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
           <ContentList label="Estimated arrival date" :value="formatDateLong(detail.estimatedArrival)" />
           <ContentList label="Ship via" :value="detail.shipVia" />
           <ContentList label="Tracking no." :value="trackingText(detail.trackingNos)" />
-          <ContentList label="Warehouse" :value="detail.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ detail.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${currentReceipt?.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
+        </div>
+        <div v-if="currentReceipt?.status === 'canceled'" class="content-list-col">
+          <ContentList label="Canceled date" :value="currentReceipt.canceledDate ? formatDateLong(currentReceipt.canceledDate) : '—'" />
+          <ContentList label="Reason" :value="currentReceipt.canceledReason ?? '—'" />
+          <ContentList label="Canceled by" :value="currentReceipt.canceledBy ?? '—'" />
         </div>
       </section>
 
@@ -299,8 +352,8 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
       <!-- Last updated -->
       <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
 
-      <!-- ── Linked purchase receivings tab (hidden until a PR exists) ── -->
-      <MpTabs v-if="displayedReceivings.length > 0" id="rcd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
+      <!-- ── Receiving only (no put-away tasks) ── -->
+      <MpTabs v-if="displayedReceivings.length > 0 && linkedPutAways.length === 0" id="rcd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="rcd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
         </MpTabList>
@@ -309,24 +362,14 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
             <h3 class="linked-section-title">Purchase receiving tasks</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
-                <colgroup>
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                </colgroup>
+                <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Date</th>
                     <th class="detail-th">Assignee</th>
                     <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Purchase qty</th>
+                    <th class="detail-th detail-th--num">Expected qty</th>
                     <th class="detail-th detail-th--num">Received qty</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Start date</th>
@@ -350,15 +393,123 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                     <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
                     <td class="detail-td">{{ pr.assignee }}</td>
                     <td class="detail-td">{{ pr.skuScope }}</td>
-                    <td class="detail-td detail-td--num">{{ formatNum(pr.purchaseQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.expectedQty) }}</td>
                     <td class="detail-td detail-td--num">{{ formatNum(pr.receivedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pr.status" /></td>
-                    <td class="detail-td">{{ pr.startDate ? formatDateNumeric(pr.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ pr.startDate ? formatDateTime(pr.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        <span v-if="pr.endDate">{{ formatDateNumeric(pr.endDate) }}</span>
+                        <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+        </MpTabPanels>
+      </MpTabs>
+
+      <!-- ── Receiving + put-away tabs ── -->
+      <MpTabs v-else-if="displayedReceivings.length > 0 && linkedPutAways.length > 0" id="rcd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
+        <MpTabList>
+          <MpTab id="rcd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
+          <MpTab id="rcd-tab-pa" :value="1">Put-away ({{ linkedPutAways.length }})</MpTab>
+        </MpTabList>
+        <MpTabPanels>
+          <MpTabPanel :value="0">
+            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <div class="detail-linked-wrap">
+              <table class="detail-linked">
+                <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
+                <thead>
+                  <tr>
+                    <th class="detail-th">Number</th>
+                    <th class="detail-th">Date</th>
+                    <th class="detail-th">Assignee</th>
+                    <th class="detail-th">Sku qty</th>
+                    <th class="detail-th detail-th--num">Expected qty</th>
+                    <th class="detail-th detail-th--num">Received qty</th>
+                    <th class="detail-th">Status</th>
+                    <th class="detail-th">Start date</th>
+                    <th class="detail-th">End date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="pr in displayedReceivings" :key="pr.id" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="linked-num">{{ pr.receivingNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/receiving/${pr.taskId}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
+                    <td class="detail-td">{{ pr.assignee }}</td>
+                    <td class="detail-td">{{ pr.skuScope }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.expectedQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.receivedQty) }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="pr.status" /></td>
+                    <td class="detail-td">{{ pr.startDate ? formatDateTime(pr.startDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+          <MpTabPanel :value="1">
+            <h3 class="linked-section-title">Put-away tasks</h3>
+            <div class="detail-linked-wrap">
+              <table class="detail-linked">
+                <colgroup><col /><col /><col /><col /><col /><col /><col /></colgroup>
+                <thead>
+                  <tr>
+                    <th class="detail-th">Number</th>
+                    <th class="detail-th">Assignee</th>
+                    <th class="detail-th detail-th--num">Item qty</th>
+                    <th class="detail-th">Destination</th>
+                    <th class="detail-th">Status</th>
+                    <th class="detail-th">Start date</th>
+                    <th class="detail-th">End date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="pa in linkedPutAways" :key="pa.id" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="linked-num">{{ pa.taskNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/put-away/${pa.id}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ pa.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pa.itemQty) }}</td>
+                    <td class="detail-td">{{ pa.destination }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
+                    <td class="detail-td">{{ pa.startDate ? formatDateTime(pa.startDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
                       </span>
                     </td>
                   </tr>
@@ -373,69 +524,97 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 
     <!-- ── Footer action bar — always at the bottom; border only when content scrolls ── -->
     <div class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <!-- Print (secondary dropdown) -->
-      <MpPopover id="rcd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+      <button class="detail-btn detail-btn--secondary">Print PDF</button>
+
+      <!-- Create purchase receiving — split button; the chevron holds the order-level
+           Edit order / Cancel/Close / Delete actions (never a standalone footer button). -->
+      <template v-if="canCreateReceivingTask(orderId)">
+        <div v-if="canEdit || canCancelAction || isManual" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openPurchaseReceiving">Create purchase receiving</button>
+          <MpPopover id="rcd-actions-recv" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">Delete</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">Create purchase receiving</button>
+      </template>
+
+      <!-- No create action left, but the receipt is still editable/cancellable/deletable -->
+      <MpPopover v-else-if="canEdit || canCancelAction || isManual" id="rcd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            Print
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+          <button class="detail-btn detail-btn--primary">
+            Actions
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
         </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Print PDF</MpPopoverListItem>
-            <MpPopoverListItem>Print dot matrix</MpPopoverListItem>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">Delete</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-
-      <!-- Create purchase receiving (primary split button) -->
-      <div class="detail-split">
-        <button class="detail-btn detail-btn--primary detail-split-main" @click="openPurchaseReceiving">
-          Create purchase receiving
-        </button>
-        <MpPopover id="rcd-pr-more" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--primary detail-split-chevron" aria-label="More">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>Cancel</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-      </div>
     </div>
 
+    <!-- ── Cancel confirmation modal ── -->
+    <MpModal
+      id="rcd-cancel-modal" :is-open="cancelModalOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ isPartialClose ? 'Close receipt?' : 'Cancel receipt?' }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <template v-if="isPartialClose">Receipt {{ detail?.purchaseNo }} will be closed. Unreceived items will not be processed. This can't be undone.</template>
+          <template v-else>Receipt {{ detail?.purchaseNo }} will be cancelled. Its receiving/put-away tasks are cancelled too. This can't be undone.</template>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep receipt</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ isPartialClose ? 'Close receipt' : 'Cancel receipt' }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
-    <!-- ── Demo scenario FAB (bottom-right) ── -->
-    <MpPopover id="rcd-demo-fab" is-close-on-select use-portal placement="top-end">
-      <MpPopoverTrigger>
-        <button class="demo-fab" aria-label="Change scenario state">
-          <MpIcon name="sliders" size="md" color="icon.inverse" />
-        </button>
-      </MpPopoverTrigger>
-      <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
-        <p class="demo-fab-heading">Linked transactions</p>
-        <MpPopoverList>
-          <MpPopoverListItem
-            v-for="s in demoLinkedStates" :key="s.value"
-            :is-active="s.value === demoLinked" @click="demoLinked = s.value"
-          >{{ s.label }}</MpPopoverListItem>
-        </MpPopoverList>
-      </MpPopoverContent>
-    </MpPopover>
+    <!-- ── Delete confirmation modal (manually-created receipts only) ── -->
+    <MpModal
+      id="rcd-delete-modal" :is-open="deleteModalOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
+    >
+      <MpModalContent>
+        <MpModalHeader>Delete receipt?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          Receipt {{ detail?.purchaseNo }} will be permanently deleted. This can't be undone.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Keep receipt</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+
     <ActivityLogModal
       :is-open="activityOpen"
       :subject="detail.purchaseNo"
       :updated-by="detail.lastUpdatedBy"
       :updated-at="detail.lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
   </div>
@@ -443,6 +622,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 
 <style scoped>
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 /* ── Title bar ── */
 .detail-bar {
@@ -470,14 +650,24 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search {
   width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
@@ -534,7 +724,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
@@ -593,14 +782,11 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 .detail-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse); }
 .detail-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
 
-/* primary split button — main + chevron joined, thin divider between */
-.detail-split { display: inline-flex; align-items: stretch; }
-.detail-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.detail-split-chevron {
-  border-top-left-radius: 0; border-bottom-left-radius: 0;
-  padding-left: var(--mp-spacing-2); padding-right: var(--mp-spacing-2);
-  border-left: 1px solid rgba(255, 255, 255, 0.3); gap: 0;
-}
+/* Split button — primary action + chevron dropdown (order-level actions live here). */
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
+
 
 /* ── Linked purchase receivings tab ── */
 .detail-tabs { flex-shrink: 0; }
@@ -615,7 +801,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   border-top: 1px solid var(--mp-border-default);
 }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
-.detail-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 
 /* Number cell with "View details" chip on row hover */
 .detail-td--number { position: relative; }
@@ -634,6 +819,10 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 }
 .detail-item-row:hover .row-hover-btn { display: flex; }
 
+/* Warehouse header field — hover chip to jump to the warehouse's own page */
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
+
 /* End date aging badge */
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
@@ -646,20 +835,5 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
 
-/* Demo scenario FAB */
-.demo-fab {
-  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
-  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e);
-  cursor: pointer; z-index: 1200;
-  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
-}
-.demo-fab:hover { opacity: 0.9; }
-.demo-fab-heading {
-  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
-  margin: 0;
-}
+
 </style>

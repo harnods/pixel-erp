@@ -135,12 +135,9 @@ Reuse as-is; do not redesign per module.
    - **Filter bar above the table**: a thin row containing only a **search input**. The
      search is **always right-aligned** (`justify-content: flex-end` on the bar). Never
      left-align or stretch the search in a detail-page filter bar.
-   - **Header**: `neutral-subtle` gray bg, **28px**, 12px/600 uppercase, padding
-     `4px 16px 4px 8px` (left) / `4px 8px 4px 16px` (right), 1px bottom border.
-   - **Rows**: single-line **40px**, **6px vertical padding** (`var(--mp-spacing-1\.5)`),
-     not 12px; numeric columns **right-aligned** (money in IDR).
-   - **Vertical alignment is conditional**: single-line rows **middle**; a row with a
-     multi-line cell (e.g. the name + `SKU:` subtitle) → that whole row **top**.
+   - **Header, rows, and vertical alignment**: follow
+     [ErpTablePage.md](ErpTablePage.md) as the single source of truth. Numeric columns
+     remain **right-aligned** (money in IDR).
    - The primary cell stacks **name + a muted subtitle** (e.g. `SKU: …`), and gets a
      **View details** button on row hover (the product/line record's detail).
    - **Show 10 by default; the table scrolls internally** (fixed `max-height` +
@@ -172,8 +169,8 @@ Reuse as-is; do not redesign per module.
    - **`MpTabList` ships a 24px bottom margin** — tighten it to **20px** so the gap from
      the tabs to the panel's section heading is 20px; the **heading → table gap is 12px**.
    - Each panel usually holds a **related-records table** (e.g. DATE / NUMBER / STATUS)
-     that **follows the [ErpTablePage.md](ErpTablePage.md) header & row spec** (single-line
-     rows → middle), statuses via `ErpStatusBadge`. Its columns are **fixed-width and
+     that **follows the [ErpTablePage.md](ErpTablePage.md) header & row spec**, statuses
+     via `ErpStatusBadge`. Its columns are **fixed-width and
      left-aligned** (a trailing spacer `<col>` absorbs the rest — don't let the 3 columns
      stretch full-width). The document-**number** column gets **View details** on hover
      (see [ErpTablePage.md → Row hover actions](ErpTablePage.md#row-hover-actions--view-details--open-preview)).
@@ -193,7 +190,7 @@ Reuse as-is; do not redesign per module.
 |---|---|---|---|
 | pxl-space-4xs | 2 | `var(--mp-spacing-0\.5)` | hairline offsets |
 | pxl-space-3xs | 4 | `var(--mp-spacing-1)` | — |
-| pxl-space-2xs | 6 | `var(--mp-spacing-1\.5)` | table cell vertical padding |
+| pxl-space-2xs | 6 | `var(--mp-spacing-1\.5)` | compact inline spacing |
 | pxl-space-xs | 8 | `var(--mp-spacing-2)` | **ContentList field padding** (top & bottom); chip / inline gaps |
 | pxl-space-sm | 12 | `var(--mp-spacing-3)` | totals stacking |
 | pxl-space-md | 16 | `var(--mp-spacing-4)` | totals-row gap |
@@ -257,7 +254,7 @@ Differences from the transaction layout:
 4. **Tabs** (`MpTabs`, green underline, same overrides as §A.8) — each tab is a
    **data table** of related records (e.g. `Products`, `Batches`, `Serial numbers`,
    `Transactions`). The primary table reuses the **[ErpTablePage.md](ErpTablePage.md)
-   header & row spec** (28px gray header, 40px rows) with a right-aligned **toolbar**
+   header & row spec** with a right-aligned **toolbar**
    (Airene · column settings · export · search) above it and a **pagination footer**
    below (`Rows per page` · `Showing X-Y of N` · page nav). Wide tables scroll
    horizontally inside a `border-bold` panel. Empty tab → a single muted line.

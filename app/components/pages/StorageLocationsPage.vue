@@ -57,19 +57,24 @@ const TYPE_OPTIONS = [
 const editOpen = ref(false)
 const editingKey = ref<string | null>(null)
 const editName = ref('')
+const editDesc = ref('')
 const editType = ref<'Organizational' | 'Storage'>('Organizational')
+const isSaving = ref(false)
 
 function openEdit(lvl: LevelRow) {
   editingKey.value = lvl.key
   editName.value = lvl.name
+  editDesc.value = lvl.description === '—' ? '' : lvl.description
   editType.value = lvl.defaultType
   editOpen.value = true
 }
-function saveEdit() {
+async function saveEdit() {
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
   if (editingKey.value) {
-    // Persists to the shared master + propagates to the warehouse level picker.
-    updateStorageLevel(editingKey.value, { name: editName.value, defaultType: editType.value })
+    updateStorageLevel(editingKey.value, { name: editName.value, defaultType: editType.value, description: editDesc.value })
   }
+  isSaving.value = false
   editOpen.value = false
 }
 </script>
@@ -84,6 +89,11 @@ function saveEdit() {
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </ErpFilterBar>
@@ -128,7 +138,7 @@ function saveEdit() {
     <MpModal
       id="sl-edit-modal"
       :is-open="editOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -144,6 +154,10 @@ function saveEdit() {
             <MpFormControl id="sl-edit-name">
               <MpFormLabel>Name</MpFormLabel>
               <MpInput id="sl-edit-name-input" v-model="editName" is-full-width placeholder="Level name" />
+            </MpFormControl>
+            <MpFormControl id="sl-edit-desc">
+              <MpFormLabel>Description</MpFormLabel>
+              <textarea id="sl-edit-desc-input" v-model="editDesc" class="sl-textarea" rows="3" placeholder="Describe this storage level" />
             </MpFormControl>
             <MpFormControl id="sl-edit-type">
               <MpFormLabel>Storing preference</MpFormLabel>
@@ -163,7 +177,7 @@ function saveEdit() {
         <MpModalFooter>
           <div class="sl-modal-btns">
             <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="saveEdit">Save changes</button>
+            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">{{ isSaving ? 'Saving…' : 'Save changes' }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -191,6 +205,14 @@ function saveEdit() {
   color: var(--mp-text-default); min-width: 0;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* fixed, equal column widths — table hugs content (no stretch to the right edge);
    ≤10 rows → no outside border, just header + row dividers */
@@ -229,4 +251,14 @@ function saveEdit() {
 
 .sl-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .sl-modal-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+.sl-textarea {
+  width: 100%; resize: vertical;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  background: var(--mp-background-neutral); font-family: inherit; line-height: 1.5;
+  outline: none;
+}
+.sl-textarea:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
+.sl-textarea::placeholder { color: var(--mp-text-placeholder); }
 </style>

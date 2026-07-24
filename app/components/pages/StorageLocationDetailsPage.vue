@@ -16,7 +16,7 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import StockTables from '~/components/patterns/StockTables.vue'
 import StorageLocationTree from '~/components/patterns/StorageLocationTree.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
-import { getWarehouseDetail, getLocationStock } from '~/data/warehouseDetails'
+import { getWarehouseDetail, getLocationStock, ensureLocationBarcode } from '~/data/warehouseDetails'
 import { findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
 import { levelLabel, STORAGE_LEVEL_KEYS } from '~/data/storageLevels'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
@@ -39,9 +39,14 @@ function countDescendants(n: LocNode): number {
 }
 const subLocationCount = computed(() => (node.value ? countDescendants(node.value) : 0))
 const isStorage = computed(() => node.value?.type === 'Storage')
-// Show the product tabs when the location holds stock directly: any Storage-typed
-// location, or any leaf (a leaf is where stock physically lives, whatever its level).
-const showStockTabs = computed(() => !!node.value && (isStorage.value || !hasChildren.value))
+// Only Storage-type locations get one — generated (and persisted) the first time
+// it's ever read, no manual "Generate" step.
+const locationBarcode = computed(() => (
+  isStorage.value ? ensureLocationBarcode(warehouseId.value, locId.value) : undefined
+))
+// Stock physically lives only at leaf nodes (no children) — branch nodes just aggregate
+// their children's ranges. Only show product tabs for leaves.
+const showStockTabs = computed(() => !!node.value && !hasChildren.value)
 // Stock at this location — its own slice of the warehouse stock [skuStart, +skuQty).
 const locStock = computed(() => {
   const n = node.value
@@ -145,6 +150,10 @@ function confirmDeleteLocation() {
             <dt class="sld-info-label">Location name</dt>
             <dd class="sld-info-value">{{ node.name }}</dd>
           </div>
+          <div v-if="isStorage" class="sld-info-row">
+            <dt class="sld-info-label">Barcode</dt>
+            <dd class="sld-info-value">{{ locationBarcode }}</dd>
+          </div>
           <div class="sld-info-row">
             <dt class="sld-info-label">Level</dt>
             <dd class="sld-info-value">{{ levelText }}</dd>
@@ -167,6 +176,10 @@ function confirmDeleteLocation() {
               <span class="sld-type-desc">{{ typeDesc }}</span>
             </dd>
           </div>
+          <div v-if="node.description" class="sld-info-row">
+            <dt class="sld-info-label">Description</dt>
+            <dd class="sld-info-value sld-info-value--desc">{{ node.description }}</dd>
+          </div>
           <div class="sld-info-row">
             <dt class="sld-info-label">Sub-locations</dt>
             <dd class="sld-info-value">{{ fmt(subLocationCount) }}</dd>
@@ -186,8 +199,10 @@ function confirmDeleteLocation() {
       <StockTables
         v-if="showStockTabs"
         :stock="locStock"
+        :warehouse-id="warehouseId"
         :subject="node.name"
         extra-label="Storage location"
+        :exclude-columns="['minStock', 'locations', 'location']"
       >
         <template v-if="hasChildren" #extra>
           <StorageLocationTree :warehouse-id="warehouseId" :parent-id="node.id" />
@@ -221,7 +236,7 @@ function confirmDeleteLocation() {
     <MpModal
       id="sld-delete-modal"
       :is-open="deleteConfirmOpen"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -263,9 +278,9 @@ function confirmDeleteLocation() {
 /* ── Title bar ── */
 .detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
-.sld-crumbs { display: flex; align-items: center; gap: var(--mp-spacing-1); }
+.sld-crumbs { display: flex; align-items: center; gap: var(--mp-spacing-1); line-height: 1; }
 .sld-crumb-sep { color: var(--mp-text-subtle); font-size: 12px; }
-.detail-breadcrumb { background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: var(--mp-line-heights-md); }
+.detail-breadcrumb { background: none; border: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--mp-text-link); line-height: 1; }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); color: var(--mp-text-default); }
 
@@ -282,6 +297,7 @@ function confirmDeleteLocation() {
 .sld-info-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; }
 .sld-info-label { flex: 0 0 200px; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-secondary); }
 .sld-info-value { margin: 0; flex: 1; min-width: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); }
+.sld-info-value--desc { white-space: pre-wrap; }
 .sld-type-desc { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .sld-path { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); flex-wrap: wrap; }
 .sld-path-link { background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }

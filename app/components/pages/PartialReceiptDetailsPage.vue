@@ -10,17 +10,49 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage, closeReceipt, type Receipt } from '~/data/receipts'
+import { receiptsForStage, closeReceipt, isManualReceipt, canEditReceipt, receipts, type Receipt } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
-import { receivedSummaryForReceipt } from '~/data/receivingTasks'
+import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
+import { receivedSummaryForReceipt, canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
+const currentReceipt = computed(() => receipts.find(r => r.id === props.orderId))
+const isManual = computed(() => !!currentReceipt.value && isManualReceipt(currentReceipt.value))
+const hasActiveReceivingTasks = computed(() =>
+  receivingTasksForReceipt(props.orderId).some(t => t.status === 'open' || t.status === 'in progress')
+)
+// Edit order — order-level action, same dropdown as Close receipt (mirrors
+// the outbound order detail's Edit order placement).
+const canEdit = computed(() => !!currentReceipt.value && canEditReceipt(currentReceipt.value))
+function goEdit() { router.push(`/inbound-delivery/${props.orderId}/edit`) }
 const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const d = detail.value
+  if (!d) return []
+  const created = {
+    date: d.lastUpdatedAt,
+    user: d.lastUpdatedBy,
+    activity: 'Created',
+    details: [
+      { label: 'Transaction no.', value: d.purchaseNo },
+      { label: 'Transaction date', value: formatDateLong(d.transactionDate) },
+      { label: 'Vendor', value: d.vendor ?? '—' },
+      { label: 'Warehouse', value: d.warehouseName },
+    ],
+  }
+  // Edit order entries (newest first) — the real before → after diff computed
+  // by editInboundReceipt (inboundSync.ts) when the edit was saved.
+  const edits = (currentReceipt.value?.editHistory ?? []).map((e) => ({
+    date: e.date, user: e.user, activity: 'Edited', details: e.changes,
+  }))
+  return [...edits, created]
+})
 const receipt = computed<Receipt | undefined>(() =>
   receiptsForStage('Partial reception').find((r) => r.id === props.orderId),
 )
@@ -112,16 +144,19 @@ const jumpResults = computed(() => {
   const matched = q ? all.filter(r => r.purchaseNo.toLowerCase().includes(q)) : all
   return matched.slice(0, 5)
 })
-function jumpTo(id: string) { router.push(`/barang-masuk/${id}`) }
+function jumpTo(id: string) { router.push(`/inbound-delivery/${id}`) }
 
 // ── Linked purchase receivings ─────────────────────────────────────────────────
 const linkedReceivings = computed(() => getPurchaseReceivingsForReceipt(props.orderId))
 
 // ── Linked put-away tasks ──────────────────────────────────────────────────────
 const linkedPutAways = computed(() => getPutAwayForReceipt(props.orderId))
+function paSkuQty(taskId: string) { return getPutAwayLineItems(taskId).length }
+function paReceivedQty(taskId: string) { return getPutAwayLineItems(taskId).reduce((s, i) => s + i.qty, 0) }
+function paPutAwayQty(taskId: string) { return getPutAwayLineItems(taskId).reduce((s, i) => s + i.stored, 0) }
 
 // ── Create purchase receiving (full page) ───────────────────────────────────────
-function openPurchaseReceiving() { router.push(`/barang-masuk/${props.orderId}/receive`) }
+function openPurchaseReceiving() { router.push(`/inbound-delivery/${props.orderId}/receive`) }
 
 // ── Close receipt modal ────────────────────────────────────────────────────────
 const closeModalOpen = ref(false)
@@ -130,7 +165,7 @@ function dismissCloseModal() { closeModalOpen.value = false }
 function confirmClose() {
   closeReceipt(props.orderId)
   closeModalOpen.value = false
-  router.push('/barang-masuk')
+  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -164,7 +199,7 @@ function agingDays(startDate?: string, endDate?: string): number {
   return Math.max(0, Math.round((end - start) / 86_400_000)) + 1
 }
 
-function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
+function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } }) }
 </script>
 
 <template>
@@ -189,6 +224,11 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
@@ -218,7 +258,18 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
           <ContentList label="Estimated arrival date" :value="formatDateLong(detail.estimatedArrival)" />
           <ContentList label="Ship via" :value="detail.shipVia" />
           <ContentList label="Tracking no." :value="trackingText(detail.trackingNos)" />
-          <ContentList label="Warehouse" :value="detail.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ detail.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${currentReceipt?.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
         </div>
       </section>
 
@@ -322,7 +373,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                     <th class="detail-th">Date</th>
                     <th class="detail-th">Assignee</th>
                     <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Purchase qty</th>
+                    <th class="detail-th detail-th--num">Expected qty</th>
                     <th class="detail-th detail-th--num">Received qty</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Start date</th>
@@ -346,13 +397,13 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                     <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
                     <td class="detail-td">{{ pr.assignee }}</td>
                     <td class="detail-td">{{ pr.skuScope }}</td>
-                    <td class="detail-td detail-td--num">{{ formatNum(pr.purchaseQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.expectedQty) }}</td>
                     <td class="detail-td detail-td--num">{{ formatNum(pr.receivedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pr.status" /></td>
-                    <td class="detail-td">{{ pr.startDate ? formatDateNumeric(pr.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ pr.startDate ? formatDateTime(pr.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        <span v-if="pr.endDate">{{ formatDateNumeric(pr.endDate) }}</span>
+                        <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
                       </span>
@@ -374,12 +425,18 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                   <col />
                   <col />
                   <col />
+                  <col />
+                  <col />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
                     <th class="detail-th">Number</th>
                     <th class="detail-th">Assignee</th>
                     <th class="detail-th">Status</th>
+                    <th class="detail-th detail-th--num">SKU qty</th>
+                    <th class="detail-th detail-th--num">Received qty</th>
+                    <th class="detail-th detail-th--num">Put-away qty</th>
                     <th class="detail-th">Start date</th>
                     <th class="detail-th">End date</th>
                   </tr>
@@ -400,10 +457,13 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                     </td>
                     <td class="detail-td">{{ pa.assignee }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
-                    <td class="detail-td">{{ pa.startDate ? formatDateNumeric(pa.startDate) : '—' }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(paSkuQty(pa.id)) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(paReceivedQty(pa.id)) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(paPutAwayQty(pa.id)) }}</td>
+                    <td class="detail-td">{{ pa.startDate ? formatDateTime(pa.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        <span v-if="pa.endDate">{{ formatDateNumeric(pa.endDate) }}</span>
+                        <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
                       </span>
@@ -438,8 +498,9 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
         </MpPopoverContent>
       </MpPopover>
 
-      <!-- Create purchase receiving (primary split button) -->
-      <div class="detail-split">
+      <!-- Create purchase receiving (primary split button) — hidden once every SKU
+           is already covered by a receiving task; Edit/Close live in the dropdown. -->
+      <div v-if="canCreateReceivingTask(orderId)" class="detail-split">
         <button class="detail-btn detail-btn--primary detail-split-main" @click="openPurchaseReceiving">
           Create purchase receiving
         </button>
@@ -453,17 +514,32 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem @click="openCloseModal">Close</MpPopoverListItem>
+              <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isManual && !hasActiveReceivingTasks" @click="openCloseModal">Close receipt</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
       </div>
+      <MpPopover v-else-if="canEdit || (!isManual && !hasActiveReceivingTasks)" id="prd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--primary">
+            Actions
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+            <MpPopoverListItem v-if="!isManual && !hasActiveReceivingTasks" @click="openCloseModal">Close receipt</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </div>
 
 
     <!-- ── Close receipt confirmation modal ── -->
     <MpModal
-      id="prd-close-modal" :is-open="closeModalOpen" size="sm"
+      id="prd-close-modal" :is-open="closeModalOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="dismissCloseModal"
     >
       <MpModalContent>
@@ -486,6 +562,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
       :subject="detail.purchaseNo"
       :updated-by="detail.lastUpdatedBy"
       :updated-at="detail.lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
   </div>
@@ -520,14 +597,24 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search {
   width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
@@ -559,7 +646,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden;
 }
 .detail-items-section--bordered .detail-items-count {
-  border-top: 1px solid var(--mp-border-default); border-bottom: none;
+ border-bottom: none;
 }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
@@ -582,7 +669,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
@@ -659,7 +745,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 .detail-linked-wrap { overflow-x: auto; }
 .detail-linked { width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: auto; border-top: 1px solid var(--mp-border-default); }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
-.detail-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--number { position: relative; }
 .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -675,6 +760,8 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
 .detail-item-row:hover .row-hover-btn { display: flex; }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }

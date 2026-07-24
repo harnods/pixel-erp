@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
+  MpModalOverlay, MpModalCloseButton, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
-import { putAwayTasksFor, type PutAwayTask } from '~/data/putAwayTasks'
+import {
+  putAwayTasksFor, startPutAway as startPutAwayTask, canCancelPutAway, cancelPutAway,
+  type PutAwayTask,
+} from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -26,7 +31,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Put-away task saved' })
+    toast.notify({ variant: 'success', title: 'Put-away task saved' , maxWidth: 'max-content'})
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })
@@ -42,8 +47,8 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'taskNo',            label: 'Number',            width: '180px', sortType: 'text' },
-  { key: 'receivingTaskNos',  label: 'Receiving tasks',   width: '240px' },
+  { key: 'taskNo',            label: 'Put-away no.',      width: '180px', sortType: 'text' },
+  { key: 'receivingTaskNos',  label: 'Receiving task no.', width: '240px' },
   { key: 'warehouseName',     label: 'Warehouse',         width: '180px', sortType: 'text' },
   { key: 'assignee',          label: 'Assignee',          width: '160px', sortType: 'text' },
   { key: 'itemQty',           label: 'Items',             width: '90px',  align: 'right', sortType: 'number' },
@@ -57,8 +62,14 @@ const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disable
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — max 2 quick filters: Status + Warehouse (hidden when scoped) ───
-const warehouseFilter = ref('')
-const statusFilter = ref('')
+const warehouseFilter = ref<string[]>([])
+// Mirror into the shared singleton so the tab bar's count badges (Receipts (N),
+// Receiving (N), Put-away (N)) scope to whatever warehouse this table is
+// actually filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
+const statusFilter = ref<string[]>([])
 
 const baseTasks = computed<PutAwayTask[]>(() =>
   demoState.value === 'data'
@@ -76,9 +87,30 @@ const statusOptions = [
   { label: 'Open',        value: 'open' },
   { label: 'In process', value: 'in progress' },
   { label: 'Completed',   value: 'completed' },
+  { label: 'Canceled',    value: 'canceled' },
 ]
-const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
-const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return statusOptions.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} statuses`
+})
+function toggleStatus(v: string) {
+  const idx = statusFilter.value.indexOf(v)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(x => x !== v)
+  else statusFilter.value = [...statusFilter.value, v]
+}
 
 const {
   search, currentPage, paginated, total, perPage,
@@ -90,15 +122,15 @@ const {
       || row.taskNo.toLowerCase().includes(s)
       || row.receivingTaskNos.some(n => n.toLowerCase().includes(s))
       || row.warehouseName.toLowerCase().includes(s)
-    const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
-    const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
+    const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
+    const matchesStatus    = !statusFilter.value.length || statusFilter.value.includes(row.status)
     return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
 watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = ''; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = [] }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -114,6 +146,22 @@ function toggleExpand(id: string) {
 // ─── Row actions ──────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(row: PutAwayTask) { router.push(`/put-away/${row.id}`) }
+function viewReceivingTask(taskId: string) { router.push(`/receiving/${taskId}`) }
+function startPutAwayAndNavigate(row: PutAwayTask) {
+  if (row.status === 'open') startPutAwayTask(row.id)
+  router.push(`/put-away/${row.id}/store`)
+}
+
+const cancelModalOpen = ref(false)
+const taskToCancel = ref<PutAwayTask | null>(null)
+function openCancelModal(t: PutAwayTask) { taskToCancel.value = t; cancelModalOpen.value = true }
+function closeCancelModal() { cancelModalOpen.value = false; taskToCancel.value = null }
+function confirmCancelTask() {
+  if (!taskToCancel.value) return
+  cancelPutAway(taskToCancel.value.id)
+  toast.notify({ variant: 'success', title: `${taskToCancel.value.taskNo} canceled`, maxWidth: 'max-content' })
+  closeCancelModal()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -140,48 +188,60 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover v-if="!isScoped" id="pa-wh-filter" is-close-on-select>
+        <MpPopover v-if="!isScoped" id="pa-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="pa-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = ''"
+              id="pa-wh-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
-              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`pa-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover id="pa-status-filter" is-close-on-select>
+        <MpPopover id="pa-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="pa-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''"
+              id="pa-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = []"
             >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+              <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in statusOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`pa-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
       </div>
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="pa-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pa-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -190,6 +250,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="pa-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-pa-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -199,6 +260,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -217,15 +283,33 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Receiving tasks — expandable list ── -->
+    <!-- ── Receiving tasks — expandable list, View details chip per task on hover ── -->
     <template #cell-receivingTaskNos="{ value, row }">
       <span class="pa-rtasks">
         <template v-if="expandedRows.has((row as unknown as PutAwayTask).id)">
-          <span v-for="no in (value as string[])" :key="no" class="pa-rtasks__item">{{ no }}</span>
+          <span v-for="(no, i) in (value as string[])" :key="no" class="cell-with-action pa-rtasks__row">
+            <span class="pa-rtasks__item">{{ no }}</span>
+            <button class="row-hover-btn" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[i]!)">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="row-hover-btn__label">VIEW DETAILS</span>
+            </button>
+          </span>
           <button class="pa-rtasks__toggle" @click.stop="toggleExpand((row as unknown as PutAwayTask).id)">Show less</button>
         </template>
         <template v-else>
-          <span class="pa-rtasks__item">{{ (value as string[])[0] }}</span>
+          <span class="cell-with-action pa-rtasks__row">
+            <span class="pa-rtasks__item">{{ (value as string[])[0] }}</span>
+            <button class="row-hover-btn" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[0]!)">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="row-hover-btn__label">VIEW DETAILS</span>
+            </button>
+          </span>
           <button
             v-if="(value as string[]).length > 1"
             class="pa-rtasks__toggle"
@@ -235,9 +319,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </span>
     </template>
 
-    <!-- ── Warehouse ── -->
-    <template #cell-warehouseName="{ value }">
-      <span class="pa-warehouse">{{ value }}</span>
+    <!-- ── Warehouse — View details chip on hover ── -->
+    <template #cell-warehouseName="{ value, row }">
+      <div class="cell-with-action">
+        <span class="pa-warehouse">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as PutAwayTask).warehouseId}`)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
     </template>
 
     <!-- ── Items qty ── -->
@@ -259,6 +352,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as PutAwayTask)">View details</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as unknown as PutAwayTask).status === 'open'"
+              @click="startPutAwayAndNavigate(row as unknown as PutAwayTask)"
+            >Start put-away</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else-if="(row as unknown as PutAwayTask).status === 'in progress'"
+              @click="startPutAwayAndNavigate(row as unknown as PutAwayTask)"
+            >Continue put-away</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancelPutAway(row as unknown as PutAwayTask)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="openCancelModal(row as unknown as PutAwayTask)"
+            >Cancel</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -273,6 +379,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
+
+  <!-- ── Cancel confirmation modal ── -->
+  <MpModal id="pa-cancel-modal" :is-open="cancelModalOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
+    <MpModalContent>
+      <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        This put-away task will be canceled and can no longer be continued. This can't be undone.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep task</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">Cancel task</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="pa-demo-fab" is-close-on-select use-portal placement="top-end">
@@ -294,6 +418,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 <style scoped>
 .filter-left  { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Warehouse multi-select list */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -314,13 +447,21 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Number cell — View details chip on hover */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pa-no { color: var(--mp-text-default); }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -347,12 +488,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }

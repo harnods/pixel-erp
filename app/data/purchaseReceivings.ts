@@ -20,9 +20,13 @@ export interface PurchaseReceiving {
   assignee: string
   skuScope: string
   purchaseQty: number
+  /** Sum of this task's own targetQty ("Expected qty") across its lines —
+   *  what the task is actually going after, distinct from purchaseQty
+   *  (whole-PO scope). */
+  expectedQty: number
   receivedQty: number
   skuCount: number
-  status: 'open' | 'in progress' | 'pending put-away' | 'completed'
+  status: 'open' | 'in progress' | 'pending put-away' | 'completed' | 'canceled'
   startDate?: string
   endDate?: string
 }
@@ -37,6 +41,7 @@ function toRow(t: ReceivingTask): PurchaseReceiving {
     assignee: t.assignee,
     skuScope: t.skuScope,
     purchaseQty: t.purchaseQty,
+    expectedQty: t.items.reduce((s, it) => s + it.targetQty, 0),
     receivedQty: t.receivedQty,
     skuCount: t.skuCount,
     status: t.status,

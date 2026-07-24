@@ -14,7 +14,13 @@ import {
 } from '@mekari/pixel3'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import { getStorageTree, findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { ensureLocationBarcode } from '~/data/warehouseDetails'
+import { warehouses } from '~/data/warehouses'
 import { useUrlModal } from '@ds/proto-review'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
+import type jsPDF from 'jspdf'
 
 const props = withDefaults(defineProps<{
   warehouseId: string
@@ -35,7 +41,7 @@ const children = computed<LocNode[]>(() => {
 const expanded = ref<Set<string>>(new Set())
 const search = ref('')
 function nameMatch(n: LocNode, q: string): boolean {
-  return n.name.toLowerCase().includes(q) || n.code.toLowerCase().includes(q) || n.children.some(c => nameMatch(c, q))
+  return n.name.toLowerCase().includes(q) || n.children.some(c => nameMatch(c, q))
 }
 const flat = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -93,6 +99,35 @@ function editLoc(n: LocNode) { drawerEditId.value = n.id; drawerParentId.value =
 function onSaved(pid: string | null) {
   if (pid && pid !== props.parentId) expanded.value = new Set([...expanded.value, pid])
 }
+
+// ── Print barcode (Storage-type locations only) — options modal then shared PDF preview ──
+const warehouseName = computed(() => warehouses.find(w => w.id === props.warehouseId)?.name ?? '')
+const printBarcodeOptionsOpen = ref(false)
+const printBarcodeTarget = ref<LocNode | null>(null)
+function printLocationBarcode(n: LocNode) {
+  printBarcodeTarget.value = n
+  printBarcodeOptionsOpen.value = true
+}
+
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  const n = printBarcodeTarget.value
+  if (!n) return
+  printBarcodeOptionsOpen.value = false
+  const path = findLocation(props.warehouseId, n.id)?.path ?? []
+  const breadcrumb = path.slice(0, -1).map(p => p.name).join(' / ')
+  barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+    barcode: ensureLocationBarcode(props.warehouseId, n.id),
+    batchNo: n.name,
+    productName: warehouseName.value,
+    sku: breadcrumb,
+  }, qty, columns)
+  barcodePreviewFilename.value = `Barcode - ${n.name}.pdf`
+  barcodePreviewOpen.value = true
+}
+
 </script>
 
 <template>
@@ -101,6 +136,11 @@ function onSaved(pid: string | null) {
       <div class="wh-search">
         <MpIcon name="search" size="md" />
         <input v-model="search" class="wh-search-input" type="text" placeholder="Search location..." />
+        <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+          </svg>
+        </button>
       </div>
       <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNew">New location</MpButton>
     </div>
@@ -174,6 +214,7 @@ function onSaved(pid: string | null) {
                 <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                   <MpPopoverList>
                     <MpPopoverListItem @click="editLoc(row.node)">Edit</MpPopoverListItem>
+                    <MpPopoverListItem v-if="row.node.type === 'Storage'" @click="printLocationBarcode(row.node)">Print barcode</MpPopoverListItem>
                     <MpPopoverListItem @click="addSub(row.node)">Add sub-location</MpPopoverListItem>
                     <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="askDelete(row.node)">Delete</MpPopoverListItem>
                   </MpPopoverList>
@@ -203,7 +244,7 @@ function onSaved(pid: string | null) {
     <MpModal
       id="slt-delete-modal"
       :is-open="!!deleteTarget"
-      size="sm"
+      size="md"
       is-close-on-esc
       is-close-on-overlay-click
       :is-keep-alive="false"
@@ -231,6 +272,20 @@ function onSaved(pid: string | null) {
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
+
+    <PrintBarcodeOptionsModal
+      :open="printBarcodeOptionsOpen"
+      @close="printBarcodeOptionsOpen = false"
+      @confirm="confirmPrintBarcode"
+    />
+
+    <PdfPreviewModal
+      :open="barcodePreviewOpen"
+      :doc="barcodePreviewDoc"
+      :filename="barcodePreviewFilename"
+      title="Barcode preview"
+      @close="barcodePreviewOpen = false"
+    />
   </div>
 </template>
 
@@ -240,6 +295,14 @@ function onSaved(pid: string | null) {
 .wh-search:focus-within { border-color: var(--mp-border-bold); box-shadow: 0 0 0 1px var(--mp-border-bold); }
 .wh-search-input { flex: 1; border: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); outline: none; }
 .wh-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .wh-loc-scroll { overflow-x: auto; }
 .wh-loc-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -253,7 +316,6 @@ function onSaved(pid: string | null) {
 .wh-loc-type-icon { flex-shrink: 0; display: inline-flex; }
 .wh-loc-type-icon--org { color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-type-icon--storage { color: var(--mp-icon-brand, var(--mp-colors-emerald-600, #0f9d58)); }
-.wh-loc-code { text-transform: uppercase; flex-shrink: 0; }
 .wh-loc-chevron { flex-shrink: 0; transition: transform 0.15s ease; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-chevron--open { transform: rotate(90deg); }
 .wh-loc-chevron-spacer { display: inline-block; width: 16px; flex-shrink: 0; }

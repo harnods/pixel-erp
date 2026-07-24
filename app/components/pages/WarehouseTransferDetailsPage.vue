@@ -2,22 +2,33 @@
 import { ref, computed } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpIcon, MpSpinner,
+  MpTooltip, MpIcon, MpSpinner, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import { formatDateLong } from '~/utils/date'
 import {
   warehouseTransfers, getTransfer, transferLineItems, transferMemo, transferAttachments,
-  transferUpdatedBy, transferUpdatedAt, deleteTransfers, duplicateTransfer,
+  transferUpdatedBy, transferUpdatedAt, transferActivityEntries, transferApprovalLog,
+  canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer,
 } from '~/data/warehouseTransfers'
+import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+
+// Shared with the index page — "As user" (no Approve) vs "As manager" (can approve).
+const { viewAs, setViewAs } = useApprovalViewAs()
+const viewAsOptions: { value: 'user' | 'manager'; label: string }[] = [
+  { value: 'user', label: 'As user' },
+  { value: 'manager', label: 'As manager' },
+]
 
 const transfer = computed(() => getTransfer(props.orderId))
 const lineItems = computed(() => transfer.value ? transferLineItems(transfer.value) : [])
@@ -25,6 +36,16 @@ const memo = computed(() => transfer.value ? transferMemo(transfer.value) : '')
 const attachments = computed(() => transfer.value ? transferAttachments(transfer.value) : [])
 const lastUpdatedBy = computed(() => transfer.value ? transferUpdatedBy(transfer.value) : '')
 const lastUpdatedAt = computed(() => transfer.value ? transferUpdatedAt(transfer.value) : new Date().toISOString())
+const activityEntries = computed(() => transfer.value ? transferActivityEntries(transfer.value) : [])
+const approvalLog = computed(() => transfer.value ? transferApprovalLog(transfer.value) : null)
+const approvalLogOpen = ref(false)
+// Approve is only offered to a manager viewing a transfer that's still awaiting approval.
+const canApprove = computed(() => viewAs.value === 'manager' && transfer.value?.status === 'draft')
+function approve() {
+  if (!transfer.value) return
+  approveTransfer(transfer.value.id)
+  toast.notify({ variant: 'success', title: `${transfer.value.number} approved` , maxWidth: 'max-content'})
+}
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
@@ -98,22 +119,24 @@ const jumpResults = computed(() => {
 function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/warehouse-transfers/${id}`) }
 
 function goBack() { router.push('/warehouse-transfers') }
+function preview() { /* opens the printable preview — not built in this prototype */ }
+function printPdf() { /* generates the transfer PDF — not built in this prototype */ }
 function editTransfer() { router.push(`/warehouse-transfers/${props.orderId}/edit`) }
 function duplicate() {
   const copy = duplicateTransfer(props.orderId)
   if (copy) router.push(`/warehouse-transfers/${copy.id}/edit`)
 }
 
-// ── Delete (single) — same alert as the index bulk delete ──────────────────────
-const deleteOpen = ref(false)
-const deleteReason = ref('')
-const deleteError = ref('')
-const REASON_MAX = 256
-function askDelete() { deleteReason.value = ''; deleteError.value = ''; deleteOpen.value = true }
-function confirmDelete() {
-  if (!deleteReason.value.trim()) { deleteError.value = 'Enter a reason for deleting'; return }
-  deleteTransfers([props.orderId])
-  deleteOpen.value = false
+// ── Cancel (single) — only while still a draft; once approved, stock has already
+// moved (applyTransfer runs at approval time) so there's nothing left to void —
+// the transfer is a permanent record from that point on, never deletable. ──────
+const canCancel = computed(() => !!transfer.value && canCancelTransfer(transfer.value))
+const cancelOpen = ref(false)
+function askCancel() { cancelOpen.value = true }
+function confirmCancel() {
+  cancelTransfer(props.orderId)
+  cancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${transfer.value?.number} canceled`, maxWidth: 'max-content' })
   router.push('/warehouse-transfers')
 }
 
@@ -138,6 +161,10 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         <button class="detail-breadcrumb" @click="goBack">All warehouse transfers</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ transfer.number }}</h1>
+          <ErpStatusBadge
+            v-if="transfer.status === 'draft' || transfer.status === 'canceled'"
+            :status="transfer.status" badge-for="additionalInformation" size="md"
+          />
           <MpPopover id="wtd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">
@@ -150,6 +177,11 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
@@ -164,10 +196,12 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </div>
       </div>
 
-      <!-- Right-side icon actions (warehouse transfer has an approval flow) -->
+      <!-- Right-side actions (warehouse transfer has an approval flow) —
+           manager view adds a primary Approve button ahead of the icon actions. -->
       <div class="detail-titlerow-right">
+        <button v-if="canApprove" class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
         <MpTooltip id="wtd-tt-tasks" label="Approval log" placement="bottom" use-portal>
-          <button class="detail-icon-btn" aria-label="Approval log"><MpIcon name="task-todo" size="md" /></button>
+          <button class="detail-icon-btn" aria-label="Approval log" @click="approvalLogOpen = true"><MpIcon name="task-todo" size="md" /></button>
         </MpTooltip>
         <MpTooltip id="wtd-tt-comments" label="Comments" placement="bottom" use-portal>
           <button class="detail-icon-btn" aria-label="Comments"><MpIcon name="comment" size="md" /></button>
@@ -181,11 +215,33 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       <section class="wtd-summary">
         <div class="content-list-col">
           <ContentList label="Transaction date" :value="formatDateLong(transfer.date)" />
-          <ContentList label="Origin warehouse" :value="transfer.originName" />
-          <ContentList label="Destination warehouse" :value="transfer.destinationName" />
+          <ContentList label="Transaction no." :value="transfer.number" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Transaction no." :value="transfer.number" />
+          <ContentList label="Origin warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ transfer.originName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${transfer.originId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
+          <ContentList label="Destination warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ transfer.destinationName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${transfer.destinationId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
         </div>
         <div class="content-list-col">
           <ContentList label="Tags">
@@ -209,7 +265,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             </thead>
             <tbody>
               <tr v-for="item in visibleItems" :key="item.key" class="detail-item-row">
-                <td class="detail-td"><ProductCell :name="item.product.name" :image="item.product.img" /></td>
+                <td class="detail-td"><ProductCell :name="item.product.name" :desc="item.product.desc" :image="item.product.img" /></td>
                 <td class="detail-td">{{ item.sku }}</td>
                 <td class="detail-td detail-td--num">{{ fmt(item.qty) }}</td>
                 <td class="detail-td">{{ item.unit }}</td>
@@ -250,24 +306,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpPopover id="wtd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--secondary">
-            Print &amp; share
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>Print PDF</MpPopoverListItem>
-            <MpPopoverListItem>Print dot matrix</MpPopoverListItem>            <MpPopoverListItem>Share via WhatsApp</MpPopoverListItem>
-            <MpPopoverListItem>Share via email</MpPopoverListItem>
-            <MpPopoverListItem>Copy link</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <button class="detail-btn detail-btn--secondary" @click="printPdf">Print PDF</button>
       <MpPopover id="wtd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
@@ -279,8 +318,15 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="editTransfer">Edit</MpPopoverListItem>
-            <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>            <MpPopoverListItem @click="askDelete">Delete</MpPopoverListItem>
+            <MpPopoverListItem @click="preview">Preview</MpPopoverListItem>
+            <div class="wtd-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
+            <MpPopoverListItem v-if="transfer.status === 'draft'" @click="editTransfer">Edit</MpPopoverListItem>
+            <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canCancel"
+              :class="css({ color: 'var(--mp-text-critical)' })"
+              @click="askCancel"
+            >Cancel</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -291,38 +337,31 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       :subject="transfer.number"
       :updated-by="lastUpdatedBy"
       :updated-at="lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
 
-    <!-- Delete warehouse transfer -->
+    <ApprovalLogModal
+      :is-open="approvalLogOpen"
+      :subject="transfer.number"
+      :log="approvalLog"
+      @close="approvalLogOpen = false"
+    />
+
+    <!-- Cancel warehouse transfer -->
     <MpModal
-      id="wtd-delete" :is-open="deleteOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="deleteOpen = false"
+      id="wtd-cancel" :is-open="cancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="cancelOpen = false"
     >
       <MpModalContent>
-        <MpModalHeader>Delete warehouse transfer?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>Cancel warehouse transfer?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="wt-del-intro">This action cannot be undone. Deleting this transfer will:</p>
-          <ul class="wt-del-list">
-            <li>Remove the related journal entry</li>
-            <li>Trigger recalculation that may affect COGS and product stock quantity</li>
-          </ul>
-          <div class="wt-del-field">
-            <div class="wt-del-label-row">
-              <label class="wt-del-label" for="wtd-del-reason">Reason for deleting<span class="wt-del-req">*</span></label>
-              <span class="wt-del-count">{{ deleteReason.length }} / {{ REASON_MAX }}</span>
-            </div>
-            <textarea
-              id="wtd-del-reason" class="wt-del-textarea" :class="{ 'wt-del-textarea--error': deleteError }"
-              :maxlength="REASON_MAX" v-model="deleteReason" rows="3" @input="deleteError = ''"
-            ></textarea>
-            <p v-if="deleteError" class="wt-del-error">{{ deleteError }}</p>
-          </div>
+          <p>This transfer will be canceled and can no longer be approved. This can't be undone.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelOpen = false">Keep transfer</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel transfer</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -335,6 +374,24 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
     <p>Warehouse transfer not found.</p>
     <button class="detail-breadcrumb" @click="goBack">Back to warehouse transfers</button>
   </div>
+
+  <!-- ── Demo scenario FAB (bottom-right) — shared with the index page ── -->
+  <MpPopover id="wtd-demo-fab" is-close-on-select use-portal placement="top-end">
+    <MpPopoverTrigger>
+      <button class="demo-fab" aria-label="Change approval view">
+        <MpIcon name="sliders" size="md" color="icon.inverse" />
+      </button>
+    </MpPopoverTrigger>
+    <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+      <p class="demo-fab-heading">Approval view</p>
+      <MpPopoverList>
+        <MpPopoverListItem
+          v-for="v in viewAsOptions" :key="v.value"
+          :is-active="v.value === viewAs" @click="setViewAs(v.value)"
+        >{{ v.label }}</MpPopoverListItem>
+      </MpPopoverList>
+    </MpPopoverContent>
+  </MpPopover>
 </template>
 
 <style scoped>
@@ -344,16 +401,25 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px); }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.detail-titlerow-right { display: flex; align-items: center; gap: var(--mp-spacing-1); flex-shrink: 0; }
-.detail-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
+.detail-titlerow-right { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
+.detail-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
-.detail-jump-search { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
+.detail-jump-search { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; padding-right: 34px; }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md); }
 .detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
@@ -363,7 +429,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 
 .detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-6); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); display: flex; flex-direction: column; gap: var(--mp-spacing-8); }
-.wtd-summary { display: grid; grid-template-columns: minmax(0, 318px) 1fr 1fr; column-gap: var(--mp-spacing-6); row-gap: 0; }
+/* Three columns, each up to 318px; they shrink together (minmax floor 0) when the
+   viewport is tight so the grid stays 3-up and responsive instead of overflowing. */
+.wtd-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 318px)); column-gap: var(--mp-spacing-6); row-gap: 0; }
 .content-list-col { display: flex; flex-direction: column; }
 
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
@@ -372,14 +440,12 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-items { width: 100%; border-collapse: collapse; table-layout: auto; }
 .detail-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
 .detail-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-.detail-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
+.detail-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .detail-items .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: 1px; }
 .detail-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
 .detail-items-loading { justify-content: center; padding: var(--mp-spacing-3); }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default); }
-.detail-items-section--bordered .detail-items-count { border-top: 1px solid var(--mp-border-default); border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 
 .detail-notes-left { display: flex; flex-direction: column; }
@@ -397,24 +463,45 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 .detail-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; border: 1px solid transparent; white-space: nowrap; }
-.detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-text-default); color: var(--mp-text-default); }
+.detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-default); }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
 
 .wtd-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-/* Delete modal (matches index bulk-delete alert) */
+/* Divider between action-menu groups (background line — reliably visible inside the
+   portaled popover list, where a 0-height border can get reset away). */
+.wtd-menu-divider { display: block; height: 1px; margin: var(--mp-spacing-1) 0; background: var(--mp-border-default); }
+
+/* Cancel modal */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
-.wt-del-intro { color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.wt-del-list { margin: var(--mp-spacing-2) 0 0; padding-left: 21px; list-style: disc; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 24px); }
-.wt-del-field { margin-top: var(--mp-spacing-5, 20px); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.wt-del-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); width: 100%; }
-.wt-del-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.wt-del-req { color: var(--mp-text-danger, #a8352d); margin-left: 2px; }
-.wt-del-count { margin-left: auto; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.wt-del-textarea { width: 100%; min-height: 80px; resize: vertical; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral, #fff); color: var(--mp-text-default); font-family: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
-.wt-del-textarea:focus { outline: none; border-color: var(--mp-border-focus, var(--mp-text-selected)); }
-.wt-del-textarea--error { border-color: var(--mp-border-danger, var(--mp-text-danger, #a8352d)); }
-.wt-del-error { margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
+
+/* Demo scenario FAB (matches the index page) */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-inverse, #080d0e); color: #fff;
+  cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+}
+.demo-fab:hover { opacity: 0.9; }
+.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+/* Warehouse header fields — hover chip to jump to the warehouse's own page */
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
+.row-hover-btn {
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5);
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.row-hover-btn__label {
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+}
 </style>

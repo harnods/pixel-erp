@@ -98,7 +98,6 @@ function formatWhen(iso: string) {
     id="activity-log-modal"
     :is-open="isOpen"
     size="xl"
-    is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
     @close="emit('close')"
@@ -110,7 +109,7 @@ function formatWhen(iso: string) {
       </MpModalHeader>
       <MpModalBody>
         <h2 class="al-subject">{{ subject }}</h2>
-        <section class="al-table-section">
+        <section class="al-table-section" :class="{ 'al-table-section--bordered': isProgressive }">
           <div ref="scrollEl" class="al-scroll" :class="{ 'al-scroll--tall': isProgressive }">
             <table class="al-table">
               <colgroup>
@@ -166,7 +165,9 @@ function formatWhen(iso: string) {
   color: var(--mp-text-default);
 }
 /* outside border of a table is the BOLD border colour */
-.al-table-section {
+/* Frame only when the list is longer than one page (matches the scroll + count
+   gating). A short log renders borderless. */
+.al-table-section--bordered {
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
@@ -213,6 +214,5 @@ function formatWhen(iso: string) {
   display: flex; align-items: center;
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-  border-top: 1px solid var(--mp-border-default);
 }
 </style>

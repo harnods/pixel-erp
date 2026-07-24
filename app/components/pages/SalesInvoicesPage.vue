@@ -248,6 +248,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             type="text"
             placeholder="Search..."
           />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -465,7 +470,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 .row-hover-btn {
   position: absolute;
   right: 0;
-  top: 50%;
+  top: var(--mp-spacing-2\.5, 10px);
   transform: translateY(-50%);
   display: none;
   align-items: center;
@@ -533,12 +538,13 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   white-space: nowrap;
 }
 
-/* Row action kebab button — transparent, 20px icon, 4px padding */
+/* Row action kebab button — transparent, 20px icon, 32x32px hit target */
 .row-kebab {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--mp-spacing-1);
+  width: var(--mp-sizes-8, 32px);
+  height: var(--mp-sizes-8, 32px);
   border: none;
   background: transparent;
   cursor: pointer;
@@ -663,4 +669,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   min-width: 0;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 </style>

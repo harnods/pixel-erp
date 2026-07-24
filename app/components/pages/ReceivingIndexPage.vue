@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox,
@@ -8,8 +8,13 @@ import {
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDateTime } from '~/utils/date'
-import { receivingPOsFor, taskAgingDays, type ReceivingPO, type ReceivingTask } from '~/data/receivingTasks'
+import {
+  receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask, startReceiving,
+  type ReceivingPO, type ReceivingTask,
+} from '~/data/receivingTasks'
+import { putAwayTasksFor } from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -27,11 +32,33 @@ const { assignedWarehouses } = useWarehouseContext()
 const scopedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.id))
 const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
+// ─── Columns ───────────────────────────────────────────────────────────────────
+const baseColumnItems = [
+  { key: 'taskNo', label: 'Receiving task no.', disabled: true },
+  { key: 'purchaseNo', label: 'Purchase order no.' },
+  { key: 'warehouseName', label: 'Warehouse' },
+  { key: 'assignee', label: 'Assignee' },
+  { key: 'skuCount', label: 'Sku qty' },
+  { key: 'expectedQty', label: 'Expected qty' },
+  { key: 'receivedQty', label: 'Received qty' },
+  { key: 'status', label: 'Status' },
+  { key: 'startDate', label: 'Start date' },
+  { key: 'endDate', label: 'End date' },
+]
+const columnItems = computed(() => isScoped.value ? baseColumnItems.filter(c => c.key !== 'assignee') : baseColumnItems)
+const colVis = reactive<Record<string, boolean>>(Object.fromEntries(baseColumnItems.map(c => [c.key, true])))
+
 // ─── Filters ───────────────────────────────────────────────────────────────────
 const search = ref('')
-const warehouseFilter = ref('')
+const warehouseFilter = ref<string[]>([])
+// Mirror into the shared singleton so the tab bar's count badges (Receipts (N),
+// Receiving (N), Put-away (N)) scope to whatever warehouse this table is
+// actually filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
 const assigneeFilter = ref('')
-const statusFilter = ref('') // '' | open | completed
+const statusFilter = ref<string[]>([])
 
 // Bumped after a bulk status mutation so the (plain-data) queue recomputes.
 const dataVersion = ref(0)
@@ -41,6 +68,8 @@ const basePOs = computed<ReceivingPO[]>(() => {
     ? receivingPOsFor(isScoped.value ? scopedWarehouseIds.value : undefined)
     : []
 })
+// Flat task list — receiving tasks are no longer grouped/merged by PO in this table.
+const baseTasks = computed<ReceivingTask[]>(() => basePOs.value.flatMap(po => po.tasks))
 
 const warehouseOptions = computed(() => {
   const src = isScoped.value
@@ -49,64 +78,87 @@ const warehouseOptions = computed(() => {
   return src.map(w => ({ label: w.name, value: w.id }))
 })
 const assigneeOptions = computed(() =>
-  [...new Set(basePOs.value.flatMap(po => po.tasks.map(t => t.assignee)))].map(a => ({ label: a, value: a })),
+  [...new Set(baseTasks.value.map(t => t.assignee))].map(a => ({ label: a, value: a })),
 )
 const statusOptions = [
   { label: 'Open',             value: 'open' },
   { label: 'In process',      value: 'in progress' },
   { label: 'Pending put-away', value: 'pending put-away' },
   { label: 'Completed',        value: 'completed' },
+  { label: 'Canceled',        value: 'canceled' },
 ]
-const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
 const assigneeLabel = computed(() => assigneeOptions.value.find(o => o.value === assigneeFilter.value)?.label ?? '')
-const statusLabel = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return statusOptions.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} statuses`
+})
+function toggleStatus(v: string) {
+  const idx = statusFilter.value.indexOf(v)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(x => x !== v)
+  else statusFilter.value = [...statusFilter.value, v]
+}
 
-// PO list with tasks filtered by the active criteria; drop POs left with no tasks.
-const filteredPOs = computed<ReceivingPO[]>(() => {
+// Flat task list filtered by the active criteria.
+const filteredTasks = computed<ReceivingTask[]>(() => {
   const s = search.value.toLowerCase().trim()
-  return basePOs.value
-    .filter(po => !warehouseFilter.value || po.warehouseId === warehouseFilter.value)
-    .map(po => ({
-      ...po,
-      tasks: po.tasks.filter(t =>
-        (!assigneeFilter.value || t.assignee === assigneeFilter.value) &&
-        (!statusFilter.value || t.status === statusFilter.value),
-      ),
-    }))
-    .filter(po => po.tasks.length > 0)
-    .filter(po =>
+  return baseTasks.value
+    .filter(t => !warehouseFilter.value.length || warehouseFilter.value.includes(t.warehouseId))
+    .filter(t => !assigneeFilter.value || t.assignee === assigneeFilter.value)
+    .filter(t => !statusFilter.value.length || statusFilter.value.includes(t.status))
+    .filter(t =>
       !s
-      || po.purchaseNo.toLowerCase().includes(s)
-      || po.tasks.some(t => t.taskNo.toLowerCase().includes(s) || t.assignee.toLowerCase().includes(s)),
+      || t.purchaseNo.toLowerCase().includes(s)
+      || t.taskNo.toLowerCase().includes(s)
+      || t.assignee.toLowerCase().includes(s),
     )
 })
 
 const hasActiveFilter = computed(
-  () => !!search.value || !!statusFilter.value || !!warehouseFilter.value || !!assigneeFilter.value,
+  () => !!search.value || statusFilter.value.length > 0 || warehouseFilter.value.length > 0 || !!assigneeFilter.value,
 )
 function clearFilters() {
-  search.value = ''; statusFilter.value = ''; warehouseFilter.value = ''; assigneeFilter.value = ''
+  search.value = ''; statusFilter.value = []; warehouseFilter.value = []; assigneeFilter.value = ''
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 const currentPage = ref(1)
 const perPage     = ref(25)
-const totalPOs    = computed(() => filteredPOs.value.length)
-const pagedPOs    = computed(() => {
+const totalTasks  = computed(() => filteredTasks.value.length)
+const pagedTasks  = computed(() => {
   const start = (currentPage.value - 1) * perPage.value
-  return filteredPOs.value.slice(start, start + perPage.value)
+  return filteredTasks.value.slice(start, start + perPage.value)
 })
 watch([search, warehouseFilter, assigneeFilter, statusFilter, perPage], () => { currentPage.value = 1 })
 
-// Total columns (Assignee hidden for Ops) — for the bulk bar colspan.
-// PO no. + Task no. + Warehouse + Assignee? + SKU scope + Purch qty + Recv qty + Status + Start + End + Actions
-const colCount = computed(() => (isScoped.value ? 10 : 11))
+// Total columns currently rendered (toggleable columns still visible, plus the
+// always-on Task no./icons/actions columns) — for the bulk bar colspan.
+const colCount = computed(() => columnItems.value.filter(c => colVis[c.key]).length + 2)
+
+// ─── Icon indicator — put-away task badge ───────────────────────────────────
+function hasPutAwayTask(taskId: string): boolean {
+  return putAwayTasksFor().some((pa) => pa.receivingTaskIds.includes(taskId) && pa.status !== 'canceled')
+}
 
 // ─── Bulk select (tasks) ───────────────────────────────────────────────────────
 // Any task can be selected. The available bulk action depends on the selection:
-//   all "pending put-away" → Create put-away · anything else (incl. mixed) → Delete only.
+//   all "pending put-away" → Create put-away · anything not yet finished (open/in
+//   progress) → Cancel. Pending put-away / completed / already-canceled tasks are
+//   never cancelable — receiving on them is already done (or was never started).
 const selectedTasks = ref(new Set<string>())
-const allTaskIds = computed(() => pagedPOs.value.flatMap(po => po.tasks.map(t => t.id)))
+const allTaskIds = computed(() => pagedTasks.value.map(t => t.id))
 const allSelected = computed(() => allTaskIds.value.length > 0 && allTaskIds.value.every(id => selectedTasks.value.has(id)))
 const someSelected = computed(() => selectedTasks.value.size > 0 && !allSelected.value)
 const bulkCountLabel = computed(() => {
@@ -114,16 +166,22 @@ const bulkCountLabel = computed(() => {
   return `${n} ${n === 1 ? 'task' : 'tasks'} selected`
 })
 const selectedTaskObjs = computed(() =>
-  filteredPOs.value.flatMap(po => po.tasks).filter(t => selectedTasks.value.has(t.id)),
+  filteredTasks.value.filter(t => selectedTasks.value.has(t.id)),
 )
 // Create put-away: all selected tasks must be pending put-away AND from the same warehouse.
 const selectedPutAwayWarehouseId = computed<string | null>(() => {
   const objs = selectedTaskObjs.value
   if (!objs.length || !objs.every(t => t.status === 'pending put-away')) return null
-  const whs = new Set(filteredPOs.value.filter(po => po.tasks.some(t => selectedTasks.value.has(t.id))).map(po => po.warehouseId))
+  const whs = new Set(objs.map(t => t.warehouseId))
   return whs.size === 1 ? [...whs][0]! : null
 })
 const canCreatePutAway = computed(() => selectedPutAwayWarehouseId.value !== null)
+// Explains why "Create put-away" is missing when it's specifically the
+// multi-warehouse rule that's blocking it (as opposed to none being pending put-away).
+const selectedTasksSpanMultipleWarehouses = computed(() => {
+  const whs = new Set(selectedTaskObjs.value.map(t => t.warehouseId))
+  return whs.size > 1
+})
 function toggleTask(id: string) {
   const s = new Set(selectedTasks.value)
   s.has(id) ? s.delete(id) : s.add(id)
@@ -132,30 +190,24 @@ function toggleTask(id: string) {
 function toggleAll() {
   selectedTasks.value = allSelected.value ? new Set() : new Set(allTaskIds.value)
 }
-function poTaskIds(po: ReceivingPO) { return po.tasks.map(t => t.id) }
-function poAllSelected(po: ReceivingPO) { return po.tasks.length > 0 && poTaskIds(po).every(id => selectedTasks.value.has(id)) }
-function poSomeSelected(po: ReceivingPO) { return poTaskIds(po).some(id => selectedTasks.value.has(id)) && !poAllSelected(po) }
-function togglePO(po: ReceivingPO) {
-  const s = new Set(selectedTasks.value)
-  if (poAllSelected(po)) poTaskIds(po).forEach(id => s.delete(id))
-  else poTaskIds(po).forEach(id => s.add(id))
-  selectedTasks.value = s
-}
 function deselectAll() { selectedTasks.value = new Set() }
 function bulkCreatePutAway() {
   const wh = selectedPutAwayWarehouseId.value
   if (!wh) return
   router.push({
-    path: '/barang-masuk/put-away/create',
+    path: '/inbound-delivery/put-away/create',
     query: { warehouseId: wh, taskIds: [...selectedTasks.value].join(',') },
   })
 }
-// Bulk delete — confirmation alert before removing.
-const bulkDeleteOpen = ref(false)
-function confirmBulkDelete() {
-  const n = selectedTasks.value.size
-  bulkDeleteOpen.value = false
-  toast.notify({ variant: 'success', title: `${n} ${n === 1 ? 'task' : 'tasks'} deleted` })
+// Bulk cancel — confirmation alert, only for not-yet-finished tasks in the selection.
+const cancelableTaskObjs = computed(() => selectedTaskObjs.value.filter(canCancelReceivingTask))
+const bulkCancelable = computed(() => cancelableTaskObjs.value.length > 0)
+const bulkCancelOpen = ref(false)
+function confirmBulkCancel() {
+  const ids = cancelableTaskObjs.value.map(t => t.id)
+  for (const id of ids) cancelReceivingTask(id)
+  bulkCancelOpen.value = false
+  toast.notify({ variant: 'success', title: `${ids.length} ${ids.length === 1 ? 'task' : 'tasks'} canceled` , maxWidth: 'max-content'})
   deselectAll()
 }
 function onEsc(e: KeyboardEvent) { if (e.key === 'Escape' && selectedTasks.value.size) deselectAll() }
@@ -169,6 +221,12 @@ onMounted(() => { window.addEventListener('keydown', onEsc) })
 onUnmounted(() => { window.removeEventListener('keydown', onEsc) })
 
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+// Expected qty (targetQty) summed across the task's own lines — more relevant
+// here than Purchase qty (t.purchaseQty, whole-PO scope): this list is about
+// what each task is actually going after, not the PO's total demand.
+function expectedQtyTotal(t: ReceivingTask): number {
+  return t.items.reduce((s, it) => s + it.targetQty, 0)
+}
 // Aging shows only when a task ran longer than a day.
 function aging(t: ReceivingTask) {
   const d = taskAgingDays(t)
@@ -178,13 +236,24 @@ function aging(t: ReceivingTask) {
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(t: ReceivingTask) { router.push(`/receiving/${t.id}`) }
-function createPutAway(t: ReceivingTask, po: ReceivingPO) {
-  router.push({ path: '/barang-masuk/put-away/create', query: { warehouseId: po.warehouseId, taskId: t.id } })
+function startReceivingAndNavigate(t: ReceivingTask) {
+  startReceiving(t.id)
+  router.push(`/receiving/${t.id}/receive`)
 }
-const deleteModalOpen = ref(false)
-const taskToDelete = ref<ReceivingTask | null>(null)
-function openDeleteModal(t: ReceivingTask) { taskToDelete.value = t; deleteModalOpen.value = true }
-function closeDeleteModal() { deleteModalOpen.value = false; taskToDelete.value = null }
+function continueReceiving(t: ReceivingTask) { router.push(`/receiving/${t.id}/receive`) }
+function createPutAway(t: ReceivingTask) {
+  router.push({ path: '/inbound-delivery/put-away/create', query: { warehouseId: t.warehouseId, taskId: t.id } })
+}
+const cancelModalOpen = ref(false)
+const taskToCancel = ref<ReceivingTask | null>(null)
+function openCancelModal(t: ReceivingTask) { taskToCancel.value = t; cancelModalOpen.value = true }
+function closeCancelModal() { cancelModalOpen.value = false; taskToCancel.value = null }
+function confirmCancelTask() {
+  if (!taskToCancel.value) return
+  cancelReceivingTask(taskToCancel.value.id)
+  toast.notify({ variant: 'success', title: `${taskToCancel.value.taskNo} canceled`, maxWidth: 'max-content' })
+  closeCancelModal()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -194,18 +263,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar ── -->
     <div class="filter-bar">
       <div class="filter-left">
-        <MpPopover v-if="!isScoped" id="rcvg-wh-filter" is-close-on-select>
+        <MpPopover v-if="!isScoped" id="rcvg-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <MpSelect id="rcvg-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = ''">
-              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
+            <MpSelect id="rcvg-wh-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = []">
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`rcvg-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
@@ -224,18 +302,26 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover id="rcvg-status-filter" is-close-on-select>
+        <MpPopover id="rcvg-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <MpSelect id="rcvg-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''">
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+            <MpSelect id="rcvg-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = []">
+              <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem v-for="opt in statusOptions" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value">{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in statusOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`rcvg-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
       </div>
@@ -250,6 +336,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="rcvg-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-rcvg-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -259,25 +346,31 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
 
     <!-- ── Table + pagination (no gap between them) ── -->
-    <div v-if="filteredPOs.length" class="rcvg-table-section">
+    <div v-if="filteredTasks.length" class="rcvg-table-section">
     <div ref="tableWrapEl" class="rcvg-table-wrap" :class="{ 'rcvg-table-wrap--scrolled': tableScrolled }" @scroll.passive="onTableScroll">
       <table class="rcvg-table">
         <colgroup>
           <col style="width: 200px" />
-          <col style="width: 220px" />
-          <col style="width: 150px" />
-          <col v-if="!isScoped" style="width: 140px" />
+          <col v-if="colVis.purchaseNo" style="width: 220px" />
+          <col v-if="colVis.warehouseName" style="width: 150px" />
+          <col v-if="!isScoped && colVis.assignee" style="width: 140px" />
+          <col v-if="colVis.skuCount" style="width: 100px" />
+          <col v-if="colVis.expectedQty" style="width: 120px" />
+          <col v-if="colVis.receivedQty" style="width: 100px" />
+          <col v-if="colVis.status" style="width: 130px" />
           <col style="width: 100px" />
-          <col style="width: 120px" />
-          <col style="width: 100px" />
-          <col style="width: 130px" />
-          <col style="width: 180px" />
-          <col style="width: 200px" />
+          <col v-if="colVis.startDate" style="width: 180px" />
+          <col v-if="colVis.endDate" style="width: 200px" />
           <col style="width: 44px" />
         </colgroup>
         <thead>
@@ -289,7 +382,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <MpCheckbox id="rcvg-bulk-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
                   <span class="rcvg-bulk-bar__count">{{ bulkCountLabel }}</span>
                   <button v-if="canCreatePutAway" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="bulkCreatePutAway">Create put-away</button>
-                  <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="bulkDeleteOpen = true">Delete</button>
+                  <span v-else-if="selectedTasksSpanMultipleWarehouses" class="rcvg-bulk-bar__hint">
+                    Select tasks from a single warehouse to create put-away
+                  </span>
+                  <button
+                    v-if="bulkCancelable"
+                    class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+                    :class="css({ color: 'var(--mp-text-critical)' })"
+                    @click="bulkCancelOpen = true"
+                  >Cancel receiving task</button>
                 </div>
                 <div class="rcvg-bulk-bar__right">
                   <span>Press</span><kbd class="rcvg-bulk-bar__kbd">Esc</kbd><span>to deselect</span>
@@ -304,58 +405,88 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 <span>Receiving task no.</span>
               </div>
             </th>
-            <th class="rcvg-th">Purchase order no.</th>
-            <th class="rcvg-th">Warehouse</th>
-            <th v-if="!isScoped" class="rcvg-th">Assignee</th>
-            <th class="rcvg-th">Sku qty</th>
-            <th class="rcvg-th rcvg-th--right">Purchase qty</th>
-            <th class="rcvg-th rcvg-th--right">Received qty</th>
-            <th class="rcvg-th">Status</th>
-            <th class="rcvg-th">Start date</th>
-            <th class="rcvg-th">End date</th>
+            <th v-if="colVis.purchaseNo" class="rcvg-th">Purchase order no.</th>
+            <th v-if="colVis.warehouseName" class="rcvg-th">Warehouse</th>
+            <th v-if="!isScoped && colVis.assignee" class="rcvg-th">Assignee</th>
+            <th v-if="colVis.skuCount" class="rcvg-th">Sku qty</th>
+            <th v-if="colVis.expectedQty" class="rcvg-th rcvg-th--right">Expected qty</th>
+            <th v-if="colVis.receivedQty" class="rcvg-th rcvg-th--right">Received qty</th>
+            <th v-if="colVis.status" class="rcvg-th">Status</th>
+            <th class="rcvg-th" />
+            <th v-if="colVis.startDate" class="rcvg-th">Start date</th>
+            <th v-if="colVis.endDate" class="rcvg-th">End date</th>
             <th class="rcvg-th rcvg-th--actions" />
           </tr>
         </thead>
         <tbody>
-          <template v-for="po in pagedPOs" :key="po.id">
-            <tr
-              v-for="(t, tIdx) in po.tasks"
-              :key="t.id"
-              class="rcvg-task-row"
-              :class="{ 'rcvg-task-row--selected': selectedTasks.has(t.id) }"
-            >
-              <!-- Receiving task cell (first column) -->
-              <td class="rcvg-td rcvg-td--task">
-                <div class="rcvg-task-cell">
-                  <span class="rcvg-check" @click.stop>
-                    <MpCheckbox :id="`rcvg-task-${t.id}`" :is-checked="selectedTasks.has(t.id)" @change="toggleTask(t.id)" />
+          <tr
+            v-for="t in pagedTasks"
+            :key="t.id"
+            class="rcvg-task-row"
+            :class="{ 'rcvg-task-row--selected': selectedTasks.has(t.id) }"
+          >
+            <!-- Receiving task cell (first column) -->
+            <td class="rcvg-td rcvg-td--task">
+              <div class="rcvg-task-cell">
+                <span class="rcvg-check" @click.stop>
+                  <MpCheckbox :id="`rcvg-task-${t.id}`" :is-checked="selectedTasks.has(t.id)" @change="toggleTask(t.id)" />
+                </span>
+                <span class="rcvg-task-no">{{ t.taskNo }}</span>
+                <button class="row-hover-btn" @click.stop="viewDetails(t)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </td>
+            <td v-if="colVis.purchaseNo" class="rcvg-td rcvg-td--po">
+              <div class="rcvg-po-cell">
+                <span class="rcvg-po-no">{{ t.purchaseNo }}</span>
+                <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${t.receiptId}`)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </td>
+            <td v-if="colVis.warehouseName" class="rcvg-td rcvg-td--warehouse">
+              <div class="rcvg-wh-cell">
+                <span>{{ t.warehouseName }}</span>
+                <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${t.warehouseId}`)">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="row-hover-btn__label">VIEW DETAILS</span>
+                </button>
+              </div>
+            </td>
+            <td v-if="!isScoped && colVis.assignee" class="rcvg-td rcvg-td--assignee">{{ t.assignee }}</td>
+            <td v-if="colVis.skuCount" class="rcvg-td">{{ t.skuCount }}</td>
+            <td v-if="colVis.expectedQty" class="rcvg-td rcvg-td--right">{{ fmt(expectedQtyTotal(t)) }}</td>
+            <td v-if="colVis.receivedQty" class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
+            <td v-if="colVis.status" class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
+            <td class="rcvg-td">
+              <div class="rcvg-icons-cell">
+                <MpTooltip
+                  v-if="hasPutAwayTask(t.id)"
+                  :id="`tt-putaway-${t.id}`"
+                  label="Put-away task created"
+                  placement="top"
+                  use-portal
+                >
+                  <span class="rcvg-icon-indicator" aria-label="Put-away task created">
+                    <MpIcon name="doc" size="20px" />
                   </span>
-                  <span class="rcvg-task-no">{{ t.taskNo }}</span>
-                  <button class="row-hover-btn" @click.stop="viewDetails(t)">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
-                </div>
-              </td>
-              <!-- PO cell — only rendered for first task, spans all tasks in this PO -->
-              <td v-if="tIdx === 0" :rowspan="po.tasks.length" class="rcvg-td rcvg-td--po">
-                <div class="rcvg-po-cell">
-                  <span class="rcvg-po-no">{{ po.purchaseNo }}</span>
-                </div>
-              </td>
-              <td v-if="tIdx === 0" :rowspan="po.tasks.length" class="rcvg-td rcvg-td--warehouse">
-                {{ po.warehouseName }}
-              </td>
-              <td v-if="!isScoped" class="rcvg-td">{{ t.assignee }}</td>
-              <td class="rcvg-td">{{ t.skuCount }}</td>
-              <td class="rcvg-td rcvg-td--right">{{ fmt(t.purchaseQty) }}</td>
-              <td class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
-              <td class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
-              <td class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
-              <td class="rcvg-td">
+                </MpTooltip>
+              </div>
+            </td>
+            <td v-if="colVis.startDate" class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
+              <td v-if="colVis.endDate" class="rcvg-td">
                 <span class="rcvg-end">
                   <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
                   <span v-else class="rcvg-end__ongoing">—</span>
@@ -374,21 +505,26 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
                       <MpPopoverListItem @click="viewDetails(t)">View details</MpPopoverListItem>
-                      <MpPopoverListItem v-if="t.status === 'pending put-away'" @click="createPutAway(t, po)">Create put-away</MpPopoverListItem>
-                      <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="openDeleteModal(t)">Delete</MpPopoverListItem>
+                      <MpPopoverListItem v-if="t.status === 'open'" @click="startReceivingAndNavigate(t)">Start receiving</MpPopoverListItem>
+                      <MpPopoverListItem v-else-if="t.status === 'in progress'" @click="continueReceiving(t)">Continue receiving</MpPopoverListItem>
+                      <MpPopoverListItem v-if="t.status === 'pending put-away'" @click="createPutAway(t)">Create put-away</MpPopoverListItem>
+                      <MpPopoverListItem
+                        v-if="canCancelReceivingTask(t)"
+                        :class="css({ color: 'var(--mp-text-critical)' })"
+                        @click="openCancelModal(t)"
+                      >Cancel</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
               </td>
             </tr>
-          </template>
         </tbody>
       </table>
     </div>
     <ErpPagination
       :current-page="currentPage"
       :per-page="perPage"
-      :total="totalPOs"
+      :total="totalTasks"
       @page-change="currentPage = $event"
       @per-page-change="perPage = $event"
     />
@@ -402,42 +538,36 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </div>
   </div>
 
-  <!-- ── Delete confirmation modal ── -->
-  <MpModal id="rcvg-delete-modal" :is-open="deleteModalOpen" size="sm"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal">
+  <!-- ── Cancel confirmation modal ── -->
+  <MpModal id="rcvg-cancel-modal" :is-open="cancelModalOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal">
     <MpModalContent>
-      <MpModalHeader>Delete {{ taskToDelete?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <template v-if="taskToDelete && taskToDelete.receivedQty > 0">
-          This task has {{ fmt(taskToDelete.receivedQty) }} units recorded.
-          Deleting it will return those units to the purchase order.
-        </template>
-        <template v-else>
-          This receiving task will be permanently deleted.
-        </template>
+        This receiving task will be canceled and can no longer be continued. This can't be undone.
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Keep task</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="closeDeleteModal">Delete task</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep task</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">Cancel task</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
 
-  <!-- ── Bulk delete confirmation modal ── -->
-  <MpModal id="rcvg-bulk-delete-modal" :is-open="bulkDeleteOpen" size="sm"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkDeleteOpen = false">
+  <!-- ── Bulk cancel confirmation modal ── -->
+  <MpModal id="rcvg-bulk-cancel-modal" :is-open="bulkCancelOpen" size="md"
+    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="bulkCancelOpen = false">
     <MpModalContent>
-      <MpModalHeader>Delete {{ selectedTasks.size }} {{ selectedTasks.size === 1 ? 'task' : 'tasks' }}?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>Cancel {{ cancelableTaskObjs.length }} {{ cancelableTaskObjs.length === 1 ? 'task' : 'tasks' }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        The selected receiving tasks will be permanently deleted. This can't be undone.
+        The selected receiving tasks will be canceled and can no longer be continued. This can't be undone.
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkDeleteOpen = false">Keep tasks</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">Delete tasks</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkCancelOpen = false">Keep tasks</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkCancel">Cancel tasks</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -465,6 +595,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Warehouse multi-select list */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -485,6 +624,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Table */
 .rcvg-table-section { display: flex; flex-direction: column; }
@@ -513,14 +660,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-bulk-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); height: var(--mp-sizes-7, 28px); }
 .rcvg-bulk-bar__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .rcvg-bulk-bar__count { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap; }
+.rcvg-bulk-bar__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .rcvg-bulk-bar__right { display: flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .rcvg-bulk-bar__kbd {
   display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5);
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-sm);
   font-size: var(--mp-font-sizes-xs); font-family: inherit; color: var(--mp-text-secondary);
 }
-/* Selected task row */
-.rcvg-task-row--selected .rcvg-td { background: var(--mp-background-selected-subtle, #eef6f2); }
 
 .rcvg-td {
   height: var(--mp-sizes-10, 40px);
@@ -530,6 +676,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .rcvg-td--right { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .rcvg-td--muted { color: var(--mp-text-secondary); }
+
+/* Icon indicator cell — put-away task badge */
+.rcvg-icons-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--mp-spacing-2);
+}
+.rcvg-icon-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mp-text-subtle);
+}
 .rcvg-th--actions,
 .rcvg-td--actions {
   position: sticky; right: 0; z-index: 1;
@@ -538,7 +698,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-th--actions { background: var(--mp-background-neutral-subtle); }
 .rcvg-td--actions { background: var(--mp-background-default, #fff); }
 .rcvg-task-row:hover .rcvg-td--actions { background: var(--mp-background-neutral-subtle); }
-.rcvg-task-row--selected .rcvg-td--actions { background: var(--mp-background-selected-subtle, #eef6f2); }
 /* Shadow only when table is scrolled right */
 .rcvg-table-wrap--scrolled .rcvg-th--actions,
 .rcvg-table-wrap--scrolled .rcvg-td--actions { box-shadow: -1px 0 0 var(--mp-border-default); }
@@ -555,10 +714,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
 
-/* Merged PO + Warehouse cells */
-.rcvg-td--po { vertical-align: top; border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
-.rcvg-td--warehouse { vertical-align: top; border-left: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); }
+/* PO + Warehouse cells */
+.rcvg-td--po { position: relative; }
+.rcvg-td--warehouse { position: relative; }
 .rcvg-po-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.rcvg-wh-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rcvg-po-no { color: var(--mp-text-default); }
 
 /* Task row */
@@ -582,12 +742,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-task-row:hover .row-hover-btn { display: flex; }
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 /* Empty state */
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }

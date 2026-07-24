@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css,
+  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
@@ -9,6 +9,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
+import { addProductionRequest } from '~/data/productionRequests'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -21,7 +22,30 @@ const hasApproval = true
 
 const router = useRouter()
 const order = computed(() => getSalesOrderDetail(props.orderId))
+
+// Raise a production request for every registered-product line on this order —
+// the request carries this sales order as its real source (see productionRequests.ts).
+function handleCreateProductionRequest() {
+  const created = addProductionRequest(order.value)
+  if (!created.length) {
+    toast.notify({ variant: 'warning', title: 'No registered products on this order to produce' })
+    return
+  }
+  toast.notify({ variant: 'success', title: 'Production request created' })
+  router.push('/production-request')
+}
 const activityOpen = ref(false)
+const activityEntries = computed(() => [{
+  date: order.value.lastUpdatedAt,
+  user: order.value.lastUpdatedBy,
+  activity: 'Created',
+  details: [
+    { label: 'Transaction no.', value: `Sales Order #${order.value.number}` },
+    { label: 'Transaction date', value: formatDateLong(order.value.date) },
+    { label: 'Customer', value: order.value.customer.name },
+    { label: 'Warehouse', value: order.value.warehouse },
+  ],
+}])
 
 // ── Line-items progressive pagination (auto lazy-load on scroll) ───────────────
 const PAGE_SIZE = 10
@@ -147,6 +171,11 @@ function goBack() { router.push('/sales-orders') }
                     type="text"
                     placeholder="Search transaction…"
                   />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button
@@ -448,6 +477,7 @@ function goBack() { router.push('/sales-orders') }
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem>Preview</MpPopoverListItem>
+              <MpPopoverListItem @click="handleCreateProductionRequest">Create production request</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
@@ -468,6 +498,7 @@ function goBack() { router.push('/sales-orders') }
       :subject="`Sales Order #${order.number}`"
       :updated-by="order.lastUpdatedBy"
       :updated-at="order.lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
   </div>
@@ -545,7 +576,7 @@ function goBack() { router.push('/sales-orders') }
 
 /* jump-to popover (304px): search on top (280px input, 12px padding), 5 recent below */
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }   /* 12px around the search */
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }   /* 12px around the search */
 .detail-jump-search {
   width: 100%;        /* = 280px inside the 304px popover minus 12px padding each side */
   box-sizing: border-box;
@@ -555,9 +586,19 @@ function goBack() { router.push('/sales-orders') }
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
   outline: none;
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
   display: flex;
@@ -689,9 +730,7 @@ function goBack() { router.push('/sales-orders') }
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
-/* in the bordered panel the count sits at the bottom → divider above, not below */
 .detail-items-section--bordered .detail-items-count {
-  border-top: 1px solid var(--mp-border-default);
   border-bottom: none;
 }
 /* table scrolls internally past ~10 rows so the page doesn't grow unbounded */
@@ -763,7 +802,7 @@ function goBack() { router.push('/sales-orders') }
 .row-hover-btn {
   position: absolute;
   right: 0;
-  top: 50%;
+  top: var(--mp-spacing-2\.5, 10px);
   transform: translateY(-50%);
   display: none;
   align-items: center;

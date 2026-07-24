@@ -9,8 +9,9 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStage } from '~/data/receipts'
+import { receiptsForStage, receipts } from '~/data/receipts'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 import { receivedSummaryForReceipt } from '~/data/receivingTasks'
@@ -19,7 +20,23 @@ const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
 const detail = computed(() => getReceiptDetail(props.orderId))
+const currentReceipt = computed(() => receipts.find(r => r.id === props.orderId))
 const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const d = detail.value
+  if (!d) return []
+  return [{
+    date: d.lastUpdatedAt,
+    user: d.lastUpdatedBy,
+    activity: 'Created',
+    details: [
+      { label: 'Transaction no.', value: d.purchaseNo },
+      { label: 'Transaction date', value: formatDateLong(d.transactionDate) },
+      { label: 'Vendor', value: d.vendor ?? '—' },
+      { label: 'Warehouse', value: d.warehouseName },
+    ],
+  }]
+})
 
 // Real per-SKU received data, aggregated from this receipt's receiving tasks.
 const receivedSummary = computed(() => receivedSummaryForReceipt(props.orderId))
@@ -108,7 +125,7 @@ const jumpResults = computed(() => {
   const matched = q ? all.filter(r => r.purchaseNo.toLowerCase().includes(q)) : all
   return matched.slice(0, 5)
 })
-function jumpTo(id: string) { router.push(`/barang-masuk/${id}`) }
+function jumpTo(id: string) { router.push(`/inbound-delivery/${id}`) }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -147,7 +164,7 @@ function agingDays(startDate?: string, endDate?: string): number {
   return Math.max(0, Math.round((ref.getTime() - start.getTime()) / 86400000) + 1)
 }
 
-function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts' } }) }
+function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } }) }
 </script>
 
 <template>
@@ -172,6 +189,11 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
@@ -201,7 +223,18 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
           <ContentList label="Estimated arrival date" :value="formatDateLong(detail.estimatedArrival)" />
           <ContentList label="Ship via" :value="detail.shipVia" />
           <ContentList label="Tracking no." :value="trackingText(detail.trackingNos)" />
-          <ContentList label="Warehouse" :value="detail.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ detail.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${currentReceipt?.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
         </div>
       </section>
 
@@ -305,7 +338,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                     <th class="detail-th">Date</th>
                     <th class="detail-th">Assignee</th>
                     <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Purchase qty</th>
+                    <th class="detail-th detail-th--num">Expected qty</th>
                     <th class="detail-th detail-th--num">Received qty</th>
                     <th class="detail-th">Status</th>
                     <th class="detail-th">Start date</th>
@@ -329,13 +362,13 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                     <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
                     <td class="detail-td">{{ pr.assignee }}</td>
                     <td class="detail-td">{{ pr.skuScope }}</td>
-                    <td class="detail-td detail-td--num">{{ formatNum(pr.purchaseQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.expectedQty) }}</td>
                     <td class="detail-td detail-td--num">{{ formatNum(pr.receivedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pr.status" /></td>
-                    <td class="detail-td">{{ pr.startDate ? formatDateNumeric(pr.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ pr.startDate ? formatDateTime(pr.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        <span v-if="pr.endDate">{{ formatDateNumeric(pr.endDate) }}</span>
+                        <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
                       </span>
@@ -383,10 +416,10 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
                     </td>
                     <td class="detail-td">{{ pa.assignee }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
-                    <td class="detail-td">{{ pa.startDate ? formatDateNumeric(pa.startDate) : '—' }}</td>
+                    <td class="detail-td">{{ pa.startDate ? formatDateTime(pa.startDate) : '—' }}</td>
                     <td class="detail-td">
                       <span class="linked-end">
-                        <span v-if="pa.endDate">{{ formatDateNumeric(pa.endDate) }}</span>
+                        <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
                         <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
                       </span>
@@ -426,6 +459,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
       :subject="detail.purchaseNo"
       :updated-by="detail.lastUpdatedBy"
       :updated-at="detail.lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
   </div>
@@ -459,14 +493,24 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search {
   width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
@@ -495,7 +539,7 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden;
 }
 .detail-items-section--bordered .detail-items-count {
-  border-top: 1px solid var(--mp-border-default); border-bottom: none;
+ border-bottom: none;
 }
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
@@ -519,7 +563,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .rcd-product-thumb {
@@ -564,7 +607,6 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
 .detail-linked-wrap { overflow-x: auto; }
 .detail-linked { width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: auto; border-top: 1px solid var(--mp-border-default); }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
-.detail-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-td--number { position: relative; }
 .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -580,6 +622,8 @@ function goBack() { router.push({ path: '/barang-masuk', query: { tab: 'Receipts
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
 }
 .detail-item-row:hover .row-hover-btn { display: flex; }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
