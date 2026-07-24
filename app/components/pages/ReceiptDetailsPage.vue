@@ -526,12 +526,10 @@ function confirmDelete() {
     <div class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary">Print PDF</button>
 
-      <button v-if="isManual" class="detail-btn detail-btn--secondary" @click="openDeleteModal">Delete</button>
-
       <!-- Create purchase receiving — split button; the chevron holds the order-level
-           Edit order / Cancel/Close receipt actions (never a standalone footer button). -->
+           Edit order / Cancel/Close / Delete actions (never a standalone footer button). -->
       <template v-if="canCreateReceivingTask(orderId)">
-        <div v-if="canEdit || canCancelAction" class="detail-split-btn">
+        <div v-if="canEdit || canCancelAction || isManual" class="detail-split-btn">
           <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openPurchaseReceiving">Create purchase receiving</button>
           <MpPopover id="rcd-actions-recv" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
@@ -543,6 +541,7 @@ function confirmDelete() {
               <MpPopoverList>
                 <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
                 <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">Delete</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -550,8 +549,8 @@ function confirmDelete() {
         <button v-else class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">Create purchase receiving</button>
       </template>
 
-      <!-- No create action left, but the receipt is still editable/cancellable -->
-      <MpPopover v-else-if="canEdit || canCancelAction" id="rcd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+      <!-- No create action left, but the receipt is still editable/cancellable/deletable -->
+      <MpPopover v-else-if="canEdit || canCancelAction || isManual" id="rcd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
             Actions
@@ -562,6 +561,7 @@ function confirmDelete() {
           <MpPopoverList>
             <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
             <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">Delete</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>

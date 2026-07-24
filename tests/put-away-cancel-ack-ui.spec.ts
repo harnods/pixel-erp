@@ -7,8 +7,9 @@
  * button acknowledges directly (no extra confirmation modal, matching the
  * receiving details page's own banner). Start/Continue put-away is still
  * blocked by a confirmation modal (reached only via that button, not the
- * banner). Acknowledging (from either path) cancels the put-away AND its
- * linked receiving task, and stays on the current page (no navigation).
+ * banner). Acknowledging (from either path) cancels the put-away only — its
+ * linked receiving task STAYS completed (done work is a permanent record) — and
+ * stays on the current page (no navigation).
  */
 import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'

@@ -31,7 +31,7 @@ import {
 import { cancelInboundReceipt } from '~/data/inboundSync'
 import {
   addPutAwayTask, startPutAway, endPutAway, getPutAwayTask, acknowledgeCanceledPutAway,
-  canCancelPutAway,
+  canCancelPutAway, cancelPutAway,
 } from '~/data/putAwayTasks'
 import '~/data/warehouseDetails'
 
@@ -143,6 +143,30 @@ describe('Inbound PO cancel cascade — unfinished put-away is flagged, not the 
     // signal the UI gates on, and it survives untouched here.
     expect(canCancelPutAway(getPutAwayTask(pa.id)!)).toBe(true)
     expect(getPutAwayTask(pa.id)!.needsCancelAck).toBe(true)
+  })
+
+  // Bug (Notion): when the PO is canceled, the operator must be able to CANCEL the
+  // put-away directly (via the Cancel-task action), not only Acknowledge — and doing
+  // so must keep the completed receiving task completed, never revert it.
+  it('canceling a PO-canceled put-away directly keeps the receiving task completed (revertReceiving:false)', () => {
+    const receipt = makeReceipt(10)
+    const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
+    startReceiving(task.id)
+    endReceiving(task.id, { [SKU_PLAIN.sku]: 10 })
+    const pa = addPutAwayTask({
+      receivingTaskIds: [task.id], receivingTaskNos: [task.taskNo],
+      warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME, assignee: 'Test Operator',
+    })
+    startPutAway(pa.id)
+    cancelInboundReceipt(receipt.id)
+    expect(getPutAwayTask(pa.id)!.needsCancelAck).toBe(true)
+    expect(getReceivingTask(task.id)!.status).toBe('completed')
+
+    // The UI's "Cancel task" for a PO-canceled put-away passes revertReceiving:false.
+    cancelPutAway(pa.id, 'Purchase order was canceled', { revertReceiving: false })
+
+    expect(getPutAwayTask(pa.id)!.status).toBe('canceled')
+    expect(getReceivingTask(task.id)!.status).toBe('completed') // stays completed, NOT reverted
   })
 })
 

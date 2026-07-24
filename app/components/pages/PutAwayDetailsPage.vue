@@ -269,7 +269,12 @@ const cancelOpen = ref(false)
 function askCancel() { cancelOpen.value = true }
 function confirmCancel() {
   if (!task.value) return
-  cancelPutAway(task.value.id)
+  // If the PO behind this put-away was canceled (needsCancelAck), its receiving task
+  // already reached completed and MUST stay completed — never revert it to pending
+  // put-away. A normal manual cancel (PO still live) does revert, so the operator can
+  // start a fresh put-away. This lets the operator cancel directly here instead of
+  // being forced through the Acknowledge modal.
+  cancelPutAway(task.value.id, undefined, needsCancelAck.value ? { revertReceiving: false } : undefined)
   cancelOpen.value = false
   // stay on this detail page — task.status is now 'canceled' and the header shows it
   toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
@@ -337,14 +342,15 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       <!-- The receiving task behind this put-away had its PO canceled while
            this put-away was still open/in progress — real work may already
            exist, so it isn't silently auto-canceled. Acknowledging cancels
-           this task AND its linked receiving task(s) too. -->
+           this put-away only; the linked receiving task stays completed (its
+           received goods are a permanent record). -->
       <div v-if="needsCancelAck" class="pad-cancel-banner">
         <svg class="pad-cancel-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
         </svg>
         <span class="pad-cancel-banner-text">
-          The purchase order behind this task's receiving was canceled. Nothing has been stored yet — acknowledging will cancel this put-away and its linked receiving task.
+          The purchase order behind this task's receiving was canceled. Nothing has been stored yet — acknowledging will cancel this put-away. Its linked receiving task stays completed (the received goods are a permanent record).
         </span>
         <button class="pad-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">Acknowledge</button>
       </div>
@@ -610,7 +616,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         <MpModalHeader>Acknowledge canceled purchase order?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           The purchase order behind this put-away's receiving task was canceled. Nothing has been stored yet —
-          acknowledging will cancel {{ task?.taskNo }} and its linked receiving task. This can't be undone.
+          acknowledging will cancel {{ task?.taskNo }}. Its linked receiving task stays completed (the received goods are a permanent record). This can't be undone.
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">

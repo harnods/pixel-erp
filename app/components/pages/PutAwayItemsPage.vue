@@ -68,8 +68,19 @@ watch([() => props.orderId, lineItems], () => {
   rowCounter = 0
   const seen = new Map<string, DraftRow>()
   lineItems.value.forEach(it => {
+    const stored = it.stored ?? 0
     if (!seen.has(it.skuCode)) {
-      seen.set(it.skuCode, { id: newRowId(), skuCode: it.skuCode, qty: 0, binLocation: it.binLocation })
+      // Seed the put-away qty from what a saved draft already stored (it.stored),
+      // not 0 — otherwise reopening/Continue put-away wiped the operator's progress
+      // (scan qty 1 → Save draft → Continue showed 0). Summed across the SKU's rows.
+      // Storage location starts EMPTY on a fresh put-away — the operator scans the bin
+      // (active-bin model), it isn't auto-filled — but a draft that already stored units
+      // into a bin keeps that bin so Continue put-away restores the real progress.
+      seen.set(it.skuCode, { id: newRowId(), skuCode: it.skuCode, qty: stored, binLocation: stored > 0 ? it.binLocation : '' })
+    } else {
+      const row = seen.get(it.skuCode)!
+      row.qty += stored
+      if (!row.binLocation && stored > 0) row.binLocation = it.binLocation
     }
   })
   draftRows.value = [...seen.values()]
@@ -412,9 +423,14 @@ function handleScan(rawValue: string) {
       return
     }
     const binRow = bin ? skuRows.find(r => sameCode(r.binLocation, bin)) : null
+    // An existing row for this SKU with no bin yet (the fresh-start seed row, whose
+    // storage location is now empty by default) should be FILLED by this scan — adopt
+    // its bin below — rather than leaving it stranded and auto-splitting a new row.
+    const emptyBinRow = withCapacity.some(r => !r.binLocation)
 
-    if (bin && !binRow) {
-      // Active bin differs from every existing row for this SKU → auto-split a new row for this bin.
+    if (bin && !binRow && !emptyBinRow) {
+      // Active bin differs from every existing row for this SKU (and none is unassigned)
+      // → auto-split a new row for this bin.
       const newRow: DraftRow = { id: newRowId(), skuCode: sku, qty: 1, binLocation: bin }
       const lastSkuIdx = draftRows.value.reduce((acc, r, i) => sameCode(r.skuCode, sku) ? i : acc, -1)
       const next = [...draftRows.value]
@@ -673,7 +689,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 <template>
   <div v-if="task && task.needsCancelAck" class="pi-not-found">
     <p>The purchase order behind this put-away's receiving task was canceled.</p>
-    <p>Nothing has been stored yet — acknowledging will cancel this put-away and its linked receiving task.</p>
+    <p>Nothing has been stored yet — acknowledging will cancel this put-away. Its linked receiving task stays completed (the received goods are a permanent record).</p>
     <button class="pi-btn pi-btn--primary" type="button" @click="acknowledgeAndCancel">Acknowledge</button>
     <button class="detail-breadcrumb" @click="goBack">Back to task</button>
   </div>

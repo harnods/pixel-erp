@@ -35,6 +35,19 @@ function sourceReceivingItem(task: PutAwayTask, skuCode: string) {
   return undefined
 }
 
+/** Total received qty for a SKU across every bundled receiving task — this is the
+ *  real "qty to put away" ceiling, independent of how much a draft has stored so
+ *  far. Summed so a SKU split across 2+ receiving tasks reports its full total. */
+function receivedTotalForSku(task: PutAwayTask, skuCode: string): number {
+  let total = 0
+  for (const rtId of task.receivingTaskIds) {
+    const rt = getReceivingTask(rtId)
+    const it = rt?.items.find((x) => x.sku === skuCode)
+    if (it) total += it.receivedQty
+  }
+  return total
+}
+
 /** Batch destination assignments for a SKU — saved progress wins, else the
  *  union of every bundled receiving task's own recorded batches for it. Two
  *  bundled tasks can both report the SAME physical batch number (e.g. one PO
@@ -110,13 +123,12 @@ export function getPutAwayLineItems(taskId: string): PutAwayLineItem[] {
           stored = serialAssignments.filter((s) => s.destLocationId).length
         }
       }
-      // ci.qty === 0 only ever happens for a row dropAbandonedZeroRows kept
-      // specifically because it's the SOLE entry for its key (see
-      // putAwayTasks.ts) — i.e. a genuinely untouched SKU, never a real
-      // partial split (those always carry their own real, positive qty). Fall
-      // back to the receiving task's own recorded qty so "Received qty" shows
-      // the true fact of what came in, not "nothing entered into put-away yet".
-      const qty = ci.qty > 0 ? ci.qty : (it?.receivedQty ?? 0)
+      // "Received qty" (the qty-to-put-away ceiling) must always be the real total
+      // that came in — NOT ci.qty, which for a plain SKU is only how much a partial
+      // draft has stored so far (put away 1 of 2 → ci.qty 1). Echoing ci.qty here
+      // silently shrank the ceiling to the drafted amount, losing the un-stored
+      // remainder on reopen. Progress lives in `stored`; the ceiling is the source total.
+      const qty = receivedTotalForSku(task, ci.skuCode) || (ci.qty > 0 ? ci.qty : (it?.receivedQty ?? 0))
       return {
         productName: it?.productName || p?.name || ci.skuCode,
         productDesc: p?.desc ?? '',
