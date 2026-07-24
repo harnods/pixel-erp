@@ -7,7 +7,7 @@
   -->
   <MpPopover
     id="header-quick-create"
-    placement="bottom-end"
+    placement="bottom-start"
     trigger="hover"
     use-portal
     is-close-on-escape
