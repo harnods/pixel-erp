@@ -187,7 +187,10 @@ function pickingListBlockReasons(pt: PickingTask): string[] {
   const reasons: string[] = []
   for (const orderId of pt.salesOrderIds) {
     const t = byOrderId.get(orderId)
-    if (!t || t.packable) continue
+    // A cancelled order never blocks packing — it's dropped from this packing entirely
+    // (see canceledTables note), so it must not drag the whole picking list to
+    // "Not packable". Skip it alongside already-packable orders.
+    if (!t || t.packable || t.canceled) continue
     if (t.alreadyPacked) reasons.push(`${t.salesNo} already has a packing task`)
     else if (t.isMarketplace) reasons.push(`${t.salesNo} (marketplace) isn't fully picked yet across its picking lists`)
     else reasons.push(`${t.salesNo} has nothing picked yet`)
