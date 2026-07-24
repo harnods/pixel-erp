@@ -75,7 +75,7 @@
             @dragend="onDragEnd"
           >
             <span class="quick-create__handle" aria-hidden="true">
-              <MpIcon name="drag" size="md" />
+              <MpIcon name="drag" size="sm" />
             </span>
             <span class="quick-create__manage-label">{{ item.label }}</span>
             <button
@@ -87,7 +87,7 @@
             >
               <!-- Different icon per state so show/hide are distinguishable at a glance:
                    `show` (open eye) when visible, `hide` (crossed eye) when hidden. -->
-              <MpIcon :name="item.visible ? 'show' : 'hide'" size="md" />
+              <MpIcon :name="item.visible ? 'show' : 'hide'" size="sm" />
             </button>
           </li>
         </ul>
@@ -273,7 +273,7 @@ function onDragEnd() {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  padding: var(--mp-spacing-1) var(--mp-spacing-3); /* 4px top/bottom, 12px sides */
   cursor: grab;
   user-select: none;
 }
