@@ -86,8 +86,14 @@
               @click="onToggle(item.key)"
             >
               <!-- Different icon per state so show/hide are distinguishable at a glance:
-                   `show` (open eye) when visible, `hide` (crossed eye) when hidden. -->
-              <MpIcon :name="item.visible ? 'show' : 'hide'" size="sm" />
+                   `show` (open eye) when visible, `hide` (crossed eye) when hidden.
+                   Color set via MpIcon's own `color` prop — it doesn't inherit the
+                   button's CSS currentColor — so hidden reads in the disabled tone. -->
+              <MpIcon
+                :name="item.visible ? 'show' : 'hide'"
+                :color="item.visible ? 'icon.default' : 'icon.disabled'"
+                size="sm"
+              />
             </button>
           </li>
         </ul>
