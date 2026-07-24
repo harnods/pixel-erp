@@ -14,6 +14,7 @@
     "@mekari/pixel3": "latest",
     "@mekari/pixel3-postcss": "latest",
     "@supabase/supabase-js": "^2.109.0",
+    "@unhead/vue": "^3.2.1",
     "bwip-js": "^4.11.2",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

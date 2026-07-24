@@ -350,7 +350,7 @@ const pageTabs: Record<string, string[]> = {
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
-  'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
+  'Expenses': ['Bills', 'Awaiting approval', 'Review files'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -400,7 +400,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
-    if (bills.length) out['Awaiting Approval'] = bills.length
+    if (bills.length) out['Awaiting approval'] = bills.length
     if (reviewFiles.length) out['Review files'] = reviewFiles.length
     return out
   }
@@ -499,7 +499,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   },
   'Expenses': {
     'Bills': BillsIndexPage,
-    'Awaiting Approval': BillsAwaitingApprovalPage,
+    'Awaiting approval': BillsAwaitingApprovalPage,
     'Review files': BillsReviewFilesPage,
   },
   'Stock adjustments': {
