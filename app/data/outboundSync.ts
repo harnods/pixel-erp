@@ -1,5 +1,5 @@
 import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder, canEditOutboundOrder, updateOutgoingOrderLines, recordOutgoingEdit } from "./outgoing";
-import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck, lockedOutboundQtyForSku, pendingPickingLinesForSku, reduceOrderSkuOnPickingTask, getPickingTask } from "./pickingTasks";
+import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck, acknowledgeCanceledPickingOrders, lockedOutboundQtyForSku, pendingPickingLinesForSku, reduceOrderSkuOnPickingTask, getPickingTask } from "./pickingTasks";
 import { getPackingForOrder, cancelPackingTask } from "./packingTasks";
 import { deliveryTasks, getDeliveryForOrder, canCancelDeliveryTask, cancelDeliveryTask, shippedQtyBySkuForOrder } from "./deliveryTasks";
 import { orderSkuLines, productBySku } from "./inventory";
@@ -181,25 +181,37 @@ export function cancelOutboundOrder(orderId: string, reason?: string): CancelOut
   // needs-ack flag on a shared picking task keys off the order's cancelled status).
   cancelOutgoingOrder(orderId, reason);
   const isCanceled = (id: string) => outgoingOrders.find((o) => o.id === id)?.status === "canceled";
-  // Picking cascade.
+  // Picking cascade (PRD D2 AC#6).
   for (const t of getPickingForOrder(orderId)) {
     if (t.status === "canceled") continue;
-    const hasOtherLiveOrder = t.salesOrderIds.some((id) => id !== orderId && !isCanceled(id));
-    if (t.salesOrderIds.length > 1 && hasOtherLiveOrder) {
-      // Shared task still serving another live order — keep it running AND keep the
-      // cancelled order linked (so it stays visible under Linked transactions on both
-      // detail pages). It can't be packed (packableOrderIds excludes cancelled). The
-      // pick WORK isn't touched automatically: flag the task so the operator explicitly
-      // ACKNOWLEDGES the cancellation, which then drops its lines from the pick list.
-      markPickingNeedsCancelAck(t.id);
-    } else {
-      // This cancelled order is the task's only (remaining) live order → void it,
-      // regardless of how far picking got.
+    const hasOtherLiveOrder = t.salesOrderIds.length > 1 && t.salesOrderIds.some((id) => id !== orderId && !isCanceled(id));
+    if (hasOtherLiveOrder) {
+      // SHARED with another live order → the task is NEVER cancelled.
+      if (t.status === "completed") {
+        // Done → stays Completed; kept linked for audit. This order's packing is voided below.
+      } else if (t.status === "open") {
+        // Not started → drop this order's lines from the pick work immediately (no ack
+        // banner), task proceeds for the others. The cancelled order stays LINKED
+        // (salesOrderIds) for audit / linked transactions.
+        acknowledgeCanceledPickingOrders(t.id);
+      } else {
+        // In progress / partially picked → flag Needs-Acknowledgment; operator acks to
+        // drop this order's lines and continue picking the remaining orders.
+        markPickingNeedsCancelAck(t.id);
+      }
+    } else if (t.status !== "completed") {
+      // SOLE order, not yet finished (open / in progress / partially picked) → cancel.
       cancelPickingTask(t.id, taskReason, true);
     }
+    // SOLE order + Completed → stays Completed (picked work is a permanent record; its
+    // reserved stock returns via the manual Release Reserved, D6).
   }
-  // Packing (1 per order) → always void; delivery/shipping (ready-to-ship only) cancel.
-  for (const t of getPackingForOrder(orderId)) cancelPackingTask(t.id, taskReason, true);
+  // Packing (1 per order): Completed → stays; open/in-progress → cancel.
+  for (const t of getPackingForOrder(orderId)) {
+    if (t.status !== "completed") cancelPackingTask(t.id, taskReason, true);
+  }
+  // Delivery/shipping: cancel while ready-to-ship / out-for-delivery (Shipped is blocked
+  // by the posting guard above).
   for (const d of getDeliveryForOrder(orderId)) if (canCancelDeliveryTask(d)) cancelDeliveryTask(d.id, taskReason);
   return { ok: true };
 }

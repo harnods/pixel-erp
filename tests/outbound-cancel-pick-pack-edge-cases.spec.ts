@@ -143,7 +143,7 @@ describe('cancel + non-marketplace leftover picking task must not be packable', 
     releaseReservedForCancelledOrder(order.id)
   })
 
-  it('non-marketplace order fully picked (completed picking) then cancelled becomes canceled + not packable', () => {
+  it('non-marketplace order fully picked (completed picking) then cancelled → picking STAYS completed, order not packable', () => {
     const order = makeOrder(2)
     const pt = pick(order)
     startPicking(pt.id)
@@ -152,9 +152,9 @@ describe('cancel + non-marketplace leftover picking task must not be packable', 
     expect(packableOrderIds(getPickingTask(pt.id)!)).toContain(order.id)
 
     cancelOutboundOrder(order.id)
-    expect(getPickingTask(pt.id)!.status).toBe('canceled') // completed → canceled (sole order)
-    expect(getPickingTask(pt.id)!.canceledReason).toMatch(/cancelled/i)
-    expect(packableOrderIds(getPickingTask(pt.id)!)).toEqual([])
+    expect(getPickingTask(pt.id)!.status).toBe('completed') // completed picking STAYS (PRD D2 AC#6)
+    expect(orderStatus(order.id)).toBe('canceled')
+    expect(packableOrderIds(getPickingTask(pt.id)!)).toEqual([]) // order canceled → not packable
     expect(canCreatePackingFrom(getPickingTask(pt.id)!)).toBe(false)
 
     releaseReservedForCancelledOrder(order.id)
@@ -194,6 +194,7 @@ describe('cancel one order within a SHARED picking task', () => {
       salesOrderIds: [a.id, b.id], salesNos: [a.salesNo, b.salesNo],
       warehouseId: WH, warehouseName: WH_NAME, assignee: 'Op',
     })
+    startPicking(pt.id) // In progress → cancelling a shared order flags Needs-Ack (Open would auto-drop)
     const toPickBefore = getPickingTask(pt.id)!.toPickQty // 2 + 2
 
     cancelOutboundOrder(a.id)
@@ -253,7 +254,7 @@ describe('cancel while packing', () => {
     releaseReservedForCancelledOrder(order.id)
   })
 
-  it('completed packing + ready-to-ship delivery → delivery cancelled, packing stays completed', () => {
+  it('completed packing + ready-to-ship delivery → only delivery cancelled; packing & picking stay completed', () => {
     const order = makeOrder(2)
     const pt = pick(order)
     startPicking(pt.id)
@@ -264,10 +265,9 @@ describe('cancel while packing', () => {
     expect(del.status).toBe('ready to ship')
 
     cancelOutboundOrder(order.id)
-    expect(getPackingTask(pk.id)!.status).toBe('canceled')           // completed → canceled
-    expect(getPackingTask(pk.id)!.canceledReason).toMatch(/cancelled/i)
-    expect(getPickingTask(pt.id)!.status).toBe('canceled')           // sole-order picking too
-    expect(getDeliveryForOrder(order.id)[0]!.status).toBe('canceled') // delivery cancelled
+    expect(getPackingTask(pk.id)!.status).toBe('completed')          // completed packing STAYS (PRD D2 AC#6)
+    expect(getPickingTask(pt.id)!.status).toBe('completed')          // completed picking STAYS too
+    expect(getDeliveryForOrder(order.id)[0]!.status).toBe('canceled') // only the delivery is cancelled
     releaseReservedForCancelledOrder(order.id)
   })
 
@@ -297,8 +297,8 @@ describe('Release reserved link visibility drives off canReleaseReservedForOrder
     startPicking(pt.id)
     endPicking(pt.id, { [key(order.id)]: 2 })
     cancelOutboundOrder(order.id)
-    expect(getPickingTask(pt.id)!.status).toBe('canceled')
-    expect(canReleaseReservedForOrder(order.id)).toBe(true)  // link visible
+    expect(getPickingTask(pt.id)!.status).toBe('completed')  // completed picking STAYS
+    expect(canReleaseReservedForOrder(order.id)).toBe(true)  // link visible (order canceled, reserved held)
     expect(releaseReservedForCancelledOrder(order.id)).toBe(true)
     expect(canReleaseReservedForOrder(order.id)).toBe(false) // link gone
   })
@@ -320,19 +320,19 @@ describe('Release reserved link visibility drives off canReleaseReservedForOrder
 // ── Invariant sweep across every pipeline state ────────────────────────────────
 describe('invariant: a sole-order picking task is canceled (with a reason) in every state', () => {
   it('open / in-progress / partially-picked / completed all → canceled + reason + not packable', () => {
-    for (const [label, build] of [
-      ['open', (o: OutgoingOrder) => pick(o)],
-      ['in progress', (o: OutgoingOrder) => { const p = pick(o); startPicking(p.id); return p }],
-      ['partially picked', (o: OutgoingOrder) => { const p = pick(o); startPicking(p.id); endPicking(p.id, { [key(o.id)]: 1 }); return p }],
-      ['completed', (o: OutgoingOrder) => { const p = pick(o); startPicking(p.id); endPicking(p.id, { [key(o.id)]: 2 }); return p }],
+    for (const [label, build, expected] of [
+      ['open', (o: OutgoingOrder) => pick(o), 'canceled'],
+      ['in progress', (o: OutgoingOrder) => { const p = pick(o); startPicking(p.id); return p }, 'canceled'],
+      ['partially picked', (o: OutgoingOrder) => { const p = pick(o); startPicking(p.id); endPicking(p.id, { [key(o.id)]: 1 }); return p }, 'canceled'],
+      ['completed', (o: OutgoingOrder) => { const p = pick(o); startPicking(p.id); endPicking(p.id, { [key(o.id)]: 2 }); return p }, 'completed'],
     ] as const) {
       const order = makeOrder(2)
       const pt = build(order)
       syncOutboundOrderStatuses()
       cancelOutboundOrder(order.id)
-      // The picking task is void whatever state it was in when the order was cancelled.
-      expect(getPickingTask(pt.id)!.status, label).toBe('canceled')
-      expect(getPickingTask(pt.id)!.canceledReason, label).toMatch(/cancelled/i)
+      // PRD D2 AC#6: Completed picking STAYS; open/in-progress/partial → Canceled. Either
+      // way the cancelled order is not packable.
+      expect(getPickingTask(pt.id)!.status, label).toBe(expected)
       const anyPackable = getPickingForOrder(order.id).some((t) => packableOrderIds(t).includes(order.id))
       expect(anyPackable, label).toBe(false)
       void getPackingForOrder(order.id)
@@ -466,15 +466,15 @@ describe('multi-order picking/packing/shipment — cancel one order, keep the ot
   })
 
   // Scenario 2 — two SEPARATE completed pickings feeding one Create-packing; S02 cancelled.
-  it('Scenario 2: separate pickings — cancel S02 voids picking02, S01 still packable (Create packing validates at Save)', () => {
+  it('Scenario 2: separate pickings — cancel S02, its completed picking STAYS (not packable), S01 still packable (Create packing validates at Save)', () => {
     const s01 = order([line(A, 2)]); const s02 = order([line(A, 2)], 'Shopee: Central Perk')
     const p1 = addPickingTask({ salesOrderIds: [s01.id], salesNos: [s01.salesNo], warehouseId: WH, warehouseName: WH_NAME, assignee: 'Op' })
     const p2 = addPickingTask({ salesOrderIds: [s02.id], salesNos: [s02.salesNo], warehouseId: WH, warehouseName: WH_NAME, assignee: 'Op' })
     startPicking(p1.id); endPicking(p1.id, { [`${s01.id}::${A}`]: 2 })
     startPicking(p2.id); endPicking(p2.id, { [`${s02.id}::${A}`]: 2 })
     cancelOutboundOrder(s02.id)
-    // picking02 (sole order S02) is voided; S02 is not packable anywhere; S01 still is.
-    expect(getPickingTask(p2.id)!.status).toBe('canceled')
+    // picking02 (sole order S02) is Completed → STAYS Completed; S02 not packable anywhere; S01 still is.
+    expect(getPickingTask(p2.id)!.status).toBe('completed')
     expect(packableOrderIds(getPickingTask(p1.id)!)).toEqual([s01.id])
     expect(packableOrderIds(getPickingTask(p2.id)!)).toEqual([])
     // (In CreatePackingPage this surfaces as the canceledTables note + a Save-time
@@ -483,7 +483,7 @@ describe('multi-order picking/packing/shipment — cancel one order, keep the ot
   })
 
   // Scenario 3 — two packings + two ready-to-ship deliveries; cancel S02.
-  it('Scenario 3: two ready-to-ship deliveries — cancel S02 cancels packing02 + its delivery, S01 untouched', () => {
+  it('Scenario 3: two ready-to-ship deliveries — cancel S02 cancels only its delivery (packing stays completed), S01 untouched', () => {
     const s01 = order([line(A, 2)]); const s02 = order([line(A, 2)], 'Shopee: Central Perk')
     const mk = (o: OutgoingOrder) => {
       const p = addPickingTask({ salesOrderIds: [o.id], salesNos: [o.salesNo], warehouseId: WH, warehouseName: WH_NAME, assignee: 'Op' })
@@ -497,8 +497,8 @@ describe('multi-order picking/packing/shipment — cancel one order, keep the ot
     expect(a.del.status).toBe('ready to ship'); expect(b.del.status).toBe('ready to ship')
 
     cancelOutboundOrder(s02.id)
-    expect(getPackingTask(b.pk.id)!.status).toBe('canceled')     // S02 packing cancelled
-    expect(getDeliveryTask(b.del.id)!.status).toBe('canceled')   // S02 delivery cancelled
+    expect(getPackingTask(b.pk.id)!.status).toBe('completed')    // S02 packing Completed → STAYS
+    expect(getDeliveryTask(b.del.id)!.status).toBe('canceled')   // only S02 delivery cancelled
     expect(getPackingTask(a.pk.id)!.status).toBe('completed')    // S01 packing stays
     expect(getDeliveryTask(a.del.id)!.status).toBe('ready to ship') // S01 delivery stays
     cleanup(s01, s02)

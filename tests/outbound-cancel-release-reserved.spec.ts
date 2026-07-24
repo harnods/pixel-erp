@@ -236,11 +236,11 @@ describe('D6 — Release reserved on cancelled outbound', () => {
 
     const res = cancelOutboundOrder(order.id)
     expect(res.ok).toBe(true)
-    // ready-to-ship delivery cancelled; a sole-order completed picking & packing are
-    // now VOIDED too (no live order left to serve) — reservation still held for release.
+    // ready-to-ship delivery cancelled; the sole-order COMPLETED picking & packing STAY
+    // completed (PRD D2 AC#6 — done work is a permanent record) — reservation still held.
     expect(getDeliveryStatus(del.id)).toBe('canceled')
-    expect(getPackingTask(pk.id)!.status).toBe('canceled')
-    expect(getPickingTask(pt.id)!.status).toBe('canceled')
+    expect(getPackingTask(pk.id)!.status).toBe('completed')
+    expect(getPickingTask(pt.id)!.status).toBe('completed')
     expect(reservedQtyForTask(order.id)).toBe(QTY)
     releaseReservedForCancelledOrder(order.id)
     expect(reservedQtyForTask(order.id)).toBe(0)
