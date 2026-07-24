@@ -43,6 +43,22 @@ export interface WarehouseConfig {
   locationPriority: string[]
   scanThreshold: boolean
   scanThresholdValue: number
+  // Cycle counts — WMS Standalone only (no equivalent in ERP), per-warehouse.
+  cycleCountRec: boolean
+  cycleCountAutoTask: boolean
+  cycleCountRuleNeg: boolean
+  cycleCountRuleVar: boolean
+  cycleCountRuleMin: boolean
+  /** Priority order for recommendation rules — highest priority first. */
+  cycleCountRuleOrder: ('neg' | 'var' | 'min')[]
+  /** Negative stock rule — how many days back to look for a negative-stock event. */
+  cycleCountNegLookbackDays: number
+  /** Variance signal rule — variance % (vs. last count) that trips the flag. */
+  cycleCountVarianceThreshold: number
+  /** Min stock rule — days a watch-listed SKU must stay at/below minimum before it's flagged. */
+  cycleCountMinGuardDays: number
+  /** SKUs that always show on the cycle count recommendation list — the "watch list" the Min stock rule flags against. */
+  cycleCountWatchList: string[]
 }
 
 const DEFAULTS: WarehouseConfig = {
@@ -54,6 +70,16 @@ const DEFAULTS: WarehouseConfig = {
   locationPriority: [],
   scanThreshold: true,
   scanThresholdValue: 50,
+  cycleCountRec: false,
+  cycleCountAutoTask: false,
+  cycleCountRuleNeg: true,
+  cycleCountRuleVar: true,
+  cycleCountRuleMin: true,
+  cycleCountRuleOrder: ['neg', 'var', 'min'],
+  cycleCountNegLookbackDays: 30,
+  cycleCountVarianceThreshold: 20,
+  cycleCountMinGuardDays: 14,
+  cycleCountWatchList: [],
 }
 
 function loadAll(): Record<string, WarehouseConfig> {

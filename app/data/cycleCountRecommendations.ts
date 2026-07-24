@@ -9,7 +9,7 @@
 
 import { warehouses } from './warehouses'
 import { getWarehouseDetail, type WarehouseStockItem } from './warehouseDetails'
-import { getWarehouseSettings, type WarehouseSettings } from './warehouseSettings'
+import { getWarehouseConfig, type WarehouseConfig } from './warehouseConfig'
 
 export const MIN_STOCK_LIMIT = 10 // mirrors the existing "Min. stock" trigger threshold
 
@@ -22,7 +22,7 @@ export function hashStr(s: string): number {
   return h
 }
 
-export function recommendationReasons(cfg: WarehouseSettings, warehouseId: string, stock: WarehouseStockItem): Reason[] {
+export function recommendationReasons(cfg: WarehouseConfig, warehouseId: string, stock: WarehouseStockItem): Reason[] {
   const varianceNorm = (hashStr(stock.sku + warehouseId + 'variance') % 101) / 100
   const reasons: Reason[] = []
   if (cfg.cycleCountRuleNeg && stock.onHand === 0) reasons.push('Negative stock')
@@ -31,12 +31,12 @@ export function recommendationReasons(cfg: WarehouseSettings, warehouseId: strin
   return reasons
 }
 
-/** Count of SKUs currently flagged for a cycle count recommendation (global setting, applies to every warehouse). */
+/** Count of SKUs currently flagged for a cycle count recommendation — each warehouse's own config decides whether it's in scope at all. */
 export function recommendationCount(): number {
-  const cfg = getWarehouseSettings()
-  if (!cfg.cycleCountRec) return 0
   let count = 0
   for (const wh of warehouses.filter((w) => w.status === 'active' && !w.isDefault)) {
+    const cfg = getWarehouseConfig(wh.id)
+    if (!cfg.cycleCountRec) continue
     const detail = getWarehouseDetail(wh.id)
     if (!detail) continue
     for (const stock of detail.stock) {
@@ -51,22 +51,23 @@ const RULE_KEY = { neg: 'cycleCountRuleNeg', min: 'cycleCountRuleMin', var: 'cyc
 
 /** Highest-priority recommended product names — mirrors the Recommendations table's
  *  own score/sort so the "N recommended for counting today" summary (e.g. a daily
- *  banner on the Cycle counts index) never drifts from what that table shows first. */
+ *  banner on the Cycle counts index) never drifts from what that table shows first.
+ *  Each warehouse has its own rule order/weights, so these are recomputed per warehouse. */
 export function topRecommendedProductNames(limit = 3): string[] {
-  const cfg = getWarehouseSettings()
-  if (!cfg.cycleCountRec) return []
-
-  const activeOrder = cfg.cycleCountRuleOrder.filter((r) => cfg[RULE_KEY[r]])
-  const weights = WEIGHT_TABLE[activeOrder.length] ?? []
-  const weightFor = (rule: 'neg' | 'min' | 'var') => {
-    const i = activeOrder.indexOf(rule)
-    return i === -1 ? 0 : (weights[i] ?? 0)
-  }
-
   const scored: { name: string; score: number }[] = []
   for (const wh of warehouses.filter((w) => w.status === 'active' && !w.isDefault)) {
+    const cfg = getWarehouseConfig(wh.id)
+    if (!cfg.cycleCountRec) continue
     const detail = getWarehouseDetail(wh.id)
     if (!detail) continue
+
+    const activeOrder = cfg.cycleCountRuleOrder.filter((r) => cfg[RULE_KEY[r]])
+    const weights = WEIGHT_TABLE[activeOrder.length] ?? []
+    const weightFor = (rule: 'neg' | 'min' | 'var') => {
+      const i = activeOrder.indexOf(rule)
+      return i === -1 ? 0 : (weights[i] ?? 0)
+    }
+
     for (const stock of detail.stock) {
       const reasons = recommendationReasons(cfg, wh.id, stock)
       if (!reasons.length) continue

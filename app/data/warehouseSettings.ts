@@ -40,22 +40,6 @@ export interface WarehouseSettings {
   batchSelectionRule:   BatchSelectionRule
   serialSelectionRule:  SerialSelectionRule
   barcodeStyle:         BarcodeStyle
-  // Cycle counts — WMS Standalone only (no equivalent in ERP).
-  cycleCountRec: boolean
-  cycleCountAutoTask: boolean
-  cycleCountRuleNeg: boolean
-  cycleCountRuleVar: boolean
-  cycleCountRuleMin: boolean
-  /** Priority order for recommendation rules — highest priority first. */
-  cycleCountRuleOrder: ('neg' | 'var' | 'min')[]
-  /** Negative stock rule — how many days back to look for a negative-stock event. */
-  cycleCountNegLookbackDays: number
-  /** Variance signal rule — variance % (vs. last count) that trips the flag. */
-  cycleCountVarianceThreshold: number
-  /** Min stock rule — days a watch-listed SKU must stay at/below minimum before it's flagged. */
-  cycleCountMinGuardDays: number
-  /** SKUs that always show on the cycle count recommendation list — the "watch list" the Min stock rule flags against. */
-  cycleCountWatchList: string[]
 }
 
 const DEFAULTS: WarehouseSettings = {
@@ -63,16 +47,6 @@ const DEFAULTS: WarehouseSettings = {
   batchSelectionRule:   'fefo',
   serialSelectionRule:  'serial_created_asc',
   barcodeStyle:         'barcode',
-  cycleCountRec: false,
-  cycleCountAutoTask: false,
-  cycleCountRuleNeg: true,
-  cycleCountRuleVar: true,
-  cycleCountRuleMin: true,
-  cycleCountRuleOrder: ['neg', 'var', 'min'],
-  cycleCountNegLookbackDays: 30,
-  cycleCountVarianceThreshold: 20,
-  cycleCountMinGuardDays: 14,
-  cycleCountWatchList: [],
 }
 
 export function getWarehouseSettings(): WarehouseSettings {
@@ -85,16 +59,6 @@ export function getWarehouseSettings(): WarehouseSettings {
       batchSelectionRule:   parsed.batchSelectionRule   ?? DEFAULTS.batchSelectionRule,
       serialSelectionRule:  parsed.serialSelectionRule  ?? DEFAULTS.serialSelectionRule,
       barcodeStyle:         parsed.barcodeStyle         ?? DEFAULTS.barcodeStyle,
-      cycleCountRec:        parsed.cycleCountRec        ?? DEFAULTS.cycleCountRec,
-      cycleCountAutoTask:   parsed.cycleCountAutoTask   ?? DEFAULTS.cycleCountAutoTask,
-      cycleCountRuleNeg:    parsed.cycleCountRuleNeg    ?? DEFAULTS.cycleCountRuleNeg,
-      cycleCountRuleVar:    parsed.cycleCountRuleVar    ?? DEFAULTS.cycleCountRuleVar,
-      cycleCountRuleMin:    parsed.cycleCountRuleMin    ?? DEFAULTS.cycleCountRuleMin,
-      cycleCountRuleOrder:  parsed.cycleCountRuleOrder  ?? DEFAULTS.cycleCountRuleOrder,
-      cycleCountNegLookbackDays:    parsed.cycleCountNegLookbackDays    ?? DEFAULTS.cycleCountNegLookbackDays,
-      cycleCountVarianceThreshold:  parsed.cycleCountVarianceThreshold  ?? DEFAULTS.cycleCountVarianceThreshold,
-      cycleCountMinGuardDays:       parsed.cycleCountMinGuardDays       ?? DEFAULTS.cycleCountMinGuardDays,
-      cycleCountWatchList:          parsed.cycleCountWatchList          ?? DEFAULTS.cycleCountWatchList,
     }
   } catch { return { ...DEFAULTS } }
 }
