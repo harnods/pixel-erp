@@ -176,7 +176,7 @@ describe('Inbound PO cancel cascade — in-progress receiving task', () => {
 })
 
 describe('Inbound PO cancel cascade — ended tasks & unrelated POs are never touched', () => {
-  it('"state G"-style PO (one ended task + one still-open task): ended task auto-canceled (no real stock committed yet), open task canceled', () => {
+  it('"state G"-style PO (one received/ended task + one still-open task): received task stays Completed, open task canceled', () => {
     const receipt = makeReceipt(20, [{ productId: SKU_A.productId, qty: 10 }, { productId: SKU_B.productId, qty: 10 }])
     const endedTask = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator', skus: [SKU_A.sku] })!
     startReceiving(endedTask.id)
@@ -195,13 +195,14 @@ describe('Inbound PO cancel cascade — ended tasks & unrelated POs are never to
     expect(receipt.status).toBe('canceled')
 
     const endedAfter = getReceivingTask(endedTask.id)!
-    expect(endedAfter.status).toBe('canceled') // auto-canceled — nothing real to reconcile
-    expect(endedAfter.canceledReason).toBe('Purchase order was canceled')
+    // Goods were received → the receiving stays Completed (PRD C1 AC#6), never canceled.
+    expect(endedAfter.status).toBe('completed')
+    expect(endedAfter.putAwayTaskId).toBeUndefined()
     expect(endedAfter.needsCancelAck).toBeFalsy()
-    expect(endedAfter.receivedQty).toBe(5) // untouched — real goods stay accounted for on the record
+    expect(endedAfter.receivedQty).toBe(5) // real goods stay accounted for on the record
 
     const openAfter = getReceivingTask(openTask.id)!
-    expect(openAfter.status).toBe('canceled')
+    expect(openAfter.status).toBe('canceled') // never started → canceled
   })
 
   it('a receiving task on a DIFFERENT (unrelated) PO is completely unaffected', () => {

@@ -71,11 +71,12 @@ describe('Scenario T1 — single order, single put-away', () => {
     expect(rStatus(t.id)).toBe('canceled')
   })
 
-  it('T1.3 receiving Pending put-away (no put-away) → Canceled', () => {
+  it('T1.3 receiving Pending put-away (no put-away) → stays Completed (received work kept)', () => {
     const r = receipt(); const t = received(r.id, 10)
     expect(rStatus(t.id)).toBe('pending put-away')
     expect(cancelInboundReceipt(r.id).ok).toBe(true)
-    expect(rStatus(t.id)).toBe('canceled')
+    expect(rStatus(t.id)).toBe('completed') // received → stays Completed; no put-away runs
+    expect(getReceivingTask(t.id)!.putAwayTaskId).toBeUndefined()
   })
 
   it('T1.4 receiving Completed + put-away Open → receiving stays Completed, put-away Canceled', () => {
@@ -102,11 +103,12 @@ describe('Scenario T1 — single order, single put-away', () => {
     expect(r.status).toBe('completed')
   })
 
-  it('T1.7 partial received + Pending put-away → Canceled', () => {
+  it('T1.7 partial received + Pending put-away → stays Completed (task-level; partial-ness is order-level)', () => {
     const r = receipt(); const t = received(r.id, 4) // short
     expect(rStatus(t.id)).toBe('pending put-away')
     cancelInboundReceipt(r.id)
-    expect(rStatus(t.id)).toBe('canceled')
+    expect(rStatus(t.id)).toBe('completed')
+    expect(getReceivingTask(t.id)!.items.reduce((s2, it) => s2 + it.receivedQty, 0)).toBe(4) // receivedQty kept
   })
 
   it('T1.8 partial received + Completed + put-away Open → receiving Completed, put-away Canceled', () => {
@@ -158,12 +160,12 @@ describe('Scenario T2 — single order, multiple receivings, one put-away', () =
     expect(pStatus(pa.id)).toBe('canceled')
   })
 
-  it('T2.4 Rec A Completed, Rec B Pending put-away, put-away Open → A Completed, B Canceled, put-away Canceled', () => {
+  it('T2.4 Rec A Completed, Rec B Pending put-away, put-away Open → A Completed, B stays Completed, put-away Canceled', () => {
     const r = receipt(20); const a = received(r.id, 10); const pa = putAway([a])
     const b = received(r.id, 10)
     expect(rStatus(b.id)).toBe('pending put-away')
     cancelInboundReceipt(r.id)
-    expect(rStatus(a.id)).toBe('completed'); expect(rStatus(b.id)).toBe('canceled')
+    expect(rStatus(a.id)).toBe('completed'); expect(rStatus(b.id)).toBe('completed') // B received → stays Completed
     expect(pStatus(pa.id)).toBe('canceled')
   })
 

@@ -59,11 +59,10 @@ function batchesFor(sku: string) {
   return getWarehouseDetail(WAREHOUSE_ID)!.stock.find((s) => s.sku === sku)!.batches ?? []
 }
 
-describe('Inbound PO cancel cascade — "pending put-away" always auto-cancels', () => {
-  it('a pending-put-away task (no put-away task created yet) is auto-canceled outright, with a reason', () => {
-    // Purchase qty > received qty so the receipt itself stays in "partial
-    // reception" (cancelable) — a fully-received PO is a permanent record
-    // that can never be canceled, regardless of what its tasks did.
+describe('Inbound PO cancel cascade — "pending put-away" receiving stays Completed', () => {
+  it('a pending-put-away task (goods received, no put-away) stays Completed on PO cancel — received work is never reverted', () => {
+    // Purchase qty > received qty so the receipt itself is cancelable — a fully-received
+    // PO is a permanent record that can never be canceled.
     const receipt = makeReceipt(12, SKU_PLAIN.productId)
     const task = addReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator' })!
     startReceiving(task.id)
@@ -74,10 +73,13 @@ describe('Inbound PO cancel cascade — "pending put-away" always auto-cancels',
     const result = cancelInboundReceipt(receipt.id)
     expect(result.ok).toBe(true)
 
+    // Per WMS PRD 1.1 C1 AC#6, a receiving task that already received goods stays
+    // Completed — never canceled. No put-away runs (order gone); no stock committed.
     const after = getReceivingTask(task.id)!
-    expect(after.status).toBe('canceled')
-    expect(after.needsCancelAck).toBeFalsy()
-    expect(after.canceledReason).toBe('Purchase order was canceled')
+    expect(after.status).toBe('completed')
+    expect(after.putAwayTaskId).toBeUndefined()
+    expect(after.stockCommitted).toBeFalsy()
+    expect(after.items.reduce((s, it) => s + it.receivedQty, 0)).toBe(10) // receivedQty kept
   })
 })
 

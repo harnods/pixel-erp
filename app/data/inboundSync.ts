@@ -3,7 +3,7 @@ import {
 } from "./receipts";
 import {
   receivingTasksForReceipt, getReceivingTask, cancelReceivingTask, flagTaskCanceledPoAck,
-  forceCancelEndedTask, lockedReceivingQtyForSku, recomputeReceiptStatus,
+  forceCancelEndedTask, completeReceivingOnPoCancel, lockedReceivingQtyForSku, recomputeReceiptStatus,
 } from "./receivingTasks";
 import { getPutAwayTask, flagPutAwayCanceledPoAck, cancelPutAway, removeReceivingTasksFromPutAway } from "./putAwayTasks";
 import { lineItemsForReceipt } from "./receiptLineItems";
@@ -154,10 +154,16 @@ export function cancelInboundReceipt(receiptId: string, reason?: string): Cancel
         continue;
       }
     }
-    // Ended task with no live put-away: pending put-away (no stock) → auto-cancel; completed
-    // WITH committed stock → flag for ack (stock reversal). Received qty stays on the record.
-    if (t.stockCommitted) flagTaskCanceledPoAck(t.id);
-    else forceCancelEndedTask(t.id, cancelReason);
+    // Ended task with no live put-away:
+    if (t.stockCommitted) {
+      flagTaskCanceledPoAck(t.id); // completed WITH committed stock → flag for ack (stock reversal)
+    } else if (t.status === "pending put-away") {
+      // Received, awaiting put-away, no stock posted → the receiving is DONE; mark it
+      // Completed (received work stays, never canceled). No put-away runs (order gone).
+      completeReceivingOnPoCancel(t.id);
+    } else {
+      forceCancelEndedTask(t.id, cancelReason); // legacy "completed" with no put-away link / no stock
+    }
   }
 
   // Resolve each affected put-away exactly once.

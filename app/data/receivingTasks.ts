@@ -680,6 +680,22 @@ export function forceCancelEndedTask(taskId: string, reason: string): void {
 }
 
 /**
+ * A receiving task that already RECEIVED goods ("pending put-away") gets its PO canceled
+ * before any put-away runs. The receiving work is done and is a permanent record, so the
+ * task is marked **Completed** (never Canceled) — WMS PRD 1.1 C1 AC#6 "received → stays
+ * Completed". No put-away will happen (order gone) and no stock is committed (its Incoming
+ * is released with the order), so no putAwayTaskId / stockCommitted is set. receivedQty
+ * stays on the record. A receiving task never carries Short/Over — partial-ness lives on
+ * the (now canceled) order, so "Completed" here means "receiving finished", not "full".
+ */
+export function completeReceivingOnPoCancel(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || t.status !== "pending put-away") return;
+  t.status = "completed";
+  persistTasks();
+}
+
+/**
  * Commit a receiving task's items into REAL, tracked on-hand stock — the
  * put-away-disabled equivalent of what endPutAway() does for a real put-away
  * task, per-SKU tracking type. Without this, a warehouse with put-away
