@@ -26,7 +26,7 @@
         <IconButton icon="add" />
         <IconButton icon="help" />
         <IconButton icon="desktop" />
-        <IconButton icon="notification" @click="goToInbox" />
+        <IconButton icon="notification" show-badge @click="goToInbox" />
       </MpFlex>
 
       <!-- User snapshot menu (avatar + name → account popover) -->
@@ -56,8 +56,8 @@ const { hasWarehouseContext } = useWarehouseContext();
 const { setActiveMenuLabel } = useNavigation();
 const router = useRouter();
 function goToInbox() {
-  setActiveMenuLabel("Awaiting approval");
-  router.push("/inbox?tab=awaiting-approval");
+  setActiveMenuLabel("Notifications");
+  router.push("/inbox?tab=notifications");
 }
 </script>
 

@@ -11,7 +11,7 @@ import ApprovalLogPopover from '~/components/patterns/ApprovalLogPopover.vue'
 import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import TransactionTypeCascadeMenu from '~/components/patterns/TransactionTypeCascadeMenu.vue'
-import { taskTypeGroups, formatTaskNumber, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
+import { taskTypeGroups, formatTaskNumber, approvalLevelsFor, approvalRequestedBy, commentsFor, overallApprovalStatus, type Task } from '~/data/tasks'
 
 const props = defineProps<{
   tasks: Task[]
@@ -53,14 +53,22 @@ const dateRange = computed<[Date, Date] | null>(() => {
   return start && end ? [dayStart(start), dayStart(end)] : null
 })
 
-const cascadeGroups = computed(() =>
-  taskTypeGroups
+// When allowedDocTypes already narrows things to a single category (e.g. the
+// Inbox "Sales" inner tab), showing that one category as a cascade parent is
+// redundant — flatten it into a plain list of its doc types instead.
+const cascadeGroups = computed(() => {
+  const filtered = taskTypeGroups
     .map((g) => ({
       label: g.label,
       children: g.children.filter((c) => !props.allowedDocTypes || props.allowedDocTypes.includes(c.value)),
     }))
     .filter((g) => g.children.length > 0)
-)
+
+  if (props.allowedDocTypes && filtered.length === 1) {
+    return filtered[0]!.children.map((c) => ({ label: c.label, children: [c] }))
+  }
+  return filtered
+})
 const transactionTypeFilter = ref('')
 
 const defaultSortedTasks = computed(() => [...props.tasks].sort((a, b) => b.date.localeCompare(a.date)))
@@ -101,6 +109,12 @@ function formatDate(iso: string) {
   return new Intl.DateTimeFormat('id-ID', {
     day: '2-digit', month: '2-digit', year: 'numeric',
   }).format(new Date(iso))
+}
+
+// A submitted transaction is "Approved" once every approval level is done;
+// otherwise it's still a "Draft" (matches the approval log popover's own data).
+function statusFor(task: Task): 'approved' | 'draft' {
+  return overallApprovalStatus(approvalLevelsFor(task)) === 'approved' ? 'approved' : 'draft'
 }
 </script>
 
@@ -192,9 +206,10 @@ function formatDate(iso: string) {
       <template v-else>{{ value }}</template>
     </template>
 
-    <!-- ── Cell: Status — always Draft (announcement/gray) ── -->
-    <template #cell-status>
-      <ErpStatusBadge status="draft" />
+    <!-- ── Cell: Status — Draft (announcement/gray) until every approval level
+         is done, then Approved (completed/green). ── -->
+    <template #cell-status="{ row }">
+      <ErpStatusBadge :status="statusFor(row as Task)" />
     </template>
 
     <!-- ── Cell: Balance due ── -->

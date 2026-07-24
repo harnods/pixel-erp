@@ -44,15 +44,64 @@ function approveTask(row: Task) {
   })
 }
 
-// ─── Reject modal ─────────────────────────────────────────────────────────────
+// ─── Bulk approve / reject (row-selection checkboxes, merged into the Date
+// column by ErpTablePage's has-checkbox prop) — selectedRows holds indices
+// into the current page (`paginated`), same as every other ErpTablePage
+// bulk-actions consumer. ─────────────────────────────────────────────────────
+function rowsFromSelection(selected: Set<number>): Task[] {
+  return Array.from(selected)
+    .map((i) => paginated.value[i])
+    .filter((r): r is Task => !!r)
+}
+
+function bulkApprove(selected: Set<number>, deselectAll: () => void) {
+  const rows = rowsFromSelection(selected)
+  if (!rows.length) return
+  approvedIds.value = new Set([...approvedIds.value, ...rows.map((r) => r.id)])
+  toast.notify({
+    variant: 'success',
+    title: `${rows.length} transaction${rows.length === 1 ? '' : 's'} approved`,
+    rootProps: { class: 'toast-enterprise' },
+  })
+  deselectAll()
+}
+
+// ─── Reject modal — shared by the single-row kebab action and the bulk-bar
+// Reject button; bulkRejectRows is set only for the latter. ──────────────────
 const rejectTarget = ref<Task | null>(null)
-const rejectModalOpen = computed(() => rejectTarget.value !== null)
+const bulkRejectRows = ref<Task[] | null>(null)
+const rejectModalOpen = computed(() => rejectTarget.value !== null || bulkRejectRows.value !== null)
+const rejectModalDocType = computed(() => {
+  if (bulkRejectRows.value) return `${bulkRejectRows.value.length} transaction${bulkRejectRows.value.length === 1 ? '' : 's'}`
+  return rejectTarget.value?.docType ?? ''
+})
+let bulkRejectDeselectAll: (() => void) | null = null
 
 function openRejectModal(row: Task) {
   rejectTarget.value = row
 }
 
+function openBulkRejectModal(selected: Set<number>, deselectAll: () => void) {
+  const rows = rowsFromSelection(selected)
+  if (!rows.length) return
+  bulkRejectRows.value = rows
+  bulkRejectDeselectAll = deselectAll
+}
+
 function handleReject(_reason: string) {
+  if (bulkRejectRows.value) {
+    const rows = bulkRejectRows.value
+    rejectedIds.value = new Set([...rejectedIds.value, ...rows.map((r) => r.id)])
+    toast.notify({
+      variant: 'success',
+      title: `${rows.length} transaction${rows.length === 1 ? '' : 's'} rejected`,
+      rootProps: { class: 'toast-enterprise' },
+    })
+    bulkRejectRows.value = null
+    bulkRejectDeselectAll?.()
+    bulkRejectDeselectAll = null
+    return
+  }
   const row = rejectTarget.value
   if (!row) return
   rejectedIds.value = new Set([...rejectedIds.value, row.id])
@@ -67,12 +116,15 @@ function handleReject(_reason: string) {
 
 function closeRejectModal() {
   rejectTarget.value = null
+  bulkRejectRows.value = null
+  bulkRejectDeselectAll = null
 }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'date',        label: 'Date',         width: '120px',                                sortType: 'date'   },
   { key: 'number',       label: 'Number',       width: '240px', sortable: true,                sortType: 'number' },
+  { key: 'warehouse',    label: 'Warehouse',    width: '160px', sortable: true,                sortType: 'text'   },
   { key: 'details',      label: 'Details',      width: '260px', sortable: true,                sortType: 'text'   },
   { key: 'requestedBy',  label: 'Requested by', width: '160px', sortable: true,                sortType: 'text'   },
   { key: 'balanceDue',   label: 'Balance due',  width: '160px', align: 'right', sortable: true, sortType: 'number' },
@@ -105,7 +157,24 @@ const dateRange = computed<[Date, Date] | null>(() => {
 
 // ─── Transaction type filter — two-level cascade (parent category → child
 // doc type); selecting a leaf sets transactionTypeFilter to its raw docType
-// string, same as the table's other filters. ───────────────────────────────
+// string, same as the table's other filters. When allowedDocTypes already
+// narrows things to a single category (e.g. the Inbox "Sales" inner tab),
+// showing that one category as a cascade parent is redundant — flatten it
+// into a plain list of its doc types instead. ───────────────────────────────
+
+const cascadeGroups = computed(() => {
+  const filtered = taskTypeGroups
+    .map((g) => ({
+      label: g.label,
+      children: g.children.filter((c) => !props.allowedDocTypes || props.allowedDocTypes.includes(c.value)),
+    }))
+    .filter((g) => g.children.length > 0)
+
+  if (props.allowedDocTypes && filtered.length === 1) {
+    return filtered[0]!.children.map((c) => ({ label: c.label, children: [c] }))
+  }
+  return filtered
+})
 
 const transactionTypeFilter = ref('')
 
@@ -170,12 +239,31 @@ function formatDate(iso: string) {
     :sort-dir="sortDir"
     :has-active-filter="hasActiveFilter"
     actions-width="228px"
+    has-checkbox
+    bulk-label="transaction"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
     @sort-change="setSort"
     @hide-column="hideColumn"
   >
+
+    <!-- ── Bulk bar → approve / reject selected rows ── -->
+    <template #bulk-actions="{ selectedRows, deselectAll }">
+      <button
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        @click="bulkApprove(selectedRows as Set<number>, deselectAll)"
+      >
+        Approve
+      </button>
+      <button
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
+        @click="openBulkRejectModal(selectedRows as Set<number>, deselectAll)"
+      >
+        Reject
+      </button>
+    </template>
 
     <!-- ── Filter bar (existing pattern: filters, icon buttons, search) ── -->
     <template #filters>
@@ -190,7 +278,7 @@ function formatDate(iso: string) {
           v-if="!hideTransactionType"
           :id="`${idPrefix}-tasks-txntype-cascade`"
           v-model="transactionTypeFilter"
-          :groups="taskTypeGroups"
+          :groups="cascadeGroups"
         />
 
         <button class="filter-all-btn">
@@ -239,6 +327,11 @@ function formatDate(iso: string) {
           <span class="row-hover-btn__label">VIEW DETAILS</span>
         </button>
       </div>
+    </template>
+
+    <!-- ── Cell: Warehouse ── -->
+    <template #cell-warehouse="{ value }">
+      {{ value }}
     </template>
 
     <!-- ── Cell: Details — Stock In/Out shows product name + qty as a two-line
@@ -313,7 +406,7 @@ function formatDate(iso: string) {
 
   <RejectTransactionModal
     :is-open="rejectModalOpen"
-    :doc-type="rejectTarget?.docType ?? ''"
+    :doc-type="rejectModalDocType"
     @close="closeRejectModal"
     @reject="handleReject"
   />

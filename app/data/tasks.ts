@@ -29,6 +29,8 @@ export interface Task {
   total: number
   balanceDue: number
   status: TaskStatus
+  /** Originating/assigned warehouse — shown in the Inbox "Warehouse" tab's Warehouse column. */
+  warehouse: string
 }
 
 const docTypes: TaskDocType[] = [
@@ -67,12 +69,11 @@ const products: { name: string; unit: string }[] = [
 // instead (there's no single "contact" for those). Stock In/Out is handled
 // separately via productName/qtyDesc (see buildTasks) since it renders as a
 // two-line product cell rather than plain text.
-function buildDetails(docType: TaskDocType, n: number): string {
+function buildDetails(docType: TaskDocType, n: number, warehouse: string): string {
   if (docType === 'Warehouse Transfer') {
-    const from = warehouses[n % warehouses.length]!
     let to = warehouses[(n + 1 + (n % (warehouses.length - 1))) % warehouses.length]!
-    if (to === from) to = warehouses[(warehouses.indexOf(to) + 1) % warehouses.length]!
-    return `${from} → ${to}`
+    if (to === warehouse) to = warehouses[(warehouses.indexOf(to) + 1) % warehouses.length]!
+    return `${warehouse} → ${to}`
   }
   return contacts[n % contacts.length]!
 }
@@ -102,10 +103,11 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
     const isNonFinancial = NON_FINANCIAL_DOC_TYPES.includes(docType)
     const total = isNonFinancial ? 0 : 1_000_000 + ((n * 37) % 60) * 1_000_000
     const paidRatio = status === 'awaiting approval' ? 1 : ((n * 13) % 3 === 0 ? 0.5 : 1)
+    const warehouse = warehouses[n % warehouses.length]!
 
     let productName: string | undefined
     let qtyDesc: string | undefined
-    let details = buildDetails(docType, n)
+    let details = buildDetails(docType, n, warehouse)
     if (docType === 'Stock In/Out') {
       const p = products[n % products.length]!
       const sign = n % 3 === 0 ? '-' : '+'
@@ -128,6 +130,7 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
       total,
       balanceDue: isNonFinancial ? 0 : Math.round(total * paidRatio),
       status,
+      warehouse,
     }
   })
 }
@@ -258,6 +261,25 @@ export const taskDocTypeTabs: { label: string; docType: TaskDocType | null }[] =
   { label: 'Stock counts', docType: 'Stock Count' },
   { label: 'Production plans', docType: 'Production Plan' },
 ]
+
+// Inbox › Awaiting approval inner tab groups.
+export const INBOX_TAB_GROUPS: Record<string, TaskDocType[]> = {
+  Sales:     ['Sales Invoice', 'Payment received', 'Sales Order', 'Sales Return', 'Sales Quote', 'Sales Delivery'],
+  Purchases: ['Purchase Invoice', 'Purchase Payment', 'Purchase Order', 'Purchase Return', 'Purchase Quote', 'Purchase Delivery', 'Purchase Request'],
+  Expenses:  ['Expense'],
+  Warehouse: ['Warehouse Transfer', 'Stock In/Out', 'Stock Count'],
+}
+
+/** Live per-category counts for Awaiting approval — shared by the sidebar's
+ *  children list and (previously) the inner tab strip, so both agree. */
+export function awaitingApprovalGroupCounts(): Record<'sales' | 'purchases' | 'expenses' | 'warehouse', number> {
+  return {
+    sales:     awaitingApprovalTasks.filter(t => (INBOX_TAB_GROUPS.Sales     as string[]).includes(t.docType)).length,
+    purchases: awaitingApprovalTasks.filter(t => (INBOX_TAB_GROUPS.Purchases as string[]).includes(t.docType)).length,
+    expenses:  awaitingApprovalTasks.filter(t => (INBOX_TAB_GROUPS.Expenses  as string[]).includes(t.docType)).length,
+    warehouse: awaitingApprovalTasks.filter(t => (INBOX_TAB_GROUPS.Warehouse as string[]).includes(t.docType)).length,
+  }
+}
 
 // Transaction type filter, grouped into parent categories for the two-level
 // cascade menu (Figma: Inbox "Transaction type" filter — pick the parent,
