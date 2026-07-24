@@ -74,6 +74,11 @@ const buttonClass = computed(() =>
 }
 
 .icon-button__badge-ping {
+  background: var(--mp-colors-teal-300, #92ded6);
+  border-color: transparent;
+}
+
+.icon-button__badge-ping {
   animation: icon-button-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 

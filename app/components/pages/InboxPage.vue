@@ -7,8 +7,7 @@ import { awaitingApprovalTasks, INBOX_TAB_GROUPS } from '~/data/tasks'
 const route = useRoute()
 
 const tab      = computed(() => (route.query.tab      as string | undefined) ?? 'notifications')
-// Sidebar no longer offers an "All" child — Sales is the first (default) category.
-const innerTab = computed(() => (route.query.innerTab as string | undefined) ?? 'sales')
+const innerTab = computed(() => (route.query.innerTab as string | undefined) ?? 'all')
 
 const GROUP_MAP: Record<string, string[]> = {
   sales:     INBOX_TAB_GROUPS.Sales     as string[],
@@ -27,9 +26,11 @@ const filteredTasks = computed(() => {
 
 const allowedDocTypes = computed<string[] | null>(() => GROUP_MAP[innerTab.value] ?? null)
 const hideTransactionType = computed(() => innerTab.value === 'expenses')
-const hiddenColumns = computed<string[]>(() =>
-  innerTab.value === 'warehouse' ? ['dueDate', 'balanceDue', 'total'] : ['warehouse']
-)
+const hiddenColumns = computed<string[]>(() => {
+  if (innerTab.value === 'warehouse') return ['dueDate', 'balanceDue', 'total', 'reason']
+  if (innerTab.value === 'all') return ['warehouse']
+  return ['warehouse', 'reason']
+})
 </script>
 
 <template>

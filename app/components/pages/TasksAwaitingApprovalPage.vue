@@ -4,5 +4,5 @@ import { awaitingApprovalTasks } from '~/data/tasks'
 </script>
 
 <template>
-  <TasksTablePage :tasks="awaitingApprovalTasks" id-prefix="aa" :hidden-columns="['warehouse']" />
+  <TasksTablePage :tasks="awaitingApprovalTasks" id-prefix="aa" :hidden-columns="['warehouse', 'reason']" />
 </template>

@@ -126,7 +126,7 @@ import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import { receiptCountsByStage } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
-import { awaitingApprovalGroupCounts } from '~/data/tasks'
+import { awaitingApprovalGroupCounts, awaitingApprovalTasks } from '~/data/tasks'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -216,6 +216,7 @@ const inboxPanelSubmenu = computed<PanelSubItem[][]>(() => {
     {
       label: 'Awaiting approval',
       children: [
+        { label: 'All transactions', path: '/inbox?tab=awaiting-approval&innerTab=all', count: awaitingApprovalTasks.length || undefined },
         { label: 'Sales', path: '/inbox?tab=awaiting-approval&innerTab=sales', count: counts.sales || undefined },
         { label: 'Purchase', path: '/inbox?tab=awaiting-approval&innerTab=purchases', count: counts.purchases || undefined },
         { label: 'Expense', path: '/inbox?tab=awaiting-approval&innerTab=expenses', count: counts.expenses || undefined },

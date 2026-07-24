@@ -31,6 +31,8 @@ export interface Task {
   status: TaskStatus
   /** Originating/assigned warehouse — shown in the Inbox "Warehouse" tab's Warehouse column. */
   warehouse: string
+  /** Approval reason/trigger shown in the awaiting-approval table. */
+  reason: string
 }
 
 const docTypes: TaskDocType[] = [
@@ -131,6 +133,7 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
       balanceDue: isNonFinancial ? 0 : Math.round(total * paidRatio),
       status,
       warehouse,
+      reason: (['Exceeds credit limit', 'Exceeds transaction limit', 'Overdue'] as const)[n % 3]!,
     }
   })
 }
