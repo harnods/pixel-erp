@@ -15,7 +15,7 @@
     use-portal
     is-close-on-escape
     v-slot="{ onClosePopover }"
-    @open="menuOpen = true"
+    @open="onPopoverOpen"
     @close="onPopoverClose"
   >
     <!-- MpPopoverTrigger allows exactly ONE child node (no sibling comments inside).
@@ -85,7 +85,9 @@
               :aria-label="item.visible ? `Hide ${item.label}` : `Show ${item.label}`"
               @click="toggleShortcut(item.key)"
             >
-              <MpIcon name="show" size="md" />
+              <!-- Different icon per state so show/hide are distinguishable at a glance:
+                   `show` (open eye) when visible, `hide` (crossed eye) when hidden. -->
+              <MpIcon :name="item.visible ? 'show' : 'hide'" size="md" />
             </button>
           </li>
         </ul>
@@ -110,9 +112,20 @@ const menuOpen = ref(false);
 // Which view is showing inside the popover.
 const view = ref<"main" | "manage">("main");
 
+// Reset to the main view only on a GENUINE close. A hover popover does a transient
+// close→reopen when you click inside it (e.g. tapping "Shortcut visibility"), which
+// would otherwise snap the view straight back to main. Debounce: the immediate
+// reopen cancels the pending reset, so entering the manage view sticks; a real close
+// (cursor left, stays gone) resets after the delay so it reopens on main next time.
+let resetTimer: ReturnType<typeof setTimeout> | null = null;
+function onPopoverOpen() {
+  menuOpen.value = true;
+  if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+}
 function onPopoverClose() {
   menuOpen.value = false;
-  view.value = "main"; // always reopen on the main list
+  if (resetTimer) clearTimeout(resetTimer);
+  resetTimer = setTimeout(() => { view.value = "main"; resetTimer = null; }, 300);
 }
 
 const router = useRouter();
@@ -299,8 +312,8 @@ function onDragEnd() {
 .quick-create__toggle:hover {
   background: var(--mp-colors-background-neutral-hovered, #f0f2f2);
 }
-/* Hidden shortcut: the `show` icon greyed to gray-50. */
+/* Hidden shortcut: the crossed `hide` icon in the disabled color — softer, reads as "off". */
 .quick-create__toggle.is-hidden {
-  color: var(--mp-colors-gray-50, #edf0f2);
+  color: var(--mp-colors-icon-disabled, #b2b9c4);
 }
 </style>
