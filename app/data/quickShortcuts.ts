@@ -62,9 +62,27 @@ function persist() {
 /** Shortcuts shown in the main "+" menu — visible ones, in the saved order. */
 export const visibleShortcuts = computed(() => quickShortcuts.filter((s) => s.visible))
 
-export function toggleShortcut(key: string): void {
+// How many shortcuts can be shown at once.
+export const MAX_VISIBLE = 6
+export const MIN_VISIBLE = 1
+
+export type ToggleResult = { ok: true } | { ok: false; reason: 'max' | 'min' }
+
+/** Toggle a shortcut's visibility, enforcing the visible-count bounds
+ *  (min 1, max 6). Returns why it was blocked so the caller can explain. */
+export function toggleShortcut(key: string): ToggleResult {
   const s = quickShortcuts.find((x) => x.key === key)
-  if (s) { s.visible = !s.visible; persist() }
+  if (!s) return { ok: false, reason: 'min' }
+  const visibleCount = quickShortcuts.filter((x) => x.visible).length
+  if (s.visible) {
+    if (visibleCount <= MIN_VISIBLE) return { ok: false, reason: 'min' } // keep at least one
+    s.visible = false
+  } else {
+    if (visibleCount >= MAX_VISIBLE) return { ok: false, reason: 'max' } // no more than six
+    s.visible = true
+  }
+  persist()
+  return { ok: true }
 }
 
 /** Move a shortcut from index `from` to index `to` (drag-and-drop reorder). */

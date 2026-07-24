@@ -83,7 +83,7 @@
               class="quick-create__toggle"
               :class="{ 'is-hidden': !item.visible }"
               :aria-label="item.visible ? `Hide ${item.label}` : `Show ${item.label}`"
-              @click="toggleShortcut(item.key)"
+              @click="onToggle(item.key)"
             >
               <!-- Different icon per state so show/hide are distinguishable at a glance:
                    `show` (open eye) when visible, `hide` (crossed eye) when hidden. -->
@@ -98,12 +98,14 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon } from "@mekari/pixel3";
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, toast } from "@mekari/pixel3";
 import {
   quickShortcuts,
   visibleShortcuts,
   toggleShortcut,
   reorderShortcuts,
+  MAX_VISIBLE,
+  MIN_VISIBLE,
   type QuickShortcut,
 } from "~/data/quickShortcuts";
 
@@ -135,6 +137,20 @@ function go(item: QuickShortcut, closePopover: () => void) {
   if (item.path) router.push(item.path);
   else navigate(item.to ?? item.label);
   closePopover();
+}
+
+// Toggle show/hide, bounded to min 1 / max 6 visible — explain when blocked.
+function onToggle(key: string) {
+  const res = toggleShortcut(key);
+  if (!res.ok) {
+    toast.notify({
+      variant: "error",
+      title: res.reason === "max"
+        ? `You can show up to ${MAX_VISIBLE} shortcuts`
+        : `At least ${MIN_VISIBLE} shortcut must stay visible`,
+      maxWidth: "max-content",
+    });
+  }
 }
 
 // ── Drag and drop reorder (manage view) — same model as LocationPriorityDrawer ──
