@@ -1,9 +1,12 @@
 <template>
   <!--
-    Quick-create ("+") menu in the header. Trigger is the header's add IconButton;
-    clicking opens an MpPopover with a "New" section listing the common create
-    shortcuts. Same popover/scoped-CSS approach as ErpUserMenu (is-unstyled content
-    + var(--mp-*) tokens) so it stays robust if Pixel's atomic utilities go stale in dev.
+    Quick-create ("+") menu in the header. Opens on hover; two views:
+      • main    — the "New" section listing VISIBLE shortcuts (in saved order),
+                  then a divider + "Shortcut visibility" entry.
+      • manage  — drag-to-reorder list of ALL shortcuts, each with a show/hide
+                  toggle (the `show` icon, greyed to gray-50 when hidden).
+    Order + visibility live in ~/data/quickShortcuts (persisted like the mini-DB).
+    Same popover/scoped-CSS approach as ErpUserMenu (is-unstyled + var(--mp-*) tokens).
   -->
   <MpPopover
     id="header-quick-create"
@@ -13,13 +16,11 @@
     is-close-on-escape
     v-slot="{ onClosePopover }"
     @open="menuOpen = true"
-    @close="menuOpen = false"
+    @close="onPopoverClose"
   >
     <!-- MpPopoverTrigger allows exactly ONE child node (no sibling comments inside).
          is-open keeps the hover fill while the popover is open, even after the cursor
-         moves off the button onto the portaled popover (real :hover can't span that).
-         Tracked via the popover's own open/close events — the v-slot isOpen doesn't
-         reliably flip back to false on hover-out. -->
+         moves off the button onto the portaled popover. -->
     <MpPopoverTrigger>
       <button class="quick-create__trigger" :class="{ 'is-open': menuOpen }" type="button" aria-label="Create new">
         <MpIcon name="add" color="icon.inverse" />
@@ -27,18 +28,68 @@
     </MpPopoverTrigger>
 
     <MpPopoverContent class="quick-create" is-unstyled>
-      <p class="quick-create__section">New</p>
-      <nav class="quick-create__group">
-        <button
-          v-for="item in items"
-          :key="item.label"
-          type="button"
-          class="quick-create__row"
-          @click="go(item, onClosePopover)"
-        >
-          <span class="quick-create__label">{{ item.label }}</span>
-        </button>
-      </nav>
+      <!-- ── Main: New shortcuts ─────────────────────────────── -->
+      <template v-if="view === 'main'">
+        <p class="quick-create__section">New</p>
+        <nav class="quick-create__group">
+          <button
+            v-for="item in visibleShortcuts"
+            :key="item.key"
+            type="button"
+            class="quick-create__row"
+            @click="go(item, onClosePopover)"
+          >
+            <span class="quick-create__label">{{ item.label }}</span>
+          </button>
+        </nav>
+
+        <div class="quick-create__divider" />
+
+        <nav class="quick-create__group">
+          <button type="button" class="quick-create__row" @click="view = 'manage'">
+            <span class="quick-create__label">Shortcut visibility</span>
+            <MpIcon name="chevrons-right" size="md" color="icon.default" />
+          </button>
+        </nav>
+      </template>
+
+      <!-- ── Manage: reorder + show/hide ─────────────────────── -->
+      <template v-else>
+        <div class="quick-create__subhead">
+          <button type="button" class="quick-create__back" aria-label="Back" @click="view = 'main'">
+            <MpIcon name="chevrons-left" size="md" color="icon.default" />
+          </button>
+          <span class="quick-create__subtitle">Shortcut visibility</span>
+        </div>
+
+        <ul class="quick-create__manage">
+          <li
+            v-for="(item, i) in quickShortcuts"
+            :key="item.key"
+            class="quick-create__manage-row"
+            :class="{ 'is-dragging': dragSrc === i, 'is-drag-over': dragOver === i }"
+            draggable="true"
+            @dragstart="onDragStart(i, $event)"
+            @dragover="onDragOver(i, $event)"
+            @drop="onDrop(i, $event)"
+            @dragend="onDragEnd"
+          >
+            <span class="quick-create__handle" aria-hidden="true">
+              <MpIcon name="drag" size="md" />
+            </span>
+            <span class="quick-create__manage-label">{{ item.label }}</span>
+            <button
+              type="button"
+              class="quick-create__toggle"
+              :class="{ 'is-hidden': !item.visible }"
+              :aria-label="item.visible ? `Hide ${item.label}` : `Show ${item.label}`"
+              @click="toggleShortcut(item.key)"
+            >
+              <MpIcon name="show" size="md" />
+            </button>
+          </li>
+        </ul>
+      </template>
     </MpPopoverContent>
   </MpPopover>
 </template>
@@ -46,33 +97,54 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon } from "@mekari/pixel3";
+import {
+  quickShortcuts,
+  visibleShortcuts,
+  toggleShortcut,
+  reorderShortcuts,
+  type QuickShortcut,
+} from "~/data/quickShortcuts";
 
-// Whether the popover is currently open — drives the trigger's persistent hover fill.
+// Whether the popover is open — drives the trigger's persistent hover fill.
 const menuOpen = ref(false);
+// Which view is showing inside the popover.
+const view = ref<"main" | "manage">("main");
 
-interface QuickCreateItem {
-  label: string;
-  /** Explicit route path (leaf create pages). Falls back to navigate(to ?? label). */
-  path?: string;
-  to?: string;
+function onPopoverClose() {
+  menuOpen.value = false;
+  view.value = "main"; // always reopen on the main list
 }
-
-const items: QuickCreateItem[] = [
-  { label: "Sales invoice", to: "Sales invoices" },
-  { label: "Sales order", to: "Sales orders" },
-  { label: "Purchase invoice", to: "Purchase invoices" },
-  { label: "Purchase order", to: "Purchase orders" },
-  { label: "Expense", to: "Expenses" },
-  { label: "Product", path: "/product-list/new" },
-];
 
 const router = useRouter();
 const { navigate } = useNavigation();
 
-function go(item: QuickCreateItem, closePopover: () => void) {
+function go(item: QuickShortcut, closePopover: () => void) {
   if (item.path) router.push(item.path);
   else navigate(item.to ?? item.label);
   closePopover();
+}
+
+// ── Drag and drop reorder (manage view) — same model as LocationPriorityDrawer ──
+const dragSrc = ref<number | null>(null);
+const dragOver = ref<number | null>(null);
+function onDragStart(i: number, e: DragEvent) {
+  dragSrc.value = i;
+  e.dataTransfer!.effectAllowed = "move";
+}
+function onDragOver(i: number, e: DragEvent) {
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = "move";
+  dragOver.value = i;
+}
+function onDrop(i: number, e: DragEvent) {
+  e.preventDefault();
+  if (dragSrc.value !== null && dragSrc.value !== i) reorderShortcuts(dragSrc.value, i);
+  dragSrc.value = null;
+  dragOver.value = null;
+}
+function onDragEnd() {
+  dragSrc.value = null;
+  dragOver.value = null;
 }
 </script>
 
@@ -100,7 +172,7 @@ function go(item: QuickCreateItem, closePopover: () => void) {
 
 :global(.mp-popover.quick-create) {
   z-index: var(--mp-z-indices-popover, 1400);
-  width: 240px;
+  width: 248px;
   padding: var(--mp-spacing-2) 0;
   background: var(--mp-colors-background-stage, #ffffff);
   border: var(--mp-border-width-sm, 1px) solid var(--mp-colors-border-default, #e3e7e9);
@@ -124,9 +196,17 @@ function go(item: QuickCreateItem, closePopover: () => void) {
   flex-direction: column;
 }
 
+.quick-create__divider {
+  height: var(--mp-border-width-sm, 1px);
+  margin: var(--mp-spacing-2) 0;
+  background: var(--mp-colors-border-default, #e3e7e9);
+}
+
 .quick-create__row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-2);
   width: 100%;
   padding: var(--mp-spacing-2) var(--mp-spacing-3); /* 8px / 12px */
   background: transparent;
@@ -135,13 +215,92 @@ function go(item: QuickCreateItem, closePopover: () => void) {
   text-align: left;
   font-family: var(--mp-fonts-label, "Inter"), sans-serif;
 }
-
 .quick-create__row:hover {
   background: var(--mp-colors-background-neutral-hovered, #f0f2f2);
 }
-
 .quick-create__label {
   font-size: var(--mp-font-sizes-md, 14px);
   color: var(--mp-colors-text-default, #080d0e);
+}
+
+/* ── Manage view ── */
+.quick-create__subhead {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+  padding: 0 var(--mp-spacing-2) var(--mp-spacing-2);
+}
+.quick-create__back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--mp-spacing-1);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--mp-radii-md, 6px);
+}
+.quick-create__back:hover {
+  background: var(--mp-colors-background-neutral-hovered, #f0f2f2);
+}
+.quick-create__subtitle {
+  font-size: var(--mp-font-sizes-md, 14px);
+  font-weight: 600;
+  color: var(--mp-colors-text-default, #080d0e);
+}
+
+.quick-create__manage {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.quick-create__manage-row {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  cursor: grab;
+  user-select: none;
+}
+.quick-create__manage-row:hover {
+  background: var(--mp-colors-background-neutral-hovered, #f0f2f2);
+}
+.quick-create__manage-row.is-dragging {
+  opacity: 0.5;
+}
+.quick-create__manage-row.is-drag-over {
+  box-shadow: inset 0 2px 0 var(--mp-colors-border-brand, #1e7d63);
+}
+.quick-create__handle {
+  display: flex;
+  align-items: center;
+  color: var(--mp-colors-icon-subtle, #9aa4a6);
+  cursor: grab;
+}
+.quick-create__manage-label {
+  flex: 1;
+  font-size: var(--mp-font-sizes-md, 14px);
+  color: var(--mp-colors-text-default, #080d0e);
+}
+.quick-create__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--mp-spacing-1);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--mp-radii-md, 6px);
+  /* Visible shortcut: normal icon; the MpIcon inherits currentColor. */
+  color: var(--mp-colors-icon-default, #536062);
+}
+.quick-create__toggle:hover {
+  background: var(--mp-colors-background-neutral-hovered, #f0f2f2);
+}
+/* Hidden shortcut: the `show` icon greyed to gray-50. */
+.quick-create__toggle.is-hidden {
+  color: var(--mp-colors-gray-50, #edf0f2);
 }
 </style>
