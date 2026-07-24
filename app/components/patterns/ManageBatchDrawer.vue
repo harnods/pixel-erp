@@ -216,9 +216,10 @@ const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
 // operator must scan the batch barcode once per unit instead (handleDrawerScan
-// already only ever +1s an existing row, so it needs no changes). Picking/
-// receiving only — put-away's batch step has no scan bar at all (it's bin
-// allocation of an already-known qty, not a count), so it's out of scope.
+// already only ever +1s an existing row, so it needs no changes). This typing-
+// lockout applies to picking/receiving only — put-away DOES have a scan bar
+// (active-bin model), but its batch step is bin allocation of an already-known
+// qty, not a count, so the threshold lockout doesn't apply there.
 const scanRequiredForLine = computed(() =>
   (isPicking.value || isReceiving.value) && scanRequiredForQty(getWarehouseConfig(props.warehouseId), props.targetCount ?? 0),
 )
@@ -899,7 +900,7 @@ function fmtNum(n: number | null): string {
           <div class="mbd-empty">
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
             <p class="mbd-empty-title">No batches yet</p>
-            <p class="mbd-empty-desc">Add a batch using the button above.</p>
+            <p class="mbd-empty-desc">Add a batch using the button above, or scan a barcode.</p>
           </div>
         </template>
 
