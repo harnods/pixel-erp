@@ -984,6 +984,17 @@ export function acknowledgeCanceledPickingOrders(taskId: string): void {
     .filter((l) => !acked.has(l.orderId));
   t.skuQty = new Set(liveLines.map((l) => l.sku)).size;
   t.toPickQty = liveLines.reduce((s, l) => s + l.qty, 0);
+  // Drop the acknowledged order(s)' picked/batch/serial entries so the task's picked
+  // count reflects the LIVE orders only — otherwise a cancelled order's already-picked
+  // units linger in pickedQty (inflating "picked X of Y" and isFullyPicked). Mirrors
+  // removeOrderFromPickingTask, but keeps the order LINKED (salesOrderIds) for audit.
+  for (const map of [t.pickedByKey, t.batchPicks, t.serialPicks, t.plannedBatchPicks, t.plannedSerialPicks]) {
+    if (map) for (const k of Object.keys(map)) {
+      const oid = k.split("::")[0]!;
+      if (acked.has(oid)) delete (map as Record<string, unknown>)[k];
+    }
+  }
+  t.pickedQty = sumPicked(t.pickedByKey ?? {});
   persistPicking();
 }
 

@@ -4,7 +4,6 @@ import {
   MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon, MpBadge,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
-  toast,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
@@ -419,18 +418,11 @@ function goPacking() {
 
 async function handleCreate() {
   if (!hasSource.value) return
-  // Re-validate at Save: an order cancelled after this form was opened must never
-  // get a packing task. packableTables already drops it reactively — surface WHY so
-  // the save isn't silently short of what the operator selected, then let them retry.
-  if (!isDirectMode.value && canceledTables.value.length) {
-    const nos = canceledTables.value.map(t => t.salesNo).join(', ')
-    toast.notify({
-      variant: 'error',
-      title: `${nos} ${canceledTables.value.length > 1 ? 'were' : 'was'} cancelled and can’t be packed — removed from this packing`,
-      maxWidth: 'max-content',
-    })
-    return
-  }
+  // A cancelled order stays LINKED to its picking for audit, so it will always be
+  // present here — it must never BLOCK packing the co-listed live orders. It's already
+  // dropped from packableTables reactively (and called out via the canceledTables note),
+  // so we simply proceed and pack the live orders. The empty-selection guard below
+  // still catches the case where every selected order turned out to be cancelled.
   let valid = true
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
   if (isDirectMode.value) {
