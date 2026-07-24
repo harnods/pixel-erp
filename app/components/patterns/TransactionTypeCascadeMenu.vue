@@ -2,17 +2,29 @@
 /**
  * Two-level "Transaction type" filter (Figma: Inbox node 4204-7370) — click a
  * parent category to open its child flyout; a group with a single child
- * (Expenses) has no children column and selects that child directly. The
+ * (Expenses) has no children column and is a plain checkbox leaf. The
  * child column is always top-aligned to the parent row that opened it (so
  * e.g. Purchases' flyout sits lower than Sales', matching the design), which
  * falls out for free from `position: absolute; top: <row.offsetTop>px` on a
  * `position: relative` parent column — no manual pixel math needed.
  *
+ * `multiple` (default false, single-select): clicking a leaf selects it and
+ * closes the popover, same as clicking a leaf in a plain submenu — no
+ * checkboxes shown. Only the "All transactions" Inbox submenu opts into
+ * `multiple`.
+ *
+ * `multiple = true`: each leaf has its own checkbox and toggles without
+ * closing the popover. A parent row also carries its own checkbox — checked
+ * when every child in that group is selected, indeterminate when some are,
+ * empty when none are — clicking THAT checkbox bulk-toggles the whole group.
+ * Clicking elsewhere on the parent row only opens/switches its flyout, it
+ * does not change selection.
+ *
  * Self-contained trigger + popover (own button, is-manual control) — see the
  * AdvancedDateRangePicker / ERP Approval-icon memory for why MpTooltip/
  * slot-forwarded triggers break MpPopoverTrigger's cloneVNode injection.
  */
-import { MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
+import { MpIcon, MpCheckbox, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
 
 export interface CascadeGroup {
   label: string
@@ -21,11 +33,12 @@ export interface CascadeGroup {
 
 const props = defineProps<{
   id: string
-  modelValue: string
+  modelValue: string[]
   groups: CascadeGroup[]
   placeholder?: string
+  multiple?: boolean
 }>()
-const emit = defineEmits<{ 'update:modelValue': [string] }>()
+const emit = defineEmits<{ 'update:modelValue': [string[]] }>()
 
 const open = ref(false)
 const activeGroupLabel = ref<string | null>(null)
@@ -41,15 +54,20 @@ const activeChildren = computed(() => {
   return g && g.children.length > 1 ? g.children : null
 })
 
-function isGroupSelected(g: CascadeGroup) {
-  return g.children.some((c) => c.value === props.modelValue)
+function groupSelectionState(g: CascadeGroup): 'all' | 'some' | 'none' {
+  const selectedCount = g.children.filter((c) => props.modelValue.includes(c.value)).length
+  if (selectedCount === 0) return 'none'
+  if (selectedCount === g.children.length) return 'all'
+  return 'some'
 }
 
 const selectedLabel = computed(() => {
-  if (!props.modelValue) return ''
+  if (props.modelValue.length === 0) return ''
+  if (props.modelValue.length > 1) return `${props.modelValue.length} selected`
+  const value = props.modelValue[0]
   for (const g of props.groups) {
-    if (g.children.length === 1 && g.children[0]!.value === props.modelValue) return g.label
-    const c = g.children.find((c) => c.value === props.modelValue)
+    if (g.children.length === 1 && g.children[0]!.value === value) return g.label
+    const c = g.children.find((c) => c.value === value)
     if (c) return c.label
   }
   return ''
@@ -64,9 +82,9 @@ function close() {
   activeGroupLabel.value = null
 }
 
-function onGroupClick(g: CascadeGroup) {
+function onGroupRowClick(g: CascadeGroup) {
   if (g.children.length <= 1) {
-    selectLeaf(g.children[0]?.value ?? '')
+    if (!props.multiple) selectSingle(g.children[0]?.value ?? '')
     return
   }
   activeGroupLabel.value = g.label
@@ -76,14 +94,34 @@ function onGroupClick(g: CascadeGroup) {
   })
 }
 
-function selectLeaf(value: string) {
-  emit('update:modelValue', value)
+function selectSingle(value: string) {
+  emit('update:modelValue', [value])
   close()
+}
+
+function onLeafClick(value: string) {
+  if (props.multiple) toggleLeaf(value)
+  else selectSingle(value)
+}
+
+function toggleLeaf(value: string) {
+  const next = props.modelValue.includes(value)
+    ? props.modelValue.filter((v) => v !== value)
+    : [...props.modelValue, value]
+  emit('update:modelValue', next)
+}
+
+function toggleGroup(g: CascadeGroup) {
+  const values = g.children.map((c) => c.value)
+  const next = groupSelectionState(g) === 'all'
+    ? props.modelValue.filter((v) => !values.includes(v))
+    : [...new Set([...props.modelValue, ...values])]
+  emit('update:modelValue', next)
 }
 
 function clear(e: MouseEvent) {
   e.stopPropagation()
-  emit('update:modelValue', '')
+  emit('update:modelValue', [])
 }
 </script>
 
@@ -104,7 +142,7 @@ function clear(e: MouseEvent) {
           {{ selectedLabel || placeholder || 'Transaction type' }}
         </span>
         <span class="ttc-field__icons">
-          <MpIcon v-if="modelValue" name="reset" size="sm" class="ttc-clear" @click.stop="clear" />
+          <MpIcon v-if="modelValue.length" name="reset" size="sm" class="ttc-clear" @click.stop="clear" />
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
@@ -115,31 +153,44 @@ function clear(e: MouseEvent) {
     <MpPopoverContent :class="css({ padding: '0' })" @blur="close" @escape="close">
       <div class="ttc-panels">
         <div class="ttc-col ttc-col--parents">
-          <button
+          <div
             v-for="g in groups" :key="g.label"
             :ref="(el) => setParentRef(el, g.label)"
-            type="button"
             class="ttc-row"
-            :class="{ 'ttc-row--active': activeGroupLabel === g.label, 'ttc-row--selected': isGroupSelected(g) }"
-            @click.stop="onGroupClick(g)"
+            :class="{ 'ttc-row--active': activeGroupLabel === g.label, 'ttc-row--selected': !multiple && g.children.some((c) => modelValue.includes(c.value)) }"
+            @click.stop="onGroupRowClick(g)"
           >
-            <span>{{ g.label }}</span>
+            <MpCheckbox
+              v-if="multiple"
+              :id="`${id}-group-${g.label}`"
+              :is-checked="groupSelectionState(g) === 'all'"
+              :is-indeterminate="groupSelectionState(g) === 'some'"
+              @change="() => toggleGroup(g)"
+              @click.stop
+            />
+            <span class="ttc-row__label">{{ g.label }}</span>
             <svg v-if="g.children.length > 1" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </div>
         </div>
 
         <div v-if="activeChildren" class="ttc-col ttc-col--children" :style="{ top: `${childTop}px` }">
-          <button
+          <div
             v-for="c in activeChildren" :key="c.value"
-            type="button"
             class="ttc-row"
-            :class="{ 'ttc-row--selected': modelValue === c.value }"
-            @click.stop="selectLeaf(c.value)"
+            :class="{ 'ttc-row--selected': !multiple && modelValue.includes(c.value) }"
+            @click.stop="onLeafClick(c.value)"
           >
-            {{ c.label }}
-          </button>
+            <MpCheckbox
+              v-if="multiple"
+              :id="`${id}-leaf-${c.value}`"
+              :is-checked="modelValue.includes(c.value)"
+              @change="() => toggleLeaf(c.value)"
+              @click.stop
+            />
+            <span class="ttc-row__label">{{ c.label }}</span>
+          </div>
         </div>
       </div>
     </MpPopoverContent>
@@ -213,7 +264,6 @@ function clear(e: MouseEvent) {
 .ttc-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
   background: transparent;
@@ -230,5 +280,6 @@ function clear(e: MouseEvent) {
   color: var(--mp-text-selected);
   font-weight: var(--mp-font-weights-semi-bold);
 }
+.ttc-row__label { flex: 1; }
 .ttc-row svg { flex-shrink: 0; color: var(--mp-text-subtle); }
 </style>

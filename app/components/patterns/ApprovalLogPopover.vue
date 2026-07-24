@@ -59,7 +59,11 @@ function ruleText(level: ApprovalLevel) {
           <MpIcon name="task-todo" size="md" />
         </button>
       </MpPopoverTrigger>
-      <MpPopoverContent :class="css({ width: '360px', padding: '0' })" @blur="open = false" @escape="open = false">
+      <MpPopoverContent
+        :class="css({ width: '360px', padding: '0', overflow: 'hidden', borderColor: 'border.default' })"
+        @blur="open = false"
+        @escape="open = false"
+      >
         <div class="alp-header">
           <span class="alp-title">Approval log - {{ overallLabel }}</span>
           <button class="alp-close" aria-label="Close" @click.stop="open = false">

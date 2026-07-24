@@ -22,6 +22,9 @@ const props = defineProps<{
   allowedDocTypes?: string[] | null
   /** When true, hides the Transaction type filter entirely (e.g. Expenses tab) */
   hideTransactionType?: boolean
+  /** When true, the Transaction type filter allows selecting multiple doc types
+   *  via checkboxes (only the Inbox "All transactions" submenu opts in) */
+  multiSelectTransactionType?: boolean
   /** Column keys to force-hide regardless of user column settings */
   hiddenColumns?: string[]
 }>()
@@ -177,7 +180,7 @@ const cascadeGroups = computed(() => {
   return filtered
 })
 
-const transactionTypeFilter = ref('')
+const transactionTypeFilter = ref<string[]>([])
 
 // ─── Table state ──────────────────────────────────────────────────────────────
 
@@ -196,7 +199,7 @@ const {
       || formatTaskNumber(row).toLowerCase().includes(s)
       || row.details.toLowerCase().includes(s)
       || row.requestedBy.toLowerCase().includes(s)
-    const matchesType = !transactionTypeFilter.value || row.docType === transactionTypeFilter.value
+    const matchesType = transactionTypeFilter.value.length === 0 || transactionTypeFilter.value.includes(row.docType)
     let matchesDate = true
     const range = dateRange.value
     if (range) {
@@ -210,7 +213,7 @@ const {
 // reset to page 1 when the extra (non-built-in) filters change
 watch([transactionTypeFilter, dateRangeValue], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!transactionTypeFilter.value)
+const hasActiveFilter = computed(() => !!search.value || transactionTypeFilter.value.length > 0)
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -280,6 +283,7 @@ function formatDate(iso: string) {
           :id="`${idPrefix}-tasks-txntype-cascade`"
           v-model="transactionTypeFilter"
           :groups="cascadeGroups"
+          :multiple="multiSelectTransactionType"
         />
 
         <button class="filter-all-btn">

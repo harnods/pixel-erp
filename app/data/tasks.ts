@@ -133,13 +133,14 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
       balanceDue: isNonFinancial ? 0 : Math.round(total * paidRatio),
       status,
       warehouse,
-      reason: (['Exceeds credit limit', 'Exceeds transaction limit', 'Overdue'] as const)[n % 3]!,
+      reason: (docType === 'Sales Invoice' || docType === 'Sales Order')
+        ? (['Exceeds credit limit', 'Exceeds transaction limit', 'Overdue'] as const)[n % 3]!
+        : 'Overdue',
     }
   })
 }
 
 export const awaitingApprovalTasks = reactive<Task[]>(buildTasks(25, 'awaiting approval', 7))
-export const submittedTasks = reactive<Task[]>(buildTasks(25, 'submitted', 13))
 
 export function formatTaskNumber(task: Task): string {
   return `${task.docType} #${String(task.number).padStart(5, '0')}`

@@ -28,8 +28,7 @@ const allowedDocTypes = computed<string[] | null>(() => GROUP_MAP[innerTab.value
 const hideTransactionType = computed(() => innerTab.value === 'expenses')
 const hiddenColumns = computed<string[]>(() => {
   if (innerTab.value === 'warehouse') return ['dueDate', 'balanceDue', 'total', 'reason']
-  if (innerTab.value === 'all') return ['warehouse']
-  return ['warehouse', 'reason']
+  return ['warehouse']
 })
 </script>
 
@@ -47,6 +46,7 @@ const hiddenColumns = computed<string[]>(() => {
     id-prefix="inbox-aa"
     :allowed-doc-types="allowedDocTypes"
     :hide-transaction-type="hideTransactionType"
+    :multi-select-transaction-type="innerTab === 'all'"
     :hidden-columns="hiddenColumns"
   />
 </template>
