@@ -15,7 +15,7 @@
           v-for="item in group"
           :key="item.name"
           class="nav-item"
-          :class="{ active: activeItem === item.name }"
+          :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
           :title="item.name"
           @click="() => handleNavClick(item)"
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
@@ -116,6 +116,8 @@ interface SubItem {
   panelSubmenu?: PanelSubItem[][]
   /** Override panel title. Defaults to parent nav item name. */
   panelTitle?: string
+  /** Navigation identity (page label), when it differs from the display label. */
+  to?: string
 }
 
 interface NavItem {
@@ -125,6 +127,18 @@ interface NavItem {
   submenu?: SubItem[][]
   /** Level-2 panel opened directly by clicking the nav item (e.g. Reports) */
   panelSubmenu?: PanelSubItem[][]
+  /**
+   * When set, clicking ANY flyout item (that doesn't already have its own
+   * nested panelSubmenu) promotes it into a persistent level-2 panel instead
+   * of just navigating — same panel UI as Reports. While that panel is open,
+   * hovering this nav item no longer reopens the flyout (see
+   * handleItemMouseEnter).
+   *   - `true`  — panel content mirrors this item's own `submenu` verbatim.
+   *   - array   — an explicit, custom panel content list (e.g. Inventory
+   *               consolidates its nested "Products" panel into this
+   *               top-level one instead of mirroring the flyout as-is).
+   */
+  expandOnClick?: boolean | PanelSubItem[][]
   /**
    * Explicit destination path for a leaf item, when it shouldn't route to its own
    * slug — e.g. WMS Ops "Warehouses" opens a specific warehouse's detail directly.
@@ -249,6 +263,7 @@ const erpNavGroups: NavItem[][] = [
     },
     {
       name: 'Accounting', icon: 'chart-of-account',
+      expandOnClick: true,
       submenu: [
         [
           { label: 'Cash management' },
@@ -266,6 +281,7 @@ const erpNavGroups: NavItem[][] = [
   [
     {
       name: 'Sales', icon: 'sales',
+      expandOnClick: true,
       submenu: [
         [
           { label: 'Sales invoices' },
@@ -282,6 +298,7 @@ const erpNavGroups: NavItem[][] = [
     },
     {
       name: 'Purchases', icon: 'cart',
+      expandOnClick: true,
       submenu: [
         [
           { label: 'Purchase invoices' },
@@ -302,26 +319,18 @@ const erpNavGroups: NavItem[][] = [
   [
     {
       name: 'Inventory', icon: 'products',
-      submenu: [
+      // No flyout — clicking the icon opens the level-2 panel directly, same
+      // as Reports/Settings. "Cost recalculation" moved to Other lists.
+      panelSubmenu: [
         [
-          {
-            label: 'Products',
-            panelSubmenu: [
-              [
-                { label: 'Products', to: 'Product list' },
-                { label: 'Categories' },
-                { label: 'Variant options' },
-                { label: 'Units' },
-                { label: 'Price rules' },
-              ],
-              [
-                { label: 'Stock adjustments', iconType: 'shortcut' },
-              ],
-            ],
-          },
-          { label: 'Cost recalculation' },
+          { label: 'Products', to: 'Product list' },
+          { label: 'Categories' },
+          { label: 'Variant options' },
+          { label: 'Units' },
+          { label: 'Price rules' },
         ],
         [
+          { label: 'Stock adjustments', iconType: 'shortcut' },
           { label: 'Products reports', iconType: 'shortcut' },
           { label: 'Inventory settings', iconType: 'settings' },
         ],
@@ -329,6 +338,7 @@ const erpNavGroups: NavItem[][] = [
     },
     {
       name: 'WMS', icon: 'warehouse',
+      expandOnClick: true,
       submenu: [
         [
           { label: 'Overview' },
@@ -348,6 +358,7 @@ const erpNavGroups: NavItem[][] = [
     },
     {
       name: 'Production', icon: 'fulfillment',
+      expandOnClick: true,
       submenu: [
         [{ label: 'Production plans' }, { label: 'Production request' }, { label: 'Work orders' }, { label: 'Bill of materials' }],
         [{ label: 'Production reports', iconType: 'shortcut' }, { label: 'Production settings', iconType: 'settings' }],
@@ -404,11 +415,12 @@ const erpNavGroups: NavItem[][] = [
     },
     {
       name: 'Other lists', icon: 'table-view-list',
+      expandOnClick: true,
       submenu: [[
         { label: 'Recurring transactions' }, { label: 'Tax rates' }, { label: 'Currencies' },
         { label: 'Payment terms' }, { label: 'Payment methods' }, { label: 'Tags' },
         { label: 'Export & import' }, { label: 'File manager' }, { label: 'Activity log' },
-        { label: 'Data migration' },
+        { label: 'Data migration' }, { label: 'Cost recalculation' },
       ]],
     },
     {
@@ -537,6 +549,13 @@ const navGroups = computed<NavItem[][]>(() => {
 // sidebar highlight, regardless of which of the two identically-labeled items
 // was actually clicked; only fall back to a shortcut match if nothing else
 // claims the label (so standalone shortcuts, e.g. "Products reports", still work).
+// The panel content an expandOnClick item promotes to — either its own
+// explicit array, or a verbatim mirror of its flyout submenu.
+function expandGroupsFor(item: NavItem): PanelSubItem[][] {
+  if (Array.isArray(item.expandOnClick)) return item.expandOnClick
+  return (item.submenu ?? []).map((group) => group.map((s) => ({ label: s.label, iconType: s.iconType, to: s.to })))
+}
+
 function findActive(pageKey: string, allowShortcuts: boolean): {
   nav: string
   sub: string | null
@@ -554,6 +573,20 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
           ? { title: item.name, groups: item.panelSubmenu, parentNavName: item.name }
           : null
         return { nav: item.name, sub: null, panel }
+      }
+      // expandOnClick items: check their promoted-panel content BEFORE the plain
+      // submenu loop below, so a page that's part of the promoted panel restores
+      // it (and the right highlight) on a hard refresh — not just a bare "sub" match.
+      if (item.expandOnClick) {
+        const groups = expandGroupsFor(item)
+        for (const g of groups) {
+          for (const p of g) {
+            if (!allowShortcuts && p.iconType === 'shortcut') continue
+            if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
+              return { nav: item.name, sub: p.label, panel: { title: item.name, groups, parentNavName: item.name } }
+            }
+          }
+        }
       }
       for (const subGroup of item.submenu ?? []) {
         for (const sub of subGroup) {
@@ -695,9 +728,8 @@ function handleToggle() {
 }
 
 function handleNavClick(item: NavItem) {
-  flyoutItem.value = null
-
   if (item.panelSubmenu) {
+    flyoutItem.value = null
     // Nav item that directly opens a panel (e.g. Reports)
     if (activePanel.value?.parentNavName === item.name) {
       // Clicking same item again — close panel
@@ -710,14 +742,29 @@ function handleNavClick(item: NavItem) {
       navigate(firstItem.to ?? firstItem.label)
       activeItem.value = item.name
     }
+  } else if (item.expandOnClick && activePanel.value?.parentNavName === item.name) {
+    // Its own promoted panel is open — clicking the icon again closes it,
+    // returning to normal hover-flyout behaviour.
+    flyoutItem.value = null
+    closePanel()
+    activeItem.value = ''
   } else if (!item.submenu) {
     // Simple leaf nav item (e.g. Home, Expenses, Settings)
+    flyoutItem.value = null
     activeItem.value = item.name
     if (item.path) router.push(item.path)
     else navigate(item.to ?? item.name)
     closePanel()
+  } else {
+    // Items with a flyout — clicking the icon itself is a shortcut straight to
+    // the flyout's first item. The flyout stays open (the cursor is still
+    // hovering it) — unlike clicking an actual flyout item, which closes it.
+    const first = item.submenu.flat()[0]
+    if (first) {
+      activeItem.value = item.name
+      navigate(first.to ?? first.label)
+    }
   }
-  // Items with submenu: flyout opens on hover, click does nothing
 }
 
 function handlePanelSubItemClick(sub: PanelSubItem) {
@@ -726,7 +773,8 @@ function handlePanelSubItemClick(sub: PanelSubItem) {
 }
 
 function handleFlyoutSubItemClick(sub: SubItem) {
-  const parentName = flyoutItem.value!.name
+  const parentItem = flyoutItem.value!
+  const parentName = parentItem.name
   flyoutItem.value = null
 
   if (sub.panelSubmenu) {
@@ -737,16 +785,25 @@ function handleFlyoutSubItemClick(sub: SubItem) {
     activePanelSubItem.value = firstItem.label
     navigate(firstItem.to ?? firstItem.label)
     activeItem.value = parentName
+  } else if (parentItem.expandOnClick) {
+    // Promote the whole flyout into a persistent panel, highlighting the
+    // clicked item (see NavItem.expandOnClick).
+    const groups = expandGroupsFor(parentItem)
+    openPanel({ title: parentName, groups, parentNavName: parentName })
+    activePanelSubItem.value = sub.label
+    navigate(sub.to ?? sub.label)
+    activeItem.value = parentName
   } else {
     // Regular level-2 item — navigate directly, close any open panel
     activeItem.value = parentName
-    navigate(sub.label)
+    navigate(sub.to ?? sub.label)
     closePanel()
   }
 }
 
 function handleItemMouseEnter(e: MouseEvent, item: NavItem) {
-  if (!item.submenu) {
+  const ownPanelActive = item.expandOnClick && activePanel.value?.parentNavName === item.name
+  if (!item.submenu || ownPanelActive) {
     scheduleClose()
     return
   }
@@ -858,9 +915,12 @@ function cancelClose() {
   width: 100%;
 }
 
-.nav-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
-.nav-item:hover img { filter: brightness(0) saturate(100%) invert(26%) sepia(60%) saturate(600%) hue-rotate(185deg) brightness(85%) contrast(95%); }
-.nav-item:hover .nav-label { color: var(--mp-text-link, #165082); }
+/* is-flyout-open keeps this look while the cursor has moved off the button and
+   onto the Teleported flyout popover — real CSS :hover alone can't do this,
+   since the flyout isn't a descendant of the button in the DOM. */
+.nav-item:hover, .nav-item.is-flyout-open { background-color: var(--mp-background-neutral-subtle-hovered); }
+.nav-item:hover img, .nav-item.is-flyout-open img { filter: brightness(0) saturate(100%) invert(26%) sepia(60%) saturate(600%) hue-rotate(185deg) brightness(85%) contrast(95%); }
+.nav-item:hover .nav-label, .nav-item.is-flyout-open .nav-label { color: var(--mp-text-link, #165082); }
 
 .nav-item.active { background-color: var(--mp-background-neutral-pressed); }
 .nav-item.active .nav-icon-line { display: none; }
