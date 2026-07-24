@@ -207,7 +207,15 @@ const lastUpdated = computed(() => {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 function startPickingAndNavigate() {
+  if (needsCancelAck.value) { ackModalOpen.value = true; return }
   startPicking(props.orderId)
+  router.push(`/picking/${props.orderId}/pick`)
+}
+// Continue picking an in-progress task — blocked behind the acknowledgment modal
+// while a cancelled order still needs acknowledging (the banner's own Acknowledge
+// button is the other path). Otherwise straight to the pick screen.
+function continuePicking() {
+  if (needsCancelAck.value) { ackModalOpen.value = true; return }
   router.push(`/picking/${props.orderId}/pick`)
 }
 
@@ -250,6 +258,17 @@ function acknowledgeCancel() {
   if (!task.value) return
   acknowledgeCanceledPickingOrders(task.value.id)
   toast.notify({ variant: 'success', title: 'Picking list updated — cancelled order removed', maxWidth: 'max-content' })
+}
+// Reached when the operator tries to Start/Continue picking while a cancelled order
+// still needs acknowledging — they must acknowledge first, then proceed to the pick screen.
+const ackModalOpen = ref(false)
+function confirmAckAndContinue() {
+  if (!task.value) return
+  const wasOpen = task.value.status === 'open'
+  acknowledgeCancel()
+  ackModalOpen.value = false
+  if (wasOpen) startPicking(props.orderId)
+  router.push(`/picking/${props.orderId}/pick`)
 }
 
 const pdfPreviewOpen = ref(false)
@@ -998,7 +1017,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       </template>
       <template v-else-if="localStatus === 'in progress'">
         <div v-if="canCancel" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="router.push(`/picking/${orderId}/pick`)">Continue picking</button>
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="continuePicking">Continue picking</button>
           <MpPopover id="pkd-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
@@ -1010,7 +1029,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="router.push(`/picking/${orderId}/pick`)">Continue picking</button>
+        <button v-else class="detail-btn detail-btn--primary" @click="continuePicking">Continue picking</button>
       </template>
       <button
         v-else-if="(localStatus === 'completed' || localStatus === 'partially picked') && hasPackableOrders"
@@ -1033,6 +1052,27 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
             <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Acknowledge cancelled order before continuing picking ── -->
+    <MpModal id="pkd-ack-cancel" :is-open="ackModalOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackModalOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Acknowledge cancelled order?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          {{ pendingCanceled.join(', ') }} {{ pendingCanceled.length > 1 ? 'were' : 'was' }} cancelled.
+          Acknowledging removes {{ pendingCanceled.length > 1 ? 'their' : 'its' }} lines from this
+          picking list (the order{{ pendingCanceled.length > 1 ? 's' : '' }} stay{{ pendingCanceled.length > 1 ? '' : 's' }}
+          listed under Sales orders) before you continue picking.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="ackModalOpen = false">Review</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="confirmAckAndContinue">Acknowledge &amp; continue</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
