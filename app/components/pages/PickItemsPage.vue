@@ -363,6 +363,19 @@ function addOrIncrementBatch(item: PickLineItem, batchNo: string): boolean {
     notifyScanError(`${item.skuCode}: qty to pick already fully picked`)
     return false
   }
+  // Don't oversell a specific batch: total picked of this batch across the WHOLE task
+  // may not exceed what this order can actually take = the batch's free available
+  // (batchAvailable already excludes reservations) PLUS this order's own reserved units
+  // of that batch. Without this, page scan could pick into stock reserved for others.
+  const siblingKeys = lineItems.value.filter(it => it.skuCode === item.skuCode).map(it => it.key)
+  const ownReserved = siblingKeys.reduce((s, k) =>
+    s + (taskBatchByKey.value[k]?.find(r => r.batchNo === batchNo)?.reservedQty ?? 0), 0)
+  const alreadyCounted = siblingKeys.reduce((s, k) =>
+    s + ((batchLinesByKey.value[k] ?? []).find(b => b.batchNo === batchNo)?.counted ?? 0), 0)
+  if (alreadyCounted >= batchAvailable(item.skuCode, batchNo) + ownReserved) {
+    notifyScanError(`${batchNo}: no more available to pick`)
+    return false
+  }
   const existing = batchLinesByKey.value[item.key] ?? []
   const idx = existing.findIndex(b => b.batchNo === batchNo)
   if (idx !== -1) {
@@ -385,8 +398,28 @@ function addOrIncrementBatch(item: PickLineItem, batchNo: string): boolean {
  *  no drawer required; a repeat scan of the same serial is a silent no-op (just
  *  re-flashes, no sound either way). Returns whether it actually applied. */
 function addSerialPick(item: PickLineItem, serial: string): boolean {
+  // Task-wide dedupe: one physical serial can never be picked for more than one order
+  // on this task (a shared picking bundles several orders' lines for the same SKU).
+  // Checking only this one line let the SAME serial fill a second order — mirror
+  // ManageSerialDrawer, which dedupes across the whole task.
+  const siblingKeys = lineItems.value.filter(it => it.skuCode === item.skuCode).map(it => it.key)
+  if (siblingKeys.some(k => (serialLinesByKey.value[k] ?? []).some(s => s.serial === serial))) {
+    notifyScanError(`"${serial}" is already selected`)
+    return false
+  }
+  // Reservation ownership: a serial sitting in ANOTHER order's reserved pool must not be
+  // picked here (oversell). A unit reserved for THIS order (i.e. in its own planned
+  // serials) is fine. Mirrors ManageSerialDrawer, which marks foreign-reserved units
+  // unpickable while keeping the order's own reserved units pickable.
+  const reservedUnits = stockMap.value.get(item.skuCode)?.serials?.reserved ?? []
+  if (reservedUnits.some(u => u.serial === serial)) {
+    const mine = new Set((item.plannedSerialPicks ?? []).map(s => s.serial))
+    if (!mine.has(serial)) {
+      notifyScanError(`"${serial}" is already reserved for another order`)
+      return false
+    }
+  }
   const existing = serialLinesByKey.value[item.key] ?? []
-  if (existing.some(s => s.serial === serial)) return false
   if (existing.length >= item.expectedQty) {
     notifyScanError(`${item.skuCode}: qty to pick already fully picked`)
     return false
@@ -933,7 +966,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pik-search" type="text" placeholder="Search..." />
+            <input v-model="search" class="pik-search" type="text" placeholder="Search product or SKU…" />
             <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
