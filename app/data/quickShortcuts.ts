@@ -13,29 +13,28 @@ import { loadSnapshot, saveSnapshot } from './persist'
 export interface QuickShortcut {
   key: string
   label: string
-  /** navigate() label (module route), when no explicit create path. */
-  to?: string
-  /** explicit route path — leaf create pages (e.g. New product). */
-  path?: string
+  /** Route to the creation page. '#' = no creation page in the prototype yet (no-op). */
+  path: string
   visible: boolean
 }
 
 const KEY = 'quick-shortcuts'
 
-// Default order + visibility. Hidden ones are off until the user enables them.
+// Default order + visibility. Each points at its creation page where the prototype
+// has one; the rest are '#' (placeholder, no navigation) until those pages exist.
 const DEFAULTS: QuickShortcut[] = [
-  { key: 'sales-invoice',     label: 'Sales invoice',     to: 'Sales invoices',    visible: true },
-  { key: 'sales-order',       label: 'Sales order',       to: 'Sales orders',      visible: true },
-  { key: 'sales-quote',       label: 'Sales quote',       to: 'Sales quotes',      visible: false },
-  { key: 'purchase-invoice',  label: 'Purchase invoice',  to: 'Purchase invoices', visible: false },
-  { key: 'purchase-order',    label: 'Purchase order',    to: 'Purchase orders',   visible: true },
-  { key: 'expenses',          label: 'Expenses',          to: 'Expenses',          visible: true },
-  { key: 'upload-bill',       label: 'Upload bill',       to: 'Upload bill',       visible: false },
+  { key: 'sales-invoice',     label: 'Sales invoice',     path: '#', visible: true },
+  { key: 'sales-order',       label: 'Sales order',       path: '#', visible: true },
+  { key: 'sales-quote',       label: 'Sales quote',       path: '#', visible: false },
+  { key: 'purchase-invoice',  label: 'Purchase invoice',  path: '#', visible: false },
+  { key: 'purchase-order',    label: 'Purchase order',    path: '#', visible: true },
+  { key: 'expenses',          label: 'Expenses',          path: '#', visible: true },
+  { key: 'upload-bill',       label: 'Upload bill',       path: '#', visible: false },
   { key: 'product',           label: 'Product',           path: '/product-list/new', visible: true },
-  { key: 'journal-entry',     label: 'Journal entry',     to: 'Journal entries',   visible: false },
-  { key: 'internal-transfer', label: 'Internal transfer', to: 'Internal transfer', visible: false },
-  { key: 'receive-money',     label: 'Receive money',     to: 'Receive money',     visible: false },
-  { key: 'spend-money',       label: 'Spend money',       to: 'Spend money',       visible: false },
+  { key: 'journal-entry',     label: 'Journal entry',     path: '#', visible: false },
+  { key: 'internal-transfer', label: 'Internal transfer', path: '#', visible: false },
+  { key: 'receive-money',     label: 'Receive money',     path: '#', visible: false },
+  { key: 'spend-money',       label: 'Spend money',       path: '#', visible: false },
 ]
 
 function build(): QuickShortcut[] {

@@ -137,11 +137,10 @@ function onPopoverClose() {
 }
 
 const router = useRouter();
-const { navigate } = useNavigation();
 
 function go(item: QuickShortcut, closePopover: () => void) {
-  if (item.path) router.push(item.path);
-  else navigate(item.to ?? item.label);
+  // '#' = no creation page in the prototype yet → no navigation, just close.
+  if (item.path !== "#") router.push(item.path);
   closePopover();
 }
 
