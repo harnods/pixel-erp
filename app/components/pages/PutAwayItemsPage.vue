@@ -12,7 +12,7 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import {
-  getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask,
+  getPutAwayTask, savePutAwayDraft, endPutAway as endPutAwayTask, acknowledgeCanceledPutAway,
   type PutAwayBatchAssignment, type PutAwaySerialAssignment,
 } from '~/data/putAwayTasks'
 import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
@@ -68,8 +68,19 @@ watch([() => props.orderId, lineItems], () => {
   rowCounter = 0
   const seen = new Map<string, DraftRow>()
   lineItems.value.forEach(it => {
+    const stored = it.stored ?? 0
     if (!seen.has(it.skuCode)) {
-      seen.set(it.skuCode, { id: newRowId(), skuCode: it.skuCode, qty: 0, binLocation: it.binLocation })
+      // Seed the put-away qty from what a saved draft already stored (it.stored),
+      // not 0 — otherwise reopening/Continue put-away wiped the operator's progress
+      // (scan qty 1 → Save draft → Continue showed 0). Summed across the SKU's rows.
+      // Storage location starts EMPTY on a fresh put-away — the operator scans the bin
+      // (active-bin model), it isn't auto-filled — but a draft that already stored units
+      // into a bin keeps that bin so Continue put-away restores the real progress.
+      seen.set(it.skuCode, { id: newRowId(), skuCode: it.skuCode, qty: stored, binLocation: stored > 0 ? it.binLocation : '' })
+    } else {
+      const row = seen.get(it.skuCode)!
+      row.qty += stored
+      if (!row.binLocation && stored > 0) row.binLocation = it.binLocation
     }
   })
   draftRows.value = [...seen.values()]
@@ -412,9 +423,14 @@ function handleScan(rawValue: string) {
       return
     }
     const binRow = bin ? skuRows.find(r => sameCode(r.binLocation, bin)) : null
+    // An existing row for this SKU with no bin yet (the fresh-start seed row, whose
+    // storage location is now empty by default) should be FILLED by this scan — adopt
+    // its bin below — rather than leaving it stranded and auto-splitting a new row.
+    const emptyBinRow = withCapacity.some(r => !r.binLocation)
 
-    if (bin && !binRow) {
-      // Active bin differs from every existing row for this SKU → auto-split a new row for this bin.
+    if (bin && !binRow && !emptyBinRow) {
+      // Active bin differs from every existing row for this SKU (and none is unassigned)
+      // → auto-split a new row for this bin.
       const newRow: DraftRow = { id: newRowId(), skuCode: sku, qty: 1, binLocation: bin }
       const lastSkuIdx = draftRows.value.reduce((acc, r, i) => sameCode(r.skuCode, sku) ? i : acc, -1)
       const next = [...draftRows.value]
@@ -623,6 +639,19 @@ const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
 function goBack()    { router.push(`/put-away/${props.orderId}`) }
 function goPutAway() { router.push('/inbound-delivery?tab=Put-away') }
 
+// Defense in depth — the details page already blocks navigating here via
+// Start/Continue put-away until acknowledged, but a direct URL visit must be
+// blocked the same way. Acknowledging cancels this task AND its linked
+// receiving task(s) too — there's no put-away UI to fall back into here, so
+// this navigates back to the task details page instead.
+function acknowledgeAndCancel() {
+  if (!task.value) return
+  const taskNo = task.value.taskNo
+  acknowledgeCanceledPutAway(task.value.id)
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
+  goBack()
+}
+
 // ── Start date label ──────────────────────────────────────────────────────────
 const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
@@ -658,7 +687,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 </script>
 
 <template>
-  <div v-if="task" class="detail-page">
+  <div v-if="task && task.needsCancelAck" class="pi-not-found">
+    <p>The purchase order behind this put-away's receiving task was canceled.</p>
+    <p>Nothing has been stored yet — acknowledging will cancel this put-away. Its linked receiving task stays completed (the received goods are a permanent record).</p>
+    <button class="pi-btn pi-btn--primary" type="button" @click="acknowledgeAndCancel">Acknowledge</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to task</button>
+  </div>
+
+  <div v-else-if="task" class="detail-page">
 
     <!-- ── Title bar ── -->
     <header class="detail-bar">
@@ -706,7 +742,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pi-search" type="text" placeholder="Search..." />
+            <input v-model="search" class="pi-search" type="text" placeholder="Search product or SKU…" />
             <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>

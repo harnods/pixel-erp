@@ -51,6 +51,7 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // Delivery is per sales order — one delivery = one order.
 const columns: TableColumn[] = [
   { key: 'salesNo',       label: 'Sales order no.', width: '200px', sortType: 'text' },
+  { key: 'packingTaskNo', label: 'Packing no.',     width: '180px', sortType: 'text' },
   { key: 'taskNo',        label: 'Delivery no.',    width: '180px', sortType: 'text' },
   { key: 'source',        label: 'Source',          width: '180px', sortType: 'text' },
   { key: 'warehouseName', label: 'Warehouse',       width: '180px', sortType: 'text' },
@@ -99,9 +100,10 @@ const warehouseOptions = computed(() => {
   return src.map(w => ({ label: w.name, value: w.id }))
 })
 const statusOptions = [
-  { label: 'Ready to ship', value: 'ready to ship' },
-  { label: 'Shipped',         value: 'shipped' },
-  { label: 'Canceled',        value: 'canceled' },
+  { label: 'Ready to ship',     value: 'ready to ship' },
+  { label: 'Out for delivery',  value: 'out for delivery' },
+  { label: 'Shipped',           value: 'shipped' },
+  { label: 'Canceled',          value: 'canceled' },
 ]
 const warehouseLabel = computed(() => {
   const n = warehouseFilter.value.length
@@ -293,11 +295,32 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Sales order no. — View details chip on hover ── -->
+    <!-- ── Sales order no. — View details chip opens the sales order detail ── -->
     <template #cell-salesNo="{ value, row }">
       <div class="cell-with-action">
         <span class="cell-text del-so">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as DeliveryTask)">
+        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/${(row as unknown as DeliveryTask).salesOrderId}`)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
+    </template>
+
+    <!-- ── Packing no. — joins all covered packing tasks when a delivery bundles
+         several; View details chip opens the (primary) packing task on hover ── -->
+    <template #cell-packingTaskNo="{ value, row }">
+      <div class="cell-with-action">
+        <span class="cell-text del-no">{{ (row as unknown as DeliveryTask).packingTaskNos?.length
+          ? (row as unknown as DeliveryTask).packingTaskNos!.join(', ')
+          : (value || '—') }}</span>
+        <button
+          v-if="(row as unknown as DeliveryTask).packingTaskId"
+          class="row-hover-btn"
+          @click.stop="router.push(`/packing/${(row as unknown as DeliveryTask).packingTaskId}`)"
+        >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>

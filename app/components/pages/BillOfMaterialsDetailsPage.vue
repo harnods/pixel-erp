@@ -33,11 +33,11 @@ function goEdit() { router.push(`/bill-of-materials/new?edit=${encodeURIComponen
 function goDuplicate() { router.push(`/bill-of-materials/new?duplicate=${encodeURIComponent(props.orderId)}`) }
 
 // ── Header actions menu ────────────────────────────────────────────────────────
-const actionItems = ['Edit', 'Duplicate', 'Print', 'Delete']
+const actionItems = ['Edit', 'Duplicate', 'Print', 'Archive']
 function onAction(item: string) {
   if (item === 'Edit') goEdit()
   else if (item === 'Duplicate') goDuplicate()
-  else if (item === 'Delete') isDeleteModalOpen.value = true
+  else if (item === 'Archive') isDeleteModalOpen.value = true
 }
 
 // ── Delete confirmation ────────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ function confirmDelete() {
   if (!bom.value) return
   bom.value.archived = true
   persistBillOfMaterials()
-  toast.notify({ variant: 'success', title: 'Bill of materials deleted' })
+  toast.notify({ variant: 'success', title: 'Bill of materials archived' })
   goList()
 }
 
@@ -133,7 +133,6 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
-                :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical)' }) : ''"
                 @click="onAction(item)"
               >{{ item }}</MpPopoverListItem>
             </MpPopoverList>
@@ -411,8 +410,9 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
   <ConfirmModal
     v-if="bom"
     v-model:is-open="isDeleteModalOpen"
-    title="Delete bill of materials?"
+    title="Archive bill of materials?"
     :description="`${bom.number} will be removed from the list. You can still find it via the Show archived BOM filter.`"
+    confirm-label="Archive"
     @confirm="confirmDelete"
   />
 </template>

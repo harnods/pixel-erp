@@ -1,14 +1,22 @@
 import { reactive } from "vue";
 import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from "./outgoing";
-import { packingTasks, pickedLinesForPacking, type PackingTask } from "./packingTasks";
+import { packingTasks, pickedLinesForPacking, getPackingTask, type PackingTask } from "./packingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
+import { applyStockInOut, consumeReservation } from "./warehouseDetails";
 import { sameCode, includesCode } from "~/utils/scan";
 
 /**
  * A delivery — created once a packing task is COMPLETED. Like packing, delivery is
- * PER SALES ORDER: each packed order ships as its own delivery. A delivery is open
- * until it's dispatched ("shipped"); it can also be canceled.
+ * PER SALES ORDER: each packed order ships as its own delivery. Lifecycle:
+ *   - ready to ship: packed, waiting for handover.
+ *   - out for delivery: handed to the courier (shipment doc "open"), but NOT yet
+ *     confirmed received — the goods are still the warehouse's responsibility, on-hand
+ *     is untouched, and the order can STILL be cancelled (e.g. the courier was closed
+ *     and the assignee brought the parcel back).
+ *   - shipped: the shipment doc was COMPLETED (recipient signed / proof filed) — the
+ *     stock has truly left: on-hand is deducted, the reservation consumed. Terminal.
+ *   - canceled.
  */
 export interface DeliveryTask {
   id: string;
@@ -36,8 +44,14 @@ export interface DeliveryTask {
   toShipQty: number;
   /** units actually shipped (0 until handed over, then = toShipQty) */
   shippedQty: number;
-  /** ready to ship = created & packed, waiting to leave; shipped = handed over */
-  status: "ready to ship" | "shipped" | "canceled";
+  /** ready to ship = packed, waiting; out for delivery = handed to courier, not yet
+   *  confirmed (reversible); shipped = shipment completed / received (posted, terminal) */
+  status: "ready to ship" | "out for delivery" | "shipped" | "canceled";
+  /** cancel audit (D2 cascade) — set when the parent outbound is cancelled */
+  canceledDate?: string;
+  canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
   /** how it leaves: self delivery (own driver) or online shipping (3rd-party courier) */
   deliveryMethod?: "self" | "online";
   /** ISO date the goods were handed to the courier (shipped only) */
@@ -106,8 +120,15 @@ function seedTasks(): DeliveryTask[] {
   for (const pack of packingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pack-sh-"))) {
     idx++;
     const order = outgoingOrders.find((o) => o.id === pack.salesOrderId);
-    const status = SEED_STATUSES[idx % SEED_STATUSES.length]!;
-    const shipmentStatus = status === "shipped" ? SEED_SHIPMENT_STATUSES[idx % SEED_SHIPMENT_STATUSES.length]! : undefined;
+    // SEED_STATUSES' "shipped" means "in a shipment"; split it by the shipment doc's
+    // own status: an OPEN shipment is still "out for delivery" (reversible, not posted),
+    // a COMPLETED one is truly "shipped".
+    const baseStatus = SEED_STATUSES[idx % SEED_STATUSES.length]!;
+    const shipmentStatus = baseStatus === "shipped" ? SEED_SHIPMENT_STATUSES[idx % SEED_SHIPMENT_STATUSES.length]! : undefined;
+    const inShipment = baseStatus === "shipped";
+    const status: DeliveryTask["status"] = inShipment
+      ? (shipmentStatus === "completed" ? "shipped" : "out for delivery")
+      : baseStatus;
     const toShipQty = pack.toPackQty;
     // marketplace ⇒ always online shipping; others alternate self / online
     const method: "self" | "online" = isMarketplaceOrder(order) ? "online" : (idx % 2 === 0 ? "self" : "online");
@@ -125,18 +146,20 @@ function seedTasks(): DeliveryTask[] {
       skuQty: pack.skuQty,
       orderQty: order?.orderQty ?? toShipQty,
       toShipQty,
+      // Posted (on-hand deducted) only once truly shipped; out-for-delivery isn't yet.
       shippedQty: status === "shipped" ? toShipQty : 0,
       status,
       deliveryMethod: method,
-      shippedDate: status === "shipped" ? new Date().toISOString() : undefined,
+      // both out-for-delivery and shipped were dispatched, so both carry a date.
+      shippedDate: inShipment ? new Date().toISOString() : undefined,
       // online shipping → courier + tracking; self delivery → optional (often blank)
-      courier: status !== "canceled" && method === "online" ? COURIERS[idx % 4] : undefined,
-      trackingNo: status !== "canceled" && method === "online" ? `SD${String(9000 + thisSeq).padStart(7, "0")}` : undefined,
+      courier: baseStatus !== "canceled" && method === "online" ? COURIERS[idx % 4] : undefined,
+      trackingNo: baseStatus !== "canceled" && method === "online" ? `SD${String(9000 + thisSeq).padStart(7, "0")}` : undefined,
       // proof of delivery only exists once the shipment doc is actually completed
       proofFile: shipmentStatus === "completed" ? "pickup-proof.jpg" : undefined,
-      // seed shipped deliveries as their own single-delivery shipment batch, so the
-      // Shipped tab (grouped by shipment) has demo content out of the box.
-      shipmentNo: status === "shipped" ? `Shipment #${60000 + thisSeq}` : undefined,
+      // both out-for-delivery and shipped deliveries belong to a shipment batch, so the
+      // Shipped tab (grouped by shipment) has open + completed demo content out of the box.
+      shipmentNo: inShipment ? `Shipment #${60000 + thisSeq}` : undefined,
       shipmentStatus,
       receivedDate: shipmentStatus === "completed" ? new Date().toISOString().slice(0, 10) : undefined,
       receivedBy: shipmentStatus === "completed" ? RECEIVER_NAMES[idx % RECEIVER_NAMES.length] : undefined,
@@ -300,16 +323,41 @@ export function deliveryTasksFor(warehouseIds?: string[]): DeliveryTask[] {
     : deliveryTasks;
 }
 
-/** Badge count for the Delivery stage = deliveries not yet shipped/canceled (scoped). */
+/** Badge count for the Delivery stage = deliveries still awaiting handover (scoped).
+ *  Out-for-delivery has already left the dock (it lives on the Shipped tab under its
+ *  open shipment), so it no longer counts as delivery work. */
 export function deliveryOpenCount(warehouseIds?: string[]): number {
   return deliveryTasksFor(warehouseIds).filter(
-    (t) => t.status !== "shipped" && t.status !== "canceled",
+    (t) => t.status === "ready to ship",
   ).length;
 }
 
 /** Delivery(ies) for a given outbound order. */
 export function getDeliveryForOrder(orderId: string): DeliveryTask[] {
   return deliveryTasks.filter((t) => t.salesOrderId === orderId);
+}
+
+/** A delivery is cancellable while it hasn't truly SHIPPED yet — i.e. "ready to ship"
+ *  OR "out for delivery" (handed over but the shipment doc isn't completed, so the
+ *  parcel can still come back). Only a completed-shipment "shipped" delivery is
+ *  terminal and blocks the parent cancel upstream (posting guard). */
+export function canCancelDeliveryTask(t: DeliveryTask): boolean {
+  return t.status === "ready to ship" || t.status === "out for delivery";
+}
+
+/** Cancel a delivery task (ready-to-ship or out-for-delivery) — part of the
+ *  outbound-cancel cascade. An out-for-delivery delivery STAYS attached to its
+ *  shipment (shipmentNo kept) so the shipment shows it as canceled and prompts the
+ *  operator to acknowledge; acknowledging (acknowledgeCanceledShipment) then detaches
+ *  it. A ready-to-ship delivery has no shipment, so there's nothing to detach. */
+export function cancelDeliveryTask(taskId: string, reason?: string): void {
+  const t = deliveryTasks.find((x) => x.id === taskId);
+  if (!t || !canCancelDeliveryTask(t)) return;
+  t.status = "canceled";
+  t.canceledDate = new Date().toISOString();
+  if (reason) t.canceledReason = reason;
+  t.canceledBy = "Rizal Candra";
+  persistDelivery();
 }
 
 /** True if an order already has a live (non-canceled) delivery — a canceled one
@@ -321,11 +369,11 @@ export function orderHasDelivery(orderId: string): boolean {
   );
 }
 
-/** True if a packing task has already been shipped (its delivery — possibly
- *  merged from several packing tasks in a bulk "Create delivery" — is shipped). */
+/** True if a packing task is already in a shipment (out for delivery or shipped) —
+ *  so it can't be swept into another. */
 export function packingTaskHasShipment(packingTaskId: string): boolean {
   return deliveryTasks.some(
-    (t) => t.status === "shipped" && packingTaskIdsForDelivery(t).includes(packingTaskId),
+    (t) => (t.status === "shipped" || t.status === "out for delivery") && packingTaskIdsForDelivery(t).includes(packingTaskId),
   );
 }
 
@@ -424,9 +472,12 @@ export function handoverToCourierBulk(
     let shippedCount = 0;
     for (const id of ids) {
       const t = getDeliveryTask(id)!;
-      t.status = "shipped";
+      // Handover ≠ shipped. The parcel is with the courier but the shipment doc is
+      // still "open" (unconfirmed) → "out for delivery": on-hand untouched, still
+      // cancellable. It only becomes "shipped" (posted) when the shipment completes.
+      t.status = "out for delivery";
       t.shipmentStatus = "open";
-      t.shippedQty = t.toShipQty;
+      t.shippedQty = 0;
       t.shippedDate = stampSaveTime(opts.transactionDate);
       t.assignee = opts.assignee;
       t.shipmentNo = shipmentNo;
@@ -459,11 +510,17 @@ export interface ShipmentSummary {
   receivedNote?: string;
   /** signed proof-of-delivery file name, set once completed. */
   proofFile?: string;
+  /** One of the shipment's orders was cancelled (still attached) and the operator
+   *  hasn't acknowledged it yet — the shipment shows it as canceled and a banner
+   *  prompts an acknowledge, which detaches it (acknowledgeCanceledShipment). */
+  needsCancelAck: boolean;
   deliveries: DeliveryTask[];
 }
 export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
+  // Include canceled deliveries still attached to the shipment (pending acknowledge),
+  // so the shipment shows them as canceled before the operator acknowledges.
   const deliveries = deliveryTasks.filter((t) => t.shipmentNo?.replace(/\D/g, "") === shipmentSeq);
-  const first = deliveries[0];
+  const first = deliveries.find((d) => d.status !== "canceled") ?? deliveries[0];
   if (!first) return undefined;
   return {
     shipmentSeq,
@@ -477,6 +534,7 @@ export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
     receivedBy: first.receivedBy,
     receivedNote: first.receivedNote,
     proofFile: first.proofFile,
+    needsCancelAck: deliveries.some((d) => d.status === "canceled"),
     deliveries,
   };
 }
@@ -486,13 +544,13 @@ export function getShipment(shipmentSeq: string): ShipmentSummary | undefined {
 export function listShipments(warehouseIds?: string[]): ShipmentSummary[] {
   const byNo = new Map<string, DeliveryTask[]>();
   for (const t of deliveryTasks) {
-    if (!t.shipmentNo) continue;
+    if (!t.shipmentNo) continue; // canceled-but-attached stays listed until acknowledged
     if (warehouseIds?.length && !warehouseIds.includes(t.warehouseId)) continue;
     if (!byNo.has(t.shipmentNo)) byNo.set(t.shipmentNo, []);
     byNo.get(t.shipmentNo)!.push(t);
   }
   return [...byNo.entries()].map(([shipmentNo, deliveries]) => {
-    const first = deliveries[0]!;
+    const first = deliveries.find((d) => d.status !== "canceled") ?? deliveries[0]!;
     return {
       shipmentSeq: shipmentNo.replace(/\D/g, ""),
       shipmentNo,
@@ -501,9 +559,27 @@ export function listShipments(warehouseIds?: string[]): ShipmentSummary[] {
       warehouseId: first.warehouseId,
       warehouseName: first.warehouseName,
       status: first.shipmentStatus ?? "open",
+      needsCancelAck: deliveries.some((d) => d.status === "canceled"),
       deliveries,
     };
   });
+}
+
+/** Operator acknowledges the cancelled order(s) in a multi-order shipment: each
+ *  canceled delivery is DETACHED from the shipment (shipmentNo cleared) so the
+ *  shipment lists only its live deliveries. The detached delivery still exists
+ *  (canceled) and stays visible on its own order's detail page. */
+export function acknowledgeCanceledShipment(shipmentSeq: string): void {
+  let changed = false;
+  for (const t of deliveryTasks) {
+    if (t.shipmentNo?.replace(/\D/g, "") !== shipmentSeq) continue;
+    if (t.status !== "canceled") continue;
+    t.shipmentNo = undefined;
+    t.shipmentStatus = undefined;
+    t.shippedDate = undefined;
+    changed = true;
+  }
+  if (changed) persistDelivery();
 }
 
 /**
@@ -517,6 +593,20 @@ export function completeShipment(
 ): void {
   for (const t of deliveryTasks) {
     if (t.shipmentNo?.replace(/\D/g, "") !== shipmentSeq) continue;
+    if (t.status === "canceled") continue;
+    // THIS is the real posting event — the goods are confirmed gone.
+    if (t.status === "out for delivery") {
+      t.status = "shipped";
+      t.shippedQty = t.toShipQty;
+      // Deduct on-hand for exactly what shipped, per SKU, and consume that much of the
+      // order's reservation. onHand ↓ and reserved ↓ by the same amount, so Available
+      // is unchanged (the units left the building, they weren't returned to stock).
+      for (const [sku, qty] of shippedQtyBySku(t)) {
+        if (qty <= 0) continue;
+        applyStockInOut(t.warehouseId, [{ sku, qty: -qty }]);
+        consumeReservation(t.salesOrderId, t.warehouseId, sku, qty);
+      }
+    }
     t.shipmentStatus = "completed";
     t.receivedDate = opts.receivedDate;
     t.receivedBy = opts.receivedBy;
@@ -524,6 +614,33 @@ export function completeShipment(
     if (opts.proofFile) t.proofFile = opts.proofFile;
   }
   persistDelivery();
+}
+
+/** Per-SKU quantity actually SHIPPED (completed) for one order, across every one of
+ *  its shipped deliveries — lets reserveOrder avoid re-reserving gone stock when a
+ *  partially-shipped order is re-evaluated (it's still "pickable"). */
+export function shippedQtyBySkuForOrder(orderId: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const d of deliveryTasks) {
+    if (d.salesOrderId !== orderId || d.status !== "shipped") continue;
+    for (const [sku, q] of shippedQtyBySku(d)) out[sku] = (out[sku] ?? 0) + q;
+  }
+  return out;
+}
+
+/** Per-SKU quantity a delivery is shipping — summed across the packing task(s) that
+ *  feed it (packed qty, falling back to what picking delivered). */
+function shippedQtyBySku(t: DeliveryTask): Map<string, number> {
+  const bySku = new Map<string, number>();
+  for (const pkId of packingTaskIdsForDelivery(t)) {
+    const pk = getPackingTask(pkId);
+    if (!pk) continue;
+    for (const l of pickedLinesForPacking(pk)) {
+      const qty = pk.packedByKey?.[l.key] ?? l.picked;
+      if (qty > 0) bySku.set(l.sku, (bySku.get(l.sku) ?? 0) + qty);
+    }
+  }
+  return bySku;
 }
 
 export function activeDeliveryTasksFor(warehouseId: string, assignee: string): DeliveryTask[] {

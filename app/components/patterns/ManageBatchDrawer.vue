@@ -228,9 +228,10 @@ const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
 // operator must scan the batch barcode once per unit instead (handleDrawerScan
-// already only ever +1s an existing row, so it needs no changes). Picking/
-// receiving only — put-away's batch step has no scan bar at all (it's bin
-// allocation of an already-known qty, not a count), so it's out of scope.
+// already only ever +1s an existing row, so it needs no changes). This typing-
+// lockout applies to picking/receiving only — put-away DOES have a scan bar
+// (active-bin model), but its batch step is bin allocation of an already-known
+// qty, not a count, so the threshold lockout doesn't apply there.
 const scanRequiredForLine = computed(() =>
   (isPicking.value || isReceiving.value) && scanRequiredForQty(getWarehouseConfig(props.warehouseId), props.targetCount ?? 0),
 )
@@ -403,6 +404,15 @@ function handleDrawerScan(rawValue: string) {
       playScanSuccessSound()
       return
     }
+  }
+
+  // Picking: once picked qty reaches the qty to pick, further batch scans are
+  // rejected — you can't pick more than the order needs (the reserved qty). The
+  // operator can still manually select a different batch to re-allocate within
+  // that ceiling, but a scan never pushes the total past it.
+  if (isPicking.value && Number.isFinite(pickMaxCount.value) && totalPickCount.value >= pickMaxCount.value) {
+    notifyScanError(`Qty to pick already fully picked (${pickMaxCount.value})`)
+    return
   }
 
   const existing = rows.value.find(r => sameCode(r.batchNo, v))

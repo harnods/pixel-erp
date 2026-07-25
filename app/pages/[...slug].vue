@@ -52,6 +52,7 @@ const pageRegistry: Record<string, Component> = {
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
+  'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
   'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
   'Put-away':          defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue')),
@@ -200,6 +201,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment') {
     return { component: ShipmentDetailsPage, id: segs[2]! }
   }
+  // /outbound-delivery/:id/edit → edit the outbound order (reuses the create form in edit mode)
+  if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[2] === 'edit') {
+    return { component: CreateDeliveryOrderPage, id: segs[1] }
+  }
   // /outbound-delivery/:id → outgoing sales order detail (not the picking/packing/handover/shipment sub-routes)
   if (segs.length >= 2 && segs[0] === 'outbound-delivery' && segs[1] !== 'picking' && segs[1] !== 'packing' && segs[1] !== 'handover' && segs[1] !== 'new-shipment' && segs[1] !== 'shipment' && segs[1] !== 'new') {
     return { component: OutgoingOrderDetailsPage, id: segs[1] }
@@ -278,6 +283,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'inbound-delivery' && segs[2] === 'receive') {
     return { component: CreatePurchaseReceivingPage, id: segs[1] }
   }
+  // /inbound-delivery/:id/edit → edit the PO (reuses the create form in edit mode)
+  if (segs.length >= 3 && segs[0] === 'inbound-delivery' && segs[2] === 'edit') {
+    return { component: CreateReceiptPage, id: segs[1] }
+  }
   if (segs.length >= 2 && segs[0] === 'inbound-delivery') {
     const r = receipts.find((x) => x.id === segs[1])
     let component = ReceiptDetailsPage
@@ -318,7 +327,7 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipped'],
+  'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
@@ -455,7 +464,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Picking': PickingIndexPage,
     'Packing': PackingIndexPage,
     'Ready to ship': DeliveryIndexPage,
-    'Shipped': ShippedIndexPage,
+    'Shipments': ShippedIndexPage,
   },
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,
@@ -506,6 +515,11 @@ const aireneOpen = ref(false)
 function toggleAirene() { aireneOpen.value = !aireneOpen.value }
 provide('toggleAirene', toggleAirene)
 provide('aireneOpen', aireneOpen)
+
+// ── Couriers: "Add courier" lives here in the title bar, but its modal state
+// lives in CouriersPage.vue — signal it to open, same mechanism as toggleAirene.
+const courierAddSignal = ref(0)
+provide('courierAddSignal', courierAddSignal)
 
 // ── Import dropdown ───────────────────────────────────────────────────────
 const importDropdownOpen = ref(false)
@@ -1106,6 +1120,14 @@ function startResize(e: MouseEvent) {
               </div>
             </div>
           </div>
+        </div>
+        <div v-else-if="currentPageKey === 'Couriers'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="courierAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Add courier
+          </button>
         </div>
       </div>
 

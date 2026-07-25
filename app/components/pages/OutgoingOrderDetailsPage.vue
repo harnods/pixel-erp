@@ -11,8 +11,8 @@ import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { outgoingOrders, outgoingStage, isMarketplaceOrder } from '~/data/outgoing'
-import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { outgoingOrders, outgoingStage, isMarketplaceOrder, canCancelOutboundOrder, canEditOutboundOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder, type OutgoingOrder } from '~/data/outgoing'
+import { syncOutboundOrderStatuses, cancelOutboundOrder } from '~/data/outboundSync'
 import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
 import { getPackingForOrder, addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
 import { deliveryTasks, marketplaceShipping, getShipment, type ShipmentSummary } from '~/data/deliveryTasks'
@@ -137,12 +137,15 @@ const attachments = computed(() => {
   const n = (s % 3) + 1 // always 1–3 files
   return Array.from({ length: n }, (_, i) => ({ name: NOTE_ATTACH[i % NOTE_ATTACH.length]!, sizeKB: 40 + ((s + i * 37) % 220) }))
 })
+const lastEdit = computed(() => order.value?.editLog?.at(-1))
 const lastUpdatedBy = computed(() => {
   if (!order.value) return ''
+  if (lastEdit.value) return lastEdit.value.by
   return order.value.source === 'Outbound delivery' ? 'Rizal Candra' : NOTE_UPDATERS[seedNum(order.value.id) % NOTE_UPDATERS.length]!
 })
 const lastUpdatedAt = computed(() => {
   if (!order.value) return new Date().toISOString()
+  if (lastEdit.value) return lastEdit.value.at
   if (order.value.source === 'Outbound delivery') return order.value.createdAt ?? order.value.transactionDate ?? order.value.dueDate
   return order.value.shippedDate ?? order.value.dueDate ?? new Date().toISOString()
 })
@@ -167,17 +170,27 @@ const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const o = order.value
   if (!o) return []
-  return [{
-    date: lastUpdatedAt.value,
-    user: lastUpdatedBy.value,
-    activity: 'Created',
-    details: [
-      { label: 'Transaction no.', value: o.salesNo },
-      { label: 'Transaction date', value: formatDateLong(transactionDate.value) },
-      { label: 'Customer', value: o.customer ?? '—' },
-      { label: 'Warehouse', value: o.warehouseName },
-    ],
-  }]
+  // Edits first (newest at the top), then the original creation entry.
+  const edits = [...(o.editLog ?? [])].reverse().map((e) => ({
+    date: e.at,
+    user: e.by,
+    activity: 'Edited',
+    details: e.changes.length ? e.changes : [{ label: 'Order', value: 'Updated' }],
+  }))
+  return [
+    ...edits,
+    {
+      date: o.createdAt ?? o.transactionDate ?? o.dueDate,
+      user: lastUpdatedBy.value,
+      activity: 'Created',
+      details: [
+        { label: 'Transaction no.', value: o.salesNo },
+        { label: 'Transaction date', value: formatDateLong(transactionDate.value) },
+        { label: 'Customer', value: o.customer ?? '—' },
+        { label: 'Warehouse', value: o.warehouseName },
+      ],
+    },
+  ]
 })
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 function agingDays(startDate?: string, endDate?: string): number {
@@ -203,6 +216,29 @@ function goBack() { router.push('/outbound-delivery?tab=Requests') }
 function createPicking() {
   if (!order.value) return
   router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id, from: `order:${order.value.id}` } })
+}
+
+// ─── Cancel order + Release reserved (D2/D6) ───────────────────────────────────
+const canCancel = computed(() => !!order.value && canCancelOutboundOrder(order.value))
+const canEdit = computed(() => !!order.value && canEditOutboundOrder(order.value))
+function goEdit() { if (order.value) router.push(`/outbound-delivery/${order.value.id}/edit`) }
+const canRelease = computed(() => !!order.value && canReleaseReservedForOrder(order.value.id))
+const cancelModalOpen = ref(false)
+function askCancel() { cancelModalOpen.value = true }
+function confirmCancel() {
+  const o = order.value
+  if (o) {
+    const res = cancelOutboundOrder(o.id)
+    if (res.ok) toast.notify({ variant: 'success', title: `Order ${o.number} cancelled`, maxWidth: 'max-content' })
+    else toast.notify({ variant: 'error', title: 'Cannot cancel — a package has already shipped', maxWidth: 'max-content' })
+  }
+  cancelModalOpen.value = false
+}
+function releaseReserved() {
+  const o = order.value
+  if (o && releaseReservedForCancelledOrder(o.id)) {
+    toast.notify({ variant: 'success', title: `Reserved stock released back to available for ${o.number}`, maxWidth: 'max-content' })
+  }
 }
 
 // ─── Direct-to-packing (Picking disabled for the order's warehouse) ─────────────
@@ -323,6 +359,11 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
               </button>
             </div>
           </ContentList>
+        </div>
+        <div v-if="order.status === 'canceled'" class="content-list-col">
+          <ContentList label="Canceled date" :value="order.canceledDate ? formatDateLong(order.canceledDate) : '—'" />
+          <ContentList label="Reason" :value="order.canceledReason ?? '—'" />
+          <ContentList label="Canceled by" :value="order.canceledBy ?? '—'" />
         </div>
       </section>
 
@@ -517,12 +558,67 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="canPickOrder(order)" class="detail-btn detail-btn--primary" @click="createPicking">
-        Create picking list
-      </button>
-      <button v-if="canCreatePackingDirectlyForOrder(order)" class="detail-btn detail-btn--primary" @click="openDirectPacking">
-        Create packing
-      </button>
+      <!-- Create picking — split button; the chevron holds order-level actions
+           (Edit order / Cancel order / Release reserved), matching StockAdjustmentDetailsPage. -->
+      <template v-if="canPickOrder(order)">
+        <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="createPicking">Create picking list</button>
+          <MpPopover id="ood-actions-pick" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canRelease" @click="releaseReserved">Release reserved</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="createPicking">Create picking list</button>
+      </template>
+
+      <!-- Create packing — same split treatment -->
+      <template v-else-if="canCreatePackingDirectlyForOrder(order)">
+        <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openDirectPacking">Create packing</button>
+          <MpPopover id="ood-actions-pack" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canRelease" @click="releaseReserved">Release reserved</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="openDirectPacking">Create packing</button>
+      </template>
+
+      <!-- No create action left, but the order is still editable / cancellable / has reserved to release -->
+      <MpPopover v-else-if="canEdit || canCancel || canRelease" id="ood-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--primary">
+            Actions
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel order</MpPopoverListItem>
+            <MpPopoverListItem v-if="canRelease" @click="releaseReserved">Release reserved</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </footer>
 
     <ActivityLogModal
@@ -562,6 +658,24 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           <div class="ood-modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">Cancel</button>
             <button class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">Create packing</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Cancel order confirmation ── -->
+    <MpModal id="ood-cancel-modal" :is-open="cancelModalOpen" size="sm" @close="cancelModalOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Cancel order?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          Order {{ order?.number }} will be cancelled. This can't be undone. Its reserved
+          stock stays held until you Release reserved.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="ood-modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelModalOpen = false">Keep order</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel order</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -678,6 +792,11 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+
+/* Split button — primary action + attached chevron dropdown (mirrors StockAdjustmentDetailsPage). */
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
 
 .ood-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 

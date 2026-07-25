@@ -217,6 +217,11 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
           <ContentList label="Tracking no." :value="task.trackingNo ?? '—'" />
           <ContentList label="Ship date" :value="task.shippedDate ? formatDateTimeLong(task.shippedDate) : '—'" />
         </div>
+        <div v-if="status === 'canceled'" class="content-list-col">
+          <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+          <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+          <ContentList label="Canceled by" :value="task.canceledBy ?? '—'" />
+        </div>
       </section>
 
       <section class="del-progress">

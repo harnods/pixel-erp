@@ -72,7 +72,7 @@ const valueColumns = computed<ValCol[]>(() => {
     : { key: 'dueDate', label: 'Due date', width: '140px', blankOnParent: true }
   return [
     requested,
-    { key: 'produced', label: 'Produced qty', width: '130px', align: 'right' },
+    { key: 'produced', label: 'Processed qty', width: '130px', align: 'right' },
     { key: 'remaining', label: 'Remaining qty', width: '140px', align: 'right' },
     unit, dateCol, memo, lastUpdatedCol,
   ]
@@ -534,7 +534,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Empty state ── -->
     <div v-else class="empty-full">
       <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-      <p class="empty-full-title">{{ hasActiveFilter ? (search ? `"${search}" not found` : 'Production request not found') : 'No production request' }}</p>
+      <p class="empty-full-title">{{ hasActiveFilter ? (search ? `"${search}" not found` : 'Production request not found') : 'No production requests' }}</p>
       <p class="empty-full-desc">{{ hasActiveFilter ? (search ? 'Recheck the keywords you have typed and try searching again.' : 'Your filter criteria didn\'t match any available production request. Try adjusting your filter.') : 'Production request will appear here.' }}</p>
       <a v-if="hasActiveFilter" class="empty-clear" @click="clearFilters">Clear filters</a>
     </div>

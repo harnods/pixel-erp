@@ -2,14 +2,18 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpSpinner, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
 import { receipts } from '~/data/receipts'
+import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
+import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -108,6 +112,14 @@ const jumpResults = computed(() => {
 })
 function jumpTo(id: string) { router.push(`/inbound-delivery/${id}`) }
 
+// ── Linked purchase receivings — a canceled PO can still have real receiving
+// history (an open task on it is auto-canceled, but an in-progress task with
+// real receivedQty stays a record, or an earlier task may have already ended
+// before this PO was canceled) — that history must stay visible here. ───────
+const linkedReceivings = computed(() => getPurchaseReceivingsForReceipt(props.orderId))
+const displayedReceivings = computed(() => linkedReceivings.value)
+const linkedPutAways = computed(() => getPutAwayForReceipt(props.orderId))
+
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function formatDateLong(iso?: string) {
@@ -128,6 +140,17 @@ function attachmentIcon(name: string): string {
   return 'attachment'
 }
 function trackingText(nos: string[]) { return nos.length ? nos.join(', ') : '—' }
+function formatDateNumeric(iso?: string) {
+  return iso ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)) : '—'
+}
+function agingDays(startDate?: string, endDate?: string): number {
+  if (!startDate) return 0
+  const REF = '2026-06-23'
+  const start = new Date(startDate).getTime()
+  const end = new Date(endDate ?? REF).getTime()
+  const diff = Math.round((end - start) / 86_400_000)
+  return Math.max(0, diff) + 1
+}
 
 function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } }) }
 </script>
@@ -269,6 +292,174 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 
       <!-- Last updated -->
       <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
+
+      <!-- ── Receiving only (no put-away tasks) ── -->
+      <MpTabs v-if="displayedReceivings.length > 0 && linkedPutAways.length === 0" id="cxd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
+        <MpTabList>
+          <MpTab id="cxd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
+        </MpTabList>
+        <MpTabPanels>
+          <MpTabPanel :value="0">
+            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <div class="detail-linked-wrap">
+              <table class="detail-linked">
+                <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
+                <thead>
+                  <tr>
+                    <th class="detail-th">Number</th>
+                    <th class="detail-th">Date</th>
+                    <th class="detail-th">Assignee</th>
+                    <th class="detail-th">Sku qty</th>
+                    <th class="detail-th detail-th--num">Expected qty</th>
+                    <th class="detail-th detail-th--num">Received qty</th>
+                    <th class="detail-th">Status</th>
+                    <th class="detail-th">Start date</th>
+                    <th class="detail-th">End date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="pr in displayedReceivings" :key="pr.id" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="linked-num">{{ pr.receivingNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/receiving/${pr.taskId}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
+                    <td class="detail-td">{{ pr.assignee }}</td>
+                    <td class="detail-td">{{ pr.skuScope }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.expectedQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.receivedQty) }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="pr.status" /></td>
+                    <td class="detail-td">{{ pr.startDate ? formatDateTime(pr.startDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+        </MpTabPanels>
+      </MpTabs>
+
+      <!-- ── Receiving + put-away tabs ── -->
+      <MpTabs v-else-if="displayedReceivings.length > 0 && linkedPutAways.length > 0" id="cxd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
+        <MpTabList>
+          <MpTab id="cxd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
+          <MpTab id="cxd-tab-pa" :value="1">Put-away ({{ linkedPutAways.length }})</MpTab>
+        </MpTabList>
+        <MpTabPanels>
+          <MpTabPanel :value="0">
+            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <div class="detail-linked-wrap">
+              <table class="detail-linked">
+                <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
+                <thead>
+                  <tr>
+                    <th class="detail-th">Number</th>
+                    <th class="detail-th">Date</th>
+                    <th class="detail-th">Assignee</th>
+                    <th class="detail-th">Sku qty</th>
+                    <th class="detail-th detail-th--num">Expected qty</th>
+                    <th class="detail-th detail-th--num">Received qty</th>
+                    <th class="detail-th">Status</th>
+                    <th class="detail-th">Start date</th>
+                    <th class="detail-th">End date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="pr in displayedReceivings" :key="pr.id" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="linked-num">{{ pr.receivingNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/receiving/${pr.taskId}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ formatDateNumeric(pr.date) }}</td>
+                    <td class="detail-td">{{ pr.assignee }}</td>
+                    <td class="detail-td">{{ pr.skuScope }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.expectedQty) }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pr.receivedQty) }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="pr.status" /></td>
+                    <td class="detail-td">{{ pr.startDate ? formatDateTime(pr.startDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+          <MpTabPanel :value="1">
+            <h3 class="linked-section-title">Put-away tasks</h3>
+            <div class="detail-linked-wrap">
+              <table class="detail-linked">
+                <colgroup><col /><col /><col /><col /><col /><col /><col /></colgroup>
+                <thead>
+                  <tr>
+                    <th class="detail-th">Number</th>
+                    <th class="detail-th">Assignee</th>
+                    <th class="detail-th detail-th--num">Item qty</th>
+                    <th class="detail-th">Destination</th>
+                    <th class="detail-th">Status</th>
+                    <th class="detail-th">Start date</th>
+                    <th class="detail-th">End date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="pa in linkedPutAways" :key="pa.id" class="detail-item-row">
+                    <td class="detail-td detail-td--number">
+                      <div class="cell-with-action">
+                        <span class="linked-num">{{ pa.taskNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/put-away/${pa.id}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="detail-td">{{ pa.assignee }}</td>
+                    <td class="detail-td detail-td--num">{{ formatNum(pa.itemQty) }}</td>
+                    <td class="detail-td">{{ pa.destination }}</td>
+                    <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
+                    <td class="detail-td">{{ pa.startDate ? formatDateTime(pa.startDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </MpTabPanel>
+        </MpTabPanels>
+      </MpTabs>
 
     </div><!-- /detail-stage -->
 
@@ -465,5 +656,33 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 .row-hover-btn__label {
   font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
+}
+.detail-item-row:hover .row-hover-btn { display: flex; }
+
+/* ── Linked transactions (Purchase receiving / Put-away) ─────────────────── */
+.detail-tabs { flex-shrink: 0; }
+.detail-tabs :deep(.mp-tab--isSelected_true),
+.detail-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.detail-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
+.detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.detail-linked-wrap { overflow-x: auto; }
+.detail-linked {
+  width: 100%; min-width: 1160px; border-collapse: collapse; table-layout: auto;
+  border-top: 1px solid var(--mp-border-default);
+}
+.detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
+.detail-td--number { position: relative; }
+.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
+.linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.linked-end__muted { color: var(--mp-text-secondary); }
+.linked-aging {
+  display: inline-flex; align-items: center;
+  padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-subtle);
+  color: var(--mp-text-secondary);
+  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
 </style>

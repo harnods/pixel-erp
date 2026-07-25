@@ -4,7 +4,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpIcon, MpSpinner, css,
+  MpIcon, MpSpinner, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
@@ -12,7 +12,8 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { formatDateTime } from '~/utils/date'
 import { getReceiptDetail } from '~/data/receiptDetails'
-import { receiptsForStages, cancelReceipt, isManualReceipt, deleteReceipt, receipts, type Receipt } from '~/data/receipts'
+import { receiptsForStages, isManualReceipt, deleteReceipt, canCancelReceipt, canEditReceipt, receipts, type Receipt } from '~/data/receipts'
+import { cancelInboundReceipt } from '~/data/inboundSync'
 import { getPurchaseReceivingsForReceipt } from '~/data/purchaseReceivings'
 import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 import { getPutAwayForReceipt } from '~/data/putAwayTasks'
@@ -25,7 +26,7 @@ const activityOpen = ref(false)
 const activityEntries = computed(() => {
   const d = detail.value
   if (!d) return []
-  return [{
+  const created = {
     date: d.lastUpdatedAt,
     user: d.lastUpdatedBy,
     activity: 'Created',
@@ -35,7 +36,13 @@ const activityEntries = computed(() => {
       { label: 'Vendor', value: d.vendor ?? '—' },
       { label: 'Warehouse', value: d.warehouseName },
     ],
-  }]
+  }
+  // Edit order entries (newest first) — the real before → after diff computed
+  // by editInboundReceipt (inboundSync.ts) when the edit was saved.
+  const edits = (currentReceipt.value?.editHistory ?? []).map((e) => ({
+    date: e.date, user: e.user, activity: 'Edited', details: e.changes,
+  }))
+  return [...edits, created]
 })
 const receipt = computed<Receipt | undefined>(() =>
   receiptsForStages(['Pending', 'Open', 'In progress']).find((r) => r.id === props.orderId),
@@ -166,12 +173,31 @@ const hasActiveReceivingTasks = computed(() =>
 )
 
 const cancelModalOpen = ref(false)
+// A partially-received PO is "closed" (accept partial, stop the rest); any other
+// still-open PO is plainly "cancelled" — same underlying action, different wording.
+const isPartialClose = computed(() => currentReceipt.value?.status === 'partial reception')
+// Cancel-receipt is an order-level action → it lives in the primary split-button's
+// dropdown, never as a standalone footer button (mirrors the outbound order detail).
+// Manual (Direct Inbound) receipts are cancellable too — they keep Delete as well,
+// so an operator can either void-and-keep (Cancel) or hard-remove (Delete).
+const canCancelAction = computed(() => !!currentReceipt.value && canCancelReceipt(currentReceipt.value))
+const cancelActionLabel = computed(() => (isPartialClose.value ? 'Close receipt' : 'Cancel receipt'))
 function openCloseReceiptModal() { cancelModalOpen.value = true }
+// Edit order — order-level action, same dropdown as Cancel/Close (mirrors the
+// outbound order detail's Edit order placement).
+const canEdit = computed(() => !!currentReceipt.value && canEditReceipt(currentReceipt.value))
+function goEdit() { router.push(`/inbound-delivery/${props.orderId}/edit`) }
 function closeCancelModal() { cancelModalOpen.value = false }
 function confirmCancel() {
-  cancelReceipt(props.orderId)
+  const wasPartial = isPartialClose.value // capture before status flips to 'canceled'
+  const result = cancelInboundReceipt(props.orderId)
   closeCancelModal()
-  router.push({ path: '/inbound-delivery', query: { tab: 'Receipts' } })
+  if (!result.ok) {
+    toast.notify({ variant: 'error', title: "This receipt can't be canceled", maxWidth: 'max-content' })
+    return
+  }
+  // Stay on this detail page — currentReceipt is now 'canceled' and the header shows it.
+  toast.notify({ variant: 'success', title: `Receipt ${wasPartial ? 'closed' : 'cancelled'}`, maxWidth: 'max-content' })
 }
 
 // Manually-created receipts (New receipt form) have no real PO behind them, so they
@@ -255,6 +281,11 @@ function confirmDelete() {
               </button>
             </div>
           </ContentList>
+        </div>
+        <div v-if="currentReceipt?.status === 'canceled'" class="content-list-col">
+          <ContentList label="Canceled date" :value="currentReceipt.canceledDate ? formatDateLong(currentReceipt.canceledDate) : '—'" />
+          <ContentList label="Reason" :value="currentReceipt.canceledReason ?? '—'" />
+          <ContentList label="Canceled by" :value="currentReceipt.canceledBy ?? '—'" />
         </div>
       </section>
 
@@ -495,11 +526,45 @@ function confirmDelete() {
     <div class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary">Print PDF</button>
 
-      <button v-if="isManual" class="detail-btn detail-btn--secondary" @click="openDeleteModal">Delete</button>
-      <button v-if="!isManual && !hasActiveReceivingTasks && currentReceipt?.status === 'partial reception'" class="detail-btn detail-btn--secondary" @click="openCloseReceiptModal">Close receipt</button>
-      <button v-if="canCreateReceivingTask(orderId)" class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">
-        Create purchase receiving
-      </button>
+      <!-- Create purchase receiving — split button; the chevron holds the order-level
+           Edit order / Cancel/Close / Delete actions (never a standalone footer button). -->
+      <template v-if="canCreateReceivingTask(orderId)">
+        <div v-if="canEdit || canCancelAction || isManual" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openPurchaseReceiving">Create purchase receiving</button>
+          <MpPopover id="rcd-actions-recv" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">Delete</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">Create purchase receiving</button>
+      </template>
+
+      <!-- No create action left, but the receipt is still editable/cancellable/deletable -->
+      <MpPopover v-else-if="canEdit || canCancelAction || isManual" id="rcd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--primary">
+            Actions
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">Delete</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </div>
 
     <!-- ── Cancel confirmation modal ── -->
@@ -508,14 +573,15 @@ function confirmDelete() {
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
     >
       <MpModalContent>
-        <MpModalHeader>Close receipt?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ isPartialClose ? 'Close receipt?' : 'Cancel receipt?' }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          Receipt {{ detail?.purchaseNo }} will be closed. Unreceived items will not be processed. This can't be undone.
+          <template v-if="isPartialClose">Receipt {{ detail?.purchaseNo }} will be closed. Unreceived items will not be processed. This can't be undone.</template>
+          <template v-else>Receipt {{ detail?.purchaseNo }} will be cancelled. Its receiving/put-away tasks are cancelled too. This can't be undone.</template>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep receipt</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Close receipt</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ isPartialClose ? 'Close receipt' : 'Cancel receipt' }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -715,6 +781,11 @@ function confirmDelete() {
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse); }
 .detail-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
+
+/* Split button — primary action + chevron dropdown (order-level actions live here). */
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
 
 
 /* ── Linked purchase receivings tab ── */

@@ -84,21 +84,31 @@ const WAREHOUSE_CATEGORIES: Record<string, Set<string>> = {
   'wh-005': new Set(['Green Beans', 'Roasted Beans', 'Accessory']),                   // batch only, no serial
 }
 
+// Original per-warehouse ORDER-DEMAND assortment size. Every warehouse now STOCKS the
+// full catalog (skuTotal = 30 for display + storage-tree sizing), but seed orders keep
+// drawing from a warehouse's original-sized pool so demand — and the tuned on-hand
+// overrides in warehouseDetails — stay exactly as before. Absent → falls back to skuTotal.
+const ORDER_POOL_SIZE: Record<string, number> = {
+  'wh-001': 30, 'wh-002': 19, 'wh-003': 12, 'wh-004': 21, 'wh-005': 16,
+  'wh-006': 30, 'wh-007': 8, 'wh-008': 10, 'wh-009': 23, 'wh-010': 14,
+}
+
 /**
- * The products a warehouse stocks — a deterministic RANDOM subset of `skuTotal`
- * distinct catalog products (seeded by the warehouse id), so each warehouse carries a
- * realistic, varied assortment instead of the same top-N SKUs. This is the ONE
- * definition of "what a warehouse carries"; `warehouseDetails` builds its stock rows
- * from this exact set, so a warehouse's Products tab, its storage locations and any
- * order sourced from it all reference the same SKUs. Returned in catalog order so the
- * stock list stays tidy (grouped by category/SKU), not shuffled.
+ * The order-demand assortment for a warehouse — a deterministic RANDOM subset of
+ * `skuTotal` distinct catalog products (seeded by the warehouse id). Seed orders draw
+ * their SKUs from THIS set (via {@link orderSkuLines}), so demand stays stable and the
+ * tuned on-hand overrides in warehouseDetails remain valid. A warehouse also STOCKS
+ * the rest of the catalog on top of this (see {@link warehouseProducts}).
  */
-export function warehouseProducts(warehouseId: string): Product[] {
+export function warehouseOrderPool(warehouseId: string): Product[] {
   const wh = warehouses.find((w) => w.id === warehouseId)
   if (!wh || wh.isDefault || !wh.skuTotal) return []
+  // wh-006 (Gudang Makassar Selatan) is the demo/QA warehouse — carry the FULL catalog
+  // so ANY product can be ordered/picked/shipped from it (not a 9-SKU subset).
+  if (warehouseId === 'wh-006') return [...PRODUCTS]
   const allowed = WAREHOUSE_CATEGORIES[warehouseId]
   const pool = allowed ? PRODUCTS.filter((p) => allowed.has(p.category)) : PRODUCTS
-  const n = Math.min(wh.skuTotal, pool.length)
+  const n = Math.min(ORDER_POOL_SIZE[warehouseId] ?? wh.skuTotal, pool.length)
   // Seeded Fisher–Yates over the pool indices, then take the first n.
   let s = warehouseSeed(warehouseId)
   const rand = () => {
@@ -114,6 +124,23 @@ export function warehouseProducts(warehouseId: string): Product[] {
     .slice(0, n)
     .sort((a, b) => a - b) // back to catalog order for a tidy, stable list
     .map((i) => pool[i]!)
+}
+
+/**
+ * The products a warehouse STOCKS — every warehouse carries the FULL catalog so ANY
+ * product can be ordered / picked / shipped from it in a demo (no "0 stock" blocker).
+ * The warehouse's order-demand pool comes FIRST (unchanged indices → existing per-SKU
+ * on-hand/reserved and the tuned data-integrity overrides stay identical); the rest of
+ * the catalog is appended as 0-demand buffer stock. This is the ONE definition of
+ * "what a warehouse carries" for stock rows, storage locations, transfers and
+ * adjustments — always a superset of what any order sourced from it demands.
+ */
+export function warehouseProducts(warehouseId: string): Product[] {
+  const wh = warehouses.find((w) => w.id === warehouseId)
+  if (!wh || wh.isDefault || !wh.skuTotal) return []
+  const pool = warehouseOrderPool(warehouseId)
+  const inPool = new Set(pool.map((p) => p.sku))
+  return [...pool, ...PRODUCTS.filter((p) => !inPool.has(p.sku))]
 }
 
 /** SKUs a warehouse stocks. */
@@ -161,7 +188,7 @@ export function orderSkuLines(order: { id: string; warehouseId: string; skuQty: 
       return { sku: l.sku, product, qty: l.qty }
     }).filter((x): x is OrderSkuLine => x !== null)
   }
-  const pool = warehouseProducts(order.warehouseId)
+  const pool = warehouseOrderPool(order.warehouseId)
   if (!pool.length) return []
   const base = seedNum(order.id)
   const n = Math.min(order.skuQty, pool.length)

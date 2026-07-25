@@ -11,6 +11,7 @@ import { MpTooltip } from '@mekari/pixel3'
 import CreatePackingPage from '~/components/pages/CreatePackingPage.vue'
 import { addOutgoing, type OutgoingOrder } from '~/data/outgoing'
 import { addPickingTask, endPicking } from '~/data/pickingTasks'
+import { cancelOutboundOrder } from '~/data/outboundSync'
 
 vi.stubGlobal('useRouter', () => ({ push: vi.fn() }))
 class FakeObserver { observe() {} unobserve() {} disconnect() {} }
@@ -66,6 +67,37 @@ describe('CreatePackingPage — a selected-but-not-packable picking list stays v
     expect(reasonTooltip).toBeTruthy()
     expect(reasonTooltip!.props('label')).toContain('marketplace')
 
+    wrapper.unmount()
+  })
+
+  it('a shared picking whose one order was cancelled shows "Ready to pack" (the cancelled order never blocks the live one)', async () => {
+    // Mirrors the reported case: Picking #30500 with 2 SOs, SO#1 cancelled, then
+    // continue picking + create packing — the list must not read "Not packable".
+    const SKU = '3004'
+    const live = addOutgoing({
+      salesNo: 'Shared Live', source: 'Manual', warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME,
+      skuQty: 1, orderQty: 5, shippedQty: 0, status: 'open', dueDate: '2026-08-01',
+      lines: [{ sku: SKU, productName: SKU, desc: '', img: '', unit: 'Unit', qty: 5 }],
+    })
+    const toCancel = addOutgoing({
+      salesNo: 'Shared Cancelled', source: 'Manual', warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME,
+      skuQty: 1, orderQty: 3, shippedQty: 0, status: 'open', dueDate: '2026-08-01',
+      lines: [{ sku: SKU, productName: SKU, desc: '', img: '', unit: 'Unit', qty: 3 }],
+    })
+    const task = addPickingTask({
+      salesOrderIds: [live.id, toCancel.id], salesNos: [live.salesNo, toCancel.salesNo],
+      warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME, assignee: 'Test Operator',
+    })
+    endPicking(task.id, { [`${live.id}::${SKU}`]: 5 }) // live order fully picked → packable
+    expect(cancelOutboundOrder(toCancel.id).ok).toBe(true) // SO#1 cancelled
+
+    vi.stubGlobal('useRoute', () => ({ query: { pickingIds: task.id } }))
+    const wrapper = mount(CreatePackingPage)
+    await flushPromises()
+
+    // The cancelled order must NOT drag the list to "Not packable" — the live order packs.
+    expect(wrapper.text()).toContain('Ready to pack')
+    expect(wrapper.text()).not.toContain('Not packable')
     wrapper.unmount()
   })
 })

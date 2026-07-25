@@ -24,11 +24,11 @@ const WAREHOUSE_ID = 'wh-006'
 const WAREHOUSE_NAME = 'Gudang Makassar Selatan'
 const PLAIN_SKU = '3004' // plain/untracked — a qty-only input suffices, no batch/serial drawer needed
 
-// binLocation defaults to the SKU's real storage bin (binForSku) already, so
-// scanning the SKU to reach the exact received qty alone satisfies put-away's
-// completeness check — no popover/location interaction needed to reach
-// postPutAway()'s commit path. Scanning (not typing) because qty=1 is well
-// below the warehouse's scan-required threshold, so the manual input is disabled.
+// The destination bin starts EMPTY on a fresh put-away (active-bin model — the
+// operator scans the bin first, then the SKU). So completeness needs a bin scan
+// ('Bin 02' = binForSku for 3004 at wh-006) THEN the SKU scan to reach the received
+// qty. Scanning (not typing) because qty=1 is well below the scan-required threshold.
+const SKU_BIN = 'Bin 02'
 function mountReceivedPutAway() {
   const receipt = receipts.find((r) => r.id === DEMO_RECEIPT_ID)!
   const task = createReceivingTask({ receiptId: receipt.id, assignee: 'Test Operator', skus: [PLAIN_SKU] })!
@@ -54,6 +54,7 @@ describe('PutAwayItemsPage — unsaved-changes guard is disabled on intentional 
     const wrapper = mountReceivedPutAway()
     await flushPromises()
 
+    await scan(wrapper, SKU_BIN)   // active bin first (empty by default now)
     await scan(wrapper, PLAIN_SKU) // matches received qty (1) — dirty, and complete
 
     const finishBtn = Array.from(wrapper.findAll('button')).find((b) => b.text() === 'Finish put-away')!
@@ -71,6 +72,7 @@ describe('PutAwayItemsPage — unsaved-changes guard is disabled on intentional 
     const wrapper = mountReceivedPutAway()
     await flushPromises()
 
+    await scan(wrapper, SKU_BIN)
     await scan(wrapper, PLAIN_SKU)
 
     const saveDraftBtn = Array.from(wrapper.findAll('button')).find((b) => b.text() === 'Save as draft')!
@@ -88,6 +90,7 @@ describe('PutAwayItemsPage — unsaved-changes guard is disabled on intentional 
     const wrapper = mountReceivedPutAway()
     await flushPromises()
 
+    await scan(wrapper, SKU_BIN)
     await scan(wrapper, PLAIN_SKU) // dirty, nothing committed yet
 
     const modal = useUnsavedChangesModalState()

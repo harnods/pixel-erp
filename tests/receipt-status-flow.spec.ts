@@ -103,19 +103,21 @@ describe('Receipt status — canceling the last active task drops the PO back do
     expect(status(receipt.id)).toBe('open')
   })
 
-  it('a PO that already reached Partial reception does NOT revert when its only remaining task is canceled', () => {
+  it('a PO with an already-ended receiving task does NOT revert to Open/Pending when its only remaining empty task is canceled', () => {
     const { receipt, sku } = freshReceipt()
     const taskA = createReceivingTask({ receiptId: receipt.id, assignee: 'Operator A', skus: [sku], targetQtyBySku: { [sku]: 4 } })!
     startReceiving(taskA.id)
-    endReceiving(taskA.id, { [sku]: 4 }) // short of purchaseQty (10) → partial reception
-    expect(status(receipt.id)).toBe('partial reception')
+    endReceiving(taskA.id, { [sku]: 4 }) // received 4 of 10, no put-away yet → no stock on-hand
+    // Per WMS PRD 1.1 C1 AC#7, "Partially Completed"/partial reception needs on-hand stock
+    // (a completed put-away). With none done, the ended-task PO reads "in progress".
+    expect(status(receipt.id)).toBe('in progress')
 
     const taskB = createReceivingTask({ receiptId: receipt.id, assignee: 'Operator B', skus: [sku] })!
-    expect(status(receipt.id)).toBe('partial reception') // unchanged by the new task
+    expect(status(receipt.id)).toBe('in progress') // unchanged by the new task
 
     cancelReceivingTask(taskB.id)
-    // taskA already ended, so canceling taskB (which never received anything)
-    // leaves the PO exactly where it was — Partial reception, never Pending/Open.
-    expect(status(receipt.id)).toBe('partial reception')
+    // taskA already ended, so canceling taskB (which never received anything) leaves the
+    // PO exactly where it was — it does NOT revert to Open/Pending.
+    expect(status(receipt.id)).toBe('in progress')
   })
 })

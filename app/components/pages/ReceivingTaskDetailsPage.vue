@@ -14,7 +14,7 @@ import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask, type TaskLineItem } from '~/data/receivingTaskDetails'
 import {
-  taskAgingDays, startReceiving, canCancelReceivingTask, cancelReceivingTask,
+  taskAgingDays, startReceiving, canCancelReceivingTask, cancelReceivingTask, acknowledgeCanceledReceipt,
   type ReceivingTask,
 } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
@@ -62,6 +62,7 @@ watch([() => props.orderId, lineItems], () => {
 }, { immediate: true })
 
 const isInProgress = computed(() => localStatus.value === 'in progress')
+const isCanceled = computed(() => localStatus.value === 'canceled')
 // Open tasks haven't started receiving yet — show only Purchase qty (no Received /
 // Outstanding columns, which are meaningless until receiving begins).
 const showReceivedCols = computed(() => localStatus.value !== 'open')
@@ -149,6 +150,27 @@ function startReceivingAndNavigate() {
   router.push(`/receiving/${props.orderId}/receive`)
 }
 
+// This task's own PO was canceled while it was in progress — real receiving
+// work may already exist, so it's never silently auto-canceled the way an
+// open task on the same PO would be. Continue receiving is blocked until the
+// operator explicitly acknowledges via the modal below — since this task
+// belongs to exactly ONE PO, acknowledging then cancels the task itself
+// (nothing left to receive once its one-and-only PO is gone).
+const needsCancelAck = computed(() => !!task.value?.needsCancelAck)
+const ackCancelOpen = ref(false)
+function continueReceiving() {
+  if (needsCancelAck.value) { ackCancelOpen.value = true; return }
+  router.push(`/receiving/${props.orderId}/receive`)
+}
+function confirmAcknowledgeCancel() {
+  if (!task.value) return
+  const taskNo = task.value.taskNo
+  acknowledgeCanceledReceipt(task.value.id)
+  ackCancelOpen.value = false
+  localStatus.value = 'canceled'
+  toast.notify({ variant: 'success', title: `${taskNo} canceled — purchase order was canceled`, maxWidth: 'max-content' })
+}
+
 // Cancel — only while receiving hasn't finished yet (open/in progress). Once
 // pending put-away/completed, receiving is already done and the task becomes a
 // permanent record.
@@ -159,8 +181,8 @@ function confirmCancel() {
   if (!task.value) return
   cancelReceivingTask(task.value.id)
   cancelOpen.value = false
+  localStatus.value = 'canceled' // stay on this detail page, now showing the canceled state
   toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
-  goBack()
 }
 
 const pdfPreviewOpen = ref(false)
@@ -355,6 +377,26 @@ function goBack() {
     <!-- ── Scrollable stage ── -->
     <div ref="stageEl" class="detail-stage">
 
+      <!-- Purchase order behind this task was canceled while real work already
+           exists for it (in progress, or already-committed on-hand stock from
+           pending put-away/completed) — so it isn't silently auto-canceled.
+           Continuing/acknowledging is blocked until this is acknowledged. -->
+      <div v-if="needsCancelAck" class="rcvgd-cancel-banner">
+        <svg class="rcvgd-cancel-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="rcvgd-cancel-banner-text">
+          <template v-if="task.stockCommitted">
+            The purchase order behind this task ({{ task.purchaseNo }}) was canceled. Its goods are already on-hand — acknowledging will cancel this task and reverse that stock via a stock adjustment.
+          </template>
+          <template v-else>
+            The purchase order behind this task ({{ task.purchaseNo }}) was canceled. This task can no longer be continued.
+          </template>
+        </span>
+        <button class="rcvgd-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">Acknowledge</button>
+      </div>
+
       <!-- ── Summary grid ── -->
       <section class="rcvgd-summary">
         <div class="content-list-col">
@@ -381,6 +423,11 @@ function goBack() {
               <span v-if="agingLabel()" class="rcvgd-aging">{{ agingLabel() }}</span>
             </span>
           </ContentList>
+        </div>
+        <div v-if="isCanceled" class="content-list-col">
+          <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+          <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+          <ContentList label="Canceled by" :value="task.canceledBy ?? '—'" />
         </div>
       </section>
 
@@ -623,15 +670,40 @@ function goBack() {
     <!-- ── Sticky footer — Print + Start/Continue (open & in-progress only) ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">Print receiving slip</button>
-      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
-        Cancel
-      </button>
-      <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">
-        Start receiving
-      </button>
-      <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/receiving/${orderId}/receive`)">
-        Continue receiving
-      </button>
+      <!-- Cancel task is an order-level action → it lives in the primary action's
+           split-button dropdown, never as a standalone "Cancel" footer button. -->
+      <template v-if="localStatus === 'open'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">Start receiving</button>
+          <MpPopover id="rcvgd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">Start receiving</button>
+      </template>
+      <template v-else-if="localStatus === 'in progress'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="continueReceiving">Continue receiving</button>
+          <MpPopover id="rcvgd-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="continueReceiving">Continue receiving</button>
+      </template>
       <button v-else-if="localStatus === 'pending put-away'" class="detail-btn detail-btn--primary" @click="createPutAway">
         Create put-away
       </button>
@@ -649,6 +721,32 @@ function goBack() {
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
             <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Acknowledge canceled-PO confirmation ── -->
+    <MpModal id="rcvgd-ack-cancel" :is-open="ackCancelOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackCancelOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Acknowledge canceled purchase order?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <template v-if="task?.stockCommitted">
+            The purchase order behind this task ({{ task?.purchaseNo }}) was canceled. Its goods were already
+            received into on-hand stock — acknowledging will cancel {{ task?.taskNo }} and reverse that stock via
+            a stock adjustment. This can't be undone.
+          </template>
+          <template v-else>
+            The purchase order behind this task ({{ task?.purchaseNo }}) was canceled. There's nothing left to
+            receive for it — acknowledging will cancel {{ task?.taskNo }} too. This can't be undone.
+          </template>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">Review</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">Acknowledge</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -784,9 +882,27 @@ function goBack() {
   display: flex; flex-direction: column; gap: var(--mp-spacing-8);
 }
 
+/* ── Canceled-PO acknowledge banner ──────────────────────────────────────── */
+.rcvgd-cancel-banner {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-warning-subtle, #fffbeb);
+  border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.rcvgd-cancel-banner-icon { color: var(--mp-icon-warning, #d97706); flex-shrink: 0; }
+.rcvgd-cancel-banner-text { flex: 1; }
+.rcvgd-cancel-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.rcvgd-cancel-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
+
 /* ── Summary grid ────────────────────────────────────────────────────────── */
 .rcvgd-summary {
-  display: grid; grid-template-columns: 244px 244px; column-gap: var(--mp-spacing-6); row-gap: 0;
+  display: grid; grid-template-columns: 244px 244px 244px; column-gap: var(--mp-spacing-6); row-gap: 0;
 }
 .content-list-col { display: flex; flex-direction: column; }
 
@@ -963,6 +1079,9 @@ function goBack() {
   background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff);
 }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
 .detail-btn--ghost {
   background: transparent; border-color: transparent; color: var(--mp-text-secondary);
 }

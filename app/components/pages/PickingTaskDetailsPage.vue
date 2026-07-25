@@ -19,10 +19,11 @@ import {
 import {
   getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds,
   canCancelPickingTask, cancelPickingTask,
+  pendingCanceledOrderIds, acknowledgeCanceledPickingOrders,
   type PickingTask,
 } from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
@@ -48,6 +49,40 @@ function rowPickedForGroup(group: PickGroupItem): number {
     return s + (m ? rowPicked(k, m.pickedQty) : 0)
   }, 0)
 }
+
+// ── "By orders" view — same line items, grouped by the order they belong to
+// instead of merged by SKU. Header (order no./customer/source) mirrors
+// CreatePackingPage.vue's per-order block exactly. ──────────────────────────
+type ViewMode = 'combined' | 'orders'
+const viewMode = ref<ViewMode>('combined')
+interface PickOrderGroup {
+  orderId: string
+  salesNo: string
+  customer: string
+  source: string
+  isMarketplace: boolean
+  lines: PickLineItem[]
+}
+const orderGroups = computed<PickOrderGroup[]>(() => {
+  const map = new Map<string, PickOrderGroup>()
+  for (const it of lineItems.value) {
+    let g = map.get(it.orderId)
+    if (!g) {
+      const o = outgoingOrders.find(x => x.id === it.orderId)
+      g = {
+        orderId: it.orderId,
+        salesNo: it.salesNo,
+        customer: o?.customer ?? '',
+        source: o?.source ?? '',
+        isMarketplace: isMarketplaceOrder(o),
+        lines: [],
+      }
+      map.set(it.orderId, g)
+    }
+    g.lines.push(it)
+  }
+  return [...map.values()]
+})
 
 // ── Local state mirror (mock data isn't deeply reactive) ─────────────────────
 const localStatus = ref<TaskStatus>('open')
@@ -125,6 +160,10 @@ function mergedGroupItem(group: PickGroupItem): PickLineItem {
 }
 function openViewBatch(group: PickGroupItem) { viewBatchItem.value = mergedGroupItem(group) }
 function openViewSerial(group: PickGroupItem) { viewSerialItem.value = mergedGroupItem(group) }
+// By-orders view — the line is already a single order's own PickLineItem, no
+// merge to undo.
+function openViewBatchForLine(item: PickLineItem) { viewBatchItem.value = item }
+function openViewSerialForLine(item: PickLineItem) { viewSerialItem.value = item }
 
 // Linked sales orders + packing tasks
 const linkedOrders = computed(() =>
@@ -146,6 +185,13 @@ const linkedPacking = computed(() => task.value ? getPackingForPickingTask(task.
 const hasPackableOrders = computed(() => {
   const t = task.value
   if (!t) return true
+  // Every order on this task cancelled → nothing left to pack, hide the button
+  // (don't fall through to the "finish picking" modal for a dead order).
+  const activeOrders = t.salesOrderIds.filter(id => {
+    const o = outgoingOrders.find(x => x.id === id)
+    return o && o.status !== 'canceled'
+  })
+  if (activeOrders.length === 0) return false
   const ids = packableOrderIds(t)
   if (ids.length === 0) return true
   return ids.some(id => !orderPackedFromPickingTask(id, t.id))
@@ -161,7 +207,15 @@ const lastUpdated = computed(() => {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 function startPickingAndNavigate() {
+  if (needsCancelAck.value) { ackModalOpen.value = true; return }
   startPicking(props.orderId)
+  router.push(`/picking/${props.orderId}/pick`)
+}
+// Continue picking an in-progress task — blocked behind the acknowledgment modal
+// while a cancelled order still needs acknowledging (the banner's own Acknowledge
+// button is the other path). Otherwise straight to the pick screen.
+function continuePicking() {
+  if (needsCancelAck.value) { ackModalOpen.value = true; return }
   router.push(`/picking/${props.orderId}/pick`)
 }
 
@@ -175,8 +229,46 @@ function confirmCancel() {
   if (!task.value) return
   cancelPickingTask(task.value.id)
   cancelOpen.value = false
+  localStatus.value = 'canceled' // stay on this detail page, now showing the canceled state
   toast.notify({ variant: 'success', title: `${task.value.taskNo} canceled`, maxWidth: 'max-content' })
-  goBack()
+}
+
+// Release reserved — shown as a text link on the Reason line when this task was
+// cancelled BECAUSE its order was cancelled and that order still holds reserved
+// stock. Once released the link disappears (canReleaseReservedForOrder = false).
+const releasableOrderIds = computed(() =>
+  (task.value?.salesOrderIds ?? []).filter(id => canReleaseReservedForOrder(id)),
+)
+const canReleaseReserved = computed(() => releasableOrderIds.value.length > 0)
+function releaseReservedFromTask() {
+  let released = 0
+  for (const id of releasableOrderIds.value) if (releaseReservedForCancelledOrder(id)) released++
+  if (released) toast.notify({ variant: 'success', title: 'Reserved stock released', maxWidth: 'max-content' })
+}
+
+// ── Cancelled-order acknowledgment (shared picking task) ──────────────────────
+// One order on this shared task was cancelled. The pick list still shows the
+// original numbers until the operator acknowledges — which drops that order's lines
+// from the pick work while keeping it in the Sales orders list (linked transaction).
+const pendingCanceled = computed(() =>
+  task.value ? pendingCanceledOrderIds(task.value).map(id => outgoingOrders.find(o => o.id === id)?.salesNo ?? id) : [],
+)
+const needsCancelAck = computed(() => !!task.value?.needsCancelAck && pendingCanceled.value.length > 0)
+function acknowledgeCancel() {
+  if (!task.value) return
+  acknowledgeCanceledPickingOrders(task.value.id)
+  toast.notify({ variant: 'success', title: 'Picking list updated — cancelled order removed', maxWidth: 'max-content' })
+}
+// Reached when the operator tries to Start/Continue picking while a cancelled order
+// still needs acknowledging — they must acknowledge first, then proceed to the pick screen.
+const ackModalOpen = ref(false)
+function confirmAckAndContinue() {
+  if (!task.value) return
+  const wasOpen = task.value.status === 'open'
+  acknowledgeCancel()
+  ackModalOpen.value = false
+  if (wasOpen) startPicking(props.orderId)
+  router.push(`/picking/${props.orderId}/pick`)
 }
 
 const pdfPreviewOpen = ref(false)
@@ -265,6 +357,16 @@ const shownCount = ref(PAGE_SIZE)
 const loadingMore = ref(false)
 const visibleItems = computed(() => filteredItems.value.slice(0, shownCount.value))
 
+// Same search box, applied per-order instead of to the merged rows — an order
+// with no matching line drops out entirely rather than showing an empty table.
+const filteredOrderGroups = computed(() => {
+  const q = itemSearch.value.trim().toLowerCase()
+  if (!q) return orderGroups.value
+  return orderGroups.value
+    .map(g => ({ ...g, lines: g.lines.filter(l => l.productName.toLowerCase().includes(q) || l.skuCode.toLowerCase().includes(q)) }))
+    .filter(g => g.lines.length > 0)
+})
+
 /** Picked qty for a batch/serial-tracked group, broken down by which bin it was
  *  actually picked from — read from the task's own committed batchPicks/
  *  serialPicks (a batch/serial always sits in exactly ONE fixed bin), so 2+
@@ -340,6 +442,57 @@ const visibleRowsWithMeta = computed<PickDetailRowWithMeta[]>(() => {
   }
   return result
 })
+
+// Same bin-split idea as groupQtyByBin/groupLocationsForDisplay above, but for
+// a single order's own (un-merged) line — one line only ever has its OWN
+// picks to split, no memberKeys to sum, so the picked qty is just the line's
+// own (locally-overlaid) pickedQty.
+function lineQtyByBin(item: PickLineItem): Map<string, number> {
+  const map = new Map<string, number>()
+  if (rowPicked(item.key, item.pickedQty) <= 0) return map
+  if (isBatchTrackedSku(item.skuCode)) {
+    for (const b of item.batchPicks ?? []) {
+      if (b.qty > 0 && b.location) map.set(b.location, (map.get(b.location) ?? 0) + b.qty)
+    }
+  } else if (isSerialTrackedSku(item.skuCode)) {
+    for (const s of item.serialPicks ?? []) {
+      if (s.location) map.set(s.location, (map.get(s.location) ?? 0) + 1)
+    }
+  }
+  return map
+}
+function lineLocationsForDisplay(item: PickLineItem): string[] {
+  const bins = new Set<string>()
+  if (isBatchTrackedSku(item.skuCode)) {
+    const source = item.batchPicks?.length ? item.batchPicks : (item.plannedBatchPicks ?? [])
+    for (const b of source) if (b.location) bins.add(b.location)
+  } else if (isSerialTrackedSku(item.skuCode)) {
+    const source = item.serialPicks?.length ? item.serialPicks : (item.plannedSerialPicks ?? [])
+    for (const s of source) if (s.location) bins.add(s.location)
+  }
+  return [...bins]
+}
+interface PickOrderRowWithMeta {
+  item: PickLineItem
+  bin: string | null
+  binQty: number
+  groupIndex: number
+  groupSize: number
+}
+/** Same row-expansion as visibleRowsWithMeta, scoped to one order's own lines. */
+function orderRowsWithMeta(group: PickOrderGroup): PickOrderRowWithMeta[] {
+  const result: PickOrderRowWithMeta[] = []
+  for (const item of group.lines) {
+    const byBin = lineQtyByBin(item)
+    if (byBin.size < 2) {
+      result.push({ item, bin: null, binQty: 0, groupIndex: 0, groupSize: 1 })
+      continue
+    }
+    const bins = [...byBin.entries()]
+    bins.forEach(([bin, qty], idx) => result.push({ item, bin, binQty: qty, groupIndex: idx, groupSize: bins.length }))
+  }
+  return result
+}
 function loadMoreItems() {
   if (loadingMore.value || shownCount.value >= filteredItems.value.length) return
   loadingMore.value = true
@@ -463,6 +616,20 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     <!-- ── Scrollable stage ── -->
     <div ref="stageEl" class="detail-stage">
 
+      <!-- A shared order on this picking task was cancelled — the pick list still
+           shows the original numbers until the operator acknowledges, which drops that
+           order's lines (it stays under Sales orders as a linked transaction). -->
+      <div v-if="needsCancelAck" class="pkd-cancel-banner">
+        <svg class="pkd-cancel-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 9v4M12 16.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="pkd-cancel-banner-text">
+          {{ pendingCanceled.join(', ') }} {{ pendingCanceled.length > 1 ? 'were' : 'was' }} cancelled. Acknowledge to update this picking list — {{ pendingCanceled.length > 1 ? 'they' : 'it' }} will stay listed under Sales orders.
+        </span>
+        <button class="pkd-cancel-banner-btn" type="button" @click="acknowledgeCancel">Acknowledge</button>
+      </div>
+
       <!-- Summary grid -->
       <section class="pkd-summary">
         <div class="content-list-col">
@@ -484,7 +651,13 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
           <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
           <template v-if="localStatus === 'canceled'">
             <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
-            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
+            <ContentList label="Reason">
+              <span class="pkd-reason">
+                <span>{{ task.canceledReason ?? '—' }}</span>
+                <button v-if="canReleaseReserved" type="button" class="pkd-reason-release" @click="releaseReservedFromTask">Release reserved</button>
+              </span>
+            </ContentList>
+            <ContentList label="Canceled by" :value="task.canceledBy ?? '—'" />
           </template>
           <ContentList v-else label="End date">
             <span class="pkd-end-cell">
@@ -518,6 +691,10 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       <!-- Line items -->
       <div class="pkd-table-wrap">
         <div class="pkd-filter-bar">
+          <div class="detail-loc-toggle">
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">Combined</button>
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">By orders</button>
+          </div>
           <div class="pkd-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -530,7 +707,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
             </button>
           </div>
         </div>
-        <section class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
+        <section v-if="viewMode === 'combined'" class="detail-items-section" :class="{ 'detail-items-section--bordered': itemsOverflowing }">
           <div ref="itemsScrollEl" class="detail-items-scroll">
             <table class="detail-items">
               <thead>
@@ -622,6 +799,107 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
             <span>Showing {{ visibleItems.length }} of {{ filteredItems.length }} products</span>
           </div>
         </section>
+
+        <!-- By orders view — same items, one section + table per contributing
+             sales order, header mirrors CreatePackingPage.vue's order grouping
+             (order no. / customer / source). -->
+        <template v-else>
+          <div v-for="group in filteredOrderGroups" :key="group.orderId" class="pkd-order-block">
+            <div class="pkd-order-head">
+              <span class="pkd-order-no">{{ group.salesNo }}</span>
+              <span v-if="group.customer" class="pkd-order-cust">{{ group.customer }}</span>
+              <span v-if="group.source" class="pkd-order-source">
+                <SourceLabel :source="group.source" />
+                <MpTooltip
+                  v-if="group.isMarketplace"
+                  :id="`pkd-mkt-${group.orderId}`"
+                  label="Marketplace orders must be picked in full. Items can't be removed."
+                  placement="top"
+                  use-portal
+                >
+                  <span class="pkd-source-info"><MpIcon name="info" size="sm" /></span>
+                </MpTooltip>
+              </span>
+            </div>
+            <section class="detail-items-section">
+              <div class="detail-items-scroll">
+                <table class="detail-items">
+                  <thead>
+                    <tr>
+                      <th class="detail-th">Product</th>
+                      <th class="detail-th">SKU</th>
+                      <th class="detail-th">Storage location</th>
+                      <th class="detail-th detail-th--num">Qty to pick</th>
+                      <th class="detail-th detail-th--num">Picked qty</th>
+                      <th class="detail-th detail-th--num">Remaining qty to pick</th>
+                      <th class="detail-th">Unit</th>
+                      <th class="detail-th detail-th--action"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="row in orderRowsWithMeta(group)" :key="`${row.item.key}::${row.groupIndex}`"
+                      class="detail-item-row"
+                    >
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">
+                        <ProductCell :name="row.item.productName" :desc="row.item.productDesc" :image="row.item.image" />
+                      </td>
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.item.skuCode }}</td>
+                      <td v-if="row.groupSize > 1" class="detail-td detail-td--location">{{ row.bin }}</td>
+                      <td
+                        v-else-if="isBatchTrackedSku(row.item.skuCode) || isSerialTrackedSku(row.item.skuCode)"
+                        class="detail-td detail-td--location"
+                        :class="{ 'detail-td--location-summary': lineLocationsForDisplay(row.item).length }"
+                      >
+                        <div v-if="lineLocationsForDisplay(row.item).length" class="pkd-location-summary-wrap">
+                          <span v-for="loc in lineLocationsForDisplay(row.item)" :key="loc" class="pkd-location-summary-item">{{ loc }}</span>
+                        </div>
+                        <MpTooltip
+                          v-else
+                          :id="`pkd-tt-loc-order-${row.item.key}`"
+                          :label="isBatchTrackedSku(row.item.skuCode) ? 'View via View batch' : 'View via View serial number'"
+                          placement="top"
+                          use-portal
+                        >
+                          <span>—</span>
+                        </MpTooltip>
+                      </td>
+                      <td v-else class="detail-td detail-td--location">
+                        <span class="pkd-location-item" :title="row.item.binLocation">{{ row.item.binLocation }}</span>
+                      </td>
+
+                      <td class="detail-td detail-td--num">{{ fmt(row.groupSize > 1 ? row.binQty : row.item.expectedQty) }}</td>
+                      <td class="detail-td detail-td--num">
+                        <span v-if="row.groupSize > 1">{{ fmt(row.binQty) }}</span>
+                        <span v-else :class="isInProgress ? '' : (rowPicked(row.item.key, row.item.pickedQty) === row.item.expectedQty ? 'pkd-qty--full' : rowPicked(row.item.key, row.item.pickedQty) > 0 ? 'pkd-qty--partial' : 'pkd-qty--zero')">
+                          {{ fmt(rowPicked(row.item.key, row.item.pickedQty)) }}
+                        </span>
+                      </td>
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--num">
+                        <span :class="row.item.expectedQty - rowPicked(row.item.key, row.item.pickedQty) > 0 ? 'pkd-outstanding' : 'pkd-qty--full'">
+                          {{ fmt(row.item.expectedQty - rowPicked(row.item.key, row.item.pickedQty)) }}
+                        </span>
+                      </td>
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td">{{ row.item.unit }}</td>
+                      <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--action">
+                        <MpTooltip v-if="isBatchTrackedSku(row.item.skuCode)" :id="`pkd-tt-batch-order-${row.item.key}`" label="View batch" placement="top" use-portal>
+                          <button class="pkd-view-btn" type="button" aria-label="View batch" @click="openViewBatchForLine(row.item)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                        <MpTooltip v-else-if="isSerialTrackedSku(row.item.skuCode)" :id="`pkd-tt-serial-order-${row.item.key}`" label="View serial number" placement="top" use-portal>
+                          <button class="pkd-view-btn" type="button" aria-label="View serial number" @click="openViewSerialForLine(row.item)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </template>
       </div>
 
       <!-- Linked transactions -->
@@ -719,15 +997,40 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary" @click="printPickingList">Print picking list</button>
-      <button v-if="canCancel" class="detail-btn detail-btn--secondary" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">
-        Cancel
-      </button>
-      <button v-if="localStatus === 'open'" class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">
-        Start picking
-      </button>
-      <button v-else-if="localStatus === 'in progress'" class="detail-btn detail-btn--primary" @click="router.push(`/picking/${orderId}/pick`)">
-        Continue picking
-      </button>
+      <!-- Cancel task lives in the primary action's split-button dropdown, never as a
+           standalone "Cancel" footer button. -->
+      <template v-if="localStatus === 'open'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startPickingAndNavigate">Start picking</button>
+          <MpPopover id="pkd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">Start picking</button>
+      </template>
+      <template v-else-if="localStatus === 'in progress'">
+        <div v-if="canCancel" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="continuePicking">Continue picking</button>
+          <MpPopover id="pkd-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem></MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="continuePicking">Continue picking</button>
+      </template>
       <button
         v-else-if="(localStatus === 'completed' || localStatus === 'partially picked') && hasPackableOrders"
         class="detail-btn detail-btn--primary"
@@ -749,6 +1052,27 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
             <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Acknowledge cancelled order before continuing picking ── -->
+    <MpModal id="pkd-ack-cancel" :is-open="ackModalOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackModalOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Acknowledge cancelled order?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          {{ pendingCanceled.join(', ') }} {{ pendingCanceled.length > 1 ? 'were' : 'was' }} cancelled.
+          Acknowledging removes {{ pendingCanceled.length > 1 ? 'their' : 'its' }} lines from this
+          picking list (the order{{ pendingCanceled.length > 1 ? 's' : '' }} stay{{ pendingCanceled.length > 1 ? '' : 's' }}
+          listed under Sales orders) before you continue picking.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="ackModalOpen = false">Review</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="confirmAckAndContinue">Acknowledge &amp; continue</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -900,13 +1224,50 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
   line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap;
 }
 
+.pkd-cancel-banner {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
+  background: var(--mp-background-warning-subtle, #fffbeb);
+  border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.pkd-cancel-banner-icon { color: var(--mp-icon-warning, #d97706); flex-shrink: 0; }
+.pkd-cancel-banner-text { flex: 1; }
+.pkd-cancel-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.pkd-cancel-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+.pkd-reason { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.pkd-reason-release {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); line-height: var(--mp-line-heights-md);
+}
+.pkd-reason-release:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 .pkd-progress { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; }
 .pkd-progress-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-28, 112px); }
 .pkd-progress-val { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .pkd-progress-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .pkd-table-wrap { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-.pkd-filter-bar { display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-3); }
+.pkd-filter-bar { display: flex; justify-content: space-between; align-items: center; gap: var(--mp-spacing-3); }
+/* Combined / By orders toggle — same pill pattern as StockAdjustmentDetailsPage.vue's By location/By SKU toggle. */
+.detail-loc-toggle { display: flex; align-items: center; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; gap: 2px; }
+.detail-loc-toggle-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.detail-loc-toggle-btn:hover { color: var(--mp-text-default); }
+.detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+/* Per-order blocks (By orders view) — same header pattern as CreatePackingPage.vue's order grouping. */
+.pkd-order-block { margin-bottom: var(--mp-spacing-5); }
+.pkd-order-head { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-2); }
+.pkd-order-no { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pkd-order-cust { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pkd-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
+.pkd-source-info { display: inline-flex; align-items: center; color: var(--mp-icon-default, var(--mp-text-secondary)); cursor: default; }
 .pkd-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
@@ -1024,6 +1385,9 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
 
 .pkd-not-found {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
