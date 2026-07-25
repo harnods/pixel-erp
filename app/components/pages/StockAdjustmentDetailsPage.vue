@@ -2,7 +2,7 @@
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpIcon, MpSpinner, MpSelect,
+  MpTooltip, MpIcon, MpSpinner, MpSelect, MpToggle,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
   css, toast,
@@ -22,9 +22,13 @@ import {
   adjustmentApprovalLog,
   type AdjustmentLine,
 } from '~/data/stockAdjustments'
-import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, startWmsCount, approveWmsAdjustment } from '~/data/wmsStockAdjustments'
+import { wmsStockAdjustments, getWmsAdjustment, canCancelWmsAdjustment, cancelWmsAdjustment, canCloseWmsCount, closeWmsCount, startWmsCount, approveWmsAdjustment } from '~/data/wmsStockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
+import { putAwayTasks } from '~/data/putAwayTasks'
+import { getPutAwayLineItems } from '~/data/putAwayTaskDetails'
+import { pickingTasks } from '~/data/pickingTasks'
+import { getPickingLineItems } from '~/data/pickingTaskDetails'
 
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
@@ -34,7 +38,9 @@ const isWmsRecord = computed(() => props.orderId.startsWith('wsa-') || props.ord
 const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.orderId) : getAdjustment(props.orderId))
 const isCount = computed(() => adjustment.value?.kind === 'count')
 const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
-const isNotStarted = computed(() => isWmsCount.value && adjustment.value?.status === 'not_started')
+// Also true for 'closed' — closing discards a.lines, so there's no real
+// counted data left to show either, same as a task that never started.
+const isNotStarted = computed(() => isWmsCount.value && (adjustment.value?.status === 'not_started' || adjustment.value?.status === 'closed'))
 
 // /stock-adjustments/:id also serves WMS Cycle count records — tell the sidebar
 // this detail page belongs under "Cycle counts" so it doesn't default to
@@ -410,9 +416,57 @@ function backPath() {
 function goBack() { router.push(backPath()) }
 function preview() { /* opens the printable preview — not built in this prototype */ }
 function printPdf() { /* generates the adjustment PDF — not built in this prototype */ }
+
+// ── Start-counting guard: an inbound (put-away) or outbound (picking) task in
+// the SAME warehouse still in progress on a SKU this count also covers means
+// stock is actively moving under the operator's feet — counting it now would
+// just record a number that's already wrong by the time it's saved. Only
+// gates the Open → In progress transition; once a count has genuinely
+// started, re-entering it (Continue counting) is never blocked. ─────────────
+interface ActiveConflict { type: 'Put-away' | 'Picking'; taskNo: string; skus: string[] }
+const cycleCountSkus = computed(() => new Set(lineItems.value.map(l => l.sku)))
+// Scenario toggle — this codebase has no real-time inbound/outbound activity
+// simulator, so this lets the conflict-blocked flow be demoed on demand
+// regardless of what the seeded put-away/picking data happens to contain.
+const simulateActiveConflict = ref(false)
+function realActiveConflicts(): ActiveConflict[] {
+  if (!adjustment.value) return []
+  const whId = adjustment.value.warehouseId
+  const skus = cycleCountSkus.value
+  const conflicts: ActiveConflict[] = []
+  for (const t of putAwayTasks) {
+    if (t.warehouseId !== whId || t.status !== 'in progress') continue
+    const shared = [...new Set(getPutAwayLineItems(t.id).map(l => l.skuCode).filter(s => skus.has(s)))]
+    if (shared.length) conflicts.push({ type: 'Put-away', taskNo: t.taskNo, skus: shared })
+  }
+  for (const t of pickingTasks) {
+    if (t.warehouseId !== whId || (t.status !== 'in progress' && t.status !== 'partially picked')) continue
+    const shared = [...new Set(getPickingLineItems(t).map(l => l.skuCode).filter(s => skus.has(s)))]
+    if (shared.length) conflicts.push({ type: 'Picking', taskNo: t.taskNo, skus: shared })
+  }
+  return conflicts
+}
+const activeConflicts = computed((): ActiveConflict[] => {
+  if (simulateActiveConflict.value) {
+    const demoSku = [...cycleCountSkus.value][0]
+    return [
+      { type: 'Put-away', taskNo: 'PA-20231', skus: demoSku ? [demoSku] : [] },
+      { type: 'Picking', taskNo: 'PICK-10098', skus: demoSku ? [demoSku] : [] },
+    ]
+  }
+  return realActiveConflicts()
+})
+
+const startBlockedOpen = ref(false)
 function startCounting() {
   if (!adjustment.value) return
-  if (adjustment.value.status === 'not_started') startWmsCount(adjustment.value.id)
+  if (adjustment.value.status === 'not_started') {
+    if (activeConflicts.value.length) {
+      startBlockedOpen.value = true
+      return
+    }
+    startWmsCount(adjustment.value.id)
+  }
   router.push(`${detailBasePath()}/${props.orderId}/count`)
 }
 function editAdjustment() { router.push(`${detailBasePath()}/${props.orderId}/edit`) }
@@ -442,6 +496,19 @@ function confirmCancel() {
   cancelOpen.value = false
   toast.notify({ variant: 'success', title: `${adjustment.value.number} canceled`, maxWidth: 'max-content' })
   router.push(backPath())
+}
+
+// ── Close task (WMS cycle count only) — an operator walking away from a count
+// mid-task, distinct from Cancel: any counted quantities saved so far are
+// discarded, and the task becomes a terminal, view-only record. ──────────────
+const canCloseTask = computed(() => isWmsCount.value && !!adjustment.value && canCloseWmsCount(adjustment.value))
+const closeOpen = ref(false)
+function askClose() { closeOpen.value = true }
+function confirmClose() {
+  if (!adjustment.value) return
+  closeWmsCount(props.orderId)
+  closeOpen.value = false
+  toast.notify({ variant: 'success', title: `${adjustment.value.number} closed`, maxWidth: 'max-content' })
 }
 
 // Footer divider appears only when the stage actually scrolls.
@@ -716,9 +783,9 @@ onUnmounted(() => {
                 <th class="detail-th detail-th--num">Counted qty</th>
                 <th v-if="isCountedStatus" class="detail-th detail-th--num">Variance</th>
                 <th class="detail-th">Unit</th>
-                <th class="detail-th detail-th--action" />
-                <th v-if="isCountedStatus" class="detail-th detail-th--reason">Reason</th>
                 <th class="detail-th">Storage locations</th>
+                <th v-if="isCountedStatus" class="detail-th detail-th--reason">Reason</th>
+                <th class="detail-th detail-th--action" />
               </tr>
             </thead>
             <tbody>
@@ -739,19 +806,10 @@ onUnmounted(() => {
                 <td class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(row.counted) }}</td>
                 <td v-if="isCountedStatus" class="detail-td detail-td--num" :class="{ 'detail-diff--pos': row.difference > 0, 'detail-diff--neg': row.difference < 0 }">{{ diffLabel(row.difference) }}</td>
                 <td class="detail-td">{{ row.unit }}</td>
-                <td class="detail-td detail-td--action">
-                  <template v-if="!isNotStarted">
-                    <MpTooltip v-if="isBatchTrackedSku(row.sku)" :id="`sad-tt-batch-sku-${row.sku}`" label="View batch" placement="top" use-portal>
-                      <button class="detail-view-btn" type="button" aria-label="View batch" @click="openViewBatchForSku(row)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
-                    </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(row.sku)" :id="`sad-tt-serial-sku-${row.sku}`" label="View serial number" placement="top" use-portal>
-                      <button class="detail-view-btn" type="button" aria-label="View serial number" @click="openViewSerialForSku(row)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
-                    </MpTooltip>
-                  </template>
+                <td class="detail-td">
+                  <div class="detail-loc-tags">
+                    <span v-for="loc in row.locations" :key="loc" class="detail-loc-tag">{{ loc === '—' ? 'No location assigned' : loc }}</span>
+                  </div>
                 </td>
                 <td v-if="isCountedStatus" class="detail-td detail-td--reason">
                   <MpPopover v-if="hasVariance(row.difference)" :id="`reason-sku-${row.sku}`" is-close-on-select use-portal placement="bottom-start">
@@ -775,10 +833,19 @@ onUnmounted(() => {
                   </MpPopover>
                   <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width size="sm" />
                 </td>
-                <td class="detail-td">
-                  <div class="detail-loc-tags">
-                    <span v-for="loc in row.locations" :key="loc" class="detail-loc-tag">{{ loc === '—' ? 'No location assigned' : loc }}</span>
-                  </div>
+                <td class="detail-td detail-td--action">
+                  <template v-if="!isNotStarted">
+                    <MpTooltip v-if="isBatchTrackedSku(row.sku)" :id="`sad-tt-batch-sku-${row.sku}`" label="View batch" placement="top" use-portal>
+                      <button class="detail-view-btn" type="button" aria-label="View batch" @click="openViewBatchForSku(row)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.sku)" :id="`sad-tt-serial-sku-${row.sku}`" label="View serial number" placement="top" use-portal>
+                      <button class="detail-view-btn" type="button" aria-label="View serial number" @click="openViewSerialForSku(row)">
+                        <MpIcon name="competencies" size="md" />
+                      </button>
+                    </MpTooltip>
+                  </template>
                 </td>
               </tr>
             </tbody>
@@ -974,10 +1041,11 @@ onUnmounted(() => {
 
       <!-- WMS stock count footer -->
       <template v-if="isWmsCount">
+        <button v-if="canCloseTask" class="detail-btn detail-btn--secondary" @click="askClose">Close task</button>
         <button class="detail-btn detail-btn--secondary" @click="printPdf">Print stock card</button>
         <button v-if="canApprove" class="detail-btn detail-btn--primary" @click="approve">Approve</button>
-        <!-- Not started / In progress: split button. Completed: stock already
-             counted/applied — no actions left, terminal record. -->
+        <!-- Not started / In progress: split button. Completed/Closed: no
+             actions left, terminal record. -->
         <div v-if="adjustment.status === 'not_started' || adjustment.status === 'in_progress'" class="detail-split-btn">
           <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startCounting">
             {{ adjustment.status === 'in_progress' ? 'Continue counting' : 'Start counting' }}
@@ -993,7 +1061,6 @@ onUnmounted(() => {
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
                 <MpPopoverListItem @click="editAdjustment">Edit</MpPopoverListItem>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -1081,6 +1148,49 @@ onUnmounted(() => {
       <MpModalOverlay />
     </MpModal>
 
+    <!-- Close task (WMS cycle count) -->
+    <MpModal
+      id="sad-close" :is-open="closeOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>Close this count task?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p>Counted data will be canceled and can't be resumed. This task will become read-only with a Closed status.</p>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="closeOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmClose">Close</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- Start-counting blocked: an inbound/outbound task sharing a SKU is still in progress -->
+    <MpModal
+      id="sad-start-blocked" :is-open="startBlockedOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="startBlockedOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>Can't start counting yet<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="sad-blocked-intro">The following tasks are still in progress in this warehouse and share products with this count:</p>
+          <ul class="sad-blocked-list">
+            <li v-for="(c, i) in activeConflicts" :key="i">{{ c.type }} {{ c.taskNo }} — {{ c.skus.join(', ') }}</li>
+          </ul>
+          <p>Wait until they're completed before starting this count.</p>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--primary" @click="startBlockedOpen = false">Got it</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
   </div>
 
   <div v-else class="sad-not-found">
@@ -1095,21 +1205,34 @@ onUnmounted(() => {
     @close="approvalLogOpen = false"
   />
 
-  <!-- Demo scenario FAB — shared approval view toggle (ERP only) -->
-  <MpPopover v-if="!isWmsRecord" id="sad-demo-fab" is-close-on-select use-portal placement="top-end">
+  <!-- Demo scenario FAB — approval view toggle (ERP) + Start-counting conflict
+       simulator (WMS cycle count, while still Open) share the one FAB. -->
+  <MpPopover
+    v-if="!isWmsRecord || (isWmsCount && adjustment?.status === 'not_started')"
+    id="sad-demo-fab" is-close-on-select use-portal placement="top-end"
+  >
     <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change approval view">
+      <button class="demo-fab" aria-label="Change scenario state">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
-    <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Approval view</p>
-      <MpPopoverList>
-        <MpPopoverListItem
-          v-for="v in viewAsOptions" :key="v.value"
-          :is-active="v.value === viewAs" @click="setViewAs(v.value)"
-        >{{ v.label }}</MpPopoverListItem>
-      </MpPopoverList>
+    <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
+      <template v-if="!isWmsRecord">
+        <p class="demo-fab-heading">Approval view</p>
+        <MpPopoverList>
+          <MpPopoverListItem
+            v-for="v in viewAsOptions" :key="v.value"
+            :is-active="v.value === viewAs" @click="setViewAs(v.value)"
+          >{{ v.label }}</MpPopoverListItem>
+        </MpPopoverList>
+      </template>
+      <template v-if="isWmsCount && adjustment?.status === 'not_started'">
+        <p class="demo-fab-heading">Scenario testing</p>
+        <div class="demo-fab-toggle-row">
+          <span class="demo-fab-toggle-label">Simulate active inbound/outbound conflict</span>
+          <MpToggle v-model:is-checked="simulateActiveConflict" aria-label="Simulate active inbound/outbound conflict" />
+        </div>
+      </template>
     </MpPopoverContent>
   </MpPopover>
 </template>
@@ -1321,6 +1444,11 @@ onUnmounted(() => {
 /* Cancel modal */
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }
 
+/* Start-counting blocked modal */
+.sad-blocked-intro { margin-bottom: var(--mp-spacing-2); }
+.sad-blocked-list { margin: 0 0 var(--mp-spacing-3); padding-left: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.sad-blocked-list li { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
 /* Linked cycle counts section */
 .detail-linked-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); flex-shrink: 0; }
 .detail-linked-heading { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -1360,7 +1488,7 @@ onUnmounted(() => {
 
 /* Demo scenario FAB */
 .demo-fab {
-  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  position: fixed; left: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
   width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: var(--mp-radii-full, 999px);
@@ -1370,4 +1498,6 @@ onUnmounted(() => {
 }
 .demo-fab:hover { opacity: 0.9; }
 .demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.demo-fab-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-1) var(--mp-spacing-3) var(--mp-spacing-2); }
+.demo-fab-toggle-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); max-width: 160px; }
 </style>

@@ -151,6 +151,7 @@ const STATUS_OPTIONS = [
   { value: 'in_progress', label: 'In progress' },
   { value: 'counted',     label: 'Counted'     },
   { value: 'completed',   label: 'Completed'   },
+  { value: 'closed',      label: 'Closed'      },
 ]
 const whOptions = computed(() => activeWhOpts.value)
 const warehouseLabel = computed(() => {
