@@ -907,11 +907,42 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
+        <!-- Scan bar — every mode, including put-away: scan a bin barcode to make it
+             the "active bin", then scan a batch barcode to assign 1 unit of that
+             batch to the active bin (creating/incrementing its destLocRows entry) —
+             same active-bin model as the page-level scan bar in PutAwayItemsPage.
+             Reset count clears every row's destLocRows back to a single blank entry
+             (and drops the active bin), so it's safe to use in every mode. Rendered
+             even with zero rows — count mode's "genuinely unrecognized code" fallback
+             in handleDrawerScan is exactly how a first batch with no prior record
+             gets registered, so it can't be hidden behind the empty state. -->
+        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
+          <div v-if="(isPutAway || isPicking) && activeBin" class="mbd-active-bin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>{{ activeBin }}</span>
+            <button class="mbd-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <button
+            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+            type="button"
+            @click="resetPickedCount"
+          >Reset count</button>
+        </ScanBar>
+
         <template v-if="rows.length === 0 && !isInOut">
           <div class="mbd-empty">
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
             <p class="mbd-empty-title">No batches yet</p>
-            <p class="mbd-empty-desc">Add a batch using the button above.</p>
+            <p class="mbd-empty-desc">Scan a batch barcode above, or add one manually.</p>
+            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addNewBatch">
+              <MpIcon name="add" size="sm" /> Add new batch
+            </button>
           </div>
         </template>
 
@@ -950,31 +981,6 @@ function fmtNum(n: number | null): string {
             </button>
           </div>
         </div>
-
-        <!-- Scan bar — every mode, including put-away: scan a bin barcode to make it
-             the "active bin", then scan a batch barcode to assign 1 unit of that
-             batch to the active bin (creating/incrementing its destLocRows entry) —
-             same active-bin model as the page-level scan bar in PutAwayItemsPage.
-             Reset count clears every row's destLocRows back to a single blank entry
-             (and drops the active bin), so it's safe to use in every mode. -->
-        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
-          <div v-if="(isPutAway || isPicking) && activeBin" class="mbd-active-bin">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <span>{{ activeBin }}</span>
-            <button class="mbd-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-              </svg>
-            </button>
-          </div>
-          <button
-            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-            type="button"
-            @click="resetPickedCount"
-          >Reset count</button>
-        </ScanBar>
 
         <!-- Table -->
         <div class="mbd-table-wrap">
