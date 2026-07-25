@@ -30,7 +30,7 @@
     <MpPopoverContent class="quick-create" is-unstyled>
       <!-- ── Main: New shortcuts ─────────────────────────────── -->
       <template v-if="view === 'main'">
-        <p class="quick-create__section">New</p>
+        <p class="quick-create__section">Create/New</p>
         <nav class="quick-create__group">
           <button
             v-for="item in visibleShortcuts"
