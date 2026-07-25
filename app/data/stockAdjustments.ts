@@ -39,7 +39,10 @@ export const IN_OUT_CATEGORIES: AdjustmentCategory[] = [
 
 // 'counted' = WMS-only: the operator finished counting but a manager still needs
 // to review it (one step below 'completed') — see wmsStockAdjustments.ts.
-export type AdjustmentStatus = 'draft' | 'completed' | 'not_started' | 'in_progress' | 'counted' | 'canceled'
+// 'closed' = WMS cycle count only: an operator (not a manager) deliberately
+// ended a not-yet-submitted count task — distinct from 'canceled', which is
+// the generic ERP "this record never happened" terminal state.
+export type AdjustmentStatus = 'draft' | 'completed' | 'not_started' | 'in_progress' | 'counted' | 'canceled' | 'closed'
 
 // Offsetting GL account shown per row — derived from the category.
 const ACCOUNT_BY_CATEGORY: Record<AdjustmentCategory, string> = {
