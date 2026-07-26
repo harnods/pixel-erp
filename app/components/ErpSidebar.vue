@@ -222,13 +222,8 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Approval workflows' },
     { label: 'Tagging rules' },
   ],
-  [
-    { label: 'Tax rates' },
-    { label: 'Currencies' },
-    { label: 'Payment terms' },
-    { label: 'Payment methods' },
-    { label: 'Tags' },
-  ],
+  // Tax rates / Currencies / Payment terms / Payment methods / Tags intentionally
+  // omitted here — they live under "Other lists" instead (no duplication).
 ]
 
 // Settings level-2 panel for WMS Standalone — a trimmed, warehouse-focused list.
