@@ -248,6 +248,7 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
+    { name: 'Dashboard', icon: 'dashboard' },
     {
       name: 'Reports', icon: 'reports',
       panelSubmenu: [[
@@ -472,6 +473,7 @@ const assignedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.
 const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
     { name: 'Home', icon: 'home' },
+    { name: 'Dashboard', icon: 'dashboard' },
     { name: 'Reports', icon: 'reports' },
   ],
   [
