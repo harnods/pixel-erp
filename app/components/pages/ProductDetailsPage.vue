@@ -251,7 +251,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <MpPopoverListItem @click="router.push(`/product-list/${product.sku}/edit`)">Edit</MpPopoverListItem>
             <MpPopoverListItem @click="printSkuBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem>Duplicate</MpPopoverListItem>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
+            <MpPopoverListItem>Archive</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -400,7 +400,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <th class="pd-th pd-th--num">On hand qty</th>
                     <th class="pd-th pd-th--num">Reserved qty</th>
                     <th class="pd-th pd-th--num">Available qty</th>
-                    <th class="pd-th pd-th--num">In transit</th>
+                    <th class="pd-th pd-th--num">In transit qty</th>
                     <th class="pd-th">Unit</th>
                   </tr>
                 </thead>
@@ -437,7 +437,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <p class="empty-full-title">No transactions</p>
-              <p class="empty-full-desc">Transactions for this product will appear here.</p>
+              <p class="empty-full-desc">Transactions will appear here.</p>
             </div>
 
             <ErpPagination
@@ -455,7 +455,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <p class="empty-full-title">No unit conversions</p>
-              <p class="empty-full-desc">Unit conversions for this product will appear here.</p>
+              <p class="empty-full-desc">Unit conversions will appear here.</p>
             </div>
           </MpTabPanel>
 
@@ -556,7 +556,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <p class="empty-full-title">No batches</p>
-              <p class="empty-full-desc">Batches for this product will appear here.</p>
+              <p class="empty-full-desc">Batches will appear here.</p>
             </div>
 
             <ErpPagination
@@ -622,8 +622,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </div>
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">Not stocked anywhere</p>
-              <p class="empty-full-desc">Warehouses that stock this product will appear here.</p>
+              <p class="empty-full-title">No stock</p>
+              <p class="empty-full-desc">Warehouses will appear here.</p>
             </div>
 
             <ErpPagination
@@ -655,7 +655,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <th class="pd-th pd-th--num">On hand qty</th>
                     <th class="pd-th pd-th--num">Reserved qty</th>
                     <th class="pd-th pd-th--num">Available qty</th>
-                    <th class="pd-th pd-th--num">In transit</th>
+                    <th class="pd-th pd-th--num">In transit qty</th>
                     <th class="pd-th pd-th--num">Min. stock</th>
                     <th class="pd-th">Unit</th>
                   </tr>
@@ -686,8 +686,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </div>
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">Not stocked anywhere</p>
-              <p class="empty-full-desc">Warehouses that stock this product will appear here.</p>
+              <p class="empty-full-title">No stock</p>
+              <p class="empty-full-desc">Warehouses will appear here.</p>
             </div>
 
             <ErpPagination

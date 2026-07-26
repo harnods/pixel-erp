@@ -127,6 +127,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="!!search || !!statusFilter || !!billingFilter"
+    :search="search"
     has-checkbox
     :context-label="(row) => `Sales Delivery #${row.number}`"
     @page-change="setPage"
@@ -272,11 +273,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <MpTooltip
         v-if="row.fulfillmentStatus !== 'direct'"
         :id="`tt-fulfillment-${row.id}`"
-        label="Processed in Fulfillment"
+        label="Processed in fulfillment"
         placement="top"
         use-portal
       >
-        <button class="row-truck-btn" aria-label="Processed in Fulfillment">
+        <button class="row-truck-btn" aria-label="Processed in fulfillment">
           <MpIcon name="truck" size="sm" />
         </button>
       </MpTooltip>

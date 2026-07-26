@@ -19,7 +19,7 @@ const columns: TableColumn[] = [
   { key: 'date',           label: 'Date',            width: '120px',                                sortType: 'date'   },
   { key: 'number',         label: 'Number',          width: '200px', sortable: true,                sortType: 'number' },
   { key: 'customerName',   label: 'Customer',        width: '240px', sortable: true,                sortType: 'text'   },
-  { key: 'expirationDate', label: 'Expiration date', width: '140px',                                sortType: 'date'   },
+  { key: 'expirationDate', label: 'Valid until',      width: '140px',                                sortType: 'date'   },
   { key: 'status',         label: 'Status',          width: '140px',                                sortType: 'text'   },
   { key: 'total',          label: 'Total',           width: '160px', align: 'right', sortable: true, sortType: 'number' },
   { key: 'tags',           label: 'Tags',            width: '160px'                                 },
@@ -107,6 +107,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="!!search || !!statusFilter"
+    :search="search"
     has-checkbox
     :context-label="(row) => `Sales Quote #${row.number}`"
     @page-change="setPage"

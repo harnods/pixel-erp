@@ -303,6 +303,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
+    :search="search"
     :actions-width="actionsWidth"
     :has-checkbox="showCheckbox"
     :bulk-label="kindFilter === 'count' ? 'stock count' : kindFilter === 'in-out' ? 'stock in/out' : 'stock adjustment'"

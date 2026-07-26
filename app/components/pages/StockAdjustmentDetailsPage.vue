@@ -571,7 +571,7 @@ onUnmounted(() => {
                     <span class="detail-jump-item-number">{{ a.number }}</span>
                     <span class="detail-jump-item-customer">{{ a.warehouseName }} · {{ a.category }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -675,8 +675,8 @@ onUnmounted(() => {
       <!-- Line items: WMS stock count → accordion grouped by storage location -->
       <div v-if="isWmsCount && locViewMode === 'location' && !groupedByLocation.length" class="empty-inline">
         <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
-        <p class="empty-inline-title">No results found</p>
-        <p class="empty-inline-desc">Try adjusting your search or filters.</p>
+        <p class="empty-inline-title">No results match your filters</p>
+        <p class="empty-inline-desc">Recheck the filters you have applied and try filtering again.</p>
         <a class="empty-inline-clear" @click="locSearch = ''">Clear all filters</a>
       </div>
       <MpAccordion v-if="isWmsCount && locViewMode === 'location' && groupedByLocation.length" is-allow-multiple is-allow-toggle class="detail-loc-accordions">
@@ -690,7 +690,7 @@ onUnmounted(() => {
           <MpAccordionHeader>
             <MpAccordionIcon />
             <span class="detail-acc-label">{{ group.location === '—' ? 'No location assigned' : group.location }}</span>
-            <span class="detail-acc-meta">SKU Qty: {{ new Set(group.items.map(i => i.sku)).size }}</span>
+            <span class="detail-acc-meta">SKUs: {{ new Set(group.items.map(i => i.sku)).size }}</span>
           </MpAccordionHeader>
           <MpAccordionPanel>
             <div class="detail-acc-body">
@@ -744,7 +744,7 @@ onUnmounted(() => {
                         <MpPopover v-if="hasVariance(item.difference)" :id="`reason-loc-${item.key}`" is-close-on-select use-portal placement="bottom-start">
                           <MpPopoverTrigger>
                             <MpSelect
-                              :id="`reason-loc-sel-${item.key}`" placeholder="Select reason..." is-full-width size="sm"
+                              :id="`reason-loc-sel-${item.key}`" placeholder="Select reason" is-full-width size="sm"
                               :model-value="varianceReasons[item.sku] || undefined"
                               @mousedown.prevent
                             >
@@ -760,7 +760,7 @@ onUnmounted(() => {
                             </MpPopoverList>
                           </MpPopoverContent>
                         </MpPopover>
-                        <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width size="sm" />
+                        <MpSelect v-else placeholder="Select reason" is-disabled is-full-width size="sm" />
                       </td>
                     </tr>
                   </tbody>
@@ -815,7 +815,7 @@ onUnmounted(() => {
                   <MpPopover v-if="hasVariance(row.difference)" :id="`reason-sku-${row.sku}`" is-close-on-select use-portal placement="bottom-start">
                     <MpPopoverTrigger>
                       <MpSelect
-                        :id="`reason-sku-sel-${row.sku}`" placeholder="Select reason..." is-full-width size="sm"
+                        :id="`reason-sku-sel-${row.sku}`" placeholder="Select reason" is-full-width size="sm"
                         :model-value="varianceReasons[row.sku] || undefined"
                         @mousedown.prevent
                       >
@@ -831,7 +831,7 @@ onUnmounted(() => {
                       </MpPopoverList>
                     </MpPopoverContent>
                   </MpPopover>
-                  <MpSelect v-else placeholder="Select reason..." is-disabled is-full-width size="sm" />
+                  <MpSelect v-else placeholder="Select reason" is-disabled is-full-width size="sm" />
                 </td>
                 <td class="detail-td detail-td--action">
                   <template v-if="!isNotStarted">
@@ -865,7 +865,7 @@ onUnmounted(() => {
                 <th class="detail-th">Product</th>
                 <th class="detail-th">SKU</th>
                 <template v-if="isCount">
-                  <th class="detail-th detail-th--num">Prev. on hand</th>
+                  <th class="detail-th detail-th--num">Prev. on hand qty</th>
                   <th class="detail-th detail-th--num">Counted</th>
                   <th class="detail-th detail-th--num">Difference</th>
                 </template>

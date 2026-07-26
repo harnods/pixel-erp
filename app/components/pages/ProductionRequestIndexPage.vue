@@ -534,8 +534,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Empty state ── -->
     <div v-else class="empty-full">
       <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-      <p class="empty-full-title">{{ hasActiveFilter ? (search ? `"${search}" not found` : 'Production request not found') : 'No production requests' }}</p>
-      <p class="empty-full-desc">{{ hasActiveFilter ? (search ? 'Recheck the keywords you have typed and try searching again.' : 'Your filter criteria didn\'t match any available production request. Try adjusting your filter.') : 'Production request will appear here.' }}</p>
+      <p class="empty-full-title">{{ hasActiveFilter ? (search ? `"${search}" not found` : 'No production requests match your filters') : 'No production requests' }}</p>
+      <p class="empty-full-desc">{{ hasActiveFilter ? (search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.') : 'Production request will appear here.' }}</p>
       <a v-if="hasActiveFilter" class="empty-clear" @click="clearFilters">Clear filters</a>
     </div>
   </div>

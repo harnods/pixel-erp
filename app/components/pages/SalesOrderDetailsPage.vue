@@ -31,7 +31,7 @@ function handleCreateProductionRequest() {
     toast.notify({ variant: 'warning', title: 'No registered products on this order to produce' })
     return
   }
-  toast.notify({ variant: 'success', title: 'Production request created' })
+  toast.notify({ variant: 'success', title: 'Production request saved' })
   router.push('/production-request')
 }
 const activityOpen = ref(false)
@@ -187,7 +187,7 @@ function goBack() { router.push('/sales-orders') }
                     <span class="detail-jump-item-number">Sales Order #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.customer.name }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -413,7 +413,7 @@ function goBack() { router.push('/sales-orders') }
               </thead>
               <tbody>
                 <tr v-if="!order.linkedTransactions.length">
-                  <td class="detail-td detail-td--muted" colspan="4">No linked transactions.</td>
+                  <td class="detail-td detail-td--muted" colspan="4">No linked transactions</td>
                 </tr>
                 <tr v-for="(t, i) in order.linkedTransactions" :key="i" class="detail-item-row">
                   <td class="detail-td">{{ formatDateNumeric(t.date) }}</td>

@@ -115,6 +115,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="!!search || !!statusFilter"
+    :search="search"
     has-checkbox
     :context-label="(row) => `Sales Order #${row.number}`"
     @page-change="setPage"
