@@ -337,7 +337,6 @@ const erpNavGroups: NavItem[][] = [
       expandOnClick: true,
       submenu: [
         [
-          { label: 'Overview' },
           { label: 'Warehouses' },
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
