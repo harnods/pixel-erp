@@ -429,7 +429,7 @@ const erpNavGroups: NavItem[][] = [
         { label: 'CRM', iconType: 'shortcut' },
         { label: 'HR & Payroll', iconType: 'shortcut' },
         { label: 'e-Signature', iconType: 'shortcut' },
-        { label: 'Tax' },
+        // { label: 'Tax' }, // Klikpajak paywall/first-run hidden for now
         { label: 'Mekari Pay' },
         { label: 'Mekari Expense', iconType: 'shortcut' },
       ]],
