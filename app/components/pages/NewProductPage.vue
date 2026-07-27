@@ -7,6 +7,7 @@
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, toast,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, css,
 } from '@mekari/pixel3'
 import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.vue'
 import { PRODUCTS, type Product } from '~/data/inventory'
@@ -52,6 +53,12 @@ const salesPrice = ref('')
 const salesAccount = ref('4-40000 Revenues')
 const salesTax = ref('')
 const discountAccount = ref('')
+
+// Tax info — Product classification determines VAT treatment (goods vs. service);
+// Classification code is the DJP/KLU code used on the e-Faktur.
+const productClassification = ref<'Goods' | 'Service' | ''>('')
+const classificationCode = ref('')
+const djpUnit = ref('')
 
 // Prefill in edit mode — only custom (user-created) products carry the full set
 // of form fields; a seed CATALOG product can still be opened for edit but only
@@ -100,6 +107,42 @@ const discountAccountOptions = [
   { label: '4-41000 Sales Returns & Allowances', value: '4-41000 Sales Returns & Allowances' },
 ]
 const taxOptions = [{ label: 'PPN 11%', value: 'PPN 11%' }]
+const classificationCodeOptions = [
+  { label: '090111 - Kopi, tidak disangrai, tidak dihilangkan kafeinnya', value: '090111' },
+  { label: '100630 - Beras', value: '100630' },
+  { label: '210690 - Makanan olahan lainnya', value: '210690' },
+  { label: '392690 - Barang dari plastik lainnya', value: '392690' },
+]
+// DJP (tax office) unit lists — Goods vs. Services have distinct vocabularies per
+// the e-Faktur spec, so the options shown depend on Product classification.
+const djpUnitGoodsList = [
+  'Ampere', 'Barrel', 'Box', 'Drum', 'Gram', 'Inch', 'Carat', 'Carton', 'Kilogram',
+  'Kiloliter', 'Others', 'Sheet', 'Liter', 'Dozen', 'MMBTU', 'Meter', 'Square meter',
+  'Metric Ton', 'Piece', 'Centimeter', 'Cubic Centimeter', 'Set', 'Unit', 'Wet Ton', 'Yard',
+]
+const djpUnitServiceList = [
+  'Material', 'Month', 'Day', 'Hour', 'Activities', 'Other', 'Report', 'Minute', 'Week', 'Percent', 'Year',
+]
+const djpUnitOptions = computed(() =>
+  (productClassification.value === 'Service' ? djpUnitServiceList : djpUnitGoodsList)
+    .map(u => ({ label: u, value: u })),
+)
+
+// Base unit → DJP unit — when the product's base unit has an obvious DJP
+// equivalent, preselect it instead of making the user pick the same thing twice.
+const BASE_UNIT_TO_DJP_GOODS: Record<string, string> = {
+  Pcs: 'Piece', Piece: 'Piece', Kg: 'Kilogram', Kilogram: 'Kilogram', Box: 'Box', Unit: 'Unit',
+  Liter: 'Liter', Ltr: 'Liter', Gram: 'Gram', Meter: 'Meter', Dozen: 'Dozen', Set: 'Set',
+  Carton: 'Carton', Drum: 'Drum', Barrel: 'Barrel', Sheet: 'Sheet', Yard: 'Yard', Inch: 'Inch', Ampere: 'Ampere',
+}
+function preselectDjpUnit() {
+  const mapped = productClassification.value === 'Service' ? undefined : BASE_UNIT_TO_DJP_GOODS[unit.value]
+  if (mapped && djpUnitOptions.value.some(o => o.value === mapped)) {
+    djpUnit.value = mapped
+    djpUnitError.value = ''
+  }
+}
+watch([unit, productClassification], preselectDjpUnit)
 
 // ── Photo upload (drag & drop + choose file) — stored as a data URL so it
 // survives a refresh via the same localStorage snapshot as the rest of the record ──
@@ -126,8 +169,77 @@ const nameError = ref('')
 const skuError = ref('')
 const categoryError = ref('')
 const unitError = ref('')
+const classificationError = ref('')
+const classificationCodeError = ref('')
+const djpUnitError = ref('')
 const isSaving = ref(false)
 const isSavingAndAdding = ref(false)
+
+// ─── Demo scenario state (FAB) — previews Tax info's Figma variants ───────────
+type DemoState = 'empty' | 'data' | 'ai_matched'
+const demoState = ref<DemoState>('empty')
+const demoStates: { value: DemoState; label: string }[] = [
+  { value: 'data', label: 'With data' },
+  { value: 'empty', label: 'Empty state' },
+  { value: 'ai_matched', label: 'AI matched' },
+]
+function setDemoState(s: DemoState) {
+  demoState.value = s
+  if (s === 'empty') {
+    productType.value = 'single'
+    hasVariants.value = false
+    name.value = ''
+    sku.value = ''
+    barcode.value = ''
+    category.value = ''
+    unit.value = 'Pcs'
+    description.value = ''
+    photoDataUrl.value = ''
+    minStock.value = ''
+    trackStock.value = true
+    trackStockBy.value = 'Quantity'
+    inventoryAccount.value = '1-10200 Inventory'
+    doesBuy.value = true
+    purchaseCost.value = ''
+    purchaseAccount.value = '5-50000 Cost of Sales'
+    purchaseTax.value = ''
+    doesSell.value = true
+    salesPrice.value = ''
+    salesAccount.value = '4-40000 Revenues'
+    salesTax.value = ''
+    discountAccount.value = ''
+    productClassification.value = ''
+    classificationCode.value = ''
+    djpUnit.value = ''
+  } else {
+    // 'data' and 'ai_matched' share the same sample product — Airene's suggestion
+    // reads the name/description, so the AI-matched preview needs them filled too.
+    name.value = 'Kopi Arabika Gayo 250g'
+    sku.value = 'COF-ARB-250'
+    barcode.value = '8991234567890'
+    category.value = categoryOptions.value[0]?.value ?? ''
+    unit.value = 'Pcs'
+    description.value = 'Single-origin arabica coffee beans from Gayo highlands, medium roast, 250g pack.'
+    minStock.value = '10'
+    trackStock.value = true
+    trackStockBy.value = 'Quantity'
+    inventoryAccount.value = '1-10200 Inventory'
+    doesBuy.value = true
+    purchaseCost.value = '45000'
+    purchaseAccount.value = '5-50000 Cost of Sales'
+    purchaseTax.value = 'PPN 11%'
+    doesSell.value = true
+    salesPrice.value = '75000'
+    salesAccount.value = '4-40000 Revenues'
+    salesTax.value = 'PPN 11%'
+    discountAccount.value = '4-40900 Sales Discounts'
+    productClassification.value = 'Goods'
+    classificationCode.value = '090111'
+    preselectDjpUnit()
+  }
+  nameError.value = skuError.value = categoryError.value = unitError.value = ''
+  classificationError.value = classificationCodeError.value = djpUnitError.value = ''
+}
 
 function goBack() {
   router.push(isEdit.value ? `/product-list/${props.orderId}` : '/product-list')
@@ -143,6 +255,9 @@ function validate(): boolean {
   skuError.value = ''
   categoryError.value = ''
   unitError.value = ''
+  classificationError.value = ''
+  classificationCodeError.value = ''
+  djpUnitError.value = ''
 
   if (!name.value.trim()) nameError.value = 'You must fill in product name'
 
@@ -159,7 +274,14 @@ function validate(): boolean {
   if (!category.value) categoryError.value = 'You must select category'
   if (!unit.value) unitError.value = 'You must select base unit'
 
-  return !(nameError.value || skuError.value || categoryError.value || unitError.value)
+  if (!productClassification.value) classificationError.value = 'You must select product classification'
+  if (!classificationCode.value) classificationCodeError.value = 'You must select classification code'
+  if (!djpUnit.value) djpUnitError.value = 'You must select DJP unit'
+
+  return !(
+    nameError.value || skuError.value || categoryError.value || unitError.value
+    || classificationError.value || classificationCodeError.value || djpUnitError.value
+  )
 }
 
 function buildPayload(): Omit<Product, 'id'> {
@@ -197,7 +319,11 @@ function resetForm() {
   purchaseCost.value = ''
   doesSell.value = true
   salesPrice.value = ''
+  productClassification.value = ''
+  classificationCode.value = ''
+  djpUnit.value = ''
   nameError.value = skuError.value = categoryError.value = unitError.value = ''
+  classificationError.value = classificationCodeError.value = djpUnitError.value = ''
 }
 
 async function save() {
@@ -255,6 +381,21 @@ onMounted(() => {
   })
 })
 onUnmounted(() => { stageObserver?.disconnect() })
+
+// ── Demo scenario FAB — pinned 32px above the footer, not the viewport bottom ──
+const footerEl = ref<HTMLElement | null>(null)
+const fabBottom = ref(24)
+let footerObserver: ResizeObserver | null = null
+onMounted(() => {
+  nextTick(() => {
+    if (footerEl.value) {
+      fabBottom.value = footerEl.value.offsetHeight + 24
+      footerObserver = new ResizeObserver(() => { fabBottom.value = (footerEl.value?.offsetHeight ?? 0) + 24 })
+      footerObserver.observe(footerEl.value)
+    }
+  })
+})
+onUnmounted(() => { footerObserver?.disconnect() })
 </script>
 
 <template>
@@ -394,6 +535,62 @@ onUnmounted(() => { stageObserver?.disconnect() })
         </div>
       </div>
 
+      <!-- ── Tax info ── -->
+      <div class="nw-form-group np-full">
+        <div class="nw-section">
+          <h2 class="nw-section-title">Tax info</h2>
+          <div class="nw-section-spacer" />
+
+          <div class="nw-fields">
+
+            <!-- Product classification -->
+            <MpFormControl id="np-classification" is-required :is-invalid="!!classificationError">
+              <MpFormLabel>Product classification</MpFormLabel>
+              <div class="np-radio-group">
+                <label class="np-radio-item">
+                  <MpRadio id="np-classification-goods" name="np-classification" value="Goods" :is-checked="productClassification === 'Goods'" @change="productClassification = 'Goods'; classificationError = ''" />
+                  <span>Goods</span>
+                </label>
+                <label class="np-radio-item">
+                  <MpRadio id="np-classification-service" name="np-classification" value="Service" :is-checked="productClassification === 'Service'" @change="productClassification = 'Service'; classificationError = ''" />
+                  <span>Service</span>
+                </label>
+              </div>
+              <MpFormErrorMessage>{{ classificationError }}</MpFormErrorMessage>
+            </MpFormControl>
+
+            <!-- Classification code + DJP unit -->
+            <div class="nw-row">
+              <div class="np-field-270 np-ai-field">
+                <MpFormControl id="np-classification-code" :class="{ 'np-ai-select': demoState === 'ai_matched' }" is-required :is-invalid="!!classificationCodeError">
+                  <MpFormLabel>Classification code</MpFormLabel>
+                  <MpAutocomplete
+                    id="np-classification-code-ac" v-model="classificationCode" :data="classificationCodeOptions" label-prop="label" value-prop="value"
+                    placeholder="Select classification code" is-searchable use-portal is-full-width :is-invalid="!!classificationCodeError"
+                    @update:model-value="classificationCodeError = ''"
+                  />
+                  <MpFormErrorMessage>{{ classificationCodeError }}</MpFormErrorMessage>
+                </MpFormControl>
+                <div v-if="demoState === 'ai_matched'" class="np-ai-banner">
+                  <MpIcon name="airene-brand" size="sm" />
+                  <span>AI matched — Matches product name &amp; description</span>
+                </div>
+              </div>
+              <MpFormControl id="np-djp-unit" class="np-field-270" is-required :is-invalid="!!djpUnitError">
+                <MpFormLabel>DJP unit</MpFormLabel>
+                <MpAutocomplete
+                  id="np-djp-unit-ac" v-model="djpUnit" :data="djpUnitOptions" label-prop="label" value-prop="value"
+                  placeholder="Select DJP unit" is-searchable use-portal is-full-width :is-invalid="!!djpUnitError"
+                  @update:model-value="djpUnitError = ''"
+                />
+                <MpFormErrorMessage>{{ djpUnitError }}</MpFormErrorMessage>
+              </MpFormControl>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
       <!-- ── Pricing & inventory info (WMS: "Inventory info" — no pricing) ── -->
       <div class="nw-form-group np-full">
         <div class="nw-section">
@@ -510,13 +707,29 @@ onUnmounted(() => { stageObserver?.disconnect() })
     </div>
 
     <!-- ── Sticky footer ── -->
-    <div class="nw-footer" :class="{ 'nw-footer--floating': stageOverflowing }">
+    <div ref="footerEl" class="nw-footer" :class="{ 'nw-footer--floating': stageOverflowing }">
       <button class="nw-btn-cancel" @click="goBack">Cancel</button>
       <button v-if="!isEdit" class="nw-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="saveAndAdd">
         {{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}
       </button>
       <button class="nw-btn-save" :disabled="isSaving || isSavingAndAdding" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</button>
     </div>
+
+    <!-- ── Demo scenario FAB — Tax info preview states ── -->
+    <MpPopover id="np-demo-fab" is-close-on-select use-portal placement="top-end">
+      <MpPopoverTrigger>
+        <button class="demo-fab" :style="{ bottom: fabBottom + 'px' }" aria-label="Change scenario state"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+      </MpPopoverTrigger>
+      <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+        <p class="demo-fab-heading">Scenario state</p>
+        <MpPopoverList>
+          <MpPopoverListItem
+            v-for="s in demoStates" :key="s.value"
+            :is-active="s.value === demoState" @click="setDemoState(s.value)"
+          >{{ s.label }}</MpPopoverListItem>
+        </MpPopoverList>
+      </MpPopoverContent>
+    </MpPopover>
   </div>
 </template>
 
@@ -665,4 +878,28 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: var(--mp-background-inverse); color: var(--mp-text-inverse); cursor: pointer; opacity: 0.85;
 }
 .np-photo-remove:hover { opacity: 1; }
+
+/* Tax info — AI-matched banner attaches to the classification code select's
+   bottom edge (select gets -8px margin + z-index so its border sits on top) */
+.np-ai-field { display: flex; flex-direction: column; }
+.np-ai-select { margin-bottom: -8px; position: relative; z-index: 2; }
+.np-ai-banner {
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
+  position: relative; z-index: 1;
+  background: var(--mp-airene-banner-bg, #f6f3ff); color: var(--mp-airene-banner-text, #5221a5);
+  padding: 16px 6px 6px; border-radius: 0 0 var(--mp-radii-md) var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px);
+}
+
+/* Demo scenario FAB — mirrors ShippedIndexPage.vue's .demo-fab */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-inverse); color: var(--mp-text-inverse); cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+}
+.demo-fab:hover { opacity: 0.9; }
+.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>
