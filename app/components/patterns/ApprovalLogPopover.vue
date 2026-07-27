@@ -12,7 +12,7 @@
  */
 import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpAvatar, css } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { overallApprovalStatus, type ApprovalLevel } from '~/data/tasks'
+import { type ApprovalLevel, type ApprovalStep } from '~/data/tasks'
 import { formatDateTime } from '~/utils/date'
 
 const props = defineProps<{
@@ -24,26 +24,32 @@ const props = defineProps<{
 
 const open = ref(false)
 const expanded = ref<Set<number>>(new Set())
+
 function toggleStage(i: number) {
   const s = new Set(expanded.value)
   s.has(i) ? s.delete(i) : s.add(i)
   expanded.value = s
 }
 
-const overallLabel = computed(() => {
-  const status = overallApprovalStatus(props.levels)
-  return status === 'approved' ? 'Approved' : status === 'rejected' ? 'Rejected' : 'Pending'
-})
-
 function ruleText(level: ApprovalLevel) {
   return level.rule === 'any'
     ? 'Anyone can approve'
     : `Everyone must approve (${level.approvedCount} of ${level.steps.length})`
 }
+
+function stepAction(status: ApprovalStep['status']) {
+  if (status === 'approved') return 'Approved'
+  if (status === 'rejected') return 'Rejected'
+  return 'Awaiting approval'
+}
+
+function stepPrep(status: ApprovalStep['status']) {
+  return status === 'awaiting approval' ? 'from' : 'by'
+}
 </script>
 
 <template>
-  <div class="icon-tooltip-wrap">
+  <div>
     <MpPopover
       :id="id"
       is-manual
@@ -55,27 +61,26 @@ function ruleText(level: ApprovalLevel) {
       @close="open = false"
     >
       <MpPopoverTrigger>
-        <button class="row-icon-btn" aria-label="Approval log" type="button" @click.stop="open = !open">
+        <button
+          v-tooltip="{ label: 'Approval log', placement: 'top' }"
+          class="row-icon-btn"
+          aria-label="Approval log"
+          type="button"
+          @click.stop="open = !open"
+        >
           <MpIcon name="task-todo" size="md" />
         </button>
       </MpPopoverTrigger>
       <MpPopoverContent
-        :class="css({ width: '360px', padding: '0', overflow: 'hidden', borderColor: 'border.default' })"
+        :class="css({ width: '360px', padding: '0', overflow: 'hidden' })"
         @blur="open = false"
         @escape="open = false"
       >
         <div class="alp-header">
-          <span class="alp-title">Approval log - {{ overallLabel }}</span>
-          <button class="alp-close" aria-label="Close" @click.stop="open = false">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-          </button>
+          <span class="alp-title">Approval log</span>
         </div>
 
         <div class="alp-body">
-          <h3 class="alp-subject">{{ subject }}</h3>
-
           <div class="alp-timeline">
             <!-- Requested-by entry -->
             <div class="alp-row">
@@ -87,81 +92,75 @@ function ruleText(level: ApprovalLevel) {
             </div>
 
             <!-- Approval stages -->
-            <div v-for="(level, li) in levels" :key="li" class="alp-row">
-              <button
-                class="alp-marker"
-                :aria-label="expanded.has(li) ? 'Collapse' : 'Expand'"
-                @click.stop="toggleStage(li)"
-              >
-                <svg v-if="!expanded.has(li)" width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-                <svg v-else width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-              </button>
-              <div class="alp-row-content">
-                <div class="alp-row-top">
+            <template v-for="(level, li) in levels" :key="li">
+              <div class="alp-row">
+                <button
+                  class="alp-marker"
+                  :aria-label="expanded.has(li) ? 'Collapse' : 'Expand'"
+                  @click.stop="toggleStage(li)"
+                >
+                  <svg v-if="!expanded.has(li)" width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                  <svg v-else width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+                <div class="alp-row-content">
                   <span class="alp-row-title">{{ level.label }}</span>
-                  <ErpStatusBadge :status="level.status" size="sm" />
-                </div>
-                <span class="alp-row-sub">{{ ruleText(level) }}</span>
-
-                <div v-if="expanded.has(li)" class="alp-approvers">
-                  <div v-for="(step, si) in level.steps" :key="si" class="alp-approver">
-                    <MpAvatar :name="step.name" size="sm" variant-color="sky" />
-                    <div class="alp-approver-body">
-                      <div class="alp-approver-top">
-                        <span class="alp-approver-name">{{ step.name }}</span>
-                        <ErpStatusBadge :status="step.status" size="sm" />
-                      </div>
-                      <span class="alp-approver-role">{{ step.role }}</span>
-                      <span v-if="step.timestamp" class="alp-approver-time">{{ formatDateTime(step.timestamp) }}</span>
-                      <p v-if="step.comment" class="alp-approver-comment">{{ step.comment }}</p>
-                    </div>
+                  <div class="alp-row-sub-line">
+                    <span class="alp-row-sub">{{ ruleText(level) }}</span>
+                    <ErpStatusBadge :status="level.status" size="sm" />
                   </div>
                 </div>
               </div>
-            </div>
+
+              <!-- Expanded: each approver step as its own timeline row -->
+              <template v-if="expanded.has(li)">
+                <div v-for="(step, si) in level.steps" :key="si" class="alp-row alp-row--step">
+                  <span class="alp-step-icon" :class="`alp-step-icon--${step.status.replace(' ', '-')}`">
+                    <!-- approved: checkmark -->
+                    <svg v-if="step.status === 'approved'" width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M5 13L9 17L19 7" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <!-- rejected: X -->
+                    <svg v-else-if="step.status === 'rejected'" width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M6 6L18 18M18 6L6 18" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                    </svg>
+                    <!-- awaiting: clock hands only (circle is the icon background) -->
+                    <svg v-else width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 6V12L15.5 14.5" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <div class="alp-row-content">
+                    <span class="alp-row-title">
+                      <strong>{{ stepAction(step.status) }}</strong>
+                      {{ stepPrep(step.status) }}
+                      <strong>{{ step.name }}</strong>
+                    </span>
+                    <span v-if="step.timestamp" class="alp-row-time">{{ formatDateTime(step.timestamp) }}</span>
+                    <p v-if="step.comment" class="alp-approver-comment">{{ step.comment }}</p>
+                  </div>
+                </div>
+              </template>
+            </template>
           </div>
         </div>
       </MpPopoverContent>
     </MpPopover>
-    <span class="icon-tooltip">Approval log</span>
   </div>
 </template>
 
 <style scoped>
-/* ── Tooltip: plain CSS, 4px gap above the trigger — avoids MpTooltip's
-     cloneVNode/inheritAttrs interaction with MpPopoverTrigger (see memory). ── */
-.icon-tooltip-wrap { position: relative; display: inline-flex; }
-.icon-tooltip {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-inverse, #1f2937);
-  color: var(--mp-text-inverse, #fff);
-  font-size: var(--mp-font-sizes-xs, 11px);
-  line-height: var(--mp-line-heights-xs, 16px);
-  border-radius: var(--mp-radii-sm);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 100ms;
-  z-index: 10;
-}
-.icon-tooltip-wrap:hover .icon-tooltip { opacity: 1; }
-
-/* ── Header ── */
+/* ── Header — bg fill + Figma's asymmetric padding (pl:16/pr:12/py:12),
+     matching ApprovalCommentPopover's .acp-header exactly ── */
 .alp-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-4);
-  background: var(--mp-background-surface, #f8fafc);
+  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle, #f0f1f3);
   border-bottom: 1px solid var(--mp-border-default);
 }
 .alp-title {
@@ -169,20 +168,6 @@ function ruleText(level: ApprovalLevel) {
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
-.alp-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mp-sizes-6, 24px);
-  height: var(--mp-sizes-6, 24px);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral);
-  color: var(--mp-text-secondary);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.alp-close:hover { background: var(--mp-background-neutral-hovered); }
 
 /* ── Body ── */
 .alp-body {
@@ -190,42 +175,56 @@ function ruleText(level: ApprovalLevel) {
   max-height: 420px;
   overflow-y: auto;
 }
-.alp-subject {
-  margin: 0 0 var(--mp-spacing-4);
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
 
-/* ── Timeline ── */
+/* ── Timeline — spacing pulled from Figma (node 754:912): every row's
+     content column uses the SAME padding-top:8/padding-bottom:16, regardless
+     of whether it's a top-level stage row or a nested step row. All icon
+     slots (dot/marker/step-icon) are a uniform 20x20px box so the connector
+     line's x-position and every row's text column line up identically.
+
+     The trunk line is drawn PER ROW (full row height, top:0 to bottom:0),
+     not as one guessed-height overlay spanning the whole timeline — row
+     height varies with content (wrapped titles, badges), so a single static
+     inset either falls short or overshoots. Each row's own segment is
+     naturally exactly as tall as that row, so consecutive rows' segments
+     meet with no gap between them (the icon just renders on top of the line
+     via z-index, hiding the portion behind it) — and :not(:last-child)
+     means the very last row never grows a trailing tail below its icon. ── */
 .alp-timeline { position: relative; }
-.alp-timeline::before {
-  content: '';
-  position: absolute;
-  left: 9px;
-  top: 12px;
-  bottom: 12px;
-  width: 1px;
-  background: var(--mp-border-default);
-}
 
 .alp-row {
   position: relative;
   display: flex;
+  align-items: flex-start;
   gap: var(--mp-spacing-3);
-  padding-bottom: var(--mp-spacing-4);
 }
-.alp-row:last-child { padding-bottom: 0; }
+.alp-row:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--mp-border-default);
+}
 
 .alp-dot {
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  margin-top: 4px;
+  width: 20px;
+  height: 20px;
+  margin-top: var(--mp-spacing-2, 8px);
+}
+.alp-dot::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 12px;
+  height: 12px;
   border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-brand, var(--mp-text-selected, #16a34a));
+  background: var(--mp-icon-brand, #029861);
 }
 
 .alp-marker {
@@ -237,6 +236,7 @@ function ruleText(level: ApprovalLevel) {
   flex-shrink: 0;
   width: 20px;
   height: 20px;
+  margin-top: var(--mp-spacing-2, 8px);
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-sm);
   background: var(--mp-background-neutral);
@@ -248,9 +248,11 @@ function ruleText(level: ApprovalLevel) {
 .alp-row-content {
   display: flex;
   flex-direction: column;
-  gap: var(--mp-spacing-0\.5);
+  gap: 0;
   min-width: 0;
   flex: 1;
+  padding-top: var(--mp-spacing-2, 8px);
+  padding-bottom: var(--mp-spacing-4, 16px);
 }
 .alp-row-top {
   display: flex;
@@ -266,34 +268,58 @@ function ruleText(level: ApprovalLevel) {
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-secondary);
 }
+.alp-row-sub-line {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  flex-wrap: wrap;
+}
 
-/* ── Expanded approver list ── */
-.alp-approvers {
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-3);
-  margin-top: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3);
-  background: var(--mp-background-neutral-subtle);
-  border-radius: var(--mp-radii-md);
+/* ── Step rows — indented with horizontal connector (tick) from the main
+     line to the step icon. Figma: tick is 16px, with a 6px gap before the
+     20px icon — icon indent = trunk position(9) + tick(16) + gap(6) = 31px. ── */
+.alp-row--step {
+  padding-left: 31px;
 }
-.alp-approver { display: flex; gap: var(--mp-spacing-2); }
-.alp-approver-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-0\.5);
-  min-width: 0;
+.alp-row--step::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  /* Centers on the 20px step icon: icon's own margin-top (8px) + half its
+     height (10px) — matches .alp-step-icon's margin-top below. */
+  top: calc(var(--mp-spacing-2, 8px) + 10px);
+  width: 16px;
+  height: 1px;
+  background: var(--mp-border-default);
+  z-index: 2;
 }
-.alp-approver-top { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.alp-approver-name {
-  font-size: var(--mp-font-sizes-sm);
+
+/* Step title: mixed bold/regular; override the default semi-bold */
+.alp-row--step .alp-row-title {
+  font-weight: var(--mp-font-weights-regular);
+}
+.alp-row--step .alp-row-title strong {
   font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
 }
-.alp-approver-role, .alp-approver-time {
-  font-size: var(--mp-font-sizes-xs, 11px);
-  color: var(--mp-text-secondary);
+
+/* ── Step icon (approver status circle) ── */
+.alp-step-icon {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: var(--mp-spacing-2, 8px);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-text-secondary);
 }
+.alp-step-icon--approved { background: var(--mp-icon-success, #1fb088); }
+.alp-step-icon--awaiting-approval { background: var(--mp-icon-warning, #e46910); }
+.alp-step-icon--rejected { background: #dc2626; }
+
 .alp-approver-comment {
   margin: var(--mp-spacing-1) 0 0;
   padding: var(--mp-spacing-2);

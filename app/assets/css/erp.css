@@ -17,10 +17,10 @@
 
 /* Secondary (ERP) — #8c9596 border, black text on a neutral fill. */
 .btn-enterprise--secondary {
-  background: var(--mp-background-neutral);
-  border-color: var(--mp-border-bold);
-  color: var(--mp-text-default);
-  font-weight: var(--mp-font-weights-regular);
+  background: var(--mp-background-neutral, white);
+  border-color: var(--mp-border-default, #e3e7e9);
+  color: var(--mp-text-secondary, #3a4749);
+  font-weight: var(--mp-font-weights-semi-bold, 600);
 }
 .btn-enterprise--secondary:hover { background: var(--mp-background-neutral-hovered); }
 

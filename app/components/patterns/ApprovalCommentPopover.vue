@@ -7,8 +7,13 @@
  *
  * Posting is local-only (demo has no backend) — new comments are appended to an
  * internal copy of the `comments` prop, not persisted back to the task.
+ *
+ * Layout/spacing matches Figma node 750:3046 ("Modal / View Comments"):
+ * header bg fill, per-comment avatar+name/timestamp row followed by an
+ * indented (32px) comment-text row, @mention highlighting, and a pill-shaped
+ * composer with a circular send button.
  */
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpAvatar, MpTextarea, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpAvatar, css } from '@mekari/pixel3'
 import type { TaskComment } from '~/data/tasks'
 import { formatDateTime } from '~/utils/date'
 
@@ -32,10 +37,35 @@ function post() {
   })
   draft.value = ''
 }
+
+// Deterministic per-author avatar color, matching the Figma reference's varied
+// (warning/success/etc) avatar backgrounds rather than one fixed color for everyone.
+const avatarColors = ['sky', 'teal', 'violet', 'amber', 'rose', 'lime', 'pink'] as const
+function avatarColorFor(name: string) {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
+  return avatarColors[hash % avatarColors.length]
+}
+
+// Splits comment text on "@Mention" / "@Multi Word Mention" so the template
+// can render mentions in the highlighted mention color.
+const mentionPattern = /@[A-Z][a-zA-Z]*(?:\s[A-Z][a-zA-Z]*)?/g
+function commentParts(text: string) {
+  const parts: { text: string; isMention: boolean }[] = []
+  let lastIndex = 0
+  for (const match of text.matchAll(mentionPattern)) {
+    const start = match.index ?? 0
+    if (start > lastIndex) parts.push({ text: text.slice(lastIndex, start), isMention: false })
+    parts.push({ text: match[0], isMention: true })
+    lastIndex = start + match[0].length
+  }
+  if (lastIndex < text.length) parts.push({ text: text.slice(lastIndex), isMention: false })
+  return parts
+}
 </script>
 
 <template>
-  <div class="icon-tooltip-wrap">
+  <div>
     <MpPopover
       :id="id"
       is-manual
@@ -47,63 +77,67 @@ function post() {
       @close="open = false"
     >
       <MpPopoverTrigger>
-        <button class="row-icon-btn" aria-label="Comments" type="button" @click.stop="open = !open">
+        <button
+          v-tooltip="{ label: 'Comments', placement: 'top' }"
+          class="row-icon-btn"
+          aria-label="Comments"
+          type="button"
+          @click.stop="open = !open"
+        >
           <MpIcon name="comment" size="md" />
         </button>
       </MpPopoverTrigger>
-      <MpPopoverContent :class="css({ width: '320px', padding: '0' })" @blur="open = false" @escape="open = false">
+      <MpPopoverContent :class="css({ width: '360px', padding: '0', overflow: 'hidden' })" @blur="open = false" @escape="open = false">
         <div class="acp-header">Comments</div>
 
-        <div class="acp-list">
-          <p v-if="!localComments.length" class="acp-empty">No comments yet</p>
+        <div class="acp-list" :class="{ 'acp-list--empty': !localComments.length }">
+          <div v-if="!localComments.length" class="acp-blank-slate">
+            <img src="/illustrations/start-chat.png" alt="" class="acp-blank-slate__img" width="288" height="240">
+            <p class="acp-blank-slate__title">No comments yet</p>
+            <p class="acp-blank-slate__desc">Start a discussion or leave a note for this transaction.</p>
+          </div>
           <div v-for="c in localComments" :key="c.id" class="acp-comment">
-            <MpAvatar :name="c.author" size="sm" variant-color="sky" />
-            <div class="acp-comment-body">
-              <div class="acp-comment-top">
+            <div class="acp-comment-header">
+              <MpAvatar :name="c.author" size="md" :variant-color="avatarColorFor(c.author)" />
+              <div class="acp-comment-col">
                 <span class="acp-comment-author">{{ c.author }}</span>
                 <span class="acp-comment-time">{{ formatDateTime(c.timestamp) }}</span>
               </div>
-              <p class="acp-comment-text">{{ c.text }}</p>
+            </div>
+            <div class="acp-comment-content">
+              <p class="acp-comment-text">
+                <template v-for="(part, i) in commentParts(c.text)" :key="i"><span :class="{ 'acp-mention': part.isMention }">{{ part.text }}</span></template>
+              </p>
             </div>
           </div>
         </div>
 
         <div class="acp-composer">
-          <MpTextarea :id="`${id}-input`" v-model="draft" placeholder="Add a comment…" is-full-width :rows="2" />
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" :disabled="!draft.trim()" @click.stop="post">Post</button>
+          <div class="acp-input-pill">
+            <input
+              :id="`${id}-input`"
+              v-model="draft"
+              class="acp-input"
+              type="text"
+              placeholder="Comment or mention others with @"
+              @keydown.enter="post"
+              @click.stop
+            >
+            <button class="acp-send" aria-label="Send" @click.stop="post">
+              <MpIcon name="sent" size="md" variant="fill" color="icon.inverse" />
+            </button>
+          </div>
         </div>
       </MpPopoverContent>
     </MpPopover>
-    <span class="icon-tooltip">Comments</span>
   </div>
 </template>
 
 <style scoped>
-/* ── Tooltip: plain CSS, 4px gap above the trigger — see ApprovalLogPopover
-     for why MpTooltip isn't used here (cloneVNode/inheritAttrs conflict with
-     MpPopoverTrigger's own cloneVNode-based trigger cloning). ── */
-.icon-tooltip-wrap { position: relative; display: inline-flex; }
-.icon-tooltip {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-inverse, #1f2937);
-  color: var(--mp-text-inverse, #fff);
-  font-size: var(--mp-font-sizes-xs, 11px);
-  line-height: var(--mp-line-heights-xs, 16px);
-  border-radius: var(--mp-radii-sm);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 100ms;
-  z-index: 10;
-}
-.icon-tooltip-wrap:hover .icon-tooltip { opacity: 1; }
-
+/* ── Header — bg fill + Figma's asymmetric padding (pl:16/pr:12/py:12) ── */
 .acp-header {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle, #f0f1f3);
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
@@ -113,45 +147,82 @@ function post() {
 .acp-list {
   display: flex;
   flex-direction: column;
-  gap: var(--mp-spacing-4);
-  max-height: 240px;
+  max-height: 320px;
   overflow-y: auto;
   padding: var(--mp-spacing-4);
 }
-
-.acp-empty {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-secondary);
+/* Blank slate (illustration + copy) is taller than the populated-list scroll
+   cap — don't clip/scroll it, let it size naturally. */
+.acp-list--empty {
+  max-height: none;
+  overflow: visible;
 }
 
-.acp-comment {
-  display: flex;
-  gap: var(--mp-spacing-2);
-}
-
-.acp-comment-body {
+/* ── Blank slate — Figma node 750:8689 "State=First Run" ── */
+/* No own bottom padding — .acp-list's padding (16px) + .acp-composer's
+   top padding (8px) already add up to the 24px gap before the input bar. */
+.acp-blank-slate {
   display: flex;
   flex-direction: column;
-  gap: var(--mp-spacing-0\.5);
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.acp-blank-slate__img {
+  width: 288px;
+  height: 240px;
+  object-fit: cover;
+}
+.acp-blank-slate__title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-lg, 16px);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg, 24px);
+  color: var(--mp-text-default);
+  text-align: center;
+}
+.acp-blank-slate__desc {
+  margin: 4px 0 0;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
+  text-align: center;
+}
+
+/* ── Comment — header row (avatar+name/time) then an indented text row,
+     gap:4px between them, py:8px per item (Figma: pxl-space-3xs / pxl-space-xs) ── */
+.acp-comment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-1, 4px);
+  padding: var(--mp-spacing-2, 8px) 0;
+}
+
+.acp-comment-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mp-spacing-2, 8px);
+}
+
+.acp-comment-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
-.acp-comment-top {
-  display: flex;
-  align-items: baseline;
-  gap: var(--mp-spacing-2);
-}
-
 .acp-comment-author {
-  font-size: var(--mp-font-sizes-sm);
+  font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
 
 .acp-comment-time {
-  font-size: var(--mp-font-sizes-xs, 11px);
+  font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-secondary);
+}
+
+.acp-comment-content {
+  padding-left: 32px;
 }
 
 .acp-comment-text {
@@ -160,15 +231,57 @@ function post() {
   color: var(--mp-text-default);
 }
 
-.acp-composer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
+.acp-mention {
+  color: #5f519f;
 }
 
-.acp-composer .btn-enterprise {
-  align-self: flex-end;
+/* ── Composer — pill-shaped input with a circular send button, sticky at
+     the bottom of the popover (Figma: ".Action group / Chat") ── */
+.acp-composer {
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-4) var(--mp-spacing-4);
+  background: var(--mp-background-neutral, white);
 }
+
+.acp-input-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-6, 24px);
+  padding: 2px 2px 2px var(--mp-spacing-3, 12px);
+  border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, white);
+}
+.acp-input-pill:focus-within {
+  border-color: #8c9596;
+  box-shadow: 0 0 0 1px #8c9596;
+}
+
+.acp-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+}
+.acp-input::placeholder {
+  color: var(--mp-text-placeholder, #6e7a7c);
+}
+
+.acp-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: var(--mp-spacing-2, 8px);
+  border: none;
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-brand-bold, #029861);
+  color: white;
+  cursor: pointer;
+}
+.acp-send:hover { opacity: 0.9; }
 </style>

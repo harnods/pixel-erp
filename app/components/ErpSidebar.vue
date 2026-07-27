@@ -249,7 +249,7 @@ const inboxPanelSubmenu = computed<PanelSubItem[][]>(() => {
     {
       label: 'Awaiting approval',
       children: [
-        { label: 'All transactions', path: '/inbox?tab=awaiting-approval&innerTab=all', count: awaitingApprovalTasks.length || undefined },
+        { label: 'All', path: '/inbox?tab=awaiting-approval&innerTab=all', count: awaitingApprovalTasks.length || undefined },
         { label: 'Sales', path: '/inbox?tab=awaiting-approval&innerTab=sales', count: counts.sales || undefined },
         { label: 'Purchase', path: '/inbox?tab=awaiting-approval&innerTab=purchases', count: counts.purchases || undefined },
         { label: 'Expense', path: '/inbox?tab=awaiting-approval&innerTab=expenses', count: counts.expenses || undefined },
@@ -1119,6 +1119,9 @@ function cancelClose() {
    from MpBadge itself (for="additionalInformation" type="warning" size="sm"). */
 .panel-item-count {
   flex-shrink: 0;
+  background-color: #F5C842 !important;
+  color: #1A1A1A !important;
+  border-radius: 999px !important;
 }
 
 /* Parent row (e.g. Awaiting approval) — not a nav target itself, just toggles

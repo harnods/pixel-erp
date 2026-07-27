@@ -479,10 +479,17 @@ function formatDate(iso: string) {
   padding-left: var(--mp-spacing-2) !important; /* 8px */
 }
 
+:deep(.erp-td--actions) {
+  padding-left: 16px !important;
+}
+:deep(.erp-filter-bar) {
+  align-items: flex-end;
+}
+
 .row-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: var(--mp-spacing-6);
   padding-left: 0;
 }
@@ -520,7 +527,7 @@ function formatDate(iso: string) {
 
 .filter-right {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--mp-spacing-3);
 }
 
