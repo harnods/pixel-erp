@@ -208,9 +208,12 @@ function couriersFiltered() {
   const q = courierSearch.value.trim().toLowerCase()
   return couriers.filter((c) => !q || c.name.toLowerCase().includes(q))
 }
-function selectCourier(id: string, name: string) { setCourier(id, name); closeCourierPicker(id) }
+function selectCourier(id: string, name: string) { setCourier(id, name); courierError.value = false; closeCourierPicker(id) }
 
 const showRowErrors = ref(false)
+// Courier is required for every delivery before creating the shipment; tracking
+// no. stays optional. Flags rows still missing a courier after a failed save.
+const courierError = ref(false)
 
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Ready to ship' } }) }
@@ -221,6 +224,12 @@ function validate(): boolean {
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
   if (!rows.value.length) valid = false
+  // Courier required for every delivery (tracking no. stays optional).
+  if (rows.value.some(r => !(courierByRow.value[r.id]?.trim()))) {
+    courierError.value = true
+    valid = false
+    toast.notify({ variant: 'error', title: 'Select a courier for every delivery before creating the shipment', maxWidth: 'max-content' })
+  }
   showRowErrors.value = true
   return valid
 }
@@ -425,7 +434,7 @@ async function handleSave() {
                   <td class="ho-td"><SourceLabel :source="row.source" /></td>
                   <td class="ho-td ho-td--num">{{ formatNum(row.skuQty) }}</td>
                   <td class="ho-td ho-td--num">{{ formatNum(row.toShipQty) }}</td>
-                  <td class="ho-td ho-td--input">
+                  <td class="ho-td ho-td--input" :class="{ 'ho-td--input--error': courierError && !(courierByRow[row.id]?.trim()) }">
                     <input
                       v-if="row.isMarketplace"
                       type="text" class="ho-text-input"
@@ -622,6 +631,8 @@ async function handleSave() {
 /* Editable Courier/Tracking cell — white, input fills edge-to-edge, focus ring */
 .ho-td--input { padding: 0; background: var(--mp-background-neutral); }
 .ho-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.ho-td--input--error { box-shadow: inset 0 0 0 2px var(--mp-border-danger, #dc2626); }
+.ho-td--input--error:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .ho-text-input {
   display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box;
   padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;
