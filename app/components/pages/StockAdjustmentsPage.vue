@@ -104,14 +104,11 @@ const visibleColumns = computed(() =>
   )
 )
 // "Memo" sits directly under "Number" — it surfaces the memo beneath the number cell.
-// Warehouse column hidden from settings on Awaiting approval tab; only show on Warehouses page.
-const columnItems = computed(() => [
+const columnItems = [
   { key: 'number', label: 'Number', disabled: true },
   { key: 'memo', label: 'Memo' },
-  ...columns.slice(1)
-    .filter(c => !(isAwaiting.value && c.key === 'warehouseName'))
-    .map(c => ({ key: c.key, label: c.label })),
-])
+  ...columns.slice(1).map(c => ({ key: c.key, label: c.label })),
+]
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Tab: "All stock adjustments" vs "Awaiting approval" (driven by ?tab=) ────────

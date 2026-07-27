@@ -33,7 +33,6 @@ import { getPickingLineItems } from '~/data/pickingTaskDetails'
 // The catch-all route binds the id via the generic `orderId` prop for every detail page.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
-const route = useRoute()
 
 const isWmsRecord = computed(() => props.orderId.startsWith('wsa-') || props.orderId.startsWith('cc-'))
 const adjustment = computed(() => isWmsRecord.value ? getWmsAdjustment(props.orderId) : getAdjustment(props.orderId))
@@ -42,8 +41,6 @@ const isWmsCount = computed(() => isWmsRecord.value && isCount.value)
 // Also true for 'closed' — closing discards a.lines, so there's no real
 // counted data left to show either, same as a task that never started.
 const isNotStarted = computed(() => isWmsCount.value && (adjustment.value?.status === 'not_started' || adjustment.value?.status === 'closed'))
-// ERP Stock Count / Stock In/Out in draft status = Awaiting approval
-const isFromAwaitingApproval = computed(() => !isWmsRecord.value && adjustment.value?.status === 'draft')
 
 // /stock-adjustments/:id also serves WMS Cycle count records — tell the sidebar
 // this detail page belongs under "Cycle counts" so it doesn't default to
@@ -544,15 +541,7 @@ onUnmounted(() => {
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">
-          {{
-            isWmsRecord
-              ? (adjustment?.kind === 'in-out' ? 'Stock in/out' : 'Cycle counts')
-              : isFromAwaitingApproval
-                ? (isCount ? 'stock count' : adjustment?.category)
-                : 'All stock adjustments'
-          }}
-        </button>
+        <button class="detail-breadcrumb" @click="goBack">{{ isWmsRecord ? (adjustment?.kind === 'in-out' ? 'Stock in/out' : 'Cycle counts') : 'All stock adjustments' }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ adjustment.number }}</h1>
           <ErpStatusBadge
