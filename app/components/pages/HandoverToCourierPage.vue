@@ -15,7 +15,8 @@ import {
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { couriers } from '~/data/couriers'
 import { scrollToFirstError } from '~/utils/form'
-import { getWarehouseOperators } from '~/data/warehouseTeam'
+import { getWarehouseTeam } from '~/data/warehouseTeam'
+import { picForWarehouse } from '~/data/warehouses'
 import { notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -142,13 +143,26 @@ function handleScan(raw: string) {
 }
 
 // ─── Assignee + transaction date/no. ──────────────────────────────────────────
-// Choices are scoped to this handover's warehouse — only its Operators are valid.
-const ASSIGNEES = computed(() => getWarehouseOperators(warehouseId.value))
-const assigneeId = ref('')
+// Assignee = the person creating this shipment. A "ready to ship" task has no
+// shipment assignee yet; it binds here, defaulting to the signed-in user (who is
+// doing the scan/handover) and still editable. Choices are team members of this
+// handover's warehouse (the signed-in user is a manager, so the picker is the full
+// team, not just operators).
+const { activeWarehouse, hasWarehouseContext } = useWarehouseContext()
+const currentUserName = computed(() =>
+  hasWarehouseContext.value && activeWarehouse.value
+    ? picForWarehouse(activeWarehouse.value.id, 0)
+    : 'Rizal Candra',
+)
+const ASSIGNEES = computed(() => getWarehouseTeam(warehouseId.value))
+function defaultAssigneeId(whId: string) {
+  return getWarehouseTeam(whId).find(m => m.name === currentUserName.value)?.id ?? ''
+}
+const assigneeId = ref(defaultAssigneeId(warehouseId.value))
 const assigneeError = ref(false)
 const isSaving = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
-watch(warehouseId, () => { assigneeId.value = '' })
+watch(warehouseId, () => { assigneeId.value = defaultAssigneeId(warehouseId.value) })
 const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 const transactionDate = ref(todayDisplay)

@@ -64,13 +64,12 @@ const columns: TableColumn[] = [
   { key: 'status',        label: 'Status',      width: '130px', sortType: 'text' },
   { key: 'shippedDate',   label: 'Ship date',   width: '170px', sortType: 'date' },
 ]
-// Column show/hide — Delivery no. and Assignee are hidden by default (not
-// important here — assignee means the packer pre-handover but the handover person
-// post-handover, and that's already shown properly on Packing / the Shipped tab).
-// The sort menu's "Hide column" flips others off, the ColumnSettings menu turns
-// them back on.
+// Column show/hide — Delivery no. is hidden by default; Assignee is shown (the
+// person handling the shipping task: the packer pre-handover, then the shipment
+// creator once a shipment doc is made). The sort menu's "Hide column" flips others
+// off, the ColumnSettings menu turns them back on.
 const colVis = reactive<Record<string, boolean>>(
-  Object.fromEntries(columns.map(c => [c.key, c.key !== 'taskNo' && c.key !== 'assignee'])),
+  Object.fromEntries(columns.map(c => [c.key, c.key !== 'taskNo'])),
 )
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
 const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
