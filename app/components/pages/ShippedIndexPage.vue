@@ -47,7 +47,7 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Rows — one per shipment batch (a batch can cover several deliveries) ───────
 interface Row {
   shipmentSeq: string; shipmentNo: string; transactionDate: string; assignee: string
-  warehouseId: string; warehouseName: string; deliveryCount: number; status: 'open' | 'completed'
+  warehouseId: string; warehouseName: string; courier: string; deliveryCount: number; status: 'open' | 'completed'
 }
 const baseRows = computed<Row[]>(() => {
   if (demoState.value !== 'data') return []
@@ -58,6 +58,9 @@ const baseRows = computed<Row[]>(() => {
     assignee: h.assignee,
     warehouseId: h.warehouseId,
     warehouseName: h.warehouseName,
+    // A shipment batch is split by courier at creation, so every delivery in it
+    // shares one courier — take the first non-empty one.
+    courier: h.deliveries.find(d => d.courier)?.courier ?? '',
     deliveryCount: h.deliveries.length,
     status: h.status,
   }))
@@ -68,6 +71,7 @@ const columns: TableColumn[] = [
   { key: 'shipmentNo',      label: 'Shipment no.',      width: '180px', sortType: 'text' },
   { key: 'transactionDate', label: 'Date',              width: '170px', sortType: 'date' },
   { key: 'warehouseName',   label: 'Warehouse',         width: '180px', sortType: 'text' },
+  { key: 'courier',         label: 'Courier',           width: '160px', sortType: 'text' },
   { key: 'assignee',        label: 'Assignee',          width: '160px', sortType: 'text' },
   { key: 'deliveryCount',   label: 'Delivery qty',      width: '120px', align: 'right', sortType: 'number' },
   { key: 'status',          label: 'Status',            width: '130px', sortType: 'text' },
@@ -122,6 +126,24 @@ function toggleStatus(v: string) {
   else statusFilter.value = [...statusFilter.value, v]
 }
 
+// Courier filter — options are the distinct couriers actually present on shipments.
+const courierFilter = ref<string[]>([])
+const courierOptions = computed(() => {
+  const names = [...new Set(baseRows.value.map(r => r.courier).filter(Boolean))]
+  return names.sort((a, b) => a.localeCompare(b)).map(c => ({ label: c, value: c }))
+})
+const courierLabel = computed(() => {
+  const n = courierFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return courierFilter.value[0]
+  return `${n} couriers`
+})
+function toggleCourier(v: string) {
+  const idx = courierFilter.value.indexOf(v)
+  if (idx >= 0) courierFilter.value = courierFilter.value.filter(x => x !== v)
+  else courierFilter.value = [...courierFilter.value, v]
+}
+
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
@@ -132,15 +154,17 @@ const {
       || row.shipmentNo.toLowerCase().includes(s)
       || row.assignee.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
+      || row.courier.toLowerCase().includes(s)
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     const matchesStatus = !statusFilter.value.length || statusFilter.value.includes(row.status)
-    return matchesSearch && matchesWarehouse && matchesStatus
+    const matchesCourier = !courierFilter.value.length || courierFilter.value.includes(row.courier)
+    return matchesSearch && matchesWarehouse && matchesStatus && matchesCourier
   },
 })
-watch([warehouseFilter, statusFilter], () => setPage(1))
+watch([warehouseFilter, statusFilter, courierFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = [] }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0 || courierFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = []; courierFilter.value = [] }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -251,6 +275,32 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
+        <MpPopover id="shp-courier-filter" :is-close-on-select="false">
+          <MpPopoverTrigger>
+            <MpSelect
+              id="shp-courier-select" placeholder="Courier" :model-value="courierFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="courierFilter = []"
+            >
+              <option v-if="courierFilter.length" value="set">{{ courierLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
+            <div class="checkbox-filter-list">
+              <label v-for="opt in courierOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`shp-courier-${opt.value}`"
+                  :is-checked="courierFilter.includes(opt.value)"
+                  @change="toggleCourier(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+              <p v-if="!courierOptions.length" class="checkbox-filter-empty">No couriers yet.</p>
+            </div>
+          </MpPopoverContent>
+        </MpPopover>
+
         <MpPopover id="shp-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
@@ -324,6 +374,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #cell-transactionDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
 
     <!-- ── Assignee / Warehouse — View details chip on hover ── -->
+    <template #cell-courier="{ value }">{{ value || '—' }}</template>
     <template #cell-assignee="{ value }">{{ value || '—' }}</template>
     <template #cell-warehouseName="{ value, row }">
       <div class="cell-with-action">
@@ -461,6 +512,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
+.checkbox-filter-empty { margin: 0; padding: var(--mp-spacing-2) 10px; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
