@@ -802,10 +802,16 @@ function buildPickedMap(): Record<string, number> {
 function buildAssignments(): PickingAssignments {
   const batchPicks: Record<string, PickingBatchPick[]> = {}
   for (const [key, batches] of Object.entries(batchLinesByKey.value)) {
-    const picks = batches.filter(b => (b.counted ?? 0) > 0).map(b => ({
+    // Keep every reserved batch, mirroring how serialPicks retains reserved
+    // serials — a batch that was reserved for the order but not re-counted (e.g.
+    // the drawer reset it to uncounted in a scan-required warehouse) must NOT be
+    // dropped, or it silently vanishes from the packing drawer downstream. Fall
+    // back to the reserved qty when it wasn't recounted; drop only genuinely-zero
+    // rows (no count and no reservation).
+    const picks = batches.map(b => ({
       batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc,
-      qty: b.counted ?? 0, unit: b.unit, location: b.location ?? '',
-    }))
+      qty: (b.counted ?? 0) || (b.reservedQty ?? 0), unit: b.unit, location: b.location ?? '',
+    })).filter(p => p.qty > 0)
     if (picks.length) batchPicks[key] = picks
   }
   const serialPicks: Record<string, PickingSerialPick[]> = {}
