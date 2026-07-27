@@ -10,6 +10,7 @@ import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import TransactionTypeCascadeMenu from '~/components/patterns/TransactionTypeCascadeMenu.vue'
+import InboxFiltersDrawer, { emptyInboxFilters, type InboxFiltersValue } from '~/components/patterns/InboxFiltersDrawer.vue'
 import { taskTypeGroups, formatTaskNumber, stockDetailsLabel, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
 
 const props = defineProps<{
@@ -188,6 +189,22 @@ const cascadeGroups = computed(() => {
 
 const transactionTypeFilter = ref<string[]>([])
 
+// ─── "All filters" drawer — a second, independent filter layer. Its Date range
+// and Transaction type fields never mirror the toolbar's own controls above
+// (opening the drawer restores only what was last Applied FROM the drawer);
+// both layers are ANDed together in the table's filterFn below. ───────────────
+const filtersOpen = ref(false)
+const appliedFilters = reactive<InboxFiltersValue>(emptyInboxFilters())
+// Warehouse checklist mirrors the Warehouse *column*'s own visibility rule —
+// both are driven by whether the parent forced it into hiddenColumns (i.e.
+// whether this is the Inbox "Warehouse" inner tab).
+const showWarehouseFilter = computed(() => !props.hiddenColumns?.includes('warehouse'))
+const reasonOptions = computed(() => [...new Set(props.tasks.map((t) => t.reason))].sort())
+const requestedByOptions = computed(() => [...new Set(props.tasks.map((t) => t.requestedBy))].sort())
+const warehouseOptions = computed(() => [...new Set(props.tasks.map((t) => t.warehouse))].sort())
+
+function applyDrawerFilters(v: InboxFiltersValue) { Object.assign(appliedFilters, v) }
+
 // ─── Table state ──────────────────────────────────────────────────────────────
 
 // Newest request first by default — sorted on the source itself (not via
@@ -212,14 +229,47 @@ const {
       const d = dayStart(new Date(row.date))
       matchesDate = d >= range[0] && d <= range[1]
     }
+
+    // ── Drawer filters (independent of the toolbar's Date range / Transaction type) ──
+    const f = appliedFilters
+    const matchesDrawerType = f.transactionType.length === 0 || f.transactionType.includes(row.docType)
+    let matchesDrawerDate = true
+    if (f.dateRange) {
+      const d = dayStart(new Date(row.date))
+      matchesDrawerDate = d >= dayStart(f.dateRange[0]!) && d <= dayStart(f.dateRange[1]!)
+    }
+    const matchesReason = f.reason.length === 0 || f.reason.includes(row.reason)
+    const matchesRequestedBy = f.requestedBy.length === 0 || f.requestedBy.includes(row.requestedBy)
+    const matchesWarehouse = f.warehouse.length === 0 || f.warehouse.includes(row.warehouse)
+    let matchesDueDate = true
+    if (f.dueDateRange && row.dueDate) {
+      const d = dayStart(new Date(row.dueDate))
+      matchesDueDate = d >= dayStart(f.dueDateRange[0]!) && d <= dayStart(f.dueDateRange[1]!)
+    }
+    const totalMin = f.totalMin === '' ? -Infinity : Number(f.totalMin)
+    const totalMax = f.totalMax === '' ? Infinity : Number(f.totalMax)
+    const matchesTotal = row.total >= totalMin && row.total <= totalMax
+    const balMin = f.balanceDueMin === '' ? -Infinity : Number(f.balanceDueMin)
+    const balMax = f.balanceDueMax === '' ? Infinity : Number(f.balanceDueMax)
+    const matchesBalanceDue = row.balanceDue >= balMin && row.balanceDue <= balMax
+
     return matchesSearch && matchesType && matchesDate
+      && matchesDrawerType && matchesDrawerDate && matchesReason && matchesRequestedBy
+      && matchesWarehouse && matchesDueDate && matchesTotal && matchesBalanceDue
   },
 })
 
 // reset to page 1 when the extra (non-built-in) filters change
-watch([transactionTypeFilter, dateRangeValue], () => setPage(1))
+watch([transactionTypeFilter, dateRangeValue, appliedFilters], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || transactionTypeFilter.value.length > 0)
+const isDrawerFilterActive = computed(() => {
+  const f = appliedFilters
+  return !!f.dateRange || f.transactionType.length > 0 || f.reason.length > 0
+    || f.requestedBy.length > 0 || f.warehouse.length > 0 || !!f.dueDateRange
+    || f.totalMin !== '' || f.totalMax !== '' || f.balanceDueMin !== '' || f.balanceDueMax !== ''
+})
+
+const hasActiveFilter = computed(() => !!search.value || transactionTypeFilter.value.length > 0 || isDrawerFilterActive.value)
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -292,7 +342,7 @@ function formatDate(iso: string) {
           :multiple="multiSelectTransactionType"
         />
 
-        <button class="filter-all-btn">
+        <button class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
           All filters
         </button>
@@ -418,6 +468,19 @@ function formatDate(iso: string) {
     :doc-type="rejectModalDocType"
     @close="closeRejectModal"
     @reject="handleReject"
+  />
+
+  <InboxFiltersDrawer
+    :id="`${idPrefix}-tasks-allfilters`"
+    :is-open="filtersOpen"
+    :model-value="appliedFilters"
+    :cascade-groups="cascadeGroups"
+    :reason-options="reasonOptions"
+    :requested-by-options="requestedByOptions"
+    :warehouse-options="warehouseOptions"
+    :show-warehouse="showWarehouseFilter"
+    @update:is-open="filtersOpen = $event"
+    @apply="applyDrawerFilters"
   />
 </template>
 
@@ -550,6 +613,11 @@ function formatDate(iso: string) {
   white-space: nowrap;
 }
 .filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-all-btn--active {
+  background: var(--mp-background-selected, var(--mp-background-information));
+  border-color: var(--mp-border-selected, var(--mp-border-information));
+  color: var(--mp-text-selected, var(--mp-text-information));
+}
 
 .filter-btn-group {
   display: flex;
