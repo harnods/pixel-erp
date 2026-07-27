@@ -58,7 +58,6 @@ const statusConfig: Record<string, StatusConfig> = {
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
-  unpaid:     { type: 'warning',      label: 'Unpaid'     },
   pending:    { type: 'warning',      label: 'Pending'    },
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
@@ -80,7 +79,6 @@ const statusConfig: Record<string, StatusConfig> = {
   expired:    { type: 'critical',     label: 'Expired'    },
   error:      { type: 'critical',     label: 'Error'      },
   declined:   { type: 'critical',     label: 'Declined'   },
-  low:        { type: 'critical',     label: 'Low'        },
 
   // ── announcement — GRAY (neutral / final / inactive) ──
   draft:      { type: 'announcement', label: 'Draft'      },
@@ -96,11 +94,8 @@ const statusConfig: Record<string, StatusConfig> = {
   not_started:{ type: 'warning',      label: 'Open'        },
   'to do':    { type: 'announcement', label: 'To do'      },
   direct:     { type: 'announcement', label: 'Direct'     },
-  unclassified:{ type: 'announcement', label: 'Unclassified' },
 
   // ── information — blue ────────────────────────────
-  bill:       { type: 'information',  label: 'Bill'       },
-  receipt:    { type: 'information',  label: 'Receipt'    },
   'partially processed': { type: 'information', label: 'Partially processed' },
   'partially produced': { type: 'warning', label: 'Partially produced' },
   'partially completed': { type: 'information', label: 'Partially completed' },

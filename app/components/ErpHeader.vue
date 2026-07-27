@@ -26,7 +26,7 @@
         <ErpQuickCreateMenu />
         <IconButton icon="help" />
         <IconButton icon="desktop" />
-        <IconButton icon="notification" />
+        <IconButton icon="notification" show-badge @click="goToInbox" />
       </MpFlex>
 
       <!-- User snapshot menu (avatar + name → account popover) -->
@@ -50,6 +50,15 @@ const logoAlt = computed(() => (isWms.value ? "Mekari WMS" : "Mekari ERP"));
 // Warehouse label next to the logo whenever the user is scoped to a warehouse
 // (Ops). Static for one warehouse (Ops 1), switchable for several (Ops 2).
 const { hasWarehouseContext } = useWarehouseContext();
+
+// Notification icon → Inbox page (not part of the sidebar tree, so set the
+// title bar label explicitly instead of relying on the sidebar to publish it)
+const { setActiveMenuLabel } = useNavigation();
+const router = useRouter();
+function goToInbox() {
+  setActiveMenuLabel("Notifications");
+  router.push("/inbox?tab=notifications");
+}
 </script>
 
 <style scoped>

@@ -63,7 +63,7 @@
 
 /* ── Button size: sm ──────────────────────────────────────────────────────────── */
 .btn-enterprise--sm {
-  padding: var(--mp-spacing-1) var(--mp-spacing-2);
+  padding: var(--mp-spacing-1) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-sm);
   line-height: var(--mp-line-heights-sm);
 }
