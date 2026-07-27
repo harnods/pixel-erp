@@ -69,6 +69,9 @@ const pageRegistry: Record<string, Component> = {
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
+  // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
+  'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
+  'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
