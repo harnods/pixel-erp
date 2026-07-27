@@ -4,11 +4,8 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
-import {
-  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
-  MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpDatePicker, MpIcon, toast,
-} from '@mekari/pixel3'
-import { getShipment, completeShipment, acknowledgeCanceledShipment } from '~/data/deliveryTasks'
+import { MpIcon, toast } from '@mekari/pixel3'
+import { getShipment, acknowledgeCanceledShipment } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateShipmentPdf } from '~/utils/shipmentPdf'
@@ -86,54 +83,9 @@ function attachmentIcon(name: string): string {
   return 'attachment'
 }
 
-// ── Complete shipment — courier/customer has signed for the goods ──────────────
-function toDisplayDate(iso: string) {
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-function toISODate(display: string) {
-  const [d, m, y] = display.split('/')
-  return `${y}-${m}-${d}`
-}
-const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
-
-const completeOpen = ref(false)
-const receivedDate = ref(todayDisplay)
-const receivedBy = ref('')
-const receivedByError = ref('')
-const note = ref('')
-const fileInput = ref<HTMLInputElement | null>(null)
-const attachedFiles = ref<File[]>([])
-
-function onFileChange(ev: Event) {
-  const files = (ev.target as HTMLInputElement).files
-  for (const f of Array.from(files ?? [])) {
-    if (!attachedFiles.value.some(x => x.name === f.name)) attachedFiles.value.push(f)
-  }
-  if (fileInput.value) fileInput.value.value = ''
-}
-function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
-
-function openComplete() {
-  receivedDate.value = todayDisplay
-  receivedBy.value = ''
-  receivedByError.value = ''
-  note.value = ''
-  attachedFiles.value = []
-  completeOpen.value = true
-}
-function confirmComplete() {
-  if (!shipment.value) return
-  if (!receivedBy.value.trim()) { receivedByError.value = 'You must fill in received by'; return }
-  completeShipment(shipment.value.shipmentSeq, {
-    receivedDate: toISODate(receivedDate.value),
-    receivedBy: receivedBy.value.trim(),
-    note: note.value.trim() || undefined,
-    proofFile: attachedFiles.value[0]?.name,
-  })
-  toast.notify({ variant: 'success', title: 'Shipment completed', maxWidth: 'max-content' })
-  completeOpen.value = false
-}
+// Complete shipment (proof of delivery) is now its own page — see
+// CompleteShipmentPage.vue at /outbound-delivery/shipment/:seq/complete.
+function openComplete() { router.push(`/outbound-delivery/shipment/${props.orderId}/complete`) }
 </script>
 
 <template>
@@ -277,62 +229,6 @@ function confirmComplete() {
       <button v-if="shipment.status === 'open'" class="detail-btn detail-btn--primary" @click="openComplete">Complete shipment</button>
     </footer>
 
-    <!-- Complete shipment -->
-    <MpModal
-      id="shd-complete" :is-open="completeOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="completeOpen = false"
-    >
-      <MpModalContent>
-        <MpModalHeader>Complete shipment<MpModalCloseButton /></MpModalHeader>
-        <MpModalBody>
-          <MpFormControl id="shd-received-date" is-required class="shd-complete-field">
-            <MpFormLabel>Date received</MpFormLabel>
-            <div class="shd-datepicker">
-              <MpDatePicker id="shd-received-date-dp" v-model="receivedDate" format="DD/MM/YYYY" value-type="format" use-portal />
-            </div>
-          </MpFormControl>
-
-          <MpFormControl id="shd-received-by" is-required :is-invalid="!!receivedByError" class="shd-complete-field">
-            <MpFormLabel>Received by</MpFormLabel>
-            <MpInput
-              id="shd-received-by-input" v-model="receivedBy" placeholder="Recipient name"
-              @update:model-value="receivedByError = ''"
-            />
-            <MpFormErrorMessage>{{ receivedByError }}</MpFormErrorMessage>
-          </MpFormControl>
-
-          <MpFormControl id="shd-note" class="shd-complete-field">
-            <MpFormLabel>Note</MpFormLabel>
-            <MpTextarea id="shd-note-textarea" v-model="note" is-full-width :rows="3" />
-          </MpFormControl>
-
-          <MpFormControl id="shd-attachment" class="shd-complete-field">
-            <MpFormLabel>Attachment</MpFormLabel>
-            <div class="shd-attachment">
-              <input ref="fileInput" type="file" accept=".pdf,.jpg,.jpeg,.png" class="shd-file-hidden" @change="onFileChange" />
-              <div class="shd-attachment-row">
-                <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
-                <span class="shd-attach-or">or drag and drop here</span>
-              </div>
-              <ul v-if="attachedFiles.length" class="shd-file-list">
-                <li v-for="f in attachedFiles" :key="f.name" class="shd-file-item">
-                  <span class="shd-file-name">{{ f.name }}</span>
-                  <button class="shd-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
-                </li>
-              </ul>
-            </div>
-          </MpFormControl>
-        </MpModalBody>
-        <MpModalFooter>
-          <div class="shd-modal-footer">
-            <MpButton variant="ghost" is-rounded @click="completeOpen = false">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="confirmComplete">Complete shipment</MpButton>
-          </div>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
-
     <PdfPreviewModal
       :open="pdfPreviewOpen"
       :doc="pdfPreviewDoc"
@@ -459,18 +355,4 @@ function confirmComplete() {
 .detail-attach-meta { display: flex; flex-direction: column; }
 .detail-attach-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .detail-attach:hover .detail-attach-name { text-decoration: underline; text-underline-offset: 2px; }
-
-/* Complete shipment modal */
-.shd-complete-field { margin-bottom: var(--mp-spacing-4); }
-.shd-datepicker :deep(.mp-date-picker) { width: 100%; }
-.shd-attachment { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.shd-file-hidden { display: none; }
-.shd-attachment-row { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.shd-attach-or { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.shd-file-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.shd-file-item { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.shd-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shd-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
-.shd-file-remove:hover { color: var(--mp-text-default); }
-.shd-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

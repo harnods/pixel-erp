@@ -102,6 +102,7 @@ const DeliveryTaskDetailsPage = asyncPage(() => import('~/components/pages/Deliv
 const HandoverToCourierPage = asyncPage(() => import('~/components/pages/HandoverToCourierPage.vue'))
 const NewShipmentPage = asyncPage(() => import('~/components/pages/NewShipmentPage.vue'))
 const ShipmentDetailsPage = asyncPage(() => import('~/components/pages/ShipmentDetailsPage.vue'))
+const CompleteShipmentPage = asyncPage(() => import('~/components/pages/CompleteShipmentPage.vue'))
 const OutgoingOrderDetailsPage = asyncPage(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
 const WarehouseTransferDetailsPage = asyncPage(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
 const WarehouseTransferFormPage = asyncPage(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
@@ -199,6 +200,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /outbound-delivery/new-shipment/create → build a shipment by scanning packing nos.
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'new-shipment' && segs[2] === 'create') {
     return { component: NewShipmentPage, id: 'create' }
+  }
+  // /outbound-delivery/shipment/:seq/complete → Complete shipment (proof-of-delivery) form page
+  if (segs.length >= 4 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment' && segs[3] === 'complete') {
+    return { component: CompleteShipmentPage, id: segs[2]! }
   }
   // /outbound-delivery/shipment/:seq → a saved shipment batch's details (Print PDF lives here)
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment') {

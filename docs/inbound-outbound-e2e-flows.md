@@ -297,10 +297,14 @@ displays as **"In process"**.
 8. **Delivery / completion**:
    - **out for delivery** = with the courier, shipment doc open, still cancellable,
      on-hand not deducted.
-   - `completeShipment` (`ShipmentDetailsPage`, on proof of delivery) → deliveries
-     **shipped**, shipment doc **completed**; **on-hand deducted + reservation
-     consumed**; records receivedDate/receivedBy/note/`proofFile`. Applies to all
-     deliveries under that shipment no. together.
+   - **Complete shipment** is its own full-page form (`CompleteShipmentPage`,
+     route `/outbound-delivery/shipment/:seq/complete`; reached from the "Complete
+     shipment" button on Shipment details when the doc is still `open`). Fields:
+     **Date received** (required), **Received by** (required), Note, Attachment
+     (proof of delivery). On save → `completeShipment` → deliveries **shipped**,
+     shipment doc **completed**; **on-hand deducted + reservation consumed**;
+     records receivedDate/receivedBy/note/`proofFile`. Applies to all deliveries
+     under that shipment no. together.
    - **Shipped index** (`ShippedIndexPage`, "Shipping document" tab) lists one row
      per shipment doc and has a **Courier column + Courier filter**.
 
