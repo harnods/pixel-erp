@@ -146,6 +146,18 @@ export function formatTaskNumber(task: Task): string {
   return `${task.docType} #${String(task.number).padStart(5, '0')}`
 }
 
+// Stock In/Out has no single counterparty the way an invoice does — the Inbox
+// Details column shows its movement category instead (mirrors the ERP Stock
+// in/out categories). Deterministic per task.number so it's stable across reloads.
+const STOCK_INOUT_CATEGORIES = ['Production output', 'Waste/damaged', 'General', 'Opening balance'] as const
+
+/** Inbox Details column text for doc types that don't have a real counterparty. */
+export function stockDetailsLabel(task: Task): string | null {
+  if (task.docType === 'Stock Count') return 'Stock Count'
+  if (task.docType === 'Stock In/Out') return STOCK_INOUT_CATEGORIES[task.number % STOCK_INOUT_CATEGORIES.length]!
+  return null
+}
+
 // ─── Approval log + comments (mock, keyed off the task's own fields so it's
 // deterministic across reloads) — feeds ApprovalLogPopover / ApprovalCommentPopover. ───
 

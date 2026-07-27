@@ -4,14 +4,13 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
-import ProductCell from '~/components/patterns/ProductCell.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogPopover from '~/components/patterns/ApprovalLogPopover.vue'
 import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import TransactionTypeCascadeMenu from '~/components/patterns/TransactionTypeCascadeMenu.vue'
-import { taskTypeGroups, formatTaskNumber, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
+import { taskTypeGroups, formatTaskNumber, stockDetailsLabel, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
 
 const props = defineProps<{
   /** Underlying dataset for this tab (Awaiting approval / Actions required) */
@@ -138,7 +137,14 @@ const columns: TableColumn[] = [
 
 // Column show/hide — Date & Number are always on (locked in the menu).
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map((c) => [c.key, true])))
-const columnItems = columns.map((c) => ({ key: c.key, label: c.label, disabled: c.key === 'date' || c.key === 'number' }))
+// Warehouse is only offered as a toggle on the inner tab that force-shows it (the
+// Warehouse submenu) — everywhere else it's in hiddenColumns, so drop it from the
+// menu entirely instead of showing a toggle that can't actually reveal a column.
+const columnItems = computed(() =>
+  columns
+    .filter((c) => !props.hiddenColumns?.includes(c.key))
+    .map((c) => ({ key: c.key, label: c.label, disabled: c.key === 'date' || c.key === 'number' })),
+)
 const visibleColumns = computed<TableColumn[]>(() =>
   columns.filter((c) => columnVisibility[c.key] && !props.hiddenColumns?.includes(c.key))
 )
@@ -333,14 +339,11 @@ function formatDate(iso: string) {
       {{ value }}
     </template>
 
-    <!-- ── Cell: Details — Stock In/Out shows product name + qty as a two-line
-         product cell; everything else is plain text (contact / warehouse route). ── -->
+    <!-- ── Cell: Details — Stock Count / Stock In/Out show a movement label
+         (Stock Count, or the In/Out category) instead of a counterparty;
+         everything else is plain text (contact / warehouse route). ── -->
     <template #cell-details="{ value, row }">
-      <ProductCell
-        v-if="(row as Task).docType === 'Stock In/Out'"
-        :name="(row as Task).productName!"
-        :desc="(row as Task).qtyDesc"
-      />
+      <template v-if="stockDetailsLabel(row as Task)">{{ stockDetailsLabel(row as Task) }}</template>
       <template v-else>{{ value }}</template>
     </template>
 
