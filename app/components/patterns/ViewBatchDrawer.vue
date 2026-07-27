@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { MpIcon } from '@mekari/pixel3'
+import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 
@@ -83,9 +84,15 @@ const props = defineProps<{
   qtyBeforeLocation?: boolean
   productName: string
   productImg: string
+  /** Packing match-order verify mode: total units scanned/verified so far for
+   *  this line. When provided, the drawer shows a scan bar (emits 'scan') and a
+   *  "Verified x/y" stat so the operator confirms each batch matches the pick. */
+  verifiedQty?: number
 }>()
 
-const emit = defineEmits<{ 'update:open': [boolean] }>()
+const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
+function onScan(raw: string) { emit('scan', raw) }
+const isVerify = computed(() => props.verifiedQty !== undefined)
 const qtyLabel = computed(() => props.qtyLabel ?? 'Picked qty')
 const plannedQtyLabel = computed(() => props.plannedQtyLabel ?? 'Qty to pick')
 // batchPicks is ONE field, not "plan" + "actual" side by side — endPicking/
@@ -290,6 +297,10 @@ function close() { emit('update:open', false) }
                 <span class="vbd-stat-label">{{ qtyLabel }}</span>
                 <span class="vbd-stat-value">{{ fmt(pickedQty ?? totalPicked) }}</span>
               </div>
+              <div v-if="isVerify" class="vbd-stat">
+                <span class="vbd-stat-label">Verified</span>
+                <span class="vbd-stat-value">{{ fmt(verifiedQty ?? 0) }} / {{ fmt(pickedQty ?? totalPicked) }}</span>
+              </div>
               <div v-if="shippedQty !== undefined && shippedQty > 0" class="vbd-stat">
                 <span class="vbd-stat-label">Previously shipped</span>
                 <span class="vbd-stat-value">{{ fmt(shippedQty) }}</span>
@@ -324,6 +335,11 @@ function close() { emit('update:open', false) }
               </template>
             </template>
           </div>
+        </div>
+
+        <!-- Match-order verify: scan each batch to confirm it matches the pick -->
+        <div v-if="isVerify" class="vbd-scan">
+          <ScanBar placeholder="Scan batch number to verify…" @scan="onScan" />
         </div>
 
         <!-- Table -->
@@ -477,6 +493,7 @@ function close() { emit('update:open', false) }
 .vbd-stat--pos .vbd-stat-value { color: var(--mp-text-success, #18794e); }
 .vbd-stat--neg .vbd-stat-value { color: var(--mp-text-danger, #a8352d); }
 
+.vbd-scan { margin-bottom: var(--mp-spacing-3); }
 .vbd-table-wrap {
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);

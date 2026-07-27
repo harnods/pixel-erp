@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { MpIcon, MpBadge, MpSpinner } from '@mekari/pixel3'
+import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 
@@ -74,11 +75,18 @@ const props = defineProps<{
    *  "Picked" (picking). Put-away passes "Assigned", matching ManageSerialDrawer's
    *  own put-away vocabulary for the same assigned-a-bin fact. */
   statusPickedLabel?: string
+  /** Packing match-order verify mode: the serials scanned so far. When provided,
+   *  the drawer shows a scan bar (emits 'scan') and a Verified/Not-scanned badge
+   *  per serial instead of the picking Picked/Reserved status. */
+  verifiedSerials?: string[]
 }>()
 
-const emit = defineEmits<{ 'update:open': [boolean] }>()
+const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
+function onScan(raw: string) { emit('scan', raw) }
 
 const isPacking = computed(() => props.kind === 'packing')
+const isVerify = computed(() => props.verifiedSerials !== undefined)
+const verifiedSet = computed(() => new Set(props.verifiedSerials ?? []))
 const qtyLabel = computed(() => props.qtyLabel ?? 'Picked qty')
 const plannedQtyLabel = computed(() => props.plannedQtyLabel ?? 'Qty to pick')
 const statusPlannedLabel = computed(() => props.statusPlannedLabel ?? 'Reserved')
@@ -280,6 +288,11 @@ function close() { emit('update:open', false) }
           </div>
         </div>
 
+        <!-- Match-order verify: scan each serial to confirm it matches the pick -->
+        <div v-if="isVerify" class="vsd-scan">
+          <ScanBar placeholder="Scan serial number to verify…" @scan="onScan" />
+        </div>
+
         <!-- Filter bar -->
         <div class="vsd-filter-bar">
           <div class="vsd-filter-search-wrap">
@@ -316,8 +329,14 @@ function close() { emit('update:open', false) }
                 <td class="vsd-td vsd-td--mono" :class="{ 'vsd-td--strike': !row.counted }">{{ row.serial }}</td>
                 <td class="vsd-td vsd-td--muted" :class="{ 'vsd-td--strike': !row.counted }">{{ row.location || '—' }}</td>
                 <td v-if="isPacking && hasStatus" class="vsd-td vsd-td--status">
-                  <MpBadge v-if="row.status === 'picked'" for="tableStatus" type="completed">{{ statusPickedLabel }}</MpBadge>
-                  <MpBadge v-else-if="row.status === 'reserved'" for="tableStatus" type="warning">{{ statusPlannedLabel }}</MpBadge>
+                  <template v-if="isVerify">
+                    <MpBadge v-if="verifiedSet.has(row.serial)" for="tableStatus" type="completed">Verified</MpBadge>
+                    <MpBadge v-else for="tableStatus" type="warning">Not scanned</MpBadge>
+                  </template>
+                  <template v-else>
+                    <MpBadge v-if="row.status === 'picked'" for="tableStatus" type="completed">{{ statusPickedLabel }}</MpBadge>
+                    <MpBadge v-else-if="row.status === 'reserved'" for="tableStatus" type="warning">{{ statusPlannedLabel }}</MpBadge>
+                  </template>
                 </td>
                 <td v-else-if="!isPacking" class="vsd-td vsd-td--status">
                   <MpBadge v-if="row.counted" variant="success">Counted</MpBadge>
@@ -418,6 +437,7 @@ function close() { emit('update:open', false) }
 .vsd-stat--pos .vsd-stat-value { color: var(--mp-text-success, #18794e); }
 .vsd-stat--neg .vsd-stat-value { color: var(--mp-text-danger, #a8352d); }
 
+.vsd-scan { margin-bottom: var(--mp-spacing-3); }
 .vsd-filter-bar { display: flex; justify-content: flex-end; }
 .vsd-filter-search-wrap {
   position: relative; display: flex; align-items: center;

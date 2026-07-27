@@ -587,6 +587,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     :picked-batches="viewBatchItem.batchPicks ?? []"
     :product-name="viewBatchItem.productName"
     :product-img="viewBatchItem.image"
+    :verified-qty="verifiedCount(viewBatchItem)"
+    @scan="handleScan"
     @update:open="viewBatchItem = null"
   />
   <ViewSerialDrawer
@@ -600,6 +602,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     :planned-serials="viewSerialItem.serialPicks ?? []"
     :product-name="viewSerialItem.productName"
     :product-img="viewSerialItem.image"
+    :verified-serials="[...(verifiedSerials[viewSerialItem.key] ?? [])]"
+    @scan="handleScan"
     @update:open="viewSerialItem = null"
   />
 </template>
