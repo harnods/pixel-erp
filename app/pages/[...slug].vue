@@ -424,6 +424,17 @@ const currentTabs = computed<string[]>(() => {
     return true
   })
 })
+// Tab display labels — the tab key stays the internal id (URL query, page
+// registry, counts, navigation), only the visible text differs. Outbound's
+// "Ready to ship" tab actually holds shipping tasks across several statuses (ready
+// to ship being just one of them), so it reads as "Shipping"; the shipment docs
+// tab reads as "Shipping document".
+const TAB_LABELS: Record<string, string> = {
+  'Ready to ship': 'Shipping',
+  'Shipments': 'Shipping document',
+}
+function tabLabel(tab: string): string { return TAB_LABELS[tab] ?? tab }
+
 const activeTab = ref('')
 watch([currentPageKey, () => route.query.tab, detailMatch], () => {
   // Detail routes (e.g. /stock-adjustments/:id) render via `detailMatch`, bypassing
@@ -1147,7 +1158,7 @@ function startResize(e: MouseEvent) {
           :aria-selected="activeTab === tab"
           @click="selectTab(tab)"
         >
-          {{ tab }}
+          {{ tabLabel(tab) }}
           <span v-if="currentTabCounts[tab] != null" class="page-tab-count">{{ currentTabCounts[tab] }}</span>
         </button>
       </div>
@@ -1163,7 +1174,7 @@ function startResize(e: MouseEvent) {
         </MpBanner>
         <component v-if="activeTabComponent" :is="activeTabComponent" />
         <div v-else-if="currentTabs.length" class="tab-stage-placeholder">
-          <p class="tab-stage-placeholder__title">{{ activeTab }}</p>
+          <p class="tab-stage-placeholder__title">{{ tabLabel(activeTab) }}</p>
           <p class="tab-stage-placeholder__desc">Page content goes here.</p>
         </div>
         <component v-else :is="currentComponent" />

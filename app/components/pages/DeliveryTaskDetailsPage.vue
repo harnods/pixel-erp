@@ -157,7 +157,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Ready to ship</button>
+        <button class="detail-breadcrumb" @click="goBack">Shipping</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
@@ -467,7 +467,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 
   <div v-else class="del-not-found">
     <p>Delivery not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Ready to ship</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to Shipping</button>
   </div>
 
   <ViewBatchDrawer

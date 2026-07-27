@@ -257,7 +257,7 @@ async function handleSave() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goBack">Ready to ship</button>
+          <button class="detail-breadcrumb" @click="goBack">Shipping</button>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New shipment</h1>
