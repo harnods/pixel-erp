@@ -20,7 +20,7 @@ import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { productBySku } from '~/data/inventory'
-import { resolveScan, notifyScanError } from '~/utils/scan'
+import { resolveScan, notifyScanError, sameCode } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
@@ -99,8 +99,48 @@ function seedDraftQty() {
   for (const it of lineItems.value) map[it.key] = it.packedQty
   draftQty.value = map
 }
+
+// ── Match-order verification ────────────────────────────────────────────────
+// A batch/serial-tracked line isn't just counted at packing — each unit must be
+// scanned so we confirm the exact SN/batch picked matches the order. Packed qty
+// for these lines is driven purely by valid scans; Finish is blocked until every
+// picked SN/batch is verified. (Stage 1: verification via the page scan bar.)
+const verifiedSerials = ref<Record<string, Set<string>>>({})       // lineKey → scanned serials
+const verifiedBatchQty = ref<Record<string, Record<string, number>>>({}) // lineKey → batchNo → scanned qty
+function isTrackedItem(it: PackLineItem): boolean {
+  return isBatchTrackedSku(it.skuCode) || isSerialTrackedSku(it.skuCode)
+}
+function verifiedCount(it: PackLineItem): number {
+  if (isSerialTrackedSku(it.skuCode)) return verifiedSerials.value[it.key]?.size ?? 0
+  if (isBatchTrackedSku(it.skuCode)) return Object.values(verifiedBatchQty.value[it.key] ?? {}).reduce((a, b) => a + b, 0)
+  return draftQty.value[it.key] ?? 0
+}
+// Pre-fill verification to match units already packed (resumed draft), so the
+// operator doesn't have to rescan work saved earlier.
+function seedVerification() {
+  const vs: Record<string, Set<string>> = {}
+  const vb: Record<string, Record<string, number>> = {}
+  for (const it of lineItems.value) {
+    if (isSerialTrackedSku(it.skuCode)) {
+      vs[it.key] = new Set((it.serialPicks ?? []).slice(0, it.packedQty).map(s => s.serial))
+    } else if (isBatchTrackedSku(it.skuCode)) {
+      const map: Record<string, number> = {}
+      let remaining = it.packedQty
+      for (const b of (it.batchPicks ?? [])) {
+        const take = Math.min(remaining, b.qty)
+        if (take > 0) map[b.batchNo] = take
+        remaining -= take
+        if (remaining <= 0) break
+      }
+      vb[it.key] = map
+    }
+  }
+  verifiedSerials.value = vs
+  verifiedBatchQty.value = vb
+}
 watch([() => props.orderId, lineItems], () => {
   seedDraftQty()
+  seedVerification()
   search.value = ''
 }, { immediate: true })
 
@@ -129,31 +169,77 @@ function handleScan(rawValue: string) {
     notifyScanError(`${v}: SKU ${resolved.sku} isn't on this packing task`)
     return
   }
-  // Scanning the SKU's own barcode (not a specific batch/serial) for a
-  // batch/serial-tracked line opens its View drawer directly, same as
-  // Receiving/Picking/Put-away — instead of ambiguously incrementing a
-  // count without saying which batch/serial it came from.
-  if (resolved.kind === 'sku' && (isBatchTrackedSku(item.skuCode) || isSerialTrackedSku(item.skuCode))) {
-    playScanSuccessSound()
-    if (isBatchTrackedSku(item.skuCode)) openViewBatch(item)
-    else openViewSerial(item)
+  const clearErrs = () => {
+    if (showQtyErrors.value) showQtyErrors.value = false
+    if (finishError.value) finishError.value = ''
+  }
+
+  // Serial-tracked: the scanned serial must be one that was picked for THIS order.
+  // Scanning the bare SKU can't verify a specific unit, so it just opens the view.
+  if (isSerialTrackedSku(item.skuCode)) {
+    if (resolved.kind !== 'serial') {
+      openViewSerial(item)
+      notifyScanError(`${item.skuCode}: scan the serial number to verify this item`)
+      return
+    }
+    const picked = (item.serialPicks ?? []).some(s => sameCode(s.serial, resolved.serial))
+    if (!picked) {
+      notifyScanError(`${resolved.serial}: serial not picked for this order`)
+      return
+    }
+    const set = verifiedSerials.value[item.key] ?? new Set<string>()
+    if ([...set].some(x => sameCode(x, resolved.serial))) {
+      notifyScanError(`${resolved.serial}: already scanned`)
+      return
+    }
+    const next = new Set(set); next.add(resolved.serial)
+    verifiedSerials.value = { ...verifiedSerials.value, [item.key]: next }
+    draftQty.value = { ...draftQty.value, [item.key]: next.size }
+    clearErrs(); playScanSuccessSound(); flashRow(item.key)
     return
   }
+
+  // Batch-tracked: the scanned batch must be one that was picked, and can't exceed
+  // the qty picked from that batch.
+  if (isBatchTrackedSku(item.skuCode)) {
+    if (resolved.kind !== 'batch') {
+      openViewBatch(item)
+      notifyScanError(`${item.skuCode}: scan the batch number to verify this item`)
+      return
+    }
+    const pick = (item.batchPicks ?? []).find(b => sameCode(b.batchNo, resolved.batchNo))
+    if (!pick) {
+      notifyScanError(`${resolved.batchNo}: batch not picked for this order`)
+      return
+    }
+    const map = verifiedBatchQty.value[item.key] ?? {}
+    const cur = map[pick.batchNo] ?? 0
+    if (cur >= pick.qty) {
+      notifyScanError(`${pick.batchNo}: already fully verified (${pick.qty})`)
+      return
+    }
+    const nextMap = { ...map, [pick.batchNo]: cur + 1 }
+    verifiedBatchQty.value = { ...verifiedBatchQty.value, [item.key]: nextMap }
+    const total = Object.values(nextMap).reduce((a, b) => a + b, 0)
+    draftQty.value = { ...draftQty.value, [item.key]: total }
+    clearErrs(); playScanSuccessSound(); flashRow(item.key)
+    return
+  }
+
+  // Non-tracked: a plain SKU count, +1 per scan.
   const current = draftQty.value[item.key] ?? 0
   if (current >= item.pickedQty) {
     notifyScanError(`${item.skuCode}: picked qty already fully packed`)
     return
   }
   draftQty.value = { ...draftQty.value, [item.key]: current + 1 }
-  if (showQtyErrors.value) showQtyErrors.value = false
-  if (finishError.value) finishError.value = ''
-  playScanSuccessSound()
-  flashRow(item.key)
+  clearErrs(); playScanSuccessSound(); flashRow(item.key)
 }
 // Scanning is harmless to undo — nothing is persisted until Save draft / Finish
 // packing — so let the operator wipe every unsaved scan/entry and start over.
 function resetProgress() {
   seedDraftQty()
+  seedVerification()
   if (showQtyErrors.value) showQtyErrors.value = false
   if (finishError.value) finishError.value = ''
 }
@@ -202,6 +288,9 @@ function onQtyInput(key: string, max: number, e: Event) {
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
 const showConfirm = ref(false)
+const unverifiedTrackedLines = computed(() =>
+  lineItems.value.filter(it => isTrackedItem(it) && verifiedCount(it) < it.pickedQty),
+)
 function endPackingClick() {
   if (!canEndPacking.value) {
     // Per-item pink cell + tooltip on the short-packed rows (below) carries the
@@ -212,6 +301,13 @@ function endPackingClick() {
   if (draftPackedTotal.value === 0) {
     showQtyErrors.value = true
     finishError.value = 'You must fill in packed qty for at least 1 item'
+    return
+  }
+  // Match order: every picked serial/batch of a tracked line must be scanned so we
+  // confirm the physical goods match the pick before the shipment goes out.
+  if (unverifiedTrackedLines.value.length) {
+    showQtyErrors.value = true
+    finishError.value = 'Scan every serial/batch number to verify it matches the pick before finishing'
     return
   }
   finishError.value = ''
@@ -367,12 +463,12 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <td v-if="!skippedPicking" class="pak-td pak-td--num">{{ fmt(item.pickedQty) }}</td>
                   <td
                     class="pak-td pak-td--input"
-                    :class="{ 'pak-td--input--error': isShortForMarketplace(item) || (showQtyErrors && !(draftQty[item.key] ?? 0)) }"
+                    :class="{ 'pak-td--input--error': isShortForMarketplace(item) || (showQtyErrors && !(draftQty[item.key] ?? 0)) || (showQtyErrors && isTrackedItem(item) && verifiedCount(item) < item.pickedQty) }"
                   >
                     <MpTooltip
-                      v-if="qtyScanRequired(item.pickedQty)"
+                      v-if="qtyScanRequired(item.pickedQty) || isTrackedItem(item)"
                       :id="`pak-tt-scan-${item.key}`"
-                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      :label="isTrackedItem(item) ? 'Scan the serial/batch number to verify each unit' : 'Qty at or below the scan threshold — scan the barcode instead of typing'"
                       placement="top"
                       use-portal
                       class="pak-qty-tooltip-wrap"
@@ -415,6 +511,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   </td>
                   <td class="pak-td">{{ item.unit }}</td>
                   <td class="pak-td pak-td--action">
+                    <span
+                      v-if="isTrackedItem(item)"
+                      class="pak-verify-tag"
+                      :class="{ 'pak-verify-tag--done': verifiedCount(item) >= item.pickedQty, 'pak-verify-tag--pending': showQtyErrors && verifiedCount(item) < item.pickedQty }"
+                    >{{ verifiedCount(item) }}/{{ item.pickedQty }} verified</span>
                     <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pak-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
                       <button class="pak-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
                         <MpIcon name="competencies" size="md" />
@@ -570,6 +671,10 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pak-td--action { position: sticky; right: 0; z-index: 1; }
 .pak-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .pak-view-btn:hover { background: var(--mp-background-neutral-hovered); }
+/* Match-order verify progress tag (batch/serial lines) */
+.pak-verify-tag { display: inline-block; margin-right: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; vertical-align: middle; }
+.pak-verify-tag--done { color: var(--mp-text-success, #18794e); }
+.pak-verify-tag--pending { color: var(--mp-text-danger, #a8352d); }
 
 /* ── Row flash on scan ────────────────────────────────────────────────────────── */
 @keyframes pak-flash {
