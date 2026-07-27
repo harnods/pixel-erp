@@ -64,14 +64,11 @@ const props = withDefaults(defineProps<{
   hasAiChat?: boolean
   /** Show skeleton placeholder rows instead of data (e.g. first load) */
   loading?: boolean
-  /** True when a text search is active. */
-  hasActiveSearch?: boolean
-  /** True when a status/dropdown filter is active. */
+  /** True when a search/filter is active — switches the empty state to the inline
+   *  "No results found" variant (vs the full illustrated empty state). */
   hasActiveFilter?: boolean
-  /** The current search term — used in the search empty state title. */
-  searchQuery?: string
-  /** Singular lowercase object label for filter empty state, e.g. "expense", "file". */
-  objectLabel?: string
+  /** Current search keyword — used to branch filter-only vs search empty state copy. */
+  search?: string
   /** Returns a context label string for a given row — shown as a chip in the AI chat input */
   contextLabel?: (row: Record<string, unknown>) => string
   /** Return true for rows that cannot be selected (checkbox disabled) */
@@ -91,10 +88,8 @@ const props = withDefaults(defineProps<{
   hasCheckbox: false,
   hasAiChat: false,
   loading: false,
-  hasActiveSearch: false,
   hasActiveFilter: false,
-  searchQuery: '',
-  objectLabel: 'result',
+  search: '',
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
@@ -109,8 +104,6 @@ const emit = defineEmits<{
   sortChange: [key: string, dir: 'asc' | 'desc']
   hideColumn: [key: string]
   clearFilters: []
-  clearSearch: []
-  clearAll: []
   selectionChange: [count: number]
 }>()
 
@@ -134,7 +127,7 @@ const showSkeleton = computed(() => props.loading || paginating.value)
  *  state the table header is hidden so the empty state replaces the whole table.
  *  (The inline "no results" filtered state keeps the header.) */
 const isFullEmpty = computed(
-  () => !showSkeleton.value && displayRows.value.length === 0 && !props.hasActiveFilter && !props.hasActiveSearch,
+  () => !showSkeleton.value && displayRows.value.length === 0 && !props.hasActiveFilter,
 )
 
 /** Rows currently rendered — frozen during a pagination change so the OLD rows stay
@@ -493,7 +486,6 @@ const bulkCountLabel = computed(() => {
             <th
               v-if="$slots.actions && !loading"
               class="erp-th erp-th--actions erp-th--fixed"
-              :style="{ width: actionsWidth, minWidth: actionsWidth }"
             />
 
             <!-- AI chat th — outermost sticky right, 28px (hidden only on first-load skeleton) -->
@@ -551,7 +543,6 @@ const bulkCountLabel = computed(() => {
               <td
                 v-if="$slots.actions"
                 class="erp-td erp-td--actions erp-td--fixed"
-                :style="{ width: actionsWidth, minWidth: actionsWidth }"
               >
                 <slot name="actions" :row="row" />
               </td>
@@ -602,11 +593,7 @@ const bulkCountLabel = computed(() => {
                 />
               </td>
               <!-- match data-row columns during pagination; hidden on first load -->
-              <td
-                v-if="$slots.actions && !loading"
-                class="erp-td erp-td--actions erp-td--fixed"
-                :style="{ width: actionsWidth, minWidth: actionsWidth }"
-              />
+              <td v-if="$slots.actions && !loading" class="erp-td erp-td--actions erp-td--fixed" />
               <td v-if="hasAiChat && !loading" class="erp-td erp-td--ai" />
             </tr>
           </template>
@@ -617,27 +604,16 @@ const bulkCountLabel = computed(() => {
               class="erp-td erp-td--empty"
               :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
             >
-              <!-- Inline empty — search/filter eliminated all results (no illustration) -->
-              <!-- Search + filter both active -->
-              <div v-if="props.hasActiveSearch && props.hasActiveFilter" class="empty-inline">
-                <p class="empty-inline-title">"{{ props.searchQuery }}" not found</p>
-                <p class="empty-inline-desc">Your search and filter criteria didn't match any available {{ props.objectLabel }}. Try adjusting your search or filter.</p>
-                <a class="empty-inline-clear" @click="emit('clearAll')">Clear search and filters</a>
+              <!-- Inline empty — search/filter eliminated all results (same illustration as
+                   the full empty state, so both empty states read consistently) -->
+              <div v-if="hasActiveFilter" class="empty-inline">
+                <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
+                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No results match your filters` }}</p>
+                <p class="empty-inline-desc">{{ props.search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.' }}</p>
+                <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
               </div>
-              <!-- Search only -->
-              <div v-else-if="props.hasActiveSearch" class="empty-inline">
-                <p class="empty-inline-title">"{{ props.searchQuery }}" not found</p>
-                <p class="empty-inline-desc">Recheck the keywords you have typed and try searching again.</p>
-                <a class="empty-inline-clear" @click="emit('clearSearch')">Clear search</a>
-              </div>
-              <!-- Filter only -->
-              <div v-else-if="props.hasActiveFilter" class="empty-inline">
-                <p class="empty-inline-title">{{ props.objectLabel.charAt(0).toUpperCase() + props.objectLabel.slice(1) }} not found</p>
-                <p class="empty-inline-desc">Your filter criteria didn't match any available {{ props.objectLabel }}. Try adjusting your filter.</p>
-                <a class="empty-inline-clear" @click="emit('clearFilters')">Clear filters</a>
-              </div>
+              <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
               <slot v-else name="empty">
-                <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
                 <div class="empty-default">
                   <p class="empty-title">No data yet</p>
                   <p class="empty-hint">There's nothing here yet.</p>

@@ -222,13 +222,8 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Approval workflows' },
     { label: 'Tagging rules' },
   ],
-  [
-    { label: 'Tax rates' },
-    { label: 'Currencies' },
-    { label: 'Payment terms' },
-    { label: 'Payment methods' },
-    { label: 'Tags' },
-  ],
+  // Tax rates / Currencies / Payment terms / Payment methods / Tags intentionally
+  // omitted here — they live under "Other lists" instead (no duplication).
 ]
 
 // Settings level-2 panel for WMS Standalone — a trimmed, warehouse-focused list.
@@ -248,6 +243,7 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
 const erpNavGroups: NavItem[][] = [
   [
     { name: 'Home', icon: 'home' },
+    { name: 'Dashboard', icon: 'dashboard' },
     {
       name: 'Reports', icon: 'reports',
       panelSubmenu: [[
@@ -341,7 +337,6 @@ const erpNavGroups: NavItem[][] = [
       expandOnClick: true,
       submenu: [
         [
-          { label: 'Overview' },
           { label: 'Warehouses' },
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
@@ -472,6 +467,7 @@ const assignedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.
 const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
     { name: 'Home', icon: 'home' },
+    { name: 'Dashboard', icon: 'dashboard' },
     { name: 'Reports', icon: 'reports' },
   ],
   [

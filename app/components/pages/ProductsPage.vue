@@ -57,8 +57,8 @@ const columns: TableColumn[] = [
   ...(isWms.value ? [] : [
     { key: 'defaultSalesPrice',   label: 'Default sales price',    width: '184px', align: 'right' as const, sortable: true, sortType: 'number' as const },
     { key: 'averageCost',         label: 'Average cost',           width: '184px', align: 'right' as const,                 sortType: 'number' as const },
-    { key: 'lastPurchaseCost',    label: 'Last Purchase cost',     width: '184px', align: 'right' as const,                 sortType: 'number' as const },
-    { key: 'defaultPurchaseCost', label: 'Default Purchase cost',  width: '184px', align: 'right' as const,                 sortType: 'number' as const },
+    { key: 'lastPurchaseCost',    label: 'Last purchase cost',     width: '184px', align: 'right' as const,                 sortType: 'number' as const },
+    { key: 'defaultPurchaseCost', label: 'Default purchase cost',  width: '184px', align: 'right' as const,                 sortType: 'number' as const },
   ]),
 ]
 
@@ -153,7 +153,7 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 const emptyIllustration = '/illustrations/empty-folder.png'
 const emptyTitle = computed(() => isAwaiting.value ? 'No products awaiting approval' : 'No products')
 const emptyDesc = computed(() =>
-  isAwaiting.value ? 'Products pending approval will appear here.' : 'Products will appear here once created.',
+  isAwaiting.value ? 'Products pending approval will appear here.' : 'Products will appear here.',
 )
 
 function clearFilters() {
@@ -181,6 +181,7 @@ const activeFilterCount = computed(() =>
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="!!search || activeFilterCount > 0"
+    :search="search"
     has-checkbox
     :context-label="(row) => `${row.name}`"
     @page-change="setPage"
@@ -375,7 +376,7 @@ const activeFilterCount = computed(() =>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails((row as ProductIndexRow).sku)">View product</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails((row as ProductIndexRow).sku)">View details</MpPopoverListItem>
             <MpPopoverListItem @click="router.push(`/product-list/${(row as ProductIndexRow).sku}/edit`)">Edit</MpPopoverListItem>
             <MpPopoverListItem>Duplicate</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>

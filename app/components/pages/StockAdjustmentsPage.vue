@@ -151,6 +151,7 @@ const STATUS_OPTIONS = [
   { value: 'in_progress', label: 'In progress' },
   { value: 'counted',     label: 'Counted'     },
   { value: 'completed',   label: 'Completed'   },
+  { value: 'closed',      label: 'Closed'      },
 ]
 const whOptions = computed(() => activeWhOpts.value)
 const warehouseLabel = computed(() => {
@@ -302,6 +303,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
+    :search="search"
     :actions-width="actionsWidth"
     :has-checkbox="showCheckbox"
     :bulk-label="kindFilter === 'count' ? 'stock count' : kindFilter === 'in-out' ? 'stock in/out' : 'stock adjustment'"

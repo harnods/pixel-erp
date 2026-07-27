@@ -20,7 +20,7 @@ const columns: TableColumn[] = [
   { key: 'vendorName', label: 'Vendor',     width: '240px', sortable: true,                 sortType: 'text'   },
   { key: 'dueDate',    label: 'Due date',   width: '108px',                                 sortType: 'date'   },
   { key: 'status',     label: 'Status',     width: '160px',                                 sortType: 'text'   },
-  { key: 'amount',     label: 'Amount',     width: '160px', align: 'right', sortable: true,  sortType: 'number' },
+  { key: 'amount',     label: 'Balance due', width: '160px', align: 'right', sortable: true,  sortType: 'number' },
   { key: 'tags',       label: 'Tags',       width: '160px'                                  },
 ]
 
@@ -108,7 +108,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     has-checkbox
     has-ai-chat
-    :context-label="(row) => `Purchase Invoice · ${row.number}`"
+    :search="search"
+    :context-label="(row) => `Purchase Invoice #${row.number}`"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -152,7 +153,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
         <!-- Card 3: Payment made -->
         <div class="stat-card stat-card--bordered">
-          <div class="stat-title">Payment made</div>
+          <div class="stat-title">Payment sent</div>
           <div class="stat-period">Last 30 days</div>
           <div class="stat-amount">Rp72.050.000,00</div>
           <a class="stat-link">7 invoices</a>

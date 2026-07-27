@@ -23,7 +23,7 @@
     <!-- Right: Actions + User -->
     <MpFlex class="erp-header__right">
       <MpFlex class="erp-header__actions">
-        <IconButton icon="add" />
+        <ErpQuickCreateMenu />
         <IconButton icon="help" />
         <IconButton icon="desktop" />
         <IconButton icon="notification" />

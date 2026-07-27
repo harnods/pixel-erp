@@ -163,9 +163,9 @@ export function wmsAdjustmentWarehouseOptions(): { value: string; label: string 
   return [...seen.entries()].map(([value, label]) => ({ value, label }))
 }
 
-/** Count tasks still open (not yet counted or completed) — badge for the "Count task" tab. */
+/** Count tasks still open (not yet counted, completed, or closed) — badge for the "Count task" tab. */
 export function openWmsCountTaskCount(): number {
-  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status !== 'completed' && a.status !== 'counted').length
+  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status !== 'completed' && a.status !== 'counted' && a.status !== 'closed').length
 }
 
 /** Count tasks counted but not yet reviewed by a manager — badge for the "Awaiting approval" tab. */
@@ -187,6 +187,28 @@ export function cancelWmsAdjustment(id: string, reason?: string): void {
   const a = wmsStockAdjustments.find((x) => x.id === id)
   if (!a || !canCancelWmsAdjustment(a)) return
   a.status = 'canceled'
+  a.canceledDate = new Date().toISOString()
+  if (reason) a.canceledReason = reason
+  persist()
+}
+
+/** Same eligibility as cancel — an operator can only close a count that hasn't
+ *  been submitted for approval yet. */
+export function canCloseWmsCount(a: StockAdjustment): boolean {
+  return a.kind === 'count' && (a.status === 'not_started' || a.status === 'in_progress')
+}
+
+/** Close a cycle count task the operator is walking away from mid-count — any
+ *  counted quantities saved so far are discarded (a.lines cleared) so the
+ *  details page shows every SKU as uncounted, not a stale partial result.
+ *  Terminal, view-only; the record itself is kept for the audit trail, same
+ *  as cancel — just a distinct status/label so it doesn't read as "never
+ *  happened" when real counting work may have gone into it. */
+export function closeWmsCount(id: string, reason?: string): void {
+  const a = wmsStockAdjustments.find((x) => x.id === id)
+  if (!a || !canCloseWmsCount(a)) return
+  a.status = 'closed'
+  a.lines = undefined
   a.canceledDate = new Date().toISOString()
   if (reason) a.canceledReason = reason
   persist()
