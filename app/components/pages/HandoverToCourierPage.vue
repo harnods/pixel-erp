@@ -2,7 +2,9 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpButton, MpAutocomplete, MpDatePicker, MpIcon, MpSpinner,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, css, toast,
+  MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  css, toast,
 } from '@mekari/pixel3'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
@@ -11,6 +13,7 @@ import {
   handoverToCourierBulk, type DeliveryTask,
 } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
+import { couriers } from '~/data/couriers'
 import { scrollToFirstError } from '~/utils/form'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { notifyScanError } from '~/utils/scan'
@@ -168,6 +171,18 @@ watch(tasks, (ts) => {
 }, { immediate: true })
 function setCourier(id: string, val: string) { courierByRow.value = { ...courierByRow.value, [id]: val } }
 function setTracking(id: string, val: string) { trackingByRow.value = { ...trackingByRow.value, [id]: val } }
+
+// ── Courier picker (searchable MpPopover, from master data couriers) — used for
+// non-marketplace rows that don't yet have a courier assigned. ────────────────
+const activeCourierRow = ref<string | null>(null)
+const courierSearch = ref('')
+function openCourierPicker(id: string) { activeCourierRow.value = id; courierSearch.value = '' }
+function closeCourierPicker(id: string) { if (activeCourierRow.value === id) { activeCourierRow.value = null; courierSearch.value = '' } }
+function couriersFiltered() {
+  const q = courierSearch.value.trim().toLowerCase()
+  return couriers.filter((c) => !q || c.name.toLowerCase().includes(q))
+}
+function selectCourier(id: string, name: string) { setCourier(id, name); closeCourierPicker(id) }
 
 
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -382,12 +397,37 @@ async function handleSave() {
                     <td class="ho-td ho-td--num">{{ formatNum(row.toShipQty) }}</td>
                     <td class="ho-td ho-td--input">
                       <input
+                        v-if="row.isMarketplace"
                         type="text" class="ho-text-input"
                         :value="courierByRow[row.id] ?? ''"
-                        :disabled="row.isMarketplace"
+                        disabled
                         placeholder="e.g. JNE, SiCepat"
-                        @input="setCourier(row.id, ($event.target as HTMLInputElement).value)"
                       />
+                      <MpPopover
+                        v-else
+                        :id="`ho-courier-${row.id}`"
+                        placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select
+                        @close="closeCourierPicker(row.id)"
+                      >
+                        <MpPopoverTrigger>
+                          <div class="ho-courier-trigger">
+                            <input
+                              type="text" class="ho-courier-input" autocomplete="off"
+                              :value="activeCourierRow === row.id ? courierSearch : (courierByRow[row.id] ?? '')"
+                              placeholder="Select courier"
+                              @focus="openCourierPicker(row.id)"
+                              @input="activeCourierRow = row.id; courierSearch = ($event.target as HTMLInputElement).value"
+                            />
+                            <svg class="ho-courier-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                          </div>
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ width: '280px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
+                          <MpPopoverList>
+                            <MpPopoverListItem v-for="c in couriersFiltered()" :key="c.id" :is-active="c.name === (courierByRow[row.id] ?? '')" @click="selectCourier(row.id, c.name)">{{ c.name }}</MpPopoverListItem>
+                            <p v-if="!couriersFiltered().length" class="ho-courier-none">No couriers found.</p>
+                          </MpPopoverList>
+                        </MpPopoverContent>
+                      </MpPopover>
                     </td>
                     <td class="ho-td ho-td--input">
                       <input
@@ -553,6 +593,12 @@ async function handleSave() {
 }
 .ho-text-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
 .ho-text-input::placeholder { color: var(--mp-text-placeholder); }
+/* Courier picker (searchable MpPopover, from master data couriers) */
+.ho-courier-trigger { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); cursor: text; }
+.ho-courier-input { flex: 1; min-width: 0; border: none; outline: none; background: none; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ho-courier-input::placeholder { color: var(--mp-text-placeholder); }
+.ho-courier-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+.ho-courier-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 
 /* Newly-scanned row flash (~700ms), same idea as New shipment / receiving / put-away */
 .ho-item-row--flash .ho-td { animation: ho-row-flash 700ms ease-out; }
