@@ -1,3 +1,7 @@
+<script setup lang="ts">
+import { MpToastManager } from '@mekari/pixel3'
+</script>
+
 <template>
   <div class="app-shell">
     <ErpHeader />
@@ -7,6 +11,7 @@
         <slot />
       </div>
     </div>
+    <MpToastManager />
   </div>
 </template>
 
@@ -42,10 +47,15 @@
   --mp-text-default: #080d0e;
   --mp-text-inverse: #ffffff;
   --mp-text-secondary: #3a4749;
+  --mp-text-subtle: #6e7a7c;
+  --mp-text-placeholder: #6e7a7c;
   --mp-text-selected: #0f6d4d;
   --mp-text-link: #165082;
   --mp-text-disabled: #8c9596;
   --mp-text-danger: #a8352d;
+
+  /* Background — inverse */
+  --mp-background-inverse: #142d26;
 
   /* Typography */
   --mp-fonts-body: "Inter", -apple-system, BlinkMacSystemFont, Helvetica, Arial,
@@ -56,6 +66,19 @@
 
   /* Shadow (Enterprise uses #1D1F2429 as shadow color) */
   --mp-shadows-sm: 0px 10px 15px -3px #1d1f2429, 0px 4px 6px -2px #1d1f2429;
+  --mp-shadows-md: 0 8px 24px rgba(0, 0, 0, 0.10);
+  --mp-shadows-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  /* ── Airene (Mekari AI) brand tokens — extends 2.4 Enterprise palette ── */
+  --mp-airene-default: #651fff;
+  --mp-airene-bold: #5a41d6;
+  --mp-airene-hovered: #7c3aed;
+  --mp-airene-pressed: #6d28d9;
+  --mp-airene-subtle: #ede9fe;
+  --mp-airene-banner-bg: #f6f3ff;
+  --mp-airene-banner-text: #5221a5;
+  --mp-airene-badge-bg: #f3f1fc;
+  --mp-airene-badge-border: #8270db;
 }
 
 *,

@@ -19,13 +19,17 @@ The `status` prop is **case-insensitive**. Unknown statuses fall back to `type="
 
 ## Status → Badge Type Mapping
 
-| Badge type | Statuses |
-|---|---|
-| `completed` (green) | `paid`, `approved`, `active`, `completed`, `verified`, `success` |
-| `warning` (yellow) | `open`, `pending`, `draft`, `in review`, `on progress` |
-| `critical` (red) | `overdue`, `rejected`, `failed`, `voided`, `expired`, `error` |
-| `information` (gray) | `inactive`, `archived`, `cancelled`, `not started` |
-| `announcement` (purple) | `new`, `beta`, `vip`, `featured` |
+> **Pixel `MpBadge` has 5 `type`s and NO purple.** The **gray / neutral** badge is
+> **`announcement`** (Pixel's own example uses `announcement` for "Inactive").
+> `information` is **blue**, not gray.
+
+| Badge type | Colour | Statuses |
+|---|---|---|
+| `completed` | green | `paid`, `approved`, `active`, `completed`, `verified`, `success` |
+| `warning` | yellow | `open`, `pending`, `draft`, `in review`, `on progress` |
+| `critical` | red | `overdue`, `rejected`, `failed`, `expired`, `error` |
+| `announcement` | **gray** | `closed`, `voided`, `inactive`, `archived`, `cancelled`, `not started` |
+| `information` | blue | `partially processed`, `new`, `beta`, `vip`, `featured` |
 
 ---
 

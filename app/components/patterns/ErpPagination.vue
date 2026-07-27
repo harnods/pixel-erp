@@ -82,7 +82,6 @@ const rangeEnd    = computed(() => Math.min(props.currentPage * props.perPage, p
   align-items: center;
   justify-content: space-between;
   padding: var(--mp-spacing-2, 8px);
-  border-top: 1px solid var(--mp-border-default, #dcdfe4);
   flex-shrink: 0;
 }
 
@@ -102,7 +101,7 @@ const rangeEnd    = computed(() => Math.min(props.currentPage * props.perPage, p
 .pag-label {
   font-size: var(--mp-font-sizes-md, 14px);
   line-height: var(--mp-line-heights-md, 20px);
-  color: var(--mp-text-secondary, #656f80);
+  color: var(--mp-text-secondary);
   white-space: nowrap;
 }
 
@@ -120,31 +119,31 @@ const rangeEnd    = computed(() => Math.min(props.currentPage * props.perPage, p
   background: transparent;
   border: none;
   outline: none;
-  font-size: var(--mp-font-sizes-md, 14px);
-  line-height: var(--mp-line-heights-md, 20px);
-  color: var(--mp-text-secondary, #656f80);
-  padding: 4px 24px 4px 8px;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-secondary);
+  padding: var(--mp-spacing-1) var(--mp-spacing-6) var(--mp-spacing-1) var(--mp-spacing-2);
   cursor: pointer;
-  border-radius: var(--mp-radii-sm, 4px);
+  border-radius: var(--mp-radii-sm);
 }
 
 .pag-select:hover {
-  background: var(--mp-background-neutral-hovered, #f0f1f3);
+  background: var(--mp-background-neutral-hovered);
 }
 
 .pag-chevron {
   position: absolute;
-  right: 4px;
+  right: var(--mp-spacing-1);
   pointer-events: none;
-  color: var(--mp-text-secondary, #656f80);
-  width: 16px;
-  height: 16px;
+  color: var(--mp-text-secondary);
+  width: var(--mp-sizes-4, 16px);
+  height: var(--mp-sizes-4, 16px);
 }
 
 .pag-showing {
   font-size: var(--mp-font-sizes-md, 14px);
   line-height: var(--mp-line-heights-md, 20px);
-  color: var(--mp-text-secondary, #656f80);
+  color: var(--mp-text-secondary);
   white-space: nowrap;
 }
 
@@ -165,23 +164,23 @@ const rangeEnd    = computed(() => Math.min(props.currentPage * props.perPage, p
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: var(--mp-spacing-2, 8px);
+  width: var(--mp-sizes-9, 36px);
+  height: var(--mp-sizes-9, 36px);
+  padding: var(--mp-spacing-2);
   border: none;
   background: transparent;
-  border-radius: var(--mp-radii-md, 6px);
+  border-radius: var(--mp-radii-md);
   cursor: pointer;
-  color: var(--mp-text-default, #272b32);
+  color: var(--mp-text-default);
   transition: background 0.1s;
 }
 
 .pag-nav-btn:hover:not(:disabled) {
-  background: var(--mp-background-neutral-hovered, #f0f1f3);
+  background: var(--mp-background-neutral-hovered);
 }
 
 .pag-nav-btn:disabled {
-  color: var(--mp-text-disabled, #c2c7d0);
+  color: var(--mp-text-disabled);
   cursor: not-allowed;
 }
 </style>

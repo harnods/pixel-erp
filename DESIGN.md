@@ -25,7 +25,7 @@ Do not use non-Enterprise components or manually override tokens.
 
 ### Stage
 - Stage is the white content area below the page title bar.
-- **Padding: `24px` on all sides — required on every page, no exceptions.**
+- **Padding: `var(--mp-spacing-6)` (24px) on all sides — required on every page, no exceptions.**
 
 ```vue
 <template>
@@ -35,15 +35,15 @@ Do not use non-Enterprise components or manually override tokens.
 </template>
 
 <style scoped>
-.page-content { padding: 24px; }
+.page-content { padding: var(--mp-spacing-6); } /* 24px */
 </style>
 ```
 
 ### Page Title Bar
-- Height: `72px`
-- Background: `var(--mp-background-neutral-subtle)`
-- Padding: `0 24px`
-- Font: 24px, semibold, `var(--mp-text-default)`
+- **Always `72px`**, background `var(--mp-background-neutral-subtle)`, padding `0 24px`.
+- Full spec (dimensions, index / detail / form variants, title-bar status badge rule,
+  build checklist) lives in **[docs/patterns/page-title-bar.md](docs/patterns/page-title-bar.md)** —
+  refer to it when generating any page.
 
 ---
 
@@ -62,17 +62,35 @@ Use these directly from `@mekari/pixel3`:
 
 > **`MpTable` is not used.** The Enterprise variant does not match the ERP Figma design. Use `ErpTablePage` instead.
 
+### Buttons
+
+See [docs/patterns/Button.md](docs/patterns/Button.md) for the source-of-truth
+button spec.
+
+Core rules:
+
+- **Secondary = black/default text + bold border** on neutral fill.
+- **Cancel / dismiss is always ghost** — never secondary.
+- **Edit forms use "Save changes"; create forms use "Save".**
+- **No disabled action buttons for validation.** Keep them clickable; validate on
+  click and show an inline error or toast. Loading/duplicate-submit protection can
+  disable while the action is already running.
+- Only **one** primary action per screen.
+
 ### MpBadge — status mapping
 
 `for="tableStatus"` inside table cells:
 
-| Status | `type` |
-|--------|--------|
-| Paid, Approved, Active, Completed | `completed` |
-| Open, Pending, Draft, In Review | `warning` |
-| Overdue, Rejected, Failed, Voided | `critical` |
-| Inactive, Archived, Cancelled | `information` |
-| New, Beta, VIP, Featured | `announcement` |
+> Pixel `MpBadge` has **no purple**. The **gray / neutral** badge is `announcement`
+> (not `information`, which is **blue**).
+
+| Status | `type` | Colour |
+|--------|--------|--------|
+| Paid, Approved, Active, Completed | `completed` | green |
+| Open, Pending, Draft, In Review | `warning` | yellow |
+| Overdue, Rejected, Failed | `critical` | red |
+| **Closed, Voided**, Inactive, Archived, Cancelled | `announcement` | **gray** |
+| Partially processed, New, VIP | `information` | blue |
 
 `for="additionalInformation"` for tag badges (VIP, B2B, Retail, etc.).
 
@@ -84,6 +102,8 @@ Use `ErpStatusBadge` — it wraps `MpBadge` with the mapping built in.
 
 Built in-house because they do not exist in Pixel Enterprise yet.
 Note for Pixel team: add these to the Enterprise library.
+
+> Full component & page docs: see [docs/README.md](docs/README.md).
 
 ### `ErpTablePage`
 `app/components/patterns/ErpTablePage.vue`
@@ -101,59 +121,12 @@ Note for Pixel team: add these to the Enterprise library.
 
 ## Table Component Design
 
-### Header
+`ErpTablePage` is the **single source of truth** for table specs: header, row
+metrics, sticky columns, standard columns, skeleton, row-hover actions, row action
+menus, and empty states.
 
-| Property | Value | Token |
-|----------|-------|-------|
-| Background | neutral subtle | `var(--mp-background-neutral-subtle)` |
-| Height | 28px | — |
-| Font size | 12px | — |
-| Font weight | 600 (semibold) | — |
-| Text transform | uppercase | — |
-| Padding (left-aligned) | `4px 16px 4px 8px` | — |
-| Padding (right-aligned) | `4px 8px 4px 16px` | — |
-| Border bottom | 1px solid | `var(--mp-border-default)` |
-| Position | sticky top: 0 | — |
-
-### Row
-
-| Property | Value | Token |
-|----------|-------|-------|
-| Min-height | 40px | — |
-| Font size | 14px | — |
-| Font weight | 400 (regular) | — |
-| Text color | default | `var(--mp-text-default)` |
-| Padding (left-aligned) | `6px 16px 6px 8px` | — |
-| Padding (right-aligned) | `6px 8px 6px 16px` | — |
-| Border bottom | 1px solid | `var(--mp-border-default)` |
-| Hover background | neutral hovered | `var(--mp-background-neutral-hovered)` |
-
-### Sticky right column (actions)
-
-```css
-position: sticky;
-right: 0;
-box-shadow: inset 2px 0 var(--mp-border-default);
-background: inherit;
-```
-
-Handled automatically by `ErpTablePage` when the `#actions` slot is used.
-
-### Standard columns
-
-| Column | Width | Align | Notes |
-|--------|-------|-------|-------|
-| Checkbox | 36px | center | `MpCheckbox`, via `has-checkbox` prop |
-| Date | 120px | left | `DD/MM/YYYY` |
-| Document number | 200px | left | link style |
-| Attachment | 40px | center | `noHeader: true`, `MpIcon name="attachment"` |
-| Customer / Vendor | 240px | left | |
-| Due date | 108px | left | `DD/MM/YYYY` |
-| Status | 160px | left | `ErpStatusBadge` + optional sub-label |
-| Balance due | 160px | right | IDR format |
-| Total | 160px | right | IDR format |
-| Tags | 160px | left | `MpBadge for="additionalInformation"` |
-| Actions | 44px | center | `MpButton variant="tertiary" left-icon="more-vertical"`, sticky right |
+See **[docs/patterns/ErpTablePage.md](docs/patterns/ErpTablePage.md)**. Do not
+duplicate table dimensions or spacing rules in page-level docs.
 
 ### Number format (IDR)
 ```ts
@@ -211,7 +184,7 @@ new Intl.DateTimeFormat('id-ID', {
 
 - [ ] `ErpTablePage` for every index page — do not build a custom table
 - [ ] `ErpStatusBadge` for status cells — do not use raw `MpBadge` with manual mapping
-- [ ] Stage padding `24px` on all sides — no exceptions
+- [ ] Stage padding `var(--mp-spacing-6)` (24px) on all sides — no exceptions
 - [ ] Enterprise theme is set in `app.vue` — do not repeat it in pages
 - [ ] `pageRegistry` key must exactly match the sidebar menu label
 - [ ] Mock data lives in `app/data/` — do not hardcode in components

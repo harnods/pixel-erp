@@ -33,15 +33,15 @@ const buttonClass = computed(() =>
     justifyContent: "center",
     cursor: "pointer",
     rounded: "lg",
-    bg: props.isActive ? "#265C58" : undefined,
+    bg: props.isActive ? "background.surface.bold.pressed" : undefined,
     _hover: {
-      bg: props.isActive ? "#265C58" : "#265C5880"
+      bg: props.isActive ? "background.surface.bold.pressed" : "background.surface.bold.hovered"
     },
     _active: {
-      bg: "#265C58"
+      bg: "background.surface.bold.pressed"
     },
     _focusVisible: {
-      outline: "2px solid #B1DF6B",
+      outline: "2px solid token(colors.focus)",
       outlineOffset: "2px"
     }
   })
