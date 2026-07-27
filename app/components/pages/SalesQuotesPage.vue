@@ -19,7 +19,7 @@ const columns: TableColumn[] = [
   { key: 'date',           label: 'Date',            width: '120px',                                sortType: 'date'   },
   { key: 'number',         label: 'Number',          width: '200px', sortable: true,                sortType: 'number' },
   { key: 'customerName',   label: 'Customer',        width: '240px', sortable: true,                sortType: 'text'   },
-  { key: 'expirationDate', label: 'Expiration date', width: '140px',                                sortType: 'date'   },
+  { key: 'expirationDate', label: 'Valid until',      width: '140px',                                sortType: 'date'   },
   { key: 'status',         label: 'Status',          width: '140px',                                sortType: 'text'   },
   { key: 'total',          label: 'Total',           width: '160px', align: 'right', sortable: true, sortType: 'number' },
   { key: 'tags',           label: 'Tags',            width: '160px'                                 },
@@ -107,6 +107,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="!!search || !!statusFilter"
+    :search="search"
     has-checkbox
     :context-label="(row) => `Sales Quote #${row.number}`"
     @page-change="setPage"
@@ -192,6 +193,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             type="text"
             placeholder="Search..."
           />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -358,7 +364,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 .row-hover-btn {
   position: absolute;
   right: 0;
-  top: 50%;
+  top: var(--mp-spacing-2\.5, 10px);
   transform: translateY(-50%);
   display: none;
   align-items: center;
@@ -386,10 +392,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 }
 
 .row-kebab {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--mp-spacing-1);
+  width: var(--mp-sizes-8, 32px);
+  height: var(--mp-sizes-8, 32px);
   border: none;
   background: transparent;
   cursor: pointer;
@@ -537,4 +544,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   min-width: 0;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 </style>

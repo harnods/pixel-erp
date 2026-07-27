@@ -1,4 +1,4 @@
-import { receivingPOs, saveReceivingDraft, type ReceivingTask, type ReceivingPO } from './receivingTasks'
+import { receivingPOs, saveReceivingDraft, type ReceivingTask, type ReceivingPO, type ReceivingBatchLine } from './receivingTasks'
 import { putAwayTasks } from './putAwayTasks'
 import { CATALOG } from './catalog'
 import { binForSku } from './warehouseDetails'
@@ -11,8 +11,14 @@ export interface TaskLineItem {
   colorHue:    number
   binLocation: string
   expectedQty: number
+  /** "Expected qty" shown in the UI — see ReceivingItem.targetQty. */
+  targetQty: number
   receivedQty: number
   unit:        string
+  /** Per-batch breakdown already recorded for this line (batch-tracked SKUs only). */
+  batchLines?: ReceivingBatchLine[]
+  /** Serials already recorded for this line (serial-tracked SKUs only). */
+  serialNumbers?: string[]
 }
 
 const CATALOG_BY_SKU = new Map(CATALOG.map((p) => [p.sku, p]))
@@ -37,8 +43,11 @@ export function getTaskLineItems(task: ReceivingTask): TaskLineItem[] {
       colorHue:    p?.hue ?? 200,
       binLocation: binForSku(task.warehouseId, it.sku),
       expectedQty: it.expectedQty,
+      targetQty:   it.targetQty,
       receivedQty: it.receivedQty,
       unit:        it.unit || p?.unit || 'Unit',
+      batchLines:    it.batchLines,
+      serialNumbers: it.serialNumbers,
     }
   })
 }
@@ -50,7 +59,7 @@ export interface PutAwayLink {
   assignee: string
   itemQty: number
   destination: string
-  status: 'open' | 'in progress' | 'completed'
+  status: 'open' | 'in progress' | 'completed' | 'canceled'
   startDate?: string
   endDate?: string
 }
@@ -61,6 +70,10 @@ export interface PutAwayLink {
  */
 export function getPutAwayForTask(task: ReceivingTask): PutAwayLink[] {
   if (task.status !== 'completed' && task.status !== 'pending put-away') return []
+  // Keep ALL put-aways for this receiving task — including canceled ones — so the
+  // linked-transactions list stays a full audit trail (a canceled put-away shows with a
+  // "Canceled" badge; the receiving task itself has reverted to "pending put-away" and a
+  // fresh put-away can be created alongside it).
   const matching = putAwayTasks.filter((pt) => pt.receivingTaskIds.includes(task.id))
   return matching.map((pt) => ({
     id: pt.id,

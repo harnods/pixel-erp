@@ -1,0 +1,3 @@
+{
+  "rewrites": [{ "source": "/((?!_nuxt|api|favicon).*)", "destination": "/" }]
+}

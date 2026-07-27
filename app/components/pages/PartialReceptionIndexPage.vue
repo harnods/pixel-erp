@@ -9,7 +9,8 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useTableState } from '~/composables/useTableState'
-import { receiptsForStage, closeReceipt, type Receipt } from '~/data/receipts'
+import { receiptsForStage, closeReceipt, isManualReceipt, type Receipt } from '~/data/receipts'
+import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivingTasks'
 import { warehouses } from '~/data/warehouses'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -92,8 +93,11 @@ function outstanding(r: Receipt) { return Math.max(0, r.purchaseQty - r.received
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
-function createPurchaseReceiving(row: Receipt) { router.push(`/barang-masuk/${row.id}/receive`) }
-function viewDetails(row: Receipt) { router.push(`/barang-masuk/${row.id}`) }
+function createPurchaseReceiving(row: Receipt) { router.push(`/inbound-delivery/${row.id}/receive`) }
+function viewDetails(row: Receipt) { router.push(`/inbound-delivery/${row.id}`) }
+function canClose(row: Receipt): boolean {
+  return !isManualReceipt(row) && !receivingTasksForReceipt(row.id).some(t => t.status === 'open' || t.status === 'in progress')
+}
 
 const closeModalOpen = ref(false)
 const receiptToClose = ref<Receipt | null>(null)
@@ -151,7 +155,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="par-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-par-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -160,6 +163,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="par-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-par-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -169,6 +173,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
@@ -190,9 +199,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Warehouse — wrap to 2 lines ── -->
-    <template #cell-warehouseName="{ value }">
-      <span class="rcv-warehouse">{{ value }}</span>
+    <!-- ── Warehouse — wrap to 2 lines; View details chip on hover ── -->
+    <template #cell-warehouseName="{ value, row }">
+      <div class="cell-with-action">
+        <span class="rcv-warehouse">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as Receipt).warehouseId}`)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
     </template>
 
     <!-- ── Numeric cells ── -->
@@ -213,9 +231,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '190px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as Receipt)">View details</MpPopoverListItem>
-            <MpPopoverListItem @click="createPurchaseReceiving(row as unknown as Receipt)">Purchase receiving</MpPopoverListItem>
             <MpPopoverListItem
-              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
+              v-if="canCreateReceivingTask((row as unknown as Receipt).id)"
+              @click="createPurchaseReceiving(row as unknown as Receipt)"
+            >Purchase receiving</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canClose(row as unknown as Receipt)"
+              :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCloseModal(row as unknown as Receipt)"
             >Close</MpPopoverListItem>
           </MpPopoverList>
@@ -235,7 +257,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Close confirmation modal ── -->
   <MpModal
-    id="par-close-modal" :is-open="closeModalOpen" size="sm"
+    id="par-close-modal" :is-open="closeModalOpen" size="md"
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCloseModal"
   >
     <MpModalContent>
@@ -297,6 +319,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Purchase no. cell — number + memo subtitle, View details chip on hover */
 .cell-with-action { position: relative; display: flex; align-items: center; }
@@ -304,7 +334,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcv-po__no { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .rcv-po__memo { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -322,12 +352,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .par-outstanding { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-warning, var(--mp-text-default)); }
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }

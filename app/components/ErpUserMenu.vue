@@ -10,10 +10,9 @@
   <MpPopover
     id="header-user-menu"
     placement="bottom-end"
+    trigger="hover"
     use-portal
-    is-close-on-blur
     is-close-on-escape
-    is-focus-on-close
     v-slot="{ onClosePopover }"
     @close="view = 'main'"
   >
@@ -265,6 +264,10 @@ function toggleReview(closePopover: () => void) {
 :global(.mp-popover.user-menu) {
   /* Above the header (sticky 1100) and the table's sticky cells/headers */
   z-index: var(--mp-z-indices-popover, 1600);
+  /* Raise 6px so its top lines up with the quick-create ("+") popover — the
+     avatar+name trigger sits 6px lower than the +'s icon button, so floating-ui
+     otherwise drops this menu 6px below the shortcut menu. */
+  margin-top: -6px;
   width: 277px;
   padding: var(--mp-spacing-2) 0 0;
   background: var(--mp-colors-background-stage, #ffffff);

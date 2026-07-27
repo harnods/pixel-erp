@@ -25,8 +25,17 @@ const props = withDefaults(
     size?: 'sm' | 'md'
     /** MpBadge variant. Default 'tableStatus' (table rows); use 'additionalInformation' next to a page-title H1. */
     badgeFor?: string
+    /** Explicit label override — keeps the mapped colour but shows this text instead.
+     *  Use when the same status value needs different wording per module (e.g. an
+     *  'in progress' order reads "In process" but a work order reads "In progress"). */
+    label?: string
+    /** Explicit colour-type override — keeps the mapped label but uses this MpBadge
+     *  type instead. Use when the same status value needs a different colour per
+     *  module (e.g. 'pending' reads warning/yellow for Production requests, but
+     *  announcement/gray for Purchase orders). */
+    type?: 'completed' | 'announcement' | 'information' | 'warning' | 'critical'
   }>(),
-  { size: undefined, badgeFor: 'tableStatus' },
+  { size: undefined, badgeFor: 'tableStatus', label: undefined, type: undefined },
 )
 
 interface StatusConfig { type: string; label: string }
@@ -37,31 +46,30 @@ const statusConfig: Record<string, StatusConfig> = {
   approved:   { type: 'completed',    label: 'Approved'   },
   active:     { type: 'completed',    label: 'Active'     },
   completed:  { type: 'completed',    label: 'Completed'  },
+  counted:    { type: 'completed',    label: 'Counted'    },
   verified:   { type: 'completed',    label: 'Verified'   },
   success:    { type: 'completed',    label: 'Success'    },
   delivered:  { type: 'completed',    label: 'Delivered'  },
   invoiced:   { type: 'completed',    label: 'Invoiced'   },
   received:   { type: 'completed',    label: 'Received'   },
   shipped:    { type: 'completed',    label: 'Shipped'    },
-  high:       { type: 'completed',    label: 'High'       },
+  fulfilled:  { type: 'completed',    label: 'Fulfilled'  },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
-  unpaid:     { type: 'warning',      label: 'Unpaid'     },
   pending:    { type: 'warning',      label: 'Pending'    },
-  'awaiting approval': { type: 'warning', label: 'Awaiting approval' },
+  draft:      { type: 'announcement', label: 'Draft'      },
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
   receiving:  { type: 'warning',      label: 'Receiving'  },
-  'on the way':{ type: 'warning',     label: 'Open'       },
   'ready to pack':{ type: 'warning',  label: 'Ready to pack' },
   'ready to ship':{ type: 'warning',  label: 'Ready to ship' },
+  'out for delivery':{ type: 'information', label: 'Out for delivery' },
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
-  'ready to ship':{ type: 'warning', label: 'Ready to ship' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
   'on progress':{ type: 'warning',    label: 'On progress'},
-  medium:     { type: 'warning',      label: 'Medium'     },
+  recommended:{ type: 'warning',      label: 'Recommended'},
 
   // ── critical — red ────────────────────────────────
   overdue:    { type: 'critical',     label: 'Overdue'    },
@@ -70,10 +78,9 @@ const statusConfig: Record<string, StatusConfig> = {
   expired:    { type: 'critical',     label: 'Expired'    },
   error:      { type: 'critical',     label: 'Error'      },
   declined:   { type: 'critical',     label: 'Declined'   },
-  low:        { type: 'critical',     label: 'Low'        },
 
   // ── announcement — GRAY (neutral / final / inactive) ──
-  draft:      { type: 'announcement', label: 'Draft'      },
+  'awaiting approval':{ type: 'announcement', label: 'Draft' },
   closed:     { type: 'announcement', label: 'Closed'     },
   voided:     { type: 'announcement', label: 'Voided'     },
   inactive:   { type: 'announcement', label: 'Inactive'   },
@@ -81,20 +88,24 @@ const statusConfig: Record<string, StatusConfig> = {
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },
+  'not allocated':{ type: 'announcement', label: 'Not allocated' },
+  not_started:{ type: 'warning',      label: 'Open'        },
   'to do':    { type: 'announcement', label: 'To do'      },
   direct:     { type: 'announcement', label: 'Direct'     },
-  unclassified:{ type: 'announcement', label: 'Unclassified' },
 
   // ── information — blue ────────────────────────────
-  bill:       { type: 'information',  label: 'Bill'       },
-  receipt:    { type: 'information',  label: 'Receipt'    },
   'partially processed': { type: 'information', label: 'Partially processed' },
+  'partially produced': { type: 'warning', label: 'Partially produced' },
+  'partially completed': { type: 'information', label: 'Partially completed' },
   'partially received': { type: 'information', label: 'Partially received' },
   'partial reception': { type: 'information', label: 'Partial reception' },
   'partially picked': { type: 'information', label: 'Partially picked' },
   'partially packed': { type: 'information', label: 'Partially packed' },
   'partially shipped': { type: 'information', label: 'Partially shipped' },
-  'in progress':{ type: 'information',  label: 'In process' },
+  'partially fulfilled': { type: 'information', label: 'Partially fulfilled' },
+  'in progress':{ type: 'information',  label: 'In progress' },
+  in_progress:{ type: 'information',  label: 'In progress' },
+  'task created':{ type: 'information', label: 'Task created' },
   new:        { type: 'information',  label: 'New'        },
   beta:       { type: 'information',  label: 'Beta'       },
   vip:        { type: 'information',  label: 'VIP'        },
@@ -103,7 +114,8 @@ const statusConfig: Record<string, StatusConfig> = {
 
 const config = computed<StatusConfig>(() => {
   const key = props.status?.toLowerCase() ?? ''
-  return statusConfig[key] ?? { type: 'information', label: props.status }
+  const base = statusConfig[key] ?? { type: 'information', label: props.status }
+  return { ...base, ...(props.label ? { label: props.label } : {}), ...(props.type ? { type: props.type } : {}) }
 })
 </script>
 

@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpAutocomplete, MpFormControl, MpFormLabel, MpFormErrorMessage, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { outgoingOrders, outgoingStage } from '~/data/outgoing'
-import { syncOutboundOrderStatuses } from '~/data/outboundSync'
+import { outgoingOrders, outgoingStage, isMarketplaceOrder, canCancelOutboundOrder, canEditOutboundOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder, type OutgoingOrder } from '~/data/outgoing'
+import { syncOutboundOrderStatuses, cancelOutboundOrder } from '~/data/outboundSync'
 import { buildPickingLines, getPickingForOrder, canPickOrder } from '~/data/pickingTasks'
-import { getPackingForOrder } from '~/data/packingTasks'
-import { deliveryTasks, marketplaceShipping } from '~/data/deliveryTasks'
+import { getPackingForOrder, addPackingTaskFromOrder, canCreatePackingDirectlyForOrder } from '~/data/packingTasks'
+import { deliveryTasks, marketplaceShipping, getShipment, type ShipmentSummary } from '~/data/deliveryTasks'
+import { getWarehouseConfig } from '~/data/warehouseConfig'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
@@ -22,11 +27,21 @@ syncOutboundOrderStatuses()
 
 const order = computed(() => outgoingOrders.find(o => o.id === props.orderId))
 const lineItems = computed(() => order.value ? buildPickingLines([order.value.id], [order.value.salesNo]) : [])
+// Picking disabled for this order's warehouse — "Picked qty" is never meaningful.
+const skippedPicking = computed(() => !order.value || !getWarehouseConfig(order.value.warehouseId).pickingEnabled)
 
 const linkedPicking = computed(() => getPickingForOrder(props.orderId))
 const linkedPacking = computed(() => getPackingForOrder(props.orderId))
 const linkedDelivery = computed(() => deliveryTasks.filter(d => d.salesOrderId === props.orderId))
-const hasLinked = computed(() => linkedPicking.value.length > 0 || linkedPacking.value.length > 0 || linkedDelivery.value.length > 0)
+// Delivery is just an in-between state (packed, waiting to leave) — not a document
+// worth linking to on its own. Once shipped, the shipment batch is what matters.
+const linkedShipments = computed<ShipmentSummary[]>(() => {
+  const seqs = new Set(
+    linkedDelivery.value.filter(d => d.shipmentNo).map(d => d.shipmentNo!.replace(/\D/g, '')),
+  )
+  return [...seqs].map(seq => getShipment(seq)).filter((h): h is ShipmentSummary => !!h)
+})
+const hasLinked = computed(() => linkedPicking.value.length > 0 || linkedPacking.value.length > 0 || linkedShipments.value.length > 0)
 
 // Per-SKU progress across this order's tasks (picked → packed → shipped).
 const shippedPackingIds = computed(() => new Set(linkedDelivery.value.filter(d => d.status === 'shipped').map(d => d.packingTaskId)))
@@ -83,19 +98,21 @@ watch(() => props.orderId, () => {
   })
 })
 
-// Transaction (order creation) date — derived: a few days before the due date.
+// Transaction date: use stored value for user-created orders; derive for seed orders.
 const transactionDate = computed(() => {
   if (!order.value) return ''
+  if (order.value.transactionDate) return order.value.transactionDate
   const d = new Date(order.value.dueDate)
   d.setDate(d.getDate() - (3 + (seedNum(order.value.id) % 5)))
   return d.toISOString()
 })
-// Marketplace orders (Desty) carry a cut-off time on the due date and usually arrive
-// with the courier + tracking no. already assigned by the channel.
-const isMarketplace = computed(() => !!order.value && order.value.source !== 'Sales Order')
+// Marketplace = Desty channel orders (source contains ":"  e.g. "Shopee: Central Perk").
+// Sales Order and manual Outbound delivery orders are NOT marketplace.
+const isMarketplace = computed(() => !!order.value && order.value.source.includes(':'))
 const dueDateDisplay = computed(() =>
   order.value ? (isMarketplace.value ? formatDateTimeLong(order.value.dueDate) : formatDateLong(order.value.dueDate)) : '—',
 )
+const isManual = computed(() => order.value?.source === 'Outbound delivery')
 // Courier / tracking no. surface from the linked delivery task; for marketplace orders
 // they're pre-assigned by the channel even before shipping is processed (same source of
 // truth the shipping handover auto-fills from).
@@ -120,8 +137,18 @@ const attachments = computed(() => {
   const n = (s % 3) + 1 // always 1–3 files
   return Array.from({ length: n }, (_, i) => ({ name: NOTE_ATTACH[i % NOTE_ATTACH.length]!, sizeKB: 40 + ((s + i * 37) % 220) }))
 })
-const lastUpdatedBy = computed(() => order.value ? NOTE_UPDATERS[seedNum(order.value.id) % NOTE_UPDATERS.length]! : '')
-const lastUpdatedAt = computed(() => order.value?.shippedDate ?? order.value?.dueDate ?? new Date().toISOString())
+const lastEdit = computed(() => order.value?.editLog?.at(-1))
+const lastUpdatedBy = computed(() => {
+  if (!order.value) return ''
+  if (lastEdit.value) return lastEdit.value.by
+  return order.value.source === 'Outbound delivery' ? 'Rizal Candra' : NOTE_UPDATERS[seedNum(order.value.id) % NOTE_UPDATERS.length]!
+})
+const lastUpdatedAt = computed(() => {
+  if (!order.value) return new Date().toISOString()
+  if (lastEdit.value) return lastEdit.value.at
+  if (order.value.source === 'Outbound delivery') return order.value.createdAt ?? order.value.transactionDate ?? order.value.dueDate
+  return order.value.shippedDate ?? order.value.dueDate ?? new Date().toISOString()
+})
 
 /** File-type → Pixel document icon for an attachment. */
 function attachmentIcon(name: string): string {
@@ -140,7 +167,39 @@ function formatUpdatedAt(iso: string) {
 }
 
 const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const o = order.value
+  if (!o) return []
+  // Edits first (newest at the top), then the original creation entry.
+  const edits = [...(o.editLog ?? [])].reverse().map((e) => ({
+    date: e.at,
+    user: e.by,
+    activity: 'Edited',
+    details: e.changes.length ? e.changes : [{ label: 'Order', value: 'Updated' }],
+  }))
+  return [
+    ...edits,
+    {
+      date: o.createdAt ?? o.transactionDate ?? o.dueDate,
+      user: lastUpdatedBy.value,
+      activity: 'Created',
+      details: [
+        { label: 'Transaction no.', value: o.salesNo },
+        { label: 'Transaction date', value: formatDateLong(transactionDate.value) },
+        { label: 'Customer', value: o.customer ?? '—' },
+        { label: 'Warehouse', value: o.warehouseName },
+      ],
+    },
+  ]
+})
 function fmt(n: number) { return n.toLocaleString('id-ID') }
+function agingDays(startDate?: string, endDate?: string): number {
+  if (!startDate) return 0
+  const REF = new Date().toISOString()
+  const start = new Date(startDate).getTime()
+  const end = new Date(endDate ?? REF).getTime()
+  return Math.max(0, Math.round((end - start) / 86_400_000)) + 1
+}
 
 // ── Jump-to-transaction switcher (title-bar chevron) ───────────────────────────
 const jumpSearch = ref('')
@@ -151,12 +210,74 @@ const jumpResults = computed(() => {
     : outgoingOrders
   return matched.slice(0, 6)
 })
-function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/barang-keluar/${id}`) }
+function jumpTo(id: string) { jumpSearch.value = ''; router.push(`/outbound-delivery/${id}`) }
 
-function goBack() { router.push('/barang-keluar?tab=Outgoing') }
+function goBack() { router.push('/outbound-delivery?tab=Requests') }
 function createPicking() {
   if (!order.value) return
-  router.push({ path: '/barang-keluar/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id } })
+  router.push({ path: '/outbound-delivery/picking/create', query: { warehouseId: order.value.warehouseId, orderIds: order.value.id, from: `order:${order.value.id}` } })
+}
+
+// ─── Cancel order + Release reserved (D2/D6) ───────────────────────────────────
+const canCancel = computed(() => !!order.value && canCancelOutboundOrder(order.value))
+const canEdit = computed(() => !!order.value && canEditOutboundOrder(order.value))
+function goEdit() { if (order.value) router.push(`/outbound-delivery/${order.value.id}/edit`) }
+const canRelease = computed(() => !!order.value && canReleaseReservedForOrder(order.value.id))
+const cancelModalOpen = ref(false)
+function askCancel() { cancelModalOpen.value = true }
+function confirmCancel() {
+  const o = order.value
+  if (o) {
+    const res = cancelOutboundOrder(o.id)
+    if (res.ok) toast.notify({ variant: 'success', title: `Order ${o.number} cancelled`, maxWidth: 'max-content' })
+    else toast.notify({ variant: 'error', title: 'Cannot cancel — a package has already shipped', maxWidth: 'max-content' })
+  }
+  cancelModalOpen.value = false
+}
+function releaseReserved() {
+  const o = order.value
+  if (o && releaseReservedForCancelledOrder(o.id)) {
+    toast.notify({ variant: 'success', title: `Reserved stock released back to available for ${o.number}`, maxWidth: 'max-content' })
+  }
+}
+
+// ─── Direct-to-packing (Picking disabled for the order's warehouse) ─────────────
+// Marketplace orders are all-or-nothing (nothing to review) → quick assignee-only
+// modal, straight to creation. Non-marketplace orders can be packed partially, so
+// they go through the full "New packing" page instead.
+const ASSIGNEES = computed(() => getWarehouseOperators(order.value?.warehouseId ?? ''))
+const directPackModalOpen = ref(false)
+const directPackAssigneeId = ref('')
+const directPackAssigneeError = ref(false)
+watch(directPackAssigneeId, (v) => { if (v) directPackAssigneeError.value = false })
+
+function openDirectPacking() {
+  if (!order.value) return
+  if (!isMarketplaceOrder(order.value)) {
+    router.push({ path: '/outbound-delivery/packing/create', query: { orderId: order.value.id } })
+    return
+  }
+  directPackAssigneeId.value = ''
+  directPackAssigneeError.value = false
+  directPackModalOpen.value = true
+}
+function closeDirectPacking() {
+  directPackModalOpen.value = false
+}
+function confirmDirectPacking() {
+  if (!directPackAssigneeId.value) { directPackAssigneeError.value = true; return }
+  if (!order.value) return
+  const assignee = ASSIGNEES.value.find(a => a.id === directPackAssigneeId.value)?.name ?? ''
+  const task = addPackingTaskFromOrder({
+    salesOrderId: order.value.id,
+    salesNo: order.value.salesNo,
+    warehouseId: order.value.warehouseId,
+    warehouseName: order.value.warehouseName,
+    assignee,
+  })
+  closeDirectPacking()
+  toast.notify({ variant: 'success', title: 'Packing task created', maxWidth: 'max-content' })
+  router.push(`/packing/${task.id}`)
 }
 
 // footer divider
@@ -177,10 +298,10 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Barang keluar</button>
+        <button class="detail-breadcrumb" @click="goBack">Outbound delivery</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ order.salesNo }}</h1>
-          <ErpStatusBadge :status="outgoingStage(order)" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge :status="outgoingStage(order)" :type="order.status === 'pending' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
           <MpPopover id="ood-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
               <button class="detail-jump-chevron" aria-label="Switch transaction">
@@ -193,6 +314,11 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                  </button>
                 </div>
                 <div class="detail-jump-list">
                   <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
@@ -215,13 +341,29 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           <ContentList label="Transaction date" :value="formatDateLong(transactionDate)" />
           <ContentList label="Transaction no." :value="order.salesNo" />
           <ContentList label="Customer" :value="order.customer ?? '—'" />
-          <ContentList label="Source" :value="order.source" />
+          <ContentList label="Source"><SourceLabel :source="order.source" /></ContentList>
         </div>
         <div class="content-list-col">
           <ContentList label="Due date" :value="dueDateDisplay" />
           <ContentList label="Courier" :value="courier" />
           <ContentList label="Tracking no." :value="trackingNo" />
-          <ContentList label="Warehouse" :value="order.warehouseName" />
+          <ContentList label="Warehouse">
+            <div class="wh-link-wrap">
+              <span>{{ order.warehouseName }}</span>
+              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${order.warehouseId}`)">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="row-hover-btn__label">VIEW DETAILS</span>
+              </button>
+            </div>
+          </ContentList>
+        </div>
+        <div v-if="order.status === 'canceled'" class="content-list-col">
+          <ContentList label="Canceled date" :value="order.canceledDate ? formatDateLong(order.canceledDate) : '—'" />
+          <ContentList label="Reason" :value="order.canceledReason ?? '—'" />
+          <ContentList label="Canceled by" :value="order.canceledBy ?? '—'" />
         </div>
       </section>
 
@@ -235,7 +377,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                   <th class="detail-th">Product</th>
                   <th class="detail-th">SKU</th>
                   <th class="detail-th detail-th--num">Order qty</th>
-                  <th class="detail-th detail-th--num">Picked qty</th>
+                  <th v-if="!skippedPicking" class="detail-th detail-th--num">Picked qty</th>
                   <th class="detail-th detail-th--num">Packed qty</th>
                   <th class="detail-th detail-th--num">Shipped qty</th>
                   <th class="detail-th">Unit</th>
@@ -246,7 +388,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                   <td class="detail-td"><ProductCell :name="item.product" :desc="item.desc" :image="item.img" /></td>
                   <td class="detail-td">{{ item.sku }}</td>
                   <td class="detail-td detail-td--num">{{ fmt(item.qty) }}</td>
-                  <td class="detail-td detail-td--num">{{ fmt(prog(item.key).picked) }}</td>
+                  <td v-if="!skippedPicking" class="detail-td detail-td--num">{{ fmt(prog(item.key).picked) }}</td>
                   <td class="detail-td detail-td--num">{{ fmt(prog(item.key).packed) }}</td>
                   <td class="detail-td detail-td--num">{{ fmt(prog(item.key).shipped) }}</td>
                   <td class="detail-td">{{ item.unit }}</td>
@@ -264,15 +406,15 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </section>
       </div>
 
-      <!-- Message / memo / attachment + audit (mirrors Sales order detail) -->
+      <!-- Message / memo / attachment + audit -->
       <section class="detail-notes-left">
-        <ContentList label="Message">
+        <ContentList v-if="!isManual" label="Message">
           <p class="detail-note-text">—</p>
         </ContentList>
         <ContentList label="Memo">
-          <p class="detail-note-text">—</p>
+          <p class="detail-note-text">{{ order.memo || '—' }}</p>
         </ContentList>
-        <ContentList :label="`Attachment (${attachments.length})`">
+        <ContentList v-if="!isManual" :label="`Attachment (${attachments.length})`">
           <div v-if="attachments.length" class="detail-attach-list">
             <a v-for="(a, i) in attachments" :key="i" class="detail-attach" @click.prevent>
               <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -292,7 +434,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         <MpTabList>
           <MpTab v-if="linkedPicking.length" id="ood-tab-pick" :value="0">Picking ({{ linkedPicking.length }})</MpTab>
           <MpTab v-if="linkedPacking.length" id="ood-tab-pack" :value="1">Packing ({{ linkedPacking.length }})</MpTab>
-          <MpTab v-if="linkedDelivery.length" id="ood-tab-del" :value="2">Delivery ({{ linkedDelivery.length }})</MpTab>
+          <MpTab v-if="linkedShipments.length" id="ood-tab-ship" :value="2">Shipment ({{ linkedShipments.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel v-if="linkedPicking.length" :value="0">
@@ -319,7 +461,13 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                     <td class="detail-td detail-td--num">{{ fmt(t.pickedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
                     <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
-                    <td class="detail-td">{{ t.endDate ? formatDateTime(t.endDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(t.startDate, t.endDate) > 1" class="linked-aging">{{ agingDays(t.startDate, t.endDate) }} days</span>
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -349,23 +497,29 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                     <td class="detail-td detail-td--num">{{ fmt(t.packedQty) }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
                     <td class="detail-td">{{ t.startDate ? formatDateTime(t.startDate) : '—' }}</td>
-                    <td class="detail-td">{{ t.endDate ? formatDateTime(t.endDate) : '—' }}</td>
+                    <td class="detail-td">
+                      <span class="linked-end">
+                        <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
+                        <span v-else class="linked-end__muted">—</span>
+                        <span v-if="agingDays(t.startDate, t.endDate) > 1" class="linked-aging">{{ agingDays(t.startDate, t.endDate) }} days</span>
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </MpTabPanel>
-          <MpTabPanel v-if="linkedDelivery.length" :value="2">
-            <h3 class="linked-section-title">Delivery tasks</h3>
+          <MpTabPanel v-if="linkedShipments.length" :value="2">
+            <h3 class="linked-section-title">Shipments</h3>
             <div class="ood-linked-wrap">
               <table class="ood-linked">
-                <thead><tr><th class="detail-th">Number</th><th class="detail-th">Assignee</th><th class="detail-th detail-th--num">SKU qty</th><th class="detail-th detail-th--num">Shipped qty</th><th class="detail-th">Status</th></tr></thead>
+                <thead><tr><th class="detail-th">Shipment no.</th><th class="detail-th">Assignee</th><th class="detail-th">Warehouse</th><th class="detail-th">Transaction date</th></tr></thead>
                 <tbody>
-                  <tr v-for="d in linkedDelivery" :key="d.id" class="detail-item-row">
+                  <tr v-for="h in linkedShipments" :key="h.shipmentSeq" class="detail-item-row">
                     <td class="detail-td detail-td--number">
                       <div class="cell-with-action">
-                        <span class="ood-link-num">{{ d.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/delivery/${d.id}`)">
+                        <span class="ood-link-num">{{ h.shipmentNo }}</span>
+                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/shipment/${h.shipmentSeq}`)">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -374,10 +528,9 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
                         </button>
                       </div>
                     </td>
-                    <td class="detail-td">{{ d.assignee }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(d.skuQty) }}</td>
-                    <td class="detail-td detail-td--num">{{ fmt(d.shippedQty) }}</td>
-                    <td class="detail-td"><ErpStatusBadge :status="d.status" /></td>
+                    <td class="detail-td">{{ h.assignee }}</td>
+                    <td class="detail-td">{{ h.warehouseName }}</td>
+                    <td class="detail-td">{{ h.transactionDate ? formatDateTime(h.transactionDate) : '—' }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -405,9 +558,67 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
-      <button v-if="canPickOrder(order)" class="detail-btn detail-btn--primary" @click="createPicking">
-        Create picking list
-      </button>
+      <!-- Create picking — split button; the chevron holds order-level actions
+           (Edit order / Cancel order / Release reserved), matching StockAdjustmentDetailsPage. -->
+      <template v-if="canPickOrder(order)">
+        <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="createPicking">Create picking list</button>
+          <MpPopover id="ood-actions-pick" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canRelease" @click="releaseReserved">Release reserved</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="createPicking">Create picking list</button>
+      </template>
+
+      <!-- Create packing — same split treatment -->
+      <template v-else-if="canCreatePackingDirectlyForOrder(order)">
+        <div v-if="canEdit || canCancel || canRelease" class="detail-split-btn">
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openDirectPacking">Create packing</button>
+          <MpPopover id="ood-actions-pack" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canRelease" @click="releaseReserved">Release reserved</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <button v-else class="detail-btn detail-btn--primary" @click="openDirectPacking">Create packing</button>
+      </template>
+
+      <!-- No create action left, but the order is still editable / cancellable / has reserved to release -->
+      <MpPopover v-else-if="canEdit || canCancel || canRelease" id="ood-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <button class="detail-btn detail-btn--primary">
+            Actions
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCancel" :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel order</MpPopoverListItem>
+            <MpPopoverListItem v-if="canRelease" @click="releaseReserved">Release reserved</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </footer>
 
     <ActivityLogModal
@@ -415,14 +626,67 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
       :subject="order.salesNo"
       :updated-by="lastUpdatedBy"
       :updated-at="lastUpdatedAt"
+      :entries="activityEntries"
       @close="activityOpen = false"
     />
+
+    <!-- ── Direct-to-packing modal — marketplace orders only ── -->
+    <MpModal
+      id="ood-direct-pack-modal" :is-open="directPackModalOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDirectPacking"
+    >
+      <MpModalContent>
+        <MpModalHeader>Create packing?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="ood-direct-pack-desc">Order {{ order.number }}'s full quantity will go into a packing task.</p>
+          <MpFormControl id="ood-direct-pack-assignee" is-required :is-invalid="directPackAssigneeError">
+            <MpFormLabel>Assignee</MpFormLabel>
+            <MpAutocomplete
+              id="ood-direct-pack-assignee-ac"
+              v-model="directPackAssigneeId"
+              :data="ASSIGNEES"
+              label-prop="name"
+              value-prop="id"
+              placeholder="Select assignee"
+              is-searchable is-clearable use-portal is-full-width
+              :is-invalid="directPackAssigneeError"
+            />
+            <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
+          </MpFormControl>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="ood-modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="closeDirectPacking">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="confirmDirectPacking">Create packing</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Cancel order confirmation ── -->
+    <MpModal id="ood-cancel-modal" :is-open="cancelModalOpen" size="sm" @close="cancelModalOpen = false">
+      <MpModalContent>
+        <MpModalHeader>Cancel order?<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          Order {{ order?.number }} will be cancelled. This can't be undone. Its reserved
+          stock stays held until you Release reserved.
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="ood-modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--ghost" @click="cancelModalOpen = false">Keep order</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel order</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
   </div>
 
   <div v-else class="ood-not-found">
     <p>Order not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Barang keluar</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to Outbound delivery</button>
   </div>
 </template>
 
@@ -441,14 +705,24 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
-.detail-jump-search-wrap { padding: var(--mp-spacing-3); }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
 .detail-jump-search {
   width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none;
+  padding-right: 34px;
 }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
   display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
@@ -473,7 +747,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-th { height: var(--mp-sizes-7, 28px); text-align: left; padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2); background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default); white-space: nowrap; }
 .detail-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .detail-td { padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
-.detail-items-section--bordered .detail-item-row:last-child .detail-td { border-bottom: none; }
 .detail-items .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: 1px; }
 .detail-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
@@ -484,7 +757,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.detail-items-section--bordered .detail-items-count { border-top: 1px solid var(--mp-border-default); border-bottom: none; }
 .detail-td--num { text-align: right; white-space: nowrap; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 
 .ood-tabs { flex-shrink: 0; }
@@ -494,7 +766,6 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ood-linked-wrap { overflow-x: auto; }
 .ood-linked { width: 100%; border-collapse: collapse; }
-.ood-linked .detail-item-row:last-child .detail-td { border-bottom: none; }
 .ood-link-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ood-empty { color: var(--mp-text-secondary); }
 /* Number cell — "View details" chip on row hover (same as index tables) */
@@ -508,6 +779,11 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 }
 .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
 .ood-linked .detail-item-row:hover .row-hover-btn { display: flex; }
+.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
+.wh-link-wrap:hover .row-hover-btn { display: flex; }
+.linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.linked-end__muted { color: var(--mp-text-secondary); }
+.linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
 .detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
@@ -517,7 +793,15 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
 
+/* Split button — primary action + attached chevron dropdown (mirrors StockAdjustmentDetailsPage). */
+.detail-split-btn { display: flex; }
+.detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
+.detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }
+
 .ood-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+.ood-direct-pack-desc { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.ood-modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 /* Notes / attachment / audit (mirrors Sales order & Receipt detail) */
 .detail-notes-left { display: flex; flex-direction: column; }

@@ -1,28 +1,30 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
-  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon,
+  MpButton, MpCheckbox, MpAutocomplete, MpSpinner, MpTooltip, MpIcon, MpBadge,
   MpFormControl, MpFormLabel, MpFormErrorMessage, css,
+  MpAccordion, MpAccordionHeader, MpAccordionIcon, MpAccordionItem, MpAccordionPanel,
 } from '@mekari/pixel3'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { getPickingTask, pickedQtyForOrderSku, getPickingForOrder, orderPickedQtyInTask, type PickingTask } from '~/data/pickingTasks'
-import { addPackingTask, getPackingForOrder } from '~/data/packingTasks'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
+import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
+import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
+import {
+  getPickingTask, getPickingForOrder, orderPickedQtyInTask,
+  pickedQtyForPickingTasks, batchPicksForPickingTasks, serialPicksForPickingTasks, type PickingTask,
+} from '~/data/pickingTasks'
+import {
+  addPackingTask, addPackingTaskFromOrder, getPackingForOrder, remainingSkusForOrder,
+  orderPackedFromPickingTask,
+} from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
-import { orderSkuLines } from '~/data/inventory'
+import { orderSkuLines, productBySku } from '~/data/inventory'
+import { getWarehouseDetail, binForSku } from '~/data/warehouseDetails'
+import { getWarehouseOperators } from '~/data/warehouseTeam'
+import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
-
-const ASSIGNEES = [
-  { id: 'u01', name: 'Budi Santoso',    initials: 'BS', hue: 210 },
-  { id: 'u02', name: 'Dewi Rahayu',     initials: 'DR', hue: 145 },
-  { id: 'u03', name: 'Rizki Pratama',   initials: 'RP', hue: 30  },
-  { id: 'u04', name: 'Agus Firmansyah', initials: 'AF', hue: 280 },
-  { id: 'u05', name: 'Sari Indah',      initials: 'SI', hue: 320 },
-  { id: 'u06', name: 'Hendra Wijaya',   initials: 'HW', hue: 170 },
-  { id: 'u07', name: 'Citra Kusuma',    initials: 'CK', hue: 55  },
-  { id: 'u08', name: 'Galih Nugraha',   initials: 'GN', hue: 100 },
-]
 
 // ─── Source picking task(s) ─────────────────────────────────────────────────────
 // Opened from one picking list (?pickingId) or a bulk selection (?pickingIds=a,b,c).
@@ -36,24 +38,71 @@ const pickingIds = computed<string[]>(() => {
 const picks = computed<PickingTask[]>(() => pickingIds.value.map(id => getPickingTask(id)).filter(Boolean) as PickingTask[])
 // Primary list — drives the warehouse + form context; order packing aggregates all lists.
 const pick = computed(() => picks.value[0])
-const warehouseName = computed(() => pick.value?.warehouseName ?? '')
-// Display-only warehouse autocomplete (locked to the picking task's warehouse)
-const warehouseAc = computed(() =>
-  pick.value ? [{ id: pick.value.warehouseId, name: pick.value.warehouseName }] : [],
-)
-const warehouseId = ref(pick.value?.warehouseId ?? '')
+
+// ─── Direct-from-order mode (?orderId) ───────────────────────────────────────────
+// Picking is disabled for the order's warehouse — non-marketplace orders land here
+// (marketplace orders use the lightweight modal on the Outgoing index instead,
+// since they're all-or-nothing and have nothing to review).
+const directOrderId = computed(() => route.query.orderId as string | undefined)
+const directOrder = computed(() => directOrderId.value ? outgoingOrders.find(o => o.id === directOrderId.value) : undefined)
+const isDirectMode = computed(() => !pickingIds.value.length && !!directOrder.value)
+
+const hasSource = computed(() => !!pick.value || !!directOrder.value)
+const warehouseName = computed(() => pick.value?.warehouseName ?? directOrder.value?.warehouseName ?? '')
+// Display-only warehouse autocomplete (locked to the source's warehouse)
+const warehouseAc = computed(() => {
+  if (pick.value) return [{ id: pick.value.warehouseId, name: pick.value.warehouseName }]
+  if (directOrder.value) return [{ id: directOrder.value.warehouseId, name: directOrder.value.warehouseName }]
+  return []
+})
+const warehouseId = ref(pick.value?.warehouseId ?? directOrder.value?.warehouseId ?? '')
 
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
 const assigneeError = ref(false)
+const isSaving      = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
-const assigneeLabel = computed(() => ASSIGNEES.find(a => a.id === assigneeId.value)?.name ?? '')
+// Assignee can only be an operator of the (locked) source warehouse.
+const ASSIGNEES = computed(() => getWarehouseOperators(warehouseId.value))
+const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 // ─── Picked items per sales order (what's available to pack) ─────────────────────
 interface PackLine { key: string; sku: string; product: string; desc: string; img: string; unit: string; order: number; picked: number }
-interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; packable: boolean; lines: PackLine[] }
+interface OrderTable { orderId: string; salesNo: string; customer: string; source: string; isMarketplace: boolean; fullyPicked: boolean; alreadyPacked: boolean; canceled: boolean; packable: boolean; lines: PackLine[] }
+
+// Which non-canceled picking lists for this order still have something new to
+// pack — excludes any list that already has its OWN (non-canceled) packing task,
+// so an earlier, independent picking→packing→shipment cycle for the same order
+// (e.g. partially shipped, then picked again for the remainder) never gets its
+// already-packed-and-shipped units re-swept into a brand-new packing task.
+function eligiblePickingIdsForOrder(orderId: string): string[] {
+  return getPickingForOrder(orderId)
+    .filter(pt => pt.status !== 'canceled' && orderPickedQtyInTask(pt, orderId) > 0 && !orderPackedFromPickingTask(orderId, pt.id))
+    .map(pt => pt.id)
+}
 
 const orderTables = computed<OrderTable[]>(() => {
+  // Direct mode: no picking task at all — only the SKUs not yet covered by an earlier
+  // direct-mode packing task on this order are available to pack (picking was skipped
+  // for this warehouse, and a partial packing leaves the rest for a follow-up).
+  if (isDirectMode.value) {
+    const o = directOrder.value
+    if (!o) return []
+    // `order` = the SKU's full order demand; `picked` here doubles as "available to
+    // pack now" (order qty minus whatever an earlier direct-mode task already packed)
+    // — the cap the Pack qty input can't exceed.
+    const lines: PackLine[] = remainingSkusForOrder(o).map((l) => ({
+      key: `${o.id}::${l.sku}`,
+      sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
+      unit: l.product.unit, order: l.qty, picked: l.qty - l.packed,
+    }))
+    return [{
+      orderId: o.id, salesNo: o.salesNo, customer: o.customer ?? '', source: o.source,
+      isMarketplace: false, fullyPicked: true, alreadyPacked: false,
+      canceled: o.status === 'canceled', packable: o.status !== 'canceled' && lines.length > 0,
+      lines,
+    }]
+  }
   if (!picks.value.length) return []
   // Union of every selected list's orders, deduped — an order split across lists (or
   // repeated because two selected lists include it) becomes ONE packing task.
@@ -65,49 +114,168 @@ const orderTables = computed<OrderTable[]>(() => {
   }
   return [...orderNo.entries()].map(([orderId, salesNoFallback]) => {
     const o = outgoingOrders.find(x => x.id === orderId)
-    // Pack the order's TOTAL picked across every picking list (an order split over 2
-    // lists still packs as one), so completeness is judged at the order level.
+    const eligibleIds = eligiblePickingIdsForOrder(orderId)
+    // Pack the TOTAL picked across every picking list LINKED TO THIS eligible set
+    // (an order split over 2 still-unpacked lists packs as one) — never an earlier,
+    // independent cycle's lists that already have their own packing task, or this
+    // would double-count units that are already packed/shipped.
     const lines: PackLine[] = o
       ? orderSkuLines(o).map((l) => ({
           key: `${orderId}::${l.sku}`,
           sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
           unit: l.product.unit, order: l.qty,
-          picked: Math.min(l.qty, pickedQtyForOrderSku(orderId, l.sku)),
+          picked: Math.min(l.qty, pickedQtyForPickingTasks(eligibleIds, orderId, l.sku)),
         }))
       : []
     const isMarketplace = isMarketplaceOrder(o)
+    const canceled = o?.status === 'canceled'
     const fullyPicked = lines.length > 0 && lines.every(l => l.picked >= l.order)
     const pickedAny = lines.some(l => l.picked > 0)
-    const alreadyPacked = getPackingForOrder(orderId).length > 0
+    // "Already packed" = genuinely nothing NEW left — something was picked at some
+    // point (across the order's whole history), but every contributing picking list
+    // already has its own packing task. Not "never picked at all" (that falls
+    // through as neither packable nor alreadyPacked, same as before).
+    const alreadyPacked = !pickedAny && getPickingForOrder(orderId).some(
+      pt => pt.status !== 'canceled' && orderPickedQtyInTask(pt, orderId) > 0,
+    )
     // Marketplace ⇒ packable only when fully picked (across lists); others ⇒ any picked
-    // unit. Never twice — an order that already has a packing task is excluded.
-    const packable = !alreadyPacked && pickedAny && (isMarketplace ? fullyPicked : true)
+    // unit. Never twice — a picking list that already has a packing task is excluded.
+    // A cancelled order is never packable, whatever was picked for it.
+    const packable = !canceled && !alreadyPacked && pickedAny && (isMarketplace ? fullyPicked : true)
     return {
       orderId,
       salesNo: o?.salesNo ?? salesNoFallback,
       customer: o?.customer ?? '',
       source: o?.source ?? '',
-      isMarketplace, fullyPicked, alreadyPacked, packable,
+      isMarketplace, fullyPicked, alreadyPacked, canceled, packable,
       lines,
     }
   })
 })
 const packableTables = computed(() => orderTables.value.filter(t => t.packable))
+// Orders on a selected picking list that got cancelled after this form was opened —
+// surfaced as a note and blocked at Save. NOT gated on picked>0: cancelling the
+// order force-cancels its picking task, which zeroes its picked qty here, so a
+// picked>0 check would miss exactly the case we need to warn about.
+const canceledTables = computed(() => orderTables.value.filter(t => t.canceled))
 // Marketplace orders held back (not fully picked across lists), and orders already packed.
-const blockedTables = computed(() => orderTables.value.filter(t => !t.packable && !t.alreadyPacked && t.isMarketplace && t.lines.some(l => l.picked > 0)))
+const blockedTables = computed(() => orderTables.value.filter(t => !t.packable && !t.canceled && !t.alreadyPacked && t.isMarketplace && t.lines.some(l => l.picked > 0)))
 const packedTables = computed(() => orderTables.value.filter(t => t.alreadyPacked))
 // Every picking list that contributed to the packable orders (an order split across
-// several lists shows them all, not just the one this form was opened from).
-const sourcePickingNos = computed(() => {
-  const seen = new Map<string, string>()
-  for (const p of picks.value) seen.set(p.id, p.taskNo)
+// several still-unpacked lists shows them all, not just the one this form was
+// opened from) — scoped the same way as orderTables above. ALSO always includes
+// every picking list the user explicitly selected, even when its order isn't
+// packable yet — never silently hide a selected list, show it with a reason
+// instead (see pickingListBlockReasons below).
+const sourcePickingLists = computed<PickingTask[]>(() => {
+  const seen = new Map<string, PickingTask>()
   for (const t of packableTables.value) {
-    for (const pt of getPickingForOrder(t.orderId)) {
-      if (pt.status !== 'canceled' && orderPickedQtyInTask(pt, t.orderId) > 0) seen.set(pt.id, pt.taskNo)
+    for (const id of eligiblePickingIdsForOrder(t.orderId)) {
+      const pt = getPickingTask(id)
+      if (pt) seen.set(pt.id, pt)
     }
   }
+  for (const pt of picks.value) seen.set(pt.id, pt)
   return [...seen.values()]
 })
+
+// Why a given picking list's order(s) can't be packed yet — empty when every
+// order it touches is packable. A picking list can bundle multiple sales
+// orders, so this can report more than one blocking reason.
+function pickingListBlockReasons(pt: PickingTask): string[] {
+  const byOrderId = new Map(orderTables.value.map(t => [t.orderId, t]))
+  const reasons: string[] = []
+  for (const orderId of pt.salesOrderIds) {
+    const t = byOrderId.get(orderId)
+    // A cancelled order never blocks packing — it's dropped from this packing entirely
+    // (see canceledTables note), so it must not drag the whole picking list to
+    // "Not packable". Skip it alongside already-packable orders.
+    if (!t || t.packable || t.canceled) continue
+    if (t.alreadyPacked) reasons.push(`${t.salesNo} already has a packing task`)
+    else if (t.isMarketplace) reasons.push(`${t.salesNo} (marketplace) isn't fully picked yet across its picking lists`)
+    else reasons.push(`${t.salesNo} has nothing picked yet`)
+  }
+  return reasons
+}
+
+// ─── Batch / serial numbers actually picked — read-only "View batch" / "View
+// serial number" per line, same heuristic as picking/receiving/put-away. An order
+// can be picked across several lists, so the batch/serial picks are aggregated
+// across ALL of them (merging by batchNo, deduping serials), not just the one
+// list this form happened to be opened from. ────────────────────────────────────
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
+const stockMap = computed(() => {
+  const wh = getWarehouseDetail(warehouseId.value)
+  return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
+})
+function isBatchTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+function isSerialTrackedSku(sku: string): boolean {
+  const si = stockMap.value.get(sku)
+  if (si) return !!si.serials
+  const p = productBySku(sku)
+  return p ? SERIAL_CATS.has(p.category) : false
+}
+/** Picked qty for a batch/serial-tracked line, broken down by which bin it was
+ *  actually picked from — a batch/serial always sits in exactly ONE fixed
+ *  bin, so 2+ bins only ever show up here because the line bundles 2+
+ *  DIFFERENT batches/serials that happen to live in different locations.
+ *  Direct mode (picking skipped for the warehouse) has no batchPicks/
+ *  serialPicks data source at all — always returns empty. */
+function rowQtyByBin(orderId: string, row: PackLine): Map<string, number> {
+  const map = new Map<string, number>()
+  if (isDirectMode.value) return map
+  const eligibleIds = eligiblePickingIdsForOrder(orderId)
+  if (isBatchTrackedSku(row.sku)) {
+    for (const b of batchPicksForPickingTasks(eligibleIds, orderId, row.sku)) {
+      if (b.qty > 0 && b.location) map.set(b.location, (map.get(b.location) ?? 0) + b.qty)
+    }
+  } else if (isSerialTrackedSku(row.sku)) {
+    for (const s of serialPicksForPickingTasks(eligibleIds, orderId, row.sku)) {
+      if (s.location) map.set(s.location, (map.get(s.location) ?? 0) + 1)
+    }
+  }
+  return map
+}
+function rowLocationsForDisplay(orderId: string, row: PackLine): string[] {
+  return [...rowQtyByBin(orderId, row).keys()]
+}
+
+interface PackCreateRowWithMeta {
+  row: PackLine
+  bin: string | null
+  binQty: number
+  groupIndex: number
+  groupSize: number
+}
+/** Expands an order table's visible lines into one row per bin actually used
+ *  (Storage location/Picked qty split per bin, everything else merged via
+ *  groupIndex/groupSize) — or a single row when there's nothing to split (0
+ *  or 1 bin used), matching the same pattern already used on the picking/
+ *  packing details pages. */
+function rowsWithMeta(t: OrderTable): PackCreateRowWithMeta[] {
+  const result: PackCreateRowWithMeta[] = []
+  for (const row of visibleLines(t)) {
+    const byBin = rowQtyByBin(t.orderId, row)
+    if (byBin.size < 2) {
+      result.push({ row, bin: null, binQty: 0, groupIndex: 0, groupSize: 1 })
+      continue
+    }
+    const bins = [...byBin.entries()]
+    bins.forEach(([bin, qty], idx) => result.push({ row, bin, binQty: qty, groupIndex: idx, groupSize: bins.length }))
+  }
+  return result
+}
+
+const viewBatchItem = ref<{ orderId: string; sku: string; product: string; img: string } | null>(null)
+const viewSerialItem = ref<{ orderId: string; sku: string; product: string; img: string } | null>(null)
+function openViewBatch(orderId: string, row: PackLine) { viewBatchItem.value = { orderId, sku: row.sku, product: row.product, img: row.img } }
+function openViewSerial(orderId: string, row: PackLine) { viewSerialItem.value = { orderId, sku: row.sku, product: row.product, img: row.img } }
 
 // ─── Which sales orders to pack (order-level selection) ──────────────────────────
 // Items are NOT individually selectable — everything picked must be packed. Only WHICH
@@ -122,6 +290,38 @@ function toggleOrder(orderId: string) {
   const s = new Set(excludedOrderIds.value)
   s.has(orderId) ? s.delete(orderId) : s.add(orderId)
   excludedOrderIds.value = s
+}
+
+// ─── Direct mode: per-SKU exclusion + qty ────────────────────────────────────────
+// Non-marketplace, skip-picking orders can exclude individual SKUs AND set how much
+// of each to pack — same as Create picking list. Excluded SKUs, or the un-packed
+// remainder of a partially-packed one, stay eligible for a follow-up packing task.
+const excludedSkuKeys = ref(new Set<string>())
+function isLineSelected(key: string) { return !excludedSkuKeys.value.has(key) }
+function toggleLineSelection(key: string) {
+  const s = new Set(excludedSkuKeys.value)
+  s.has(key) ? s.delete(key) : s.add(key)
+  excludedSkuKeys.value = s
+}
+const directLines = computed(() => orderTables.value[0]?.lines ?? [])
+
+const packQtyOverrides = ref<Record<string, number>>({})
+/** row.picked is the cap here (order qty minus what's already covered elsewhere). */
+function packQtyFor(row: PackLine): number { return packQtyOverrides.value[row.key] ?? row.picked }
+function setPackQty(key: string, val: string, cap: number) {
+  const n = Math.min(cap, Math.max(0, Math.floor(Number(val) || 0)))
+  packQtyOverrides.value = { ...packQtyOverrides.value, [key]: n }
+}
+
+const selectedDirectLines = computed(() =>
+  directLines.value
+    .filter(l => isLineSelected(l.key))
+    .map(l => ({ ...l, picked: packQtyFor(l) }))
+    .filter(l => l.picked > 0),
+)
+const allDirectLinesSelected = computed(() => directLines.value.length > 0 && directLines.value.every(l => isLineSelected(l.key)))
+function toggleAllDirectLines() {
+  excludedSkuKeys.value = allDirectLinesSelected.value ? new Set(directLines.value.map(l => l.key)) : new Set()
 }
 
 const orderError = ref(false)
@@ -216,23 +416,53 @@ function setSentinelRef(orderId: string, el: unknown) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function goPacking() {
-  router.push({ path: '/barang-keluar', query: { tab: 'Packing' } })
+  router.push({ path: '/outbound-delivery', query: { tab: 'Packing' } })
 }
 
-function handleCreate() {
-  const p = pick.value
-  if (!p) return
+async function handleCreate() {
+  if (!hasSource.value) return
+  // A cancelled order stays LINKED to its picking for audit, so it will always be
+  // present here — it must never BLOCK packing the co-listed live orders. It's already
+  // dropped from packableTables reactively (and called out via the canceledTables note),
+  // so we simply proceed and pack the live orders. The empty-selection guard below
+  // still catches the case where every selected order turned out to be cancelled.
   let valid = true
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
-  if (selectedTotals.value.orders === 0) { orderError.value = true; valid = false }
-  if (!valid) return
+  if (isDirectMode.value) {
+    if (selectedDirectLines.value.length === 0) { orderError.value = true; valid = false }
+  } else if (selectedTotals.value.orders === 0) { orderError.value = true; valid = false }
+  if (!valid) { scrollToFirstError(); return }
+  isSaving.value = true
+  await new Promise(r => setTimeout(r, 600))
 
+  if (isDirectMode.value) {
+    // No picking task at all — pack only the SKUs the operator kept checked; any
+    // excluded ones stay available for a follow-up packing task on this order.
+    const o = directOrder.value!
+    addPackingTaskFromOrder({
+      salesOrderId: o.id,
+      salesNo: o.salesNo,
+      warehouseId: o.warehouseId,
+      warehouseName: o.warehouseName,
+      assignee: assigneeLabel.value,
+      lines: selectedDirectLines.value.map(l => ({ sku: l.sku, qty: l.picked })),
+    })
+    router.push({ path: '/outbound-delivery', query: { tab: 'Packing', saved: '1' } })
+    return
+  }
+
+  const p = pick.value!
   // One packing task per selected PACKABLE sales order — packs everything picked for it
-  // across ALL its picking lists, and records every contributing picking list.
+  // across ALL its still-unpacked picking lists, and records every contributing one.
+  // Scoped via eligiblePickingIdsForOrder — never an earlier, independent picking
+  // cycle's list that already has its own packing task (partially shipped, then
+  // picked again for the remainder), or its already-packed-and-shipped units would
+  // get double-counted into this brand-new packing task.
   for (const t of packableTables.value) {
     if (!isOrderSelected(t.orderId) || !t.lines.length) continue
-    const lists = getPickingForOrder(t.orderId)
-      .filter(pt => pt.status !== 'canceled' && orderPickedQtyInTask(pt, t.orderId) > 0)
+    const lists = eligiblePickingIdsForOrder(t.orderId)
+      .map(id => getPickingTask(id))
+      .filter((x): x is PickingTask => !!x)
     addPackingTask({
       salesOrderId:  t.orderId,
       salesNo:       t.salesNo,
@@ -248,7 +478,7 @@ function handleCreate() {
     })
   }
 
-  router.push({ path: '/barang-keluar', query: { tab: 'Packing', saved: '1' } })
+  router.push({ path: '/outbound-delivery', query: { tab: 'Packing', saved: '1' } })
 }
 </script>
 
@@ -271,7 +501,7 @@ function handleCreate() {
     <div ref="stageEl" class="detail-stage">
 
       <!-- Not found -->
-      <div v-if="!pick" class="pk-empty">
+      <div v-if="!hasSource" class="pk-empty">
         <p class="pk-empty-title">Picking task not found</p>
         <p class="pk-empty-desc">This packing task must be created from a completed picking task.</p>
       </div>
@@ -314,30 +544,88 @@ function handleCreate() {
                 </div>
               </template>
             </MpAutocomplete>
-            <MpFormErrorMessage>You must select an assignee</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
           </MpFormControl>
         </div>
+
+        <!-- Picking lists that contributed to this packing — MpAccordion, collapsed
+             by default since it's supplementary reference info, not the main content. -->
+        <MpAccordion v-if="!isDirectMode && sourcePickingLists.length" is-allow-toggle class="pk-picking-accordion">
+          <MpAccordionItem id="pk-picking-lists-acc" icon-position="start">
+            <MpAccordionHeader>
+              <span class="pk-acc-chevron-wrap"><MpAccordionIcon /></span>
+              <span class="pk-acc-label">{{ sourcePickingLists.length > 1 ? 'Picking lists' : 'Picking list' }}</span>
+            </MpAccordionHeader>
+            <MpAccordionPanel>
+              <table class="pk-picking-table">
+                <thead>
+                  <tr class="pk-thead-row--plain">
+                    <th class="pk-th">Picking no.</th>
+                    <th class="pk-th">Assignee</th>
+                    <th class="pk-th pk-th--num">SKU qty</th>
+                    <th class="pk-th pk-th--num">Picked qty</th>
+                    <th class="pk-th">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="pt in sourcePickingLists" :key="pt.id" class="pk-item-row">
+                    <td class="pk-td pk-td--number">
+                      <div class="cell-with-action">
+                        <span>{{ pt.taskNo }}</span>
+                        <button class="row-hover-btn" type="button" @click.stop="router.push(`/picking/${pt.id}`)">
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          <span class="row-hover-btn__label">VIEW DETAILS</span>
+                        </button>
+                      </div>
+                    </td>
+                    <td class="pk-td">{{ pt.assignee }}</td>
+                    <td class="pk-td pk-td--num">{{ formatNum(pt.skuQty) }}</td>
+                    <td class="pk-td pk-td--num">{{ formatNum(pt.pickedQty) }}</td>
+                    <td class="pk-td">
+                      <template v-if="pickingListBlockReasons(pt).length">
+                        <MpTooltip
+                          :id="`pk-tt-block-${pt.id}`"
+                          :label="pickingListBlockReasons(pt).join('; ')"
+                          placement="top"
+                          use-portal
+                        >
+                          <MpBadge for="tableStatus" type="warning">Not packable</MpBadge>
+                        </MpTooltip>
+                      </template>
+                      <MpBadge v-else for="tableStatus" type="completed">Ready to pack</MpBadge>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </MpAccordionPanel>
+          </MpAccordionItem>
+        </MpAccordion>
 
         <!-- Items to pack, per sales order -->
         <div class="pk-sku-section">
           <h2 class="pk-section-title">Items to pack</h2>
-          <div class="pk-section-meta">
-            <div class="pk-picking-ref">
-              <span class="pk-picking-ref-label">{{ sourcePickingNos.length > 1 ? 'Picking lists' : 'Picking list' }}</span>
-              <span class="pk-picking-ref-val">{{ sourcePickingNos.join(', ') }}</span>
-            </div>
-            <div v-if="selectedTotals.orders" class="pk-picking-ref">
-              <span class="pk-picking-ref-label">Packing tasks</span>
-              <span class="pk-picking-ref-val">{{ formatNum(selectedTotals.orders) }}</span>
-            </div>
+          <div v-if="selectedTotals.orders" class="pk-picking-ref">
+            <span class="pk-picking-ref-label">Packing tasks</span>
+            <span class="pk-picking-ref-val">{{ formatNum(selectedTotals.orders) }}</span>
           </div>
           <p v-if="blockedTables.length" class="pk-tasks-note">
-            Note: {{ blockedTables.map(t => t.salesNo).join(', ') }} ({{ blockedTables.length > 1 ? 'marketplace orders' : 'marketplace order' }}) not fully picked yet across its picking lists, so {{ blockedTables.length > 1 ? 'they’re' : 'it’s' }} not included here — finish picking {{ blockedTables.length > 1 ? 'them' : 'it' }} to pack. You can still save this packing for the order{{ packableTables.length > 1 ? 's' : '' }} below.
+            Note: {{ blockedTables.map(t => t.salesNo).join(', ') }} ({{ blockedTables.length > 1 ? 'marketplace orders' : 'marketplace order' }}) not fully picked yet across its picking lists, so {{ blockedTables.length > 1 ? 'they’re' : 'it’s' }} not included here — finish picking {{ blockedTables.length > 1 ? 'them' : 'it' }} to pack.
+            <template v-if="packableTables.length"> You can still save this packing for the order{{ packableTables.length > 1 ? 's' : '' }} below.</template>
           </p>
           <p v-if="packedTables.length" class="pk-tasks-note">
             Note: {{ packedTables.map(t => t.salesNo).join(', ') }} already {{ packedTables.length > 1 ? 'have' : 'has a' }} packing task, so {{ packedTables.length > 1 ? 'they’re' : 'it’s' }} not shown here.
           </p>
-          <p v-if="orderError" class="pk-tasks-error">Select at least one SKU to pack.</p>
+          <p v-if="canceledTables.length" class="pk-tasks-note">
+            Note: {{ canceledTables.map(t => t.salesNo).join(', ') }} {{ canceledTables.length > 1 ? 'were' : 'was' }} cancelled, so {{ canceledTables.length > 1 ? 'they’re' : 'it’s' }} not shown here — {{ canceledTables.length > 1 ? 'their' : 'its' }} reserved stock can be returned via Release reserved.
+          </p>
+          <p v-if="orderError" class="pk-tasks-error">
+            {{ !isDirectMode && packableTables.length === 0
+              ? 'Marketplace orders must be fully picked (across their picking lists) before a packing task can be created.'
+              : 'You must select at least one SKU to pack' }}
+          </p>
 
           <div v-for="t in packableTables" :key="t.orderId" class="pk-order-block">
             <div class="pk-order-head">
@@ -351,11 +639,11 @@ function handleCreate() {
               <span class="pk-order-no">{{ t.salesNo }}</span>
               <span v-if="t.customer" class="pk-order-cust">{{ t.customer }}</span>
               <span v-if="t.source" class="pk-order-source">
-                {{ t.source }}
+                <SourceLabel :source="t.source" />
                 <MpTooltip
                   v-if="t.isMarketplace"
                   :id="`pc-mkt-${t.orderId}`"
-                  label="Marketplace orders must be packed in full — their items can't be removed."
+                  label="Marketplace orders must be packed in full. Items can't be removed."
                   placement="top"
                   use-portal
                 >
@@ -365,37 +653,102 @@ function handleCreate() {
             </div>
             <section class="pk-items-section" :class="{ 'pk-items-section--bordered': overflowingOrders.has(t.orderId) }">
               <div :ref="el => setScrollRef(t.orderId, el)" class="pk-items-scroll">
-                <table class="pk-items">
+                <table class="pk-items" :class="{ 'pk-items--form': isDirectMode }">
                   <colgroup>
-                    <col style="width: 42%" />
-                    <col style="width: 22%" />
-                    <col style="width: 14%" />
-                    <col style="width: 14%" />
+                    <col v-if="isDirectMode" style="width: 6%" />
+                    <col :style="{ width: isDirectMode ? '26%' : '32%' }" />
+                    <col style="width: 12%" />
+                    <col v-if="!isDirectMode" style="width: 16%" />
+                    <col :style="{ width: isDirectMode ? '12%' : '12%' }" />
+                    <col v-if="!isDirectMode" style="width: 12%" />
+                    <col v-if="isDirectMode" style="width: 12%" />
                     <col style="width: 8%" />
+                    <col v-if="!isDirectMode" style="width: 8%" />
                   </colgroup>
                   <thead>
-                    <tr>
+                    <tr :class="{ 'pk-thead-row--plain': !isDirectMode }">
+                      <th v-if="isDirectMode" class="pk-th pk-th--check" @click.stop>
+                        <MpCheckbox
+                          :id="`pc-all-${t.orderId}`"
+                          :is-checked="allDirectLinesSelected"
+                          @change="toggleAllDirectLines"
+                        />
+                      </th>
                       <th class="pk-th">Product</th>
                       <th class="pk-th">SKU</th>
+                      <th v-if="!isDirectMode" class="pk-th">Storage location</th>
                       <th class="pk-th pk-th--num">Order qty</th>
-                      <th class="pk-th pk-th--num">Picked qty</th>
+                      <th v-if="!isDirectMode" class="pk-th pk-th--num">Picked qty</th>
+                      <th v-if="isDirectMode" class="pk-th pk-th--num">Pack qty</th>
                       <th class="pk-th">Unit</th>
+                      <th v-if="!isDirectMode" class="pk-th pk-th--action"></th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr
-                      v-for="row in visibleLines(t)"
-                      :key="row.key"
+                      v-for="meta in rowsWithMeta(t)"
+                      :key="`${meta.row.key}::${meta.groupIndex}`"
                       class="pk-item-row"
-                      :class="{ 'pk-item-row--off': !isOrderSelected(t.orderId) }"
+                      :class="{ 'pk-item-row--off': isDirectMode ? !isLineSelected(meta.row.key) : !isOrderSelected(t.orderId) }"
                     >
-                      <td class="pk-td">
-                        <ProductCell :name="row.product" :desc="row.desc" :image="row.img" />
+                      <td v-if="isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td" @click.stop>
+                        <MpCheckbox
+                          :id="`pc-line-${meta.row.key}`"
+                          :is-checked="isLineSelected(meta.row.key)"
+                          @change="toggleLineSelection(meta.row.key)"
+                        />
                       </td>
-                      <td class="pk-td"><span class="pk-sku-text">{{ row.sku }}</span></td>
-                      <td class="pk-td pk-td--num">{{ formatNum(row.order) }}</td>
-                      <td class="pk-td pk-td--num">{{ formatNum(row.picked) }}</td>
-                      <td class="pk-td">{{ row.unit }}</td>
+                      <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td">
+                        <ProductCell :name="meta.row.product" :desc="meta.row.desc" :image="meta.row.img" />
+                      </td>
+                      <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td"><span class="pk-sku-text">{{ meta.row.sku }}</span></td>
+
+                      <!-- Storage location: split into one row per bin once the line's picks
+                           actually span 2+ different bins, else whatever bin(s) are already
+                           known (real batch/serial pick data — direct mode has none, so this
+                           column doesn't render there at all). -->
+                      <td v-if="!isDirectMode && meta.groupSize > 1" class="pk-td pk-td--location">{{ meta.bin }}</td>
+                      <td
+                        v-else-if="!isDirectMode && (isBatchTrackedSku(meta.row.sku) || isSerialTrackedSku(meta.row.sku))"
+                        class="pk-td pk-td--location"
+                        :class="{ 'pk-td--location-summary': rowLocationsForDisplay(t.orderId, meta.row).length > 0 }"
+                      >
+                        <div v-if="rowLocationsForDisplay(t.orderId, meta.row).length" class="pk-location-summary-wrap">
+                          <span v-for="loc in rowLocationsForDisplay(t.orderId, meta.row)" :key="loc" class="pk-location-summary-item">{{ loc }}</span>
+                        </div>
+                        <span v-else>—</span>
+                      </td>
+                      <td v-else-if="!isDirectMode" class="pk-td">{{ binForSku(warehouseId, meta.row.sku) }}</td>
+
+                      <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--num">{{ formatNum(meta.row.order) }}</td>
+
+                      <!-- Picked qty: static total for the line, unless split per bin — a bin
+                           row has no separate plan of its own, so it mirrors that bin's own
+                           picked qty. -->
+                      <td v-if="!isDirectMode" class="pk-td pk-td--num">{{ formatNum(meta.groupSize > 1 ? meta.binQty : meta.row.picked) }}</td>
+                      <td v-if="isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--input">
+                        <input
+                          type="number" min="0" :max="meta.row.picked" class="pk-qty-input"
+                          :value="packQtyFor(meta.row)"
+                          :disabled="!isLineSelected(meta.row.key)"
+                          :aria-label="`Pack qty for ${meta.row.product}`"
+                          @input="setPackQty(meta.row.key, ($event.target as HTMLInputElement).value, meta.row.picked)"
+                          @click.stop
+                        />
+                      </td>
+                      <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td">{{ meta.row.unit }}</td>
+                      <td v-if="!isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--action">
+                        <MpTooltip v-if="isBatchTrackedSku(meta.row.sku)" :id="`pc-tt-batch-${meta.row.key}`" label="View batch" placement="top" use-portal>
+                          <button class="pk-view-btn" type="button" aria-label="View batch" @click.stop="openViewBatch(t.orderId, meta.row)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                        <MpTooltip v-else-if="isSerialTrackedSku(meta.row.sku)" :id="`pc-tt-serial-${meta.row.key}`" label="View serial number" placement="top" use-portal>
+                          <button class="pk-view-btn" type="button" aria-label="View serial number" @click.stop="openViewSerial(t.orderId, meta.row)">
+                            <MpIcon name="competencies" size="md" />
+                          </button>
+                        </MpTooltip>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -417,9 +770,34 @@ function handleCreate() {
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goPacking">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleCreate">Save</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </footer>
   </div>
+
+  <ViewBatchDrawer
+    v-if="viewBatchItem"
+    :open="true"
+    :sku="viewBatchItem.sku"
+    :warehouse-id="warehouseId"
+    kind="packing"
+    :picked-batches="batchPicksForPickingTasks(eligiblePickingIdsForOrder(viewBatchItem.orderId), viewBatchItem.orderId, viewBatchItem.sku)"
+    :product-name="viewBatchItem.product"
+    :product-img="viewBatchItem.img"
+    @update:open="viewBatchItem = null"
+  />
+  <ViewSerialDrawer
+    v-if="viewSerialItem"
+    :open="true"
+    :sku="viewSerialItem.sku"
+    :warehouse-id="warehouseId"
+    kind="packing"
+    :counted-total="serialPicksForPickingTasks(eligiblePickingIdsForOrder(viewSerialItem.orderId), viewSerialItem.orderId, viewSerialItem.sku).length"
+    :picked-serials="serialPicksForPickingTasks(eligiblePickingIdsForOrder(viewSerialItem.orderId), viewSerialItem.orderId, viewSerialItem.sku)"
+    :planned-serials="serialPicksForPickingTasks(eligiblePickingIdsForOrder(viewSerialItem.orderId), viewSerialItem.orderId, viewSerialItem.sku)"
+    :product-name="viewSerialItem.product"
+    :product-img="viewSerialItem.img"
+    @update:open="viewSerialItem = null"
+  />
 </template>
 
 <style scoped>
@@ -461,10 +839,25 @@ function handleCreate() {
 /* ── Source + form grid ──────────────────────────────────────────────────────── */
 .pk-source { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .pk-source strong { color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
-.pk-section-meta { display: flex; align-items: flex-start; gap: var(--mp-spacing-10); margin: var(--mp-spacing-2) 0 var(--mp-spacing-5); }
-.pk-picking-ref { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
+.pk-picking-ref { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); margin: var(--mp-spacing-2) 0 var(--mp-spacing-5); }
 .pk-picking-ref-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); }
 .pk-picking-ref-val { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); }
+.pk-picking-table { width: 100%; table-layout: auto; border-collapse: collapse; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); overflow: hidden; }
+.pk-picking-accordion { margin: 0 0 var(--mp-spacing-5); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); overflow: hidden; }
+.pk-acc-chevron-wrap { display: inline-flex; padding-left: 12px; }
+.pk-acc-label { flex: 1; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+
+/* Picking list row — hover chip linking to the picking task's own detail page */
+.pk-td--number { position: relative; }
+.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
+.row-hover-btn {
+  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
+  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
+}
+.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
+.pk-item-row:hover .row-hover-btn { display: flex; }
 .pk-section { margin-bottom: var(--mp-spacing-6); }
 .pk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--mp-spacing-4); max-width: 558px; }
 .pk-assignee-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -489,15 +882,14 @@ function handleCreate() {
 /* ── Per-order blocks ────────────────────────────────────────────────────────── */
 .pk-order-block { margin-bottom: var(--mp-spacing-5); }
 .pk-order-head { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-bottom: var(--mp-spacing-2); }
-.pk-order-no { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pk-order-no { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pk-order-cust { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.pk-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pk-order-source { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
 .pk-source-info { display: inline-flex; align-items: center; color: var(--mp-icon-default, var(--mp-text-secondary)); cursor: default; }
 
 /* ── Items table (form-table look) ───────────────────────────────────────────── */
 .pk-items-section { display: flex; flex-direction: column; }
 .pk-items-section--bordered { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
-.pk-items-section--bordered .pk-items-count { border-top: 1px solid var(--mp-border-default); }
 .pk-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
 .pk-items-sentinel { height: 1px; }
 .pk-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
@@ -514,17 +906,69 @@ function handleCreate() {
   color: var(--mp-text-secondary); text-transform: uppercase;
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
+/* Picking-sourced table has no form columns (direct mode's Pack qty input is the
+   only one) — a plain, read-only table gets the standard filled header, not the
+   white/no-border thead reserved for tables that actually contain form cells. */
+.pk-thead-row--plain .pk-th {
+  background: var(--mp-background-neutral-subtle);
+}
 .pk-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pk-th--check { width: var(--mp-sizes-12, 48px); }
 .pk-td {
-  height: var(--mp-sizes-10, 40px);
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: left;
-  border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .pk-item-row--off { opacity: 0.45; }
 .pk-td--num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
 .pk-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+/* Body cells get a right divider since a bin-split line renders fewer <td>s per
+   row than the header; the Action column (the true rightmost) is excepted. The
+   form-table header stays white with border-bottom only (no side dividers). */
+.pk-items .pk-td { border-right: 1px solid var(--mp-border-default); }
+.pk-items .pk-td--action { border-right: none; }
+/* Direct mode has no sticky action column, so the true last cell (Unit) must drop
+   its right border to avoid an outer frame. Direct rows never bin-split, so
+   :last-child reliably lands on the real last column here. */
+.pk-items--form .pk-td:last-child { border-right: none; }
+.pk-td--location { min-width: 160px; max-width: 200px; }
+/* Stacked list of 2+ known bins in one cell (a line's picks span 2+ bins but
+   the row isn't split) — the wrapping <td> gets padding:0 so each item can
+   carry its own 10px top/bottom padding instead of a wrapped bin name
+   sitting flush against its neighbor with no breathing room. */
+.pk-td--location-summary { padding: 0; }
+.pk-location-summary-wrap { display: flex; flex-direction: column; }
+.pk-location-summary-item {
+  display: flex; align-items: center; min-height: var(--mp-sizes-10, 40px);
+  padding: 10px var(--mp-spacing-2); box-sizing: border-box; flex-shrink: 0;
+  white-space: normal; word-break: break-word; line-height: var(--mp-line-heights-md);
+}
+.pk-location-summary-item:not(:last-child) { border-bottom: 1px solid var(--mp-border-default); }
+
+/* Editable Pack qty cell — white, input fills edge-to-edge, focus ring */
+.pk-td--input { padding: 0; background: var(--mp-background-neutral); }
+.pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+/* Direct/skip-picking mode is a FORM table (Pack qty input) → read-only cells go
+   gray, the input + sticky action stay white. From-picking mode is a plain read-only
+   table, so it keeps default (no gray). */
+.pk-items--form .pk-td { background: var(--mp-background-neutral-subtle); }
+.pk-items--form .pk-td--input,
+.pk-items--form .pk-td--action { background: var(--mp-background-neutral, #fff); }
+.pk-qty-input {
+  display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box; text-align: right;
+  padding: 0 var(--mp-spacing-2);
+  border: none; background: transparent; color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none;
+}
+.pk-qty-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
+
+.pk-td--action { text-align: center; white-space: nowrap; }
+/* Sticky action column — stays visible when the table scrolls wider than the stage */
+.pk-th--action { position: sticky; right: 0; z-index: 2; }
+.pk-td--action { position: sticky; right: 0; z-index: 1; background: var(--mp-background-neutral, #fff); }
+.pk-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.pk-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 .pk-summary { display: flex; align-items: center; gap: var(--mp-spacing-10); align-self: flex-start; margin-top: var(--mp-spacing-4); }
 .pk-stat { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: var(--mp-sizes-24, 96px); }

@@ -193,6 +193,7 @@ export interface Warehouse {
   address: string
   status: WarehouseStatus
   hasTransactions: boolean
+  hasStorageLocations?: boolean
   isDefault?: boolean
   description?: string    // set on user-created / edited warehouses
   updatedAt: string       // ISO date string

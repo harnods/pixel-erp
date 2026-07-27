@@ -1,9 +1,48 @@
 import { reactive } from "vue";
-import { warehouses, picForWarehouse } from "./warehouses";
+import { warehouses } from "./warehouses";
+import { operatorForWarehouse } from "./warehouseTeam";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { receipts, persistReceipts, type Receipt } from "./receipts";
 import { lineItemsForReceipt } from "./receiptLineItems";
 import { TODAY } from "./master";
+import { CATALOG } from "./catalog";
+import { getWarehouseConfig } from "./warehouseConfig";
+import {
+  applyStockInOut, registerNewBatch, receiveNewSerials, unregisterBatch, removeReceivedSerials, binForSku,
+} from "./warehouseDetails";
+import { addWmsAdjustment } from "./wmsStockAdjustments";
+
+const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment']);
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans']);
+const SKU_CATEGORY = new Map(CATALOG.map((p) => [p.sku, p.category]));
+
+function isSerialSku(sku: string): boolean {
+  return SERIAL_CATS.has(SKU_CATEGORY.get(sku) ?? '');
+}
+function isBatchSku(sku: string): boolean {
+  return BATCH_CATS.has(SKU_CATEGORY.get(sku) ?? '');
+}
+
+/** Generate deterministic serial numbers for seed receiving data. */
+function seedSerials(sku: string, count: number, base: number): string[] {
+  const prefix = sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN';
+  return Array.from({ length: count }, (_, k) =>
+    `${prefix}${String(80000 + base + k).padStart(5, '0')}`,
+  );
+}
+
+/** Generate a deterministic single-batch breakdown for seed receiving data. */
+function seedBatchLines(unit: string, qty: number, base: number): ReceivingBatchLine[] {
+  const exp = new Date(TODAY.getTime());
+  exp.setMonth(exp.getMonth() + 2 + (base % 12));
+  return [{
+    batchNo: `Batch #${String(10000 + base).padStart(5, '0')}`,
+    expiryDate: exp.toISOString().slice(0, 10),
+    desc: '',
+    qty,
+    unit,
+  }];
+}
 
 /**
  * Inbound receiving — the connected per-SKU graph.
@@ -13,15 +52,41 @@ import { TODAY } from "./master";
  * (see {@link recomputeReceiptStatus}). See docs/scenarios/inbound-complete-scenario.md.
  */
 
+/** One physical batch recorded against a received SKU (batch-tracked SKUs only). */
+export interface ReceivingBatchLine {
+  batchNo: string;
+  expiryDate: string;
+  desc: string;
+  qty: number;
+  unit: string;
+}
+
 /** One SKU line within a receiving task. */
 export interface ReceivingItem {
   sku: string;
   productName: string;
   unit: string;
-  /** units expected for this SKU in this task (from the PO line) */
+  /** Purchase qty — units ordered for this SKU on the PO line. The hard ceiling:
+   *  receivedQty may exceed targetQty but never this. */
   expectedQty: number;
+  /** "Expected qty" shown in the UI — how much is realistically expected to
+   *  arrive in THIS receiving task. Defaults to expectedQty at creation, but can
+   *  be set lower (never higher — see createReceivingTask). Drives the
+   *  Outstanding qty display and the barcode-scan-threshold check; does NOT cap
+   *  receivedQty (expectedQty/Purchase qty still does). */
+  targetQty: number;
   /** units the operator has recorded as received */
   receivedQty: number;
+  /** Per-batch breakdown of receivedQty, recorded via Manage batch (batch-tracked SKUs only). */
+  batchLines?: ReceivingBatchLine[];
+  /** Individual serials recorded via Manage serial number (serial-tracked SKUs only). */
+  serialNumbers?: string[];
+}
+
+/** Per-SKU batch/serial detail captured alongside a plain qty save. */
+export interface ReceivingItemDetail {
+  batchLines?: ReceivingBatchLine[];
+  serialNumbers?: string[];
 }
 
 export interface ReceivingTask {
@@ -47,8 +112,9 @@ export interface ReceivingTask {
   /** units recorded so far — derived (Σ receivedQty) */
   receivedQty: number;
   /** open = not started · in progress = receiving · pending put-away = received,
-   *  awaiting put-away · completed = put away / done */
-  status: "open" | "in progress" | "pending put-away" | "completed";
+   *  awaiting put-away · completed = put away / done · canceled = voided before
+   *  receiving finished */
+  status: "open" | "in progress" | "pending put-away" | "completed" | "canceled";
   /** ISO timestamp the task was created/assigned (shown as "Date" on the PO) */
   createdDate?: string;
   /** ISO timestamp receiving started — set on Start receiving */
@@ -57,6 +123,32 @@ export interface ReceivingTask {
   endDate?: string;
   /** the put-away task that consumed this receiving task (→ status completed) */
   putAwayTaskId?: string;
+  canceledDate?: string;
+  canceledReason?: string;
+  /** Who canceled it. */
+  canceledBy?: string;
+  /** This task's OWN receipt (PO) was canceled while the task was already "in
+   *  progress" — real receiving work may already exist, so it is NOT
+   *  auto-canceled immediately the way an "open" task on the same PO would be
+   *  (see cancelInboundReceipt in inboundSync.ts). Instead, Continue receiving
+   *  is blocked until the operator explicitly acknowledges the PO is gone —
+   *  acknowledging (see acknowledgeCanceledReceipt below) then cancels the
+   *  task itself, since there's nothing left to receive once its one-and-only
+   *  PO is gone. */
+  needsCancelAck?: boolean;
+  /** True once this task's goods are ACTUALLY reflected in real, tracked
+   *  on-hand stock — via a genuinely completed put-away (endPutAway calls
+   *  markStockCommitted below) or via commitReceivingStock (put-away disabled
+   *  for the warehouse, so receiving itself commits it directly). NOT the same
+   *  as status === "completed": a put-away task can be created (which flips
+   *  its source receiving task to "completed" immediately) long before that
+   *  put-away actually runs — no stock exists yet at that point. Also
+   *  deliberately left unset on seed/demo data, whose on-hand numbers are
+   *  purely deterministic mock generation, never a real tracked mutation —
+   *  reversing "stock" that was never actually added this way would corrupt
+   *  unrelated numbers. Read by the PO-cancellation cascade to decide whether
+   *  acknowledging must also reverse stock (see acknowledgeCanceledReceipt). */
+  stockCommitted?: boolean;
 }
 
 /** A PO with its receiving task(s) — a grouping view derived from the flat store. */
@@ -119,24 +211,35 @@ function buildItems(
   lines: { sku: string; productName: string; unit: string; purchaseQty: number }[],
   mode: ReceiveMode,
   seed: number,
+  taskSeq: number = 0,
 ): ReceivingItem[] {
   return lines.map((l, i) => {
     let received = 0;
     if (mode === "full") received = l.purchaseQty;
     else if (mode === "zero") received = 0;
     else if (mode === "short")
-      // most SKUs full, ~1/3 short, so the PO ends Partial reception
       received = (seed + i) % 3 === 0 ? Math.max(0, Math.round(l.purchaseQty * 0.6)) : l.purchaseQty;
     else if (mode === "partial")
-      // operator midway: some full, some partial, some untouched
       received = (seed + i) % 3 === 0 ? 0 : Math.round(l.purchaseQty * (0.4 + ((seed + i) % 3) * 0.2));
-    return {
+    const receivedQty = Math.min(l.purchaseQty, received);
+    // Demo variety: ~1 in 4 lines expects a partial shipment this task (Expected
+    // qty < Purchase qty) — everything else defaults to the full Purchase qty,
+    // same as before this field existed.
+    const targetQty = (seed + i) % 4 === 0 ? Math.max(0, Math.round(l.purchaseQty * 0.7)) : l.purchaseQty;
+    const item: ReceivingItem = {
       sku: l.sku,
       productName: l.productName,
       unit: l.unit,
       expectedQty: l.purchaseQty,
-      receivedQty: Math.min(l.purchaseQty, received),
+      targetQty,
+      receivedQty,
     };
+    if (receivedQty > 0 && isSerialSku(l.sku)) {
+      item.serialNumbers = seedSerials(l.sku, receivedQty, seed * 100 + taskSeq * 50 + i * 10);
+    } else if (receivedQty > 0 && isBatchSku(l.sku)) {
+      item.batchLines = seedBatchLines(l.unit, receivedQty, seed * 100 + taskSeq * 50 + i * 10);
+    }
+    return item;
   });
 }
 
@@ -163,8 +266,8 @@ function seedTasks(): ReceivingTask[] {
       purchaseNo: r.purchaseNo,
       warehouseId: r.warehouseId,
       warehouseName: r.warehouseName,
-      assignee: picForWarehouse(r.warehouseId, pos),
-      items: buildItems(lines, mode, h),
+      assignee: operatorForWarehouse(r.warehouseId, pos),
+      items: buildItems(lines, mode, h, pos),
       skuScope: "",
       skuCount: 0,
       purchaseQty: 0,
@@ -199,7 +302,10 @@ function seedTasks(): ReceivingTask[] {
         out.push(make(r, lines.slice(cut), "zero", "open", 1, false, false));
       }
     } else {
-      // "on the way" (Open). Most → no task (state A); a few → B/C.
+      // Pre-task seed status "pending" (no ended task yet). Most → no task at
+      // all, so recomputeReceiptStatus() below leaves the PO at Pending (state
+      // A); a few get an Open (state B) or In progress (state C) task instead —
+      // recomputeReceiptStatus() bumps the PO to match once initInbound() runs.
       const bucket = h % 5;
       if (bucket === 0) out.push(make(r, lines, "zero", "open", 0, false, false)); // B
       else if (bucket === 1) out.push(make(r, lines, "partial", "in progress", 0, true, false)); // C
@@ -210,7 +316,56 @@ function seedTasks(): ReceivingTask[] {
 }
 
 // ── Store (flat tasks) + derived PO grouping ─────────────────────────────────────
-const snapshot = loadSnapshot<ReceivingTask>("receiving");
+// Seed task IDs are in the rtask-1XXXX range; user-created start at rtask-30000+.
+const SEED_ID_RE = /^rtask-1\d{4}$/;
+
+/**
+ * Migration: patch a loaded snapshot so that seed tasks (rtask-1XXXX, any status
+ * including in-progress drafts) with receivedQty > 0 but no batch/serial breakdown
+ * for batch- or serial-tracked SKUs get deterministic detail backfilled. User-created
+ * tasks are never touched.
+ */
+function patchSnapshotSerials(snap: ReceivingTask[]): ReceivingTask[] {
+  return snap.map((t) => {
+    if (!SEED_ID_RE.test(t.id)) return t; // user-created — never modify
+    const needsPatch = t.items.some(
+      (it) =>
+        (isSerialSku(it.sku) && it.receivedQty > 0 && !it.serialNumbers?.length) ||
+        (isBatchSku(it.sku) && it.receivedQty > 0 && !it.batchLines?.length),
+    );
+    if (!needsPatch) return t;
+    const h = hash(t.id);
+    return {
+      ...t,
+      items: t.items.map((it, i) => {
+        if (isSerialSku(it.sku) && it.receivedQty > 0 && !it.serialNumbers?.length) {
+          return { ...it, serialNumbers: seedSerials(it.sku, it.receivedQty, h * 3 + i * 10) };
+        }
+        if (isBatchSku(it.sku) && it.receivedQty > 0 && !it.batchLines?.length) {
+          return { ...it, batchLines: seedBatchLines(it.unit, it.receivedQty, h * 3 + i * 10) };
+        }
+        return it;
+      }),
+    };
+  });
+}
+
+/**
+ * Migration: backfill targetQty on any snapshot saved before this field existed
+ * (both seed AND user-created tasks — this is a structural-field default, not a
+ * business-data backfill, so it isn't scoped to SEED_ID_RE like the one above).
+ * Defaults to expectedQty (Purchase qty), matching every task's actual behavior
+ * before "Expected qty" existed as its own concept.
+ */
+function patchMissingTargetQty(snap: ReceivingTask[]): ReceivingTask[] {
+  return snap.map((t) => {
+    if (t.items.every((it) => it.targetQty !== undefined)) return t;
+    return { ...t, items: t.items.map((it) => ({ ...it, targetQty: it.targetQty ?? it.expectedQty })) };
+  });
+}
+
+const _snap = loadSnapshot<ReceivingTask>("receiving");
+const snapshot = _snap ? patchMissingTargetQty(patchSnapshotSerials(_snap)) : null;
 export const receivingTasks = reactive<ReceivingTask[]>(snapshot ?? seedTasks());
 
 /** PO grouping used by the Receiving index — derived from the flat task store. */
@@ -248,15 +403,34 @@ function persistTasks(): void {
 // receipt's status reflects its seed tasks, then persist both snapshots.
 function initInbound(): void {
   rebuildPOs();
-  if (!snapshot) {
+  if (!_snap) {
+    // Fresh seed — derive receipt statuses from tasks
     const ids = new Set(receivingTasks.map((t) => t.receiptId));
     ids.forEach((id) => recomputeReceiptStatus(id));
-    saveSnapshot("receiving", receivingTasks);
   }
+  // Always persist: captures fresh seed OR patched snapshot with added SNs
+  saveSnapshot("receiving", receivingTasks);
 }
 
 // ── PO status derivation ─────────────────────────────────────────────────────────
-/** Re-derive a receipt's status (Open / Partial reception / Completed) from its tasks. */
+/**
+ * Re-derive a receipt's status from its tasks — Pending / Open / In progress
+ * once no task has ended yet, Partial reception / In progress / Completed
+ * once at least one has. A receipt with ended tasks never falls back to
+ * Pending/Open even if a later, still-active task exists on it (e.g. a second
+ * receiving task covering the remainder) — completeness is judged by
+ * cumulative received qty, not by what's currently in flight.
+ *
+ * Fully received does NOT immediately mean Completed: for a warehouse using
+ * put-away, the PO stays "In progress" (still cancelable) until put-away has
+ * genuinely finished — i.e. every ended task's stockCommitted is true (set by
+ * markStockCommitted/commitReceivingStock, NOT merely by reaching receiving
+ * status "completed", which a put-away task being CREATED — not finished —
+ * already causes). "Pending put-away" itself is a ReceivingTask status, not a
+ * Receipt one — at the PO level this is just more "In progress" work.
+ * Put-away-disabled tasks reach stockCommitted immediately when they end, so
+ * they go straight to Completed as before.
+ */
 export function recomputeReceiptStatus(receiptId: string): void {
   const r = receipts.find((x) => x.id === receiptId);
   if (!r || r.status === "canceled") return;
@@ -264,19 +438,40 @@ export function recomputeReceiptStatus(receiptId: string): void {
   const tasks = receivingTasks.filter((t) => t.receiptId === receiptId);
   const ended = tasks.filter((t) => t.status === "pending put-away" || t.status === "completed");
 
-  const received: Record<string, number> = {};
-  for (const t of ended)
-    for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
+  if (ended.length > 0) {
+    const received: Record<string, number> = {};
+    for (const t of ended)
+      for (const it of t.items) received[it.sku] = (received[it.sku] ?? 0) + it.receivedQty;
 
-  r.receivedQty = Object.values(received).reduce((s, n) => s + n, 0);
+    r.receivedQty = Object.values(received).reduce((s, n) => s + n, 0);
 
-  if (ended.length === 0) {
-    r.status = "on the way"; // Open — nothing ended yet
-  } else if (lines.every((l) => (received[l.sku] ?? 0) >= l.purchaseQty)) {
-    r.status = "completed";
-    r.receivedDate = r.receivedDate ?? nowIso().slice(0, 10);
+    if (lines.every((l) => (received[l.sku] ?? 0) >= l.purchaseQty)) {
+      if (ended.every((t) => t.stockCommitted)) {
+        r.status = "completed";
+        r.receivedDate = r.receivedDate ?? nowIso().slice(0, 10);
+      } else {
+        r.status = "in progress"; // fully received, still waiting on real put-away
+      }
+    } else if (ended.some((t) => t.stockCommitted)) {
+      // Received short AND stock is genuinely on-hand — a put-away has completed
+      // (put-away enabled) or receiving committed directly (put-away disabled). Per WMS
+      // PRD 1.1 C1 AC#7, "Partially Completed" requires on-hand stock.
+      r.status = "partial reception";
+    } else {
+      // Received short but NO stock on-hand yet (put-away enabled, none finished) — the
+      // inbound is still In Progress and remains cancelable (not yet Partially Completed).
+      r.status = "in progress";
+    }
   } else {
-    r.status = "partial reception";
+    r.receivedQty = 0;
+    const active = tasks.filter((t) => t.status === "open" || t.status === "in progress");
+    if (active.some((t) => t.status === "in progress")) {
+      r.status = "in progress";
+    } else if (active.length > 0) {
+      r.status = "open";
+    } else {
+      r.status = "pending";
+    }
   }
   persistReceipts();
 }
@@ -289,21 +484,47 @@ export function coverageForReceipt(receiptId: string): Set<string> {
   return covered;
 }
 
-/** PO line items not yet covered by any receiving task. */
+/** Per-SKU qty already spoken for on this receipt — either physically received
+ *  by an ENDED task ("pending put-away"/"completed", its real receivedQty), or
+ *  claimed by a still-open/in-progress task (its own planned targetQty, not
+ *  necessarily received yet). A SKU can be split across more than one
+ *  concurrent task this way, as long as their combined claim never exceeds the
+ *  line's Purchase qty — used everywhere "how much of this SKU is left to
+ *  receive" needs to account for BOTH, so a second task can't re-claim units
+ *  an open task already has dibs on. */
+export function claimedQtyBySku(receiptId: string): Record<string, number> {
+  const claimed: Record<string, number> = {};
+  for (const t of receivingTasks) {
+    if (t.receiptId !== receiptId) continue;
+    if (t.status === "open" || t.status === "in progress") {
+      for (const it of t.items) claimed[it.sku] = (claimed[it.sku] ?? 0) + it.targetQty;
+    } else if (t.status === "pending put-away" || t.status === "completed") {
+      for (const it of t.items) claimed[it.sku] = (claimed[it.sku] ?? 0) + it.receivedQty;
+    }
+  }
+  return claimed;
+}
+
+/** PO line items that still need receiving: purchaseQty exceeds what's already
+ *  claimed across every task on this receipt (open/in-progress claims by their
+ *  own targetQty, ended tasks by their real receivedQty) — never a blanket
+ *  "any open task touches this SKU at all" exclusion, so a SKU only partially
+ *  targeted by an open task still offers its real remainder to a new one. */
 export function uncoveredLineItems(
   receiptId: string,
 ): { sku: string; productName: string; unit: string; purchaseQty: number }[] {
   const r = receipts.find((x) => x.id === receiptId);
   if (!r) return [];
-  const covered = coverageForReceipt(receiptId);
-  return lineItemsForReceipt(r).filter((l) => !covered.has(l.sku));
+  const claimed = claimedQtyBySku(receiptId);
+  return lineItemsForReceipt(r).filter((l) => (claimed[l.sku] ?? 0) < l.purchaseQty);
 }
 
 /** A receiving task can be created while uncovered SKUs remain (and PO isn't canceled). */
 export function canCreateReceivingTask(receiptId: string): boolean {
   const r = receipts.find((x) => x.id === receiptId);
-  if (!r || r.status === "canceled") return false;
-  return uncoveredLineItems(receiptId).length > 0;
+  if (!r || r.status === "canceled" || r.status === "completed") return false;
+  const claimed = claimedQtyBySku(receiptId);
+  return lineItemsForReceipt(r).some((l) => (claimed[l.sku] ?? 0) < l.purchaseQty);
 }
 
 // ── Mutations (state machine) ────────────────────────────────────────────────────
@@ -319,18 +540,31 @@ function freshSeq(): number {
 
 /**
  * Admin creates an Open receiving task covering the given SKUs (a subset of the
- * receipt's uncovered SKUs). PO status is unchanged. Returns the new task.
+ * receipt's uncovered SKUs). Bumps the PO to Open — unless it already has an
+ * ended task, in which case recomputeReceiptStatus keeps it at Partial
+ * reception/Completed instead. Returns the new task.
  */
 export function createReceivingTask(opts: {
   receiptId: string;
   assignee: string;
   skus: string[];
+  /** Per-SKU "Expected qty" from the Create Purchase Receiving form — how much
+   *  is realistically expected THIS task, distinct from (and never above) the
+   *  SKU's outstanding qty (Purchase qty minus whatever's already claimed
+   *  elsewhere on this same receipt — ended tasks' real receivedQty, plus any
+   *  other still-open/in-progress task's own targetQty). Any SKU left out, or
+   *  given a value above its own outstanding qty, just defaults to the
+   *  outstanding qty. */
+  targetQtyBySku?: Record<string, number>;
 }): ReceivingTask | null {
   const r = receipts.find((x) => x.id === opts.receiptId);
   if (!r) return null;
   const lines = lineItemsForReceipt(r);
   const chosen = lines.filter((l) => opts.skus.includes(l.sku));
   if (!chosen.length) return null;
+
+  const claimed = claimedQtyBySku(r.id);
+
   const n = freshSeq();
   const task: ReceivingTask = {
     id: `rtask-${n}`,
@@ -339,14 +573,19 @@ export function createReceivingTask(opts: {
     purchaseNo: r.purchaseNo,
     warehouseId: r.warehouseId,
     warehouseName: r.warehouseName,
-    assignee: opts.assignee || picForWarehouse(r.warehouseId, 0),
-    items: chosen.map((l) => ({
-      sku: l.sku,
-      productName: l.productName,
-      unit: l.unit,
-      expectedQty: l.purchaseQty,
-      receivedQty: 0,
-    })),
+    assignee: opts.assignee || operatorForWarehouse(r.warehouseId, 0),
+    items: chosen.map((l) => {
+      const outstanding = Math.max(0, l.purchaseQty - (claimed[l.sku] ?? 0));
+      const target = opts.targetQtyBySku?.[l.sku];
+      return {
+        sku: l.sku,
+        productName: l.productName,
+        unit: l.unit,
+        expectedQty: l.purchaseQty,
+        targetQty: target === undefined ? outstanding : Math.min(Math.max(0, target), outstanding),
+        receivedQty: 0,
+      };
+    }),
     skuScope: "",
     skuCount: 0,
     purchaseQty: 0,
@@ -357,6 +596,7 @@ export function createReceivingTask(opts: {
   syncTaskTotals(task, lines.length);
   receivingTasks.unshift(task);
   persistTasks();
+  recomputeReceiptStatus(r.id);
   return task;
 }
 
@@ -364,35 +604,255 @@ export function getReceivingTask(taskId: string): ReceivingTask | undefined {
   return receivingTasks.find((t) => t.id === taskId);
 }
 
-/** Operator starts receiving → In progress + start timestamp. */
+/** Operator starts receiving → In progress + start timestamp; PO follows to In progress. */
 export function startReceiving(taskId: string): void {
   const t = getReceivingTask(taskId);
   if (!t || t.status !== "open") return;
   t.status = "in progress";
   t.startDate = nowIso();
   persistTasks();
+  recomputeReceiptStatus(t.receiptId);
+}
+
+/** A receiving task can only be canceled while receiving hasn't finished yet —
+ *  "pending put-away"/"completed" mean the PO's outstanding qty already counts
+ *  this task's receivedQty (see recomputeReceiptStatus/uncoveredLineItems), so
+ *  canceling it at that point would silently make received stock unaccounted
+ *  for. The task itself never touches real on-hand stock directly (that only
+ *  happens downstream at put-away), so canceling here has nothing to revert. */
+export function canCancelReceivingTask(t: ReceivingTask): boolean {
+  return t.status === "open" || t.status === "in progress";
+}
+
+/** Cancel a not-yet-finished receiving task — its SKUs simply become uncovered
+ *  again (uncoveredLineItems only excludes open/in-progress tasks), so a new
+ *  receiving task can be created for them. Terminal state; the record itself is
+ *  kept (never deleted) so it stays in the audit trail. PO status is re-derived
+ *  afterward — it drops back to Open (another active task remains), or all the
+ *  way to Pending if this was the last one and none has ever ended. */
+export function cancelReceivingTask(taskId: string, reason?: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || !canCancelReceivingTask(t)) return;
+  t.status = "canceled";
+  t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
+  if (reason) t.canceledReason = reason;
+  persistTasks();
+  recomputeReceiptStatus(t.receiptId);
+}
+
+/**
+ * This task's own PO was just canceled while the task was already "in
+ * progress", "pending put-away", or "completed" WITH real committed stock
+ * (stockCommitted) — called only from cancelInboundReceipt (inboundSync.ts),
+ * never directly. Unlike an "open" task on the same PO (auto-canceled
+ * outright, nothing to reconcile) or an ended task with NO real stock
+ * committed yet (also auto-canceled — see forceCancelEndedTask below), any of
+ * these three cases may have real, consequential state (draft receivedQty, or
+ * genuine on-hand stock) that shouldn't be silently discarded — so this just
+ * flags it, blocking Continue receiving until the operator explicitly
+ * acknowledges via acknowledgeCanceledReceipt below.
+ */
+export function flagTaskCanceledPoAck(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t) return;
+  t.needsCancelAck = true;
+  persistTasks();
+}
+
+/**
+ * Cancel an ALREADY-ENDED task ("pending put-away", or "completed" with no
+ * real stock committed yet) when its PO gets canceled — bypasses the normal
+ * open/in-progress-only cancel guard (canCancelReceivingTask), since this is
+ * the one sanctioned path allowed to cancel a task past that point. Safe:
+ * neither state has real on-hand stock tied to it yet (see stockCommitted's
+ * own doc comment for why "completed" doesn't necessarily mean stock exists),
+ * so there's nothing to reverse — no acknowledgment needed either.
+ */
+export function forceCancelEndedTask(taskId: string, reason: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || (t.status !== "pending put-away" && t.status !== "completed") || t.stockCommitted) return;
+  t.status = "canceled";
+  t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
+  t.canceledReason = reason;
+  persistTasks();
+}
+
+/**
+ * A receiving task that already RECEIVED goods ("pending put-away") gets its PO canceled
+ * before any put-away runs. The receiving work is done and is a permanent record, so the
+ * task is marked **Completed** (never Canceled) — WMS PRD 1.1 C1 AC#6 "received → stays
+ * Completed". No put-away will happen (order gone) and no stock is committed (its Incoming
+ * is released with the order), so no putAwayTaskId / stockCommitted is set. receivedQty
+ * stays on the record. A receiving task never carries Short/Over — partial-ness lives on
+ * the (now canceled) order, so "Completed" here means "receiving finished", not "full".
+ */
+export function completeReceivingOnPoCancel(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || t.status !== "pending put-away") return;
+  t.status = "completed";
+  persistTasks();
+}
+
+/**
+ * Commit a receiving task's items into REAL, tracked on-hand stock — the
+ * put-away-disabled equivalent of what endPutAway() does for a real put-away
+ * task, per-SKU tracking type. Without this, a warehouse with put-away
+ * disabled would reach "completed" receiving without ever actually adding
+ * anything to on-hand — this closes that gap. Marks stockCommitted so a
+ * later PO cancellation cascade knows there's real stock to reverse.
+ */
+function commitReceivingStock(t: ReceivingTask): void {
+  for (const it of t.items) {
+    if (it.receivedQty <= 0) continue;
+    if (it.batchLines?.length) {
+      for (const b of it.batchLines) {
+        registerNewBatch(t.warehouseId, it.sku, {
+          batchNo: b.batchNo, expiryDate: b.expiryDate, onHand: b.qty,
+          location: binForSku(t.warehouseId, it.sku),
+        });
+      }
+    } else if (it.serialNumbers?.length) {
+      receiveNewSerials(t.warehouseId, it.sku, it.serialNumbers);
+    } else {
+      applyStockInOut(t.warehouseId, [{ sku: it.sku, qty: it.receivedQty }]);
+    }
+  }
+  t.stockCommitted = true;
+}
+
+/** A completed put-away task just committed real stock for these receiving
+ *  tasks — called by endPutAway() (putAwayTasks.ts) so a later PO
+ *  cancellation knows there's real, reversible stock behind them. Deliberately
+ *  NOT set merely by linkPutAway (put-away task CREATED, receiving flipped to
+ *  "completed" immediately) — that happens before the put-away actually runs,
+ *  long before any stock is real. */
+export function markStockCommitted(taskIds: string[]): void {
+  let changed = false;
+  const receiptIds = new Set<string>();
+  for (const id of taskIds) {
+    const t = getReceivingTask(id);
+    if (t && !t.stockCommitted) { t.stockCommitted = true; changed = true; receiptIds.add(t.receiptId); }
+  }
+  if (changed) {
+    persistTasks();
+    // Re-derive each affected PO's status now that its goods are genuinely
+    // committed — this is what actually flips a "Pending put-away" PO to
+    // "Completed" once put-away truly finishes (nothing else does).
+    for (const receiptId of receiptIds) recomputeReceiptStatus(receiptId);
+  }
+}
+
+/**
+ * Reverse a receiving task's committed stock — used when its PO is canceled
+ * after receiving already put real stock on-hand (stockCommitted). Batch/
+ * serial-tracked SKUs go through their own dedicated reversal primitives
+ * (unregisterBatch/removeReceivedSerials) rather than a plain aggregate
+ * stock adjustment — applyStockInOut only touches the aggregate onHand and
+ * would desync it from the sum of item.batches, breaking the batch-sum
+ * invariant. Also records ONE audited stock adjustment reflecting the full
+ * reversal (skipStockMutation — the mutation already happened above; this is
+ * purely the audit trail).
+ */
+function reverseReceivingStock(t: ReceivingTask): void {
+  const lines: { sku: string; qty: number }[] = [];
+  for (const it of t.items) {
+    if (it.receivedQty <= 0) continue;
+    if (it.batchLines?.length) {
+      for (const b of it.batchLines) unregisterBatch(t.warehouseId, it.sku, b.batchNo, b.qty);
+    } else if (it.serialNumbers?.length) {
+      removeReceivedSerials(t.warehouseId, it.sku, it.serialNumbers);
+    } else {
+      applyStockInOut(t.warehouseId, [{ sku: it.sku, qty: -it.receivedQty }]);
+    }
+    lines.push({ sku: it.sku, qty: -it.receivedQty });
+  }
+  if (!lines.length) return;
+  addWmsAdjustment({
+    kind: "in-out",
+    category: "General",
+    warehouseId: t.warehouseId,
+    warehouseName: t.warehouseName,
+    date: nowIso().slice(0, 10),
+    tags: [],
+    memo: `Reversed — purchase order ${t.purchaseNo} was canceled (${t.taskNo}).`,
+    lines,
+    skipStockMutation: true,
+  });
+}
+
+/**
+ * Operator acknowledges that this task's source PO was canceled. Since a
+ * receiving task always belongs to exactly ONE PO (no cross-PO bundling),
+ * there is nothing left to receive once that PO is gone — acknowledging
+ * therefore cancels the task itself (same terminal state a manual Cancel
+ * would reach). If real stock had already been committed for it
+ * (stockCommitted), that stock is reversed first (and audited via a stock
+ * adjustment) — otherwise (an in-progress task's draft qty never touched
+ * real stock) there's nothing to reverse, it just cancels. A no-op if the
+ * task isn't actually flagged (nothing to acknowledge).
+ */
+export function acknowledgeCanceledReceipt(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || !t.needsCancelAck) return;
+  t.needsCancelAck = false;
+  if (t.stockCommitted) reverseReceivingStock(t);
+  t.status = "canceled";
+  t.canceledDate = nowIso();
+  t.canceledBy = "Rizal Candra";
+  t.canceledReason = "Purchase order was canceled";
+  persistTasks();
+}
+
+function applyReceivingDetail(
+  t: ReceivingTask,
+  received: Record<string, number>,
+  detail?: Record<string, ReceivingItemDetail>,
+): void {
+  for (const it of t.items) {
+    if (received[it.sku] != null) it.receivedQty = Math.max(0, received[it.sku]!);
+    const d = detail?.[it.sku];
+    if (d?.batchLines) it.batchLines = d.batchLines;
+    if (d?.serialNumbers) it.serialNumbers = d.serialNumbers;
+  }
 }
 
 /** Save received qty per SKU (manual save or autosave) — stays In progress. */
-export function saveReceivingDraft(taskId: string, received: Record<string, number>): void {
+export function saveReceivingDraft(
+  taskId: string,
+  received: Record<string, number>,
+  detail?: Record<string, ReceivingItemDetail>,
+): void {
   const t = getReceivingTask(taskId);
   if (!t) return;
-  for (const it of t.items)
-    if (received[it.sku] != null) it.receivedQty = Math.max(0, received[it.sku]!);
+  applyReceivingDetail(t, received, detail);
   const lines = lineItemsForReceipt(receipts.find((x) => x.id === t.receiptId)!);
   syncTaskTotals(t, lines.length);
   persistTasks();
 }
 
-/** Operator ends receiving → Pending put-away + end timestamp; re-derive PO status. */
-export function endReceiving(taskId: string, received?: Record<string, number>): void {
+/**
+ * Operator ends receiving → end timestamp; re-derive PO status. Goes to
+ * "pending put-away" normally, or straight to "completed" when put-away is
+ * disabled for this task's warehouse (see app/data/warehouseConfig.ts).
+ */
+export function endReceiving(
+  taskId: string,
+  received?: Record<string, number>,
+  detail?: Record<string, ReceivingItemDetail>,
+): void {
   const t = getReceivingTask(taskId);
   if (!t) return;
-  if (received) for (const it of t.items) if (received[it.sku] != null) it.receivedQty = Math.max(0, received[it.sku]!);
+  if (received) applyReceivingDetail(t, received, detail);
   const lines = lineItemsForReceipt(receipts.find((x) => x.id === t.receiptId)!);
   syncTaskTotals(t, lines.length);
-  t.status = "pending put-away";
+  const putAwayEnabled = getWarehouseConfig(t.warehouseId).putAwayEnabled;
+  t.status = putAwayEnabled ? "pending put-away" : "completed";
   t.endDate = nowIso();
+  // Put-away disabled → there's no separate put-away step left to commit the
+  // goods to on-hand, so receiving itself must do it right here.
+  if (!putAwayEnabled) commitReceivingStock(t);
   persistTasks();
   recomputeReceiptStatus(t.receiptId);
 }
@@ -404,6 +864,35 @@ export function linkPutAway(taskId: string, putAwayTaskId: string): void {
   t.putAwayTaskId = putAwayTaskId;
   t.status = "completed";
   persistTasks();
+}
+
+/**
+ * A put-away was CANCELED — send its source receiving task back to "pending put-away"
+ * so a new put-away can be created for it. Only reverts a task that actually pointed at
+ * THIS put-away and never committed real stock (an open/in-progress put-away — the only
+ * cancelable states — never runs endPutAway, so nothing is on-hand yet). No-op otherwise.
+ */
+export function revertPutAwayLink(taskId: string, putAwayTaskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t || t.putAwayTaskId !== putAwayTaskId || t.stockCommitted) return;
+  t.putAwayTaskId = undefined;
+  t.status = "pending put-away";
+  persistTasks();
+}
+
+/**
+ * Put-away was just disabled for this task's warehouse while it sat in
+ * "pending put-away" with no put-away task ever created — finish it directly,
+ * matching the new normal for that warehouse (no putAwayTaskId to link), and
+ * commit its stock now since no put-away step will ever run for it.
+ */
+export function completeReceivingWithoutPutAway(taskId: string): void {
+  const t = getReceivingTask(taskId);
+  if (!t) return;
+  t.status = "completed";
+  commitReceivingStock(t);
+  persistTasks();
+  recomputeReceiptStatus(t.receiptId);
 }
 
 /**
@@ -444,12 +933,32 @@ export function receivingQueuePOs(warehouseIds?: string[]): ReceivingPO[] {
 export function receivingOpenCount(warehouseIds?: string[]): number {
   return receivingPOsFor(warehouseIds)
     .flatMap((po) => po.tasks)
-    .filter((t) => t.status !== "completed").length;
+    .filter((t) => t.status !== "completed" && t.status !== "canceled").length;
 }
 
 /** Receiving tasks for a receipt (used by the receipt detail "Purchase receiving" tab). */
 export function receivingTasksForReceipt(receiptId: string): ReceivingTask[] {
   return receivingTasks.filter((t) => t.receiptId === receiptId);
+}
+
+/**
+ * D-equivalent of PRD C2 AC#4's edit lock: the qty of this SKU that's already
+ * been PHYSICALLY RECEIVED (not just assigned) on a task that's started or
+ * ended — "in progress", "pending put-away", or "completed". An editInboundReceipt
+ * (inboundSync.ts) edit can never reduce a SKU's PO qty below this, since that
+ * stock has genuinely arrived and can't be "un-received." An "open" (not yet
+ * started) task contributes nothing — nothing has been received on it yet, so
+ * its SKUs stay freely editable (matches the PRD: "the same add/remove is
+ * still allowed against that Pending receiving task").
+ */
+export function lockedReceivingQtyForSku(receiptId: string, sku: string): number {
+  let sum = 0;
+  for (const t of receivingTasks) {
+    if (t.receiptId !== receiptId) continue;
+    if (t.status === "open" || t.status === "canceled") continue;
+    for (const it of t.items) if (it.sku === sku) sum += it.receivedQty;
+  }
+  return sum;
 }
 
 /**
@@ -471,6 +980,19 @@ export function receivedSummaryForReceipt(
     }
   }
   return out;
+}
+
+const RECEIVING_ACTIVE: ReceivingTask["status"][] = ["open", "in progress", "pending put-away"];
+
+export function activeReceivingTasksFor(warehouseId: string, assignee: string): ReceivingTask[] {
+  return receivingTasks.filter(
+    (t) => t.warehouseId === warehouseId && t.assignee === assignee && (RECEIVING_ACTIVE as string[]).includes(t.status),
+  );
+}
+
+export function reassignReceivingTasks(warehouseId: string, fromName: string, toName: string): void {
+  for (const t of activeReceivingTasksFor(warehouseId, fromName)) t.assignee = toName;
+  persistTasks();
 }
 
 initInbound();

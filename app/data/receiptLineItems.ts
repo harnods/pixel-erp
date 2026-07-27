@@ -21,7 +21,55 @@ export const BINS = [
   'D-01-03', 'D-02-01', 'D-02-02', 'D-03-04', 'D-04-02',
 ] as const
 
+// Hand-crafted line items for the demo inbound receipt (rcv-demo-001, see receipts.ts)
+// — pins the exact SKU mix (1 batch-tracked, 1 serial-tracked, 1 plain) and per-SKU
+// qty so the receiving/put-away flow (including partial receiving) has known, stable
+// values to assert against, instead of the hash-derived mix every other receipt gets.
+export const DEMO_RECEIPT_ID = 'rcv-demo-001'
+const DEMO_INBOUND_SPECS: { sku: string; qty: number }[] = [
+  { sku: '1001', qty: 2 }, // batch-tracked — Green Beans Arabica Gayo Grade 1
+  { sku: '2004', qty: 2 }, // serial-tracked — Espresso Machine Lever Manual 1-Group
+  { sku: '3004', qty: 2 }, // plain/untracked — Coffee Scale 2kg / 0.1g
+]
+function demoInboundLines(receipt: Receipt): ReceiptLineItem[] {
+  return DEMO_INBOUND_SPECS.map(({ sku, qty }) => {
+    const p = CATALOG.find((c) => c.sku === sku)!
+    return {
+      productId: p.id,
+      productName: p.name,
+      productDesc: p.desc,
+      sku: p.sku,
+      colorHue: p.hue,
+      image: p.img,
+      unit: p.unit,
+      purchaseQty: qty,
+      storageLocation: binForSku(receipt.warehouseId, p.sku),
+    }
+  })
+}
+
 export function lineItemsForReceipt(receipt: Receipt): ReceiptLineItem[] {
+  if (receipt.id === DEMO_RECEIPT_ID) return demoInboundLines(receipt)
+  // A user-created receipt carries its REAL entered products — use those
+  // instead of fabricating an unrelated mix from skuQty/purchaseQty alone
+  // (the bug: what was actually entered on Create receipt never matched what
+  // the details page showed, because this function never looked at it).
+  if (receipt.lineItems?.length) {
+    return receipt.lineItems.map(({ productId, qty }) => {
+      const p = CATALOG.find((c) => c.id === productId)
+      return {
+        productId,
+        productName: p?.name ?? '',
+        productDesc: p?.desc ?? '',
+        sku: p?.sku ?? '',
+        colorHue: p?.hue ?? 0,
+        image: p?.img ?? '',
+        unit: p?.unit ?? '',
+        purchaseQty: qty,
+        storageLocation: binForSku(receipt.warehouseId, p?.sku ?? ''),
+      }
+    })
+  }
   const seed = receipt.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
   const count = Math.min(receipt.skuQty, CATALOG.length)
   const used = new Set<number>()

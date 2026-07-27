@@ -3,11 +3,11 @@ import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, MpBadge,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpRadio, css,
+  MpModalOverlay, MpModalCloseButton, MpRadio, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { warehouses } from '~/data'
+import { warehouses, archiveWarehouses, unarchiveWarehouses } from '~/data'
 import type { Warehouse } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -15,6 +15,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 const router = useRouter()
 function goToDetail(id: string) { router.push(`/warehouses/${id}`) }
 function goEdit(id: string) { router.push(`/warehouses/${id}/edit`) }
+function goConfigure(id: string) { router.push(`/warehouses/${id}/configure`) }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const allColumns: TableColumn[] = [
@@ -120,6 +121,19 @@ function closeArchiveModal() {
   warehouseToArchive.value = null
 }
 
+function confirmArchive() {
+  if (!warehouseToArchive.value) return
+  archiveWarehouses([warehouseToArchive.value.id])
+  toast.notify({ variant: 'success', title: `${warehouseToArchive.value.name} archived` , maxWidth: 'max-content'})
+  closeArchiveModal()
+}
+
+/** Unarchive is a low-friction, reversible action — no confirmation needed. */
+function unarchive(row: Warehouse) {
+  unarchiveWarehouses([row.id])
+  toast.notify({ variant: 'success', title: `${row.name} unarchived` , maxWidth: 'max-content'})
+}
+
 // ─── Bulk delete confirmation ─────────────────────────────────────────────────
 const bulkDeleteModalOpen = ref(false)
 const bulkDeleteCount = ref(0)
@@ -135,15 +149,28 @@ function closeBulkDeleteModal() {
 
 // ─── Bulk archive confirmation ────────────────────────────────────────────────
 const bulkArchiveModalOpen = ref(false)
-const bulkArchiveCount = ref(0)
+const bulkArchiveIds = ref<string[]>([])
+const bulkArchiveCount = computed(() => bulkArchiveIds.value.length)
+let bulkArchiveDeselect: (() => void) | null = null
 
-function openBulkArchiveModal(count: number) {
-  bulkArchiveCount.value = count
+function openBulkArchiveModal(sel: Set<number>, deselectAll: () => void) {
+  bulkArchiveIds.value = [...sel]
+    .map((i) => (paginated.value[i] as unknown as Warehouse)?.id)
+    .filter(Boolean) as string[]
+  bulkArchiveDeselect = deselectAll
   bulkArchiveModalOpen.value = true
 }
 
 function closeBulkArchiveModal() {
   bulkArchiveModalOpen.value = false
+}
+
+function confirmBulkArchive() {
+  const count = bulkArchiveCount.value
+  archiveWarehouses(bulkArchiveIds.value)
+  toast.notify({ variant: 'success', title: `${count} warehouse${count !== 1 ? 's' : ''} archived` , maxWidth: 'max-content'})
+  bulkArchiveDeselect?.()
+  closeBulkArchiveModal()
 }
 
 // ─── Export modal ─────────────────────────────────────────────────────────────
@@ -200,6 +227,15 @@ function clearFilters() {
   search.value = ''
   statusFilter.value = 'active'
 }
+
+// ─── Empty state — illustrated (matches every other index page); the status tab
+// (Active/Archived) has its own tailored copy, not the generic "adjust your filters"
+// text (that's reserved for an actual search miss, via hasActiveFilter below). ────────
+const emptyIllustration = '/illustrations/empty-folder.png'
+const emptyTitle = computed(() => statusFilter.value === 'archived' ? 'No archived warehouses' : 'No warehouses')
+const emptyDesc = computed(() =>
+  statusFilter.value === 'archived' ? 'Warehouses you archive will appear here.' : 'Warehouses will appear here once created.',
+)
 </script>
 
 <template>
@@ -212,7 +248,7 @@ function clearFilters() {
     :sort-key="sortKey"
     :sort-dir="sortDir"
     :loading="loading"
-    :has-active-filter="!!search || (statusFilter !== 'active')"
+    :has-active-filter="!!search"
     has-checkbox
     :row-disabled="isRowDisabled"
     bulk-label="warehouse"
@@ -227,10 +263,10 @@ function clearFilters() {
   >
 
     <!-- ── Bulk actions ── -->
-    <template #bulk-actions="{ count, deselectAll }">
+    <template #bulk-actions="{ count, selectedRows, deselectAll }">
       <button
         class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-        @click="openBulkArchiveModal(count)"
+        @click="openBulkArchiveModal(selectedRows as Set<number>, deselectAll)"
       >
         Archive
       </button>
@@ -304,13 +340,14 @@ function clearFilters() {
                   :class="{ 'col-settings-item--disabled': item.disabled }"
                   @click="!item.disabled && (columnVisibility[item.key] = !columnVisibility[item.key])"
                 >
-                  <MpCheckbox
-                    :id="`col-chk-${item.key}`"
-                    :is-checked="columnVisibility[item.key]"
-                    :is-disabled="item.disabled"
-                    @change="() => { if (!item.disabled) columnVisibility[item.key] = !columnVisibility[item.key] }"
-                    @click.stop
-                  />
+                  <span @click.stop>
+                    <MpCheckbox
+                      :id="`col-chk-${item.key}`"
+                      :is-checked="columnVisibility[item.key]"
+                      :is-disabled="item.disabled"
+                      @change="() => { if (!item.disabled) columnVisibility[item.key] = !columnVisibility[item.key] }"
+                    />
+                  </span>
                   <span class="col-settings-label">{{ item.label }}</span>
                 </li>
               </ul>
@@ -333,7 +370,7 @@ function clearFilters() {
             v-model="search"
             class="filter-search-input"
             type="text"
-            placeholder="Search..."
+            placeholder="Search warehouse name..."
           />
         </div>
       </div>
@@ -411,7 +448,7 @@ function clearFilters() {
               >
                 Archive
               </MpPopoverListItem>
-              <MpPopoverListItem v-else>
+              <MpPopoverListItem v-else @click="unarchive(row as unknown as Warehouse)">
                 Unarchive
               </MpPopoverListItem>
               <MpPopoverListItem
@@ -422,9 +459,20 @@ function clearFilters() {
                 Delete
               </MpPopoverListItem>
             </template>
+            <div class="wh-menu-divider" role="separator" style="height:1px;margin:4px 0;background:var(--mp-border-default);" />
+            <MpPopoverListItem @click="goConfigure((row as unknown as Warehouse).id)">Configure warehouse</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
+    </template>
+
+    <!-- ── Full empty state (no active-search result — status tab genuinely has none) ── -->
+    <template #empty>
+      <div class="empty-full">
+        <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+        <p class="empty-full-title">{{ emptyTitle }}</p>
+        <p class="empty-full-desc">{{ emptyDesc }}</p>
+      </div>
     </template>
 
   </ErpTablePage>
@@ -433,7 +481,7 @@ function clearFilters() {
   <MpModal
     id="wh-delete-modal"
     :is-open="deleteModalOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -488,7 +536,7 @@ function clearFilters() {
       <MpModalFooter>
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--ghost" @click="closeArchiveModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="closeArchiveModal">Archive</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmArchive">Archive</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -499,7 +547,7 @@ function clearFilters() {
   <MpModal
     id="wh-bulk-archive-modal"
     :is-open="bulkArchiveModalOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -516,7 +564,7 @@ function clearFilters() {
       <MpModalFooter>
         <div class="modal-footer-btns">
           <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkArchiveModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="closeBulkArchiveModal">Archive</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmBulkArchive">Archive</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -594,6 +642,11 @@ function clearFilters() {
                 type="text"
                 placeholder="Search columns..."
               />
+              <button v-if="exportColumnSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="exportColumnSearch = ''">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                </svg>
+              </button>
             </div>
 
             <!-- All columns toggle -->
@@ -642,7 +695,7 @@ function clearFilters() {
   <MpModal
     id="wh-bulk-delete-modal"
     :is-open="bulkDeleteModalOpen"
-    size="sm"
+    size="md"
     is-close-on-esc
     is-close-on-overlay-click
     :is-keep-alive="false"
@@ -668,6 +721,12 @@ function clearFilters() {
 </template>
 
 <style scoped>
+/* Full empty state (illustrated — matches every other index page) */
+.empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
 /* Filter bar layout — reused from other index pages */
 .filter-left {
   display: flex;
@@ -746,7 +805,7 @@ function clearFilters() {
 .row-hover-btn {
   position: absolute;
   right: 0;
-  top: 50%;
+  top: var(--mp-spacing-2\.5, 10px);
   transform: translateY(-50%);
   display: none;
   align-items: center;
@@ -879,7 +938,7 @@ function clearFilters() {
 }
 
 .archive-modal-body__note {
-  color: var(--mp-text-secondary);
+  color: var(--mp-text-default);
 }
 
 /* Export modal body */
@@ -950,6 +1009,15 @@ function clearFilters() {
 }
 
 .export-col-search__input::placeholder { color: var(--mp-text-placeholder); }
+
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* All columns row */
 .export-col-all {

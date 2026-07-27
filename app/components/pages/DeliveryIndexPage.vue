@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { useTableState } from '~/composables/useTableState'
 import { deliveryTasksFor, type DeliveryTask } from '~/data/deliveryTasks'
+import { outgoingOrders } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
+
+// A delivery's order source (Sales Order / Manual / marketplace channel) — looked
+// up from the order since DeliveryTask itself doesn't carry it.
+type DeliveryRow = DeliveryTask & { source: string }
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -27,7 +33,7 @@ const loading = ref(true)
 onMounted(() => {
   setTimeout(() => { loading.value = false }, 1200)
   if (route.query.saved === '1') {
-    toast.notify({ variant: 'success', title: 'Delivery saved' })
+    toast.notify({ variant: 'success', title: 'Delivery saved' , maxWidth: 'max-content'})
     router.replace({ query: { ...route.query, saved: undefined } })
   }
 })
@@ -44,32 +50,46 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Columns ───────────────────────────────────────────────────────────────────
 // Delivery is per sales order — one delivery = one order.
 const columns: TableColumn[] = [
-  { key: 'taskNo',        label: 'Number',      width: '180px', sortType: 'text' },
-  { key: 'salesNo',       label: 'Sales order', width: '200px', sortType: 'text' },
-  { key: 'warehouseName', label: 'Warehouse',   width: '180px', sortType: 'text' },
+  { key: 'salesNo',       label: 'Sales order no.', width: '200px', sortType: 'text' },
+  { key: 'packingTaskNo', label: 'Packing no.',     width: '180px', sortType: 'text' },
+  { key: 'taskNo',        label: 'Delivery no.',    width: '180px', sortType: 'text' },
+  { key: 'source',        label: 'Source',          width: '180px', sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse',       width: '180px', sortType: 'text' },
   { key: 'assignee',      label: 'Assignee',    width: '160px', sortType: 'text' },
+  { key: 'courier',       label: 'Courier',     width: '140px', sortType: 'text' },
+  { key: 'trackingNo',    label: 'Tracking no.', width: '150px', sortType: 'text' },
   { key: 'skuQty',        label: 'SKU qty',     width: '90px',  align: 'right', sortType: 'number' },
   { key: 'orderQty',      label: 'Order qty',   width: '90px',  align: 'right', sortType: 'number' },
   { key: 'toShipQty',     label: 'To ship',     width: '90px',  align: 'right', sortType: 'number' },
   { key: 'status',        label: 'Status',      width: '130px', sortType: 'text' },
-  { key: 'courier',       label: 'Courier',     width: '140px', sortType: 'text' },
-  { key: 'trackingNo',    label: 'Tracking no.', width: '150px', sortType: 'text' },
   { key: 'shippedDate',   label: 'Ship date',   width: '170px', sortType: 'date' },
 ]
-// Column show/hide — Number stays on; the sort menu's "Hide column" flips these off,
-// the ColumnSettings menu turns them back on.
-const colVis = reactive<Record<string, boolean>>(Object.fromEntries(columns.map(c => [c.key, true])))
+// Column show/hide — Delivery no. and Assignee are hidden by default (not
+// important here — assignee means the packer pre-handover but the handover person
+// post-handover, and that's already shown properly on Packing / the Shipped tab).
+// The sort menu's "Hide column" flips others off, the ColumnSettings menu turns
+// them back on.
+const colVis = reactive<Record<string, boolean>>(
+  Object.fromEntries(columns.map(c => [c.key, c.key !== 'taskNo' && c.key !== 'assignee'])),
+)
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
 const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 function hideColumn(key: string) { colVis[key] = false }
 
 // ─── Filters — Status + Warehouse (hidden when scoped) ───
-const warehouseFilter = ref('')
-const statusFilter = ref('')
+const warehouseFilter = ref<string[]>([])
+// Mirror into the shared singleton so the tab bar's count badges (Requests (N),
+// Picking (N), etc.) scope to whatever warehouse this table is actually
+// filtered to, instead of always counting every warehouse.
+const activeWarehouseFilter = useActiveWarehouseFilter()
+watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
+onUnmounted(() => { activeWarehouseFilter.value = [] })
+const statusFilter = ref<string[]>([])
 
-const baseTasks = computed<DeliveryTask[]>(() =>
+const baseTasks = computed<DeliveryRow[]>(() =>
   demoState.value === 'data'
     ? deliveryTasksFor(isScoped.value ? scopedWarehouseIds.value : undefined)
+        .map(t => ({ ...t, source: outgoingOrders.find(o => o.id === t.salesOrderId)?.source ?? '' }))
     : [],
 )
 
@@ -80,32 +100,54 @@ const warehouseOptions = computed(() => {
   return src.map(w => ({ label: w.name, value: w.id }))
 })
 const statusOptions = [
-  { label: 'Ready to ship', value: 'ready to ship' },
-  { label: 'Shipped',         value: 'shipped' },
-  { label: 'Canceled',        value: 'canceled' },
+  { label: 'Ready to ship',     value: 'ready to ship' },
+  { label: 'Out for delivery',  value: 'out for delivery' },
+  { label: 'Shipped',           value: 'shipped' },
+  { label: 'Canceled',          value: 'canceled' },
 ]
-const warehouseLabel = computed(() => warehouseOptions.value.find(o => o.value === warehouseFilter.value)?.label ?? '')
-const statusLabel    = computed(() => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '')
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} warehouses`
+})
+function toggleWarehouse(id: string) {
+  const idx = warehouseFilter.value.indexOf(id)
+  if (idx >= 0) warehouseFilter.value = warehouseFilter.value.filter(v => v !== id)
+  else warehouseFilter.value = [...warehouseFilter.value, id]
+}
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return statusOptions.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} statuses`
+})
+function toggleStatus(v: string) {
+  const idx = statusFilter.value.indexOf(v)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(x => x !== v)
+  else statusFilter.value = [...statusFilter.value, v]
+}
 
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
-} = useTableState<DeliveryTask>(baseTasks, {
+} = useTableState<DeliveryRow>(baseTasks, {
   perPage: 25,
   filterFn: (row, s) => {
     const matchesSearch = !s
       || row.taskNo.toLowerCase().includes(s)
       || row.salesNo.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
-    const matchesWarehouse = !warehouseFilter.value || row.warehouseId === warehouseFilter.value
-    const matchesStatus    = !statusFilter.value    || row.status === statusFilter.value
+      || row.source.toLowerCase().includes(s)
+    const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
+    const matchesStatus    = !statusFilter.value.length || statusFilter.value.includes(row.status)
     return matchesSearch && matchesWarehouse && matchesStatus
   },
 })
 watch([warehouseFilter, statusFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || !!warehouseFilter.value || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = ''; statusFilter.value = '' }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = [] }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -113,7 +155,28 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
 // ─── Row actions ──────────────────────────────────────────────────────────────
 const router = useRouter()
 function viewDetails(row: DeliveryTask) { router.push(`/delivery/${row.id}`) }
-function shipRow(row: DeliveryTask) { router.push({ path: `/delivery/${row.id}`, query: { handover: '1' } }) }
+function handoverRow(row: DeliveryTask) {
+  router.push({ path: '/outbound-delivery/handover/create', query: { deliveryIds: row.id } })
+}
+
+// ─── Bulk → hand several ready-to-ship deliveries over to the courier at once ────
+function selectedDeliveriesOf(sel: Set<number>): DeliveryTask[] {
+  return [...sel].map(i => paginated.value[i]).filter(Boolean) as DeliveryTask[]
+}
+// A handover batch is single-warehouse — show the bulk action only when every
+// selected delivery is ready to ship AND from the same warehouse.
+function bulkHandoverable(sel: Set<number>): boolean {
+  const rows = selectedDeliveriesOf(sel)
+  if (!rows.length) return false
+  const wh = rows[0]!.warehouseId
+  return rows.every(t => t.warehouseId === wh && t.status === 'ready to ship')
+}
+function bulkCreateHandover(sel: Set<number>, deselectAll: () => void) {
+  const rows = selectedDeliveriesOf(sel)
+  if (!rows.length) return
+  router.push({ path: '/outbound-delivery/handover/create', query: { deliveryIds: rows.map(t => t.id).join(',') } })
+  deselectAll()
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -137,51 +200,74 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
+    <!-- ── Bulk bar → handover the selected ready-to-ship deliveries at once ── -->
+    <template #bulk-actions="{ deselectAll, selectedRows }">
+      <button
+        v-if="bulkHandoverable(selectedRows as Set<number>)"
+        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+        @click="bulkCreateHandover(selectedRows as Set<number>, deselectAll)"
+      >
+        Create shipment
+      </button>
+    </template>
+
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover v-if="!isScoped" id="del-wh-filter" is-close-on-select>
+        <MpPopover v-if="!isScoped" id="del-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="del-wh-select" placeholder="Warehouse" :model-value="warehouseFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = ''"
+              id="del-wh-select" placeholder="Warehouse"
+              :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
-              <option v-if="warehouseFilter" :value="warehouseFilter">{{ warehouseLabel }}</option>
+              <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseFilter" @click="warehouseFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`del-wh-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover id="del-status-filter" is-close-on-select>
+        <MpPopover id="del-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="del-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = ''"
+              id="del-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = []"
             >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
+              <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in statusOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`del-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
       </div>
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <ColumnSettingsMenu id="del-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-del-airene" label="Ask Airene" placement="bottom" use-portal>
             <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -190,6 +276,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </MpTooltip>
+          <ColumnSettingsMenu id="del-col-settings" :items="columnItems" :visibility="colVis" />
           <MpTooltip id="tt-del-export" label="Export" placement="bottom" use-portal>
             <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
@@ -199,15 +286,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
           <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     </template>
 
-    <!-- ── Number — View details chip on hover ── -->
-    <template #cell-taskNo="{ value, row }">
+    <!-- ── Sales order no. — View details chip opens the sales order detail ── -->
+    <template #cell-salesNo="{ value, row }">
       <div class="cell-with-action">
-        <span class="cell-text del-no">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as DeliveryTask)">
+        <span class="cell-text del-so">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/${(row as unknown as DeliveryTask).salesOrderId}`)">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -217,15 +309,53 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Sales order (single) ── -->
-    <template #cell-salesNo="{ value }">
-      <span class="del-so">{{ value }}</span>
+    <!-- ── Packing no. — joins all covered packing tasks when a delivery bundles
+         several; View details chip opens the (primary) packing task on hover ── -->
+    <template #cell-packingTaskNo="{ value, row }">
+      <div class="cell-with-action">
+        <span class="cell-text del-no">{{ (row as unknown as DeliveryTask).packingTaskNos?.length
+          ? (row as unknown as DeliveryTask).packingTaskNos!.join(', ')
+          : (value || '—') }}</span>
+        <button
+          v-if="(row as unknown as DeliveryTask).packingTaskId"
+          class="row-hover-btn"
+          @click.stop="router.push(`/packing/${(row as unknown as DeliveryTask).packingTaskId}`)"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
     </template>
 
-    <!-- ── Warehouse ── -->
-    <template #cell-warehouseName="{ value }">
-      <span class="del-warehouse">{{ value }}</span>
+    <!-- ── Delivery no. ── -->
+    <template #cell-taskNo="{ value }">
+      <span class="del-no">{{ value }}</span>
     </template>
+
+    <!-- ── Source — wrap to 2 lines instead of bleeding ── -->
+    <template #cell-source="{ value }">
+      <span class="del-source"><SourceLabel :source="value as string" /></span>
+    </template>
+
+    <!-- ── Warehouse — View details chip on hover ── -->
+    <template #cell-warehouseName="{ value, row }">
+      <div class="cell-with-action">
+        <span class="del-warehouse">{{ value }}</span>
+        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as DeliveryTask).warehouseId}`)">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="row-hover-btn__label">VIEW DETAILS</span>
+        </button>
+      </div>
+    </template>
+
+    <!-- ── Assignee ── -->
+    <template #cell-assignee="{ value }">{{ value || '—' }}</template>
 
     <!-- ── Numeric cells ── -->
     <template #cell-skuQty="{ value }">{{ formatNum(value as number) }}</template>
@@ -256,7 +386,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem @click="viewDetails(row as unknown as DeliveryTask)">View details</MpPopoverListItem>
             <MpPopoverListItem
               v-if="(row as unknown as DeliveryTask).status === 'ready to ship'"
-              @click="shipRow(row as unknown as DeliveryTask)"
+              @click="handoverRow(row as unknown as DeliveryTask)"
             >Handover to courier</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -293,6 +423,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 <style scoped>
 .filter-left  { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+
+/* Warehouse multi-select list */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -313,6 +452,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Number cell — View details chip on hover */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
@@ -320,7 +467,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .del-no { color: var(--mp-text-default); }
 .del-so { color: var(--mp-text-default); }
 .row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
+  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
   align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
@@ -335,14 +482,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .del-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
+.del-source {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; white-space: normal; color: var(--mp-text-default);
+}
 
 .row-kebab {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px); margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); margin-left: auto;
   border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }
