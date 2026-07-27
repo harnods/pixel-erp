@@ -133,8 +133,10 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
       balanceDue: isNonFinancial ? 0 : Math.round(total * paidRatio),
       status,
       warehouse,
+      // Only 2 of the 25 seeded rows are Sales Invoice/Order — cycle just these two
+      // reasons (no Overdue) so both examples actually show up in the demo data.
       reason: (docType === 'Sales Invoice' || docType === 'Sales Order')
-        ? (['Exceeds credit limit', 'Exceeds transaction limit', 'Overdue'] as const)[n % 3]!
+        ? (['Credit limit', 'Amount limit'] as const)[n % 2]!
         : 'Overdue',
     }
   })
