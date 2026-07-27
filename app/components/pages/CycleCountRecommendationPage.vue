@@ -161,13 +161,13 @@ function createCycleCount(sel: Set<number>, deselectAll: () => void) {
   }
   const skus = rows.map(r => r.sku)
   deselectAll()
-  router.push({ path: '/stock-adjustments/new', query: { type: 'count', preselect: skus.join(','), warehouse: rows[0]!.warehouseId } })
+  router.push({ path: '/cycle-counts/new', query: { preselect: skus.join(','), warehouse: rows[0]!.warehouseId } })
 }
 
 // ── Row actions ───────────────────────────────────────────────────────────────
 function viewProduct(sku: string) { router.push(`/product-list/${sku}`) }
 function createCountTaskForRow(row: Recommendation) {
-  router.push({ path: '/stock-adjustments/new', query: { type: 'count', preselect: row.sku, warehouse: row.warehouseId } })
+  router.push({ path: '/cycle-counts/new', query: { preselect: row.sku, warehouse: row.warehouseId } })
 }
 
 </script>

@@ -10,6 +10,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
+import StockAdjustmentsFiltersDrawer, { type StockAdjustmentsFiltersValue } from '~/components/patterns/StockAdjustmentsFiltersDrawer.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 
 function formatAging(startIso?: string, endIso?: string): string {
@@ -145,7 +146,8 @@ function setDemoState(s: DemoState) {
 // ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
 const warehouseFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
-const statusFilter = ref('')
+const statusFilter = ref<string[]>([])
+const assigneeFilter = ref<string[]>([])
 const STATUS_OPTIONS = [
   { value: 'not_started', label: 'Open' },
   { value: 'in_progress', label: 'In progress' },
@@ -176,6 +178,39 @@ function toggleCategory(cat: string) {
   if (idx >= 0) categoryFilter.value = categoryFilter.value.filter(v => v !== cat)
   else categoryFilter.value = [...categoryFilter.value, cat]
 }
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return STATUS_OPTIONS.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} statuses`
+})
+function toggleStatus(id: string) {
+  const idx = statusFilter.value.indexOf(id)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(v => v !== id)
+  else statusFilter.value = [...statusFilter.value, id]
+}
+
+// ─── "All filters" drawer — wraps keyword/warehouse/assignee/status filters ───────
+const isFiltersDrawerOpen = ref(false)
+const drawerWarehouseOptions = computed(() => whOptions.value.map(o => ({ id: o.value, name: o.label })))
+const drawerStatusOptions = computed(() => STATUS_OPTIONS.map(o => ({ id: o.value, name: o.label })))
+const assigneeOptions = computed(() => {
+  const names = new Set<string>()
+  for (const a of activeList.value) { if (a.assignee) names.add(a.assignee) }
+  return [...names].sort().map(name => ({ id: name, name }))
+})
+const drawerValue = computed<StockAdjustmentsFiltersValue>(() => ({
+  keyword: search.value,
+  warehouseIds: warehouseFilter.value,
+  assignees: assigneeFilter.value,
+  statuses: statusFilter.value,
+}))
+function applyDrawerFilters(v: StockAdjustmentsFiltersValue) {
+  search.value = v.keyword
+  warehouseFilter.value = v.warehouseIds
+  assigneeFilter.value = v.assignees
+  statusFilter.value = v.statuses
+}
 
 // ─── Rows (demo state → tab → warehouse/category filter; search handled below) ────
 const baseRows = computed<StockAdjustment[]>(() => {
@@ -190,7 +225,8 @@ const baseRows = computed<StockAdjustment[]>(() => {
   if (kindFilter.value && !isErpStockCounts.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value.length) list = list.filter(a => warehouseFilter.value.includes(a.warehouseId))
   if (categoryFilter.value.length) list = list.filter(a => categoryFilter.value.includes(a.category))
-  if (statusFilter.value) list = list.filter(a => a.status === statusFilter.value)
+  if (statusFilter.value.length) list = list.filter(a => statusFilter.value.includes(a.status))
+  if (assigneeFilter.value.length) list = list.filter(a => a.assignee && assigneeFilter.value.includes(a.assignee))
   return list
 })
 
@@ -207,12 +243,12 @@ const {
     || (kindFilter.value === 'count' && (row.assignee ?? '').toLowerCase().includes(s)),
 })
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || categoryFilter.value.length > 0 || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = []; statusFilter.value = '' }
-watch([warehouseFilter, categoryFilter, statusFilter, isAwaiting, isCycleAwaiting], () => setPage(1))
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || categoryFilter.value.length > 0 || statusFilter.value.length > 0 || assigneeFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = []; statusFilter.value = []; assigneeFilter.value = [] }
+watch([warehouseFilter, categoryFilter, statusFilter, assigneeFilter, isAwaiting, isCycleAwaiting], () => setPage(1))
 // The Status filter is hidden on the Awaiting approval tab (every row is already
 // "Counted") — drop any leftover value so it can't silently zero out the table.
-watch(isCycleAwaiting, (v) => { if (v) statusFilter.value = '' })
+watch(isCycleAwaiting, (v) => { if (v) statusFilter.value = [] })
 
 // ─── Row actions ─────────────────────────────────────────────────────────────────
 // WMS cycle count tasks live under /cycle-counts/:id (not /stock-adjustments/:id)
@@ -371,27 +407,34 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Status (WMS stock count only; not on the Awaiting approval tab — every row there is already "Counted") -->
-        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts && !isCycleAwaiting" id="sa-status-filter" is-close-on-select>
+        <!-- Status — multi-select (WMS stock count only; not on the Awaiting approval tab — every row there is already "Counted") -->
+        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts && !isCycleAwaiting" id="sa-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="sa-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '150px' })" @mousedown.prevent @clear="statusFilter = ''"
+              id="sa-status-select" placeholder="Status"
+              :model-value="statusFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '150px' })" @mousedown.prevent @clear="statusFilter = []"
             >
-              <option v-if="statusFilter" :value="statusFilter">{{ STATUS_OPTIONS.find(o => o.value === statusFilter)?.label }}</option>
+              <option v-if="statusFilter.length" value="__selected__">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in STATUS_OPTIONS" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in STATUS_OPTIONS" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`sa-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="filter-all-btn">
+        <button class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M3 6h18M7 12h10M11 18h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
@@ -663,6 +706,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :subject="approvalLogSubject"
     :log="approvalLogData"
     @close="approvalLogOpen = false"
+  />
+
+  <!-- ── All filters drawer ── -->
+  <StockAdjustmentsFiltersDrawer
+    v-model:is-open="isFiltersDrawerOpen"
+    :model-value="drawerValue"
+    :warehouse-options="drawerWarehouseOptions"
+    :assignee-options="assigneeOptions"
+    :status-options="drawerStatusOptions"
+    :show-status="!isCycleAwaiting"
+    @apply="applyDrawerFilters"
   />
 
   <!-- ── Demo scenario FAB (bottom-right) ── -->

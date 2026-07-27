@@ -459,11 +459,12 @@ function selectTab(tab: string) {
   router.push({ query: { ...route.query, tab } })
 }
 
-// Daily banner (Cycle counts index, all tabs) — top 3 recommended product names,
-// only shown once the Recommendations tab actually has SKUs flagged for counting.
+// Daily banner (Cycle counts index, Count task tab only) — top 3 recommended
+// product names, only shown once the Recommendations tab actually has SKUs
+// flagged for counting.
 const cycleCountBannerNames = computed(() => topRecommendedProductNames(3))
 const cycleCountBannerVisible = computed(() =>
-  currentPageKey.value === 'Cycle counts' && cycleCountBannerNames.value.length > 0,
+  currentPageKey.value === 'Cycle counts' && activeTab.value === 'Count task' && cycleCountBannerNames.value.length > 0,
 )
 
 // Real component to render in the stage for a given page + tab (else placeholder).

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon, MpCheckbox,
@@ -15,6 +15,7 @@ import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
+const route = useRoute()
 
 // ── Warehouse + assignee ────────────────────────────────────────────────────────
 const realWarehouses = warehouses.filter(w => w.status === 'active' && !w.isDefault)
@@ -233,6 +234,29 @@ function productsForLoc(loc: LocEntry): PickerProduct[] {
 // ── Flat fallback (warehouse has no storage locations) ─────────────────────────
 function applyFlatPicker(skus: string[]) { flatSkus.value = skus; flatDrawerOpen.value = false }
 function removeFlatSku(sku: string) { flatSkus.value = flatSkus.value.filter(s => s !== sku) }
+
+// ── Pre-fill from Cycle count recommendations (query: warehouse, preselect) ────
+// Mirrors StockCountFormPage's own deep-link prefill — nextTick so this runs
+// after the warehouseId watcher's own clear-on-change reset has settled.
+onMounted(() => {
+  const warehouseParam = route.query.warehouse as string | undefined
+  if (warehouseParam && warehouseOptions.value.find(w => w.id === warehouseParam)) {
+    warehouseId.value = warehouseParam
+  }
+  const preselectParam = route.query.preselect as string | undefined
+  if (preselectParam) {
+    const skus = preselectParam.split(',').filter(Boolean)
+    nextTick(() => {
+      if (hasStorageLocs.value) {
+        countBy.value = 'sku'
+        bySkuSelected.value = skus
+        rebuildLocsBySkus(skus)
+      } else {
+        flatSkus.value = skus
+      }
+    })
+  }
+})
 
 // ── Attachment ───────────────────────────────────────────────────────────────────
 const fileInput = ref<HTMLInputElement | null>(null)
