@@ -244,8 +244,20 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Approval workflows' },
     { label: 'Tagging rules' },
   ],
-  // Tax rates / Currencies / Payment terms / Payment methods / Tags intentionally
-  // omitted here — they live under "Other lists" instead (no duplication).
+  [
+    // Moved back from "Other lists" — configuration lists that belong under
+    // Settings. Recurring transactions, Activity log, Export & import, File
+    // manager, and Cost recalculation stay in "Other lists".
+    { label: 'Tax rates' },
+    { label: 'Currencies' },
+    { label: 'Payment terms' },
+    { label: 'Payment methods' },
+    { label: 'Tags' },
+  ],
+  [
+    // Data migration sits on its own with a divider above it.
+    { label: 'Data migration' },
+  ],
 ]
 
 // Settings level-2 panel for WMS Standalone — a trimmed, warehouse-focused list.
@@ -438,10 +450,8 @@ const erpNavGroups: NavItem[][] = [
       name: 'Other lists', icon: 'table-view-list',
       expandOnClick: true,
       submenu: [[
-        { label: 'Recurring transactions' }, { label: 'Tax rates' }, { label: 'Currencies' },
-        { label: 'Payment terms' }, { label: 'Payment methods' }, { label: 'Tags' },
-        { label: 'Export & import' }, { label: 'File manager' }, { label: 'Activity log' },
-        { label: 'Data migration' }, { label: 'Cost recalculation' },
+        { label: 'Recurring transactions' }, { label: 'Activity log' },
+        { label: 'Export & import' }, { label: 'File manager' }, { label: 'Cost recalculation' },
       ]],
     },
     {
