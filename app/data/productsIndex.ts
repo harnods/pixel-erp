@@ -11,6 +11,7 @@ import { getWarehouseDetail } from './warehouseDetails'
 import { PRODUCTS } from './inventory'
 import { customProducts } from './customProducts'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { GOODS_CLASSIFICATION_CODES } from './taxClassificationCodes'
 
 // ── Persisted SKU barcode overlay ──────────────────────────────────────────────
 // Only products with no barcode set anywhere (catalog, custom-product form, or
@@ -60,6 +61,11 @@ export interface ProductIndexRow {
   averageCost: number
   lastPurchaseCost: number
   defaultPurchaseCost: number
+  /** Tax info (DJP/e-Faktur) — only filled in for a small, deterministic set of
+   *  products; most rows are blank since this is a newly-added field on the
+   *  product form and existing catalog data hasn't been backfilled. */
+  djpCode: string
+  djpUnit: string
   /** true for a small, deterministic set of newly-added SKUs pending review */
   pendingApproval: boolean
 }
@@ -105,6 +111,30 @@ function minStockFor(catalogIndex: number): number {
 // go live (every 6th product, capped at 5 — matches the tab's badge count).
 const PENDING_SKUS = new Set(PRODUCTS.filter((_, i) => i % 6 === 0).slice(0, 5).map((p) => p.sku))
 
+// Tax info (DJP code / DJP unit) — only a handful of products have this filled in,
+// since it's a newly-added field; a different offset from PENDING_SKUS so the two
+// "notable minority" sets don't just line up with each other. The DJP code is looked
+// up by category so it always matches what the product actually is (coffee beans get
+// the coffee HS code, grinders/machines get an appliance/machinery code) rather than
+// an arbitrary pick from the full classification list.
+function djpCodeFor(label: string) {
+  return GOODS_CLASSIFICATION_CODES.find((c) => c.value === label)!.label
+}
+const CATEGORY_DJP: Record<string, { code: string; unit: string }> = {
+  'Green Beans':       { code: djpCodeFor('090100'), unit: 'Kilogram' }, // coffee, whether or not roasted
+  'Roasted Beans':      { code: djpCodeFor('090100'), unit: 'Kilogram' },
+  'Espresso Machine':    { code: djpCodeFor('843800'), unit: 'Unit' },     // machinery for industrial prep of food/drink
+  'Grinder':            { code: djpCodeFor('850900'), unit: 'Unit' },     // electro-mechanical domestic appliance
+  Equipment:            { code: djpCodeFor('841900'), unit: 'Unit' },     // machinery for treatment by heating/roasting
+  Accessory:            { code: djpCodeFor('850900'), unit: 'Piece' },
+}
+const DJP_SKUS = new Map(
+  PRODUCTS.filter((_, i) => i % 9 === 3).slice(0, 6).map((p) => {
+    const entry = CATEGORY_DJP[p.category]
+    return [p.sku, { djpCode: entry.code, djpUnit: entry.unit }]
+  }),
+)
+
 /** Count of products awaiting approval — badges the sidebar/tab. */
 export function pendingApprovalCount(): number {
   return PENDING_SKUS.size
@@ -146,6 +176,8 @@ export function productIndexRows(warehouseIds?: string[]): ProductIndexRow[] {
       averageCost: p.averageCost,
       lastPurchaseCost: p.lastPurchaseCost,
       defaultPurchaseCost: p.buyPrice,
+      djpCode: DJP_SKUS.get(p.sku)?.djpCode ?? '',
+      djpUnit: DJP_SKUS.get(p.sku)?.djpUnit ?? '',
       pendingApproval: PENDING_SKUS.has(p.sku),
     }
   })

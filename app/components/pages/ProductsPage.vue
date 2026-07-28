@@ -7,12 +7,14 @@
  */
 import {
   MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpSelect, MpCheckbox, MpTooltip, css,
+  MpSelect, MpCheckbox, MpTooltip, MpModal, MpModalContent, MpModalHeader, MpModalBody,
+  MpModalFooter, MpModalOverlay, MpModalCloseButton, MpRadio, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
+import DjpCodeCell from '~/components/patterns/DjpCodeCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDateTimeLong } from '~/utils/date'
 import { TODAY_ISO } from '~/data/master'
@@ -59,12 +61,16 @@ const columns: TableColumn[] = [
     { key: 'averageCost',         label: 'Average cost',           width: '184px', align: 'right' as const,                 sortType: 'number' as const },
     { key: 'lastPurchaseCost',    label: 'Last purchase cost',     width: '184px', align: 'right' as const,                 sortType: 'number' as const },
     { key: 'defaultPurchaseCost', label: 'Default purchase cost',  width: '184px', align: 'right' as const,                 sortType: 'number' as const },
+    // DJP (tax) columns — hidden by default, opt-in via column settings.
+    { key: 'djpCode',             label: 'DJP code',               width: '260px',                                          sortType: 'text' as const },
+    { key: 'djpUnit',             label: 'DJP unit',                width: '140px',                                         sortType: 'text' as const },
   ]),
 ]
 
-// Column show/hide (Name always on; Last updated appended, hidden by default)
+// Column show/hide (Name always on; Last updated / DJP columns appended, hidden by default)
+const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'djpCode', 'djpUnit'])
 const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
@@ -168,6 +174,81 @@ function clearFilters() {
 const activeFilterCount = computed(() =>
   (productTypeFilter.value ? 1 : 0) + (warehouseFilter.value.length > 0 ? 1 : 0) + (stockStatusFilter.value ? 1 : 0),
 )
+
+// ─── Export modal (Figma node 8557-162044) ─────────────────────────────────────
+const exportModalOpen = ref(false)
+const selectedCount = ref(0)
+
+type ExportProductsOption = 'products' | 'bundleAssembled'
+const exportProductsOption = ref<ExportProductsOption>('products')
+
+type ExportScope = 'all' | 'page' | 'selected'
+const exportScope = ref<ExportScope>('all')
+const exportStockOnly = ref(false)
+
+// Columns are grouped into 3 named columns matching the Figma layout — Name→Category,
+// On hand→Unit, Default sales price→DJP unit — rather than a flat auto-flowed grid,
+// so each column always holds the same fields regardless of the search filter.
+const exportColumnGroups: { key: string; label: string }[][] = [
+  [
+    { key: 'name', label: 'Name' },
+    { key: 'productType', label: 'Product type' },
+    { key: 'productDescription', label: 'Product description' },
+    { key: 'sku', label: 'SKU' },
+    { key: 'barcode', label: 'Barcode' },
+    { key: 'category', label: 'Category' },
+  ],
+  [
+    { key: 'onHand', label: 'On hand' },
+    { key: 'reserved', label: 'Reserved' },
+    { key: 'available', label: 'Available' },
+    { key: 'inTransit', label: 'In transit' },
+    { key: 'minStock', label: 'Min. stock' },
+    { key: 'unit', label: 'Unit' },
+  ],
+  [
+    { key: 'defaultSalesPrice', label: 'Default sales price' },
+    { key: 'defaultSalesAccount', label: 'Default sales account' },
+    { key: 'defaultSalesTax', label: 'Default sales tax' },
+    { key: 'defaultPurchaseCost', label: 'Default purchase cost' },
+    { key: 'defaultPurchaseAccount', label: 'Default purchase account' },
+    { key: 'defaultPurchaseTax', label: 'Default purchase tax' },
+    { key: 'lastPurchaseCost', label: 'Last purchase cost' },
+    { key: 'averageCost', label: 'Average cost' },
+    { key: 'djpCode', label: 'DJP code' },
+    { key: 'djpUnit', label: 'DJP unit' },
+  ],
+]
+const exportColumnKeys = exportColumnGroups.flat().map(c => c.key)
+const exportColumnChecked = reactive<Record<string, boolean>>(
+  Object.fromEntries(exportColumnKeys.map(k => [k, true])),
+)
+const exportColumnSearch = ref('')
+
+const visibleExportColumnGroups = computed(() =>
+  exportColumnGroups.map(group =>
+    group.filter(c => c.label.toLowerCase().includes(exportColumnSearch.value.toLowerCase())),
+  ),
+)
+const allExportColumnsChecked = computed(() => exportColumnKeys.every(k => exportColumnChecked[k]))
+const someExportColumnsChecked = computed(
+  () => exportColumnKeys.some(k => exportColumnChecked[k]) && !allExportColumnsChecked.value,
+)
+
+function toggleAllExportColumns() {
+  const next = !allExportColumnsChecked.value
+  exportColumnKeys.forEach(k => { exportColumnChecked[k] = next })
+}
+
+function openExportModal() {
+  exportProductsOption.value = 'products'
+  exportScope.value = selectedCount.value > 0 ? 'selected' : 'all'
+  exportStockOnly.value = false
+  exportColumnSearch.value = ''
+  exportColumnKeys.forEach(k => { exportColumnChecked[k] = true })
+  exportModalOpen.value = true
+}
+function closeExportModal() { exportModalOpen.value = false }
 </script>
 
 <template>
@@ -190,6 +271,7 @@ const activeFilterCount = computed(() =>
     @sort-change="setSort"
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
+    @selection-change="count => selectedCount = count"
   >
 
     <!-- ── Stats section ── -->
@@ -305,7 +387,7 @@ const activeFilterCount = computed(() =>
           <ColumnSettingsMenu id="prod-col-settings" tooltip="Column settings" :items="columnItems" :visibility="columnVisibility" />
           <!-- Export -->
           <MpTooltip id="prod-tt-export" label="Export" placement="bottom" use-portal>
-            <button class="filter-icon-btn" aria-label="Export">
+            <button class="filter-icon-btn" aria-label="Export" @click="openExportModal">
               <MpIcon name="download" size="md" />
             </button>
           </MpTooltip>
@@ -362,6 +444,18 @@ const activeFilterCount = computed(() =>
     <template #cell-lastPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
     <template #cell-defaultPurchaseCost="{ value }">{{ formatIDR(value as number) }}</template>
 
+    <!-- ── Cell: DJP (tax) columns — blank for most rows, see productsIndex.ts ── -->
+    <template #cell-djpCode="{ row, value }">
+      <DjpCodeCell
+        v-if="value"
+        :id="`prod-djp-${(row as ProductIndexRow).id}`"
+        :title="(row as ProductIndexRow).name"
+        :text="value as string"
+      />
+      <template v-else>—</template>
+    </template>
+    <template #cell-djpUnit="{ value }">{{ (value as string) || '—' }}</template>
+
     <!-- ── Actions kebab ── -->
     <template #actions="{ row }">
       <MpPopover :id="`prod-actions-${(row as ProductIndexRow).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -399,6 +493,162 @@ const activeFilterCount = computed(() =>
     </template>
 
   </ErpTablePage>
+
+  <!-- ── Export modal (Figma node 8557-162044) ── -->
+  <MpModal
+    id="prod-export-modal"
+    :is-open="exportModalOpen"
+    size="lg"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="closeExportModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        Export products
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <div class="export-modal-body">
+
+          <!-- Export options -->
+          <div class="export-section">
+            <p class="export-section__label">Export options</p>
+            <div class="export-radio-group">
+              <label class="export-radio-item">
+                <MpRadio
+                  id="export-option-products"
+                  name="export-option"
+                  value="products"
+                  :is-checked="exportProductsOption === 'products'"
+                  @change="exportProductsOption = 'products'"
+                />
+                <span>Products</span>
+              </label>
+              <label class="export-radio-item">
+                <MpRadio
+                  id="export-option-bundle"
+                  name="export-option"
+                  value="bundleAssembled"
+                  :is-checked="exportProductsOption === 'bundleAssembled'"
+                  @change="exportProductsOption = 'bundleAssembled'"
+                />
+                <span>Bundle & assembled products</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Export scope -->
+          <div class="export-section">
+            <p class="export-section__label">Export scope</p>
+            <div class="export-radio-group">
+              <label class="export-radio-item">
+                <MpRadio
+                  id="export-scope-all"
+                  name="export-scope"
+                  value="all"
+                  :is-checked="exportScope === 'all'"
+                  @change="exportScope = 'all'"
+                />
+                <span>All products ({{ total }})</span>
+              </label>
+              <label class="export-radio-item">
+                <MpRadio
+                  id="export-scope-page"
+                  name="export-scope"
+                  value="page"
+                  :is-checked="exportScope === 'page'"
+                  @change="exportScope = 'page'"
+                />
+                <span>Current page</span>
+              </label>
+              <label class="export-radio-item" :class="{ 'export-radio-item--disabled': selectedCount === 0 }">
+                <MpRadio
+                  id="export-scope-selected"
+                  name="export-scope"
+                  value="selected"
+                  :is-checked="exportScope === 'selected'"
+                  :is-disabled="selectedCount === 0"
+                  @change="selectedCount > 0 && (exportScope = 'selected')"
+                />
+                <span>Selected {{ selectedCount }} product{{ selectedCount !== 1 ? 's' : '' }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Stock filter -->
+          <label class="export-col-all export-col-all--standalone">
+            <MpCheckbox
+              id="export-stock-only"
+              :is-checked="exportStockOnly"
+              @change="exportStockOnly = !exportStockOnly"
+              @click.stop
+            />
+            <span class="export-col-label">Products with stock only</span>
+          </label>
+
+          <!-- Select columns -->
+          <div class="export-section">
+            <p class="export-section__label">Select columns to export</p>
+
+            <!-- Search -->
+            <div class="export-col-search">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <input
+                v-model="exportColumnSearch"
+                class="export-col-search__input"
+                type="text"
+                placeholder="Search column"
+              />
+              <button v-if="exportColumnSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="exportColumnSearch = ''">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- All columns toggle -->
+            <div class="export-col-all">
+              <MpCheckbox
+                id="export-col-all"
+                :is-checked="allExportColumnsChecked"
+                :is-indeterminate="someExportColumnsChecked"
+                @change="toggleAllExportColumns"
+                @click.stop
+              />
+              <span class="export-col-label">All columns</span>
+            </div>
+
+            <!-- Column list — 3 fixed groups (Name→Category, On hand→Unit, Default sales price→DJP unit) -->
+            <div class="export-col-groups">
+              <div v-for="(group, gi) in visibleExportColumnGroups" :key="gi" class="export-col-group">
+                <label v-for="col in group" :key="col.key" class="export-col-item">
+                  <MpCheckbox
+                    :id="`export-col-${col.key}`"
+                    :is-checked="exportColumnChecked[col.key]"
+                    @change="exportColumnChecked[col.key] = !exportColumnChecked[col.key]"
+                    @click.stop
+                  />
+                  <span class="export-col-label">{{ col.label }}</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeExportModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="closeExportModal">Export</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 </template>
 
 <style scoped>
@@ -635,5 +885,122 @@ const activeFilterCount = computed(() =>
   margin: 0;
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
+}
+
+/* ── Export modal (Figma node 8557-162044) ── */
+.export-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-5);
+}
+
+.export-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-1);
+}
+
+.export-section__label {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
+}
+
+.export-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-2);
+}
+
+.export-radio-item {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+  cursor: pointer;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
+  user-select: none;
+}
+
+.export-radio-item--disabled {
+  color: var(--mp-text-disabled);
+  cursor: default;
+}
+
+.export-col-search {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral);
+  color: var(--mp-text-secondary);
+}
+
+.export-col-search__input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-md);
+  outline: none;
+}
+.export-col-search__input::placeholder { color: var(--mp-text-placeholder); }
+
+/* "All columns" toggle + standalone "Products with stock only" checkbox row */
+.export-col-all {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+  margin-top: var(--mp-spacing-4);
+}
+.export-col-all--standalone {
+  margin-top: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Column list — 3 named groups (not an auto-flowed grid) so each column always
+   holds the same fields (Name→Category / On hand→Unit / Default sales price→DJP
+   unit) regardless of the search filter. */
+.export-col-groups {
+  display: flex;
+  gap: var(--mp-spacing-6);
+  align-items: flex-start;
+  width: 100%;
+}
+.export-col-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.export-col-item {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.export-col-label {
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
+}
+
+.modal-footer-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--mp-spacing-2);
+  width: 100%;
 }
 </style>

@@ -7,11 +7,12 @@
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, toast,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
 } from '@mekari/pixel3'
 import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.vue'
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
+import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
 
 // order-id from the catch-all route: 'new' → create, a SKU → edit.
 const props = defineProps<{ orderId?: string }>()
@@ -107,12 +108,11 @@ const discountAccountOptions = [
   { label: '4-41000 Sales Returns & Allowances', value: '4-41000 Sales Returns & Allowances' },
 ]
 const taxOptions = [{ label: 'PPN 11%', value: 'PPN 11%' }]
-const classificationCodeOptions = [
-  { label: '090111 - Kopi, tidak disangrai, tidak dihilangkan kafeinnya', value: '090111' },
-  { label: '100630 - Beras', value: '100630' },
-  { label: '210690 - Makanan olahan lainnya', value: '210690' },
-  { label: '392690 - Barang dari plastik lainnya', value: '392690' },
-]
+// Classification code list follows Product classification — Goods and Services
+// draw from separate DJP (KLU) reference tables.
+const classificationCodeOptions = computed(() =>
+  productClassification.value === 'Service' ? SERVICE_CLASSIFICATION_CODES : GOODS_CLASSIFICATION_CODES,
+)
 // DJP (tax office) unit lists — Goods vs. Services have distinct vocabularies per
 // the e-Faktur spec, so the options shown depend on Product classification.
 const djpUnitGoodsList = [
@@ -136,13 +136,25 @@ const BASE_UNIT_TO_DJP_GOODS: Record<string, string> = {
   Carton: 'Carton', Drum: 'Drum', Barrel: 'Barrel', Sheet: 'Sheet', Yard: 'Yard', Inch: 'Inch', Ampere: 'Ampere',
 }
 function preselectDjpUnit() {
+  // Switching Goods ↔ Service swaps the DJP unit list — drop a unit picked from
+  // the other list before (maybe) preselecting one that matches the base unit.
+  if (djpUnit.value && !djpUnitOptions.value.some(o => o.value === djpUnit.value)) {
+    djpUnit.value = ''
+  }
   const mapped = productClassification.value === 'Service' ? undefined : BASE_UNIT_TO_DJP_GOODS[unit.value]
   if (mapped && djpUnitOptions.value.some(o => o.value === mapped)) {
     djpUnit.value = mapped
-    djpUnitError.value = ''
   }
 }
 watch([unit, productClassification], preselectDjpUnit)
+
+// Switching Goods ↔ Service swaps the classification code list entirely — clear
+// a code picked from the other list instead of leaving a stale mismatch selected.
+watch(productClassification, () => {
+  if (classificationCode.value && !classificationCodeOptions.value.some(o => o.value === classificationCode.value)) {
+    classificationCode.value = ''
+  }
+})
 
 // ── Photo upload (drag & drop + choose file) — stored as a data URL so it
 // survives a refresh via the same localStorage snapshot as the rest of the record ──
@@ -169,9 +181,6 @@ const nameError = ref('')
 const skuError = ref('')
 const categoryError = ref('')
 const unitError = ref('')
-const classificationError = ref('')
-const classificationCodeError = ref('')
-const djpUnitError = ref('')
 const isSaving = ref(false)
 const isSavingAndAdding = ref(false)
 
@@ -234,11 +243,10 @@ function setDemoState(s: DemoState) {
     salesTax.value = 'PPN 11%'
     discountAccount.value = '4-40900 Sales Discounts'
     productClassification.value = 'Goods'
-    classificationCode.value = '090111'
+    classificationCode.value = '090100'
     preselectDjpUnit()
   }
   nameError.value = skuError.value = categoryError.value = unitError.value = ''
-  classificationError.value = classificationCodeError.value = djpUnitError.value = ''
 }
 
 function goBack() {
@@ -255,9 +263,6 @@ function validate(): boolean {
   skuError.value = ''
   categoryError.value = ''
   unitError.value = ''
-  classificationError.value = ''
-  classificationCodeError.value = ''
-  djpUnitError.value = ''
 
   if (!name.value.trim()) nameError.value = 'You must fill in product name'
 
@@ -274,14 +279,7 @@ function validate(): boolean {
   if (!category.value) categoryError.value = 'You must select category'
   if (!unit.value) unitError.value = 'You must select base unit'
 
-  if (!productClassification.value) classificationError.value = 'You must select product classification'
-  if (!classificationCode.value) classificationCodeError.value = 'You must select classification code'
-  if (!djpUnit.value) djpUnitError.value = 'You must select DJP unit'
-
-  return !(
-    nameError.value || skuError.value || categoryError.value || unitError.value
-    || classificationError.value || classificationCodeError.value || djpUnitError.value
-  )
+  return !(nameError.value || skuError.value || categoryError.value || unitError.value)
 }
 
 function buildPayload(): Omit<Product, 'id'> {
@@ -323,7 +321,6 @@ function resetForm() {
   classificationCode.value = ''
   djpUnit.value = ''
   nameError.value = skuError.value = categoryError.value = unitError.value = ''
-  classificationError.value = classificationCodeError.value = djpUnitError.value = ''
 }
 
 async function save() {
@@ -544,48 +541,63 @@ onUnmounted(() => { footerObserver?.disconnect() })
           <div class="nw-fields">
 
             <!-- Product classification -->
-            <MpFormControl id="np-classification" is-required :is-invalid="!!classificationError">
+            <MpFormControl id="np-classification">
               <MpFormLabel>Product classification</MpFormLabel>
               <div class="np-radio-group">
                 <label class="np-radio-item">
-                  <MpRadio id="np-classification-goods" name="np-classification" value="Goods" :is-checked="productClassification === 'Goods'" @change="productClassification = 'Goods'; classificationError = ''" />
+                  <MpRadio id="np-classification-goods" name="np-classification" value="Goods" :is-checked="productClassification === 'Goods'" @change="productClassification = 'Goods'" />
                   <span>Goods</span>
                 </label>
                 <label class="np-radio-item">
-                  <MpRadio id="np-classification-service" name="np-classification" value="Service" :is-checked="productClassification === 'Service'" @change="productClassification = 'Service'; classificationError = ''" />
+                  <MpRadio id="np-classification-service" name="np-classification" value="Service" :is-checked="productClassification === 'Service'" @change="productClassification = 'Service'" />
                   <span>Service</span>
                 </label>
               </div>
-              <MpFormErrorMessage>{{ classificationError }}</MpFormErrorMessage>
             </MpFormControl>
 
-            <!-- Classification code + DJP unit -->
-            <div class="nw-row">
-              <div class="np-field-270 np-ai-field">
-                <MpFormControl id="np-classification-code" :class="{ 'np-ai-select': demoState === 'ai_matched' }" is-required :is-invalid="!!classificationCodeError">
-                  <MpFormLabel>Classification code</MpFormLabel>
-                  <MpAutocomplete
-                    id="np-classification-code-ac" v-model="classificationCode" :data="classificationCodeOptions" label-prop="label" value-prop="value"
-                    placeholder="Select classification code" is-searchable use-portal is-full-width :is-invalid="!!classificationCodeError"
-                    @update:model-value="classificationCodeError = ''"
-                  />
-                  <MpFormErrorMessage>{{ classificationCodeError }}</MpFormErrorMessage>
-                </MpFormControl>
-                <div v-if="demoState === 'ai_matched'" class="np-ai-banner">
-                  <MpIcon name="airene-brand" size="sm" />
-                  <span>AI matched — Matches product name &amp; description</span>
-                </div>
-              </div>
-              <MpFormControl id="np-djp-unit" class="np-field-270" is-required :is-invalid="!!djpUnitError">
-                <MpFormLabel>DJP unit</MpFormLabel>
+            <!-- Classification code — same width as Category (564px), not the full Tax info row -->
+            <div class="np-ai-field np-field-564">
+              <MpFormControl id="np-classification-code" :class="{ 'np-ai-select': demoState === 'ai_matched' }">
+                <MpFormLabel>DJP code</MpFormLabel>
                 <MpAutocomplete
-                  id="np-djp-unit-ac" v-model="djpUnit" :data="djpUnitOptions" label-prop="label" value-prop="value"
-                  placeholder="Select DJP unit" is-searchable use-portal is-full-width :is-invalid="!!djpUnitError"
-                  @update:model-value="djpUnitError = ''"
-                />
-                <MpFormErrorMessage>{{ djpUnitError }}</MpFormErrorMessage>
+                  id="np-classification-code-ac" v-model="classificationCode" :data="classificationCodeOptions" label-prop="label" value-prop="value"
+                  placeholder="Select DJP code" is-searchable use-portal is-full-width is-adaptive-width
+                >
+                  <template #default="{ item }">
+                    <MpTooltip
+                      v-if="item.label.length > 60" :id="`np-cc-tip-${item.value}`"
+                      :label="item.label" placement="top" use-portal
+                    >
+                      <span class="np-option-truncate np-option-truncate--code">{{ item.label }}</span>
+                    </MpTooltip>
+                    <span v-else class="np-option-truncate np-option-truncate--code">{{ item.label }}</span>
+                  </template>
+                </MpAutocomplete>
               </MpFormControl>
+              <div v-if="demoState === 'ai_matched'" class="np-ai-banner">
+                <MpIcon name="airene-brand" size="sm" />
+                <span>AI matched — Matches product name &amp; description</span>
+              </div>
             </div>
+
+            <!-- DJP unit -->
+            <MpFormControl id="np-djp-unit" class="np-field-270">
+              <MpFormLabel>DJP unit</MpFormLabel>
+              <MpAutocomplete
+                id="np-djp-unit-ac" v-model="djpUnit" :data="djpUnitOptions" label-prop="label" value-prop="value"
+                placeholder="Select DJP unit" is-searchable use-portal is-full-width is-adaptive-width
+              >
+                <template #default="{ item }">
+                  <MpTooltip
+                    v-if="item.label.length > 60" :id="`np-djp-tip-${item.value}`"
+                    :label="item.label" placement="top" use-portal
+                  >
+                    <span class="np-option-truncate np-option-truncate--unit">{{ item.label }}</span>
+                  </MpTooltip>
+                  <span v-else class="np-option-truncate np-option-truncate--unit">{{ item.label }}</span>
+                </template>
+              </MpAutocomplete>
+            </MpFormControl>
 
           </div>
         </div>
@@ -890,6 +902,15 @@ onUnmounted(() => { footerObserver?.disconnect() })
   padding: 16px 6px 6px; border-radius: 0 0 var(--mp-radii-md) var(--mp-radii-md);
   font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px);
 }
+
+/* Classification code / DJP unit popover options — long DJP descriptions get
+   ellipsis-truncated instead of wrapping/overflowing; full text via MpTooltip.
+   Widths are capped a little under the field's own width (minus the popover
+   list item's own horizontal padding) so the popover never grows past it. */
+.np-field-564 { width: 564px; max-width: 100%; }
+.np-option-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-option-truncate--code { max-width: 532px; }
+.np-option-truncate--unit { max-width: 238px; }
 
 /* Demo scenario FAB — mirrors ShippedIndexPage.vue's .demo-fab */
 .demo-fab {
