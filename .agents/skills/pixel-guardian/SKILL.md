@@ -94,6 +94,11 @@ rewrite the output:
   `ConfirmModal`, …).
 - Import UI from `@mekari/pixel3`; Pixel primitives before raw HTML; wrap
   validated fields in `MpFormControl`; tokens over raw values; Token v2.4 only.
+- **Cards/boxes/panels use a `1px` border (`var(--mp-border-*)`), NEVER a
+  drop-shadow** — do not carry a `box-shadow` over from the source design. Shadows
+  are only for floating overlays. And a `pageRegistry` page's root must **not**
+  add stage padding — the `.stage` wrapper already gives 24px. See DESIGN.md →
+  "Stage" + "Surfaces & cards".
 - Mock data lives in `app/data/` (add file + type in `types.ts` + export from
   `index.ts`) — never hardcode arrays inside the `.vue`.
 - Wire the page in per `docs/patterns/*`: `pageRegistry` key in

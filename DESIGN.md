@@ -24,20 +24,30 @@ Do not use non-Enterprise components or manually override tokens.
 ## Layout
 
 ### Stage
-- Stage is the white content area below the page title bar.
-- **Padding: `var(--mp-spacing-6)` (24px) on all sides — required on every page, no exceptions.**
+- Stage is the **white** content area (`var(--mp-background-stage)`) below the page
+  title bar, with **`var(--mp-spacing-6)` (24px) padding on all sides** — required
+  on every page, no exceptions.
+- **Who supplies that padding depends on the page type — do NOT double it:**
+  - **Sidebar / `pageRegistry` pages** (index & simple pages) render *inside* the
+    shared `.stage` wrapper in `[...slug].vue`, which already provides the white
+    surface + 24px padding + column gap. **Your page root must NOT add its own
+    padding or background** — just lay out your sections. (Adding `padding: 24px`
+    on the root double-pads to 48px — a common mistake.)
+  - **Detail / form pages** (matched via `detailMatch`) own their *entire* layout,
+    including their own 72px title bar and their own scroll container — **these**
+    apply the 24px stage padding themselves.
+- If unsure, check whether your page is in `pageRegistry` (→ don't pad) or
+  `detailMatch` (→ pad).
 
-```vue
-<template>
-  <div class="page-content">
-    <!-- content -->
-  </div>
-</template>
-
-<style scoped>
-.page-content { padding: var(--mp-spacing-6); } /* 24px */
-</style>
-```
+### Surfaces & cards
+- **Cards, boxes, panels, and any inline surface are separated by a `1px` border
+  (`var(--mp-border-default)` / `var(--mp-border-subtle)`) — NEVER a drop-shadow.**
+  We do not use `box-shadow` / `var(--mp-shadows-*)` for elevation on content
+  surfaces. A dropshadowed card is wrong even if the source design has one.
+- Drop-shadows are reserved for genuinely **floating overlays** (menu, popover,
+  dropdown, modal, drawer) that sit above the page. `box-shadow: inset …` (focus
+  rings, cell borders) is not a drop-shadow and is fine.
+- Radius via `var(--mp-radii-*)`; surface fill `var(--mp-background-neutral)`.
 
 ### Page Title Bar
 - **Always `72px`**, background `var(--mp-background-neutral-subtle)`, padding `0 24px`.
@@ -184,7 +194,10 @@ new Intl.DateTimeFormat('id-ID', {
 
 - [ ] `ErpTablePage` for every index page — do not build a custom table
 - [ ] `ErpStatusBadge` for status cells — do not use raw `MpBadge` with manual mapping
-- [ ] Stage padding `var(--mp-spacing-6)` (24px) on all sides — no exceptions
+- [ ] Stage padding `var(--mp-spacing-6)` (24px) — supplied by `.stage` for
+      `pageRegistry` pages (do NOT re-pad the root); by the page itself for detail/form pages
+- [ ] Cards/boxes use a `1px` border, **never** a drop-shadow (`box-shadow`) —
+      shadows are only for floating overlays
 - [ ] Enterprise theme is set in `app.vue` — do not repeat it in pages
 - [ ] `pageRegistry` key must exactly match the sidebar menu label
 - [ ] Mock data lives in `app/data/` — do not hardcode in components
