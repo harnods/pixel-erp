@@ -49,6 +49,13 @@ function goBack() { router.push(`/outbound-delivery/shipment/${props.orderId}`) 
 async function handleSave() {
   const s = shipment.value
   if (!s) return
+  // A canceled delivery must be acknowledged (detached) first — guards direct URL
+  // access; the Shipment details button already blocks this path.
+  if (s.needsCancelAck) {
+    toast.notify({ variant: 'error', title: 'Acknowledge the canceled order before completing this shipment', maxWidth: 'max-content' })
+    goBack()
+    return
+  }
   if (!receivedBy.value.trim()) { receivedByError.value = 'You must fill in received by'; return }
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))

@@ -84,8 +84,16 @@ function attachmentIcon(name: string): string {
 }
 
 // Complete shipment (proof of delivery) is now its own page — see
-// CompleteShipmentPage.vue at /outbound-delivery/shipment/:seq/complete.
-function openComplete() { router.push(`/outbound-delivery/shipment/${props.orderId}/complete`) }
+// CompleteShipmentPage.vue at /outbound-delivery/shipment/:seq/complete. A canceled
+// delivery must be acknowledged (detached) before the shipment can be completed,
+// so the completion posts only what actually shipped.
+function openComplete() {
+  if (shipment.value?.needsCancelAck) {
+    toast.notify({ variant: 'error', title: 'Acknowledge the canceled order before completing this shipment', maxWidth: 'max-content' })
+    return
+  }
+  router.push(`/outbound-delivery/shipment/${props.orderId}/complete`)
+}
 </script>
 
 <template>
