@@ -23,9 +23,10 @@
     <!-- Right: Actions + User -->
     <MpFlex class="erp-header__right">
       <MpFlex class="erp-header__actions">
-        <ErpQuickCreateMenu />
+        <!-- Quick-create (+) and the monitor/display shortcut are ERP-only -->
+        <ErpQuickCreateMenu v-if="!isWms" />
         <IconButton icon="help" />
-        <IconButton icon="desktop" />
+        <IconButton v-if="!isWms" icon="desktop" />
         <IconButton icon="notification" />
       </MpFlex>
 
