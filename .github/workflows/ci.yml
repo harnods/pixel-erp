@@ -1,0 +1,43 @@
+name: CI
+
+# Gate every change into main: the Vitest suite must pass AND no new Pixel
+# token/component violations may be introduced. Make this a required status
+# check in the branch-protection settings so a red run blocks the merge.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  gate:
+    name: Test suite + Pixel Police
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for the diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test suite (Vitest)
+        run: npm test
+
+      - name: Pixel Police — token/component check on changed .vue
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          bash scripts/pixel-police-ci.sh "$BASE"
