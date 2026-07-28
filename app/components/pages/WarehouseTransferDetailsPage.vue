@@ -15,7 +15,8 @@ import { formatDateLong } from '~/utils/date'
 import {
   warehouseTransfers, getTransfer, transferLineItems, transferMemo, transferAttachments,
   transferUpdatedBy, transferUpdatedAt, transferActivityEntries, transferApprovalLog,
-  canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer,
+  canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer, canApproveTransfer,
+  type TransferApproveCheck,
 } from '~/data/warehouseTransfers'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -41,9 +42,23 @@ const approvalLog = computed(() => transfer.value ? transferApprovalLog(transfer
 const approvalLogOpen = ref(false)
 // Approve is only offered to a manager viewing a transfer that's still awaiting approval.
 const canApprove = computed(() => viewAs.value === 'manager' && transfer.value?.status === 'draft')
+// Map an approval refusal reason to a human-readable toast title.
+function approveErrorTitle(check: TransferApproveCheck): string {
+  if (check.ok) return "Can't approve this transfer"
+  if (check.reason.startsWith('INSUFFICIENT_STOCK')) return "Can't approve: not enough stock at origin"
+  if (check.reason === 'WAREHOUSE_ARCHIVED') return "Can't approve: a warehouse involved is archived"
+  if (check.reason === 'SAME_WAREHOUSE') return "Can't approve: origin and destination are the same"
+  return "Can't approve this transfer"
+}
 function approve() {
   if (!transfer.value) return
-  approveTransfer(transfer.value.id)
+  const id = transfer.value.id
+  const wasDraft = transfer.value.status === 'draft'
+  const result = approveTransfer(id)
+  if (wasDraft && result === undefined) {
+    toast.notify({ variant: 'error', title: approveErrorTitle(canApproveTransfer(id)) , maxWidth: 'max-content'})
+    return
+  }
   toast.notify({ variant: 'success', title: `${transfer.value.number} approved` , maxWidth: 'max-content'})
 }
 

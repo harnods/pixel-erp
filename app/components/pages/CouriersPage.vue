@@ -13,7 +13,8 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
-import { couriers, addCourier, updateCourier, deleteCourier, type Courier } from '~/data/couriers'
+import { couriers, addCourier, updateCourier, type Courier } from '~/data/couriers'
+import { deleteCourierSafe } from '~/data/integrityGuards'
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
@@ -93,7 +94,12 @@ function openDeleteModal(c: Courier) {
 }
 function confirmDelete() {
   if (courierToDelete.value) {
-    deleteCourier(courierToDelete.value.id)
+    const res = deleteCourierSafe(courierToDelete.value.id)
+    if (!res.ok) {
+      toast.notify({ variant: 'error', title: "Courier is still used by an active shipment and can't be deleted", maxWidth: 'max-content' })
+      courierToDelete.value = null
+      return
+    }
     toast.notify({ variant: 'success', title: 'Courier deleted' })
   }
   courierToDelete.value = null

@@ -7,7 +7,7 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { warehouses, archiveWarehouses, unarchiveWarehouses } from '~/data'
+import { warehouses, archiveWarehousesSafe, unarchiveWarehouses } from '~/data'
 import type { Warehouse } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -123,7 +123,12 @@ function closeArchiveModal() {
 
 function confirmArchive() {
   if (!warehouseToArchive.value) return
-  archiveWarehouses([warehouseToArchive.value.id])
+  const res = archiveWarehousesSafe([warehouseToArchive.value.id])
+  if (!res.ok) {
+    toast.notify({ variant: 'error', title: "Warehouse still has stock or open tasks and can't be archived" , maxWidth: 'max-content'})
+    closeArchiveModal()
+    return
+  }
   toast.notify({ variant: 'success', title: `${warehouseToArchive.value.name} archived` , maxWidth: 'max-content'})
   closeArchiveModal()
 }
@@ -167,7 +172,14 @@ function closeBulkArchiveModal() {
 
 function confirmBulkArchive() {
   const count = bulkArchiveCount.value
-  archiveWarehouses(bulkArchiveIds.value)
+  const res = archiveWarehousesSafe(bulkArchiveIds.value)
+  if (!res.ok) {
+    const blocked = res.reason.replace(/^WAREHOUSE_NOT_EMPTY:\s*/, '')
+    toast.notify({ variant: 'error', title: `Warehouse still has stock or open tasks and can't be archived: ${blocked}` , maxWidth: 'max-content'})
+    bulkArchiveDeselect?.()
+    closeBulkArchiveModal()
+    return
+  }
   toast.notify({ variant: 'success', title: `${count} warehouse${count !== 1 ? 's' : ''} archived` , maxWidth: 'max-content'})
   bulkArchiveDeselect?.()
   closeBulkArchiveModal()

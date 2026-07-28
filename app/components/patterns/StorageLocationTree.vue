@@ -10,10 +10,11 @@ import {
   MpButton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  css,
+  css, toast,
 } from '@mekari/pixel3'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
-import { getStorageTree, findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
+import { deleteLocationSafe } from '~/data/integrityGuards'
 import { ensureLocationBarcode } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
 import { useUrlModal } from '@ds/proto-review'
@@ -83,7 +84,14 @@ function view(n: LocNode) { router.push(`/warehouses/${props.warehouseId}/locati
 const deleteTarget = ref<LocNode | null>(null)
 function askDelete(n: LocNode) { deleteTarget.value = n }
 function confirmDelete() {
-  if (deleteTarget.value) deleteLocation(props.warehouseId, deleteTarget.value.id)
+  if (deleteTarget.value) {
+    const res = deleteLocationSafe(props.warehouseId, deleteTarget.value.id)
+    if (!res.ok) {
+      toast.notify({ variant: 'error', title: "This location still holds stock and can't be deleted", maxWidth: 'max-content' })
+      deleteTarget.value = null
+      return
+    }
+  }
   deleteTarget.value = null
 }
 

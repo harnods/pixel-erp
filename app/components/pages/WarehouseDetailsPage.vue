@@ -23,8 +23,9 @@ import { formatDate } from '~/utils/date'
 import { getWarehouseDetail, getReservationsForBatch, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { outgoingOrders } from '~/data/outgoing'
 import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
-import { warehouses, getWarehouseActivity, archiveWarehouses, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
-import { getStorageTree, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { warehouses, getWarehouseActivity, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
+import { getStorageTree, type LocNode } from '~/data/storageLocations'
+import { archiveWarehousesSafe, deleteLocationSafe } from '~/data/integrityGuards'
 import {
   getWarehouseTeam, getWarehouseManagers, addTeamMember, removeTeamMember,
   getAvailableUsersForWarehouse,
@@ -141,8 +142,12 @@ function goConfigure() {
 }
 function confirmArchive() {
   if (!warehouse.value) return
-  archiveWarehouses([warehouse.value.id])
+  const res = archiveWarehousesSafe([warehouse.value.id])
   archiveModalOpen.value = false
+  if (!res.ok) {
+    toast.notify({ variant: 'error', title: "Warehouse still has stock or open tasks and can't be archived" , maxWidth: 'max-content'})
+    return
+  }
   toast.notify({ variant: 'success', title: 'Warehouse archived' , maxWidth: 'max-content'})
 }
 /** Unarchive is a low-friction, reversible action — no confirmation modal (matches the index). */
@@ -251,7 +256,11 @@ function toggleLoc(node: LocNode) {
   expandedLoc.value = s
 }
 function deleteLoc(node: LocNode) {
-  if (warehouse.value) deleteLocation(warehouse.value.id, node.id)
+  if (!warehouse.value) return
+  const res = deleteLocationSafe(warehouse.value.id, node.id)
+  if (!res.ok) {
+    toast.notify({ variant: 'error', title: "This location still holds stock and can't be deleted" , maxWidth: 'max-content'})
+  }
 }
 function viewLocation(node: LocNode) {
   if (warehouse.value) router.push(`/warehouses/${warehouse.value.id}/locations/${node.id}`)

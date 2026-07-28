@@ -10,14 +10,15 @@
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  css,
+  css, toast,
 } from '@mekari/pixel3'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import StockTables from '~/components/patterns/StockTables.vue'
 import StorageLocationTree from '~/components/patterns/StorageLocationTree.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import { getWarehouseDetail, getLocationStock, ensureLocationBarcode } from '~/data/warehouseDetails'
-import { findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { findLocation, type LocNode } from '~/data/storageLocations'
+import { deleteLocationSafe } from '~/data/integrityGuards'
 import { levelLabel, STORAGE_LEVEL_KEYS } from '~/data/storageLevels'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDateTimeLong } from '~/utils/date'
@@ -102,7 +103,14 @@ const editOpen = ref(false)
 // Delete needs a confirmation modal.
 const deleteConfirmOpen = ref(false)
 function confirmDeleteLocation() {
-  if (node.value) deleteLocation(warehouseId.value, node.value.id)
+  if (node.value) {
+    const res = deleteLocationSafe(warehouseId.value, node.value.id)
+    if (!res.ok) {
+      toast.notify({ variant: 'error', title: "This location still holds stock and can't be deleted", maxWidth: 'max-content' })
+      deleteConfirmOpen.value = false
+      return
+    }
+  }
   deleteConfirmOpen.value = false
   goWarehouse()
 }

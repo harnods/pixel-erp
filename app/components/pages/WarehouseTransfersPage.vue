@@ -11,8 +11,8 @@ import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import {
   warehouseTransfers, transferWarehouseOptions, transferMemo, transferUpdatedBy, transferUpdatedAt,
-  transferApprovalLog, canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer,
-  type WarehouseTransfer, type ApprovalLog,
+  transferApprovalLog, canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer, canApproveTransfer,
+  type WarehouseTransfer, type ApprovalLog, type TransferApproveCheck,
 } from '~/data/warehouseTransfers'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -123,8 +123,21 @@ function duplicate(row: WarehouseTransfer) {
   const copy = duplicateTransfer(row.id)
   if (copy) router.push(`/warehouse-transfers/${copy.id}/edit`)
 }
+// Map an approval refusal reason to a human-readable toast title.
+function approveErrorTitle(check: TransferApproveCheck): string {
+  if (check.ok) return "Can't approve this transfer"
+  if (check.reason.startsWith('INSUFFICIENT_STOCK')) return "Can't approve: not enough stock at origin"
+  if (check.reason === 'WAREHOUSE_ARCHIVED') return "Can't approve: a warehouse involved is archived"
+  if (check.reason === 'SAME_WAREHOUSE') return "Can't approve: origin and destination are the same"
+  return "Can't approve this transfer"
+}
 function approve(row: WarehouseTransfer) {
-  approveTransfer(row.id)
+  const wasDraft = row.status === 'draft'
+  const result = approveTransfer(row.id)
+  if (wasDraft && result === undefined) {
+    toast.notify({ variant: 'error', title: approveErrorTitle(canApproveTransfer(row.id)) , maxWidth: 'max-content'})
+    return
+  }
   toast.notify({ variant: 'success', title: `${row.number} approved` , maxWidth: 'max-content'})
 }
 
@@ -144,9 +157,20 @@ function selectedTransfersOf(sel: Set<number>): WarehouseTransfer[] {
 }
 function bulkApprove(sel: Set<number>, deselectAll: () => void) {
   const rows = selectedTransfersOf(sel)
-  for (const row of rows) approveTransfer(row.id)
+  let approved = 0
+  const failed: string[] = []
+  for (const row of rows) {
+    const wasDraft = row.status === 'draft'
+    const result = approveTransfer(row.id)
+    if (wasDraft && result === undefined) failed.push(row.number)
+    else approved++
+  }
   deselectAll()
-  toast.notify({ variant: 'success', title: `${rows.length} transfer${rows.length > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
+  if (failed.length) {
+    toast.notify({ variant: 'error', title: `${failed.length} transfer${failed.length > 1 ? 's' : ''} couldn't be approved (not enough stock at origin): ${failed.join(', ')}` , maxWidth: 'max-content'})
+    return
+  }
+  toast.notify({ variant: 'success', title: `${approved} transfer${approved > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
 }
 
 // ─── Bulk cancel — draft transfers only; once approved, stock has already moved
