@@ -94,7 +94,10 @@ const statCards = computed<
 })
 
 // ── Styling (Panda css() — DT2.4 tokens only) ───────────────────────────────
-const stage = css({ padding: 'var(--mp-spacing-6)', display: 'flex', flexDirection: 'column', gap: 'var(--mp-spacing-5)' })
+// NB: the surrounding `.stage` (in [...slug].vue) already supplies the white
+// surface + 24px padding on all sides + column gap — the page root must NOT add
+// its own padding (that double-pads). It only lays out its own sections.
+const stage = css({ display: 'flex', flexDirection: 'column', gap: 'var(--mp-spacing-5)' })
 const filterBar = css({
   display: 'flex', alignItems: 'flex-end', gap: 'var(--mp-spacing-3)', flexWrap: 'wrap',
   padding: 'var(--mp-spacing-4)', background: 'var(--mp-background-neutral)',
@@ -112,8 +115,8 @@ const emptyNote = css({
 })
 const grid = css({ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--mp-spacing-4)' })
 const card = css({
-  background: 'var(--mp-background-neutral)', border: '1px solid var(--mp-border-subtle)',
-  borderRadius: 'var(--mp-radii-lg)', boxShadow: 'var(--mp-shadows-sm)',
+  background: 'var(--mp-background-neutral)', border: '1px solid var(--mp-border-default)',
+  borderRadius: 'var(--mp-radii-lg)',
   padding: 'var(--mp-spacing-5)', display: 'flex', flexDirection: 'column', gap: 'var(--mp-spacing-4)',
 })
 const cardWide = `${card} ${css({ gridColumn: 'span 2' })}`

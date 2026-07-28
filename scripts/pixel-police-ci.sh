@@ -64,6 +64,16 @@ while IFS= read -r f; do
   check '^[[:space:]]+(margin|padding|gap|width|height)[[:space:]]*:[[:space:]]*[0-9]+px' 'Hardcoded spacing in <style> — use var(--mp-spacing-*)/(--mp-size-*)'
   check "from ['\"]@mekari/pixel[^3'\"]"                       'Non-Pixel3 import — use @mekari/pixel3 only'
 
+  # Drop-shadow on a card/box/panel is banned — Enterprise surfaces use a 1px
+  # border, never a drop-shadow. `inset` shadows (focus rings, cell borders) are
+  # fine. Real floating overlays (menu/popover/modal/drawer) may keep a shadow —
+  # append a trailing `pixel-police-allow-shadow` comment on that line to opt out.
+  shadow_hits="$(grep -nE 'box-shadow|--mp-shadows-' <<<"$added" | grep -viE 'inset|pixel-police-allow-shadow' || true)"
+  if [[ -n "$shadow_hits" ]]; then
+    file_msgs+="  ✗ Drop-shadow on a surface — Enterprise cards use a 1px border (var(--mp-border-*)), not box-shadow"$'\n'
+    file_msgs+="$(sed 's/^/       + /' <<<"$shadow_hits" | head -3)"$'\n'
+  fi
+
   if [[ -n "$file_msgs" ]]; then
     echo ""
     echo "🚨 $f"
