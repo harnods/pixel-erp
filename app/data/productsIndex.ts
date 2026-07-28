@@ -64,6 +64,7 @@ export interface ProductIndexRow {
   /** Tax info (DJP/e-Faktur) — only filled in for a small, deterministic set of
    *  products; most rows are blank since this is a newly-added field on the
    *  product form and existing catalog data hasn't been backfilled. */
+  productClassification: string
   djpCode: string
   djpUnit: string
   /** true for a small, deterministic set of newly-added SKUs pending review */
@@ -176,6 +177,7 @@ export function productIndexRows(warehouseIds?: string[]): ProductIndexRow[] {
       averageCost: p.averageCost,
       lastPurchaseCost: p.lastPurchaseCost,
       defaultPurchaseCost: p.buyPrice,
+      productClassification: DJP_SKUS.has(p.sku) ? 'Goods' : '',
       djpCode: DJP_SKUS.get(p.sku)?.djpCode ?? '',
       djpUnit: DJP_SKUS.get(p.sku)?.djpUnit ?? '',
       pendingApproval: PENDING_SKUS.has(p.sku),
