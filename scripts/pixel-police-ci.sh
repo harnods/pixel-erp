@@ -59,7 +59,15 @@ while IFS= read -r f; do
   }
 
   check ':[[:space:]]*(#[0-9a-fA-F]{3,8}|rgb\(|rgba\(|hsl\()' 'Hardcoded color — use var(--mp-color-*)'
-  check '<(button|input|select|textarea)[ >]'                 'Raw HTML control — use MpButton / MpInput / MpSelect / MpTextarea'
+
+  # Raw HTML controls must use Pixel components — EXCEPT a <button class="btn-enterprise…">,
+  # which is the project's sanctioned Enterprise button (erp.css; MpButton's secondary
+  # renders with the wrong color). A raw <button> without btn-enterprise is still flagged.
+  rawctl_hits="$(grep -nE '<(button|input|select|textarea)[ >]' <<<"$added" | grep -viE 'btn-enterprise' || true)"
+  if [[ -n "$rawctl_hits" ]]; then
+    file_msgs+="  ✗ Raw HTML control — use MpButton / MpInput / MpSelect / MpTextarea (or a btn-enterprise button)"$'\n'
+    file_msgs+="$(sed 's/^/       + /' <<<"$rawctl_hits" | head -3)"$'\n'
+  fi
   check 'style="[^"]*[0-9]+px'                                'Hardcoded px in inline style — use var(--mp-spacing-*)'
   check '^[[:space:]]+(margin|padding|gap|width|height)[[:space:]]*:[[:space:]]*[0-9]+px' 'Hardcoded spacing in <style> — use var(--mp-spacing-*)/(--mp-size-*)'
   check "from ['\"]@mekari/pixel[^3'\"]"                       'Non-Pixel3 import — use @mekari/pixel3 only'
