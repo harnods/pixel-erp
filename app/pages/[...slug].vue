@@ -44,6 +44,7 @@ useHead({
 
 const pageRegistry: Record<string, Component> = {
   'Home':              defineAsyncComponent(() => import('~/components/pages/HomePage.vue')),
+  'Inbound quick view': defineAsyncComponent(() => import('~/components/pages/InboundQuickViewPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),

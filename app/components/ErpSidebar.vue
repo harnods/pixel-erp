@@ -494,6 +494,7 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
     { name: 'Home', icon: 'home' },
     { name: 'Dashboard', icon: 'dashboard' },
+    { name: 'Inbound quick view', icon: 'reports' },
     { name: 'Reports', icon: 'reports' },
   ],
   [
