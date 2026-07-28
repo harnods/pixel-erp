@@ -28,7 +28,14 @@ jobs:
         # its Pixel deps to `latest`, so there is no lockfile to cache or ci-install.
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        # --legacy-peer-deps: the file: local package (@ds/proto-review) trips
+        # npm's peer resolver ("edgesOut" crash) on a fresh, lockfile-less install.
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+
+      - name: Generate Nuxt types (.nuxt/tsconfig.json)
+        # tsconfig extends ./.nuxt/tsconfig.json, which Nuxt generates; without it
+        # vitest can't transform any spec. .nuxt/ is gitignored, so build it here.
+        run: npx nuxt prepare
 
       - name: Test suite (Vitest)
         run: npm test
