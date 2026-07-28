@@ -198,6 +198,9 @@ new Intl.DateTimeFormat('id-ID', {
       `pageRegistry` pages (do NOT re-pad the root); by the page itself for detail/form pages
 - [ ] Cards/boxes use a `1px` border, **never** a drop-shadow (`box-shadow`) —
       shadows are only for floating overlays
+- [ ] Section/status tabs go **below the title bar, outside the stage** via
+      `pageTabs` in `[...slug].vue` — NOT `MpTabs` in the page; active tab =
+      `.page-tab--active` (`--mp-text-selected` + 2px bar). See [docs/patterns/tabs.md](docs/patterns/tabs.md)
 - [ ] Enterprise theme is set in `app.vue` — do not repeat it in pages
 - [ ] `pageRegistry` key must exactly match the sidebar menu label
 - [ ] Mock data lives in `app/data/` — do not hardcode in components

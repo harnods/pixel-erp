@@ -289,6 +289,7 @@ const erpNavGroups: NavItem[][] = [
         { label: 'Sales', to: 'Sales report' },
         { label: 'Purchases', to: 'Purchase report' },
         { label: 'Inventory', to: 'Inventory report' },
+        { label: 'WMS', to: 'WMS report' },
         { label: 'Tax', to: 'Tax report' },
         { label: 'Cash & bank', to: 'Cash & bank report' },
         { label: 'Production', to: 'Production report' },
@@ -375,6 +376,7 @@ const erpNavGroups: NavItem[][] = [
       expandOnClick: true,
       submenu: [
         [
+          { label: 'Overview' },
           { label: 'Warehouses' },
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
@@ -384,7 +386,7 @@ const erpNavGroups: NavItem[][] = [
         [
           { label: 'Storage locations' },
           { label: 'Couriers' },
-          { label: 'Warehouse reports', iconType: 'shortcut' },
+          { label: 'Warehouse reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'WMS' } },
           { label: 'Warehouse settings', iconType: 'shortcut' },
         ],
       ],
@@ -504,7 +506,14 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
     { name: 'Home', icon: 'home' },
     { name: 'Dashboard', icon: 'dashboard' },
-    { name: 'Reports', icon: 'reports' },
+    {
+      name: 'Reports', icon: 'reports',
+      panelSubmenu: [[
+        { label: 'Overview', to: 'WMS report' },
+        { label: 'Inbound', to: 'WMS inbound report' },
+        { label: 'Outbound', to: 'WMS outbound report' },
+      ]],
+    },
   ],
   [
     // Inventory carries a level-2 panel (Products, Categories, …) — mirrors the ERP
@@ -526,6 +535,8 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Inbound delivery', icon: 'cart' },
   ],
   [
+    // Mirrors the ERP "Warehouse transfers" module — same page (/warehouse-transfers).
+    { name: 'Warehouse transfers', icon: 'transfer' },
     {
       name: 'Stock adjustments', icon: 'table-view-list',
       panelSubmenu: [[
@@ -897,7 +908,8 @@ function handleItemMouseEnter(e: MouseEvent, item: NavItem) {
 }
 
 function scheduleClose() {
-  closeTimer = setTimeout(() => { flyoutItem.value = null }, 150)
+  // Generous delay so crossing the gap from the rail to the flyout doesn't close it.
+  closeTimer = setTimeout(() => { flyoutItem.value = null }, 300)
 }
 
 function cancelClose() {
@@ -1158,6 +1170,17 @@ function cancelClose() {
   box-shadow: var(--mp-shadows-sm);
   padding: var(--mp-spacing-2) 0;
   font-family: var(--mp-fonts-body);
+}
+/* Invisible bridge over the 8px gap between the rail and the flyout, so moving
+   the cursor across it keeps the pointer "inside" the flyout and it doesn't
+   close before you reach it (hover-intent fix). */
+.submenu-flyout::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(-1 * var(--mp-spacing-3));
+  width: var(--mp-spacing-3);
+  height: 100%;
 }
 
 .submenu-group { display: flex; flex-direction: column; }

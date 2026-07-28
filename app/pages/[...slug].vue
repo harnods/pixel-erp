@@ -335,6 +335,9 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
+  // WMS Overview — mirrored for the WMS menu (/overview) and WMS Reports (/wms-report)
+  'Overview':          ['Outbound delivery', 'Inbound delivery'],
+  'Wms report':        ['Outbound delivery', 'Inbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],

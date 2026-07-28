@@ -23,6 +23,7 @@ Start here. This is the home for ERP UI/UX documentation.
 | Index page format | [index-page-format.md](patterns/index-page-format.md) | Wireframe + spec for list/index pages (filter bar → table → pagination) |
 | Detail page format | [details-page-format.md](patterns/details-page-format.md) | Wireframe + spec for transaction detail pages (header summary 2–5 col → line items → totals → tabs → footer actions) |
 | Page recipes | [page-recipes.md](patterns/page-recipes.md) | Standard scaffolds for index, form, and detail pages |
+| Tabs | [tabs.md](patterns/tabs.md) | Status tabs (outside stage, via `pageTabs`) vs in-page detail tabs (`MpTabs`); correct active color |
 
 ## Flows / Scenarios
 
