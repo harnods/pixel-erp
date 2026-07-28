@@ -4,6 +4,7 @@ import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from "./outgoi
 import { packingTasks, pickedLinesForPacking, getPackingTask, type PackingTask } from "./packingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { applyStockInOut, consumeReservation } from "./warehouseDetails";
+import { couriers } from "./couriers";
 import { sameCode, includesCode } from "~/utils/scan";
 
 /**
@@ -78,7 +79,11 @@ export interface DeliveryTask {
   receivedNote?: string;
 }
 
-const COURIERS = ["JNE", "SiCepat", "J&T Express", "AnterAja", "Internal fleet"];
+// Seed couriers for generated deliveries — drawn from the real courier master
+// (couriers.ts) so every shipment references a service that actually exists in
+// the picker. Self-delivery (own driver) is method-gated separately and carries
+// no courier, so this list is 3rd-party services only.
+const COURIERS = ["JNE REG", "SiCepat BEST", "AnterAja REG", "JNT Express", "Ninja Xpress"];
 const RECEIVER_NAMES = ["Andi Wijaya", "Siti Nurhaliza", "Budi Santoso", "Rina Marlina"];
 
 // A Desty marketplace channel never hands over to the seller's internal fleet.
@@ -654,5 +659,6 @@ export function reassignDeliveryTasks(warehouseId: string, fromName: string, toN
   persistDelivery();
 }
 
-/** Available couriers for the ship form. */
-export const DELIVERY_COURIERS = COURIERS;
+/** Available couriers for the ship form — sourced from the courier master
+ *  (couriers.ts), so the picker and the CouriersPage manage the same list. */
+export const DELIVERY_COURIERS = couriers.map((c) => c.name);

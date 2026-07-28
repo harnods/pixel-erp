@@ -1,5 +1,7 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
+import { customers } from "./customers";
+import { salesOrders } from "./salesOrders";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY } from './master'
 import { getWarehouseConfig } from './warehouseConfig'
@@ -37,6 +39,11 @@ export interface OutgoingOrder {
   number: string;
   /** source sales order number, e.g. "Sales Order #10090" */
   salesNo: string;
+  /** FK into the ERP sales orders (`salesOrders.ts`) that this dispatch fulfils.
+   *  Set for ERP-sourced orders; undefined for marketplace ("#SO…") / manual
+   *  dispatches that have no ERP sales order behind them. When set, `salesNo`
+   *  and `customer`/`customerId` are inherited from the linked sales order. */
+  salesOrderId?: string;
   /** where the order originated: "Sales Order" (ERP), "Manual", or a Desty
    *  marketplace channel "{Marketplace}: {store name}" (e.g. "Shopee: Central Perk"). */
   source: string;
@@ -73,8 +80,13 @@ export interface OutgoingOrder {
   /** free-text memo the back-office writes on the order (optional) — e.g.
    *  "BATCH # 35 -- 31/03/2026 - 2 Koli". */
   memo?: string;
-  /** customer — set on user-created orders; seed orders derive it by hash. */
+  /** customer display name — set on user-created orders; seed orders derive it
+   *  from the customer master by hash. Kept alongside `customerId` for cheap
+   *  display without a lookup. */
   customer?: string;
+  /** FK into the shared customer master (`customers.ts`) — the same id the ERP
+   *  sales order for this dispatch resolves to. */
+  customerId?: string;
   /** ISO date the order was created (user-created orders only). */
   transactionDate?: string;
   /** Full ISO timestamp of creation — set on user-created orders for accurate audit display. */
@@ -190,12 +202,22 @@ export function isMarketplaceOrder(o: OutgoingOrder | undefined | null): boolean
 }
 
 // Customers the outbound orders ship to (parallels the receipt vendor).
-const CUSTOMERS = [
-  'Anomali Coffee', 'Tanamera Coffee Roastery', 'Hotel Mulia Senayan',
-  'Fore Coffee Thamrin', 'Djournal Coffee', 'Kopi Kenangan Pusat',
-  'Common Grounds PIK', 'Titik Temu Coffee', 'Maxx Coffee Lippo Mall',
-  'Janji Jiwa Kemang', 'Tuku Coffee Cipete', 'Excelso Grand Indonesia',
-]
+// Customers the outbound orders ship to, drawn from the shared customer master
+// (customers.ts) — the SAME records the ERP sales orders use, so a dispatch and
+// its sales order resolve to one company id. `CUST_BY_NAME` lets the fixed demo
+// orders below attach a real FK from their display name.
+const CUSTOMERS = customers.map((c) => ({ id: c.id, name: c.name }))
+const CUST_BY_NAME = new Map(customers.map((c) => [c.name, c.id]))
+
+/**
+ * Link an ERP-sourced dispatch to a real sales order (`salesOrders.ts`) at a
+ * fixed index — so the dispatch's `salesNo`, `customer`/`customerId`, and
+ * `salesOrderId` all come from one authoritative record. The seed generators
+ * pass disjoint index ranges so no two dispatches claim the same sales order.
+ */
+function erpSalesOrderAt(index: number) {
+  return salesOrders[index % salesOrders.length]!
+}
 
 /**
  * Status for order i — weighted to feel like a real outbound queue: mostly Pending +
@@ -237,11 +259,12 @@ function generateOrders(count = 42): OutgoingOrder[] {
     let orderQty = 0;
     for (let s = 0; s < skuQty; s++) orderQty += skuLineQty(i + 1, s); // 1..5 units per SKU
     // Sales no. comes from two sources, each with its own format:
-    //  - ERP Sales Order menu → "Sales Order #10090"
-    //  - Desty (marketplace fulfillment) → "#SO060"
-    const salesNo = fromDesty
-      ? `#SO${String(60 + i).padStart(3, "0")}`
-      : `Sales Order #${10090 + i}`;
+    //  - ERP Sales Order menu → real sales order (FK), "Sales Order #10090"
+    //  - Desty (marketplace fulfillment) → "#SO060", no ERP sales order
+    const so = fromDesty ? undefined : erpSalesOrderAt(i); // ERP index range: 0–41
+    const salesNo = so ? `Sales Order #${so.number}` : `#SO${String(60 + i).padStart(3, "0")}`;
+    const custName = so ? so.customer.name : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].name;
+    const custId = so ? so.customer.id : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].id;
     const source = fromDesty ? `${MARKETPLACES[hash100(i * 29) % MARKETPLACES.length]}: ${STORE_NAME}` : "Sales Order";
     out.push({
       id: `out-${String(i + 1).padStart(3, "0")}`,
@@ -258,7 +281,9 @@ function generateOrders(count = 42): OutgoingOrder[] {
       shippedDate: status === "completed" ? isoOffset(-((i % 10) + 1)) : undefined,
       dueDate,
       memo: generateMemo(i, isoOffset(offset)),
-      customer: CUSTOMERS[hash100(i * 31) % CUSTOMERS.length],
+      salesOrderId: so?.id,
+      customer: custName,
+      customerId: custId,
     });
   }
   return out;
@@ -284,9 +309,10 @@ function generateShipped(count = 10): OutgoingOrder[] {
     let orderQty = 0;
     for (let s = 0; s < skuQty; s++) orderQty += skuLineQty(seed, s);
     const fromDesty = hash100(i * 7 + 13) % 100 < 38;
-    const salesNo = fromDesty
-      ? `#SO${String(140 + k).padStart(3, "0")}`
-      : `Sales Order #${10150 + k}`;
+    const so = fromDesty ? undefined : erpSalesOrderAt(50 + k); // ERP index range: 50–59
+    const salesNo = so ? `Sales Order #${so.number}` : `#SO${String(140 + k).padStart(3, "0")}`;
+    const custName = so ? so.customer.name : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].name;
+    const custId = so ? so.customer.id : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].id;
     const source = fromDesty ? `${MARKETPLACES[hash100(i * 29) % MARKETPLACES.length]}: ${STORE_NAME}` : "Sales Order";
     out.push({
       id,
@@ -302,7 +328,9 @@ function generateShipped(count = 10): OutgoingOrder[] {
       shippedDate: isoOffset(-((k % 10) + 1)),
       dueDate: isoOffset(-((k % 12) + 2)),
       memo: generateMemo(i, isoOffset(-((k % 12) + 2))),
-      customer: CUSTOMERS[hash100(i * 31) % CUSTOMERS.length],
+      salesOrderId: so?.id,
+      customer: custName,
+      customerId: custId,
     });
   }
   return out;
@@ -327,9 +355,10 @@ function generateCanceled(count = 7): OutgoingOrder[] {
     let orderQty = 0;
     for (let s = 0; s < skuQty; s++) orderQty += skuLineQty(k + 1, s); // 1..5 units per SKU
     const fromDesty = hash100(i * 7 + 13) % 100 < 38;
-    const salesNo = fromDesty
-      ? `#SO${String(180 + k).padStart(3, "0")}`
-      : `Sales Order #${10210 + k}`;
+    const so = fromDesty ? undefined : erpSalesOrderAt(70 + k); // ERP index range: 70–76
+    const salesNo = so ? `Sales Order #${so.number}` : `#SO${String(180 + k).padStart(3, "0")}`;
+    const custName = so ? so.customer.name : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].name;
+    const custId = so ? so.customer.id : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].id;
     const source = fromDesty ? `${MARKETPLACES[hash100(i * 29) % MARKETPLACES.length]}: ${STORE_NAME}` : "Sales Order";
     out.push({
       id: `out-cx-${String(k + 1).padStart(3, "0")}`,
@@ -347,7 +376,9 @@ function generateCanceled(count = 7): OutgoingOrder[] {
       canceledBy: ['Rizal Candra', 'Dewi Rahayu', 'Agus Firmansyah', 'Sari Indah'][hash100(i * 31) % 4],
       dueDate: isoOffset(-((k % 12) + 3)),
       memo: generateMemo(i, isoOffset(0)),
-      customer: CUSTOMERS[hash100(i * 31) % CUSTOMERS.length],
+      salesOrderId: so?.id,
+      customer: custName,
+      customerId: custId,
     });
   }
   return out;
@@ -421,12 +452,16 @@ function reserveOrder(order: OutgoingOrder): void {
  * them deterministically from skuQty, with no control over which land here).
  */
 function generateTrackingScenario(): OutgoingOrder[] {
+  // Link to a real sales order (free index, not claimed by any generator) so this
+  // ERP-sourced demo dispatch carries a valid salesOrderId FK + inherited customer.
+  const demoSo = erpSalesOrderAt(90);
   return [
     {
       id: "out-demo-001",
       number: "OUT-2026-0700",
-      salesNo: "Sales Order #10199",
+      salesNo: `Sales Order #${demoSo.number}`,
       source: "Sales Order",
+      salesOrderId: demoSo.id,
       warehouseId: "wh-006",
       warehouseName: "Gudang Makassar Selatan",
       skuQty: 3,
@@ -435,7 +470,8 @@ function generateTrackingScenario(): OutgoingOrder[] {
       status: "pending",
       dueDate: isoOffset(7),
       memo: "For demo 001",
-      customer: "Anomali Coffee",
+      customer: demoSo.customer.name,
+      customerId: demoSo.customer.id,
       lines: [
         {
           sku: "1003",
@@ -480,12 +516,15 @@ function generateTrackingScenario(): OutgoingOrder[] {
  * ever claims 3 of 3001, 2 of 3002, 3 of 3005, 2 of 3006.
  */
 function generateMultiOrderPickingScenario(): OutgoingOrder[] {
+  // Regular ERP order of the pair → real sales order FK (free index 91).
+  const demoSo = erpSalesOrderAt(91);
   return [
     {
       id: "out-demo-multi-a",
       number: "OUT-2026-0701",
-      salesNo: "Sales Order #10200",
+      salesNo: `Sales Order #${demoSo.number}`,
       source: "Sales Order",
+      salesOrderId: demoSo.id,
       warehouseId: "wh-001",
       warehouseName: "Gudang Jakarta Pusat",
       skuQty: 2,
@@ -494,7 +533,8 @@ function generateMultiOrderPickingScenario(): OutgoingOrder[] {
       status: "pending",
       dueDate: isoOffset(5),
       memo: "For demo multi-order picking (regular)",
-      customer: "Hotel Mulia Senayan",
+      customer: demoSo.customer.name,
+      customerId: demoSo.customer.id,
       lines: [
         {
           sku: "3001",
@@ -528,6 +568,7 @@ function generateMultiOrderPickingScenario(): OutgoingOrder[] {
       dueDate: `${isoOffset(1)}T23:59:00`,
       memo: "For demo multi-order picking (marketplace)",
       customer: "Fore Coffee Thamrin",
+      customerId: CUST_BY_NAME.get("Fore Coffee Thamrin"),
       lines: [
         {
           sku: "3002",

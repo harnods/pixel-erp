@@ -276,6 +276,41 @@ export function applyStockInOut(warehouseId: string, lines: { sku: string; qty: 
   persistOverlay()
 }
 
+/** Allocatable units for a SKU (onHand − reserved) — 0 if the SKU isn't stocked. */
+export function availableForSku(warehouseId: string, sku: string): number {
+  return getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)?.available ?? 0
+}
+
+/** On-hand units for a SKU in a warehouse — 0 if the SKU isn't stocked. */
+export function onHandForSku(warehouseId: string, sku: string): number {
+  return getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)?.onHand ?? 0
+}
+
+/**
+ * Would a stock-out (negative-qty lines) drive any SKU below zero on-hand, or
+ * below what's already reserved? `applyStockInOut` silently clamps at 0, which
+ * hides over-decrements — callers that must REJECT rather than swallow them
+ * (stock in/out, transfers) check this first. Returns the first offending SKU,
+ * or null when every line is safe.
+ */
+export function stockOutViolation(
+  warehouseId: string,
+  lines: { sku: string; qty: number }[],
+): { sku: string; requested: number; onHand: number; available: number } | null {
+  for (const l of lines) {
+    if (l.qty >= 0) continue
+    const out = -l.qty
+    const onHand = onHandForSku(warehouseId, l.sku)
+    const available = availableForSku(warehouseId, l.sku)
+    // Removing more than is on hand → negative stock; more than available →
+    // eating into reserved (already promised) stock. Both break the invariant.
+    if (out > onHand || out > available) {
+      return { sku: l.sku, requested: out, onHand, available }
+    }
+  }
+  return null
+}
+
 export function applyTransfer(
   originId: string,
   destinationId: string,

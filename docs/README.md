@@ -30,6 +30,15 @@ Start here. This is the home for ERP UI/UX documentation.
 |---|---|---|
 | Inbound (Barang masuk) | [inbound-complete-scenario.md](scenarios/inbound-complete-scenario.md) | End-to-end PO → Receiving Task → Put-away: statuses, transitions, SKU-coverage rules, PO-status derivation, seed-data states. **Draft spec — pending sign-off.** |
 
+## Testing
+
+| Topic | Doc | Covers |
+|---|---|---|
+| Test suite overview | [testing/README.md](testing/README.md) | How to run, conventions (node vs happy-dom, unique-id isolation), 133-file/673-test headline |
+| Data model & coherence | [testing/data-model.md](testing/data-model.md) | Mini-DB entities, ID schemes, status lifecycles, cross-module FK graph, coherence invariants + fixes |
+| Scenario catalog | [testing/scenarios.md](testing/scenarios.md) | Every covered scenario per module (happy/edge/regression) mapped to its spec file |
+| Integrity guards | [testing/integrity-guards.md](testing/integrity-guards.md) | Cross-module guards, what each prevents, reason codes, spec files |
+
 ## ERP Components
 
 | Component | Doc | Covers |
