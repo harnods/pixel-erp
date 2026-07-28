@@ -24,10 +24,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+        # No npm cache / npm ci: this repo gitignores package-lock.json and pins
+        # its Pixel deps to `latest`, so there is no lockfile to cache or ci-install.
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Test suite (Vitest)
         run: npm test
