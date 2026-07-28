@@ -61,17 +61,12 @@ const advanced = reactive({
       <div class="cp-field cp-field--logo">
         <span class="cp-label">Company logo</span>
         <div class="cp-logo">
-          <div class="cp-logo-icon" aria-hidden="true">🏠</div>
           <span class="cp-logo-name">Central Perk</span>
         </div>
       </div>
-    </section>
 
-    <div class="cp-divider" />
-
-    <!-- ── Shipping / Fax / Website ──────────────────────────────────────────── -->
-    <section class="cp-section">
-      <div class="cp-grid">
+      <!-- Shipping / Fax / Website — part of Company info -->
+      <div class="cp-grid cp-grid--spaced">
         <div class="cp-field">
           <span class="cp-label">Shipping address</span>
           <span class="cp-value">
@@ -99,12 +94,55 @@ const advanced = reactive({
     <!-- ── Tax info ───────────────────────────────────────────────────────────── -->
     <section class="cp-section">
       <h2 class="cp-section-title">Tax info</h2>
-      <p class="cp-section-desc">NPWP will appear on invoices and tax documents.</p>
+      <p class="cp-section-desc">This information appears on invoices and tax documents.</p>
+
+      <!-- Tax identity -->
+      <div class="cp-subhead">
+        <span class="cp-subhead-title">Tax identity</span>
+        <span class="cp-status cp-status--ok">Validated</span>
+      </div>
+      <p class="cp-subhead-desc">NPWP details</p>
 
       <div class="cp-grid">
         <div class="cp-field">
-          <span class="cp-label">NPWP</span>
-          <span class="cp-value">01.234.567.8-011.000</span>
+          <span class="cp-label">
+            NPWP
+            <span class="cp-status cp-status--muted">Not validated</span>
+          </span>
+          <span class="cp-value">00098765432102222</span>
+        </div>
+        <div class="cp-field">
+          <span class="cp-label">NITKU</span>
+          <span class="cp-value">000022</span>
+        </div>
+      </div>
+
+      <!-- Coretax info -->
+      <div class="cp-subhead cp-subhead--spaced">
+        <span class="cp-subhead-title">Coretax info</span>
+      </div>
+      <p class="cp-subhead-desc">Enter Coretax information to validate your e-faktur.</p>
+
+      <div class="cp-grid">
+        <div class="cp-field">
+          <span class="cp-label">
+            NPWP signee
+            <span class="cp-status cp-status--ok">Validated</span>
+          </span>
+          <span class="cp-value">
+            00098765432100000<br>
+            <span class="cp-value-subtle">R****l C****ra</span>
+          </span>
+        </div>
+        <div class="cp-field">
+          <span class="cp-label">
+            NPWP signee
+            <span class="cp-status cp-status--ok">Validated</span>
+          </span>
+          <span class="cp-value">
+            00098765432100000<br>
+            <span class="cp-value-subtle">B**u F*****n</span>
+          </span>
         </div>
       </div>
     </section>
@@ -132,7 +170,7 @@ const advanced = reactive({
         </div>
         <div class="cp-field">
           <span class="cp-label">Account no.</span>
-          <span class="cp-value">78808350373</span>
+          <span class="cp-value">78806350373</span>
         </div>
 
         <div class="cp-field">
@@ -158,7 +196,7 @@ const advanced = reactive({
         <div class="cp-toggle-row">
           <div class="cp-toggle-info">
             <span class="cp-toggle-title">Transaction approval</span>
-            <span class="cp-toggle-desc">Require approval for transactions.</span>
+            <span class="cp-toggle-desc">Transactions require approval before they are processed.</span>
           </div>
           <MpToggle v-model="advanced.transactionApproval" />
         </div>
@@ -166,7 +204,7 @@ const advanced = reactive({
         <div class="cp-toggle-row">
           <div class="cp-toggle-info">
             <span class="cp-toggle-title">Multiple withholding tax</span>
-            <span class="cp-toggle-desc">Allow multiple withholding tax lines per transaction.</span>
+            <span class="cp-toggle-desc">Multiple withholding tax lines can be added per transaction.</span>
           </div>
           <MpToggle v-model="advanced.multipleWithholdingTax" />
         </div>
@@ -174,7 +212,7 @@ const advanced = reactive({
         <div class="cp-toggle-row">
           <div class="cp-toggle-info">
             <span class="cp-toggle-title">Company performance summary</span>
-            <span class="cp-toggle-desc">Receive a weekly performance summary by email.</span>
+            <span class="cp-toggle-desc">A weekly performance summary will be sent to your email.</span>
           </div>
           <MpToggle v-model="advanced.companyPerformanceSummary" />
         </div>
@@ -190,7 +228,7 @@ const advanced = reactive({
         <div class="cp-toggle-row">
           <div class="cp-toggle-info">
             <span class="cp-toggle-title">Transaction log</span>
-            <span class="cp-toggle-desc">Record a detailed audit trail for all user activities.</span>
+            <span class="cp-toggle-desc">A detailed audit trail is recorded for user activities.</span>
           </div>
           <MpToggle v-model="advanced.transactionLog" />
         </div>
@@ -198,7 +236,7 @@ const advanced = reactive({
         <div class="cp-toggle-row">
           <div class="cp-toggle-info">
             <span class="cp-toggle-title">Multi-currency</span>
-            <span class="cp-toggle-desc">Enable transactions in foreign currencies.</span>
+            <span class="cp-toggle-desc">Transactions can be made in foreign currencies.</span>
           </div>
           <MpToggle v-model="advanced.multiCurrency" />
         </div>
@@ -219,8 +257,7 @@ const advanced = reactive({
 /* ─── Page root ───────────────────────────────────────────────────────────── */
 
 .cp-page {
-  overflow-y: auto;
-  height: 100%;
+  /* No inner scroll — the surrounding .stage owns the scroll (page/browser). */
   max-width: 720px;   /* custom — readable line length for a detail page */
 }
 
@@ -252,6 +289,35 @@ const advanced = reactive({
   background: var(--mp-border-default);
 }
 
+/* ─── Sub-headings within a section (Tax identity / Coretax info) ──────────── */
+
+.cp-subhead {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+}
+.cp-subhead--spaced {
+  margin-top: var(--mp-spacing-6);
+}
+.cp-subhead-title {
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.cp-subhead-desc {
+  margin: var(--mp-spacing-0\.5) 0 var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-subtle);
+}
+
+/* Inline validation status text (green = validated, gray = not validated) */
+.cp-status {
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-normal);
+}
+.cp-status--ok { color: var(--mp-text-success); }
+.cp-status--muted { color: var(--mp-text-subtle); }
+
 /* ─── Info grid ───────────────────────────────────────────────────────────── */
 
 .cp-grid {
@@ -270,7 +336,14 @@ const advanced = reactive({
   margin-top: var(--mp-spacing-5);
 }
 
+.cp-grid--spaced {
+  margin-top: var(--mp-spacing-5);
+}
+
 .cp-label {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-subtle);
 }
@@ -298,25 +371,12 @@ const advanced = reactive({
 .cp-logo {
   display: inline-flex;
   align-items: center;
-  gap: var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
-  border-radius: var(--mp-radii-md);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-}
-
-.cp-logo-icon {
-  width: var(--mp-sizes-6);
-  height: var(--mp-sizes-6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;  /* custom — emoji size */
-  line-height: 1;
 }
 
 .cp-logo-name {
-  font-size: var(--mp-font-sizes-lg);
-  font-weight: var(--mp-font-weights-semi-bold);
+  font-size: var(--mp-font-sizes-xl);
+  font-weight: var(--mp-font-weights-bold);
+  letter-spacing: -0.01em;
   color: var(--mp-text-default);
 }
 
