@@ -898,17 +898,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <div class="wh-product">
                     <img class="wh-thumb" :src="(row as any).photo" :alt="(row as any).name" loading="lazy" />
                     <span class="wh-product-text">
-                      <span class="wh-product-name">{{ (row as any).name }}</span>
+                      <a class="cell-link wh-product-name" @click.stop>{{ (row as any).name }}</a>
                       <ClampText class="wh-product-sub" :text="(row as any).subtitle" />
                     </span>
                   </div>
-                  <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
                 </div>
               </template>
 
@@ -1106,18 +1099,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           <div class="wh-product">
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                             <span class="wh-product-text">
-                              <span class="wh-product-name">{{ p.name }}</span>
+                              <a class="cell-link wh-product-name" @click.stop>{{ p.name }}</a>
                               <ClampText class="wh-product-sub" :text="p.subtitle" />
                             </span>
                           </div>
                         </div>
-                        <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
                       </td>
                       <td v-if="batchColVisibility.sku" class="wh-btd wh-btd--sku" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">
                         {{ p.sku }}
@@ -1135,14 +1121,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <!-- batch rows (only when expanded) -->
                     <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
                       <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
-                        <span>{{ b.batchNo }}</span>
-                        <button class="row-hover-btn row-hover-btn--top" @click.stop="openBatchReservations(p, b.batchNo)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
+                        <a class="cell-link" @click.stop="openBatchReservations(p, b.batchNo)">{{ b.batchNo }}</a>
                       </td>
                       <td v-if="batchColVisibility.location" class="wh-btd wh-loc-cell">{{ b.location }}</td>
                       <td v-if="batchColVisibility.expiry" class="wh-btd">
@@ -1244,35 +1223,18 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                           <div class="wh-product">
                             <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                             <span class="wh-product-text">
-                              <span class="wh-product-name">{{ p.name }}</span>
+                              <a class="cell-link wh-product-name" @click.stop>{{ p.name }}</a>
                               <ClampText class="wh-product-sub" :text="p.subtitle" />
                             </span>
                           </div>
                         </div>
-                        <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
                       </td>
                       <td v-if="serialColVisibility.sku" class="wh-btd wh-btd--sku">{{ p.sku }}</td>
                       <td v-if="serialColVisibility.available" class="wh-btd">
-                        <div class="cell-with-action">
-                          <span class="wh-serial-count">{{ serialCountLabel(p.serials.available.length) }}</span>
-                          <button class="row-hover-btn" @click.stop="openSerialDrawer(p, 'available')">
-                            <span class="row-hover-btn__label">VIEW DETAILS</span>
-                          </button>
-                        </div>
+                        <a class="cell-link wh-serial-count" @click.stop="openSerialDrawer(p, 'available')">{{ serialCountLabel(p.serials.available.length) }}</a>
                       </td>
                       <td v-if="serialColVisibility.reserved" class="wh-btd">
-                        <div class="cell-with-action">
-                          <span class="wh-serial-count">{{ serialCountLabel(p.serials.reserved.length) }}</span>
-                          <button class="row-hover-btn" @click.stop="openSerialDrawer(p, 'reserved')">
-                            <span class="row-hover-btn__label">VIEW DETAILS</span>
-                          </button>
-                        </div>
+                        <a class="cell-link wh-serial-count" @click.stop="openSerialDrawer(p, 'reserved')">{{ serialCountLabel(p.serials.reserved.length) }}</a>
                       </td>
                       <td v-if="serialColVisibility.minStock" class="wh-btd wh-btd--num">{{ formatNum(p.minStock) }}</td>
                       <td v-if="serialColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
@@ -1372,14 +1334,8 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                   <tr v-for="tx in pagedTransactions" :key="tx.id" class="wh-batch-group-row wh-tx-row">
                     <td class="wh-btd">
                       <div class="cell-with-action">
-                        <span>{{ tx.number }}</span>
-                        <button v-if="tx.link" class="row-hover-btn" @click.stop="router.push(tx.link)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
+                        <a v-if="tx.link" class="cell-link" @click.stop="router.push(tx.link)">{{ tx.number }}</a>
+                        <span v-else>{{ tx.number }}</span>
                       </div>
                     </td>
                     <td class="wh-btd">{{ formatDate(tx.date) }}</td>
@@ -1474,14 +1430,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                             :class="row.node.type === 'Storage' ? 'wh-loc-type-icon--storage' : 'wh-loc-type-icon--org'"
                           />
                         </MpTooltip>
-                        <span class="wh-loc-name-text">{{ row.node.name }}</span>
-                        <button class="wh-loc-view" @click.stop="viewLocation(row.node)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
+                        <a class="cell-link wh-loc-name-text" @click.stop="viewLocation(row.node)">{{ row.node.name }}</a>
                       </div>
                     </td>
                     <td class="wh-btd">{{ formatNum(row.node.skuQty) }}</td>
@@ -1832,19 +1781,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-loc-type-icon { flex-shrink: 0; display: inline-flex; }
 .wh-loc-type-icon--org { color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-type-icon--storage { color: var(--mp-icon-brand, var(--mp-colors-emerald-600, #0f9d58)); }
-/* "View details" chip sits inline right after the location name. Kept in layout with
-   visibility (not display) + a fixed height so revealing it on hover never shifts
-   the row height. */
-.wh-loc-view {
-  visibility: hidden;
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
-  margin-left: var(--mp-spacing-2); flex-shrink: 0;
-  height: 20px; box-sizing: border-box; padding: 0 var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);
-}
-.wh-loc-view .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
-.wh-loc-row:hover .wh-loc-view { visibility: visible; }
 .wh-loc-chevron { flex-shrink: 0; transition: transform 0.15s ease; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-chevron--open { transform: rotate(90deg); }
 .wh-loc-chevron-spacer { display: inline-block; width: 16px; flex-shrink: 0; }
@@ -2086,7 +2022,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-tx-type-select { min-width: 200px; }
 .wh-tx-table { min-width: unset; width: 100%; }
 .wh-tx-row td.wh-btd { font-size: var(--mp-font-sizes-md); }
-.wh-tx-row:hover .row-hover-btn { display: flex; }
 .wh-expiry-custom {
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-3);
@@ -2145,33 +2080,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 /* ── Product cell (Name column: product photo + name + subtitle) ── */
 .cell-with-action { position: relative; display: flex; align-items: flex-start; width: 100%; min-width: 0; }
 .wh-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); min-width: 0; }
-/* "View details" chip — revealed on row hover (ErpTablePage row-hover pattern) */
-.row-hover-btn {
-  position: absolute;
-  right: var(--mp-spacing-4);   /* 16px gap from the cell's right edge */
-  top: var(--mp-spacing-2\.5, 10px);
-  transform: translateY(-50%);
-  display: none;
-  align-items: center;
-  gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
-  cursor: pointer;
-  color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  text-transform: uppercase;
-  color: var(--mp-text-secondary);
-}
-/* reveal on hovering the Name cell — self-contained (same scope), so it works
-   even though the Name column is position:sticky and rendered via a slot */
-.cell-with-action:hover .row-hover-btn { display: flex; }
-/* also reveal on full-row hover where that selector resolves (parity with index) */
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 .wh-thumb {
   flex-shrink: 0;
   width: var(--mp-sizes-8, 32px);
@@ -2260,12 +2168,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-batch-summary { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .wh-serial-count { color: var(--mp-text-default); }
 .wh-btd.wh-btd--top { vertical-align: top; }
-/* "View details" chip on hover — Product cell + each Batch cell */
 .wh-batch-cell { position: relative; }
-.wh-batch-cell:hover .row-hover-btn { display: flex; }
-/* the Product cell is a tall (rowspan) merged cell → anchor the chip near the
-   top so it sits beside the product name, not the middle of the whole group */
-.row-hover-btn--top { top: var(--mp-spacing-2\.5, 10px); transform: none; }
 .wh-batch-no { color: var(--mp-text-default); }
 .wh-expiry-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); white-space: nowrap; }
 .wh-expiry-cell--danger { color: var(--mp-text-danger, #a8352d); }

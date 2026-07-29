@@ -533,19 +533,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Cell: Sales no. — View details chip on hover ── -->
     <template #cell-salesNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="out-so">
-          <span class="cell-text out-so__no">{{ value }}</span>
-          <span v-if="colVis.memo && (row as unknown as OutgoingOrder).memo" class="out-so__memo">{{ (row as unknown as OutgoingOrder).memo }}</span>
-        </span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as OutgoingOrder)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <span class="out-so">
+        <a class="cell-link cell-text out-so__no" @click.stop="viewDetails(row as unknown as OutgoingOrder)">{{ value }}</a>
+        <span v-if="colVis.memo && (row as unknown as OutgoingOrder).memo" class="out-so__memo">{{ (row as unknown as OutgoingOrder).memo }}</span>
+      </span>
     </template>
 
     <!-- ── Source (ERP Sales Order / Manual / Desty marketplace) ── -->
@@ -555,16 +546,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Warehouse — wrap to 2 lines instead of bleeding; View details chip on hover ── -->
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="out-warehouse">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as OutgoingOrder).warehouseId}`)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link out-warehouse" @click.stop="router.push(`/warehouses/${(row as unknown as OutgoingOrder).warehouseId}`)">{{ value }}</a>
     </template>
 
     <!-- ── Status badge ── -->
@@ -844,8 +826,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   border-top: 1px solid var(--mp-border-default);
 }
 
-/* Number cell hover chip */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Number cell — the value links to the record's detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* Warehouse — wrap to 2 lines (clamp) instead of overflowing into the next column */
@@ -900,18 +881,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden; white-space: normal; color: var(--mp-text-default);
 }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 /* Kebab — 20px tall so the actions cell stays within the 40px text-only row
    (10px vertical padding + 20px control = 40px → row stays middle-aligned). */

@@ -129,14 +129,7 @@ function openComplete() {
         <div class="content-list-col">
           <ContentList label="Warehouse">
             <div class="wh-link-wrap">
-              <span>{{ shipment.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${shipment.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${shipment.warehouseId}`)">{{ shipment.warehouseName }}</a>
             </div>
           </ContentList>
           <ContentList label="Assignee" :value="shipment.assignee" />
@@ -179,28 +172,12 @@ function openComplete() {
             <tr v-for="row in rows" :key="row.id" class="detail-item-row" :class="{ 'shd-row-canceled': row.status === 'canceled' }">
               <td class="detail-td">
                 <div class="cell-with-action">
-                  <span class="cell-text">{{ row.salesNo }}</span>
+                  <a class="cell-link cell-text" @click.stop="viewSalesOrder(row)">{{ row.salesNo }}</a>
                   <ErpStatusBadge v-if="row.status === 'canceled'" status="canceled" />
-                  <button class="row-hover-btn" @click.stop="viewSalesOrder(row)">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
                 </div>
               </td>
               <td class="detail-td">
-                <div class="cell-with-action">
-                  <span class="cell-text">{{ row.packingTaskNo }}</span>
-                  <button class="row-hover-btn" @click.stop="viewPacking(row)">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
-                </div>
+                <a class="cell-link cell-text" @click.stop="viewPacking(row)">{{ row.packingTaskNo }}</a>
               </td>
               <td class="detail-td"><SourceLabel :source="row.source" /></td>
               <td class="detail-td">{{ row.courier }}</td>
@@ -321,20 +298,7 @@ function openComplete() {
 /* Number cells — View details chip on hover */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 
 .detail-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);

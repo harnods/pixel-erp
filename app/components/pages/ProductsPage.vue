@@ -331,22 +331,15 @@ const activeFilterCount = computed(() =>
       </div>
     </template>
 
-    <!-- ── Cell: Name — thumbnail + name + desc, "View details" chip on row hover ── -->
+    <!-- ── Cell: Name — thumbnail + name (link) + desc ── -->
     <template #cell-name="{ row }">
-      <div class="cell-with-action">
-        <ProductCell
-          :name="(row as ProductIndexRow).name"
-          :desc="(row as ProductIndexRow).desc"
-          :image="(row as ProductIndexRow).img"
-        />
-        <button class="row-hover-btn" @click.stop="viewDetails((row as ProductIndexRow).sku)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <ProductCell
+        :name="(row as ProductIndexRow).name"
+        :desc="(row as ProductIndexRow).desc"
+        :image="(row as ProductIndexRow).img"
+        linkable
+        @name-click="viewDetails((row as ProductIndexRow).sku)"
+      />
     </template>
 
     <!-- ── Cell: quantity columns ── -->
@@ -559,41 +552,6 @@ const activeFilterCount = computed(() =>
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-/* Cell with hover action button (View details) */
-.cell-with-action {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-}
-.row-hover-btn {
-  position: absolute;
-  right: 0;
-  top: var(--mp-spacing-2\.5, 10px);
-  transform: translateY(-50%);
-  display: none;
-  align-items: center;
-  gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px);
-  color: var(--mp-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-}
-:global(.erp-tr:hover .row-hover-btn) {
-  display: flex;
-}
 
 /* ── Row kebab ── */
 .row-kebab {

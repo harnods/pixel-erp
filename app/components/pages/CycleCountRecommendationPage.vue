@@ -249,16 +249,9 @@ function createCountTaskForRow(row: Recommendation) {
         />
         <span v-else class="ccr-thumb ccr-thumb--empty" />
         <span class="ccr-product-text">
-          <span class="ccr-product-name">{{ (row as any).name }}</span>
+          <a class="cell-link ccr-product-name" @click.stop="viewProduct((row as any).sku)">{{ (row as any).name }}</a>
           <ClampText v-if="(row as any).desc" class="ccr-product-sub" :text="(row as any).desc" />
         </span>
-        <button class="row-hover-btn" @click.stop="viewProduct((row as any).sku)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
       </div>
     </template>
 
@@ -354,19 +347,6 @@ function createCountTaskForRow(row: Recommendation) {
 .ccr-product-name { color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ccr-product-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); margin-top: 2px; }
 
-/* Hover "view details" chip — mirrors the pattern used for warehouse/row links elsewhere */
-.row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 :deep(.erp-tr:hover .erp-td) { background: var(--mp-background-neutral); }
 
 /* ── Triggered by (reason badges) ── */

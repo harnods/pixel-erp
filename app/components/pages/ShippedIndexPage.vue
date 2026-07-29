@@ -358,16 +358,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Shipment no. — View details chip on hover ── -->
     <template #cell-shipmentNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text shp-no">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as Row)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text shp-no" @click.stop="viewDetails(row as unknown as Row)">{{ value }}</a>
     </template>
 
     <!-- ── Transaction date ── -->
@@ -377,16 +368,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #cell-courier="{ value }">{{ value || '—' }}</template>
     <template #cell-assignee="{ value }">{{ value || '—' }}</template>
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text shp-warehouse">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as Row).warehouseId)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text shp-warehouse" @click.stop="viewWarehouse((row as unknown as Row).warehouseId)">{{ value }}</a>
     </template>
 
     <!-- ── Numeric cells ── -->
@@ -542,22 +524,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-/* Shipment no. cell — View details chip on hover */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Shipment no. cell — value is a link to detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .shp-no { color: var(--mp-text-default); }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 .shp-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;

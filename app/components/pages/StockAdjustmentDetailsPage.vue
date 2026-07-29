@@ -604,14 +604,7 @@ onUnmounted(() => {
           <div class="content-list-col">
             <ContentList label="Warehouse">
               <div class="wh-link-wrap">
-                <span>{{ adjustment.warehouseName }}</span>
-                <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${adjustment.warehouseId}`)">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <span class="row-hover-btn__label">VIEW DETAILS</span>
-                </button>
+                <a class="cell-link" @click.stop="router.push(`/warehouses/${adjustment.warehouseId}`)">{{ adjustment.warehouseName }}</a>
               </div>
             </ContentList>
           </div>
@@ -630,14 +623,7 @@ onUnmounted(() => {
             <ContentList label="Transaction no." :value="adjustment.number" />
             <ContentList label="Warehouse">
               <div class="wh-link-wrap">
-                <span>{{ adjustment.warehouseName }}</span>
-                <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${adjustment.warehouseId}`)">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <span class="row-hover-btn__label">VIEW DETAILS</span>
-                </button>
+                <a class="cell-link" @click.stop="router.push(`/warehouses/${adjustment.warehouseId}`)">{{ adjustment.warehouseName }}</a>
               </div>
             </ContentList>
           </div>
@@ -946,16 +932,7 @@ onUnmounted(() => {
             <tbody>
               <tr class="detail-item-row">
                 <td class="detail-td detail-td--number">
-                  <div class="cell-with-action">
-                    <span class="linked-num">{{ linkedCycleCount.number }}</span>
-                    <button class="row-hover-btn" @click.stop="router.push(`/cycle-counts/${linkedCycleCount.id}`)">
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                        <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                      <span class="row-hover-btn__label">VIEW DETAILS</span>
-                    </button>
-                  </div>
+                  <a class="cell-link linked-num" @click.stop="router.push(`/cycle-counts/${linkedCycleCount.id}`)">{{ linkedCycleCount.number }}</a>
                 </td>
                 <td class="detail-td">{{ linkedCycleCount.warehouseName }}</td>
                 <td class="detail-td">{{ linkedCycleCount.assignee || '—' }}</td>
@@ -992,16 +969,7 @@ onUnmounted(() => {
             <tbody>
               <tr class="detail-item-row">
                 <td class="detail-td detail-td--number">
-                  <div class="cell-with-action">
-                    <span class="linked-num">{{ linkedStockCount.number }}</span>
-                    <button class="row-hover-btn" @click.stop="router.push(`/stock-adjustments/${linkedStockCount.id}`)">
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                        <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                      <span class="row-hover-btn__label">VIEW DETAILS</span>
-                    </button>
-                  </div>
+                  <a class="cell-link linked-num" @click.stop="router.push(`/stock-adjustments/${linkedStockCount.id}`)">{{ linkedStockCount.number }}</a>
                 </td>
                 <td class="detail-td">{{ formatDateLong(linkedStockCount.date) }}</td>
                 <td class="detail-td">{{ linkedStockCount.warehouseName }}</td>
@@ -1459,22 +1427,8 @@ onUnmounted(() => {
 }
 .detail-linked .detail-th { background: var(--mp-background-neutral-subtle); }
 .detail-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
 .linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging {

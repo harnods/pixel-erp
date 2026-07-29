@@ -408,28 +408,10 @@ async function handleSave() {
                   :class="{ 'ho-item-row--flash': flashRowId === row.id }"
                 >
                   <td class="ho-td ho-td--number">
-                    <div class="cell-with-action">
-                      <span>{{ row.salesNo }}</span>
-                      <button class="row-hover-btn" type="button" @click.stop="router.push(`/outbound-delivery/${row.salesOrderId}`)">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span class="row-hover-btn__label">VIEW DETAILS</span>
-                      </button>
-                    </div>
+                    <a class="cell-link" @click.stop="router.push(`/outbound-delivery/${row.salesOrderId}`)">{{ row.salesNo }}</a>
                   </td>
                   <td class="ho-td ho-td--number">
-                    <div class="cell-with-action">
-                      <span>{{ row.packingTaskNo }}</span>
-                      <button class="row-hover-btn" type="button" @click.stop="router.push(`/packing/${row.packingTaskId}`)">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span class="row-hover-btn__label">VIEW DETAILS</span>
-                      </button>
-                    </div>
+                    <a class="cell-link" @click.stop="router.push(`/packing/${row.packingTaskId}`)">{{ row.packingTaskNo }}</a>
                   </td>
                   <td class="ho-td"><SourceLabel :source="row.source" /></td>
                   <td class="ho-td ho-td--num">{{ formatNum(row.skuQty) }}</td>
@@ -619,15 +601,6 @@ async function handleSave() {
 
 /* Sales order no. / Packing no. cells — hover chip linking to their own detail page */
 .ho-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
-.ho-item-row:hover .row-hover-btn { display: flex; }
 /* Editable Courier/Tracking cell — white, input fills edge-to-edge, focus ring */
 .ho-td--input { padding: 0; background: var(--mp-background-neutral); }
 .ho-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
