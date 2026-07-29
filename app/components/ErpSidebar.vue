@@ -509,9 +509,10 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     {
       name: 'Reports', icon: 'reports',
       panelSubmenu: [[
-        { label: 'Overview', to: 'WMS report' },
-        { label: 'Inbound', to: 'WMS inbound report' },
-        { label: 'Outbound', to: 'WMS outbound report' },
+        { label: 'Inbound timeliness' },
+        { label: 'Inbound accuracy' },
+        { label: 'Outbound timeliness' },
+        { label: 'Outbound accuracy' },
       ]],
     },
   ],
