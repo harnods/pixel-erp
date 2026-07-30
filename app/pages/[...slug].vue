@@ -255,6 +255,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 4 && segs[0] === 'product-list' && segs[2] === 'batches') {
     return { component: BatchDetailsPage, id: `${segs[1]}::${decodeURIComponent(segs[3]!)}` }
   }
+  // /warehouses/:whId/batches/:sku/:batchNo → warehouse-scoped batch detail (same
+  // BatchDetailsPage, stays under /warehouses; id encodes the warehouse context).
+  if (segs.length >= 5 && segs[0] === 'warehouses' && segs[2] === 'batches') {
+    return { component: BatchDetailsPage, id: `${segs[1]}::${segs[3]}::${decodeURIComponent(segs[4]!)}` }
+  }
   // /product-list/:sku → product detail
   if (segs.length >= 2 && segs[0] === 'product-list') {
     return { component: ProductDetailsPage, id: segs[1] }
@@ -885,7 +890,7 @@ function startResize(e: MouseEvent) {
       <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
 
       <template v-else>
-      <div class="page-title-bar">
+      <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">

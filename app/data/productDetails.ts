@@ -365,6 +365,37 @@ export function getBatchTransactions(sku: string, batchNo: string): ProductTrans
 /** A batch's stock split across the same warehouses the product itself stocks in,
  *  proportional to each warehouse's existing share of the product's on-hand total —
  *  so a batch's numbers always sum back to its own totals above. */
+/**
+ * Batch details for ONE warehouse's lot — same BatchDetail shape as getBatchDetail,
+ * but the qty fields are that warehouse's lot (not the product-wide total). Backs the
+ * warehouse-scoped batch-details page reached from Warehouse Details (stays under the
+ * /warehouses path, same page format).
+ */
+export function getWarehouseBatchDetail(warehouseId: string, sku: string, batchNo: string): BatchDetail | undefined {
+  const row = productIndexRows().find((r) => r.sku === sku)
+  const item = getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)
+  const lot = item?.batches?.find((b) => b.batchNo === batchNo)
+  if (!row || !item || !lot) return undefined
+  const { at, by } = lastUpdatedFor(`batch-${sku}-${batchNo}`)
+  let barcode = getBatchBarcode(sku, batchNo)
+  if (!barcode) { barcode = generateNextBarcode('batch'); setBatchBarcode(sku, batchNo, barcode) }
+  return {
+    sku,
+    productName: row.name,
+    batchNo,
+    expiryDate: lot.expiryDate,
+    description: '',
+    onHand: lot.onHand,
+    reserved: lot.reserved,
+    available: lot.available,
+    minStock: item.minStock,
+    unit: item.unit,
+    updatedBy: by,
+    updatedAt: at,
+    barcode,
+  }
+}
+
 export function getBatchWarehouseStock(sku: string, batchNo: string): ProductWarehouseStock[] {
   const batch = getProductBatches(sku).find((b) => b.batchNo === batchNo)
   if (!batch) {

@@ -618,11 +618,11 @@ function openSerialDrawer(p: WarehouseStockItem, tab: 'available' | 'reserved' =
 }
 
 // ── View batch details ───────────────────────────────────────────────────────
-// Same destination + design/format as Product Details' "view batch": the full-page
-// BatchDetailsPage at /product-list/:sku/batches/:batchNo. Batch data is keyed by
-// sku::batchNo, so the SKU-global page needs no warehouse context.
+// Same page/format as the Products batch details, but STAYS under /warehouses so
+// the warehouse context (path + breadcrumb) is kept and the qty shown is this
+// warehouse's lot. BatchDetailsPage renders warehouse-scoped mode from this id.
 function viewBatch(p: WarehouseStockItem, batchNo: string) {
-  router.push(`/product-list/${p.sku}/batches/${encodeURIComponent(batchNo)}`)
+  router.push(`/warehouses/${props.orderId}/batches/${p.sku}/${encodeURIComponent(batchNo)}`)
 }
 
 function formatDateNumeric(iso: string) {
