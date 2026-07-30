@@ -635,6 +635,17 @@ function paSelectLoc(row: WorkRow, lr: LocRow, locId: string) {
   if (row.destLocRows[row.destLocRows.length - 1]?.id === lr.id) row.destLocRows.push(makeLocRow())
 }
 
+// Closing the picker without selecting must drop this row's active-search state,
+// otherwise the input keeps showing the (empty) search string instead of falling
+// back to the already-chosen locationId — the bin appears to "detach" on reopen.
+// Mirrors PutAwayItemsPage/ManageSerialDrawer, which reset on close.
+function paCloseLoc(lr: LocRow) {
+  if (locActiveKey.value === `pa-${lr.id}`) {
+    locActiveKey.value = null
+    delete locSearches[`pa-${lr.id}`]
+  }
+}
+
 function paRemoveLocRow(row: WorkRow, lr: LocRow) {
   row.destLocRows = row.destLocRows.filter(r => r.id !== lr.id)
   if (!row.destLocRows.length) row.destLocRows = [makeLocRow()]
@@ -1036,7 +1047,7 @@ function fmtNum(n: number | null): string {
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc }}</td>
                   <!-- Storage location picker -->
                   <td class="mbd-td mbd-td--input mbd-td--pa-loc" :class="{ 'mbd-td--pa-loc-error': paLocMissing(lr) }">
-                    <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select>
+                    <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="paCloseLoc(lr)">
                       <MpTooltip
                         v-if="paLocMissing(lr)"
                         :id="`mbd-pa-loc-tooltip-${lr.id}`"
