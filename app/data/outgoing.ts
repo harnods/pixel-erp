@@ -588,6 +588,37 @@ function generateMultiOrderPickingScenario(): OutgoingOrder[] {
         },
       ],
     },
+    {
+      // Demo for D3 partial picking + D7 edit-reallocation: one SKU, qty 7, in a
+      // warehouse with allowPartialPicking on. seedPartialSplitPickingDemo() hangs
+      // two Open picking tasks (4 + 3) off it, so editing the order 7 → 5 exercises
+      // the D7 drain-smallest-first reallocation. Direct (Manual) source so it's
+      // editable in the WMS surface.
+      id: "out-demo-partial-split",
+      number: "OUT-2026-0703",
+      salesNo: "Split Picking Demo",
+      source: "Manual",
+      warehouseId: "wh-006",
+      warehouseName: "Gudang Makassar Selatan",
+      skuQty: 1,
+      orderQty: 7,
+      shippedQty: 0,
+      status: "pending",
+      dueDate: isoOffset(4),
+      memo: "Demo: SKU split across 2 picking tasks (D3), then edit qty to test D7",
+      customer: "Fore Coffee Thamrin",
+      customerId: CUST_BY_NAME.get("Fore Coffee Thamrin"),
+      lines: [
+        {
+          sku: "3001",
+          productName: "Milk Frothing Pitcher 600ml",
+          desc: "Stainless steel, sharp spout, latte art",
+          img: "https://cdn.shopify.com/s/files/1/2425/8607/products/milk-steaming-pitcher_7a0b6d9d-dc2f-410b-83e8-0c0caf6403e5.jpg",
+          unit: "Unit",
+          qty: 7,
+        },
+      ],
+    },
   ];
 }
 

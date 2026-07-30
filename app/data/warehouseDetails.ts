@@ -534,6 +534,8 @@ const MIN_ONHAND_OVERRIDE: Record<string, number> = {
   // ── exposed once wh-006 (Makassar Selatan) started carrying the FULL catalog:
   // orders already demanded these SKUs from wh-006, but it didn't stock them before. ──
   'wh-006::2004': 15,  // total_reserved=9 demand=4 → available 6 (≥ demand); kept < 20 (serial-drawer page size)
+  // ── out-demo-partial-split (D3/D7 demo): a 7-qty SKU-3001 order in wh-006 ──
+  'wh-006::3001': 20,  // covers the demo order's demand 7 with headroom (avail ≥ 7)
 }
 
 // Deterministic ISO date `days` before TODAY — used for created-at fields so the

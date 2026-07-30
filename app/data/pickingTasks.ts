@@ -262,6 +262,7 @@ function seedTasks(): PickingTask[] {
   }
   out.push(...seedShippedPicks(seq));
   out.push(seedMultiOrderPickingDemo());
+  out.push(...seedPartialSplitPickingDemo());
   return out;
 }
 
@@ -390,6 +391,35 @@ function seedMultiOrderPickingDemo(): PickingTask {
     ...(Object.keys(batchPicks).length ? { batchPicks, plannedBatchPicks: clonePicks(batchPicks) } : {}),
     ...(Object.keys(serialPicks).length ? { serialPicks, plannedSerialPicks: clonePicks(serialPicks) } : {}),
   };
+}
+
+/**
+ * Demo for PRD 1.2 D3 (partial picking) + D7 (edit-reallocation): the single
+ * SKU-3001 order out-demo-partial-split (qty 7) split across TWO Open picking
+ * tasks — 4 pcs and 3 pcs. Lets a demo edit the order 7 → 5 and watch D7 drain
+ * the smallest Open task first (the 3-pcs one → 1). Only possible now that
+ * partial picking lets one SKU span multiple lists (pickedKeysForOrder qty-aware).
+ */
+function seedPartialSplitPickingDemo(): PickingTask[] {
+  const order = outgoingOrders.find((o) => o.id === "out-demo-partial-split");
+  if (!order) return [];
+  const [full] = buildPickingLines([order.id], [order.salesNo]);
+  if (!full) return [];
+  const mk = (seq: number, qty: number): PickingTask => ({
+    id: `pick-demo-split-00${seq}`,
+    taskNo: `Picking #3051${seq}`, // outside the 30090+/30500 ranges other seeds use
+    salesOrderIds: [order.id],
+    salesNos: [order.salesNo],
+    warehouseId: order.warehouseId,
+    warehouseName: order.warehouseName,
+    assignee: operatorForWarehouse(order.warehouseId, 0),
+    skuQty: 1,
+    toPickQty: qty,
+    pickedQty: 0,
+    status: "open",
+    lines: [{ ...full, qty }],
+  });
+  return [mk(1, 4), mk(2, 3)];
 }
 
 function isoAt(dayOffset: number, hour: number, minute: number): string {
