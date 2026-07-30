@@ -59,12 +59,18 @@ async function handleSave() {
   if (!receivedBy.value.trim()) { receivedByError.value = 'You must fill in received by'; return }
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
-  completeShipment(s.shipmentSeq, {
+  const res = completeShipment(s.shipmentSeq, {
     receivedDate: toISODate(receivedDate.value),
     receivedBy: receivedBy.value.trim(),
     note: note.value.trim() || undefined,
     proofFile: attachedFiles.value[0]?.name,
   })
+  isSaving.value = false
+  if (!res.ok) {
+    toast.notify({ variant: 'error', title: 'Acknowledge the canceled order before completing this shipment', maxWidth: 'max-content' })
+    goBack()
+    return
+  }
   toast.notify({ variant: 'success', title: 'Shipment completed', maxWidth: 'max-content' })
   goBack()
 }

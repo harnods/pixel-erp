@@ -595,10 +595,16 @@ export function acknowledgeCanceledShipment(shipmentSeq: string): void {
 export function completeShipment(
   shipmentSeq: string,
   opts: { receivedDate: string; receivedBy: string; note?: string; proofFile?: string },
-): void {
-  for (const t of deliveryTasks) {
-    if (t.shipmentNo?.replace(/\D/g, "") !== shipmentSeq) continue;
-    if (t.status === "canceled") continue;
+): { ok: boolean; reason?: "not-found" | "needs-cancel-ack" } {
+  const related = deliveryTasks.filter((t) => t.shipmentNo?.replace(/\D/g, "") === shipmentSeq);
+  if (related.length === 0) return { ok: false, reason: "not-found" };
+  // A shipment with a still-attached CANCELED delivery must be acknowledged
+  // (detached via acknowledgeCanceledShipment) BEFORE it can be completed —
+  // otherwise completion would silently post only the live deliveries and leave
+  // the canceled one dangling. Guard here at the data layer so NO caller (index,
+  // detail, direct URL) can bypass it, not just the UI.
+  if (related.some((t) => t.status === "canceled")) return { ok: false, reason: "needs-cancel-ack" };
+  for (const t of related) {
     // THIS is the real posting event — the goods are confirmed gone.
     if (t.status === "out for delivery") {
       t.status = "shipped";
@@ -619,6 +625,7 @@ export function completeShipment(
     if (opts.proofFile) t.proofFile = opts.proofFile;
   }
   persistDelivery();
+  return { ok: true };
 }
 
 /** Per-SKU quantity actually SHIPPED (completed) for one order, across every one of

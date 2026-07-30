@@ -3,15 +3,12 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpDatePicker, MpInput, MpTextarea, MpButton,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { useTableState } from '~/composables/useTableState'
-import { listShipments, completeShipment } from '~/data/deliveryTasks'
+import { listShipments } from '~/data/deliveryTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 
@@ -48,6 +45,7 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 interface Row {
   shipmentSeq: string; shipmentNo: string; transactionDate: string; assignee: string
   warehouseId: string; warehouseName: string; courier: string; deliveryCount: number; status: 'open' | 'completed'
+  needsCancelAck: boolean
 }
 const baseRows = computed<Row[]>(() => {
   if (demoState.value !== 'data') return []
@@ -63,6 +61,7 @@ const baseRows = computed<Row[]>(() => {
     courier: h.deliveries.find(d => d.courier)?.courier ?? '',
     deliveryCount: h.deliveries.length,
     status: h.status,
+    needsCancelAck: h.needsCancelAck,
   }))
 })
 
@@ -174,55 +173,19 @@ const router = useRouter()
 function viewDetails(row: Row) { router.push(`/outbound-delivery/shipment/${row.shipmentSeq}`) }
 function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
 
-// ─── Complete shipment — courier/customer has signed for the goods ────────────
-function toDisplayDate(iso: string) {
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-function toISODate(display: string) {
-  const [d, m, y] = display.split('/')
-  return `${y}-${m}-${d}`
-}
-const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
-
-const completeOpen = ref(false)
-const shipmentToComplete = ref<Row | null>(null)
-const receivedDate = ref(todayDisplay)
-const receivedBy = ref('')
-const receivedByError = ref('')
-const note = ref('')
-const fileInput = ref<HTMLInputElement | null>(null)
-const attachedFiles = ref<File[]>([])
-
-function onFileChange(ev: Event) {
-  const files = (ev.target as HTMLInputElement).files
-  for (const f of Array.from(files ?? [])) {
-    if (!attachedFiles.value.some(x => x.name === f.name)) attachedFiles.value.push(f)
-  }
-  if (fileInput.value) fileInput.value.value = ''
-}
-function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
-
+// ─── Complete shipment — proof-of-delivery is its own full-page form
+// (CompleteShipmentPage.vue at /outbound-delivery/shipment/:seq/complete),
+// same as the Shipment details "Complete shipment" button. The page handles
+// the needsCancelAck guard itself. ────────────────────────────────────────────
 function openComplete(row: Row) {
-  shipmentToComplete.value = row
-  receivedDate.value = todayDisplay
-  receivedBy.value = ''
-  receivedByError.value = ''
-  note.value = ''
-  attachedFiles.value = []
-  completeOpen.value = true
-}
-function confirmComplete() {
-  if (!shipmentToComplete.value) return
-  if (!receivedBy.value.trim()) { receivedByError.value = 'You must fill in received by'; return }
-  completeShipment(shipmentToComplete.value.shipmentSeq, {
-    receivedDate: toISODate(receivedDate.value),
-    receivedBy: receivedBy.value.trim(),
-    note: note.value.trim() || undefined,
-    proofFile: attachedFiles.value[0]?.name,
-  })
-  toast.notify({ variant: 'success', title: 'Shipment completed', maxWidth: 'max-content' })
-  completeOpen.value = false
+  // A shipment with a still-attached canceled order must be acknowledged first —
+  // block at click here (same as the Shipment details button), don't just rely on
+  // the CompleteShipmentPage guard, so the halt happens even from this index.
+  if (row.needsCancelAck) {
+    toast.notify({ variant: 'error', title: 'Acknowledge the canceled order before completing this shipment', maxWidth: 'max-content' })
+    return
+  }
+  router.push(`/outbound-delivery/shipment/${row.shipmentSeq}/complete`)
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
@@ -409,62 +372,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
   </ErpTablePage>
 
-  <!-- ── Complete shipment ── -->
-  <MpModal
-    id="shp-complete" :is-open="completeOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="completeOpen = false"
-  >
-    <MpModalContent>
-      <MpModalHeader>Complete shipment<MpModalCloseButton /></MpModalHeader>
-      <MpModalBody>
-        <MpFormControl id="shp-received-date" is-required class="shp-complete-field">
-          <MpFormLabel>Date received</MpFormLabel>
-          <div class="shp-datepicker">
-            <MpDatePicker id="shp-received-date-dp" v-model="receivedDate" format="DD/MM/YYYY" value-type="format" use-portal />
-          </div>
-        </MpFormControl>
-
-        <MpFormControl id="shp-received-by" is-required :is-invalid="!!receivedByError" class="shp-complete-field">
-          <MpFormLabel>Received by</MpFormLabel>
-          <MpInput
-            id="shp-received-by-input" v-model="receivedBy" placeholder="Recipient name"
-            @update:model-value="receivedByError = ''"
-          />
-          <MpFormErrorMessage>{{ receivedByError }}</MpFormErrorMessage>
-        </MpFormControl>
-
-        <MpFormControl id="shp-note" class="shp-complete-field">
-          <MpFormLabel>Note</MpFormLabel>
-          <MpTextarea id="shp-note-textarea" v-model="note" is-full-width :rows="3" />
-        </MpFormControl>
-
-        <MpFormControl id="shp-attachment" class="shp-complete-field">
-          <MpFormLabel>Attachment</MpFormLabel>
-          <div class="shp-attachment">
-            <input ref="fileInput" type="file" accept=".pdf,.jpg,.jpeg,.png" class="shp-file-hidden" @change="onFileChange" />
-            <div class="shp-attachment-row">
-              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
-              <span class="shp-attach-or">or drag and drop here</span>
-            </div>
-            <ul v-if="attachedFiles.length" class="shp-file-list">
-              <li v-for="f in attachedFiles" :key="f.name" class="shp-file-item">
-                <span class="shp-file-name">{{ f.name }}</span>
-                <button class="shp-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
-              </li>
-            </ul>
-          </div>
-        </MpFormControl>
-      </MpModalBody>
-      <MpModalFooter>
-        <div class="shp-modal-footer">
-          <MpButton variant="ghost" is-rounded @click="completeOpen = false">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="confirmComplete">Complete shipment</MpButton>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
-
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="shp-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
@@ -539,20 +446,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
-
-/* Complete shipment modal */
-.shp-complete-field { margin-bottom: var(--mp-spacing-4); }
-.shp-datepicker :deep(.mp-date-picker) { width: 100%; }
-.shp-attachment { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.shp-file-hidden { display: none; }
-.shp-attachment-row { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.shp-attach-or { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.shp-file-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.shp-file-item { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.shp-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shp-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
-.shp-file-remove:hover { color: var(--mp-text-default); }
-.shp-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }
