@@ -850,6 +850,11 @@ function scrollChatToBottom() {
 // Expose sendMessage so popover can call it
 provide('sendAireneMessage', sendMessage)
 
+// Bridge: let components above the page (e.g. the header search) drive the panel.
+const aireneBridge = useAireneBridge()
+watch(aireneBridge.toggleSignal, () => toggleAirene())
+watch(aireneBridge.sendSignal, () => { if (aireneBridge.pendingText.value) sendMessage(aireneBridge.pendingText.value) })
+
 // ── Resize panel ──────────────────────────────────────────────────────────
 const PANEL_MIN = 320
 const PANEL_MAX = 640

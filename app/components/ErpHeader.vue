@@ -15,9 +15,9 @@
       <ErpWarehouseSwitcher v-if="hasWarehouseContext" />
     </MpFlex>
 
-    <!-- Center: Search -->
+    <!-- Center: Search — hidden on Home, where the hero already has a search box -->
     <MpFlex class="erp-header__center">
-      <QuickSearch />
+      <QuickSearch v-if="currentPageKey !== 'Home'" />
     </MpFlex>
 
     <!-- Right: Actions + User -->
@@ -51,6 +51,9 @@ const logoAlt = computed(() => (isWms.value ? "Mekari WMS" : "Mekari ERP"));
 // Warehouse label next to the logo whenever the user is scoped to a warehouse
 // (Ops). Static for one warehouse (Ops 1), switchable for several (Ops 2).
 const { hasWarehouseContext } = useWarehouseContext();
+
+// Home has its own hero search — drop the header search there to avoid redundancy.
+const { currentPageKey } = useNavigation();
 </script>
 
 <style scoped>
