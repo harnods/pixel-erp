@@ -1316,7 +1316,7 @@ function handleSave(mode: 'close' | 'new') {
 .ex-td--border { border-right: 1px solid var(--mp-border-default); }
 
 /* Line-item validation — same red convention as CreateReceiptPage's cr-td--prod-error/cr-td--qty-error. */
-.ex-td--error { background: #FCEEED; box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
+.ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
 .ex-td--error :deep([class*='autocomplete']),
 .ex-td--error :deep([class*='input']) { background: transparent; }
 .ex-error-tooltip-wrap { display: block; width: 100%; }
