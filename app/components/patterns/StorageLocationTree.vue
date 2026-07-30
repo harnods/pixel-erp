@@ -10,10 +10,11 @@ import {
   MpButton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  css,
+  css, toast,
 } from '@mekari/pixel3'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
-import { getStorageTree, findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
+import { deleteLocationSafe } from '~/data/integrityGuards'
 import { ensureLocationBarcode } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
 import { useUrlModal } from '@ds/proto-review'
@@ -83,7 +84,14 @@ function view(n: LocNode) { router.push(`/warehouses/${props.warehouseId}/locati
 const deleteTarget = ref<LocNode | null>(null)
 function askDelete(n: LocNode) { deleteTarget.value = n }
 function confirmDelete() {
-  if (deleteTarget.value) deleteLocation(props.warehouseId, deleteTarget.value.id)
+  if (deleteTarget.value) {
+    const res = deleteLocationSafe(props.warehouseId, deleteTarget.value.id)
+    if (!res.ok) {
+      toast.notify({ variant: 'error', title: "This location still holds stock and can't be deleted", maxWidth: 'max-content' })
+      deleteTarget.value = null
+      return
+    }
+  }
   deleteTarget.value = null
 }
 
@@ -135,7 +143,7 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
     <div class="slt-toolbar">
       <div class="wh-search">
         <MpIcon name="search" size="md" />
-        <input v-model="search" class="wh-search-input" type="text" placeholder="Search location..." />
+        <input v-model="search" class="wh-search-input" type="text" placeholder="Search..." />
         <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -191,14 +199,7 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
                     :class="row.node.type === 'Storage' ? 'wh-loc-type-icon--storage' : 'wh-loc-type-icon--org'"
                   />
                 </MpTooltip>
-                <span class="wh-loc-name-text">{{ row.node.name }}</span>
-                <button class="wh-loc-view" @click.stop="view(row.node)">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <span class="row-hover-btn__label">VIEW DETAILS</span>
-                </button>
+                <a class="cell-link wh-loc-name-text" @click.stop="view(row.node)">{{ row.node.name }}</a>
               </div>
             </td>
             <td class="wh-btd">{{ fmt(row.node.skuQty) }}</td>
@@ -319,10 +320,6 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
 .wh-loc-chevron { flex-shrink: 0; transition: transform 0.15s ease; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-loc-chevron--open { transform: rotate(90deg); }
 .wh-loc-chevron-spacer { display: inline-block; width: 16px; flex-shrink: 0; }
-.wh-loc-view { visibility: hidden; display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5); margin-left: var(--mp-spacing-2); flex-shrink: 0; height: 20px; box-sizing: border-box; padding: 0 var(--mp-spacing-1\.5); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
-.wh-loc-view .row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
-.wh-loc-row:hover .wh-loc-view { visibility: visible; }
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
 .wh-loc-table .wh-loc-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
 .row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }

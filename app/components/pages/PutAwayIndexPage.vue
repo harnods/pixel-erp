@@ -271,16 +271,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Number — View details chip on hover ── -->
     <template #cell-taskNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text pa-no">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as PutAwayTask)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text pa-no" @click.stop="viewDetails(row as unknown as PutAwayTask)">{{ value }}</a>
     </template>
 
     <!-- ── Receiving tasks — expandable list, View details chip per task on hover ── -->
@@ -288,27 +279,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <span class="pa-rtasks">
         <template v-if="expandedRows.has((row as unknown as PutAwayTask).id)">
           <span v-for="(no, i) in (value as string[])" :key="no" class="cell-with-action pa-rtasks__row">
-            <span class="pa-rtasks__item">{{ no }}</span>
-            <button class="row-hover-btn" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[i]!)">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <span class="row-hover-btn__label">VIEW DETAILS</span>
-            </button>
+            <a class="cell-link pa-rtasks__item" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[i]!)">{{ no }}</a>
           </span>
           <button class="pa-rtasks__toggle" @click.stop="toggleExpand((row as unknown as PutAwayTask).id)">Show less</button>
         </template>
         <template v-else>
           <span class="cell-with-action pa-rtasks__row">
-            <span class="pa-rtasks__item">{{ (value as string[])[0] }}</span>
-            <button class="row-hover-btn" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[0]!)">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <span class="row-hover-btn__label">VIEW DETAILS</span>
-            </button>
+            <a class="cell-link pa-rtasks__item" @click.stop="viewReceivingTask((row as unknown as PutAwayTask).receivingTaskIds[0]!)">{{ (value as string[])[0] }}</a>
           </span>
           <button
             v-if="(value as string[]).length > 1"
@@ -321,16 +298,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Warehouse — View details chip on hover ── -->
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="pa-warehouse">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as PutAwayTask).warehouseId}`)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link pa-warehouse" @click.stop="router.push(`/warehouses/${(row as unknown as PutAwayTask).warehouseId}`)">{{ value }}</a>
     </template>
 
     <!-- ── Items qty ── -->
@@ -460,19 +428,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pa-no { color: var(--mp-text-default); }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
-
 /* Receiving tasks cell */
 .pa-rtasks { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-0\.5); }
 .pa-rtasks__item  { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }

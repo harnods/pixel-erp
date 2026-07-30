@@ -21,10 +21,11 @@ import {
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
 import {
-  addBillOfMaterials, updateBillOfMaterials, billOfMaterials, catalogProduct,
+  addBillOfMaterials, billOfMaterials, catalogProduct,
   type BillOfMaterials, type BomRawMaterial, type BomProductionCost,
   type BomRoutingStep, type BomOtherOutput, type BomProductionWaste,
 } from '~/data/billOfMaterials'
+import { updateBillOfMaterialsSafe } from '~/data/integrityGuards'
 
 const router = useRouter()
 const route = useRoute()
@@ -399,21 +400,31 @@ function buildBomPayload() {
   }
 }
 
-function saveBom() {
-  return isEditMode.value
-    ? updateBillOfMaterials(editingId, buildBomPayload())
-    : addBillOfMaterials(buildBomPayload())
+// Returns the BOM id to navigate to, or null when the guard refused the edit
+// (an active work order still depends on this BOM) — caller then aborts.
+function saveBom(): string | null {
+  if (isEditMode.value) {
+    const res = updateBillOfMaterialsSafe(editingId, buildBomPayload())
+    if (!res.ok) {
+      toast.notify({ variant: 'error', title: "This BOM is used by an active work order and can't be edited", maxWidth: 'max-content' })
+      return null
+    }
+    return editingId
+  }
+  return addBillOfMaterials(buildBomPayload()).id
 }
 function handleSave() {
   if (!validate()) return
-  const bom = saveBom()
+  const id = saveBom()
+  if (!id) return
   toast.notify({ variant: 'success', title: isEditMode.value ? 'Bill of materials updated' : 'Bill of materials saved' })
-  router.push(`/bill-of-materials/${bom.id}`)
+  router.push(`/bill-of-materials/${id}`)
 }
 function handleSaveDraft() {
-  const bom = saveBom()
+  const id = saveBom()
+  if (!id) return
   toast.notify({ variant: 'success', title: isEditMode.value ? 'Bill of materials updated' : 'Bill of materials saved as draft' })
-  router.push(`/bill-of-materials/${bom.id}`)
+  router.push(`/bill-of-materials/${id}`)
 }
 
 // ── Sticky footer float ────────────────────────────────────────────────────────────

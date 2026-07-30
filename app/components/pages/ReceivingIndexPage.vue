@@ -431,38 +431,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 <span class="rcvg-check" @click.stop>
                   <MpCheckbox :id="`rcvg-task-${t.id}`" :is-checked="selectedTasks.has(t.id)" @change="toggleTask(t.id)" />
                 </span>
-                <span class="rcvg-task-no">{{ t.taskNo }}</span>
-                <button class="row-hover-btn" @click.stop="viewDetails(t)">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <span class="row-hover-btn__label">VIEW DETAILS</span>
-                </button>
+                <a class="cell-link rcvg-task-no" @click.stop="viewDetails(t)">{{ t.taskNo }}</a>
               </div>
             </td>
             <td v-if="colVis.purchaseNo" class="rcvg-td rcvg-td--po">
               <div class="rcvg-po-cell">
-                <span class="rcvg-po-no">{{ t.purchaseNo }}</span>
-                <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${t.receiptId}`)">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <span class="row-hover-btn__label">VIEW DETAILS</span>
-                </button>
+                <a class="cell-link rcvg-po-no" @click.stop="router.push(`/inbound-delivery/${t.receiptId}`)">{{ t.purchaseNo }}</a>
               </div>
             </td>
             <td v-if="colVis.warehouseName" class="rcvg-td rcvg-td--warehouse">
               <div class="rcvg-wh-cell">
-                <span>{{ t.warehouseName }}</span>
-                <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${t.warehouseId}`)">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <span class="row-hover-btn__label">VIEW DETAILS</span>
-                </button>
+                <a class="cell-link" @click.stop="router.push(`/warehouses/${t.warehouseId}`)">{{ t.warehouseName }}</a>
               </div>
             </td>
             <td v-if="!isScoped && colVis.assignee" class="rcvg-td rcvg-td--assignee">{{ t.assignee }}</td>
@@ -726,20 +705,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rcvg-td--task { position: relative; }
 .rcvg-task-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rcvg-task-no { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-
-/* Task number — View details chip on row hover */
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.rcvg-task-row:hover .row-hover-btn { display: flex; }
 
 .row-kebab {
   display: inline-flex; align-items: center; justify-content: center;

@@ -116,8 +116,9 @@ describe('ReceiveItemsPage — scan threshold basis is Expected qty (targetQty),
     const input = wrapper.find('input.ri-qty-input')
     expect(input.exists()).toBe(true)
     expect(input.attributes('disabled')).toBeDefined()
-    // The hard ceiling shown/enforced on the input stays Purchase qty, unchanged.
-    expect(input.attributes('max')).toBe('57')
+    // The hard ceiling shown/enforced on the input is Expected qty (targetQty),
+    // not Purchase qty — a task may never receive past what it expects.
+    expect(input.attributes('max')).toBe('40')
     wrapper.unmount()
   })
 

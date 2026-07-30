@@ -305,17 +305,10 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <div class="wh-product">
                   <img class="wh-thumb" :src="(row as any).photo" :alt="(row as any).name" loading="lazy" />
                   <span class="wh-product-text">
-                    <span class="wh-product-name">{{ (row as any).name }}</span>
+                    <a class="cell-link wh-product-name" @click.stop>{{ (row as any).name }}</a>
                     <ClampText class="wh-product-sub" :text="(row as any).subtitle" />
                   </span>
                 </div>
-                <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <span class="row-hover-btn__label">VIEW DETAILS</span>
-                </button>
               </div>
             </template>
 
@@ -460,18 +453,11 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <div class="wh-product">
                         <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                         <span class="wh-product-text">
-                          <span class="wh-product-name">{{ p.name }}</span>
+                          <a class="cell-link wh-product-name" @click.stop>{{ p.name }}</a>
                           <ClampText class="wh-product-sub" :text="p.subtitle" />
                         </span>
                       </div>
                     </div>
-                    <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                        <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                      <span class="row-hover-btn__label">VIEW DETAILS</span>
-                    </button>
                   </td>
                   <td v-if="batchColVisibility.sku" class="wh-btd wh-btd--sku" :rowspan="isBatchExpanded(p.id) ? visibleBatches(p).length + 1 : 1">{{ p.sku }}</td>
                   <td v-if="batchColVisibility.batch" class="wh-btd" :colspan="batchColVisibility.location ? 2 : 1"><span class="wh-batch-summary">{{ batchCountLabel(visibleBatches(p).length) }}</span></td>
@@ -486,14 +472,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </tr>
                 <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
                   <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
-                    <span>{{ b.batchNo }}</span>
-                    <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                        <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                      <span class="row-hover-btn__label">VIEW DETAILS</span>
-                    </button>
+                    <a class="cell-link" @click.stop>{{ b.batchNo }}</a>
                   </td>
                   <td v-if="batchColVisibility.location" class="wh-btd wh-loc-cell">{{ b.location }}</td>
                   <td v-if="batchColVisibility.expiry" class="wh-btd">
@@ -579,35 +558,18 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <div class="wh-product">
                         <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                         <span class="wh-product-text">
-                          <span class="wh-product-name">{{ p.name }}</span>
+                          <a class="cell-link wh-product-name" @click.stop>{{ p.name }}</a>
                           <ClampText class="wh-product-sub" :text="p.subtitle" />
                         </span>
                       </div>
                     </div>
-                    <button class="row-hover-btn row-hover-btn--top" @click.stop>
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                        <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                      <span class="row-hover-btn__label">VIEW DETAILS</span>
-                    </button>
                   </td>
                   <td v-if="serialColVisibility.sku" class="wh-btd wh-btd--sku">{{ p.sku }}</td>
                   <td v-if="serialColVisibility.available" class="wh-btd">
-                    <div class="cell-with-action">
-                      <span class="wh-serial-count">{{ serialCountLabel(p.serials.available.length) }}</span>
-                      <button class="row-hover-btn" @click.stop="openSerialDrawer(p, 'available')">
-                        <span class="row-hover-btn__label">VIEW DETAILS</span>
-                      </button>
-                    </div>
+                    <a class="cell-link wh-serial-count" @click.stop="openSerialDrawer(p, 'available')">{{ serialCountLabel(p.serials.available.length) }}</a>
                   </td>
                   <td v-if="serialColVisibility.reserved" class="wh-btd">
-                    <div class="cell-with-action">
-                      <span class="wh-serial-count">{{ serialCountLabel(p.serials.reserved.length) }}</span>
-                      <button class="row-hover-btn" @click.stop="openSerialDrawer(p, 'reserved')">
-                        <span class="row-hover-btn__label">VIEW DETAILS</span>
-                      </button>
-                    </div>
+                    <a class="cell-link wh-serial-count" @click.stop="openSerialDrawer(p, 'reserved')">{{ serialCountLabel(p.serials.reserved.length) }}</a>
                   </td>
                   <td v-if="serialColVisibility.minStock" class="wh-btd wh-btd--num">{{ formatNum(p.minStock) }}</td>
                   <td v-if="serialColVisibility.unit" class="wh-btd">{{ p.unit }}</td>
@@ -681,10 +643,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 /* Product cell */
 .cell-with-action { position: relative; display: flex; align-items: flex-start; width: 100%; min-width: 0; }
 .wh-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); min-width: 0; }
-.row-hover-btn { position: absolute; right: var(--mp-spacing-4); top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none; align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
-.cell-with-action:hover .row-hover-btn { display: flex; }
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 .wh-thumb { flex-shrink: 0; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-sm); object-fit: cover; background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default); }
 .wh-product-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .wh-product-name { color: var(--mp-text-default); }
@@ -701,8 +659,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-serial-count { color: var(--mp-text-default); }
 .wh-btd.wh-btd--top { vertical-align: top; }
 .wh-batch-cell { position: relative; }
-.wh-batch-cell:hover .row-hover-btn { display: flex; }
-.row-hover-btn--top { top: var(--mp-spacing-2\.5, 10px); transform: none; }
 .wh-expiry-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); white-space: nowrap; }
 .wh-expiry-cell--danger { color: var(--mp-text-danger, #a8352d); }
 .wh-expiry-warn { display: inline-flex; align-items: center; color: var(--mp-text-danger, #a8352d); flex-shrink: 0; cursor: default; }

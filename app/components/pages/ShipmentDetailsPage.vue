@@ -4,11 +4,8 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
-import {
-  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
-  MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpDatePicker, MpIcon, toast,
-} from '@mekari/pixel3'
-import { getShipment, completeShipment, acknowledgeCanceledShipment } from '~/data/deliveryTasks'
+import { MpIcon, toast } from '@mekari/pixel3'
+import { getShipment, acknowledgeCanceledShipment } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateShipmentPdf } from '~/utils/shipmentPdf'
@@ -86,53 +83,16 @@ function attachmentIcon(name: string): string {
   return 'attachment'
 }
 
-// ── Complete shipment — courier/customer has signed for the goods ──────────────
-function toDisplayDate(iso: string) {
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-function toISODate(display: string) {
-  const [d, m, y] = display.split('/')
-  return `${y}-${m}-${d}`
-}
-const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
-
-const completeOpen = ref(false)
-const receivedDate = ref(todayDisplay)
-const receivedBy = ref('')
-const receivedByError = ref('')
-const note = ref('')
-const fileInput = ref<HTMLInputElement | null>(null)
-const attachedFiles = ref<File[]>([])
-
-function onFileChange(ev: Event) {
-  const files = (ev.target as HTMLInputElement).files
-  for (const f of Array.from(files ?? [])) {
-    if (!attachedFiles.value.some(x => x.name === f.name)) attachedFiles.value.push(f)
-  }
-  if (fileInput.value) fileInput.value.value = ''
-}
-function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
-
+// Complete shipment (proof of delivery) is now its own page — see
+// CompleteShipmentPage.vue at /outbound-delivery/shipment/:seq/complete. A canceled
+// delivery must be acknowledged (detached) before the shipment can be completed,
+// so the completion posts only what actually shipped.
 function openComplete() {
-  receivedDate.value = todayDisplay
-  receivedBy.value = ''
-  receivedByError.value = ''
-  note.value = ''
-  attachedFiles.value = []
-  completeOpen.value = true
-}
-function confirmComplete() {
-  if (!shipment.value) return
-  if (!receivedBy.value.trim()) { receivedByError.value = 'You must fill in received by'; return }
-  completeShipment(shipment.value.shipmentSeq, {
-    receivedDate: toISODate(receivedDate.value),
-    receivedBy: receivedBy.value.trim(),
-    note: note.value.trim() || undefined,
-    proofFile: attachedFiles.value[0]?.name,
-  })
-  toast.notify({ variant: 'success', title: 'Shipment completed', maxWidth: 'max-content' })
-  completeOpen.value = false
+  if (shipment.value?.needsCancelAck) {
+    toast.notify({ variant: 'error', title: 'Acknowledge the canceled order before completing this shipment', maxWidth: 'max-content' })
+    return
+  }
+  router.push(`/outbound-delivery/shipment/${props.orderId}/complete`)
 }
 </script>
 
@@ -141,7 +101,7 @@ function confirmComplete() {
 
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Shipments</button>
+        <button class="detail-breadcrumb" @click="goBack">Shipping document</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ shipment.shipmentNo }}</h1>
           <ErpStatusBadge :status="shipment.status" badge-for="additionalInformation" size="md" />
@@ -169,14 +129,7 @@ function confirmComplete() {
         <div class="content-list-col">
           <ContentList label="Warehouse">
             <div class="wh-link-wrap">
-              <span>{{ shipment.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${shipment.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${shipment.warehouseId}`)">{{ shipment.warehouseName }}</a>
             </div>
           </ContentList>
           <ContentList label="Assignee" :value="shipment.assignee" />
@@ -219,28 +172,12 @@ function confirmComplete() {
             <tr v-for="row in rows" :key="row.id" class="detail-item-row" :class="{ 'shd-row-canceled': row.status === 'canceled' }">
               <td class="detail-td">
                 <div class="cell-with-action">
-                  <span class="cell-text">{{ row.salesNo }}</span>
+                  <a class="cell-link cell-text" @click.stop="viewSalesOrder(row)">{{ row.salesNo }}</a>
                   <ErpStatusBadge v-if="row.status === 'canceled'" status="canceled" />
-                  <button class="row-hover-btn" @click.stop="viewSalesOrder(row)">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
                 </div>
               </td>
               <td class="detail-td">
-                <div class="cell-with-action">
-                  <span class="cell-text">{{ row.packingTaskNo }}</span>
-                  <button class="row-hover-btn" @click.stop="viewPacking(row)">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
-                </div>
+                <a class="cell-link cell-text" @click.stop="viewPacking(row)">{{ row.packingTaskNo }}</a>
               </td>
               <td class="detail-td"><SourceLabel :source="row.source" /></td>
               <td class="detail-td">{{ row.courier }}</td>
@@ -277,62 +214,6 @@ function confirmComplete() {
       <button v-if="shipment.status === 'open'" class="detail-btn detail-btn--primary" @click="openComplete">Complete shipment</button>
     </footer>
 
-    <!-- Complete shipment -->
-    <MpModal
-      id="shd-complete" :is-open="completeOpen" size="md"
-      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="completeOpen = false"
-    >
-      <MpModalContent>
-        <MpModalHeader>Complete shipment<MpModalCloseButton /></MpModalHeader>
-        <MpModalBody>
-          <MpFormControl id="shd-received-date" is-required class="shd-complete-field">
-            <MpFormLabel>Date received</MpFormLabel>
-            <div class="shd-datepicker">
-              <MpDatePicker id="shd-received-date-dp" v-model="receivedDate" format="DD/MM/YYYY" value-type="format" use-portal />
-            </div>
-          </MpFormControl>
-
-          <MpFormControl id="shd-received-by" is-required :is-invalid="!!receivedByError" class="shd-complete-field">
-            <MpFormLabel>Received by</MpFormLabel>
-            <MpInput
-              id="shd-received-by-input" v-model="receivedBy" placeholder="Recipient name"
-              @update:model-value="receivedByError = ''"
-            />
-            <MpFormErrorMessage>{{ receivedByError }}</MpFormErrorMessage>
-          </MpFormControl>
-
-          <MpFormControl id="shd-note" class="shd-complete-field">
-            <MpFormLabel>Note</MpFormLabel>
-            <MpTextarea id="shd-note-textarea" v-model="note" is-full-width :rows="3" />
-          </MpFormControl>
-
-          <MpFormControl id="shd-attachment" class="shd-complete-field">
-            <MpFormLabel>Attachment</MpFormLabel>
-            <div class="shd-attachment">
-              <input ref="fileInput" type="file" accept=".pdf,.jpg,.jpeg,.png" class="shd-file-hidden" @change="onFileChange" />
-              <div class="shd-attachment-row">
-                <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
-                <span class="shd-attach-or">or drag and drop here</span>
-              </div>
-              <ul v-if="attachedFiles.length" class="shd-file-list">
-                <li v-for="f in attachedFiles" :key="f.name" class="shd-file-item">
-                  <span class="shd-file-name">{{ f.name }}</span>
-                  <button class="shd-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
-                </li>
-              </ul>
-            </div>
-          </MpFormControl>
-        </MpModalBody>
-        <MpModalFooter>
-          <div class="shd-modal-footer">
-            <MpButton variant="ghost" is-rounded @click="completeOpen = false">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded @click="confirmComplete">Complete shipment</MpButton>
-          </div>
-        </MpModalFooter>
-      </MpModalContent>
-      <MpModalOverlay />
-    </MpModal>
-
     <PdfPreviewModal
       :open="pdfPreviewOpen"
       :doc="pdfPreviewDoc"
@@ -345,7 +226,7 @@ function confirmComplete() {
 
   <div v-else class="shd-not-found">
     <p>Shipment not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Shipments</button>
+    <button class="detail-breadcrumb" @click="goBack">Back to Shipping document</button>
   </div>
 </template>
 
@@ -417,20 +298,7 @@ function confirmComplete() {
 /* Number cells — View details chip on hover */
 .cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 
 .detail-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
@@ -459,18 +327,4 @@ function confirmComplete() {
 .detail-attach-meta { display: flex; flex-direction: column; }
 .detail-attach-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); }
 .detail-attach:hover .detail-attach-name { text-decoration: underline; text-underline-offset: 2px; }
-
-/* Complete shipment modal */
-.shd-complete-field { margin-bottom: var(--mp-spacing-4); }
-.shd-datepicker :deep(.mp-date-picker) { width: 100%; }
-.shd-attachment { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.shd-file-hidden { display: none; }
-.shd-attachment-row { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.shd-attach-or { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.shd-file-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.shd-file-item { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.shd-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shd-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
-.shd-file-remove:hover { color: var(--mp-text-default); }
-.shd-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

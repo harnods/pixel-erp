@@ -209,7 +209,7 @@ const receiptNumber = computed(() =>
       <div class="ssd-toolbar">
         <div class="ssd-search">
           <MpIcon name="search" size="md" />
-          <input v-model="search" class="ssd-search-input" type="text" placeholder="Search serial number…" />
+          <input v-model="search" class="ssd-search-input" type="text" placeholder="Search..." />
           <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -239,16 +239,7 @@ const receiptNumber = computed(() =>
             <tbody>
               <tr v-for="row in visibleRows" :key="row.serial" class="ssd-tr">
                 <td class="ssd-td">
-                  <div class="cell-with-action">
-                    <span class="cell-text">{{ row.serial }}</span>
-                    <button class="row-hover-btn" type="button" @click.stop="openDetail(row)">
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                        <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                      <span class="row-hover-btn__label">VIEW DETAILS</span>
-                    </button>
-                  </div>
+                  <a class="cell-link cell-text" @click.stop="openDetail(row)">{{ row.serial }}</a>
                 </td>
                 <td class="ssd-td ssd-td--muted">{{ row.location }}</td>
                 <td v-if="initialTab === 'reserved'" class="ssd-td">{{ salesNoFor(row.serial) }}</td>
@@ -454,21 +445,8 @@ const receiptNumber = computed(() =>
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 .ssd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
 
-/* Serial number cell — "View details" chip on row hover, switches to the detail step */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Serial number cell — value is a link that switches to the detail step */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.ssd-tr:hover .row-hover-btn { display: flex; }
 
 /* Sentinel row — zero height, invisible */
 .ssd-sentinel-row td { padding: 0; height: 0; border: none; background: transparent; }
