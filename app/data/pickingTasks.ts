@@ -3,6 +3,7 @@ import { warehouses } from "./warehouses";
 import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, type OutgoingOrder } from "./outgoing";
 import { orderSkuLines } from "./inventory";
+import { getWarehouseConfig } from "./warehouseConfig";
 import {
   binForSku, getWarehouseDetail, getReservationsForOrder, releaseReservationsForOrderSku, reserveStock,
   autoSelectLocationBins, autoSelectBatches, autoSelectSerials, registerNewBatch,
@@ -595,7 +596,15 @@ export function pickedKeysForOrder(orderId: string): Set<string> {
   const demand = new Map<string, number>(); // planned qty per SKU line
   if (order) for (const l of buildPickingLines([orderId], [order.salesNo])) demand.set(l.key, l.qty);
 
-  const picked = new Map<string, number>();
+  // PRD 1.2 D3: when the warehouse allows partial picking, one SKU line may be split
+  // across several picking tasks — so coverage is QTY-AWARE: a line is only "covered"
+  // once the total COMMITTED qty (open/in-progress tasks' claimed line qty + finished
+  // tasks' actually-picked qty) meets demand, leaving any remainder creatable on a new
+  // list. When partial picking is OFF, any open task claims the WHOLE line (no split —
+  // the original double-commit guard).
+  const partial = order ? getWarehouseConfig(order.warehouseId).allowPartialPicking : false;
+
+  const committed = new Map<string, number>();
   const onActive = new Set<string>();
   for (const t of getPickingForOrder(orderId)) {
     if (t.status === "canceled") continue;
@@ -603,15 +612,41 @@ export function pickedKeysForOrder(orderId: string): Set<string> {
     for (const l of pickingLinesOf(t)) {
       if (l.orderId !== orderId) continue;
       if (!finished) onActive.add(l.key);
-      picked.set(l.key, (picked.get(l.key) ?? 0) + (t.pickedByKey?.[l.key] ?? 0));
+      // finished → count only what was actually picked (un-picked remainder is freed);
+      // open/in-progress → count the qty it claimed on the list.
+      const claim = finished ? (t.pickedByKey?.[l.key] ?? 0) : l.qty;
+      committed.set(l.key, (committed.get(l.key) ?? 0) + claim);
     }
   }
 
   const covered = new Set<string>();
   for (const [key, need] of demand) {
-    if (onActive.has(key) || (picked.get(key) ?? 0) >= need) covered.add(key);
+    if ((committed.get(key) ?? 0) >= need || (!partial && onActive.has(key))) covered.add(key);
   }
   return covered;
+}
+
+/**
+ * Qty of one order+SKU already committed to existing (non-canceled) picking tasks —
+ * finished tasks count their ACTUAL picked qty (the un-picked remainder is freed for
+ * a top-up list), open/in-progress tasks count their claimed line qty ONLY when the
+ * warehouse allows partial picking (else an open task claims the whole line and the
+ * SKU is dropped entirely from a new list via pickedKeysForOrder). Lets a new picking
+ * list offer just the still-unclaimed remainder (PRD 1.2 D3).
+ */
+export function committedQtyForOrderSku(orderId: string, sku: string): number {
+  const order = outgoingOrders.find((o) => o.id === orderId);
+  const partial = order ? getWarehouseConfig(order.warehouseId).allowPartialPicking : false;
+  const key = `${orderId}::${sku}`;
+  let sum = 0;
+  for (const t of getPickingForOrder(orderId)) {
+    if (t.status === "canceled") continue;
+    const finished = t.status === "completed" || t.status === "partially picked";
+    if (finished) { sum += t.pickedByKey?.[key] ?? 0; continue; }
+    if (!partial) continue;
+    for (const l of pickingLinesOf(t)) if (l.orderId === orderId && l.sku === sku) sum += l.qty;
+  }
+  return sum;
 }
 
 /**
