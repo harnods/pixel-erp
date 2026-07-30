@@ -1274,13 +1274,13 @@ function cancelClose() {
 }
 
 /* Children indent 24px (--mp-spacing-6) from the panel edge; text/secondary
-   distinguishes them from top-level panel items. */
+   distinguishes them from top-level panel items. Active state matches
+   .panel-item.active exactly (same blue + bg) — no separate override, so a
+   selected child (e.g. "Sales") reads the same as a selected top-level item
+   (e.g. "Notifications"). */
 .panel-item--child {
   padding-left: var(--mp-spacing-6, 24px);
   color: var(--mp-text-secondary);
-}
-.panel-item--child.active {
-  color: var(--mp-text-selected);
 }
 
 

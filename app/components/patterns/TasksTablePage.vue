@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpBadge, MpButton, MpInput,
+  MpIcon, MpBadge, MpButton, MpInput, MpInputGroup, MpInputLeftAddon,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -383,12 +383,10 @@ function formatDate(iso: string) {
           </MpButton>
         </div>
 
-        <div class="filter-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-          <MpInput v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-        </div>
+        <MpInputGroup :id="`${idPrefix}-tasks-search`" class="filter-search">
+          <MpInputLeftAddon><MpIcon name="search" size="md" /></MpInputLeftAddon>
+          <MpInput v-model="search" type="text" placeholder="Search..." />
+        </MpInputGroup>
       </div>
     </template>
 
@@ -397,18 +395,10 @@ function formatDate(iso: string) {
       {{ formatDate(value as string) }}
     </template>
 
-    <!-- ── Cell: Number — View details chip on hover (same as Bills) ── -->
+    <!-- ── Cell: Number — text link, same pattern as the Sales index pages
+         (erp.css .cell-link; replaces the old row-hover "View details" chip) ── -->
     <template #cell-number="{ row }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ formatTaskNumber(row as Task) }}</span>
-        <MpButton class="row-hover-btn" @click.stop>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </MpButton>
-      </div>
+      <a class="cell-link cell-text" @click.stop>{{ formatTaskNumber(row as Task) }}</a>
     </template>
 
     <!-- ── Cell: Warehouse ── -->
@@ -522,53 +512,11 @@ function formatDate(iso: string) {
 </template>
 
 <style scoped>
-/* Cell with hover action button (same as Bills' Number/Beneficiary cells) */
-.cell-with-action {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-}
-
 .cell-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-
-/* Rendered via MpButton, not a raw HTML control — default look reset (see
-   IconButton/.demo-fab precedent). */
-.row-hover-btn {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  display: none;
-  align-items: center;
-  gap: var(--mp-spacing-1\.5);
-  min-width: 0 !important;
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5) !important;
-  background: var(--mp-background-neutral) !important;
-  border: 1px solid var(--mp-border-bold) !important;
-  border-radius: var(--mp-radii-sm) !important;
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1;
-}
-
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px);
-  color: var(--mp-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-}
-
-:global(.erp-tr:hover .row-hover-btn) {
-  display: flex;
 }
 
 /* Actions cell: left padding 8px only */
@@ -688,24 +636,9 @@ function formatDate(iso: string) {
 .filter-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-icon-btn--airene { color: var(--mp-airene-default); }
 
-.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
-
-/* Rendered via MpInput, not a raw HTML control — default look reset so it
-   merges into .filter-search's own bordered box (see NotificationsView's
-   ".nv-search-input" precedent). */
-.filter-search-input {
-  flex: 1;
-  border: none !important;
-  outline: none;
-  background: transparent !important;
-  padding: 0 !important;
-  height: auto !important;
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-default);
-  min-width: 0;
-}
-.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+/* Rendered via MpInputGroup/MpInputLeftAddon/MpInput (Pixel's own merged-box
+   input pattern) — just pinned to the filter bar's fixed pill width/shape. */
+.filter-search { width: 248px; border-radius: var(--mp-radii-full, 999px) !important; overflow: hidden; }
 
 /* Enterprise toast — fully rounded with enterprise styling */
 :global(.toast-enterprise) {
