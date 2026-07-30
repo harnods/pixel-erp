@@ -568,7 +568,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
   background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
@@ -649,7 +649,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
 .rcd-product { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .rcd-product-thumb {
   width: 28px; height: 28px; border-radius: var(--mp-radii-sm); flex-shrink: 0;
-  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle);
+  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .rcd-product-name {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);

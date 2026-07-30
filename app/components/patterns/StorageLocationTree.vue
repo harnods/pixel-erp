@@ -217,7 +217,7 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
                     <MpPopoverListItem @click="editLoc(row.node)">Edit</MpPopoverListItem>
                     <MpPopoverListItem v-if="row.node.type === 'Storage'" @click="printLocationBarcode(row.node)">Print barcode</MpPopoverListItem>
                     <MpPopoverListItem @click="addSub(row.node)">Add sub-location</MpPopoverListItem>
-                    <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askDelete(row.node)">Delete</MpPopoverListItem>
+                    <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="askDelete(row.node)">Delete</MpPopoverListItem>
                   </MpPopoverList>
                 </MpPopoverContent>
               </MpPopover>
@@ -321,7 +321,7 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
 .wh-loc-chevron--open { transform: rotate(90deg); }
 .wh-loc-chevron-spacer { display: inline-block; width: 16px; flex-shrink: 0; }
 .wh-loc-table .wh-loc-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
-.row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 .wh-loc-empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6); }
 .slt-modal-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); width: 100%; }

@@ -531,7 +531,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   border: none;
   outline: none;
   width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-9) var(--mp-spacing-2) var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) var(--mp-spacing-10) var(--mp-spacing-2) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-placeholder);

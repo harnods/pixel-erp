@@ -1059,7 +1059,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5);
 }
 .pi-editing-hint {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-normal);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-normal, 400);
   color: var(--mp-text-default); white-space: nowrap;
 }
 .pi-search-wrap {

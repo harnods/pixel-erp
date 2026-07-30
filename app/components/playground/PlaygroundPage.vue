@@ -60,7 +60,7 @@ const current = computed(() => tabs.find(t => t.key === active.value)!.comp)
   cursor: pointer;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-medium);
+  font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-secondary);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;

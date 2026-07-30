@@ -458,7 +458,7 @@ const emptyDesc = computed(() =>
               </MpPopoverListItem>
               <MpPopoverListItem
                 v-if="!(row as unknown as Warehouse).hasTransactions"
-                :class="css({ color: 'var(--mp-text-critical)' })"
+                :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
                 @click="openDeleteModal(row as unknown as Warehouse)"
               >
                 Delete

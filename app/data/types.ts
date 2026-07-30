@@ -1,6 +1,8 @@
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
 export type InvoiceStatus    = 'paid' | 'open' | 'overdue'
+export type BillStatus       = 'open' | 'paid' | 'unpaid' | 'overdue' | 'draft'
+export type FileClassification = 'bill' | 'receipt' | 'unclassified'
 export type SalesOrderStatus = 'open' | 'partially processed' | 'closed' | 'voided'
 export type SalesQuoteStatus = 'open' | 'closed' | 'declined'
 export type ProductStatus    = 'active' | 'inactive'
@@ -73,6 +75,70 @@ export interface PurchaseInvoice {
   itemCount: number
   hasAttachment?: boolean
   tags?: string[]
+}
+
+export interface BillAttachment {
+  name: string
+  sizeKB: number
+  /** object URL — only valid for the current session (not persisted) */
+  url?: string
+}
+
+export interface BillLineItem {
+  account: string
+  description: string
+  tax: string
+  amount: number
+}
+
+/** Recorded when a bill is created already marked "I have paid this bill" —
+ * a bill created unpaid has no payment until one is added later. */
+export interface BillPayment {
+  paymentAccount: string
+  amountPaid: number
+  paymentDate: string
+  reference?: string
+}
+
+/** "Less: Withholding" deduction — see NewExpensePage's withholding rows. */
+export interface BillWithholding {
+  name: string
+  amount: number
+  account: string
+}
+
+export interface Bill {
+  id: string
+  number: number                            // rendered as "Expense #00001"
+  beneficiary: { id: string; name: string } // customer or vendor
+  category: string
+  date: string
+  dueDate: string
+  total: number         // bill total IDR (after withholding deduction, if any)
+  balanceDue: number    // remaining unpaid amount IDR (0 when fully paid)
+  status: BillStatus
+  tags?: string[]
+  memo?: string
+  attachments?: BillAttachment[]
+  lineItems?: BillLineItem[]
+  subtotal?: number
+  taxAmount?: number
+  withholding?: BillWithholding
+  /** only set when the bill was created (or later marked) as paid */
+  payment?: BillPayment
+  /** true once the payment has been matched against a bank transaction */
+  reconciled?: boolean
+}
+
+export interface ReviewFile {
+  id: string
+  file: string                               // uploaded filename
+  number: number                             // rendered as "Expense #00001"
+  beneficiary: { id: string; name: string }  // customer or vendor
+  confidence: number                         // AI extraction confidence, 0-100
+  classification: FileClassification
+  date: string
+  amount: number
 }
 
 export interface SalesOrderItem {

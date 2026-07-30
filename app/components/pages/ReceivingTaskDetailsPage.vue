@@ -804,7 +804,7 @@ function goBack() {
   line-height: var(--mp-line-heights-xs, 14px);
 }
 .rcvgd-last-updated-val {
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); line-height: var(--mp-line-heights-sm);
   font-variant-numeric: tabular-nums;
 }
@@ -813,7 +813,7 @@ function goBack() {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
   background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -986,10 +986,10 @@ function goBack() {
 .rcvgd-product-thumb {
   width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-md); flex-shrink: 0;
-  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle);
+  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .rcvgd-product-name {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -1000,10 +1000,10 @@ function goBack() {
 }
 
 /* Received qty coloring */
-.rcvgd-qty--full    { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
+.rcvgd-qty--full    { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }
 .rcvgd-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
 .rcvgd-qty--zero    { color: var(--mp-text-placeholder); }
-.rcvgd-outstanding  { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
+.rcvgd-outstanding  { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium, 500); }
 
 /* ── Sticky footer — canonical pattern ───────────────────────────────────── */
 .detail-footer {
