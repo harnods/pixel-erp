@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf'
 import type { Bill } from '~/data'
+import { formatDate } from './date'
 
 function formatIDR(amount: number) {
   return new Intl.NumberFormat('id-ID', {
@@ -7,12 +8,6 @@ function formatIDR(amount: number) {
     currency: 'IDR',
     minimumFractionDigits: 2,
   }).format(amount).replace(/^(Rp)\s/, '$1')
-}
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat('id-ID', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-  }).format(new Date(iso))
 }
 
 /** One page per selected bill — same shape as the other generate*Pdf helpers, so
