@@ -803,7 +803,16 @@ const bulkCountLabel = computed(() => {
   width: 100%;
   min-width: 0;
 }
-.erp-cell-check > :last-child { flex: 1 1 auto; min-width: 0; }
+/* min-width defaults to auto here (not 0) — so plain text hugs its full width instead of
+   shrinking below the visible glyphs and letting them spill past the box. Slotted cells
+   that need to fill the column (e.g. a right-aligned chip) still get flex-grow. */
+.erp-cell-check > :last-child { flex: 1 1 auto; }
+/* The `:last-child` rule above assumes the last child is the wrapped cell
+   content — but when a cell's content is bare text (not wrapped in an
+   element, e.g. a plain date string), the checkbox <label> becomes the only
+   (and therefore "last") element child, so it wrongly inherits flex-shrink
+   and gets crushed. Pin the checkbox to its natural size unconditionally. */
+.erp-cell-check > [data-pixel-component="MpCheckbox"] { flex: 0 0 auto; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
@@ -858,7 +867,7 @@ const bulkCountLabel = computed(() => {
 
 /* ── Column sort menu (ERP behaviour) ── */
 /* header content wraps label + sort icon; right-aligned columns push it to the end */
-.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); max-width: 100%; }
+.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; }
 .erp-th--right .th-inner { flex-direction: row-reverse; }
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
@@ -969,7 +978,7 @@ const bulkCountLabel = computed(() => {
   width: var(--erp-actions-width, var(--mp-sizes-11));
   min-width: var(--erp-actions-width, var(--mp-sizes-11));
   text-align: right;
-  padding: 2px var(--mp-spacing-2);
+  padding: 2px var(--mp-spacing-2) 2px var(--mp-spacing-4);
 }
 
 /* AI chat cell */

@@ -59,6 +59,7 @@
                   @click="handlePanelSubItemClick(child)"
                 >
                   <span>{{ child.label }}</span>
+                  <MpBadge v-if="child.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ child.count }}</MpBadge>
                 </button>
               </template>
               <!-- Plain item -->
@@ -69,7 +70,7 @@
                 @click="handlePanelSubItemClick(sub)"
               >
                 <span>{{ sub.label }}</span>
-                <span v-if="sub.count != null" class="panel-item-count">{{ sub.count }}</span>
+                <MpBadge v-if="sub.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ sub.count }}</MpBadge>
                 <img
                   v-else-if="sub.iconType === 'shortcut'"
                   :src="shortcutIcon"
@@ -113,11 +114,13 @@
 </template>
 
 <script setup lang="ts">
+import { MpIcon, MpBadge } from '@mekari/pixel3'
 import toggleIconUrl from '~/assets/images/sidebar-toggle.svg?url'
 import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import { receiptCountsByStage } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
+import { awaitingApprovalGroupCounts, awaitingApprovalTasks } from '~/data/tasks'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -238,6 +241,30 @@ const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
 const { navigate, currentPageKey, setActiveMenuLabel, activeSectionOverride } = useNavigation()
 const router = useRouter()
+const route = useRoute()
+
+// Inbox level-2 panel — reached from the header notification icon (not the nav
+// tree). Its tabs route via ?tab= so the page key stays 'Inbox' (same pattern as
+// the Reports panel, but query-driven since it's a single page). "Awaiting
+// approval" is a non-clickable, always-expanded parent — only its per-category
+// children (counts live from awaitingApprovalGroupCounts) are navigable.
+const inboxPanelSubmenu = computed<PanelSubItem[][]>(() => {
+  const counts = awaitingApprovalGroupCounts()
+  return [[
+    { label: 'Notifications', path: '/inbox?tab=notifications' },
+    {
+      label: 'Awaiting approval',
+      children: [
+        { label: 'All', path: '/inbox?tab=awaiting-approval&innerTab=all', count: awaitingApprovalTasks.length || undefined },
+        { label: 'Sales', path: '/inbox?tab=awaiting-approval&innerTab=sales', count: counts.sales || undefined },
+        { label: 'Purchases', path: '/inbox?tab=awaiting-approval&innerTab=purchases', count: counts.purchases || undefined },
+        { label: 'Expenses', path: '/inbox?tab=awaiting-approval&innerTab=expenses', count: counts.expenses || undefined },
+        { label: 'Products', path: '/inbox?tab=awaiting-approval&innerTab=products', count: counts.products || undefined },
+        { label: 'Warehouse', path: '/inbox?tab=awaiting-approval&innerTab=warehouse', count: counts.warehouse || undefined },
+      ],
+    },
+  ]]
+})
 
 const flyoutItem = ref<NavItem | null>(null)
 const flyoutStyle = ref<Record<string, string>>({})
@@ -764,8 +791,27 @@ const SECTION_PARENT: Record<string, string> = {
   'Put away': 'Inbound delivery',
 }
 
-watch([currentPageKey, activeSectionOverride], ([urlKey, override]) => {
+watch([currentPageKey, activeSectionOverride, () => route.query.tab, () => route.query.innerTab], ([urlKey, override]) => {
   const key = override ?? urlKey
+  // Inbox is reached from the header notification icon, not the sidebar tree —
+  // open its own level-2 panel (titled INBOX) and don't highlight any nav item.
+  if (key === 'Inbox') {
+    const tab = (route.query.tab as string | undefined) ?? 'notifications'
+    const groups = inboxPanelSubmenu.value
+    let matchLabel = groups[0][0]!.label // 'Notifications'
+    if (tab === 'awaiting-approval') {
+      const awaitingApproval = groups[0][1]!
+      const innerTab = (route.query.innerTab as string | undefined) ?? 'sales'
+      const child = awaitingApproval.children!.find(c => c.path?.includes(`innerTab=${innerTab}`))
+        ?? awaitingApproval.children![0]!
+      matchLabel = child.label
+    }
+    openPanel({ title: 'Inbox', groups, parentNavName: 'Inbox' })
+    activePanelSubItem.value = matchLabel
+    activeItem.value = ''
+    setActiveMenuLabel(matchLabel)
+    return
+  }
   let { nav, sub, panel } = resolveActive(key)
   // When the URL key isn't in this scenario's nav tree, try the canonical parent
   // section instead so the sidebar stays anchored (and the level-2 panel stays open).
@@ -897,7 +943,8 @@ function openShortcutTo(navName: string, subLabel: string) {
 function handlePanelSubItemClick(sub: PanelSubItem) {
   if (sub.shortcutTo) { openShortcutTo(sub.shortcutTo.nav, sub.shortcutTo.sub); return }
   activePanelSubItem.value = sub.label
-  navigate(sub.to ?? sub.label)
+  if (sub.path) router.push(sub.path)
+  else navigate(sub.to ?? sub.label)
 }
 
 // An accordion (e.g. Fixed assets) shows open when the user manually expanded it
@@ -1209,24 +1256,33 @@ function cancelClose() {
   filter: brightness(0) opacity(0.5);
 }
 
-/* Task-count indicator — right-aligned pill */
+/* Task-count indicator — right-aligned; appearance (color/shape/size) comes
+   from MpBadge itself (for="additionalInformation" type="warning" size="sm"). */
 .panel-item-count {
   flex-shrink: 0;
-  min-width: var(--mp-sizes-5);
-  padding: 0 var(--mp-spacing-1\.5);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral-pressed);
-  font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg, 24px);
-  color: var(--mp-text-secondary);
-  text-align: center;
 }
 
-.panel-item.active .panel-item-count {
-  background: var(--mp-background-brand, var(--mp-text-selected));
-  color: var(--mp-text-inverse, #fff);
+/* Parent row (e.g. Awaiting approval) — not a nav target itself, just toggles
+   its children list; keeps the normal panel-item hover feedback. */
+.panel-item-chevron {
+  flex-shrink: 0;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  transition: transform 150ms ease;
 }
+.panel-item-chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
+/* Children indent 24px (--mp-spacing-6) from the panel edge; text/secondary
+   distinguishes them from top-level panel items. */
+.panel-item--child {
+  padding-left: var(--mp-spacing-6, 24px);
+  color: var(--mp-text-secondary);
+}
+.panel-item--child.active {
+  color: var(--mp-text-selected);
+}
+
 
 /* Slide-in transition */
 .panel-enter-active,
