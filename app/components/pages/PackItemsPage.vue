@@ -425,7 +425,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pak-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="search" class="pak-search" type="text" placeholder="Search..." />
             <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -511,21 +511,23 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   </td>
                   <td class="pak-td">{{ item.unit }}</td>
                   <td class="pak-td pak-td--action">
-                    <span
-                      v-if="isTrackedItem(item)"
-                      class="pak-verify-tag"
-                      :class="{ 'pak-verify-tag--done': verifiedCount(item) >= item.pickedQty, 'pak-verify-tag--pending': showQtyErrors && verifiedCount(item) < item.pickedQty }"
-                    >{{ verifiedCount(item) }}/{{ item.pickedQty }} verified</span>
-                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pak-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
-                      <button class="pak-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
-                    </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`pak-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
-                      <button class="pak-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
-                    </MpTooltip>
+                    <div class="pak-verify-cell">
+                      <span
+                        v-if="isTrackedItem(item)"
+                        class="pak-verify-tag"
+                        :class="{ 'pak-verify-tag--done': verifiedCount(item) >= item.pickedQty, 'pak-verify-tag--pending': showQtyErrors && verifiedCount(item) < item.pickedQty }"
+                      >{{ verifiedCount(item) }}/{{ item.pickedQty }} verified</span>
+                      <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pak-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
+                        <button class="pak-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                          <MpIcon name="competencies" size="md" />
+                        </button>
+                      </MpTooltip>
+                      <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`pak-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
+                        <button class="pak-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                          <MpIcon name="competencies" size="md" />
+                        </button>
+                      </MpTooltip>
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="!filteredItems.length"><td class="pak-td pak-empty" :colspan="skippedPicking ? 7 : 8">No products match your search.</td></tr>
@@ -675,8 +677,10 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pak-td--action { position: sticky; right: 0; z-index: 1; }
 .pak-view-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .pak-view-btn:hover { background: var(--mp-background-neutral-hovered); }
-/* Match-order verify progress tag (batch/serial lines) */
-.pak-verify-tag { display: inline-block; margin-right: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; vertical-align: middle; }
+/* Match-order verify progress tag (batch/serial lines) — inline-flex so the
+   "N/N verified" text and the 36px view-icon button share one vertical center. */
+.pak-verify-cell { display: inline-flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
+.pak-verify-tag { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
 .pak-verify-tag--done { color: var(--mp-text-success, #18794e); }
 .pak-verify-tag--pending { color: var(--mp-text-danger, #a8352d); }
 

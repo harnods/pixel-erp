@@ -352,10 +352,10 @@ function close() { emit('update:open', false) }
               <col v-if="!isPacking" class="vbd-col-num" />
               <template v-if="qtyBeforeLocation">
                 <col v-if="hasPlanned" class="vbd-col-num" />
-                <col v-if="isPacking" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
               </template>
               <template v-else>
-                <col v-if="isPacking" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
                 <col v-if="hasPlanned" class="vbd-col-num" />
               </template>
               <col class="vbd-col-num" />
@@ -370,10 +370,10 @@ function close() { emit('update:open', false) }
                 <th v-if="!isPacking" class="vbd-th vbd-th--num">On hand qty</th>
                 <template v-if="qtyBeforeLocation">
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
-                  <th v-if="isPacking" class="vbd-th">Storage location</th>
+                  <th v-if="isPacking && !isVerify" class="vbd-th">Storage location</th>
                 </template>
                 <template v-else>
-                  <th v-if="isPacking" class="vbd-th">Storage location</th>
+                  <th v-if="isPacking && !isVerify" class="vbd-th">Storage location</th>
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
                 </template>
                 <th v-if="isPacking" class="vbd-th vbd-th--num">{{ hasPlanned ? qtyLabel : tableQtyLabel }}</th>
@@ -393,10 +393,10 @@ function close() { emit('update:open', false) }
                 <td v-if="!isPacking" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
                 <template v-if="qtyBeforeLocation">
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
-                  <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                 </template>
                 <template v-else>
-                  <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
                 </template>
                 <td v-if="isPacking || !isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
@@ -409,7 +409,7 @@ function close() { emit('update:open', false) }
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted vbd-td--unit">{{ row.unit }}</td>
               </tr>
               <tr v-if="!rows.length" class="vbd-tr">
-                <td :colspan="isPacking ? (hasPlanned ? 7 : 6) : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">No batch data available.</td>
+                <td :colspan="isPacking ? (hasPlanned ? 7 : (isVerify ? 5 : 6)) : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">No batch data available.</td>
               </tr>
             </tbody>
           </table>

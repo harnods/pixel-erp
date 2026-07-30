@@ -293,3 +293,18 @@ describe('ViewBatchDrawer — put-away view (qtyBeforeLocation): Received qty be
     wrapper.unmount()
   })
 })
+
+describe('ViewBatchDrawer — match-order verify mode drops the Storage location column', () => {
+  // Bin/location is no longer relevant once verifying a packed order, so the
+  // Storage location column is hidden — but plain packing/picking/delivery keep it.
+  it('verify mode (verifiedQty passed) hides Storage location; plain packing keeps it', () => {
+    const verify = mountDrawer({ verifiedQty: 0 })
+    expect(headerRow(verify)).not.toContain('Storage location')
+    expect(bodyRow(verify, 'Batch #00001')).not.toContain('Bin 01')
+    verify.unmount()
+
+    const plain = mountDrawer({})
+    expect(headerRow(plain)).toContain('Storage location')
+    plain.unmount()
+  })
+})

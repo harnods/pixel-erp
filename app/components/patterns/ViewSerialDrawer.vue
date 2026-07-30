@@ -314,20 +314,20 @@ function close() { emit('update:open', false) }
           <table class="vsd-table">
             <colgroup>
               <col class="vsd-col-sn" />
-              <col class="vsd-col-loc" />
+              <col v-if="!isVerify" class="vsd-col-loc" />
               <col v-if="hasStatus" class="vsd-col-status" />
             </colgroup>
             <thead>
               <tr>
                 <th class="vsd-th">Serial number</th>
-                <th class="vsd-th">Location</th>
+                <th v-if="!isVerify" class="vsd-th">Location</th>
                 <th v-if="hasStatus" class="vsd-th">Status</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in visibleRows" :key="row.serial" class="vsd-tr" :class="{ 'vsd-tr--removed': !row.counted }">
                 <td class="vsd-td vsd-td--mono" :class="{ 'vsd-td--strike': !row.counted }">{{ row.serial }}</td>
-                <td class="vsd-td vsd-td--muted" :class="{ 'vsd-td--strike': !row.counted }">{{ row.location || '—' }}</td>
+                <td v-if="!isVerify" class="vsd-td vsd-td--muted" :class="{ 'vsd-td--strike': !row.counted }">{{ row.location || '—' }}</td>
                 <td v-if="isPacking && hasStatus" class="vsd-td vsd-td--status">
                   <template v-if="isVerify">
                     <MpBadge v-if="verifiedSet.has(row.serial)" for="tableStatus" type="completed">Verified</MpBadge>
@@ -344,11 +344,11 @@ function close() { emit('update:open', false) }
                 </td>
               </tr>
               <tr v-if="!filteredRows.length" class="vsd-tr">
-                <td :colspan="hasStatus ? 3 : 2" class="vsd-td vsd-td--empty">{{ serialSearch ? 'No serial numbers match your search.' : 'No serial number data available.' }}</td>
+                <td :colspan="1 + (isVerify ? 0 : 1) + (hasStatus ? 1 : 0)" class="vsd-td vsd-td--empty">{{ serialSearch ? 'No serial numbers match your search.' : 'No serial number data available.' }}</td>
               </tr>
-              <tr ref="sentinelEl" aria-hidden="true" class="vsd-sentinel-row"><td :colspan="hasStatus ? 3 : 2" /></tr>
+              <tr ref="sentinelEl" aria-hidden="true" class="vsd-sentinel-row"><td :colspan="1 + (isVerify ? 0 : 1) + (hasStatus ? 1 : 0)" /></tr>
               <tr v-if="loadingMore" class="vsd-tr">
-                <td :colspan="hasStatus ? 3 : 2" class="vsd-td">
+                <td :colspan="1 + (isVerify ? 0 : 1) + (hasStatus ? 1 : 0)" class="vsd-td">
                   <div class="vsd-loading-inner"><MpSpinner size="sm" /> Loading…</div>
                 </td>
               </tr>
