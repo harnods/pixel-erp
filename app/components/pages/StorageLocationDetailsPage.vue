@@ -16,6 +16,10 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import StockTables from '~/components/patterns/StockTables.vue'
 import StorageLocationTree from '~/components/patterns/StorageLocationTree.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
+import type jsPDF from 'jspdf'
 import { getWarehouseDetail, getLocationStock, ensureLocationBarcode } from '~/data/warehouseDetails'
 import { findLocation, type LocNode } from '~/data/storageLocations'
 import { deleteLocationSafe } from '~/data/integrityGuards'
@@ -45,6 +49,28 @@ const isStorage = computed(() => node.value?.type === 'Storage')
 const locationBarcode = computed(() => (
   isStorage.value ? ensureLocationBarcode(warehouseId.value, locId.value) : undefined
 ))
+
+// ── Print barcode (Storage locations) — same options + preview flow as the
+// location tree's per-row "Print barcode". ────────────────────────────────────
+const printBarcodeOptionsOpen = ref(false)
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+function openPrintBarcode() { printBarcodeOptionsOpen.value = true }
+async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  const n = node.value
+  if (!n) return
+  printBarcodeOptionsOpen.value = false
+  const breadcrumb = path.value.slice(0, -1).map(p => p.name).join(' / ')
+  barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+    barcode: ensureLocationBarcode(warehouseId.value, locId.value),
+    batchNo: n.name,
+    productName: warehouse.value?.name ?? '',
+    sku: breadcrumb,
+  }, qty, columns)
+  barcodePreviewFilename.value = `Barcode - ${n.name}.pdf`
+  barcodePreviewOpen.value = true
+}
 // Stock physically lives only at leaf nodes (no children) — branch nodes just aggregate
 // their children's ranges. Only show product tabs for leaves.
 const showStockTabs = computed(() => !!node.value && !hasChildren.value)
@@ -141,6 +167,7 @@ function confirmDeleteLocation() {
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="editOpen = true">Edit location</MpPopoverListItem>
+            <MpPopoverListItem v-if="isStorage" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="deleteConfirmOpen = true">
               Delete location
             </MpPopoverListItem>
@@ -228,6 +255,20 @@ function confirmDeleteLocation() {
       :subject="node.name"
       :entries="activityEntries"
       @close="activityOpen = false"
+    />
+
+    <PrintBarcodeOptionsModal
+      :open="printBarcodeOptionsOpen"
+      @close="printBarcodeOptionsOpen = false"
+      @confirm="confirmPrintBarcode"
+    />
+
+    <PdfPreviewModal
+      :open="barcodePreviewOpen"
+      :doc="barcodePreviewDoc"
+      :filename="barcodePreviewFilename"
+      title="Barcode preview"
+      @close="barcodePreviewOpen = false"
     />
 
     <!-- Edit this location (shared add-location form) -->
