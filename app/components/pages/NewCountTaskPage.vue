@@ -565,7 +565,7 @@ async function handleSave() {
             <button class="loc-spd-close" type="button" @click="locationDrawerOpen = false"><MpIcon name="close" size="sm" /></button>
           </div>
           <div class="loc-spd-search-wrap">
-            <input v-model="locDrawerSearch" class="loc-spd-search-input" type="text" placeholder="Search location..." />
+            <input v-model="locDrawerSearch" class="loc-spd-search-input" type="text" placeholder="Search..." />
             <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="locDrawerSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>

@@ -760,7 +760,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search warehouse…" />
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search..." />
                   <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -1375,7 +1375,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <div class="wh-loc-filterbar">
               <div class="wh-search">
                 <MpIcon name="search" size="md" />
-                <input v-model="locSearch" class="wh-search-input" type="text" placeholder="Search location..." />
+                <input v-model="locSearch" class="wh-search-input" type="text" placeholder="Search..." />
                 <button v-if="locSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="locSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -1475,7 +1475,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
             <div class="wh-loc-filterbar">
               <div class="wh-search">
                 <MpIcon name="search" size="md" />
-                <input v-model="teamSearch" class="wh-search-input" type="text" placeholder="Search name..." />
+                <input v-model="teamSearch" class="wh-search-input" type="text" placeholder="Search..." />
                 <button v-if="teamSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="teamSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>

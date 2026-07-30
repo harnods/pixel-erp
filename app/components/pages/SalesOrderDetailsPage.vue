@@ -169,7 +169,7 @@ function goBack() { router.push('/sales-orders') }
                     v-model="jumpSearch"
                     class="detail-jump-search"
                     type="text"
-                    placeholder="Search transaction…"
+                    placeholder="Search..."
                   />
                   <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">

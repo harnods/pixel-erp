@@ -549,7 +549,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ width: '320px', padding: '0' })">
                   <div class="cr-courier-search-wrap">
-                    <input v-model="courierSearch" class="cr-courier-search" type="text" placeholder="Search courier…" autocomplete="off" />
+                    <input v-model="courierSearch" class="cr-courier-search" type="text" placeholder="Search..." autocomplete="off" />
                   </div>
                   <div class="cr-courier-list">
                     <MpPopoverList>

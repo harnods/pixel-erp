@@ -209,7 +209,7 @@ const receiptNumber = computed(() =>
       <div class="ssd-toolbar">
         <div class="ssd-search">
           <MpIcon name="search" size="md" />
-          <input v-model="search" class="ssd-search-input" type="text" placeholder="Search serial number…" />
+          <input v-model="search" class="ssd-search-input" type="text" placeholder="Search..." />
           <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>

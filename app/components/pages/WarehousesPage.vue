@@ -382,7 +382,7 @@ const emptyDesc = computed(() =>
             v-model="search"
             class="filter-search-input"
             type="text"
-            placeholder="Search warehouse name..."
+            placeholder="Search..."
           />
         </div>
       </div>
@@ -645,7 +645,7 @@ const emptyDesc = computed(() =>
                 v-model="exportColumnSearch"
                 class="export-col-search__input"
                 type="text"
-                placeholder="Search columns..."
+                placeholder="Search..."
               />
               <button v-if="exportColumnSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="exportColumnSearch = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
