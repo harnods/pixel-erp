@@ -58,17 +58,17 @@ const anomalies: Anomaly[] = [
   {
     id: 'a1',
     title: 'Unusual amount in Sales invoice #33201',
-    body: 'The transaction value of Sales Invoice #33201 is Rp500,000,000 — 5× above average for customer Anomali Coffee. Double-check the sales invoice and ensure that components such as amount, quantity, and payment terms are correct.',
+    body: 'The transaction value of Sales Invoice #33201 is Rp500.000.000 — 5× above average for customer Anomali Coffee. Double-check the sales invoice and ensure that components such as amount, quantity, and payment terms are correct.',
   },
   {
     id: 'a2',
     title: 'Possible duplicate payment in Purchase invoice #12088',
-    body: 'Purchase Invoice #12088 to EXPAT Roasters (Rp33,000,000) matches a payment already recorded 3 days ago. Confirm this is not a duplicate before approving the disbursement.',
+    body: 'Purchase Invoice #12088 to EXPAT Roasters (Rp33.000.000) matches a payment already recorded 3 days ago. Confirm this is not a duplicate before approving the disbursement.',
   },
   {
     id: 'a3',
     title: 'Unexpected stock write-off in Gudang Jakarta Pusat',
-    body: 'A 120 Kg write-off of Arabica Gayo Grade 1 was recorded in Gudang Jakarta Pusat — 8× the usual monthly adjustment. Review the stock adjustment and confirm the reason code.',
+    body: 'A 120 kg write-off of Arabica Gayo Grade 1 was recorded in Gudang Jakarta Pusat — 8× the usual monthly adjustment. Review the stock adjustment and confirm the reason code.',
   },
 ]
 const anomalyExpanded = ref(false)
@@ -101,7 +101,7 @@ function approve(a: Approval) {
 // ── What's new ────────────────────────────────────────────────────────────────
 interface NewsCard { key: string; title: string[]; desc: string; art: string }
 const news: NewsCard[] = [
-  { key: 'blue',   title: ['Smarter reconciliation', 'is now available'], desc: 'Speed up bank reconciliation with our AI tool for accurate matching.', art: whatsnewReconciliation },
+  { key: 'blue',   title: ['Smarter reconciliation', 'is now available'], desc: 'Speed up bank reconciliation with Airene for accurate matching.', art: whatsnewReconciliation },
   { key: 'yellow', title: ['Detect your financial', 'anomalies earlier'],  desc: 'Identify unusual transactions in 1 click.',                            art: whatsnewAnomaly },
   { key: 'green',  title: ['Plan production with', 'confidence'],          desc: 'Stay ahead with clear schedules and real-time visibility.',            art: whatsnewProduction },
 ]
