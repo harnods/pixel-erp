@@ -114,11 +114,16 @@ On-hand increases **only** when goods are physically put away:
      (case-insensitive; `resolve-scan-case-insensitive.spec.ts`).
    - Batch-tracked SKU → opens Manage batch drawer; serial-tracked → Manage serial
      drawer (`receive-items-scan-opens-tracked-drawer.spec.ts`).
-   - Plain SKU: reject if already at Purchase qty ("purchase qty already fully
-     received").
-   - **Exceed-target confirm**: scanning past `targetQty` (Expected qty) but still
-     within Purchase qty opens a confirm modal; the unit is **not** counted until
-     confirmed. Test: `receive-items-exceed-target-confirm.spec.ts`.
+   - **Expected qty (`targetQty`) is the hard cap for ALL track types** (plain SKU,
+     batch, serial) — a task may never receive past what it expects (PRD over-receipt
+     guard, `allow_receive_exceed_order = FALSE`). Scanning/typing past it is rejected
+     with an error beep ("expected qty already fully received"), never counted, no
+     confirm step. Purchase qty (`expectedQty`) is only a reference number shown in
+     the drawer, not a receivable ceiling. Tests: `receive-items-expected-qty-cap.spec.ts`,
+     `drawer-receiving-expected-cap.spec.ts`.
+   - Serial already in the warehouse's real stock (same SKU) → rejected with
+     "already exists in the system"; already received in a prior task → "already
+     received in a prior task".
    - Below scan threshold → qty input disabled, must scan
      (`receive-items-scan-threshold.spec.ts`).
    - Draft: `saveReceivingDraft` persists received + batch/serial detail; resume
@@ -360,9 +365,9 @@ deliveries in that shipment are unaffected.
 
 ### Inbound
 - Received short + no put-away → **In progress**, not Partial reception (`stockCommitted`).
-- Exceed "Expected qty" (targetQty) but within Purchase qty → confirm modal; not counted until confirmed.
-- Never receive past Purchase qty (`expectedQty` ceiling).
-- Second receiving task caps to the real remainder, not full Purchase qty again.
+- Expected qty (`targetQty`) is the hard receiving cap for plain SKU, batch, and serial — scanning/typing past it is rejected (error beep "expected qty already fully received"), never counted, no confirm step. Purchase qty (`expectedQty`) is a reference number only, not a receivable ceiling (PRD over-receipt guard, `allow_receive_exceed_order = FALSE`).
+- Second receiving task's `targetQty` already nets the real remainder at creation, so the per-task Expected-qty cap covers multi-task receipts too.
+- Serial already in real stock (same SKU) → "already exists in the system"; already received in a prior task → "already received in a prior task".
 - Edit locks a SKU at already-received qty; open (not-started) task doesn't lock.
 - PO cancel: pending-put-away receiving → Completed (not Canceled); shared put-away → only this order's lines dropped.
 - Put-away multi-task SKU merge; draft preserves untouched SKUs & partial qty.

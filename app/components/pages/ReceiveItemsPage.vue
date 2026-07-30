@@ -249,6 +249,15 @@ function handleScan(rawValue: string) {
   for (const [skuCode, batches] of Object.entries(batchLinesBySku.value)) {
     const bIdx = batches.findIndex(b => sameCode(b.batchNo, v))
     if (bIdx !== -1) {
+      // Expected qty (targetQty) is the hard cap — a batch re-scan must never push
+      // the SKU's received total past what the task expects, matching the plain-SKU
+      // and SN caps (PRD over-receipt guard, allow_receive_exceed_order = FALSE).
+      const batchItem = lineItems.value.find(it => sameCode(it.skuCode, skuCode))
+      const receivedTotal = batches.reduce((s, b) => s + (b.counted ?? 0), 0)
+      if (batchItem && receivedTotal >= batchItem.targetQty) {
+        notifyScanError(`${skuCode}: expected qty already fully received`)
+        return
+      }
       const newCounted = (batches[bIdx]!.counted ?? 0) + 1
       const updated = batches.map((b, i) => i === bIdx ? { ...b, counted: newCounted } : b)
       batchLinesBySku.value = { ...batchLinesBySku.value, [skuCode]: updated }
@@ -282,15 +291,11 @@ function handleScan(rawValue: string) {
     openSerialDrawer(sku)
     return
   }
+  // Expected qty (targetQty) is the hard cap — a task may never receive past what
+  // it expects (PRD over-receipt guard, allow_receive_exceed_order = FALSE).
   const current = draftQty.value[sku] ?? 0
-  if (current >= item.expectedQty) {
-    notifyScanError(`${sku}: purchase qty already fully received`)
-    return
-  }
-  // Past Expected qty but still within Purchase qty — confirm before counting
-  // it, rather than silently accepting an over-expected unit.
   if (current >= item.targetQty) {
-    exceedTargetConfirm.value = { sku, productName: item.productName, targetQty: item.targetQty }
+    notifyScanError(`${sku}: expected qty already fully received`)
     return
   }
   incrementDraftQty(sku)
@@ -304,17 +309,6 @@ function incrementDraftQty(sku: string) {
   flashRowId.value = sku
   if (flashTimer) clearTimeout(flashTimer)
   flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
-}
-
-// ── Confirm counting a scan past Expected qty (still within Purchase qty) ──────
-const exceedTargetConfirm = ref<{ sku: string; productName: string; targetQty: number } | null>(null)
-function confirmExceedTarget() {
-  if (!exceedTargetConfirm.value) return
-  incrementDraftQty(exceedTargetConfirm.value.sku)
-  exceedTargetConfirm.value = null
-}
-function cancelExceedTarget() {
-  exceedTargetConfirm.value = null
 }
 
 const showQtyErrors = ref(false)
@@ -612,7 +606,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       <input
                         class="ri-qty-input"
                         type="number" min="0"
-                        :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
+                        :max="item.targetQty"
                         :value="draftQty[item.skuCode] ?? 0"
                         :aria-label="`Received qty for ${item.productName}`"
                         disabled
@@ -622,15 +616,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       v-else
                       class="ri-qty-input"
                       type="number" min="0"
-                      :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
+                      :max="item.targetQty"
                       :value="draftQty[item.skuCode] ?? 0"
                       :aria-label="`Received qty for ${item.productName}`"
-                      @input="onQtyInput(item.skuCode, item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0), $event)"
+                      @input="onQtyInput(item.skuCode, item.targetQty, $event)"
                     />
                   </td>
                   <td class="ri-td ri-td--num">
-                    <span :class="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0) > 0 ? 'ri-outstanding' : 'ri-qty--full'">
-                      {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0)) }}
+                    <span :class="item.targetQty - (draftQty[item.skuCode] ?? 0) > 0 ? 'ri-outstanding' : 'ri-qty--full'">
+                      {{ fmt(item.targetQty - (draftQty[item.skuCode] ?? 0)) }}
                     </span>
                   </td>
                   <td class="ri-td">{{ item.unit }}</td>
@@ -716,34 +710,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
             @click="commitReceiving(false)"
           >{{ draftOutstanding > 0 ? 'Finish as incomplete' : 'Save' }}</button>
           <button v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" @click="commitReceiving(true)">Save &amp; create put-away</button>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
-
-  <!-- ── Confirm counting a scan past Expected qty ── -->
-  <MpModal
-    id="ri-exceed-target"
-    :is-open="!!exceedTargetConfirm"
-    size="md"
-    is-close-on-esc
-    :is-keep-alive="false"
-    @close="cancelExceedTarget"
-  >
-    <MpModalContent>
-      <MpModalHeader>
-        Count this unit anyway?
-        <MpModalCloseButton />
-      </MpModalHeader>
-      <MpModalBody>
-        {{ exceedTargetConfirm?.productName }} ({{ exceedTargetConfirm?.sku }}) has an expected qty of
-        {{ fmt(exceedTargetConfirm?.targetQty ?? 0) }}. This unit is beyond that — count it as received anyway?
-      </MpModalBody>
-      <MpModalFooter>
-        <div class="ri-modal-footer">
-          <button class="ri-btn ri-btn--ghost" @click="cancelExceedTarget">Cancel</button>
-          <button class="ri-btn ri-btn--primary" @click="confirmExceedTarget">Count it</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

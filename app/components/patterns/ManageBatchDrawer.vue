@@ -277,11 +277,13 @@ const totalDifference = computed(() => {
 // Live sum of what's currently allocated across batch rows — what Save will actually commit.
 const totalPickCount = computed(() => rows.value.reduce((s, r) => s + (r.counted ?? 0), 0))
 const pickMaxCount = computed(() => props.maxCount ?? props.targetCount ?? Infinity)
+// Receiving caps at Expected qty (targetCount); picking caps at Purchase/order qty.
+const overLimitCap = computed(() => isReceiving.value ? (props.targetCount ?? Infinity) : pickMaxCount.value)
 const pickOverLimit = computed(() =>
-  (isPicking.value || isReceiving.value) && Number.isFinite(pickMaxCount.value) && totalPickCount.value > pickMaxCount.value,
+  (isPicking.value || isReceiving.value) && Number.isFinite(overLimitCap.value) && totalPickCount.value > overLimitCap.value,
 )
 const pickOverLimitMsg = computed(() => isReceiving.value
-  ? `Received qty (${totalPickCount.value}) exceeds the purchase qty (${pickMaxCount.value})`
+  ? `Received qty (${totalPickCount.value}) exceeds the expected qty (${overLimitCap.value})`
   : `Qty to pick (${totalPickCount.value}) exceeds the order qty (${pickMaxCount.value})`)
 const totalNewOnHand = computed(() => {
   if (totalCounted.value === null) return null
@@ -412,6 +414,14 @@ function handleDrawerScan(rawValue: string) {
   // that ceiling, but a scan never pushes the total past it.
   if (isPicking.value && Number.isFinite(pickMaxCount.value) && totalPickCount.value >= pickMaxCount.value) {
     notifyScanError(`Qty to pick already fully picked (${pickMaxCount.value})`)
+    return
+  }
+
+  // Receiving: hard cap at Expected qty (targetCount) — no scan (re-scan of an
+  // existing batch or a brand-new one) may push the total past what the task
+  // expects (PRD over-receipt guard, allow_receive_exceed_order = FALSE).
+  if (isReceiving.value && props.targetCount !== undefined && totalPickCount.value >= props.targetCount) {
+    notifyScanError(`Expected qty already fully received (${props.targetCount})`)
     return
   }
 

@@ -37,7 +37,7 @@ invariant lock. Files live in [`tests/`](../../tests); names below are the
 | Details header: "SKU qty" + Expected qty stat; Outstanding = Expected − Received, floored at 0 | R | `receiving-task-details-header-stats` |
 | Details View batch/serial action column (open shows none; in-progress/completed open read-only drawer; canceled still shows button) | H/E | `receiving-task-details-view-batch-serial-action` |
 | Draft batch/serial detail survives "Continue receiving" resume; seed sums match aggregate receivedQty | R | `receiving-draft-batch-serial-resume` |
-| Receive-items: confirm modal before counting a scan past Expected qty (never past Purchase qty) | E | `receive-items-exceed-target-confirm` |
+| Receive-items: Expected qty (targetQty) is the hard cap — scanning/typing past it is rejected, never counted (no confirm step) | E | `receive-items-expected-qty-cap` |
 | Cancel replaces delete (open/in-progress cancelable; pending-put-away/completed not; frees SKUs back to uncovered) | E | `receiving-task-cancel` |
 | Full two-pass partial receiving + put-away cycle keeps on-hand/batch/serial/location accurate | H | `receiving-putaway-flow` |
 
@@ -165,7 +165,7 @@ a PO cancel invalidates 100% of its tasks.
 | ManageBatchDrawer: Qty-to-pick column (picking + executionMode + plannedBatches); put-away "Put away qty" header + storage-location validation; scan-threshold gates manual qty | H/E | `manage-batch-drawer` |
 | ManageBatchDrawer picking never registers a brand-new batch; count mode still can; overscan caps at qty-to-pick; requires active bin | E | `manage-batch-drawer-picking-no-new-batch`, `…-picking-overscan-cap`, `manage-drawer-picking-active-bin` |
 | ManageBatchDrawer put-away: cross-SKU scan rejected; active-bin scan model + Reset count (bin assignment clears, batch list survives, inherited bin restored) | E | `manage-batch-drawer-put-away-cross-sku-scan`, `…-put-away-scan-reset` |
-| ManageBatchDrawer/SerialDrawer receiving Save capped by maxCount (Purchase qty), not targetCount | E | `drawer-receiving-maxcount` |
+| ManageBatchDrawer/SerialDrawer receiving scan/paste/Save capped by targetCount (Expected qty); maxCount (Purchase qty) is reference-only | E | `drawer-receiving-expected-cap` |
 | ManageSerialDrawer: row status by executionMode; scan bar per-mode behaviour; Reset re-seeds; bulk-paste threshold | H/E | `manage-serial-drawer` |
 | ManageSerialDrawer picking: hides available units until scanned; hides foreign-reserved serials (dedicated empty state) | E | `manage-serial-drawer-picking-hide-available`, `…-hide-foreign-reserved` |
 | ManageSerialDrawer put-away: active-bin scan model; (-) remove & Reset count keep rows visible; unassigned row doesn't block Save | E | `manage-serial-drawer-put-away-active-bin`, `…-put-away-reset` |

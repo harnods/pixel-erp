@@ -325,7 +325,7 @@ function addToList() {
     // pattern as the dupes/already-received cases below), not a hard all-or-nothing block.
     let overLimit: string[] = []
     if (isReceiving.value) {
-      const budget = Math.max(0, receivingMaxCount.value - existing.size)
+      const budget = Math.max(0, (props.targetCount ?? 0) - existing.size)
       if (newOnes.length > budget) {
         overLimit = newOnes.slice(budget)
         newOnes = newOnes.slice(0, budget)
@@ -336,7 +336,7 @@ function addToList() {
     } else if (dupes.length) {
       addError.value = `Already in list: ${dupes.join(', ')}`
     } else if (overLimit.length) {
-      addError.value = `Exceeds purchase qty, not added: ${overLimit.join(', ')}`
+      addError.value = `Exceeds expected qty, not added: ${overLimit.join(', ')}`
     } else {
       addError.value = ''
     }
@@ -411,14 +411,21 @@ function handleDrawerScan(rawValue: string) {
       notifyScanError(`"${v}" belongs to SKU ${resolved.sku}, not ${props.sku}`)
       return
     }
+    // Receiving: a serial that already resolves to this SKU's real stock is one the
+    // system already knows about — receiving it again would double-count an existing
+    // unit, so reject it (error beep) instead of the misleading "not found" fallback.
+    if (isReceiving.value && resolved?.kind === 'serial' && resolved.sku === props.sku) {
+      notifyScanError(`"${v}" already exists in the system`)
+      return
+    }
     if (acceptsNewSerials.value && !resolved) {
       const blocked = new Set((props.blockedSerials ?? []).map(normalizeCode))
       if (isReceiving.value && blocked.has(normalizeCode(v))) {
         notifyScanError(`"${v}" was already received in a prior task`)
         return
       }
-      if (isReceiving.value && rows.value.length >= receivingMaxCount.value) {
-        notifyScanError(`"${v}": purchase qty already fully received`)
+      if (isReceiving.value && rows.value.length >= (props.targetCount ?? 0)) {
+        notifyScanError(`"${v}": expected qty already fully received`)
         return
       }
       rows.value.push({ serial: v, counted: true })
