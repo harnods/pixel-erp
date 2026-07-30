@@ -168,7 +168,7 @@ function confirmDeleteLocation() {
           <MpPopoverList>
             <MpPopoverListItem @click="editOpen = true">Edit location</MpPopoverListItem>
             <MpPopoverListItem v-if="isStorage" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="deleteConfirmOpen = true">
+            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="deleteConfirmOpen = true">
               Delete location
             </MpPopoverListItem>
           </MpPopoverList>

@@ -632,7 +632,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
 /* Toolbar */
 .wh-toolbar { display: flex; width: 100%; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); }
-.wh-tool-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.wh-tool-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-tool-btn:hover { background: var(--mp-background-neutral-hovered); }
 .wh-tool-btn--airene { color: var(--mp-airene-default, #651fff); }
 .wh-search { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-1\.5) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral); color: var(--mp-text-secondary); min-width: 220px; }
@@ -659,7 +659,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 
 /* Batch/serial table cells */
 .wh-batch-product { display: flex; align-items: flex-start; gap: var(--mp-spacing-1); min-width: 0; }
-.wh-expand-btn { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-6, 24px); height: var(--mp-sizes-6, 24px); margin-top: var(--mp-spacing-1); border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-icon-default); }
+.wh-expand-btn { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-6, 24px); height: var(--mp-sizes-6, 24px); margin-top: var(--mp-spacing-1); border: none; background: none; cursor: pointer; border-radius: var(--mp-radii-sm); color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .wh-expand-btn:hover { background: var(--mp-background-neutral-hovered); }
 .wh-expand-chevron { transition: transform 0.15s ease; }
 .wh-expand-chevron--open { transform: rotate(90deg); }
@@ -670,7 +670,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 .wh-expiry-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); white-space: nowrap; }
 .wh-expiry-cell--danger { color: var(--mp-text-danger, #a8352d); }
 .wh-expiry-warn { display: inline-flex; align-items: center; color: var(--mp-text-danger, #a8352d); flex-shrink: 0; cursor: default; }
-.row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Batch/serial table */

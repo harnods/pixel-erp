@@ -410,7 +410,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <button
         v-if="bulkCancelable(selectedRows as Set<number>)"
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-        :class="css({ color: 'var(--mp-text-critical)' })"
+        :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
         @click="askBulkCancel(selectedRows as Set<number>, deselectAll)"
       >
         Cancel order
@@ -647,7 +647,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             >Create packing</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canCancelOrder(row as unknown as OutgoingOrder)"
-              :class="css({ color: 'var(--mp-text-critical)' })"
+              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
               @click="openCancelModal(row as unknown as OutgoingOrder)"
             >Cancel order</MpPopoverListItem>
             <MpPopoverListItem
@@ -856,7 +856,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .out-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
 .out-due-expire {
   font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
-  color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium);
+  color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium, 500);
 }
 
 /* Icon indicators cell — picking list + packing task */

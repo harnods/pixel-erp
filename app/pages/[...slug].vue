@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton } from '@mekari/pixel3'
+import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
@@ -24,6 +24,8 @@ import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
+import { bills } from '~/data/bills'
+import { reviewFiles } from '~/data/reviewFiles'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
@@ -136,11 +138,29 @@ const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTask
 const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
+const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
+const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
+const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
+const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
+const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /expenses/new → New expense form (full page, brings its own title bar)
+  if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
+    return { component: NewExpensePage, id: 'new' }
+  }
+  // /expenses/:id/payment → "Add payment" form for that unpaid bill (New spend money)
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment') {
+    return { component: SpendMoneyPage, id: segs[1]! }
+  }
+  // /expenses/:id → bill/expense detail page
+  if (segs.length >= 2 && segs[0] === 'expenses') {
+    return { component: BillDetailsPage, id: segs[1]! }
+  }
   // /work-orders/new → create a new work order (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
     return { component: CreateWorkOrderPage, id: 'new' }
@@ -155,8 +175,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CreateBillOfMaterialsPage, id: 'new' }
     return { component: BillOfMaterialsDetailsPage, id: segs[1]! }
   }
-  // /warehouse-transfers/new → create form; /:id/edit → edit form; /:id → detail.
-  // The bare index falls through to the registry.
+  // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
+  // forms (not built yet → placeholder). The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
     if (segs[1] === 'new') return { component: WarehouseTransferFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: WarehouseTransferFormPage, id: segs[1]! }
@@ -346,6 +366,7 @@ const pageTabs: Record<string, string[]> = {
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
+  'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -392,6 +413,12 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Warehouse transfers') {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
+  }
+  if (currentPageKey.value === 'Expenses') {
+    const out: Record<string, number> = {}
+    if (bills.length) out['Awaiting Approval'] = bills.length
+    if (reviewFiles.length) out['Review files'] = reviewFiles.length
+    return out
   }
   if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
@@ -498,6 +525,11 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'All warehouse transfers': WarehouseTransfersPage,
     'Awaiting approval': WarehouseTransfersPage,
   },
+  'Expenses': {
+    'Bills': BillsIndexPage,
+    'Awaiting Approval': BillsAwaitingApprovalPage,
+    'Review files': BillsReviewFilesPage,
+  },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
@@ -537,6 +569,7 @@ const showNewWarehouseTransfer = computed(() =>
   activeScenario.value === 'ERP' && currentPageKey.value === 'Warehouse transfers',
 )
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
+function newExpense() { router.push('/expenses/new') }
 
 // ── Airene panel open/close ───────────────────────────────────────────────
 const aireneOpen = ref(false)
@@ -1078,6 +1111,65 @@ function startResize(e: MouseEvent) {
             New purchase invoice
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Expenses'" class="page-title-actions">
+          <!-- Import button + dropdown -->
+          <div ref="importBtnWrapEl" class="import-wrap">
+            <button
+              class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
+              :class="{ 'btn-enterprise--active': importDropdownOpen }"
+              @click.stop="importDropdownOpen = !importDropdownOpen"
+            >
+              Import
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
+              >
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+            <!-- Dropdown -->
+            <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
+
+              <!-- Group 1: spreadsheet + upload bills -->
+              <div class="import-group import-group--bordered">
+                <MpButton class="import-item">Import from spreadsheet</MpButton>
+                <MpButton class="import-item import-item--ai">
+                  <span>Upload bills</span>
+                  <span class="ai-badge">
+                    <img
+                      src="https://www.figma.com/api/mcp/asset/b87bbbb6-b7ca-46be-a6a9-755ab81fefe6"
+                      width="12" height="12" alt="" class="ai-badge__icon"
+                    />
+                    <span class="ai-badge__label">AI</span>
+                  </span>
+                </MpButton>
+              </div>
+
+              <!-- Group 2: Forward bills to -->
+              <div class="import-group">
+                <div class="import-forward">
+                  <div class="import-forward__labels">
+                    <span class="import-forward__title">Forward bills to</span>
+                    <span class="import-forward__email">dropbox.680128@jurnal.id</span>
+                  </div>
+                  <a class="import-forward__copy" @click.prevent>Copy address</a>
+                  <p class="import-forward__desc">
+                    Any bill or receipt attachment forwarded to this email will be automatically recorded as a draft.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newExpense">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New expense
+          </button>
+        </div>
         <div v-else-if="showNewPurchaseOrder" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
             Import
@@ -1524,13 +1616,14 @@ function startResize(e: MouseEvent) {
 }
 
 .import-item {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: var(--mp-spacing-2);
-  width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: none;
-  border: none;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: none !important;
+  border: none !important;
   cursor: pointer;
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-regular);
@@ -1539,7 +1632,7 @@ function startResize(e: MouseEvent) {
   text-align: left;
 }
 .import-item:hover {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle) !important;
 }
 
 .import-item--ai {
@@ -1683,19 +1776,7 @@ function startResize(e: MouseEvent) {
 
 /* Count badge on a tab */
 .page-tab-count {
-  min-width: var(--mp-sizes-5);
-  padding: 0 var(--mp-spacing-1\.5);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral-pressed);
-  font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg, 24px);
-  color: var(--mp-text-secondary);
-  text-align: center;
-}
-.page-tab--active .page-tab-count {
-  background: var(--mp-background-brand, var(--mp-text-selected));
-  color: var(--mp-text-inverse, #fff);
+  margin-left: var(--mp-spacing-1);
 }
 
 .page-tab:not(.page-tab--active):hover {
@@ -1858,7 +1939,7 @@ function startResize(e: MouseEvent) {
   border: none;
   cursor: pointer;
   font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-medium);
+  font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default);
   text-align: left;
   border-radius: var(--mp-radii-md);
