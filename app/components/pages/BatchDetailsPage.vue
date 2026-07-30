@@ -15,6 +15,10 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
+import type jsPDF from 'jspdf'
 import {
   getBatchDetail, getWarehouseBatchDetail, getBatchTransactions, getBatchWarehouseStock,
 } from '~/data/productDetails'
@@ -105,6 +109,26 @@ const pagedTransactions = computed(() => {
 })
 watch([txTypeFilter, txSearch], () => { txPage.value = 1 })
 
+// ── Print barcode (same options + preview flow as Product/Inventory batch print) ──
+const printBarcodeOptionsOpen = ref(false)
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+function openPrintBarcode() { printBarcodeOptionsOpen.value = true }
+async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  const b = batch.value
+  if (!b) return
+  printBarcodeOptionsOpen.value = false
+  barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+    barcode: b.barcode,
+    batchNo: b.batchNo,
+    productName: b.productName,
+    sku: b.sku,
+  }, qty, columns)
+  barcodePreviewFilename.value = `Barcode - ${b.batchNo}.pdf`
+  barcodePreviewOpen.value = true
+}
+
 // ── Stock by warehouses tab ──────────────────────────────────────────────────────
 const warehouseStock = computed(() => batch.value ? getBatchWarehouseStock(sku.value, batchNo.value) : [])
 const whPage = ref(1)
@@ -148,6 +172,7 @@ const pagedWarehouseStock = computed(() => {
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem>Edit</MpPopoverListItem>
+            <MpPopoverListItem @click="openPrintBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -357,6 +382,20 @@ const pagedWarehouseStock = computed(() => {
       :subject="batch.batchNo"
       :entries="activityEntries"
       @close="activityOpen = false"
+    />
+
+    <PrintBarcodeOptionsModal
+      :open="printBarcodeOptionsOpen"
+      @close="printBarcodeOptionsOpen = false"
+      @confirm="confirmPrintBarcode"
+    />
+
+    <PdfPreviewModal
+      :open="barcodePreviewOpen"
+      :doc="barcodePreviewDoc"
+      :filename="barcodePreviewFilename"
+      title="Barcode preview"
+      @close="barcodePreviewOpen = false"
     />
   </div>
 
