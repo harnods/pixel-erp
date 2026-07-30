@@ -934,9 +934,15 @@ function handleFlyoutSubItemClick(sub: SubItem) {
     openPanel({ title: parentName, groups, parentNavName: parentName })
     activeItem.value = parentName
     if (sub.children) {
-      // Accordion header (e.g. Fixed assets) has no page of its own — open the
-      // panel with it expanded so the user can pick a child; don't navigate.
-      expandedAccordion.value = sub.label
+      // The hover flyout is a quick-jump: clicking an accordion item (e.g. Fixed
+      // assets) navigates straight to its default child (Assets) — the accordion
+      // then shows open in the panel because that child is active. (This differs
+      // from the panel header, which only toggles.)
+      const first = sub.children[0]
+      if (first) {
+        activePanelSubItem.value = first.label
+        navigate(first.to ?? first.label)
+      }
     } else {
       activePanelSubItem.value = sub.label
       navigate(sub.to ?? sub.label)
