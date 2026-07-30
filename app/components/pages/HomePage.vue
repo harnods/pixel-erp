@@ -102,9 +102,9 @@ function approve(a: Approval) {
 // ── What's new ────────────────────────────────────────────────────────────────
 interface NewsCard { key: string; title: string[]; desc: string; art: string }
 const news: NewsCard[] = [
-  { key: 'green',    title: ['Smarter reconciliation', 'is now available'], desc: 'Speed up bank reconciliation with our AI tool for accurate matching.', art: whatsnewReconciliation },
-  { key: 'lavender', title: ['Detect your financial', 'anomalies earlier'],  desc: 'Identify unusual transactions in 1 click.',                            art: whatsnewAnomaly },
-  { key: 'blue',     title: ['Plan production with', 'confidence'],          desc: 'Stay ahead with clear schedules and real-time visibility.',            art: whatsnewProduction },
+  { key: 'blue',   title: ['Smarter reconciliation', 'is now available'], desc: 'Speed up bank reconciliation with our AI tool for accurate matching.', art: whatsnewReconciliation },
+  { key: 'yellow', title: ['Detect your financial', 'anomalies earlier'],  desc: 'Identify unusual transactions in 1 click.',                            art: whatsnewAnomaly },
+  { key: 'green',  title: ['Plan production with', 'confidence'],          desc: 'Stay ahead with clear schedules and real-time visibility.',            art: whatsnewProduction },
 ]
 
 // ── Set up Mekari ERP ─────────────────────────────────────────────────────────
@@ -537,7 +537,7 @@ const learn: LearnCard[] = [
   height: 40px;
   z-index: 1;
   border-radius: var(--mp-radii-xl, 12px);
-  background: linear-gradient(90deg, #ecf1fc 0%, #f2f1ff 100%);
+  background: linear-gradient(90deg, #dbe4f5 0%, #e2def4 100%);
 }
 
 /* Expanded (and single): connected segments — small gaps, only the first item's
@@ -692,9 +692,9 @@ const learn: LearnCard[] = [
   display: flex;
   flex-direction: column;
 }
-.wn--green    { background: #f1fbef; }
-.wn--lavender { background: #f5f4ff; }
-.wn--blue     { background: #edf9ff; }
+.wn--green    { background: #edf9f2; }
+.wn--yellow   { background: #fdf6dd; }
+.wn--blue     { background: #eaf4fc; }
 .wn__head { padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
 .wn__title {
   margin: 0 0 var(--mp-spacing-2);
@@ -709,7 +709,10 @@ const learn: LearnCard[] = [
   line-height: var(--mp-line-heights-md, 20px);
   color: var(--mp-text-secondary);
 }
-.wn__art { display: block; width: 100%; margin: auto 0; }
+/* Fill the space between the head and the foot, showing the artwork's bottom edge
+   (object-position bottom) — so the cover stays bottom-aligned and the Learn more /
+   Try feature foot is never pushed out of the fixed-height card. */
+.wn__art { display: block; width: 100%; flex: 1 1 0; min-height: 0; object-fit: cover; object-position: center bottom; }
 .wn__foot {
   padding: var(--mp-spacing-4) var(--mp-spacing-6) var(--mp-spacing-6);
   display: flex;
