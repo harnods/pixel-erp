@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpBadge,
+  MpIcon, MpBadge, MpButton, MpInput,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -369,25 +369,25 @@ function formatDate(iso: string) {
           :multiple="multiSelectTransactionType"
         />
 
-        <button class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
+        <MpButton class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
           All filters
-        </button>
+        </MpButton>
       </div>
 
       <div class="filter-right">
         <div class="filter-btn-group">
           <ColumnSettingsMenu :id="`${idPrefix}-tasks-columns`" :items="columnItems" :visibility="columnVisibility" />
-          <button class="filter-icon-btn" aria-label="Export">
+          <MpButton class="filter-icon-btn" aria-label="Export">
             <MpIcon name="download" size="md" />
-          </button>
+          </MpButton>
         </div>
 
         <div class="filter-search">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <MpInput v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
         </div>
       </div>
     </template>
@@ -401,13 +401,13 @@ function formatDate(iso: string) {
     <template #cell-number="{ row }">
       <div class="cell-with-action">
         <span class="cell-text">{{ formatTaskNumber(row as Task) }}</span>
-        <button class="row-hover-btn" @click.stop>
+        <MpButton class="row-hover-btn" @click.stop>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
+        </MpButton>
       </div>
     </template>
 
@@ -478,13 +478,13 @@ function formatDate(iso: string) {
           />
           <MpPopover :id="`${idPrefix}-row-actions-${(row as Task).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="row-icon-btn" aria-label="More actions" @click.stop>
+              <MpButton class="row-icon-btn" aria-label="More actions" @click.stop>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <circle cx="12" cy="5" r="2" />
                   <circle cx="12" cy="12" r="2" />
                   <circle cx="12" cy="19" r="2" />
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -538,6 +538,8 @@ function formatDate(iso: string) {
   min-width: 0;
 }
 
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent). */
 .row-hover-btn {
   position: absolute;
   right: 0;
@@ -546,10 +548,11 @@ function formatDate(iso: string) {
   display: none;
   align-items: center;
   gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
+  min-width: 0 !important;
+  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5) !important;
+  background: var(--mp-background-neutral) !important;
+  border: 1px solid var(--mp-border-bold) !important;
+  border-radius: var(--mp-radii-sm) !important;
   cursor: pointer;
   white-space: nowrap;
   line-height: 1;
@@ -603,19 +606,22 @@ function formatDate(iso: string) {
   gap: var(--mp-spacing-5); /* 20px (8px more than before) */
 }
 
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent). */
 .row-icon-btn {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
-  padding: var(--mp-spacing-1);
-  border: none;
-  background: transparent;
+  min-width: 0 !important;
+  padding: var(--mp-spacing-1) !important;
+  border: none !important;
+  background: transparent !important;
   cursor: pointer;
-  border-radius: var(--mp-radii-sm);
+  border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-subtle);
 }
 .row-icon-btn:hover {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered) !important;
   color: var(--mp-text-default);
 }
 
@@ -634,14 +640,17 @@ function formatDate(iso: string) {
   gap: var(--mp-spacing-3);
 }
 
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent). */
 .filter-all-btn {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-full, 999px);
+  min-width: 0 !important;
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: var(--mp-background-neutral) !important;
+  border: 1px solid var(--mp-border-bold) !important;
+  border-radius: var(--mp-radii-full, 999px) !important;
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-md);
@@ -649,10 +658,10 @@ function formatDate(iso: string) {
   cursor: pointer;
   white-space: nowrap;
 }
-.filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information));
-  border-color: var(--mp-border-selected, var(--mp-border-information));
+  background: var(--mp-background-selected, var(--mp-background-information)) !important;
+  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
   color: var(--mp-text-selected, var(--mp-text-information));
 }
 
@@ -661,39 +670,36 @@ function formatDate(iso: string) {
   align-items: center;
 }
 
+/* Rendered via MpButton, not a raw HTML control — default look reset. */
 .filter-icon-btn {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
+  min-width: 0 !important;
   width: var(--mp-sizes-9, 36px);
   height: var(--mp-sizes-9, 36px);
-  padding: var(--mp-spacing-2);
-  border: none;
-  background: transparent;
-  border-radius: var(--mp-radii-md);
+  padding: var(--mp-spacing-2) !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: var(--mp-radii-md) !important;
   cursor: pointer;
   color: var(--mp-text-default);
 }
-.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-icon-btn--airene { color: var(--mp-airene-default); }
 
-.filter-search {
-  display: flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  width: 248px;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-full, 999px);
-  color: var(--mp-text-subtle);
-}
+.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
 
+/* Rendered via MpInput, not a raw HTML control — default look reset so it
+   merges into .filter-search's own bordered box (see NotificationsView's
+   ".nv-search-input" precedent). */
 .filter-search-input {
   flex: 1;
-  border: none;
+  border: none !important;
   outline: none;
-  background: transparent;
+  background: transparent !important;
+  padding: 0 !important;
+  height: auto !important;
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-default);

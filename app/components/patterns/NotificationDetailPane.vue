@@ -105,13 +105,13 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: var(--mp-sizes-9, 36px);
+  height: var(--mp-sizes-9, 36px);
 }
 .ndp-sender-col {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--mp-spacing-1, 4px);
   min-width: 0;
 }
 .ndp-sender-name {
@@ -175,17 +175,11 @@ defineEmits<{
   gap: var(--mp-spacing-6, 24px);
   padding: var(--mp-spacing-2, 8px) 0;
 }
-.ndp-field-label {
-  flex-shrink: 0;
-  width: 168px;
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
+.ndp-field-label { flex-shrink: 0; width: 168px; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ndp-field-value-col {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--mp-spacing-1, 4px);
   min-width: 0;
 }
 .ndp-field-value {

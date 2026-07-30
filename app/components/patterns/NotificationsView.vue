@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { MpCheckbox } from '@mekari/pixel3'
+import { MpCheckbox, MpInput } from '@mekari/pixel3'
 import { notifications as allNotifications, type Notification } from '~/data/notifications'
 import NotificationListItem from '~/components/patterns/NotificationListItem.vue'
 import NotificationDetailPane from '~/components/patterns/NotificationDetailPane.vue'
@@ -80,7 +80,7 @@ function goNext() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="nv-search-input" type="text" placeholder="Search...">
+          <MpInput v-model="search" class="nv-search-input" type="text" placeholder="Search..." />
         </div>
       </div>
 
@@ -132,15 +132,7 @@ function goNext() {
 }
 
 /* ── Left: list pane ── */
-.nv-list {
-  display: flex;
-  flex-direction: column;
-  width: 392px;
-  flex-shrink: 0;
-  height: 100%;
-  min-height: 0;
-  border-right: 1px solid var(--mp-border-default, #d0d6dd);
-}
+.nv-list { display: flex; flex-direction: column; width: 392px; flex-shrink: 0; height: 100%; min-height: 0; border-right: 1px solid var(--mp-border-default, #d0d6dd); }
 
 .nv-list-header {
   display: flex;
@@ -173,12 +165,17 @@ function goNext() {
   border-radius: var(--mp-radii-md, 6px);
   color: var(--mp-text-placeholder, #8690a2);
 }
+/* Rendered via MpInput, not a raw HTML control — default look reset so it
+   merges into .nv-search's own bordered box instead of doubling it up (see
+   AmountComparatorField's ".acf-input" precedent). */
 .nv-search-input {
   flex: 1;
   min-width: 0;
-  border: none;
+  border: none !important;
   outline: none;
-  background: transparent;
+  background: transparent !important;
+  padding: 0 !important;
+  height: auto !important;
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
 }

@@ -61,7 +61,7 @@ export function emptyInboxFilters(): InboxFiltersValue {
  * only restores whatever was last Applied from the drawer itself. Both sets of
  * filters are ANDed together when the table filters its rows.
  */
-import { MpIcon, MpCheckbox, MpFormControl, MpFormLabel, MpDatePicker } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpDatePicker } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import TransactionTypeCascadeMenu, { type CascadeGroup } from '~/components/patterns/TransactionTypeCascadeMenu.vue'
 import AmountComparatorField from '~/components/patterns/AmountComparatorField.vue'
@@ -105,9 +105,9 @@ function toggleReason(value: string) {
       <div class="ibf-filters-panel" role="dialog" aria-label="All filters">
         <header class="ibf-filters-header">
           <span class="ibf-filters-title">All filters</span>
-          <button class="ibf-filters-close" type="button" aria-label="Close" @click="close">
+          <MpButton class="ibf-filters-close" type="button" aria-label="Close" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="ibf-filters-body">
@@ -241,7 +241,7 @@ function toggleReason(value: string) {
 
 .ibf-filters-overlay {
   position: fixed; inset: 0; z-index: 1300;
-  background: rgba(8, 13, 14, 0.45);
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
   display: flex; justify-content: flex-end;
 }
 .ibf-filters-panel {
@@ -263,13 +263,17 @@ function toggleReason(value: string) {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent). */
 .ibf-filters-close {
-  display: inline-flex; align-items: center; justify-content: center;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  min-width: 0 !important;
   width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
+  border: none !important; background: none !important; border-radius: var(--mp-radii-md) !important;
+  padding: 0 !important;
   cursor: pointer; color: var(--mp-icon-default);
 }
-.ibf-filters-close:hover { background: var(--mp-background-neutral-hovered); }
+.ibf-filters-close:hover { background: var(--mp-background-neutral-hovered) !important; }
 
 .ibf-filters-body {
   flex: 1; overflow-y: auto;

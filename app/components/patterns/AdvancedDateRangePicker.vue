@@ -15,7 +15,7 @@
  * triggers break MpPopoverTrigger's cloneVNode injection; same reasoning
  * applies here, so this renders its own button directly.
  */
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpButton, css } from '@mekari/pixel3'
 
 const props = defineProps<{
   id: string
@@ -186,13 +186,13 @@ function onYearClick(y: number) {
       @close="open = false"
     >
       <MpPopoverTrigger>
-        <button class="adr-field" :class="{ 'adr-field--full': isFullWidth }" type="button" @click.stop="open = !open">
+        <MpButton class="adr-field" :class="{ 'adr-field--full': isFullWidth }" type="button" @click.stop="open = !open">
           <span class="adr-field__value" :class="{ 'adr-field__value--placeholder': !hasValue }">{{ fieldText }}</span>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
             <path d="M3 9.5H21M8 3V6M16 3V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-        </button>
+        </MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ padding: '0' })" @blur="open = false" @escape="open = false">
         <div class="adr-popover">
@@ -215,13 +215,13 @@ function onYearClick(y: number) {
             <!-- Day-grid (Per day / Per week / Custom) -->
             <template v-if="mode === 'day' || mode === 'week' || mode === 'custom'">
               <div class="adr-cal-header">
-                <button class="adr-cal-nav" aria-label="Previous month" @click.stop="prevMonth">
+                <MpButton class="adr-cal-nav" aria-label="Previous month" @click.stop="prevMonth">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                </MpButton>
                 <span class="adr-cal-title">{{ MONTHS_SHORT[viewMonth.getMonth()] }} {{ viewMonth.getFullYear() }}</span>
-                <button class="adr-cal-nav" aria-label="Next month" @click.stop="nextMonth">
+                <MpButton class="adr-cal-nav" aria-label="Next month" @click.stop="nextMonth">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                </MpButton>
               </div>
               <div class="adr-cal-weekdays">
                 <span v-for="wd in ['Su','Mo','Tu','We','Th','Fr','Sa']" :key="wd">{{ wd }}</span>
@@ -245,13 +245,13 @@ function onYearClick(y: number) {
             <!-- Month-grid (Per month) -->
             <template v-else-if="mode === 'month'">
               <div class="adr-cal-header">
-                <button class="adr-cal-nav" aria-label="Previous year" @click.stop="viewYear--">
+                <MpButton class="adr-cal-nav" aria-label="Previous year" @click.stop="viewYear--">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                </MpButton>
                 <span class="adr-cal-title">{{ viewYear }}</span>
-                <button class="adr-cal-nav" aria-label="Next year" @click.stop="viewYear++">
+                <MpButton class="adr-cal-nav" aria-label="Next year" @click.stop="viewYear++">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                </MpButton>
               </div>
               <div class="adr-grid adr-grid--month">
                 <button
@@ -267,13 +267,13 @@ function onYearClick(y: number) {
             <!-- Year-grid / decade (Per year) -->
             <template v-else-if="mode === 'year'">
               <div class="adr-cal-header">
-                <button class="adr-cal-nav" aria-label="Previous decade" @click.stop="prevDecade">
+                <MpButton class="adr-cal-nav" aria-label="Previous decade" @click.stop="prevDecade">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                </MpButton>
                 <span class="adr-cal-title">{{ decadeStart }} - {{ decadeStart + 9 }}</span>
-                <button class="adr-cal-nav" aria-label="Next decade" @click.stop="nextDecade">
+                <MpButton class="adr-cal-nav" aria-label="Next decade" @click.stop="nextDecade">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                </MpButton>
               </div>
               <div class="adr-grid adr-grid--year">
                 <button
@@ -303,21 +303,9 @@ function onYearClick(y: number) {
 .adr-label-prefix { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .adr-label-value { font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); margin-left: var(--mp-spacing-1); }
 
-.adr-field {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--mp-spacing-2);
-  width: 260px;
-  height: var(--mp-sizes-9, 36px);
-  padding: 0 var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-  cursor: pointer;
-}
+/* Rendered via MpButton, not a raw HTML control — default look reset so it
+   can take on the field's own shape (see IconButton/.demo-fab precedent). */
+.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-default) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
 .adr-field--full { width: 100%; }
 .adr-field:hover { background: var(--mp-background-neutral-hovered); }
 .adr-field svg { flex-shrink: 0; color: var(--mp-text-subtle); }
@@ -326,13 +314,7 @@ function onYearClick(y: number) {
 /* ── Popover: sidebar + calendar ── */
 .adr-popover { display: flex; }
 
-.adr-sidebar {
-  width: 180px;
-  padding: var(--mp-spacing-3) 0;
-  border-right: 1px solid var(--mp-border-default);
-  display: flex;
-  flex-direction: column;
-}
+.adr-sidebar { width: 180px; padding: var(--mp-spacing-3) 0; border-right: 1px solid var(--mp-border-default); display: flex; flex-direction: column; }
 .adr-sidebar-title {
   padding: var(--mp-spacing-1) var(--mp-spacing-4);
   font-size: var(--mp-font-sizes-xs, 11px);
@@ -368,13 +350,15 @@ function onYearClick(y: number) {
   margin-bottom: var(--mp-spacing-2);
 }
 .adr-cal-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+/* Rendered via MpButton — default look reset (see IconButton/.demo-fab precedent). */
 .adr-cal-nav {
-  display: flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px;
-  border: none; background: transparent; border-radius: var(--mp-radii-sm);
+  display: flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-6, 24px); height: var(--mp-sizes-6, 24px);
+  padding: 0 !important; min-width: 0 !important;
+  border: none !important; background: transparent !important; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-secondary); cursor: pointer;
 }
-.adr-cal-nav:hover { background: var(--mp-background-neutral-hovered); }
+.adr-cal-nav:hover { background: var(--mp-background-neutral-hovered) !important; }
 
 .adr-cal-weekdays {
   display: grid;
@@ -387,7 +371,7 @@ function onYearClick(y: number) {
 
 .adr-cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .adr-cal-day {
-  height: 30px;
+  height: var(--mp-sizes-7\.5, 30px);
   border: none;
   background: transparent;
   border-radius: var(--mp-radii-sm);

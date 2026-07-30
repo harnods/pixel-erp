@@ -9,7 +9,7 @@
  * ERP Approval-icon memory for why MpTooltip/slot-forwarded triggers break
  * MpPopoverTrigger's cloneVNode injection.
  */
-import { MpIcon, MpCheckbox, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpCheckbox, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
 
 const props = defineProps<{
   id: string
@@ -53,7 +53,7 @@ function clear(e: MouseEvent) {
     @close="open = false"
   >
     <MpPopoverTrigger>
-      <button class="msd-field" :class="{ 'msd-field--full': isFullWidth }" type="button" @click.stop="open = !open">
+      <MpButton class="msd-field" :class="{ 'msd-field--full': isFullWidth }" type="button" @click.stop="open = !open">
         <span class="msd-field__value" :class="{ 'msd-field__value--placeholder': !selectedLabel }">
           {{ selectedLabel || placeholder || 'Select' }}
         </span>
@@ -61,7 +61,7 @@ function clear(e: MouseEvent) {
           <MpIcon v-if="modelValue.length" name="reset" size="sm" class="msd-clear" @click.stop="clear" />
           <MpIcon name="chevrons-down" size="sm" />
         </span>
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
 
     <MpPopoverContent :class="css({ padding: '4px', minWidth: '240px', maxHeight: '260px', overflowY: 'auto', borderRadius: '12px' })" @blur="open = false" @escape="open = false">
@@ -78,22 +78,10 @@ function clear(e: MouseEvent) {
 </template>
 
 <style scoped>
-.msd-field {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--mp-spacing-2);
-  width: 200px;
-  height: var(--mp-sizes-9, 36px);
-  padding: 0 var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-  cursor: pointer;
-}
-.msd-field:hover { background: var(--mp-background-neutral-hovered); }
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent). */
+.msd-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 200px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-default) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
+.msd-field:hover { background: var(--mp-background-neutral-hovered) !important; }
 .msd-field--full { width: 100%; }
 
 .msd-field__value {

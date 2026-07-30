@@ -204,7 +204,7 @@ function stepPrep(status: ApprovalStep['status']) {
   left: 9px;
   top: 0;
   bottom: 0;
-  width: 1px;
+  width: var(--mp-sizes-0\.25, 1px);
   background: var(--mp-border-default);
 }
 
@@ -212,8 +212,8 @@ function stepPrep(status: ApprovalStep['status']) {
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: var(--mp-sizes-5, 20px);
+  height: var(--mp-sizes-5, 20px);
   margin-top: var(--mp-spacing-2, 8px);
 }
 .alp-dot::before {
@@ -221,8 +221,8 @@ function stepPrep(status: ApprovalStep['status']) {
   position: absolute;
   top: 4px;
   left: 4px;
-  width: 12px;
-  height: 12px;
+  width: var(--mp-sizes-3, 12px);
+  height: var(--mp-sizes-3, 12px);
   border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-icon-brand, #029861);
 }
@@ -234,8 +234,8 @@ function stepPrep(status: ApprovalStep['status']) {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: var(--mp-sizes-5, 20px);
+  height: var(--mp-sizes-5, 20px);
   margin-top: var(--mp-spacing-2, 8px);
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-sm);
@@ -288,8 +288,8 @@ function stepPrep(status: ApprovalStep['status']) {
   /* Centers on the 20px step icon: icon's own margin-top (8px) + half its
      height (10px) — matches .alp-step-icon's margin-top below. */
   top: calc(var(--mp-spacing-2, 8px) + 10px);
-  width: 16px;
-  height: 1px;
+  width: var(--mp-sizes-4, 16px);
+  height: var(--mp-sizes-0\.25, 1px);
   background: var(--mp-border-default);
   z-index: 2;
 }
@@ -310,15 +310,15 @@ function stepPrep(status: ApprovalStep['status']) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: var(--mp-sizes-5, 20px);
+  height: var(--mp-sizes-5, 20px);
   margin-top: var(--mp-spacing-2, 8px);
   border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-text-secondary);
 }
 .alp-step-icon--approved { background: var(--mp-icon-success, #1fb088); }
 .alp-step-icon--awaiting-approval { background: var(--mp-icon-warning, #e46910); }
-.alp-step-icon--rejected { background: #dc2626; }
+.alp-step-icon--rejected { background: var(--mp-icon-danger, #dc2626); }
 
 .alp-approver-comment {
   margin: var(--mp-spacing-1) 0 0;

@@ -978,7 +978,7 @@ const bulkCountLabel = computed(() => {
   width: var(--erp-actions-width, var(--mp-sizes-11));
   min-width: var(--erp-actions-width, var(--mp-sizes-11));
   text-align: right;
-  padding: 2px var(--mp-spacing-2) 2px var(--mp-spacing-4);
+  padding: var(--mp-sizes-0\.5, 2px) var(--mp-spacing-2) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-4);
 }
 
 /* AI chat cell */

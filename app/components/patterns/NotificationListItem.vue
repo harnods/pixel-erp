@@ -81,8 +81,8 @@ defineEmits<{
 }
 .nli-dot {
   flex-shrink: 0;
-  width: 6px;
-  height: 6px;
+  width: var(--mp-spacing-1\.5, 6px);
+  height: var(--mp-spacing-1\.5, 6px);
   border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-information-bold, #4b61dc);
 }

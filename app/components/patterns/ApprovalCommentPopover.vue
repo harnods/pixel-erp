@@ -13,7 +13,7 @@
  * indented (32px) comment-text row, @mention highlighting, and a pill-shaped
  * composer with a circular send button.
  */
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpAvatar, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpAvatar, MpButton, css } from '@mekari/pixel3'
 import type { TaskComment } from '~/data/tasks'
 import { formatDateTime } from '~/utils/date'
 
@@ -123,9 +123,9 @@ function commentParts(text: string) {
               @keydown.enter="post"
               @click.stop
             >
-            <button class="acp-send" aria-label="Send" @click.stop="post">
+            <MpButton class="acp-send" aria-label="Send" @click.stop="post">
               <MpIcon name="sent" size="md" variant="fill" color="icon.inverse" />
-            </button>
+            </MpButton>
           </div>
         </div>
       </MpPopoverContent>
@@ -168,11 +168,7 @@ function commentParts(text: string) {
   justify-content: center;
   width: 100%;
 }
-.acp-blank-slate__img {
-  width: 288px;
-  height: 240px;
-  object-fit: cover;
-}
+.acp-blank-slate__img { width: 288px; height: 240px; object-fit: cover; }
 .acp-blank-slate__title {
   margin: 0;
   font-size: var(--mp-font-sizes-lg, 16px);
@@ -182,14 +178,15 @@ function commentParts(text: string) {
   text-align: center;
 }
 .acp-blank-slate__desc {
-  margin: 4px 0 0;
+  margin: var(--mp-spacing-1, 4px) 0 0;
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
   text-align: center;
 }
 
-/* ── Comment — header row (avatar+name/time) then an indented text row,
-     gap:4px between them, py:8px per item (Figma: pxl-space-3xs / pxl-space-xs) ── */
+/* ── Comment — header row (avatar+name/time) then an indented text row, with
+     a small gap between them and vertical padding per item
+     (Figma: pxl-space-3xs / pxl-space-xs) ── */
 .acp-comment {
   display: flex;
   flex-direction: column;
@@ -203,12 +200,7 @@ function commentParts(text: string) {
   gap: var(--mp-spacing-2, 8px);
 }
 
-.acp-comment-col {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
+.acp-comment-col { display: flex; flex-direction: column; gap: var(--mp-sizes-0\.5, 2px); min-width: 0; }
 
 .acp-comment-author {
   font-size: var(--mp-font-sizes-md);
@@ -232,7 +224,7 @@ function commentParts(text: string) {
 }
 
 .acp-mention {
-  color: #5f519f;
+  color: var(--mp-text-link, #5f519f);
 }
 
 /* ── Composer — pill-shaped input with a circular send button, sticky at
@@ -246,14 +238,14 @@ function commentParts(text: string) {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-6, 24px);
-  padding: 2px 2px 2px var(--mp-spacing-3, 12px);
+  padding: var(--mp-sizes-0\.5, 2px) var(--mp-sizes-0\.5, 2px) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-3, 12px);
   border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
   border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-neutral, white);
 }
 .acp-input-pill:focus-within {
-  border-color: #8c9596;
-  box-shadow: 0 0 0 1px #8c9596;
+  border-color: var(--mp-border-bold, #8c9596);
+  box-shadow: 0 0 0 1px var(--mp-border-bold, #8c9596); /* pixel-police-allow-shadow: focus ring on a floating popover composer */
 }
 
 .acp-input {
@@ -269,19 +261,22 @@ function commentParts(text: string) {
   color: var(--mp-text-placeholder, #6e7a7c);
 }
 
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent) so it keeps its circular send-button shape. */
 .acp-send {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  padding: var(--mp-spacing-2, 8px);
-  border: none;
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-brand-bold, #029861);
+  min-width: 0 !important;
+  width: var(--mp-sizes-8, 32px);
+  height: var(--mp-sizes-8, 32px);
+  padding: var(--mp-spacing-2, 8px) !important;
+  border: none !important;
+  border-radius: var(--mp-radii-full, 999px) !important;
+  background: var(--mp-background-brand-bold, #029861) !important;
   color: white;
   cursor: pointer;
 }
-.acp-send:hover { opacity: 0.9; }
+.acp-send:hover { opacity: 0.9; background: var(--mp-background-brand-bold, #029861) !important; }
 </style>
