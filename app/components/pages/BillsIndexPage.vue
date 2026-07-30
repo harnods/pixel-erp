@@ -2,14 +2,20 @@
 import { type Ref } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpButton, css, toast,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpButton, MpTooltip, MpRadio, MpCheckbox,
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
+  css, toast,
 } from '@mekari/pixel3'
+import type jsPDF from 'jspdf'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
+import { generateBillAttachmentPreviewPdf } from '~/utils/billAttachmentPdf'
+import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { bills, duplicateBill } from '~/data'
+import { bills, duplicateBill, deleteBills } from '~/data'
 import type { Bill, BillStatus } from '~/data'
 
 const router = useRouter()
@@ -27,10 +33,79 @@ const toggleAirene = inject<() => void>('toggleAirene')
 const aireneOpen = inject<Ref<boolean>>('aireneOpen')
 const showMekariCardUpsell = ref(true)
 
+// Empty-state illustration — public path (same asset used across other index pages)
+const emptyIllustration = '/illustrations/empty-folder.png'
+
+// ─── Attachment preview (reuses the same PdfPreviewModal used for print previews) ──
+const attachmentPreviewOpen = ref(false)
+const attachmentPreviewDoc = ref<jsPDF | null>(null)
+const attachmentPreviewFilename = ref('')
+const attachmentPreviewTitle = ref('')
+function previewAttachments(bill: Bill) {
+  if (!bill.attachments?.length) return
+  attachmentPreviewDoc.value = generateBillAttachmentPreviewPdf(bill, bill.attachments)
+  attachmentPreviewFilename.value = `Expense #${String(bill.number).padStart(5, '0')} - attachments.pdf`
+  attachmentPreviewTitle.value = `Expense #${String(bill.number).padStart(5, '0')} — attachment${bill.attachments.length !== 1 ? 's' : ''}`
+  attachmentPreviewOpen.value = true
+}
+
+// ─── Export modal (mirrors ProductsPage's export modal pattern) ────────────────
+const selectedCount = ref(0)
+const exportModalOpen = ref(false)
+
+type ExportScope = 'all' | 'page' | 'selected'
+const exportScope = ref<ExportScope>('all')
+
+const exportColumnGroups: { key: string; label: string }[][] = [
+  [
+    { key: 'date', label: 'Date' },
+    { key: 'number', label: 'Number' },
+    { key: 'beneficiaryName', label: 'Beneficiary' },
+    { key: 'category', label: 'Category' },
+    { key: 'dueDate', label: 'Due date' },
+  ],
+  [
+    { key: 'status', label: 'Status' },
+    { key: 'balanceDue', label: 'Balance due' },
+    { key: 'total', label: 'Total' },
+    { key: 'tags', label: 'Tags' },
+    { key: 'lastUpdated', label: 'Last updated' },
+  ],
+]
+const exportColumnKeys = exportColumnGroups.flat().map(c => c.key)
+const exportColumnChecked = reactive<Record<string, boolean>>(
+  Object.fromEntries(exportColumnKeys.map(k => [k, true])),
+)
+const exportColumnSearch = ref('')
+
+const visibleExportColumnGroups = computed(() =>
+  exportColumnGroups.map(group =>
+    group.filter(c => c.label.toLowerCase().includes(exportColumnSearch.value.toLowerCase())),
+  ),
+)
+const allExportColumnsChecked = computed(() => exportColumnKeys.every(k => exportColumnChecked[k]))
+const someExportColumnsChecked = computed(
+  () => exportColumnKeys.some(k => exportColumnChecked[k]) && !allExportColumnsChecked.value,
+)
+
+function toggleAllExportColumns() {
+  const next = !allExportColumnsChecked.value
+  exportColumnKeys.forEach(k => { exportColumnChecked[k] = next })
+}
+
+function openExportModal() {
+  exportScope.value = selectedCount.value > 0 ? 'selected' : 'all'
+  exportColumnSearch.value = ''
+  exportColumnKeys.forEach(k => { exportColumnChecked[k] = true })
+  exportModalOpen.value = true
+}
+function closeExportModal() { exportModalOpen.value = false }
+
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'date',          label: 'Date',          width: '120px',                                 sortType: 'date'   },
   { key: 'number',        label: 'Number',        width: '160px', sortable: true,                 sortType: 'number' },
+  { key: 'attachment',    label: '',              width: '52px',  noHeader: true, align: 'center' },
   { key: 'beneficiaryName', label: 'Beneficiary', width: '220px', sortable: true,                 sortType: 'text'   },
   { key: 'category',      label: 'Category',      width: '160px', sortable: true,                 sortType: 'text'   },
   { key: 'dueDate',       label: 'Due date',      width: '108px',                                 sortType: 'date'   },
@@ -44,6 +119,7 @@ const columns: TableColumn[] = [
 
 type Row = Bill & {
   beneficiaryName: string
+  attachment: boolean
   overdueLabel: string | null
   displayStatus: 'open' | 'overdue' | 'paid' | BillStatus
 }
@@ -66,6 +142,7 @@ const rows = computed<Row[]>(() =>
     return {
       ...bill,
       beneficiaryName: bill.beneficiary.name,
+      attachment: (bill.attachments?.length ?? 0) > 0,
       overdueLabel,
       displayStatus,
     }
@@ -83,12 +160,18 @@ const {
     (!status || row.displayStatus === status),
 })
 
+const hasActiveFilter = computed(() => !!search.value || !!statusFilter.value)
+function clearFilters() {
+  search.value = ''
+  statusFilter.value = ''
+}
+
 // ─── Filter options ───────────────────────────────────────────────────────────
 
 const statusOptions = [
-  { label: 'Open',   value: 'open'   },
-  { label: 'Paid',   value: 'paid'   },
-  { label: 'Unpaid', value: 'unpaid' },
+  { label: 'Open',    value: 'open'    },
+  { label: 'Overdue', value: 'overdue' },
+  { label: 'Paid',    value: 'paid'    },
 ]
 
 const statusLabel = computed(
@@ -128,9 +211,64 @@ const paidTotal = computed(() => paidBills.value.reduce((sum, r) => sum + r.tota
 // Column show/hide (first column always on; Last updated appended, hidden by default)
 const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
-const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const columnItems = allCols
+  .filter(c => c.label && !c.noHeader)
+  .map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
+
+// ─── Bulk actions (selection bar) — mirrors WarehousesPage's bulk pattern ──────
+
+function bulkSelectedBills(selectedRows: Set<number>): Row[] {
+  return [...selectedRows].map(i => paginated.value[i] as Row).filter(Boolean)
+}
+function allSelectedUnpaid(selectedRows: Set<number>): boolean {
+  const selected = bulkSelectedBills(selectedRows)
+  return selected.length > 0 && selected.every(b => b.status === 'unpaid')
+}
+
+// Print PDF — same PdfPreviewModal used for row-level attachment previews, but
+// combined into one multi-page doc across every selected bill.
+const bulkPdfPreviewOpen = ref(false)
+const bulkPdfPreviewDoc = ref<jsPDF | null>(null)
+const bulkPdfPreviewFilename = ref('')
+const bulkPdfPreviewCount = ref(0)
+function printBulkPdf(selectedRows: Set<number>) {
+  const selected = bulkSelectedBills(selectedRows)
+  if (!selected.length) return
+  bulkPdfPreviewDoc.value = generateBillsBulkPdf(selected)
+  bulkPdfPreviewFilename.value = `Expenses (${selected.length}).pdf`
+  bulkPdfPreviewCount.value = selected.length
+  bulkPdfPreviewOpen.value = true
+}
+
+// Pay with Mekari Pay — reuses the single-bill "Add payment" flow, seeded from
+// the first selected unpaid bill (that page auto-adds any other unpaid bills
+// owed to the same payee).
+function payWithMekariPay(selectedRows: Set<number>) {
+  const selected = bulkSelectedBills(selectedRows)
+  if (!selected.length) return
+  addPayment(selected[0]!.id)
+}
+
+// Delete
+const bulkDeleteModalOpen = ref(false)
+const bulkDeleteIds = ref<string[]>([])
+const bulkDeleteCount = computed(() => bulkDeleteIds.value.length)
+let bulkDeleteDeselect: (() => void) | null = null
+
+function openBulkDeleteModal(selectedRows: Set<number>, deselectAll: () => void) {
+  bulkDeleteIds.value = bulkSelectedBills(selectedRows).map(b => b.id)
+  bulkDeleteDeselect = deselectAll
+  bulkDeleteModalOpen.value = true
+}
+function closeBulkDeleteModal() { bulkDeleteModalOpen.value = false }
+function confirmBulkDelete() {
+  const count = deleteBills(bulkDeleteIds.value)
+  toast.notify({ variant: 'success', title: `${count} expense${count !== 1 ? 's' : ''} deleted` })
+  bulkDeleteDeselect?.()
+  closeBulkDeleteModal()
+}
 </script>
 
 <template>
@@ -144,12 +282,53 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     has-checkbox
     actions-width="52px"
+    filter-empty-label="expense"
+    bulk-label="expense"
+    :search="search"
+    :has-active-filter="hasActiveFilter"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
     @sort-change="setSort"
     @hide-column="hideColumn"
+    @clear-filters="clearFilters"
+    @selection-change="count => selectedCount = count"
   >
+
+    <!-- ── Bulk actions ── -->
+    <template #bulk-actions="{ selectedRows, deselectAll }">
+      <template v-if="allSelectedUnpaid(selectedRows as Set<number>)">
+        <MpPopover id="bills-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+          <MpPopoverTrigger>
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm btn-enterprise--icon-after">
+              Actions
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="payWithMekariPay(selectedRows as Set<number>)">Pay with Mekari Pay</MpPopoverListItem>
+              <MpPopoverListItem @click="printBulkPdf(selectedRows as Set<number>)">Print PDF</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+      </template>
+      <button
+        v-else
+        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+        @click="printBulkPdf(selectedRows as Set<number>)"
+      >
+        Print PDF
+      </button>
+      <button
+        class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
+        @click="openBulkDeleteModal(selectedRows as Set<number>, deselectAll)"
+      >
+        Delete
+      </button>
+    </template>
 
     <!-- ── Stats section ── -->
     <template #stats>
@@ -191,7 +370,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           </button>
           <div class="upsell-content">
             <div class="upsell-icon">
-              <MpIcon name="billing" size="md" variant="fill" color="#075056" />
+              <MpIcon name="billing" size="md" variant="fill" color="icon.success" />
             </div>
             <div class="upsell-copy">
               <p class="upsell-title">Control business spend with Mekari Card</p>
@@ -263,9 +442,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <!-- Column settings -->
           <ColumnSettingsMenu id="tt-columns" :items="columnItems" :visibility="columnVisibility" />
           <!-- Export -->
-          <MpButton class="filter-icon-btn" aria-label="Export">
-            <MpIcon name="download" size="md" />
-          </MpButton>
+          <MpTooltip id="bills-tt-export" label="Export" placement="bottom" use-portal>
+            <MpButton class="filter-icon-btn" aria-label="Export" @click="openExportModal">
+              <MpIcon name="download" size="md" />
+            </MpButton>
+          </MpTooltip>
         </div>
 
         <!-- Pill search -->
@@ -290,30 +471,35 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
     <!-- ── Cell: Number ── -->
     <template #cell-number="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ formatNumber(value as number) }}</span>
-        <MpButton class="row-hover-btn" @click.stop="goDetail((row as Row).id)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </MpButton>
+      <a class="cell-link cell-text" @click.stop="goDetail((row as Row).id)">{{ formatNumber(value as number) }}</a>
+    </template>
+
+    <!-- ── Cell: Attachment icon (narrow column, no header) — same icons-cell
+         pattern as OutgoingIndexPage's #cell-icons: centered flex wrapper +
+         a plain icon-indicator, just clickable here to open the preview. ── -->
+    <template #cell-attachment="{ value, row }">
+      <div v-if="value" class="attachment-icons-cell">
+        <MpTooltip
+          :id="`bill-attachment-tt-${(row as Row).id}`"
+          label="Attachment"
+          placement="top"
+          use-portal
+        >
+          <button
+            type="button"
+            class="attachment-icon-indicator"
+            aria-label="View attachment"
+            @click.stop="previewAttachments(row as Row)"
+          >
+            <MpIcon name="attachment" size="sm" />
+          </button>
+        </MpTooltip>
       </div>
     </template>
 
     <!-- ── Cell: Beneficiary ── -->
     <template #cell-beneficiaryName="{ value }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ value }}</span>
-        <MpButton class="row-hover-btn" @click.stop>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <rect x="1.5" y="1.5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1.2"/>
-            <path d="M4.5 1.5v9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-          </svg>
-          <span class="row-hover-btn__label">OPEN PREVIEW</span>
-        </MpButton>
-      </div>
+      <a class="cell-link cell-text" @click.stop>{{ value }}</a>
     </template>
 
     <!-- ── Cell: Due Date ── -->
@@ -374,7 +560,180 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <template #cell-lastUpdated="{ row }">
       <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
     </template>
+
+    <!-- ── Full empty state (no bills yet) ── -->
+    <template #empty>
+      <div class="empty-full">
+        <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+        <p class="empty-full-title">No expenses</p>
+        <p class="empty-full-desc">Expenses will appear here.</p>
+      </div>
+    </template>
   </ErpTablePage>
+
+  <PdfPreviewModal
+    :open="attachmentPreviewOpen"
+    :doc="attachmentPreviewDoc"
+    :filename="attachmentPreviewFilename"
+    :title="attachmentPreviewTitle"
+    @close="attachmentPreviewOpen = false"
+  />
+
+  <!-- ── Bulk Print PDF preview ── -->
+  <PdfPreviewModal
+    :open="bulkPdfPreviewOpen"
+    :doc="bulkPdfPreviewDoc"
+    :filename="bulkPdfPreviewFilename"
+    title="Expenses preview"
+    :print-label="`Print (${bulkPdfPreviewCount})`"
+    @close="bulkPdfPreviewOpen = false"
+  />
+
+  <!-- ── Bulk delete confirmation modal (same pattern as WarehousesPage) ── -->
+  <MpModal
+    id="bills-bulk-delete-modal"
+    :is-open="bulkDeleteModalOpen"
+    size="md"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="closeBulkDeleteModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        Delete {{ bulkDeleteCount }} expense{{ bulkDeleteCount !== 1 ? 's' : '' }}?
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        Deleted expenses cannot be restored.
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkDeleteModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">Delete</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Export modal (same pattern as ProductsPage's export modal) ── -->
+  <MpModal
+    id="bills-export-modal"
+    :is-open="exportModalOpen"
+    size="lg"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="closeExportModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        Export expenses
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <div class="export-modal-body">
+
+          <!-- Export scope -->
+          <div class="export-section">
+            <p class="export-section__label">Export scope</p>
+            <div class="export-radio-group">
+              <label class="export-radio-item">
+                <MpRadio
+                  id="export-scope-all"
+                  name="export-scope"
+                  value="all"
+                  :is-checked="exportScope === 'all'"
+                  @change="exportScope = 'all'"
+                />
+                <span>All expenses ({{ total }})</span>
+              </label>
+              <label class="export-radio-item">
+                <MpRadio
+                  id="export-scope-page"
+                  name="export-scope"
+                  value="page"
+                  :is-checked="exportScope === 'page'"
+                  @change="exportScope = 'page'"
+                />
+                <span>Current page</span>
+              </label>
+              <label class="export-radio-item" :class="{ 'export-radio-item--disabled': selectedCount === 0 }">
+                <MpRadio
+                  id="export-scope-selected"
+                  name="export-scope"
+                  value="selected"
+                  :is-checked="exportScope === 'selected'"
+                  :is-disabled="selectedCount === 0"
+                  @change="selectedCount > 0 && (exportScope = 'selected')"
+                />
+                <span>Selected {{ selectedCount }} expense{{ selectedCount !== 1 ? 's' : '' }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Select columns -->
+          <div class="export-section">
+            <p class="export-section__label">Select columns to export</p>
+
+            <!-- Search -->
+            <div class="export-col-search">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <input
+                v-model="exportColumnSearch"
+                class="export-col-search__input"
+                type="text"
+                placeholder="Search column"
+              />
+              <MpButton v-if="exportColumnSearch" class="search-clear-btn" aria-label="Clear search" @click="exportColumnSearch = ''">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                </svg>
+              </MpButton>
+            </div>
+
+            <!-- All columns toggle -->
+            <div class="export-col-all">
+              <MpCheckbox
+                id="export-col-all"
+                :is-checked="allExportColumnsChecked"
+                :is-indeterminate="someExportColumnsChecked"
+                @change="toggleAllExportColumns"
+                @click.stop
+              />
+              <span class="export-col-label">All columns</span>
+            </div>
+
+            <!-- Column list — 2 fixed groups (Date→Due date, Status→Last updated) -->
+            <div class="export-col-groups">
+              <div v-for="(group, gi) in visibleExportColumnGroups" :key="gi" class="export-col-group">
+                <label v-for="col in group" :key="col.key" class="export-col-item">
+                  <MpCheckbox
+                    :id="`export-col-${col.key}`"
+                    :is-checked="exportColumnChecked[col.key]"
+                    @change="exportColumnChecked[col.key] = !exportColumnChecked[col.key]"
+                    @click.stop
+                  />
+                  <span class="export-col-label">{{ col.label }}</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeExportModal">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="closeExportModal">Export</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 </template>
 
 <style scoped>
@@ -508,15 +867,6 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   padding-left: calc(var(--mp-sizes-12, 48px) + var(--mp-spacing-3));
 }
 
-/* Cell with hover action button */
-.cell-with-action {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-}
-
 .cell-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -524,36 +874,25 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   min-width: 0;
 }
 
-.row-hover-btn {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  display: none !important;
+/* Attachment icon indicator — same icons-cell pattern as OutgoingIndexPage's
+   #cell-icons (centered flex wrapper + plain icon, no button chrome). */
+.attachment-icons-cell {
+  display: flex;
   align-items: center;
-  gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5) !important;
+  justify-content: center;
+}
+.attachment-icon-indicator {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
   min-width: 0 !important;
-  background: var(--mp-background-neutral) !important;
-  border: 1px solid var(--mp-border-bold) !important;
-  border-radius: var(--mp-radii-sm) !important;
+  border: none !important;
+  background: transparent !important;
   cursor: pointer;
-  white-space: nowrap;
-  line-height: 1;
+  color: var(--mp-text-subtle);
 }
-
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px);
-  color: var(--mp-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-}
-
-:global(.erp-tr:hover .row-hover-btn) {
-  display: flex !important;
-}
+.attachment-icon-indicator:hover { color: var(--mp-text-default); }
 
 /* Status cell */
 .status-cell {
@@ -681,4 +1020,128 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   min-width: 0;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+
+/* Empty state */
+.empty-full { display: flex; flex-direction: column; align-items: center; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title {
+  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.empty-full-desc {
+  margin-top: var(--mp-spacing-0\.5);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+}
+
+/* ── Export modal (same pattern as ProductsPage's export modal) ── */
+.export-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-5);
+}
+
+.export-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-1);
+}
+
+.export-section__label {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
+}
+
+.export-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-2);
+}
+
+.export-radio-item {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+  cursor: pointer;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
+  user-select: none;
+}
+
+.export-radio-item--disabled {
+  color: var(--mp-text-disabled);
+  cursor: default;
+}
+
+.export-col-search {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral);
+  color: var(--mp-text-secondary);
+}
+
+.export-col-search__input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-md);
+  outline: none;
+}
+.export-col-search__input::placeholder { color: var(--mp-text-placeholder); }
+
+.export-col-all {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+  margin-top: var(--mp-spacing-4);
+}
+
+.export-col-groups {
+  display: flex;
+  gap: var(--mp-spacing-6);
+  align-items: flex-start;
+  width: 100%;
+}
+.export-col-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.export-col-item {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.export-col-label {
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
+}
+
+.search-clear-btn {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important;
+  border: none !important; background: none !important; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px) !important;
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

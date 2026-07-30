@@ -1134,17 +1134,14 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <MpButton class="import-item">Import from spreadsheet</MpButton>
-                <MpButton class="import-item import-item--ai">
+                <button class="import-item">Import from spreadsheet</button>
+                <button class="import-item import-item--ai">
                   <span>Upload bills</span>
                   <span class="ai-badge">
-                    <img
-                      src="https://www.figma.com/api/mcp/asset/b87bbbb6-b7ca-46be-a6a9-755ab81fefe6"
-                      width="12" height="12" alt="" class="ai-badge__icon"
-                    />
+                    <MpIcon name="airene-brand" size="xs" class="ai-badge__icon" />
                     <span class="ai-badge__label">AI</span>
                   </span>
-                </MpButton>
+                </button>
               </div>
 
               <!-- Group 2: Forward bills to -->
@@ -1271,7 +1268,7 @@ function startResize(e: MouseEvent) {
           @click="selectTab(tab)"
         >
           {{ tabLabel(tab) }}
-          <span v-if="currentTabCounts[tab] != null" class="page-tab-count">{{ currentTabCounts[tab] }}</span>
+          <MpBadge v-if="currentTabCounts[tab] != null" class="page-tab-count" for="additionalInformation" type="warning" size="sm">{{ currentTabCounts[tab] }}</MpBadge>
         </button>
       </div>
 

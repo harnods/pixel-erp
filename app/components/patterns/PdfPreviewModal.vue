@@ -13,6 +13,8 @@ const props = defineProps<{
   /** Filename used when the operator confirms Print (triggers the actual download). */
   filename: string
   title?: string
+  /** Overrides the confirm button's label (default "Print") — e.g. "Print (3)" for a bulk preview. */
+  printLabel?: string
 }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -48,7 +50,7 @@ function confirmPrint() {
       <MpModalFooter>
         <div class="pdf-preview-footer">
           <MpButton variant="ghost" is-rounded @click="emit('close')">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="confirmPrint">Print</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmPrint">{{ printLabel ?? 'Print' }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

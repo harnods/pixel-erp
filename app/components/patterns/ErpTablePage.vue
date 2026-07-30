@@ -81,6 +81,9 @@ const props = withDefaults(defineProps<{
   /** Override the sticky actions column width (default 44px) — use when the #actions
    *  slot renders more than a single kebab button (several buttons in a row). */
   actionsWidth?: string
+  /** Singular noun for the filter-only empty state, e.g. "expense" → "No expense match
+   *  your filters". Defaults to the generic "No results match your filters". */
+  filterEmptyLabel?: string
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -95,6 +98,7 @@ const props = withDefaults(defineProps<{
   bulkLabel: 'item',
   bulkLabelPlural: undefined,
   actionsWidth: undefined,
+  filterEmptyLabel: undefined,
 })
 
 const emit = defineEmits<{
@@ -608,7 +612,7 @@ const bulkCountLabel = computed(() => {
                    the full empty state, so both empty states read consistently) -->
               <div v-if="hasActiveFilter" class="empty-inline">
                 <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
-                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No results match your filters` }}</p>
+                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No ${props.filterEmptyLabel ?? 'results'} match your filters` }}</p>
                 <p class="empty-inline-desc">{{ props.search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.' }}</p>
                 <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
               </div>
