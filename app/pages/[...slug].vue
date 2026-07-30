@@ -1075,8 +1075,8 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <button class="import-item">Import from spreadsheet</button>
-                <button class="import-item import-item--ai">
+                <MpButton variant="ghost" class="import-item">Import from spreadsheet</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--ai">
                   <span>Upload bills</span>
                   <span class="ai-badge">
                     <img
@@ -1085,7 +1085,7 @@ function startResize(e: MouseEvent) {
                     />
                     <span class="ai-badge__label">AI</span>
                   </span>
-                </button>
+                </MpButton>
               </div>
 
               <!-- Group 2: Forward bills to -->
@@ -1134,14 +1134,14 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <button class="import-item">Import from spreadsheet</button>
-                <button class="import-item import-item--ai">
+                <MpButton variant="ghost" class="import-item">Import from spreadsheet</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--ai">
                   <span>Upload bills</span>
                   <span class="ai-badge">
                     <MpIcon name="airene-brand" size="xs" class="ai-badge__icon" />
                     <span class="ai-badge__label">AI</span>
                   </span>
-                </button>
+                </MpButton>
               </div>
 
               <!-- Group 2: Forward bills to -->
