@@ -66,13 +66,13 @@ const warehouseOptions = warehouses
   .map(w => ({ id: w.id, name: w.name }))
 const UNIT_OPTIONS = [...new Set(CATALOG.map(p => p.unit))].map(u => ({ id: u, name: u }))
 const COST_ACCOUNT_OPTIONS = [
-  { id: 'labour', name: 'Direct labour' },
+  { id: 'labour', name: 'Direct labor' },
   { id: 'overhead', name: 'Manufacturing overhead' },
   { id: 'electricity', name: 'Electricity' },
   { id: 'depreciation', name: 'Machine depreciation' },
 ]
 const COST_DRIVER_OPTIONS = [
-  { id: 'labour-hour', name: 'Labour hour' },
+  { id: 'labour-hour', name: 'Labor hour' },
   { id: 'machine-hour', name: 'Machine hour' },
   { id: 'unit', name: 'Unit produced' },
 ]
@@ -601,7 +601,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wo-th">Other cost</th><th class="wo-th">Cost driver</th><th class="wo-th">Estimated unit cost</th>
+                  <th class="wo-th">Cost account</th><th class="wo-th">Cost driver</th><th class="wo-th">Estimated unit cost</th>
                   <th class="wo-th">Multiplier</th><th class="wo-th wo-th--right">Amount</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
