@@ -53,7 +53,6 @@ const pageRegistry: Record<string, Component> = {
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
-  'Overview':          defineAsyncComponent(() => import('~/components/pages/WmsOverviewPage.vue')),
   'On the way':        defineAsyncComponent(() => import('~/components/pages/ReceiptIndexPage.vue')),
   'Receiving':         defineAsyncComponent(() => import('~/components/pages/ReceivingIndexPage.vue')),
   'Put-away':          defineAsyncComponent(() => import('~/components/pages/PutAwayIndexPage.vue')),
@@ -341,7 +340,8 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  // WMS Overview renders its own analytics chrome (WmsOverviewPage) — no shell tabs.
+  // WMS Overview — mirrored for the WMS menu (/overview) and WMS Reports (/wms-report)
+  'Overview':          ['Outbound delivery', 'Inbound delivery'],
   'Wms report':        ['Outbound delivery', 'Inbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
@@ -895,7 +895,7 @@ function startResize(e: MouseEvent) {
       <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
 
       <template v-else>
-      <div v-if="currentPageKey !== 'Home' && currentPageKey !== 'Overview'" class="page-title-bar">
+      <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
@@ -1182,7 +1182,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Overview' }">
+      <div class="stage">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
@@ -1649,9 +1649,6 @@ function startResize(e: MouseEvent) {
   flex-direction: column;
   gap: var(--mp-spacing-5);
 }
-/* Overview owns its full analytics chrome (breadcrumb + title + tabs + grey body),
-   so drop the stage's default 24px padding/top border and gap. */
-.stage--flush { padding: 0; border-top: 0; gap: 0; }
 
 /* ── Status tabs (between title bar and stage, on the gray surface) ───────── */
 
