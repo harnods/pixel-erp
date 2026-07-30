@@ -5,7 +5,10 @@ const props = defineProps<{
   name: string
   desc?: string
   image?: string
+  /** When true the product name becomes a text link (emits `nameClick`). */
+  linkable?: boolean
 }>()
+defineEmits<{ (e: 'nameClick'): void }>()
 
 const descEl   = ref<HTMLElement | null>(null)
 const overflow = ref(false)
@@ -30,7 +33,8 @@ onMounted(() => {
       height="40"
     />
     <div class="pc-info">
-      <span class="pc-name">{{ name }}</span>
+      <a v-if="linkable" class="cell-link pc-name" @click.stop="$emit('nameClick')">{{ name }}</a>
+      <span v-else class="pc-name">{{ name }}</span>
       <template v-if="desc">
         <p
           ref="descEl"

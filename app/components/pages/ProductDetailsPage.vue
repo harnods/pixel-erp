@@ -292,9 +292,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         </div>
       </section>
 
-      <!-- Purchase info / Sales info — ERP only, WMS doesn't deal in pricing/accounting -->
-      <div v-if="!isWms" class="pd-two-col">
-        <section class="pd-section pd-section--flex">
+      <!-- Purchase info / Sales info — ERP only, WMS doesn't deal in pricing/accounting.
+           Tax info sits in the same row but gates on product.djpCode independently,
+           since tax classification applies regardless of ERP/WMS scenario. -->
+      <div class="pd-two-col">
+        <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Purchase info</h2>
           <div class="pd-purchase-row">
             <div class="pd-field-col pd-field-col--flex">
@@ -310,7 +312,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </div>
           </div>
         </section>
-        <section class="pd-section pd-section--flex">
+        <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Sales info</h2>
           <div class="pd-field-col" style="width: 270px">
             <ContentList label="Default sales price" :value="formatIDR(product.defaultSalesPrice)" />
@@ -320,32 +322,18 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <ContentList label="Default sales tax" :value="product.defaultSalesTax" />
           </div>
         </section>
-      </div>
 
-      <!-- Tax info — only shown once tax info has actually been filled in on the product.
-           Reuses Purchase/Sales info's exact column structure (pd-two-col flex:1 pair +
-           fixed 270px column) so Product classification/DJP code/DJP unit line up with
-           Default purchase cost/Default purchase account/Default sales price above. -->
-      <section v-if="product.djpCode" class="pd-section">
-        <h2 class="pd-section-title">Tax info</h2>
-        <div class="pd-two-col">
-          <section class="pd-section pd-section--flex">
-            <div class="pd-purchase-row">
-              <div class="pd-field-col pd-field-col--flex">
-                <ContentList label="Product classification" :value="product.productClassification" />
-              </div>
-              <div class="pd-field-col pd-field-col--flex">
-                <ContentList label="DJP code" :value="product.djpCode" />
-              </div>
-            </div>
-          </section>
-          <section class="pd-section pd-section--flex">
-            <div class="pd-field-col pd-field-col--djp-unit">
-              <ContentList label="DJP unit" :value="product.djpUnit" />
-            </div>
-          </section>
-        </div>
-      </section>
+        <!-- Tax info — only shown once tax info has actually been filled in on the
+             product. Same vertical-list pattern as Sales info (single column, fixed 270px). -->
+        <section v-if="product.djpCode" class="pd-section pd-section--flex">
+          <h2 class="pd-section-title">Tax info</h2>
+          <div class="pd-field-col" style="width: 270px">
+            <ContentList label="Product classification" :value="product.productClassification" />
+            <ContentList label="DJP code" :value="product.djpCode" />
+            <ContentList label="DJP unit" :value="product.djpUnit" />
+          </div>
+        </section>
+      </div>
 
       <a class="detail-updated" @click.prevent="activityOpen = true">
         Created by {{ product.createdBy }} on {{ createdLabel }}
@@ -842,7 +830,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-field-col { display: flex; flex-direction: column; }
 .pd-field-col--flex { flex: 1; min-width: 0; }
-.pd-field-col--djp-unit { width: 270px; }
 .pd-two-col { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .pd-purchase-row { display: flex; gap: var(--mp-spacing-6); }
 .pd-link { color: var(--mp-text-link); cursor: pointer; }
