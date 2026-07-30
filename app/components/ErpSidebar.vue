@@ -37,22 +37,47 @@
         <div class="panel-list">
           <template v-for="(group, gi) in activePanel.groups" :key="gi">
             <div v-if="gi > 0" class="panel-divider" />
-            <button
-              v-for="sub in group"
-              :key="sub.label"
-              class="panel-item"
-              :class="{ active: activePanelSubItem === sub.label }"
-              @click="handlePanelSubItemClick(sub)"
-            >
-              <span>{{ sub.label }}</span>
-              <span v-if="sub.count != null" class="panel-item-count">{{ sub.count }}</span>
-              <img
-                v-else-if="sub.iconType === 'shortcut'"
-                :src="shortcutIcon"
-                class="panel-item-icon"
-                alt=""
-              />
-            </button>
+            <template v-for="sub in group" :key="sub.label">
+              <!-- Accordion item (e.g. Fixed assets): expandable header + children -->
+              <template v-if="sub.children">
+                <button
+                  class="panel-item panel-item--accordion"
+                  :class="{ 'is-open': isAccordionOpen(sub) }"
+                  @click="handlePanelAccordionClick(sub)"
+                >
+                  <span>{{ sub.label }}</span>
+                  <svg class="panel-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </button>
+                <button
+                  v-for="child in sub.children"
+                  v-show="isAccordionOpen(sub)"
+                  :key="child.label"
+                  class="panel-item panel-item--child"
+                  :class="{ active: activePanelSubItem === child.label }"
+                  @click="handlePanelSubItemClick(child)"
+                >
+                  <span>{{ child.label }}</span>
+                </button>
+              </template>
+              <!-- Plain item -->
+              <button
+                v-else
+                class="panel-item"
+                :class="{ active: activePanelSubItem === sub.label }"
+                @click="handlePanelSubItemClick(sub)"
+              >
+                <span>{{ sub.label }}</span>
+                <span v-if="sub.count != null" class="panel-item-count">{{ sub.count }}</span>
+                <img
+                  v-else-if="sub.iconType === 'shortcut'"
+                  :src="shortcutIcon"
+                  class="panel-item-icon"
+                  alt=""
+                />
+              </button>
+            </template>
           </template>
         </div>
       </div>
@@ -107,6 +132,12 @@ interface PanelSubItem {
   to?: string
   /** Task-count indicator shown right-aligned (e.g. items awaiting action). */
   count?: number
+  /** Inline accordion inside the level-2 panel: this item becomes an expandable
+   *  header whose children render indented below it. The accordion is closed by
+   *  default and only expands while one of its children is the active page (e.g.
+   *  Accounting › Fixed assets → Assets / Depreciation schedule). Clicking the
+   *  header lands on the first child. */
+  children?: PanelSubItem[]
   /** Cross-section shortcut: jump to another nav's panel item (e.g. a module's
    *  "reports" shortcut opening Reports › Sales) instead of navigating in place. */
   shortcutTo?: { nav: string; sub: string }
@@ -116,6 +147,9 @@ interface PanelSubItem {
 interface SubItem {
   label: string
   iconType?: 'shortcut' | 'settings'
+  /** Inline accordion children promoted into the level-2 panel (see
+   *  PanelSubItem.children) — carried through expandGroupsFor. */
+  children?: PanelSubItem[]
   panelSubmenu?: PanelSubItem[][]
   /** Override panel title. Defaults to parent nav item name. */
   panelTitle?: string
@@ -192,6 +226,11 @@ const isPanelVisible = ref(true)
 const activeItem = ref('Home')
 const activePanel = ref<ActivePanel | null>(null)
 const activePanelSubItem = ref<string | null>(null)
+// Which accordion (e.g. Fixed assets) the user has manually expanded in the
+// level-2 panel. Closed by default; toggled purely by clicking the header — it
+// never navigates on its own. (An accordion also shows open whenever one of its
+// children is the active page — see isAccordionOpen.)
+const expandedAccordion = ref<string | null>(null)
 
 const toggleIcon = toggleIconUrl
 const shortcutIcon = shortcutIconUrl
@@ -306,7 +345,10 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Consolidation' },
           { label: 'Chart of accounts' },
           { label: 'Close books' },
-          { label: 'Fixed assets' },
+          { label: 'Fixed assets', children: [
+            { label: 'Assets' },
+            { label: 'Depreciation schedule' },
+          ] },
           { label: 'Bank rules' },
         ],
         [{ label: 'Accounting settings', iconType: 'settings' }],
@@ -597,7 +639,7 @@ const navGroups = computed<NavItem[][]>(() => {
 // explicit array, or a verbatim mirror of its flyout submenu.
 function expandGroupsFor(item: NavItem): PanelSubItem[][] {
   if (Array.isArray(item.expandOnClick)) return item.expandOnClick
-  return (item.submenu ?? []).map((group) => group.map((s) => ({ label: s.label, iconType: s.iconType, to: s.to })))
+  return (item.submenu ?? []).map((group) => group.map((s) => ({ label: s.label, iconType: s.iconType, to: s.to, children: s.children })))
 }
 
 // A panel/flyout item flagged 'shortcut' or 'settings' is a POINTER into another
@@ -638,6 +680,14 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
             if (!allowShortcuts && isPointer(p.iconType)) continue
             if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
               return { nav: item.name, sub: p.label, panel: { title: item.name, groups, parentNavName: item.name } }
+            }
+            // Accordion children (e.g. Fixed assets › Assets): the active sub is the
+            // child, so a refresh on its page restores the panel with the accordion
+            // expanded (isAccordionOpen keys off the active child).
+            for (const child of p.children ?? []) {
+              if (labelToPath(child.to ?? child.label) === labelToPath(pageKey)) {
+                return { nav: item.name, sub: child.label, panel: { title: item.name, groups, parentNavName: item.name } }
+              }
             }
           }
         }
@@ -850,6 +900,19 @@ function handlePanelSubItemClick(sub: PanelSubItem) {
   navigate(sub.to ?? sub.label)
 }
 
+// An accordion (e.g. Fixed assets) shows open when the user manually expanded it
+// OR when one of its children is the active page (so it's expanded while you're
+// inside that section, and restores open on refresh). Closed by default.
+function isAccordionOpen(sub: PanelSubItem): boolean {
+  if (expandedAccordion.value === sub.label) return true
+  return sub.children?.some((c) => c.label === activePanelSubItem.value) ?? false
+}
+// Clicking the accordion header only expands/collapses it — it does NOT navigate.
+// The user then picks a child (e.g. Assets, Depreciation schedule) to go there.
+function handlePanelAccordionClick(sub: PanelSubItem) {
+  expandedAccordion.value = expandedAccordion.value === sub.label ? null : sub.label
+}
+
 function handleFlyoutSubItemClick(sub: SubItem) {
   if (sub.shortcutTo) { openShortcutTo(sub.shortcutTo.nav, sub.shortcutTo.sub); return }
   const parentItem = flyoutItem.value!
@@ -869,9 +932,15 @@ function handleFlyoutSubItemClick(sub: SubItem) {
     // clicked item (see NavItem.expandOnClick).
     const groups = expandGroupsFor(parentItem)
     openPanel({ title: parentName, groups, parentNavName: parentName })
-    activePanelSubItem.value = sub.label
-    navigate(sub.to ?? sub.label)
     activeItem.value = parentName
+    if (sub.children) {
+      // Accordion header (e.g. Fixed assets) has no page of its own — open the
+      // panel with it expanded so the user can pick a child; don't navigate.
+      expandedAccordion.value = sub.label
+    } else {
+      activePanelSubItem.value = sub.label
+      navigate(sub.to ?? sub.label)
+    }
   } else if (parentItem.panelSubmenu) {
     // Panel menu with a hover flyout (flyoutOnHover, e.g. Reports): clicking a
     // flyout item opens the full level-2 panel with that item selected — same as
@@ -1113,6 +1182,19 @@ function cancelClose() {
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-link, #165082);
 }
+
+/* Accordion header (e.g. Fixed assets) — chevron rotates when expanded */
+.panel-accordion-chevron {
+  flex-shrink: 0;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  transition: transform 150ms;
+}
+.panel-item--accordion.is-open .panel-accordion-chevron { transform: rotate(180deg); }
+
+/* Accordion children (e.g. Assets, Depreciation schedule) — indented under the
+   header, but with tighter left/right padding so longer labels like "Depreciation
+   schedule" stay on one line in the narrow panel. */
+.panel-item--child { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-1); }
 
 .panel-item-icon {
   width: var(--mp-sizes-4);
