@@ -15,12 +15,11 @@ import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
 import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
-import BatchReservationsDrawer from '~/components/patterns/BatchReservationsDrawer.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDate } from '~/utils/date'
-import { getWarehouseDetail, getReservationsForBatch, type WarehouseStockItem } from '~/data/warehouseDetails'
+import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { outgoingOrders } from '~/data/outgoing'
 import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
 import { warehouses, getWarehouseActivity, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
@@ -618,27 +617,13 @@ function openSerialDrawer(p: WarehouseStockItem, tab: 'available' | 'reserved' =
   serialDrawerOpen.value    = true
 }
 
-// ── Batch reservations drawer (temporary design) ────────────────────────────
-const batchReservationsProduct = ref<WarehouseStockItem | null>(null)
-const batchReservationsBatchNo = ref('')
-const batchReservationsOpen    = ref(false)
-function openBatchReservations(p: WarehouseStockItem, batchNo: string) {
-  batchReservationsProduct.value = p
-  batchReservationsBatchNo.value = batchNo
-  batchReservationsOpen.value    = true
+// ── View batch details ───────────────────────────────────────────────────────
+// Same page/format as the Products batch details, but STAYS under /warehouses so
+// the warehouse context (path + breadcrumb) is kept and the qty shown is this
+// warehouse's lot. BatchDetailsPage renders warehouse-scoped mode from this id.
+function viewBatch(p: WarehouseStockItem, batchNo: string) {
+  router.push(`/warehouses/${props.orderId}/batches/${p.sku}/${encodeURIComponent(batchNo)}`)
 }
-const batchReservationRows = computed(() => {
-  const p = batchReservationsProduct.value
-  if (!p) return []
-  return getReservationsForBatch(props.orderId, p.sku, batchReservationsBatchNo.value).map((r) => {
-    const order = outgoingOrders.find((o) => o.id === r.taskId)
-    return {
-      salesNo: order?.salesNo ?? r.taskId,
-      orderNumber: order?.number ?? r.taskId,
-      qty: r.qty,
-    }
-  })
-})
 
 function formatDateNumeric(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
@@ -1121,7 +1106,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     <!-- batch rows (only when expanded) -->
                     <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
                       <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
-                        <a class="cell-link" @click.stop="openBatchReservations(p, b.batchNo)">{{ b.batchNo }}</a>
+                        <a class="cell-link" @click.stop="viewBatch(p, b.batchNo)">{{ b.batchNo }}</a>
                       </td>
                       <td v-if="batchColVisibility.location" class="wh-btd wh-loc-cell">{{ b.location }}</td>
                       <td v-if="batchColVisibility.expiry" class="wh-btd">
@@ -1750,16 +1735,6 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       :warehouse-id="props.orderId"
       :initial-tab="serialDrawerTab"
       @update:open="serialDrawerOpen = $event"
-    />
-
-    <BatchReservationsDrawer
-      :open="batchReservationsOpen"
-      :product-name="batchReservationsProduct?.name ?? ''"
-      :product-img="batchReservationsProduct?.photo ?? ''"
-      :sku="batchReservationsProduct?.sku ?? ''"
-      :batch-no="batchReservationsBatchNo"
-      :rows="batchReservationRows"
-      @update:open="batchReservationsOpen = $event"
     />
 
   </div>

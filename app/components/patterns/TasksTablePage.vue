@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpBadge,
+  MpIcon, MpBadge, MpButton, MpInput, MpInputGroup, MpInputLeftAddon,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import ProductCell from '~/components/patterns/ProductCell.vue'
 import ApprovalLogPopover from '~/components/patterns/ApprovalLogPopover.vue'
 import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import TransactionTypeCascadeMenu from '~/components/patterns/TransactionTypeCascadeMenu.vue'
 import InboxFiltersDrawer, { emptyInboxFilters, type InboxFiltersValue } from '~/components/patterns/InboxFiltersDrawer.vue'
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { taskTypeGroups, formatTaskNumber, stockDetailsLabel, approvalLevelsFor, approvalRequestedBy, commentsFor, type Task } from '~/data/tasks'
 
 const props = defineProps<{
@@ -27,6 +29,13 @@ const props = defineProps<{
   multiSelectTransactionType?: boolean
   /** Column keys to force-hide regardless of user column settings */
   hiddenColumns?: string[]
+  /** Hides the "All filters" drawer's Reason field (e.g. Purchase/Expense/Warehouse tabs) */
+  hideReasonFilter?: boolean
+  /** Hides the "All filters" drawer's Due date field (e.g. Warehouse tab) */
+  hideDueDateFilter?: boolean
+  /** When true, renders the Details column before Warehouse instead of after
+   *  (Products tab — the reverse of the Warehouse tab's column order) */
+  detailsBeforeWarehouse?: boolean
 }>()
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -138,17 +147,25 @@ const columns: TableColumn[] = [
 
 // Column show/hide — Date & Number are always on (locked in the menu).
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(columns.map((c) => [c.key, true])))
-// Warehouse is only offered as a toggle on the inner tab that force-shows it (the
-// Warehouse submenu) — everywhere else it's in hiddenColumns, so drop it from the
-// menu entirely instead of showing a toggle that can't actually reveal a column.
+// Warehouse is only offered as a toggle on the inner tabs that force-show it
+// (Warehouse/Products submenus) — everywhere else it's in hiddenColumns, so
+// drop it from the menu entirely instead of showing a toggle that can't
+// actually reveal a column.
 const columnItems = computed(() =>
   columns
     .filter((c) => !props.hiddenColumns?.includes(c.key))
     .map((c) => ({ key: c.key, label: c.label, disabled: c.key === 'date' || c.key === 'number' })),
 )
-const visibleColumns = computed<TableColumn[]>(() =>
-  columns.filter((c) => columnVisibility[c.key] && !props.hiddenColumns?.includes(c.key))
-)
+const visibleColumns = computed<TableColumn[]>(() => {
+  const cols = columns.filter((c) => columnVisibility[c.key] && !props.hiddenColumns?.includes(c.key))
+  if (!props.detailsBeforeWarehouse) return cols
+  const warehouseIdx = cols.findIndex((c) => c.key === 'warehouse')
+  const detailsIdx = cols.findIndex((c) => c.key === 'details')
+  if (warehouseIdx === -1 || detailsIdx === -1) return cols
+  const swapped = [...cols]
+  ;[swapped[warehouseIdx], swapped[detailsIdx]] = [swapped[detailsIdx]!, swapped[warehouseIdx]!]
+  return swapped
+})
 function hideColumn(key: string) { columnVisibility[key] = false }
 
 // ─── Date range filter (default: last 30 days) — AdvancedDateRangePicker
@@ -156,6 +173,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 // day/month/year calendar views) with its own label + field. ─────────────────
 
 function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+
+// Parses MpDatePicker's format="DD/MM/YYYY" string output.
+function parseDMY(s: string): Date {
+  const [d, m, y] = s.split('/').map(Number)
+  return new Date(y!, m! - 1, d!)
+}
 function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate() + n); return x }
 
 const today = dayStart(new Date())
@@ -205,6 +228,16 @@ const warehouseOptions = computed(() => [...new Set(props.tasks.map((t) => t.war
 
 function applyDrawerFilters(v: InboxFiltersValue) { Object.assign(appliedFilters, v) }
 
+// Total / Balance due drawer filters — "Is greater than"/"Is less than" read a
+// single value field, "Is between" reads the min/max pair.
+function matchesAmountFilter(amount: number, comparator: AmountComparator, value: string, min: string, max: string): boolean {
+  if (comparator === 'gt') return value === '' || amount > Number(value)
+  if (comparator === 'lt') return value === '' || amount < Number(value)
+  const lo = min === '' ? -Infinity : Number(min)
+  const hi = max === '' ? Infinity : Number(max)
+  return amount >= lo && amount <= hi
+}
+
 // ─── Table state ──────────────────────────────────────────────────────────────
 
 // Newest request first by default — sorted on the source itself (not via
@@ -241,17 +274,10 @@ const {
     const matchesReason = f.reason.length === 0 || f.reason.includes(row.reason)
     const matchesRequestedBy = f.requestedBy.length === 0 || f.requestedBy.includes(row.requestedBy)
     const matchesWarehouse = f.warehouse.length === 0 || f.warehouse.includes(row.warehouse)
-    let matchesDueDate = true
-    if (f.dueDateRange && row.dueDate) {
-      const d = dayStart(new Date(row.dueDate))
-      matchesDueDate = d >= dayStart(f.dueDateRange[0]!) && d <= dayStart(f.dueDateRange[1]!)
-    }
-    const totalMin = f.totalMin === '' ? -Infinity : Number(f.totalMin)
-    const totalMax = f.totalMax === '' ? Infinity : Number(f.totalMax)
-    const matchesTotal = row.total >= totalMin && row.total <= totalMax
-    const balMin = f.balanceDueMin === '' ? -Infinity : Number(f.balanceDueMin)
-    const balMax = f.balanceDueMax === '' ? Infinity : Number(f.balanceDueMax)
-    const matchesBalanceDue = row.balanceDue >= balMin && row.balanceDue <= balMax
+    const matchesDueDate = !f.dueDate || !row.dueDate
+      || dayStart(new Date(row.dueDate)).getTime() === dayStart(parseDMY(f.dueDate)).getTime()
+    const matchesTotal = matchesAmountFilter(row.total, f.totalComparator, f.totalValue, f.totalMin, f.totalMax)
+    const matchesBalanceDue = matchesAmountFilter(row.balanceDue, f.balanceDueComparator, f.balanceDueValue, f.balanceDueMin, f.balanceDueMax)
 
     return matchesSearch && matchesType && matchesDate
       && matchesDrawerType && matchesDrawerDate && matchesReason && matchesRequestedBy
@@ -265,8 +291,9 @@ watch([transactionTypeFilter, dateRangeValue, appliedFilters], () => setPage(1))
 const isDrawerFilterActive = computed(() => {
   const f = appliedFilters
   return !!f.dateRange || f.transactionType.length > 0 || f.reason.length > 0
-    || f.requestedBy.length > 0 || f.warehouse.length > 0 || !!f.dueDateRange
-    || f.totalMin !== '' || f.totalMax !== '' || f.balanceDueMin !== '' || f.balanceDueMax !== ''
+    || f.requestedBy.length > 0 || f.warehouse.length > 0 || !!f.dueDate
+    || f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== ''
+    || f.balanceDueValue !== '' || f.balanceDueMin !== '' || f.balanceDueMax !== ''
 })
 
 const hasActiveFilter = computed(() => !!search.value || transactionTypeFilter.value.length > 0 || isDrawerFilterActive.value)
@@ -342,26 +369,24 @@ function formatDate(iso: string) {
           :multiple="multiSelectTransactionType"
         />
 
-        <button class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
+        <MpButton class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
           All filters
-        </button>
+        </MpButton>
       </div>
 
       <div class="filter-right">
         <div class="filter-btn-group">
           <ColumnSettingsMenu :id="`${idPrefix}-tasks-columns`" :items="columnItems" :visibility="columnVisibility" />
-          <button class="filter-icon-btn" aria-label="Export">
+          <MpButton class="filter-icon-btn" aria-label="Export">
             <MpIcon name="download" size="md" />
-          </button>
+          </MpButton>
         </div>
 
-        <div class="filter-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-        </div>
+        <MpInputGroup :id="`${idPrefix}-tasks-search`" class="filter-search">
+          <MpInputLeftAddon><MpIcon name="search" size="md" /></MpInputLeftAddon>
+          <MpInput v-model="search" type="text" placeholder="Search..." />
+        </MpInputGroup>
       </div>
     </template>
 
@@ -370,18 +395,10 @@ function formatDate(iso: string) {
       {{ formatDate(value as string) }}
     </template>
 
-    <!-- ── Cell: Number — View details chip on hover (same as Bills) ── -->
+    <!-- ── Cell: Number — text link, same pattern as the Sales index pages
+         (erp.css .cell-link; replaces the old row-hover "View details" chip) ── -->
     <template #cell-number="{ row }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ formatTaskNumber(row as Task) }}</span>
-        <button class="row-hover-btn" @click.stop>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text" @click.stop>{{ formatTaskNumber(row as Task) }}</a>
     </template>
 
     <!-- ── Cell: Warehouse ── -->
@@ -391,15 +408,23 @@ function formatDate(iso: string) {
 
     <!-- ── Cell: Details — Stock Count / Stock In/Out show a movement label
          (Stock Count, or the In/Out category) instead of a counterparty;
+         Product Conversion shows the converted product name + qty converted;
          everything else is plain text (contact / warehouse route). ── -->
     <template #cell-details="{ value, row }">
-      <template v-if="stockDetailsLabel(row as Task)">{{ stockDetailsLabel(row as Task) }}</template>
+      <ProductCell
+        v-if="(row as Task).docType === 'Product Conversion'"
+        :name="(row as Task).productName!"
+        :desc="(row as Task).qtyDesc"
+      />
+      <template v-else-if="stockDetailsLabel(row as Task)">{{ stockDetailsLabel(row as Task) }}</template>
       <template v-else>{{ value }}</template>
     </template>
 
-    <!-- ── Cell: Reason — MpBadge tableStatus (all warning) ── -->
+    <!-- ── Cell: Reason — MpBadge tableStatus. "Internal rule" (Warehouse doc
+         types) is a policy trigger, not a collections/limit trigger, so it gets
+         the neutral gray (announcement) badge instead of warning. ── -->
     <template #cell-reason="{ value }">
-      <MpBadge for="tableStatus" type="warning">
+      <MpBadge for="tableStatus" :type="value === 'Internal rule' ? 'announcement' : 'warning'">
         {{ value }}
       </MpBadge>
     </template>
@@ -443,13 +468,13 @@ function formatDate(iso: string) {
           />
           <MpPopover :id="`${idPrefix}-row-actions-${(row as Task).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="row-icon-btn" aria-label="More actions" @click.stop>
+              <MpButton class="row-icon-btn" aria-label="More actions" @click.stop>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <circle cx="12" cy="5" r="2" />
                   <circle cx="12" cy="12" r="2" />
                   <circle cx="12" cy="19" r="2" />
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -479,56 +504,19 @@ function formatDate(iso: string) {
     :requested-by-options="requestedByOptions"
     :warehouse-options="warehouseOptions"
     :show-warehouse="showWarehouseFilter"
+    :hide-reason="hideReasonFilter"
+    :hide-due-date="hideDueDateFilter"
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
   />
 </template>
 
 <style scoped>
-/* Cell with hover action button (same as Bills' Number/Beneficiary cells) */
-.cell-with-action {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-}
-
 .cell-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-
-.row-hover-btn {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  display: none;
-  align-items: center;
-  gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1;
-}
-
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px);
-  color: var(--mp-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-}
-
-:global(.erp-tr:hover .row-hover-btn) {
-  display: flex;
 }
 
 /* Actions cell: left padding 8px only */
@@ -566,19 +554,22 @@ function formatDate(iso: string) {
   gap: var(--mp-spacing-5); /* 20px (8px more than before) */
 }
 
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent). */
 .row-icon-btn {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
-  padding: var(--mp-spacing-1);
-  border: none;
-  background: transparent;
+  min-width: 0 !important;
+  padding: var(--mp-spacing-1) !important;
+  border: none !important;
+  background: transparent !important;
   cursor: pointer;
-  border-radius: var(--mp-radii-sm);
+  border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-subtle);
 }
 .row-icon-btn:hover {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered) !important;
   color: var(--mp-text-default);
 }
 
@@ -597,14 +588,17 @@ function formatDate(iso: string) {
   gap: var(--mp-spacing-3);
 }
 
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent). */
 .filter-all-btn {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-full, 999px);
+  min-width: 0 !important;
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: var(--mp-background-neutral) !important;
+  border: 1px solid var(--mp-border-bold) !important;
+  border-radius: var(--mp-radii-full, 999px) !important;
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-md);
@@ -612,10 +606,10 @@ function formatDate(iso: string) {
   cursor: pointer;
   white-space: nowrap;
 }
-.filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-all-btn--active {
-  background: var(--mp-background-selected, var(--mp-background-information));
-  border-color: var(--mp-border-selected, var(--mp-border-information));
+  background: var(--mp-background-selected, var(--mp-background-information)) !important;
+  border-color: var(--mp-border-selected, var(--mp-border-information)) !important;
   color: var(--mp-text-selected, var(--mp-text-information));
 }
 
@@ -624,45 +618,27 @@ function formatDate(iso: string) {
   align-items: center;
 }
 
+/* Rendered via MpButton, not a raw HTML control — default look reset. */
 .filter-icon-btn {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
+  min-width: 0 !important;
   width: var(--mp-sizes-9, 36px);
   height: var(--mp-sizes-9, 36px);
-  padding: var(--mp-spacing-2);
-  border: none;
-  background: transparent;
-  border-radius: var(--mp-radii-md);
+  padding: var(--mp-spacing-2) !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: var(--mp-radii-md) !important;
   cursor: pointer;
   color: var(--mp-text-default);
 }
-.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .filter-icon-btn--airene { color: var(--mp-airene-default); }
 
-.filter-search {
-  display: flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  width: 248px;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-full, 999px);
-  color: var(--mp-text-subtle);
-}
-
-.filter-search-input {
-  flex: 1;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-default);
-  min-width: 0;
-}
-.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+/* Rendered via MpInputGroup/MpInputLeftAddon/MpInput (Pixel's own merged-box
+   input pattern) — just pinned to the filter bar's fixed pill width/shape. */
+.filter-search { width: 248px; border-radius: var(--mp-radii-full, 999px) !important; overflow: hidden; }
 
 /* Enterprise toast — fully rounded with enterprise styling */
 :global(.toast-enterprise) {

@@ -3,6 +3,8 @@
 // type-only re-exports are) — this companion block holds the runtime export
 // (a fresh, all-empty filters value) and the shared type, both used by
 // TasksTablePage.vue and by <script setup> below (same module scope).
+import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
+
 export interface InboxFiltersValue {
   /** null = not applied. AdvancedDateRangePicker always needs 2 real dates to
    *  render (its internal `range` computed reads modelValue[0]/[1] directly and
@@ -13,9 +15,14 @@ export interface InboxFiltersValue {
   reason: string[]
   requestedBy: string[]
   warehouse: string[]
-  dueDateRange: Date[] | null
+  /** MpDatePicker format="DD/MM/YYYY" string — '' = not applied. */
+  dueDate: string
+  totalComparator: AmountComparator
+  totalValue: string
   totalMin: string
   totalMax: string
+  balanceDueComparator: AmountComparator
+  balanceDueValue: string
   balanceDueMin: string
   balanceDueMax: string
 }
@@ -27,9 +34,13 @@ export function emptyInboxFilters(): InboxFiltersValue {
     reason: [],
     requestedBy: [],
     warehouse: [],
-    dueDateRange: null,
+    dueDate: '',
+    totalComparator: 'gt',
+    totalValue: '',
     totalMin: '',
     totalMax: '',
+    balanceDueComparator: 'gt',
+    balanceDueValue: '',
     balanceDueMin: '',
     balanceDueMax: '',
   }
@@ -50,9 +61,11 @@ export function emptyInboxFilters(): InboxFiltersValue {
  * only restores whatever was last Applied from the drawer itself. Both sets of
  * filters are ANDed together when the table filters its rows.
  */
-import { MpIcon, MpInput, MpCheckbox } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpDatePicker } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import TransactionTypeCascadeMenu, { type CascadeGroup } from '~/components/patterns/TransactionTypeCascadeMenu.vue'
+import AmountComparatorField from '~/components/patterns/AmountComparatorField.vue'
+import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 
 const props = defineProps<{
   id: string
@@ -64,6 +77,10 @@ const props = defineProps<{
   warehouseOptions: string[]
   /** Warehouse checklist only makes sense on the Inbox "Warehouse" inner tab. */
   showWarehouse: boolean
+  /** Hides the Reason field (Purchase / Expense / Warehouse tabs). */
+  hideReason?: boolean
+  /** Hides the Due date field (Warehouse tab). */
+  hideDueDate?: boolean
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
@@ -73,25 +90,13 @@ const emit = defineEmits<{
 const draft = reactive<InboxFiltersValue>({ ...props.modelValue })
 watch(() => props.isOpen, (open) => { if (open) Object.assign(draft, props.modelValue) })
 
-// AdvancedDateRangePicker display fallback while draft.dateRange/dueDateRange are
-// null (unapplied) — picking a date writes a real range into the draft.
-function defaultRange(): Date[] {
-  const end = new Date()
-  const start = new Date(end)
-  start.setDate(start.getDate() - 29)
-  return [start, end]
-}
-
 function close() { emit('update:isOpen', false) }
 function apply() { emit('apply', { ...draft }); close() }
 function clearAll() { Object.assign(draft, emptyInboxFilters()) }
 
-function toggleIn(list: string[], value: string): string[] {
-  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
+function toggleReason(value: string) {
+  draft.reason = draft.reason.includes(value) ? draft.reason.filter((v) => v !== value) : [...draft.reason, value]
 }
-function toggleReason(value: string) { draft.reason = toggleIn(draft.reason, value) }
-function toggleRequestedBy(value: string) { draft.requestedBy = toggleIn(draft.requestedBy, value) }
-function toggleWarehouse(value: string) { draft.warehouse = toggleIn(draft.warehouse, value) }
 </script>
 
 <template>
@@ -100,22 +105,32 @@ function toggleWarehouse(value: string) { draft.warehouse = toggleIn(draft.wareh
       <div class="ibf-filters-panel" role="dialog" aria-label="All filters">
         <header class="ibf-filters-header">
           <span class="ibf-filters-title">All filters</span>
-          <button class="ibf-filters-close" type="button" aria-label="Close" @click="close">
+          <MpButton class="ibf-filters-close" type="button" aria-label="Close" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="ibf-filters-body">
-          <!-- Both of these are self-contained trigger + popover components (own
-               button, is-manual control) — MpFormLabel requires an MpFormControl
-               ancestor (every other usage in the codebase pairs them), and
-               MpFormControl in turn breaks MpPopoverTrigger's cloneVNode injection
-               (same reasoning as the ERP Approval/Comment Icon Pattern memory), so
-               neither wrapper works here — plain text label instead. -->
+          <!-- Date range / Transaction type / Requested by / Warehouse / Total /
+               Balance due are self-contained trigger + popover components (own
+               button, is-manual control) — MpFormControl breaks their
+               MpPopoverTrigger's cloneVNode injection (same reasoning as the ERP
+               Approval/Comment Icon Pattern memory), so they use a plain text
+               label instead. Only Due date below is an official Pixel3 form
+               component (MpDatePicker) and pairs with MpFormControl + MpFormLabel
+               normally, same as WorkOrderFiltersDrawer.vue.
+
+               Date range's own label is the same plain bold field-label format
+               as every other field here (not AdvancedDateRangePicker's dynamic
+               "Date range: Last 30 days" sub-label, which only ever appears once
+               a value is picked). It also always opens unset (never pre-filled
+               from the toolbar's own Date range filter up top — that's separate,
+               independent state, see the file header comment). -->
           <div class="ibf-field">
             <span class="ibf-field-label">Date range</span>
             <AdvancedDateRangePicker
-              :id="`${id}-daterange`" :model-value="draft.dateRange ?? defaultRange()"
+              :id="`${id}-daterange`" :model-value="draft.dateRange"
+              is-full-width hide-label placeholder="Select date range"
               @update:model-value="draft.dateRange = $event"
             />
           </div>
@@ -125,10 +140,11 @@ function toggleWarehouse(value: string) { draft.warehouse = toggleIn(draft.wareh
             <TransactionTypeCascadeMenu
               :id="`${id}-txntype`" v-model="draft.transactionType"
               :groups="cascadeGroups" multiple placeholder="Select transaction type"
+              is-full-width
             />
           </div>
 
-          <div class="ibf-field">
+          <div v-if="!hideReason" class="ibf-field">
             <span class="ibf-field-label">Reason</span>
             <ul class="ibf-checklist">
               <li
@@ -143,61 +159,65 @@ function toggleWarehouse(value: string) { draft.warehouse = toggleIn(draft.wareh
             </ul>
           </div>
 
+          <!-- Requested by / Warehouse — flat multi-select dropdown (Figma shows
+               a plain "Select ..." field, but both can reasonably match more
+               than one person/warehouse, so selection is multi- under the hood). -->
           <div class="ibf-field">
             <span class="ibf-field-label">Requested by</span>
-            <ul class="ibf-checklist">
-              <li
-                v-for="opt in requestedByOptions" :key="opt"
-                class="ibf-check-item" @click="toggleRequestedBy(opt)"
-              >
-                <span @click.stop>
-                  <MpCheckbox :id="`${id}-requestedby-${opt}`" :is-checked="draft.requestedBy.includes(opt)" @change="() => toggleRequestedBy(opt)" />
-                </span>
-                <span class="ibf-check-label">{{ opt }}</span>
-              </li>
-            </ul>
+            <MultiSelectDropdown
+              :id="`${id}-requestedby`" v-model="draft.requestedBy"
+              :options="requestedByOptions" placeholder="Select requested by"
+              is-full-width
+            />
           </div>
 
           <!-- Warehouse only appears when filtering inside the Warehouse inner tab. -->
           <div v-if="showWarehouse" class="ibf-field">
             <span class="ibf-field-label">Warehouse</span>
-            <ul class="ibf-checklist">
-              <li
-                v-for="opt in warehouseOptions" :key="opt"
-                class="ibf-check-item" @click="toggleWarehouse(opt)"
-              >
-                <span @click.stop>
-                  <MpCheckbox :id="`${id}-warehouse-${opt}`" :is-checked="draft.warehouse.includes(opt)" @change="() => toggleWarehouse(opt)" />
-                </span>
-                <span class="ibf-check-label">{{ opt }}</span>
-              </li>
-            </ul>
+            <MultiSelectDropdown
+              :id="`${id}-warehouse`" v-model="draft.warehouse"
+              :options="warehouseOptions" placeholder="Select warehouse"
+              is-full-width
+            />
           </div>
 
+          <MpFormControl v-if="!hideDueDate" :id="`${id}-duedate-fc`">
+            <MpFormLabel>Due date</MpFormLabel>
+            <MpDatePicker
+              :id="`${id}-duedate`" v-model="draft.dueDate"
+              format="DD/MM/YYYY" value-type="format" placeholder="Select due date"
+              is-clearable use-portal is-full-width
+            />
+          </MpFormControl>
+
           <div class="ibf-field">
-            <span class="ibf-field-label">Due date</span>
-            <AdvancedDateRangePicker
-              :id="`${id}-duedate`" :model-value="draft.dueDateRange ?? defaultRange()"
-              @update:model-value="draft.dueDateRange = $event"
+            <span class="ibf-field-label">Total (Rp)</span>
+            <AmountComparatorField
+              :id="`${id}-total`"
+              :comparator="draft.totalComparator"
+              :value="draft.totalValue"
+              :min="draft.totalMin"
+              :max="draft.totalMax"
+              @update:comparator="draft.totalComparator = $event"
+              @update:value="draft.totalValue = $event"
+              @update:min="draft.totalMin = $event"
+              @update:max="draft.totalMax = $event"
             />
           </div>
 
           <div class="ibf-field">
-            <span class="ibf-field-label">Total</span>
-            <div class="ibf-range-row">
-              <MpInput :id="`${id}-total-min`" v-model="draft.totalMin" type="number" placeholder="Min" is-full-width />
-              <span class="ibf-range-sep">–</span>
-              <MpInput :id="`${id}-total-max`" v-model="draft.totalMax" type="number" placeholder="Max" is-full-width />
-            </div>
-          </div>
-
-          <div class="ibf-field">
-            <span class="ibf-field-label">Balance due</span>
-            <div class="ibf-range-row">
-              <MpInput :id="`${id}-balancedue-min`" v-model="draft.balanceDueMin" type="number" placeholder="Min" is-full-width />
-              <span class="ibf-range-sep">–</span>
-              <MpInput :id="`${id}-balancedue-max`" v-model="draft.balanceDueMax" type="number" placeholder="Max" is-full-width />
-            </div>
+            <span class="ibf-field-label">Balance due (Rp)</span>
+            <AmountComparatorField
+              :id="`${id}-balancedue`"
+              :comparator="draft.balanceDueComparator"
+              :value="draft.balanceDueValue"
+              :min="draft.balanceDueMin"
+              :max="draft.balanceDueMax"
+              @update:comparator="draft.balanceDueComparator = $event"
+              @update:value="draft.balanceDueValue = $event"
+              @update:min="draft.balanceDueMin = $event"
+              @update:max="draft.balanceDueMax = $event"
+            />
           </div>
         </div>
 
@@ -221,7 +241,7 @@ function toggleWarehouse(value: string) { draft.warehouse = toggleIn(draft.wareh
 
 .ibf-filters-overlay {
   position: fixed; inset: 0; z-index: 1300;
-  background: rgba(8, 13, 14, 0.45);
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
   display: flex; justify-content: flex-end;
 }
 .ibf-filters-panel {
@@ -230,7 +250,7 @@ function toggleWarehouse(value: string) { draft.warehouse = toggleIn(draft.wareh
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: 24px;
+  border-radius: 12px;
   overflow: hidden;
 }
 .ibf-filters-header {
@@ -243,13 +263,17 @@ function toggleWarehouse(value: string) { draft.warehouse = toggleIn(draft.wareh
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent). */
 .ibf-filters-close {
-  display: inline-flex; align-items: center; justify-content: center;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  min-width: 0 !important;
   width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
+  border: none !important; background: none !important; border-radius: var(--mp-radii-md) !important;
+  padding: 0 !important;
   cursor: pointer; color: var(--mp-icon-default);
 }
-.ibf-filters-close:hover { background: var(--mp-background-neutral-hovered); }
+.ibf-filters-close:hover { background: var(--mp-background-neutral-hovered) !important; }
 
 .ibf-filters-body {
   flex: 1; overflow-y: auto;
@@ -260,20 +284,15 @@ function toggleWarehouse(value: string) { draft.warehouse = toggleIn(draft.wareh
 .ibf-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .ibf-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
-.ibf-checklist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); max-height: 176px; overflow-y: auto; }
+.ibf-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .ibf-check-item {
   display: flex;
   align-items: center;
   gap: 0;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
   cursor: pointer;
   user-select: none;
 }
-.ibf-check-item:hover { background: var(--mp-background-neutral-hovered); }
 .ibf-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-
-.ibf-range-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.ibf-range-sep { color: var(--mp-text-subtle); flex-shrink: 0; }
 
 .ibf-filters-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);

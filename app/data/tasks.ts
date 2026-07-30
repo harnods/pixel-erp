@@ -5,13 +5,22 @@ export type TaskDocType =
   | 'Payment received' | 'Sales Return'
   | 'Purchase Request' | 'Purchase Order' | 'Purchase Delivery' | 'Purchase Invoice'
   | 'Purchase Quote' | 'Purchase Payment' | 'Purchase Return'
-  | 'Expense' | 'Warehouse Transfer' | 'Production Plan' | 'Stock In/Out' | 'Stock Count'
+  | 'Expense' | 'Warehouse Transfer' | 'Stock In/Out' | 'Stock Count' | 'Product Conversion'
 
 export type TaskStatus = 'awaiting approval' | 'action required' | 'submitted'
 
 // Doc types with no meaningful Total / Balance due / Due date — internal
 // movements/plans rather than billable transactions.
-const NON_FINANCIAL_DOC_TYPES: TaskDocType[] = ['Warehouse Transfer', 'Production Plan', 'Stock In/Out', 'Stock Count']
+const NON_FINANCIAL_DOC_TYPES: TaskDocType[] = ['Warehouse Transfer', 'Stock In/Out', 'Stock Count', 'Product Conversion']
+
+// Reason categorization (Inbox "Awaiting approval" Reason column/filter) — kept
+// separate from NON_FINANCIAL_DOC_TYPES/INBOX_TAB_GROUPS (defined further down)
+// to avoid a temporal-dead-zone reference from buildTasks(), which runs at
+// module-eval time before those consts are initialized.
+const WAREHOUSE_REASON_DOC_TYPES: TaskDocType[] = ['Warehouse Transfer', 'Stock In/Out', 'Stock Count', 'Product Conversion']
+const PURCHASE_REASON_DOC_TYPES: TaskDocType[] = [
+  'Purchase Request', 'Purchase Order', 'Purchase Delivery', 'Purchase Invoice', 'Purchase Quote', 'Purchase Payment', 'Purchase Return',
+]
 
 export interface Task {
   id: string
@@ -40,7 +49,7 @@ const docTypes: TaskDocType[] = [
   'Payment received', 'Sales Return',
   'Purchase Request', 'Purchase Order', 'Purchase Delivery', 'Purchase Invoice',
   'Purchase Quote', 'Purchase Payment', 'Purchase Return',
-  'Expense', 'Warehouse Transfer', 'Production Plan', 'Stock In/Out', 'Stock Count',
+  'Expense', 'Warehouse Transfer', 'Stock In/Out', 'Stock Count', 'Product Conversion',
 ]
 
 const contacts = [
@@ -117,6 +126,12 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
       productName = p.name
       qtyDesc = `${sign}${qty} ${p.unit}`
       details = `${productName} ${qtyDesc}`
+    } else if (docType === 'Product Conversion') {
+      const p = products[(n + 1) % products.length]!
+      const qty = 5 + (n * 11) % 150
+      productName = p.name
+      qtyDesc = `${qty} ${p.unit}`
+      details = `${productName} ${qtyDesc}`
     }
 
     return {
@@ -135,8 +150,15 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
       warehouse,
       // Only 2 of the 25 seeded rows are Sales Invoice/Order — cycle just these two
       // reasons (no Overdue) so both examples actually show up in the demo data.
+      // Warehouse doc types are never overdue in the credit/collections sense —
+      // they're approved per internal policy instead. Purchase/Expense doc types
+      // only ever trigger on Amount limit (no Overdue, no Credit limit there).
       reason: (docType === 'Sales Invoice' || docType === 'Sales Order')
         ? (['Credit limit', 'Amount limit'] as const)[n % 2]!
+        : WAREHOUSE_REASON_DOC_TYPES.includes(docType)
+        ? 'Internal rule'
+        : (PURCHASE_REASON_DOC_TYPES.includes(docType) || docType === 'Expense')
+        ? 'Amount limit'
         : 'Overdue',
     }
   })
@@ -277,7 +299,7 @@ export const taskDocTypeTabs: { label: string; docType: TaskDocType | null }[] =
   { label: 'Warehouse transfers', docType: 'Warehouse Transfer' },
   { label: 'Stock In/Out', docType: 'Stock In/Out' },
   { label: 'Stock counts', docType: 'Stock Count' },
-  { label: 'Production plans', docType: 'Production Plan' },
+  { label: 'Product conversions', docType: 'Product Conversion' },
 ]
 
 // Inbox › Awaiting approval inner tab groups.
@@ -285,16 +307,18 @@ export const INBOX_TAB_GROUPS: Record<string, TaskDocType[]> = {
   Sales:     ['Sales Invoice', 'Payment received', 'Sales Order', 'Sales Return', 'Sales Quote', 'Sales Delivery'],
   Purchases: ['Purchase Invoice', 'Purchase Payment', 'Purchase Order', 'Purchase Return', 'Purchase Quote', 'Purchase Delivery', 'Purchase Request'],
   Expenses:  ['Expense'],
+  Products:  ['Product Conversion'],
   Warehouse: ['Warehouse Transfer', 'Stock In/Out', 'Stock Count'],
 }
 
 /** Live per-category counts for Awaiting approval — shared by the sidebar's
  *  children list and (previously) the inner tab strip, so both agree. */
-export function awaitingApprovalGroupCounts(): Record<'sales' | 'purchases' | 'expenses' | 'warehouse', number> {
+export function awaitingApprovalGroupCounts(): Record<'sales' | 'purchases' | 'expenses' | 'products' | 'warehouse', number> {
   return {
     sales:     awaitingApprovalTasks.filter(t => (INBOX_TAB_GROUPS.Sales     as string[]).includes(t.docType)).length,
     purchases: awaitingApprovalTasks.filter(t => (INBOX_TAB_GROUPS.Purchases as string[]).includes(t.docType)).length,
     expenses:  awaitingApprovalTasks.filter(t => (INBOX_TAB_GROUPS.Expenses  as string[]).includes(t.docType)).length,
+    products:  awaitingApprovalTasks.filter(t => (INBOX_TAB_GROUPS.Products  as string[]).includes(t.docType)).length,
     warehouse: awaitingApprovalTasks.filter(t => (INBOX_TAB_GROUPS.Warehouse as string[]).includes(t.docType)).length,
   }
 }
@@ -329,10 +353,15 @@ export const taskTypeGroups: { label: string; children: { label: string; value: 
     ],
   },
   {
+    label: 'Products',
+    children: [
+      { label: 'Product conversions', value: 'Product Conversion' },
+    ],
+  },
+  {
     label: 'Warehouse',
     children: [
       { label: 'Warehouse transfers', value: 'Warehouse Transfer' },
-      { label: 'Production plans', value: 'Production Plan' },
       { label: 'Stock In/Out', value: 'Stock In/Out' },
     ],
   },

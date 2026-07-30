@@ -85,9 +85,6 @@ const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/Warehous
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
-const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
-const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
-const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
 const PartialReceiptDetailsPage = asyncPage(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
@@ -142,6 +139,9 @@ const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTask
 const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
+const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
+const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
+const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -176,8 +176,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CreateBillOfMaterialsPage, id: 'new' }
     return { component: BillOfMaterialsDetailsPage, id: segs[1]! }
   }
-  // /warehouse-transfers/new → create form; /:id/edit → edit form; /:id → detail.
-  // The bare index falls through to the registry.
+  // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
+  // forms (not built yet → placeholder). The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
     if (segs[1] === 'new') return { component: WarehouseTransferFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: WarehouseTransferFormPage, id: segs[1]! }
@@ -276,6 +276,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 4 && segs[0] === 'product-list' && segs[2] === 'batches') {
     return { component: BatchDetailsPage, id: `${segs[1]}::${decodeURIComponent(segs[3]!)}` }
   }
+  // /warehouses/:whId/batches/:sku/:batchNo → warehouse-scoped batch detail (same
+  // BatchDetailsPage, stays under /warehouses; id encodes the warehouse context).
+  if (segs.length >= 5 && segs[0] === 'warehouses' && segs[2] === 'batches') {
+    return { component: BatchDetailsPage, id: `${segs[1]}::${segs[3]}::${decodeURIComponent(segs[4]!)}` }
+  }
   // /product-list/:sku → product detail
   if (segs.length >= 2 && segs[0] === 'product-list') {
     return { component: ProductDetailsPage, id: segs[1] }
@@ -362,7 +367,7 @@ const pageTabs: Record<string, string[]> = {
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
-  'Expenses': ['Bills', 'Awaiting approval', 'Review files'],
+  'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -412,7 +417,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
-    if (bills.length) out['Awaiting approval'] = bills.length
+    if (bills.length) out['Awaiting Approval'] = bills.length
     if (reviewFiles.length) out['Review files'] = reviewFiles.length
     return out
   }
@@ -523,7 +528,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   },
   'Expenses': {
     'Bills': BillsIndexPage,
-    'Awaiting approval': BillsAwaitingApprovalPage,
+    'Awaiting Approval': BillsAwaitingApprovalPage,
     'Review files': BillsReviewFilesPage,
   },
   'Stock adjustments': {
@@ -879,6 +884,11 @@ function scrollChatToBottom() {
 // Expose sendMessage so popover can call it
 provide('sendAireneMessage', sendMessage)
 
+// Bridge: let components above the page (e.g. the header search) drive the panel.
+const aireneBridge = useAireneBridge()
+watch(aireneBridge.toggleSignal, () => toggleAirene())
+watch(aireneBridge.sendSignal, () => { if (aireneBridge.pendingText.value) sendMessage(aireneBridge.pendingText.value) })
+
 // ── Resize panel ──────────────────────────────────────────────────────────
 const PANEL_MIN = 320
 const PANEL_MAX = 640
@@ -919,7 +929,7 @@ function startResize(e: MouseEvent) {
       <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
 
       <template v-else>
-      <div class="page-title-bar">
+      <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
@@ -1124,8 +1134,8 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <button class="import-item">Import from spreadsheet</button>
-                <button class="import-item import-item--ai">
+                <MpButton class="import-item">Import from spreadsheet</MpButton>
+                <MpButton class="import-item import-item--ai">
                   <span>Upload bills</span>
                   <span class="ai-badge">
                     <img
@@ -1134,7 +1144,7 @@ function startResize(e: MouseEvent) {
                     />
                     <span class="ai-badge__label">AI</span>
                   </span>
-                </button>
+                </MpButton>
               </div>
 
               <!-- Group 2: Forward bills to -->
@@ -1607,13 +1617,14 @@ function startResize(e: MouseEvent) {
 }
 
 .import-item {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: var(--mp-spacing-2);
-  width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: none;
-  border: none;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: none !important;
+  border: none !important;
   cursor: pointer;
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-regular);
@@ -1622,7 +1633,7 @@ function startResize(e: MouseEvent) {
   text-align: left;
 }
 .import-item:hover {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle) !important;
 }
 
 .import-item--ai {

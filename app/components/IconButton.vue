@@ -65,8 +65,8 @@ const buttonClass = computed(() =>
   position: absolute;
   top: 5px;
   right: 7px;
-  width: 12px;
-  height: 12px;
+  width: var(--mp-sizes-3, 12px);
+  height: var(--mp-sizes-3, 12px);
   border-radius: 9999px;
   background: var(--mp-colors-red-500, #ef4444);
   border: 2px solid var(--mp-colors-background-header, #142d26);

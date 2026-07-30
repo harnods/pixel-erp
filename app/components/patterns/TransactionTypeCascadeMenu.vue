@@ -24,7 +24,7 @@
  * AdvancedDateRangePicker / ERP Approval-icon memory for why MpTooltip/
  * slot-forwarded triggers break MpPopoverTrigger's cloneVNode injection.
  */
-import { MpIcon, MpCheckbox, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
+import { MpIcon, MpCheckbox, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
 
 export interface CascadeGroup {
   label: string
@@ -37,6 +37,7 @@ const props = defineProps<{
   groups: CascadeGroup[]
   placeholder?: string
   multiple?: boolean
+  isFullWidth?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [string[]] }>()
 
@@ -137,7 +138,7 @@ function clear(e: MouseEvent) {
     @close="close"
   >
     <MpPopoverTrigger>
-      <button class="ttc-field" type="button" @click.stop="toggle">
+      <MpButton class="ttc-field" :class="{ 'ttc-field--full': isFullWidth }" type="button" @click.stop="toggle">
         <span class="ttc-field__value" :class="{ 'ttc-field__value--placeholder': !selectedLabel }">
           {{ selectedLabel || placeholder || 'Transaction type' }}
         </span>
@@ -147,7 +148,7 @@ function clear(e: MouseEvent) {
             <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
 
     <MpPopoverContent :class="css({ padding: '0' })" @blur="close" @escape="close">
@@ -198,22 +199,11 @@ function clear(e: MouseEvent) {
 </template>
 
 <style scoped>
-.ttc-field {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--mp-spacing-2);
-  width: 200px;
-  height: var(--mp-sizes-9, 36px);
-  padding: 0 var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-  cursor: pointer;
-}
-.ttc-field:hover { background: var(--mp-background-neutral-hovered); }
+/* Rendered via MpButton, not a raw HTML control — default look reset (see
+   IconButton/.demo-fab precedent). */
+.ttc-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 200px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral) !important; border: 1px solid var(--mp-border-default) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
+.ttc-field:hover { background: var(--mp-background-neutral-hovered) !important; }
+.ttc-field--full { width: 100%; }
 
 .ttc-field__value {
   overflow: hidden;
@@ -239,12 +229,7 @@ function clear(e: MouseEvent) {
   align-items: flex-start;
 }
 
-.ttc-col {
-  display: flex;
-  flex-direction: column;
-  width: 200px;
-  padding: var(--mp-spacing-2) 0;
-}
+.ttc-col { display: flex; flex-direction: column; width: 200px; padding: var(--mp-spacing-2) 0; }
 
 .ttc-col--parents {
   position: relative;
@@ -258,7 +243,7 @@ function clear(e: MouseEvent) {
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);
-  box-shadow: var(--mp-shadows-md, 0 4px 12px rgba(0, 0, 0, 0.12));
+  box-shadow: var(--mp-shadows-md, 0 4px 12px rgba(0, 0, 0, 0.12)); /* pixel-police-allow-shadow: floating cascade flyout panel */
 }
 
 .ttc-row {

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import TasksTablePage from '~/components/patterns/TasksTablePage.vue'
+import NotificationsView from '~/components/patterns/NotificationsView.vue'
 import { awaitingApprovalTasks, INBOX_TAB_GROUPS } from '~/data/tasks'
 
 const route = useRoute()
@@ -13,6 +14,7 @@ const GROUP_MAP: Record<string, string[]> = {
   sales:     INBOX_TAB_GROUPS.Sales     as string[],
   purchases: INBOX_TAB_GROUPS.Purchases as string[],
   expenses:  INBOX_TAB_GROUPS.Expenses  as string[],
+  products:  INBOX_TAB_GROUPS.Products  as string[],
   warehouse: INBOX_TAB_GROUPS.Warehouse as string[],
 }
 
@@ -27,17 +29,24 @@ const filteredTasks = computed(() => {
 const allowedDocTypes = computed<string[] | null>(() => GROUP_MAP[innerTab.value] ?? null)
 const hideTransactionType = computed(() => innerTab.value === 'expenses')
 const hiddenColumns = computed<string[]>(() => {
-  if (innerTab.value === 'warehouse') return ['dueDate', 'balanceDue', 'total', 'reason']
+  if (innerTab.value === 'warehouse' || innerTab.value === 'products') return ['dueDate', 'balanceDue', 'total']
   return ['warehouse']
 })
+// Products repeats the Warehouse tab's index pattern but with Details (product
+// name + qty converted) leading and Warehouse trailing — the reverse of every
+// other tab's column order.
+const detailsBeforeWarehouse = computed(() => innerTab.value === 'products')
+
+// "All filters" drawer field visibility — Reason doesn't apply to Purchase,
+// Expense, Products, or Warehouse; Due date doesn't apply to Products or
+// Warehouse (no due dates there).
+const hideReasonFilter = computed(() => ['purchases', 'expenses', 'products', 'warehouse'].includes(innerTab.value))
+const hideDueDateFilter = computed(() => innerTab.value === 'products' || innerTab.value === 'warehouse')
 </script>
 
 <template>
-  <!-- Notifications — placeholder -->
-  <div v-if="tab === 'notifications'" class="inbox-empty">
-    <p class="inbox-empty__title">Notifications</p>
-    <p class="inbox-empty__desc">Notifications will show up here.</p>
-  </div>
+  <!-- Notifications — two-pane list + detail -->
+  <NotificationsView v-if="tab === 'notifications'" />
 
   <!-- Awaiting approval — table filtered by the URL's innerTab -->
   <TasksTablePage
@@ -48,30 +57,8 @@ const hiddenColumns = computed<string[]>(() => {
     :hide-transaction-type="hideTransactionType"
     :multi-select-transaction-type="innerTab === 'all'"
     :hidden-columns="hiddenColumns"
+    :details-before-warehouse="detailsBeforeWarehouse"
+    :hide-reason-filter="hideReasonFilter"
+    :hide-due-date-filter="hideDueDateFilter"
   />
 </template>
-
-<style scoped>
-.inbox-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  height: 100%;
-  min-height: 240px;
-}
-
-.inbox-empty__title {
-  font-size: 18px;
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-  margin: 0 0 var(--mp-spacing-2);
-}
-
-.inbox-empty__desc {
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-subtle);
-  margin: 0;
-}
-</style>

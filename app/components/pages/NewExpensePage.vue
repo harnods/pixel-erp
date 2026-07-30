@@ -6,7 +6,7 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTextlink, css,
   type DataInterface,
 } from '@mekari/pixel3'
 import { VENDORS } from '~/data/master'
@@ -63,8 +63,10 @@ function onBeneficiaryAdd(_suggestions: unknown, currentSearch: string) {
 
 const iHavePaid = ref(true)
 const dueDate = ref(todayDisplay)
+const dueDateError = ref(false)
 
 const transactionDate = ref(todayDisplay)
+const transactionDateError = ref(false)
 const transactionNo = ref('')
 const referenceNo = ref('')
 const tags = ref<DataInterface[]>([])
@@ -366,6 +368,8 @@ function reopenAutofillPanel() {
 // ── Save ─────────────────────────────────────────────────────────────────────
 function handleSave(mode: 'close' | 'new') {
   if (!beneficiary.value) { beneficiaryError.value = true; return }
+  if (!transactionDate.value) { transactionDateError.value = true; return }
+  if (!iHavePaid.value && !dueDate.value) { dueDateError.value = true; return }
 
   // The dropzone receipt (if any) + the form's own Attachment files both land on
   // the saved bill as attachments. Fresh object URLs are minted here (rather than
@@ -434,7 +438,7 @@ function handleSave(mode: 'close' | 'new') {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goExpenses">Expenses</button>
+          <MpTextlink id="ne-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">Expenses</MpTextlink>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New expense</h1>
@@ -447,9 +451,9 @@ function handleSave(mode: 'close' | 'new') {
 
       <!-- ── Docked rail — shown after a close that wasn't permanently suppressed ── -->
       <div v-if="leftPanelDocked" class="ex-docked-rail">
-        <button type="button" class="ex-docked-btn" aria-label="Open receipt autofill" @click="undockPanel">
+        <MpButton class="ex-docked-btn" aria-label="Open receipt autofill" @click="undockPanel">
           <MpIcon name="airene-brand" size="md" />
-        </button>
+        </MpButton>
       </div>
 
       <!-- ── Left panel: receipt dropzone / preview ── -->
@@ -460,9 +464,9 @@ function handleSave(mode: 'close' | 'new') {
               <MpIcon name="airene-brand" size="md" />
               <h2 class="ex-left-header-heading">Autofill fields</h2>
             </div>
-            <button class="ex-icon-btn" aria-label="Close receipt panel" @click="requestClosePanel">
+            <MpButton class="ex-icon-btn" aria-label="Close receipt panel" @click="requestClosePanel">
               <MpIcon name="close" size="sm" />
-            </button>
+            </MpButton>
           </template>
           <template v-else>
             <div class="ex-file-meta">
@@ -487,9 +491,9 @@ function handleSave(mode: 'close' | 'new') {
                   @click="zoomMode = '100'"
                 >100%</button>
               </div>
-              <button class="ex-icon-btn" aria-label="Close receipt panel" @click="requestClosePanel">
+              <MpButton class="ex-icon-btn" aria-label="Close receipt panel" @click="requestClosePanel">
                 <MpIcon name="close" size="sm" />
-              </button>
+              </MpButton>
             </div>
           </template>
         </div>
@@ -513,12 +517,12 @@ function handleSave(mode: 'close' | 'new') {
             <img src="/illustrations/receipt-dropzone.png" alt="" class="ex-dropzone-thumb-img" />
             <p class="ex-dropzone-title">
               Drop your receipt file here or
-              <button type="button" class="ex-dropzone-browse" @click.stop="handleClickInput">choose</button>
+              <MpTextlink id="ne-dropzone-browse" as="a" class="ex-dropzone-browse" @click.stop.prevent="handleClickInput">browse</MpTextlink>
             </p>
             <p class="ex-dropzone-desc">
-              Airene will read your file and fill in the details automatically.
-              Supported formats: PDF, PNG, JPG.
-              Maximum file size: 10 MB.
+              This feature will reduce your monthly AI token usage.
+              Supported formats: PDF, PNG and JPG.
+              Maximum file size 10 MB.
             </p>
           </template>
           <template #loading>
@@ -531,15 +535,15 @@ function handleSave(mode: 'close' | 'new') {
 
         <p v-if="dropzoneError" class="ex-dropzone-error">{{ dropzoneError }}</p>
 
-        <button v-if="!uploadedFile" type="button" class="ex-turn-off-link" @click="requestTurnOffAutofill">
-          Turn off autofill
-        </button>
+        <MpTextlink v-if="!uploadedFile" id="ne-turn-off-link" as="a" class="ex-turn-off-link" @click.prevent="requestTurnOffAutofill">
+          Turn off autofill option
+        </MpTextlink>
 
         <!-- Uploaded-state footer: Airene disclaimer + feedback thumbs -->
         <div v-if="uploadedFile" class="ex-airene-disclaimer">
           <p class="ex-airene-disclaimer-text">
             Airene responses can be inaccurate or misleading.
-            <button type="button" class="ex-airene-learn-more">Learn more</button>
+            <MpTextlink id="ne-airene-learn-more" as="a" class="ex-airene-learn-more" @click.prevent>Learn more</MpTextlink>
           </p>
           <div class="ex-airene-feedback">
             <button
@@ -584,7 +588,7 @@ function handleSave(mode: 'close' | 'new') {
                 {{ currentSearch ? `Add "${currentSearch}" as a new beneficiary` : 'Add new beneficiary' }}
               </template>
             </MpAutocomplete>
-            <MpFormErrorMessage>Select beneficiary</MpFormErrorMessage>
+            <MpFormErrorMessage>Please select a beneficiary</MpFormErrorMessage>
           </MpFormControl>
           <div class="ex-paid-check">
             <MpCheckbox id="ex-paid" :is-checked="iHavePaid" @change="iHavePaid = !iHavePaid" />
@@ -594,32 +598,40 @@ function handleSave(mode: 'close' | 'new') {
 
         <!-- Transaction date -> Transaction no. -> Due date -> Reference no. -> Tag -->
         <div class="ex-grid-2 ex-section-divider">
-          <MpFormControl id="ex-txdate">
+          <MpFormControl id="ex-txdate" is-required :is-invalid="transactionDateError">
             <MpFormLabel>Transaction date</MpFormLabel>
             <div class="ex-datepicker">
-              <MpDatePicker id="ex-txdate-dp" v-model="transactionDate" format="DD/MM/YYYY" value-type="format" use-portal />
+              <MpDatePicker
+                id="ex-txdate-dp" v-model="transactionDate" format="DD/MM/YYYY" value-type="format" use-portal
+                @update:model-value="transactionDateError = false"
+              />
             </div>
+            <MpFormErrorMessage>Please select a transaction date</MpFormErrorMessage>
           </MpFormControl>
-          <MpFormControl id="ex-transno">
+          <MpFormControl id="ex-transno" is-required>
             <div class="ex-label-row">
               <MpFormLabel>Transaction no.</MpFormLabel>
               <span class="ex-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
             </div>
-            <MpInput id="ex-transno-input" v-model="transactionNo" placeholder="Auto" is-full-width is-disabled />
+            <MpInput id="ex-transno-input" v-model="transactionNo" placeholder="[Auto]" is-full-width is-disabled />
           </MpFormControl>
           <!-- Due date — only relevant while the bill is still unpaid -->
-          <MpFormControl v-if="!iHavePaid" id="ex-duedate">
+          <MpFormControl v-if="!iHavePaid" id="ex-duedate" is-required :is-invalid="dueDateError">
             <MpFormLabel>Due date</MpFormLabel>
             <div class="ex-datepicker">
-              <MpDatePicker id="ex-duedate-dp" v-model="dueDate" format="DD/MM/YYYY" value-type="format" use-portal />
+              <MpDatePicker
+                id="ex-duedate-dp" v-model="dueDate" format="DD/MM/YYYY" value-type="format" use-portal
+                @update:model-value="dueDateError = false"
+              />
             </div>
+            <MpFormErrorMessage>Please select a due date</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="ex-refno">
             <MpFormLabel>Reference no.</MpFormLabel>
             <MpInput id="ex-refno-input" v-model="referenceNo" is-full-width />
           </MpFormControl>
           <MpFormControl id="ex-tags">
-            <MpFormLabel>Tags</MpFormLabel>
+            <MpFormLabel>Tag</MpFormLabel>
             <MpInputTag id="ex-tags-input" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
           </MpFormControl>
         </div>
@@ -689,9 +701,9 @@ function handleSave(mode: 'close' | 'new') {
                       </div>
                     </td>
                     <td class="ex-td ex-td--del">
-                      <button class="ex-del-btn" type="button" @click="removeRow(row.id)">
+                      <MpButton class="ex-del-btn" @click="removeRow(row.id)">
                         <MpIcon name="minus-circular" size="sm" />
-                      </button>
+                      </MpButton>
                     </td>
                   </template>
                 </tr>
@@ -718,7 +730,7 @@ function handleSave(mode: 'close' | 'new') {
               <div class="ex-section-label-row">
                 <div class="ex-section-label">Attachment</div>
                 <MpButton v-if="!leftPanelOpen && autofillOff" variant="textLink" size="sm" left-icon="airene-brand" @click="reopenAutofillPanel">
-                  Open autofill
+                  Try autofill
                 </MpButton>
               </div>
               <div class="ex-attachment">
@@ -729,13 +741,13 @@ function handleSave(mode: 'close' | 'new') {
                   accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
                   is-multiple is-full-width
                   placeholder="or drag and drop here"
-                  button-text="Choose file"
+                  button-text="Browse file"
                   @change="onFormFileChange"
                   @dragover.prevent="formDragOver = true"
                   @dragleave.prevent="formDragOver = false"
                   @drop.prevent="onFormFileDrop"
                 />
-                <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 5 files per transaction</p>
+                <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
                 <MpUploadList
                   v-for="f in formAttachedFiles" :key="f.name"
                   :id="`ex-attachment-file-${f.name}`"
@@ -783,10 +795,10 @@ function handleSave(mode: 'close' | 'new') {
                       <MpInputLeftAddon has-background class="ex-wh-unit-addon">
                         <MpPopover :id="`ex-wh-unit-${wh.id}`" is-close-on-select placement="bottom-start" use-portal :is-keep-alive="false">
                           <MpPopoverTrigger>
-                            <button type="button" class="ex-wh-unit-trigger">
+                            <MpButton class="ex-wh-unit-trigger">
                               <span>{{ wh.unit }}</span>
                               <MpIcon name="chevrons-down" size="sm" />
-                            </button>
+                            </MpButton>
                           </MpPopoverTrigger>
                           <MpPopoverContent :class="css({ minWidth: '64px', width: 'max-content' })">
                             <MpPopoverList>
@@ -807,9 +819,9 @@ function handleSave(mode: 'close' | 'new') {
                       :id="`ex-wh-account-ac-${wh.id}`" v-model="wh.accountId" :data="BANK_ACCOUNT_OPTIONS"
                       label-prop="name" value-prop="id" is-searchable use-portal is-full-width
                     />
-                    <button v-if="withholdingRows.length > 1" class="ex-del-btn" type="button" @click="removeWithholdingRow(wh.id)">
+                    <MpButton v-if="withholdingRows.length > 1" class="ex-del-btn" @click="removeWithholdingRow(wh.id)">
                       <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    </MpButton>
                   </div>
                 </MpFormControl>
               </div>
@@ -899,12 +911,12 @@ function handleSave(mode: 'close' | 'new') {
       <MpModalContent>
         <MpModalHeader>Close receipt panel?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="ex-modal-copy">You can turn it back on anytime from the Attachment field.</p>
+          <p class="ex-modal-copy">You can turn it back on anytime from the same spot.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="ex-modal-footer-btns">
             <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="showCloseConfirm = false">Cancel</button>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="closePanelDontShowAgain">Don't ask again</button>
+            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="closePanelDontShowAgain">Close &amp; don't show again</button>
             <button type="button" class="btn-enterprise btn-enterprise--primary" @click="closePanelKeepAsking">Close</button>
           </div>
         </MpModalFooter>
@@ -915,9 +927,9 @@ function handleSave(mode: 'close' | 'new') {
     <!-- Turn-off-autofill confirmation -->
     <MpModal :is-open="showTurnOffConfirm" @close="showTurnOffConfirm = false">
       <MpModalContent>
-        <MpModalHeader>Turn off autofill?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>Turn off autofill option?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p class="ex-modal-copy">You can turn it back on anytime from the Attachment field in the expense form.</p>
+          <p class="ex-modal-copy">You can turn it back on anytime from the attachment field in expense form.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="ex-modal-footer-btns">
@@ -960,13 +972,13 @@ function handleSave(mode: 'close' | 'new') {
    Zero padding, zero gap between panels. Rounded top corners clip both panels. */
 .ex-stage {
   flex: 1; min-height: 0; display: flex; position: relative;
-  background: #EFF1F1; border-radius: 12px 12px 0 0; overflow: hidden;
+  background: var(--mp-colors-gray-50, #EFF1F1); border-radius: 12px 12px 0 0; overflow: hidden;
 }
 
 /* ── Left panel — no background, 24px left / 12px right (divider gap) / 12px top-bottom padding, full height ── */
 .ex-left {
   flex-shrink: 0;
-  padding: 12px 12px 32px 24px;
+  padding: var(--mp-spacing-3, 12px) var(--mp-spacing-3, 12px) var(--mp-spacing-8, 32px) var(--mp-spacing-6, 24px);
   display: flex; flex-direction: column; min-height: 0;
 }
 .ex-left-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; margin-bottom: 8px; }
@@ -983,12 +995,13 @@ function handleSave(mode: 'close' | 'new') {
   gap: var(--mp-spacing-2, 8px); padding: 12px 12px 24px;
 }
 .ex-docked-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; padding: var(--mp-spacing-2, 8px);
-  border: none; background: none; border-radius: var(--mp-radii-md, 6px);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
+  padding: var(--mp-spacing-2, 8px) !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-md, 6px) !important;
   cursor: pointer;
 }
-.ex-docked-btn:hover { background: var(--mp-background-neutral-hovered); }
+.ex-docked-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 
 /* ── Resize divider — drag to resize the left panel ── */
 .ex-divider {
@@ -998,13 +1011,14 @@ function handleSave(mode: 'close' | 'new') {
 .ex-divider::after { content: ''; display: block; width: 2px; height: var(--mp-spacing-10, 40px); background: var(--mp-border-default); border-radius: var(--mp-radii-full); }
 .ex-divider:hover::after { background: var(--mp-border-bold, #758195); }
 .ex-icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-sm);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   color: var(--mp-text-secondary); cursor: pointer;
 }
-.ex-icon-btn:hover { background: rgba(0, 0, 0, 0.06); color: var(--mp-text-default); }
+.ex-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; color: var(--mp-text-default); }
 .ex-icon-btn--active,
-.ex-icon-btn--active:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-link, #2563eb); }
+.ex-icon-btn--active:hover { background: var(--mp-background-neutral-hovered) !important; color: var(--mp-text-link, #2563eb); }
 .ex-file-controls { display: flex; align-items: center; gap: 8px; }
 
 /* Uploaded-state header: file-type icon + filename/size stack (mirrors OCR Figma header) */
@@ -1020,13 +1034,13 @@ function handleSave(mode: 'close' | 'new') {
 /* Fit / 100% zoom pill (hand-rolled per the (E)/enterprise-token convention) */
 .ex-zoom-toggle {
   display: flex; align-items: center; gap: 4px; flex-shrink: 0;
-  padding: 4px; border-radius: var(--mp-radii-full, 999px);
+  padding: var(--mp-spacing-1, 4px); border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-neutral, #fff);
   border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
 }
 .ex-zoom-part {
   border: none; background: none; cursor: pointer;
-  padding: 4px 8px; border-radius: var(--mp-radii-full, 999px);
+  padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); border-radius: var(--mp-radii-full, 999px);
   font: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px);
   color: var(--mp-text-secondary);
 }
@@ -1063,7 +1077,7 @@ function handleSave(mode: 'close' | 'new') {
   border: 1px dashed var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md, 6px);
   background: transparent;
-  padding: 40px;
+  padding: var(--mp-sizes-10, 40px);
   gap: var(--mp-spacing-3);
   transition: border-color 0.1s, background 0.1s;
 }
@@ -1090,7 +1104,7 @@ function handleSave(mode: 'close' | 'new') {
 .ex-dropzone-loading { display: flex; flex-direction: column; align-items: center; gap: 24px; }
 .ex-dropzone-loader {
   display: flex; align-items: center; justify-content: center;
-  width: 80px; height: 80px; padding: var(--mp-spacing-4, 16px);
+  width: var(--mp-sizes-20, 80px); height: var(--mp-sizes-20, 80px); padding: var(--mp-spacing-4, 16px);
   border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   color: var(--mp-icon-default, #536062);
@@ -1131,7 +1145,7 @@ function handleSave(mode: 'close' | 'new') {
 /* Hover overlay ("Replace your file here") uses the same scrim colour as a modal
    overlay, not Pixel's dropzone default. */
 .ex-dropzone :deep(.mp-dropzone__overlayPreview) {
-  background: rgba(34, 34, 34, 0.8);
+  background: var(--mp-colors-overlay, rgba(34, 34, 34, 0.8));
 }
 
 .ex-dropzone-title {
@@ -1163,28 +1177,27 @@ function handleSave(mode: 'close' | 'new') {
 
 /* ── Right panel — rounded left corners, neutral bg, 24px padding, scrollable ── */
 .ex-right {
+  --ex-field-width: 318px;
   flex: 1; min-width: 0; overflow-y: auto;
   background: var(--mp-background-neutral, white);
   border-radius: 12px 0 0 12px;
-  padding: 24px;
+  padding: var(--mp-spacing-6, 24px);
   container-type: inline-size;
 }
 
-/* Beneficiary row shares the exact same grid column tracks as the field grid below, so its 1-column
-   width always matches a single field (e.g. Transaction date) pixel-for-pixel — no calc()/ratio guesswork. */
-.ex-row-1, .ex-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
-.ex-row-1 { align-items: flex-end; max-width: 620px; }
-.ex-field-flex { grid-column: span 1; min-width: 0; }
-.ex-paid-check { grid-column: span 1; display: flex; align-items: center; gap: var(--mp-spacing-2); padding-bottom: 8px; white-space: nowrap; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+/* Fields keep a fixed comfortable width regardless of whether the receipt panel is
+   open or closed — they wrap onto new rows as space allows instead of stretching
+   narrower/wider with the container. Beneficiary matches the same fixed field width
+   pixel-for-pixel (e.g. Transaction date) — no calc()/ratio guesswork. */
+.ex-row-1 { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px 24px; }
+.ex-field-flex { flex: 0 0 var(--ex-field-width); min-width: 0; }
+.ex-paid-check { display: flex; align-items: center; gap: var(--mp-spacing-2); padding-bottom: 8px; white-space: nowrap; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-/* Narrow (default): 2 equal columns, natural field order flows top-to-bottom */
-.ex-grid-2 { padding: 20px 0; max-width: 620px; }
-.ex-section-divider { border-bottom: 1px dashed var(--mp-border-default); }
-
-/* Wide panel: all 5 fields inline in one row */
-@container (min-width: 860px) {
-  .ex-row-1, .ex-grid-2 { grid-template-columns: repeat(5, 1fr); max-width: none; }
+.ex-grid-2 {
+  display: grid; grid-template-columns: repeat(auto-fill, var(--ex-field-width));
+  justify-content: flex-start; gap: 16px 24px; padding: 20px 0;
 }
+.ex-section-divider { border-bottom: 1px dashed var(--mp-border-default); }
 .ex-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .ex-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 .ex-datepicker { width: 100%; }
@@ -1216,7 +1229,7 @@ function handleSave(mode: 'close' | 'new') {
 .ex-th--drag, .ex-th--del { padding: 0; }
 
 .ex-td {
-  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
   vertical-align: middle;
@@ -1236,17 +1249,13 @@ function handleSave(mode: 'close' | 'new') {
 /* Line items table: left-aligned container, right-side-only column dividers
    instead of row-separator borders. */
 .ex-lineitems-table { min-width: 764px; margin-right: auto; }
-.ex-lineitems-table .ex-td {
-  height: 52px;
-  vertical-align: middle;
-  border-bottom: 1px solid var(--mp-border-default);
-}
+.ex-lineitems-table .ex-td { height: 52px; vertical-align: middle; border-bottom: 1px solid var(--mp-border-default); }
 .ex-lineitems-table .ex-td--amount { padding: 0; }
 
 .ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: 52px; }
 .ex-amount-prefix {
   flex-shrink: 0; display: flex; justify-content: center;
-  padding: 16px var(--mp-spacing-2) 0;
+  padding: var(--mp-spacing-4, 16px) var(--mp-spacing-2) 0;
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: 0;
@@ -1254,11 +1263,12 @@ function handleSave(mode: 'close' | 'new') {
 .ex-amount-input { flex: 1; min-width: 0; }
 
 .ex-del-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-sm);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.ex-del-btn:hover { background: var(--mp-background-neutral); color: var(--mp-text-danger, #dc2626); }
+.ex-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger, #dc2626); }
 
 /* ── Memo/Attachment + Totals — inline when the panel is wide enough, stacked otherwise.
    Widths are spec'd at a 1440px screen (Memo 432px, Attachment matches the Beneficiary
@@ -1269,7 +1279,7 @@ function handleSave(mode: 'close' | 'new') {
 .ex-notes { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
 /* Stacked: Totals on top, Memo/Attachment below (order flips DOM order without changing tab order) */
 .ex-notes-left { display: flex; flex-direction: column; flex-shrink: 0; order: 2; }
-.ex-memo-section { width: min(432px, 32.7cqw); flex-shrink: 0; }
+.ex-memo-section { width: clamp(318px, 32.7cqw, 432px); flex-shrink: 0; }
 .ex-attachment-section { width: 318px; flex-shrink: 0; }
 /* .ex-section (below) sets gap: spacing-2 with equal specificity but later source order,
    so it would win over a plain .ex-attachment-section override — combine both classes instead. */
@@ -1301,17 +1311,18 @@ function handleSave(mode: 'close' | 'new') {
 .ex-wh-account { min-width: 0; }
 .ex-wh-unit-addon :deep(.mp-input-addon__root) { padding: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-md); }
 .ex-wh-unit-trigger {
-  display: flex; align-items: center; gap: 4px;
-  padding: 6px;
-  background: none;
-  border: none;
+  display: flex !important; align-items: center; gap: 4px;
+  padding: var(--mp-spacing-1\.5, 6px) !important;
+  min-width: 0 !important;
+  background: none !important;
+  border: none !important;
   cursor: pointer;
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
-  border-radius: var(--mp-radii-md);
+  border-radius: var(--mp-radii-md) !important;
 }
-.ex-wh-unit-trigger:hover { background: var(--mp-background-neutral-hovered); }
+.ex-wh-unit-trigger:hover { background: var(--mp-background-neutral-hovered) !important; }
 .ex-wh-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 :deep([id^='ex-wh-amount-group-'] .mp-input__control) { padding: 2px; }
 

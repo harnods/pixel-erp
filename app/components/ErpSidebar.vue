@@ -59,6 +59,7 @@
                   @click="handlePanelSubItemClick(child)"
                 >
                   <span>{{ child.label }}</span>
+                  <MpBadge v-if="child.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ child.count }}</MpBadge>
                 </button>
               </template>
               <!-- Plain item -->
@@ -69,7 +70,7 @@
                 @click="handlePanelSubItemClick(sub)"
               >
                 <span>{{ sub.label }}</span>
-                <span v-if="sub.count != null" class="panel-item-count">{{ sub.count }}</span>
+                <MpBadge v-if="sub.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ sub.count }}</MpBadge>
                 <img
                   v-else-if="sub.iconType === 'shortcut'"
                   :src="shortcutIcon"
@@ -256,8 +257,9 @@ const inboxPanelSubmenu = computed<PanelSubItem[][]>(() => {
       children: [
         { label: 'All', path: '/inbox?tab=awaiting-approval&innerTab=all', count: awaitingApprovalTasks.length || undefined },
         { label: 'Sales', path: '/inbox?tab=awaiting-approval&innerTab=sales', count: counts.sales || undefined },
-        { label: 'Purchase', path: '/inbox?tab=awaiting-approval&innerTab=purchases', count: counts.purchases || undefined },
-        { label: 'Expense', path: '/inbox?tab=awaiting-approval&innerTab=expenses', count: counts.expenses || undefined },
+        { label: 'Purchases', path: '/inbox?tab=awaiting-approval&innerTab=purchases', count: counts.purchases || undefined },
+        { label: 'Expenses', path: '/inbox?tab=awaiting-approval&innerTab=expenses', count: counts.expenses || undefined },
+        { label: 'Products', path: '/inbox?tab=awaiting-approval&innerTab=products', count: counts.products || undefined },
         { label: 'Warehouse', path: '/inbox?tab=awaiting-approval&innerTab=warehouse', count: counts.warehouse || undefined },
       ],
     },
@@ -1258,9 +1260,6 @@ function cancelClose() {
    from MpBadge itself (for="additionalInformation" type="warning" size="sm"). */
 .panel-item-count {
   flex-shrink: 0;
-  background-color: #F5C842 !important;
-  color: #1A1A1A !important;
-  border-radius: 999px !important;
 }
 
 /* Parent row (e.g. Awaiting approval) — not a nav target itself, just toggles
@@ -1275,13 +1274,13 @@ function cancelClose() {
 }
 
 /* Children indent 24px (--mp-spacing-6) from the panel edge; text/secondary
-   distinguishes them from top-level panel items. */
+   distinguishes them from top-level panel items. Active state matches
+   .panel-item.active exactly (same blue + bg) — no separate override, so a
+   selected child (e.g. "Sales") reads the same as a selected top-level item
+   (e.g. "Notifications"). */
 .panel-item--child {
   padding-left: var(--mp-spacing-6, 24px);
   color: var(--mp-text-secondary);
-}
-.panel-item--child.active {
-  color: var(--mp-text-selected);
 }
 
 

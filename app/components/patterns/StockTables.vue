@@ -212,6 +212,14 @@ function openSerialDrawer(p: WarehouseStockItem, tab: 'available' | 'reserved' =
   serialDrawerOpen.value    = true
 }
 
+// Product name → inventory Product Details; batch number → warehouse-scoped batch
+// details (same routes/format as Warehouse Details). SN keeps opening the drawer.
+const router = useRouter()
+function viewProduct(item: { sku: string }) { router.push(`/product-list/${item.sku}`) }
+function viewBatch(p: WarehouseStockItem, batchNo: string) {
+  router.push(`/warehouses/${props.warehouseId}/batches/${p.sku}/${encodeURIComponent(batchNo)}`)
+}
+
 // ── Formatters + expiry helpers ────────────────────────────────────────────────────
 function formatDateNumeric(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
@@ -305,7 +313,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 <div class="wh-product">
                   <img class="wh-thumb" :src="(row as any).photo" :alt="(row as any).name" loading="lazy" />
                   <span class="wh-product-text">
-                    <a class="cell-link wh-product-name" @click.stop>{{ (row as any).name }}</a>
+                    <a class="cell-link wh-product-name" @click.stop="viewProduct(row as any)">{{ (row as any).name }}</a>
                     <ClampText class="wh-product-sub" :text="(row as any).subtitle" />
                   </span>
                 </div>
@@ -453,7 +461,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <div class="wh-product">
                         <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                         <span class="wh-product-text">
-                          <a class="cell-link wh-product-name" @click.stop>{{ p.name }}</a>
+                          <a class="cell-link wh-product-name" @click.stop="viewProduct(p)">{{ p.name }}</a>
                           <ClampText class="wh-product-sub" :text="p.subtitle" />
                         </span>
                       </div>
@@ -472,7 +480,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                 </tr>
                 <tr v-for="b in (isBatchExpanded(p.id) ? visibleBatches(p) : [])" :key="b.batchNo" class="wh-batch-child-row">
                   <td v-if="batchColVisibility.batch" class="wh-btd wh-batch-cell">
-                    <a class="cell-link" @click.stop>{{ b.batchNo }}</a>
+                    <a class="cell-link" @click.stop="viewBatch(p, b.batchNo)">{{ b.batchNo }}</a>
                   </td>
                   <td v-if="batchColVisibility.location" class="wh-btd wh-loc-cell">{{ b.location }}</td>
                   <td v-if="batchColVisibility.expiry" class="wh-btd">
@@ -558,7 +566,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       <div class="wh-product">
                         <img class="wh-thumb" :src="p.photo" :alt="p.name" loading="lazy" />
                         <span class="wh-product-text">
-                          <a class="cell-link wh-product-name" @click.stop>{{ p.name }}</a>
+                          <a class="cell-link wh-product-name" @click.stop="viewProduct(p)">{{ p.name }}</a>
                           <ClampText class="wh-product-sub" :text="p.subtitle" />
                         </span>
                       </div>
