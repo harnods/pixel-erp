@@ -15,9 +15,9 @@
       <ErpWarehouseSwitcher v-if="hasWarehouseContext" />
     </MpFlex>
 
-    <!-- Center: Search — hidden on Home, where the hero already has a search box -->
+    <!-- Center: Search -->
     <MpFlex class="erp-header__center">
-      <QuickSearch v-if="currentPageKey !== 'Home'" />
+      <QuickSearch />
     </MpFlex>
 
     <!-- Right: Actions + User -->
@@ -27,7 +27,7 @@
         <ErpQuickCreateMenu v-if="!isWms" />
         <IconButton icon="help" />
         <IconButton v-if="!isWms" icon="desktop" />
-        <IconButton icon="notification" />
+        <IconButton icon="notification" @click="goToInbox" />
       </MpFlex>
 
       <!-- User snapshot menu (avatar + name → account popover) -->
@@ -52,8 +52,14 @@ const logoAlt = computed(() => (isWms.value ? "Mekari WMS" : "Mekari ERP"));
 // (Ops). Static for one warehouse (Ops 1), switchable for several (Ops 2).
 const { hasWarehouseContext } = useWarehouseContext();
 
-// Home has its own hero search — drop the header search there to avoid redundancy.
-const { currentPageKey } = useNavigation();
+// Notification icon → Inbox page (not part of the sidebar tree, so set the
+// title bar label explicitly instead of relying on the sidebar to publish it)
+const { setActiveMenuLabel } = useNavigation();
+const router = useRouter();
+function goToInbox() {
+  setActiveMenuLabel("Notifications");
+  router.push("/inbox?tab=notifications");
+}
 </script>
 
 <style scoped>
