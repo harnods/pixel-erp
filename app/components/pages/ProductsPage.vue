@@ -47,18 +47,18 @@ const columns: TableColumn[] = [
   { key: 'sku',                 label: 'SKU',                    width: '160px', sortable: true, sortType: 'text'   },
   { key: 'barcode',             label: 'Barcode',                width: '160px',                 sortType: 'text'   },
   { key: 'category',            label: 'Category',               width: '160px',                 sortType: 'text'   },
-  { key: 'onHand',              label: 'On hand qty',            width: '130px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'reserved',            label: 'Reserved qty',           width: '130px', align: 'right',                 sortType: 'number' },
-  { key: 'available',           label: 'Available qty',          width: '130px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'onTheWay',            label: 'In transit qty',         width: '130px', align: 'right',                 sortType: 'number' },
+  { key: 'onHand',              label: 'On hand',                width: '130px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'reserved',            label: 'Reserved',               width: '130px', align: 'right',                 sortType: 'number' },
+  { key: 'available',           label: 'Available',              width: '130px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'onTheWay',            label: 'In transit',             width: '130px', align: 'right',                 sortType: 'number' },
   { key: 'minStock',            label: 'Min. stock',             width: '104px', align: 'right',                 sortType: 'number' },
   { key: 'unit',                label: 'Unit',                   width: '96px',                  sortType: 'text'   },
   // Pricing/costing columns — ERP only, WMS doesn't deal in pricing.
   ...(isWms.value ? [] : [
     { key: 'defaultSalesPrice',   label: 'Default sales price',    width: '184px', align: 'right' as const, sortable: true, sortType: 'number' as const },
     { key: 'averageCost',         label: 'Average cost',           width: '184px', align: 'right' as const,                 sortType: 'number' as const },
-    { key: 'lastPurchaseCost',    label: 'Last Purchase cost',     width: '184px', align: 'right' as const,                 sortType: 'number' as const },
-    { key: 'defaultPurchaseCost', label: 'Default Purchase cost',  width: '184px', align: 'right' as const,                 sortType: 'number' as const },
+    { key: 'lastPurchaseCost',    label: 'Last purchase cost',     width: '184px', align: 'right' as const,                 sortType: 'number' as const },
+    { key: 'defaultPurchaseCost', label: 'Default purchase cost',  width: '184px', align: 'right' as const,                 sortType: 'number' as const },
   ]),
 ]
 
@@ -153,7 +153,7 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 const emptyIllustration = '/illustrations/empty-folder.png'
 const emptyTitle = computed(() => isAwaiting.value ? 'No products awaiting approval' : 'No products')
 const emptyDesc = computed(() =>
-  isAwaiting.value ? 'Products pending approval will appear here.' : 'Products will appear here once created.',
+  isAwaiting.value ? 'Products pending approval will appear here.' : 'Products will appear here.',
 )
 
 function clearFilters() {
@@ -181,6 +181,7 @@ const activeFilterCount = computed(() =>
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="!!search || activeFilterCount > 0"
+    :search="search"
     has-checkbox
     :context-label="(row) => `${row.name}`"
     @page-change="setPage"
@@ -375,7 +376,7 @@ const activeFilterCount = computed(() =>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails((row as ProductIndexRow).sku)">View product</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails((row as ProductIndexRow).sku)">View details</MpPopoverListItem>
             <MpPopoverListItem @click="router.push(`/product-list/${(row as ProductIndexRow).sku}/edit`)">Edit</MpPopoverListItem>
             <MpPopoverListItem>Duplicate</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
