@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { MpCheckbox, MpInput } from '@mekari/pixel3'
+import { MpCheckbox, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon } from '@mekari/pixel3'
 import { notifications as allNotifications, type Notification } from '~/data/notifications'
 import NotificationListItem from '~/components/patterns/NotificationListItem.vue'
 import NotificationDetailPane from '~/components/patterns/NotificationDetailPane.vue'
@@ -76,12 +76,10 @@ function goNext() {
           </span>
           <h1 class="nv-title">Notifications</h1>
         </div>
-        <div class="nv-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-          <MpInput v-model="search" class="nv-search-input" type="text" placeholder="Search..." />
-        </div>
+        <MpInputGroup id="nv-search" is-full-width>
+          <MpInputLeftAddon><MpIcon name="search" size="md" /></MpInputLeftAddon>
+          <MpInput v-model="search" type="text" placeholder="Search..." is-full-width />
+        </MpInputGroup>
       </div>
 
       <div class="nv-list-body">
@@ -154,32 +152,6 @@ function goNext() {
   line-height: 32px;
   color: var(--mp-text-default);
 }
-
-.nv-search {
-  display: flex;
-  align-items: center;
-  gap: var(--mp-spacing-3, 12px);
-  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px);
-  background: var(--mp-background-neutral, white);
-  border: 1px solid var(--mp-border-default, #d0d6dd);
-  border-radius: var(--mp-radii-md, 6px);
-  color: var(--mp-text-placeholder, #8690a2);
-}
-/* Rendered via MpInput, not a raw HTML control — default look reset so it
-   merges into .nv-search's own bordered box instead of doubling it up (see
-   AmountComparatorField's ".acf-input" precedent). */
-.nv-search-input {
-  flex: 1;
-  min-width: 0;
-  border: none !important;
-  outline: none;
-  background: transparent !important;
-  padding: 0 !important;
-  height: auto !important;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-default);
-}
-.nv-search-input::placeholder { color: var(--mp-text-placeholder, #8690a2); }
 
 .nv-list-body {
   flex: 1;
