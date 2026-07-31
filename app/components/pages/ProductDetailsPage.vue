@@ -314,7 +314,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         </section>
         <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Sales info</h2>
-          <div class="pd-field-col" style="width: 270px">
+          <div class="pd-field-col pd-field-col--fixed">
             <ContentList label="Default sales price" :value="formatIDR(product.defaultSalesPrice)" />
             <ContentList label="Default sales account">
               <a class="pd-link">{{ product.defaultSalesAccount }}</a>
@@ -327,7 +327,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
              product. Same vertical-list pattern as Sales info (single column, fixed 270px). -->
         <section v-if="product.djpCode" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Tax info</h2>
-          <div class="pd-field-col" style="width: 270px">
+          <div class="pd-field-col pd-field-col--fixed">
             <ContentList label="Product classification" :value="product.productClassification" />
             <ContentList label="DJP code" :value="product.djpCode" />
             <ContentList label="DJP unit" :value="product.djpUnit" />
@@ -353,7 +353,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </div>
           </section>
           <section class="pd-section pd-section--flex">
-            <div class="pd-field-col pd-field-col--djp-unit">
+            <div class="pd-field-col pd-field-col--fixed">
               <ContentList label="DJP unit" :value="product.djpUnit" />
             </div>
           </section>
@@ -809,7 +809,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-field-col { display: flex; flex-direction: column; }
 .pd-field-col--flex { flex: 1; min-width: 0; }
-.pd-field-col--djp-unit { width: 270px; }
+.pd-field-col--fixed { width: 270px; }
 .pd-two-col { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .pd-purchase-row { display: flex; gap: var(--mp-spacing-6); }
 .pd-link { color: var(--mp-text-link); cursor: pointer; }
