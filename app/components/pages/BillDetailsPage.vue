@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import {
   MpIcon, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
-  MpBanner, MpBannerIcon, MpBannerDescription, MpTextlink,
+  MpBanner, MpBannerIcon, MpBannerDescription, MpTextlink, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -109,7 +109,7 @@ function goExpenses() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goExpenses">Expenses</button>
+          <MpTextlink id="bd-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">Expenses</MpTextlink>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">Expense #{{ String(bill.number).padStart(5, '0') }}</h1>
@@ -120,14 +120,14 @@ function goExpenses() {
       <!-- Right-side header actions — only while awaiting approval, same icon row as the PO detail page -->
       <div v-if="isAwaitingApproval" class="detail-titlerow-right">
         <MpTooltip id="detail-tt-applog" label="Approval log" placement="bottom" use-portal>
-          <button class="detail-icon-btn" aria-label="Approval log">
+          <MpButton class="detail-icon-btn" aria-label="Approval log">
             <MpIcon name="task-todo" size="md" />
-          </button>
+          </MpButton>
         </MpTooltip>
         <MpTooltip id="detail-tt-comments" label="Comments" placement="bottom" use-portal>
-          <button class="detail-icon-btn" aria-label="Comments">
+          <MpButton class="detail-icon-btn" aria-label="Comments">
             <MpIcon name="comment" size="md" />
-          </button>
+          </MpButton>
         </MpTooltip>
         <button class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
       </div>
@@ -231,7 +231,7 @@ function goExpenses() {
           </thead>
           <tbody class="detail-items-body">
             <tr v-if="!bill.lineItems?.length">
-              <td class="detail-td detail-td--muted" colspan="4">No accounts</td>
+              <td class="detail-td detail-td--muted" colspan="4">No accounts.</td>
             </tr>
             <tr v-for="(li, i) in bill.lineItems" :key="i" class="detail-item-row">
               <td class="detail-td">{{ li.account }}</td>
@@ -323,7 +323,7 @@ function goExpenses() {
               </thead>
               <tbody>
                 <tr v-if="!bill.payment">
-                  <td class="detail-td detail-td--muted" colspan="5">No payment recorded</td>
+                  <td class="detail-td detail-td--muted" colspan="5">No payment recorded.</td>
                 </tr>
                 <tr v-else class="detail-item-row">
                   <td class="detail-td">{{ formatDate(bill.payment.paymentDate) }}</td>
@@ -342,16 +342,16 @@ function goExpenses() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer">
-      <button class="detail-btn detail-btn--secondary">Print PDF</button>
+      <button class="detail-btn detail-btn--secondary btn-enterprise">Print PDF</button>
 
-      <button v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="detail-btn detail-btn--secondary">
+      <button v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="detail-btn detail-btn--secondary btn-enterprise">
         <MpIcon name="mekari_pay" size="md" />
         Pay with Mekari Pay
       </button>
 
       <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="detail-btn" :class="isAwaitingApproval ? 'detail-btn--secondary' : 'detail-btn--primary'">
+          <button class="detail-btn btn-enterprise" :class="isAwaitingApproval ? 'detail-btn--secondary' : 'detail-btn--primary'">
             Actions
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -368,7 +368,7 @@ function goExpenses() {
           <MpPopoverList>
             <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>
             <MpPopoverListItem v-if="bill.status === 'unpaid' || isAwaitingApproval">Edit</MpPopoverListItem>
-            <MpTooltip v-if="isReconciled" id="detail-actions-delete-tt" label="Cannot delete. Transaction has been reconciled." placement="top" use-portal>
+            <MpTooltip v-if="isReconciled" id="detail-actions-delete-tt" label="Unmatch reconciliation to delete" placement="top" use-portal>
               <span class="detail-actions-delete-tt-wrap">
                 <MpPopoverListItem is-disabled>Delete</MpPopoverListItem>
               </span>
@@ -383,7 +383,7 @@ function goExpenses() {
   <!-- Not found fallback -->
   <div v-else class="bd-not-found">
     <p>Expense not found.</p>
-    <button class="detail-breadcrumb" @click="goExpenses">Back to Expenses</button>
+    <MpTextlink id="bd-not-found-back" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">Back to Expenses</MpTextlink>
   </div>
 </template>
 
@@ -405,12 +405,12 @@ function goExpenses() {
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-titlerow-right { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-shrink: 0; }
 .detail-icon-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  padding: var(--mp-spacing-2); border: none; background: transparent;
-  border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default);
+  display: flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
+  padding: var(--mp-spacing-2) !important; border: none !important; background: transparent !important;
+  border-radius: var(--mp-radii-md) !important; cursor: pointer; color: var(--mp-text-default);
 }
-.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
 .detail-title {
   margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
   /* --mp-line-heights-2xl resolves to a unitless 1.67 in this app (not a px value), which

@@ -10,6 +10,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
+import StockAdjustmentsFiltersDrawer, { type StockAdjustmentsFiltersValue } from '~/components/patterns/StockAdjustmentsFiltersDrawer.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 
 function formatAging(startIso?: string, endIso?: string): string {
@@ -145,12 +146,14 @@ function setDemoState(s: DemoState) {
 // ─── Warehouse / Category filters (independent MpSelect dropdowns) ────────────────
 const warehouseFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
-const statusFilter = ref('')
+const statusFilter = ref<string[]>([])
+const assigneeFilter = ref<string[]>([])
 const STATUS_OPTIONS = [
   { value: 'not_started', label: 'Open' },
   { value: 'in_progress', label: 'In progress' },
   { value: 'counted',     label: 'Counted'     },
   { value: 'completed',   label: 'Completed'   },
+  { value: 'closed',      label: 'Closed'      },
 ]
 const whOptions = computed(() => activeWhOpts.value)
 const warehouseLabel = computed(() => {
@@ -175,6 +178,39 @@ function toggleCategory(cat: string) {
   if (idx >= 0) categoryFilter.value = categoryFilter.value.filter(v => v !== cat)
   else categoryFilter.value = [...categoryFilter.value, cat]
 }
+const statusLabel = computed(() => {
+  const n = statusFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return STATUS_OPTIONS.find(o => o.value === statusFilter.value[0])?.label ?? ''
+  return `${n} statuses`
+})
+function toggleStatus(id: string) {
+  const idx = statusFilter.value.indexOf(id)
+  if (idx >= 0) statusFilter.value = statusFilter.value.filter(v => v !== id)
+  else statusFilter.value = [...statusFilter.value, id]
+}
+
+// ─── "All filters" drawer — wraps keyword/warehouse/assignee/status filters ───────
+const isFiltersDrawerOpen = ref(false)
+const drawerWarehouseOptions = computed(() => whOptions.value.map(o => ({ id: o.value, name: o.label })))
+const drawerStatusOptions = computed(() => STATUS_OPTIONS.map(o => ({ id: o.value, name: o.label })))
+const assigneeOptions = computed(() => {
+  const names = new Set<string>()
+  for (const a of activeList.value) { if (a.assignee) names.add(a.assignee) }
+  return [...names].sort().map(name => ({ id: name, name }))
+})
+const drawerValue = computed<StockAdjustmentsFiltersValue>(() => ({
+  keyword: search.value,
+  warehouseIds: warehouseFilter.value,
+  assignees: assigneeFilter.value,
+  statuses: statusFilter.value,
+}))
+function applyDrawerFilters(v: StockAdjustmentsFiltersValue) {
+  search.value = v.keyword
+  warehouseFilter.value = v.warehouseIds
+  assigneeFilter.value = v.assignees
+  statusFilter.value = v.statuses
+}
 
 // ─── Rows (demo state → tab → warehouse/category filter; search handled below) ────
 const baseRows = computed<StockAdjustment[]>(() => {
@@ -189,7 +225,8 @@ const baseRows = computed<StockAdjustment[]>(() => {
   if (kindFilter.value && !isErpStockCounts.value) list = list.filter(a => a.kind === kindFilter.value)
   if (warehouseFilter.value.length) list = list.filter(a => warehouseFilter.value.includes(a.warehouseId))
   if (categoryFilter.value.length) list = list.filter(a => categoryFilter.value.includes(a.category))
-  if (statusFilter.value) list = list.filter(a => a.status === statusFilter.value)
+  if (statusFilter.value.length) list = list.filter(a => statusFilter.value.includes(a.status))
+  if (assigneeFilter.value.length) list = list.filter(a => a.assignee && assigneeFilter.value.includes(a.assignee))
   return list
 })
 
@@ -206,12 +243,12 @@ const {
     || (kindFilter.value === 'count' && (row.assignee ?? '').toLowerCase().includes(s)),
 })
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || categoryFilter.value.length > 0 || !!statusFilter.value)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = []; statusFilter.value = '' }
-watch([warehouseFilter, categoryFilter, statusFilter, isAwaiting, isCycleAwaiting], () => setPage(1))
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || categoryFilter.value.length > 0 || statusFilter.value.length > 0 || assigneeFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; categoryFilter.value = []; statusFilter.value = []; assigneeFilter.value = [] }
+watch([warehouseFilter, categoryFilter, statusFilter, assigneeFilter, isAwaiting, isCycleAwaiting], () => setPage(1))
 // The Status filter is hidden on the Awaiting approval tab (every row is already
 // "Counted") — drop any leftover value so it can't silently zero out the table.
-watch(isCycleAwaiting, (v) => { if (v) statusFilter.value = '' })
+watch(isCycleAwaiting, (v) => { if (v) statusFilter.value = [] })
 
 // ─── Row actions ─────────────────────────────────────────────────────────────────
 // WMS cycle count tasks live under /cycle-counts/:id (not /stock-adjustments/:id)
@@ -302,6 +339,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
+    :search="search"
     :actions-width="actionsWidth"
     :has-checkbox="showCheckbox"
     :bulk-label="kindFilter === 'count' ? 'stock count' : kindFilter === 'in-out' ? 'stock in/out' : 'stock adjustment'"
@@ -369,27 +407,34 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Status (WMS stock count only; not on the Awaiting approval tab — every row there is already "Counted") -->
-        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts && !isCycleAwaiting" id="sa-status-filter" is-close-on-select>
+        <!-- Status — multi-select (WMS stock count only; not on the Awaiting approval tab — every row there is already "Counted") -->
+        <MpPopover v-if="kindFilter === 'count' && !isErpStockCounts && !isCycleAwaiting" id="sa-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="sa-status-select" placeholder="Status" :model-value="statusFilter" is-clearable
-              :class="css({ width: '150px' })" @mousedown.prevent @clear="statusFilter = ''"
+              id="sa-status-select" placeholder="Status"
+              :model-value="statusFilter.length ? '__selected__' : undefined" is-clearable
+              :class="css({ width: '150px' })" @mousedown.prevent @clear="statusFilter = []"
             >
-              <option v-if="statusFilter" :value="statusFilter">{{ STATUS_OPTIONS.find(o => o.value === statusFilter)?.label }}</option>
+              <option v-if="statusFilter.length" value="__selected__">{{ statusLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in STATUS_OPTIONS" :key="opt.value"
-                :is-active="opt.value === statusFilter" @click="statusFilter = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in STATUS_OPTIONS" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`sa-status-${opt.value}`"
+                  :is-checked="statusFilter.includes(opt.value)"
+                  @change="toggleStatus(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="filter-all-btn">
+        <button class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M3 6h18M7 12h10M11 18h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
@@ -448,16 +493,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Number — View details chip on hover; memo below when the toggle is on ── -->
     <template #cell-number="{ value, row }">
       <div class="sa-number-cell">
-        <div class="cell-with-action">
-          <span class="cell-text sa-link">{{ value }}</span>
-          <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as StockAdjustment)">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span class="row-hover-btn__label">VIEW DETAILS</span>
-          </button>
-        </div>
+        <a class="cell-link cell-text sa-link" @click.stop="viewDetails(row as unknown as StockAdjustment)">{{ value }}</a>
         <ClampText v-if="colVis.memo" :text="adjustmentMemo(row as unknown as StockAdjustment)" :lines="2" class="sa-memo" />
       </div>
     </template>
@@ -466,16 +502,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Warehouse — View details chip → warehouse detail ── -->
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as StockAdjustment).warehouseId)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text" @click.stop="viewWarehouse((row as unknown as StockAdjustment).warehouseId)">{{ value }}</a>
     </template>
 
     <template #cell-tags="{ value }"><ErpTagList :tags="(value as string[])" /></template>
@@ -663,6 +690,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @close="approvalLogOpen = false"
   />
 
+  <!-- ── All filters drawer ── -->
+  <StockAdjustmentsFiltersDrawer
+    v-model:is-open="isFiltersDrawerOpen"
+    :model-value="drawerValue"
+    :warehouse-options="drawerWarehouseOptions"
+    :assignee-options="assigneeOptions"
+    :status-options="drawerStatusOptions"
+    :show-status="!isCycleAwaiting"
+    @apply="applyDrawerFilters"
+  />
+
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="sa-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
@@ -744,8 +782,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 
-/* Cell hover chip */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Number / Warehouse cells — the value links to the record's detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sa-link { color: var(--mp-text-default); }
 
@@ -767,18 +804,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .sa-updated-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
 .sa-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 /* Kebab */
 .row-kebab {

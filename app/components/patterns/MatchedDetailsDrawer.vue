@@ -5,7 +5,7 @@
  * statement line(s) on the left vs the matched transaction(s) on the right,
  * each with its own running total. Figma: node 7277:146534, "Drawer / Matched Details".
  */
-import { MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay, MpIcon } from '@mekari/pixel3'
+import { MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay, MpIcon, MpButton } from '@mekari/pixel3'
 import type { Bill } from '~/data/types'
 import { formatDate } from '~/utils/date'
 
@@ -43,9 +43,9 @@ function unmatch() { emit('unmatch'); close() }
         <div class="mdd-card">
           <div class="mdd-header">
             <span class="mdd-title">Matched details</span>
-            <button type="button" class="mdd-close" aria-label="Close" @click="close">
+            <MpButton class="mdd-close" aria-label="Close" @click="close">
               <MpIcon name="close" size="sm" />
-            </button>
+            </MpButton>
           </div>
 
           <div class="mdd-content">
@@ -56,9 +56,9 @@ function unmatch() { emit('unmatch'); close() }
               </div>
               <table class="mdd-table">
                 <colgroup>
-                  <col style="width: 90px" />
+                  <col class="mdd-col-date" />
                   <col />
-                  <col style="width: 140px" />
+                  <col class="mdd-col-amount" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -94,9 +94,9 @@ function unmatch() { emit('unmatch'); close() }
               </div>
               <table class="mdd-table">
                 <colgroup>
-                  <col style="width: 90px" />
+                  <col class="mdd-col-date" />
                   <col />
-                  <col style="width: 140px" />
+                  <col class="mdd-col-amount" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -149,7 +149,7 @@ function unmatch() { emit('unmatch'); close() }
   border-bottom: 1px solid var(--mp-border-default);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
-.mdd-close { display: inline-flex; background: none; border: none; padding: var(--mp-spacing-1); cursor: pointer; color: var(--mp-text-secondary); }
+.mdd-close { display: inline-flex !important; background: none !important; border: none !important; padding: var(--mp-spacing-1) !important; min-width: 0 !important; cursor: pointer; color: var(--mp-text-secondary); }
 .mdd-close:hover { color: var(--mp-text-default); }
 
 .mdd-content { flex: 1; overflow: auto; display: flex; gap: 80px; padding: var(--mp-spacing-4); }
@@ -159,8 +159,9 @@ function unmatch() { emit('unmatch'); close() }
 .mdd-section-count { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .mdd-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-.mdd-th {
-  height: 28px; text-align: left;
+.mdd-col-date { width: 90px; }
+.mdd-col-amount { width: 140px; }
+.mdd-th { height: 28px; text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-surface, #f1f5f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);

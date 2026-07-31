@@ -277,11 +277,13 @@ const totalDifference = computed(() => {
 // Live sum of what's currently allocated across batch rows — what Save will actually commit.
 const totalPickCount = computed(() => rows.value.reduce((s, r) => s + (r.counted ?? 0), 0))
 const pickMaxCount = computed(() => props.maxCount ?? props.targetCount ?? Infinity)
+// Receiving caps at Expected qty (targetCount); picking caps at Purchase/order qty.
+const overLimitCap = computed(() => isReceiving.value ? (props.targetCount ?? Infinity) : pickMaxCount.value)
 const pickOverLimit = computed(() =>
-  (isPicking.value || isReceiving.value) && Number.isFinite(pickMaxCount.value) && totalPickCount.value > pickMaxCount.value,
+  (isPicking.value || isReceiving.value) && Number.isFinite(overLimitCap.value) && totalPickCount.value > overLimitCap.value,
 )
 const pickOverLimitMsg = computed(() => isReceiving.value
-  ? `Received qty (${totalPickCount.value}) exceeds the purchase qty (${pickMaxCount.value})`
+  ? `Received qty (${totalPickCount.value}) exceeds the expected qty (${overLimitCap.value})`
   : `Qty to pick (${totalPickCount.value}) exceeds the order qty (${pickMaxCount.value})`)
 const totalNewOnHand = computed(() => {
   if (totalCounted.value === null) return null
@@ -412,6 +414,14 @@ function handleDrawerScan(rawValue: string) {
   // that ceiling, but a scan never pushes the total past it.
   if (isPicking.value && Number.isFinite(pickMaxCount.value) && totalPickCount.value >= pickMaxCount.value) {
     notifyScanError(`Qty to pick already fully picked (${pickMaxCount.value})`)
+    return
+  }
+
+  // Receiving: hard cap at Expected qty (targetCount) — no scan (re-scan of an
+  // existing batch or a brand-new one) may push the total past what the task
+  // expects (PRD over-receipt guard, allow_receive_exceed_order = FALSE).
+  if (isReceiving.value && props.targetCount !== undefined && totalPickCount.value >= props.targetCount) {
+    notifyScanError(`Expected qty already fully received (${props.targetCount})`)
     return
   }
 
@@ -623,6 +633,17 @@ function paSelectLoc(row: WorkRow, lr: LocRow, locId: string) {
   locActiveKey.value = null
   delete locSearches[`pa-${lr.id}`]
   if (row.destLocRows[row.destLocRows.length - 1]?.id === lr.id) row.destLocRows.push(makeLocRow())
+}
+
+// Closing the picker without selecting must drop this row's active-search state,
+// otherwise the input keeps showing the (empty) search string instead of falling
+// back to the already-chosen locationId — the bin appears to "detach" on reopen.
+// Mirrors PutAwayItemsPage/ManageSerialDrawer, which reset on close.
+function paCloseLoc(lr: LocRow) {
+  if (locActiveKey.value === `pa-${lr.id}`) {
+    locActiveKey.value = null
+    delete locSearches[`pa-${lr.id}`]
+  }
 }
 
 function paRemoveLocRow(row: WorkRow, lr: LocRow) {
@@ -917,11 +938,42 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
+        <!-- Scan bar — every mode, including put-away: scan a bin barcode to make it
+             the "active bin", then scan a batch barcode to assign 1 unit of that
+             batch to the active bin (creating/incrementing its destLocRows entry) —
+             same active-bin model as the page-level scan bar in PutAwayItemsPage.
+             Reset count clears every row's destLocRows back to a single blank entry
+             (and drops the active bin), so it's safe to use in every mode. Rendered
+             even with zero rows — count mode's "genuinely unrecognized code" fallback
+             in handleDrawerScan is exactly how a first batch with no prior record
+             gets registered, so it can't be hidden behind the empty state. -->
+        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
+          <div v-if="(isPutAway || isPicking) && activeBin" class="mbd-active-bin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>{{ activeBin }}</span>
+            <button class="mbd-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <button
+            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+            type="button"
+            @click="resetPickedCount"
+          >Reset count</button>
+        </ScanBar>
+
         <template v-if="rows.length === 0 && !isInOut">
           <div class="mbd-empty">
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
             <p class="mbd-empty-title">No batches yet</p>
-            <p class="mbd-empty-desc">Add a batch using the button above, or scan a barcode.</p>
+            <p class="mbd-empty-desc">Scan a batch barcode above, or add one manually.</p>
+            <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addNewBatch">
+              <MpIcon name="add" size="sm" /> Add new batch
+            </button>
           </div>
         </template>
 
@@ -961,31 +1013,6 @@ function fmtNum(n: number | null): string {
           </div>
         </div>
 
-        <!-- Scan bar — every mode, including put-away: scan a bin barcode to make it
-             the "active bin", then scan a batch barcode to assign 1 unit of that
-             batch to the active bin (creating/incrementing its destLocRows entry) —
-             same active-bin model as the page-level scan bar in PutAwayItemsPage.
-             Reset count clears every row's destLocRows back to a single blank entry
-             (and drops the active bin), so it's safe to use in every mode. -->
-        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
-          <div v-if="(isPutAway || isPicking) && activeBin" class="mbd-active-bin">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <span>{{ activeBin }}</span>
-            <button class="mbd-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-              </svg>
-            </button>
-          </div>
-          <button
-            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-            type="button"
-            @click="resetPickedCount"
-          >Reset count</button>
-        </ScanBar>
-
         <!-- Table -->
         <div class="mbd-table-wrap">
 
@@ -1020,7 +1047,7 @@ function fmtNum(n: number | null): string {
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc }}</td>
                   <!-- Storage location picker -->
                   <td class="mbd-td mbd-td--input mbd-td--pa-loc" :class="{ 'mbd-td--pa-loc-error': paLocMissing(lr) }">
-                    <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select>
+                    <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="paCloseLoc(lr)">
                       <MpTooltip
                         v-if="paLocMissing(lr)"
                         :id="`mbd-pa-loc-tooltip-${lr.id}`"

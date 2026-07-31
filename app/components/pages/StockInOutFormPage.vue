@@ -14,7 +14,7 @@ import { productBySku, PRODUCTS } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { addAdjustment, accountOptions, IN_OUT_CATEGORIES } from '~/data/stockAdjustments'
-import { addWmsAdjustment } from '~/data/wmsStockAdjustments'
+import { addWmsAdjustmentSafe } from '~/data/wmsStockAdjustments'
 import { scrollToFirstError } from '~/utils/form'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
@@ -299,7 +299,16 @@ async function handleSave() {
     memo: memo.value.trim() || undefined,
     lines,
   }
-  isWms.value ? addWmsAdjustment(input) : addAdjustment(input)
+  if (isWms.value) {
+    const res = addWmsAdjustmentSafe(input)
+    if (!res.ok) {
+      isSaving.value = false
+      toast.notify({ variant: 'error', title: "Can't remove more than available stock" , maxWidth: 'max-content'})
+      return
+    }
+  } else {
+    addAdjustment(input)
+  }
   toast.notify({ variant: 'success', title: 'Stock in/out created' , maxWidth: 'max-content'})
   // Already saved — the router.push below is this function's own doing, not
   // the operator losing unsaved work, so the guard mustn't fire on it.

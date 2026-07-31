@@ -204,26 +204,23 @@ function handleScan(rawValue: string) {
     return
   }
 
-  const addedRows = Object.values(addedByLoc.value).flat()
-  const onThisCount = wmsCountLines.value.some(i => i.sku === resolved.sku) || addedRows.some(r => r.sku === resolved.sku)
-  if (!onThisCount) {
-    notifyScanError(`${v}: SKU ${resolved.sku} isn't on this count`)
-    return
-  }
-
   if (!activeBin.value) {
     notifyScanError('Scan a bin first before scanning products')
     return
   }
 
   const row = mergedRowFor(resolved.sku, activeBin.value)
-  const addedRow = Object.entries(addedByLoc.value)
+  let addedRow = Object.entries(addedByLoc.value)
     .find(([loc]) => sameCode(loc, activeBin.value!))?.[1]
     ?.find(r => r.sku === resolved.sku)
 
+  // Not on this bin's count plan — the operator physically found it here.
+  // Add it on the fly (same as "Add product") instead of rejecting the scan;
+  // it then falls through to the exact same handling below as any planned
+  // line, including "+ Add new batch" inside the drawer if this SKU has no
+  // batch registered at all yet.
   if (!row && !addedRow) {
-    notifyScanError(`${resolved.sku}: not stocked at ${activeBin.value}`)
-    return
+    addedRow = addScannedProduct(resolved.sku, activeBin.value)
   }
 
   const trackedByBatch = isBatchTrackedSku(resolved.sku)
@@ -432,6 +429,20 @@ const addedByLoc = ref<Record<string, AddedLine[]>>({})
 
 function incrementAddedCounted(location: string, id: string) {
   addedByLoc.value = { ...addedByLoc.value, [location]: (addedByLoc.value[location] ?? []).map(r => r.id === id ? { ...r, counted: (r.counted ?? 0) + 1 } : r) }
+}
+
+/** Scanning a SKU that isn't part of this location's count plan — the operator
+ *  physically found it in this bin — adds it on the fly instead of rejecting
+ *  the scan, the same way "Add product" would, so it flows through the same
+ *  batch/serial/plain-qty handling as any planned line right after. */
+function addScannedProduct(sku: string, location: string): AddedLine {
+  const existing = addedByLoc.value[location]?.find(r => r.sku === sku)
+  if (existing) return existing
+  const p = PRODUCTS.find(x => x.sku === sku)
+  const row: AddedLine = { id: `added-${++_addedId}`, sku, productName: p?.name ?? sku, counted: undefined }
+  addedByLoc.value = { ...addedByLoc.value, [location]: [...(addedByLoc.value[location] ?? []), row] }
+  toast.notify({ variant: 'success', title: `${p?.name ?? sku} added to ${location === '—' ? 'this count' : location}`, maxWidth: 'max-content' })
+  return row
 }
 
 // Product picker — one shared drawer, tracks which location triggered it
@@ -986,7 +997,7 @@ onUnmounted(() => {
           </button>
         </div>
         <div class="loc-drw-search-wrap">
-          <input v-model="locDrawerSearch" class="loc-drw-search-input" type="text" placeholder="Search location..." />
+          <input v-model="locDrawerSearch" class="loc-drw-search-input" type="text" placeholder="Search..." />
           <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="locDrawerSearch = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>

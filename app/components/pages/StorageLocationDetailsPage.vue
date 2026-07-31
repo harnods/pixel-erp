@@ -10,14 +10,19 @@
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  css,
+  css, toast,
 } from '@mekari/pixel3'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import StockTables from '~/components/patterns/StockTables.vue'
 import StorageLocationTree from '~/components/patterns/StorageLocationTree.vue'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
+import type jsPDF from 'jspdf'
 import { getWarehouseDetail, getLocationStock, ensureLocationBarcode } from '~/data/warehouseDetails'
-import { findLocation, deleteLocation, type LocNode } from '~/data/storageLocations'
+import { findLocation, type LocNode } from '~/data/storageLocations'
+import { deleteLocationSafe } from '~/data/integrityGuards'
 import { levelLabel, STORAGE_LEVEL_KEYS } from '~/data/storageLevels'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDateTimeLong } from '~/utils/date'
@@ -44,6 +49,28 @@ const isStorage = computed(() => node.value?.type === 'Storage')
 const locationBarcode = computed(() => (
   isStorage.value ? ensureLocationBarcode(warehouseId.value, locId.value) : undefined
 ))
+
+// ── Print barcode (Storage locations) — same options + preview flow as the
+// location tree's per-row "Print barcode". ────────────────────────────────────
+const printBarcodeOptionsOpen = ref(false)
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+function openPrintBarcode() { printBarcodeOptionsOpen.value = true }
+async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  const n = node.value
+  if (!n) return
+  printBarcodeOptionsOpen.value = false
+  const breadcrumb = path.value.slice(0, -1).map(p => p.name).join(' / ')
+  barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+    barcode: ensureLocationBarcode(warehouseId.value, locId.value),
+    batchNo: n.name,
+    productName: warehouse.value?.name ?? '',
+    sku: breadcrumb,
+  }, qty, columns)
+  barcodePreviewFilename.value = `Barcode - ${n.name}.pdf`
+  barcodePreviewOpen.value = true
+}
 // Stock physically lives only at leaf nodes (no children) — branch nodes just aggregate
 // their children's ranges. Only show product tabs for leaves.
 const showStockTabs = computed(() => !!node.value && !hasChildren.value)
@@ -102,7 +129,14 @@ const editOpen = ref(false)
 // Delete needs a confirmation modal.
 const deleteConfirmOpen = ref(false)
 function confirmDeleteLocation() {
-  if (node.value) deleteLocation(warehouseId.value, node.value.id)
+  if (node.value) {
+    const res = deleteLocationSafe(warehouseId.value, node.value.id)
+    if (!res.ok) {
+      toast.notify({ variant: 'error', title: "This location still holds stock and can't be deleted", maxWidth: 'max-content' })
+      deleteConfirmOpen.value = false
+      return
+    }
+  }
   deleteConfirmOpen.value = false
   goWarehouse()
 }
@@ -133,6 +167,7 @@ function confirmDeleteLocation() {
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="editOpen = true">Edit location</MpPopoverListItem>
+            <MpPopoverListItem v-if="isStorage" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="deleteConfirmOpen = true">
               Delete location
             </MpPopoverListItem>
@@ -220,6 +255,20 @@ function confirmDeleteLocation() {
       :subject="node.name"
       :entries="activityEntries"
       @close="activityOpen = false"
+    />
+
+    <PrintBarcodeOptionsModal
+      :open="printBarcodeOptionsOpen"
+      @close="printBarcodeOptionsOpen = false"
+      @confirm="confirmPrintBarcode"
+    />
+
+    <PdfPreviewModal
+      :open="barcodePreviewOpen"
+      :doc="barcodePreviewDoc"
+      :filename="barcodePreviewFilename"
+      title="Barcode preview"
+      @close="barcodePreviewOpen = false"
     />
 
     <!-- Edit this location (shared add-location form) -->

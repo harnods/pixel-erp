@@ -9,7 +9,9 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpButton, MpAutocomplete, MpDatePicker, MpIcon, MpSpinner,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, css, toast,
+  MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  css, toast,
 } from '@mekari/pixel3'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
@@ -18,9 +20,11 @@ import {
   handoverToCourierBulk, type DeliveryTask,
 } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
+import { couriers } from '~/data/couriers'
 import { warehouses } from '~/data/warehouses'
 import { scrollToFirstError } from '~/utils/form'
-import { getWarehouseOperators } from '~/data/warehouseTeam'
+import { getWarehouseTeam } from '~/data/warehouseTeam'
+import { picForWarehouse } from '~/data/warehouses'
 import { notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 
@@ -152,12 +156,25 @@ function handleScan(raw: string) {
 }
 
 // ─── Assignee + transaction date/no. ──────────────────────────────────────────
-// Choices are scoped to the selected warehouse — only its Operators are valid.
-const ASSIGNEES = computed(() => getWarehouseOperators(warehouseId.value))
-const assigneeId = ref('')
+// Assignee = the person creating this shipment. A "ready to ship" task has no
+// shipment assignee yet; it binds here, defaulting to the signed-in user (who is
+// doing the scan/select) and still editable. Choices are team members of the
+// selected warehouse (the signed-in user is a manager, so the picker is the full
+// team, not just operators).
+const { activeWarehouse, hasWarehouseContext } = useWarehouseContext()
+const currentUserName = computed(() =>
+  hasWarehouseContext.value && activeWarehouse.value
+    ? picForWarehouse(activeWarehouse.value.id, 0)
+    : 'Rizal Candra',
+)
+const ASSIGNEES = computed(() => getWarehouseTeam(warehouseId.value))
+function defaultAssigneeId(whId: string) {
+  return getWarehouseTeam(whId).find(m => m.name === currentUserName.value)?.id ?? ''
+}
+const assigneeId = ref(defaultAssigneeId(warehouseId.value))
 const assigneeError = ref(false)
 watch(assigneeId, (v) => { if (v) assigneeError.value = false })
-watch(warehouseId, () => { assigneeId.value = '' })
+watch(warehouseId, () => { assigneeId.value = defaultAssigneeId(warehouseId.value) })
 const assigneeLabel = computed(() => ASSIGNEES.value.find(a => a.id === assigneeId.value)?.name ?? '')
 
 const transactionDate = ref(todayDisplay)
@@ -181,7 +198,22 @@ watch(tasks, (ts) => {
 function setCourier(id: string, val: string) { courierByRow.value = { ...courierByRow.value, [id]: val } }
 function setTracking(id: string, val: string) { trackingByRow.value = { ...trackingByRow.value, [id]: val } }
 
+// ── Courier picker (searchable MpPopover, from master data couriers) — used for
+// non-marketplace rows that don't yet have a courier assigned. ────────────────
+const activeCourierRow = ref<string | null>(null)
+const courierSearch = ref('')
+function openCourierPicker(id: string) { activeCourierRow.value = id; courierSearch.value = '' }
+function closeCourierPicker(id: string) { if (activeCourierRow.value === id) { activeCourierRow.value = null; courierSearch.value = '' } }
+function couriersFiltered() {
+  const q = courierSearch.value.trim().toLowerCase()
+  return couriers.filter((c) => !q || c.name.toLowerCase().includes(q))
+}
+function selectCourier(id: string, name: string) { setCourier(id, name); courierError.value = false; closeCourierPicker(id) }
+
 const showRowErrors = ref(false)
+// Courier is required for every delivery before creating the shipment; tracking
+// no. stays optional. Flags rows still missing a courier after a failed save.
+const courierError = ref(false)
 
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Ready to ship' } }) }
@@ -192,6 +224,12 @@ function validate(): boolean {
   if (!assigneeId.value) { assigneeError.value = true; valid = false }
   if (!transactionDate.value) { transactionDateError.value = true; valid = false }
   if (!rows.value.length) valid = false
+  // Courier required for every delivery (tracking no. stays optional).
+  if (rows.value.some(r => !(courierByRow.value[r.id]?.trim()))) {
+    courierError.value = true
+    valid = false
+    toast.notify({ variant: 'error', title: 'Select a courier for every delivery before creating the shipment', maxWidth: 'max-content' })
+  }
   showRowErrors.value = true
   return valid
 }
@@ -228,7 +266,7 @@ async function handleSave() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goBack">Ready to ship</button>
+          <button class="detail-breadcrumb" @click="goBack">Shipping</button>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New shipment</h1>
@@ -370,40 +408,47 @@ async function handleSave() {
                   :class="{ 'ho-item-row--flash': flashRowId === row.id }"
                 >
                   <td class="ho-td ho-td--number">
-                    <div class="cell-with-action">
-                      <span>{{ row.salesNo }}</span>
-                      <button class="row-hover-btn" type="button" @click.stop="router.push(`/outbound-delivery/${row.salesOrderId}`)">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span class="row-hover-btn__label">VIEW DETAILS</span>
-                      </button>
-                    </div>
+                    <a class="cell-link" @click.stop="router.push(`/outbound-delivery/${row.salesOrderId}`)">{{ row.salesNo }}</a>
                   </td>
                   <td class="ho-td ho-td--number">
-                    <div class="cell-with-action">
-                      <span>{{ row.packingTaskNo }}</span>
-                      <button class="row-hover-btn" type="button" @click.stop="router.push(`/packing/${row.packingTaskId}`)">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span class="row-hover-btn__label">VIEW DETAILS</span>
-                      </button>
-                    </div>
+                    <a class="cell-link" @click.stop="router.push(`/packing/${row.packingTaskId}`)">{{ row.packingTaskNo }}</a>
                   </td>
                   <td class="ho-td"><SourceLabel :source="row.source" /></td>
                   <td class="ho-td ho-td--num">{{ formatNum(row.skuQty) }}</td>
                   <td class="ho-td ho-td--num">{{ formatNum(row.toShipQty) }}</td>
-                  <td class="ho-td ho-td--input">
+                  <td class="ho-td ho-td--input" :class="{ 'ho-td--input--error': courierError && !(courierByRow[row.id]?.trim()) }">
                     <input
+                      v-if="row.isMarketplace"
                       type="text" class="ho-text-input"
                       :value="courierByRow[row.id] ?? ''"
-                      :disabled="row.isMarketplace"
+                      disabled
                       placeholder="e.g. JNE, SiCepat"
-                      @input="setCourier(row.id, ($event.target as HTMLInputElement).value)"
                     />
+                    <MpPopover
+                      v-else
+                      :id="`ns-courier-${row.id}`"
+                      placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select
+                      @close="closeCourierPicker(row.id)"
+                    >
+                      <MpPopoverTrigger>
+                        <div class="ho-courier-trigger">
+                          <input
+                            type="text" class="ho-courier-input" autocomplete="off"
+                            :value="activeCourierRow === row.id ? courierSearch : (courierByRow[row.id] ?? '')"
+                            placeholder="Select courier"
+                            @focus="openCourierPicker(row.id)"
+                            @input="activeCourierRow = row.id; courierSearch = ($event.target as HTMLInputElement).value"
+                          />
+                          <svg class="ho-courier-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </div>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ width: '280px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem v-for="c in couriersFiltered()" :key="c.id" :is-active="c.name === (courierByRow[row.id] ?? '')" @click="selectCourier(row.id, c.name)">{{ c.name }}</MpPopoverListItem>
+                          <p v-if="!couriersFiltered().length" class="ho-courier-none">No couriers found.</p>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
                   </td>
                   <td class="ho-td ho-td--input">
                     <input
@@ -556,18 +601,11 @@ async function handleSave() {
 
 /* Sales order no. / Packing no. cells — hover chip linking to their own detail page */
 .ho-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
-.ho-item-row:hover .row-hover-btn { display: flex; }
 /* Editable Courier/Tracking cell — white, input fills edge-to-edge, focus ring */
 .ho-td--input { padding: 0; background: var(--mp-background-neutral); }
 .ho-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.ho-td--input--error { box-shadow: inset 0 0 0 2px var(--mp-border-danger, #dc2626); }
+.ho-td--input--error:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 .ho-text-input {
   display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box;
   padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;
@@ -575,6 +613,12 @@ async function handleSave() {
 }
 .ho-text-input:disabled { color: var(--mp-text-disabled); cursor: not-allowed; background: var(--mp-background-neutral-subtle); }
 .ho-text-input::placeholder { color: var(--mp-text-placeholder); }
+/* Courier picker (searchable MpPopover, from master data couriers) */
+.ho-courier-trigger { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-2); cursor: text; }
+.ho-courier-input { flex: 1; min-width: 0; border: none; outline: none; background: none; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ho-courier-input::placeholder { color: var(--mp-text-placeholder); }
+.ho-courier-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
+.ho-courier-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 
 /* Newly-scanned row flash (~700ms), same idea as the receiving/put-away scan flash */
 .ho-item-row--flash .ho-td { animation: ho-row-flash 700ms ease-out; }

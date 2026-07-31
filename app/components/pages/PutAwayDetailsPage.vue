@@ -315,7 +315,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Cari tugas put-away…" />
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search..." />
                   <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -360,14 +360,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
         <div class="content-list-col">
           <ContentList label="Warehouse">
             <div class="wh-link-wrap">
-              <span>{{ task.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">{{ task.warehouseName }}</a>
             </div>
           </ContentList>
           <ContentList label="Assignee" :value="task.assignee" />
@@ -503,36 +496,14 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                 <tbody>
                   <tr v-for="rt in linkedReceivingTasks" :key="rt.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="pad-linked-num">{{ rt.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/receiving/${rt.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link pad-linked-num" @click.stop="router.push(`/receiving/${rt.id}`)">{{ rt.taskNo }}</a>
                     </td>
                     <td class="detail-td detail-td--po">
-                      <span class="pad-po-no">{{ rt.purchaseOrderNo }}</span>
-                      <button v-if="rt.receiptId" class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${rt.receiptId}`)">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span class="row-hover-btn__label">VIEW DETAILS</span>
-                      </button>
+                      <a v-if="rt.receiptId" class="cell-link pad-po-no" @click.stop="router.push(`/inbound-delivery/${rt.receiptId}`)">{{ rt.purchaseOrderNo }}</a>
+                      <span v-else class="pad-po-no">{{ rt.purchaseOrderNo }}</span>
                     </td>
                     <td class="detail-td detail-td--wh">
-                      <span class="pad-wh-name">{{ rt.warehouseName }}</span>
-                      <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${rt.warehouseId}`)">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span class="row-hover-btn__label">VIEW DETAILS</span>
-                      </button>
+                      <a class="cell-link pad-wh-name" @click.stop="router.push(`/warehouses/${rt.warehouseId}`)">{{ rt.warehouseName }}</a>
                     </td>
                     <td class="detail-td"><ErpStatusBadge :status="rt.status" /></td>
                     <td class="detail-td">{{ rt.startDate ? formatDateTime(rt.startDate) : '—' }}</td>
@@ -855,28 +826,12 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
 
-.cell-with-action { position: relative; display: flex; align-items: center; }
 .pad-linked-num { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-td--po { position: relative; }
 .pad-po-no { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.detail-item-row:hover .detail-td--po .row-hover-btn { display: flex; }
 .detail-td--wh { position: relative; }
 .pad-wh-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.detail-item-row:hover .detail-td--wh .row-hover-btn { display: flex; }
-.row-hover-btn {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
-:global(.detail-item-row:hover .row-hover-btn) { display: flex; }
 
 .detail-footer {
   flex-shrink: 0;

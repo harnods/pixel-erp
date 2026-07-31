@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import { warehouses } from './warehouses'
 import { operatorForWarehouse } from './warehouseTeam'
 import { warehouseProducts, PRODUCTS } from './inventory'
-import { applyStockCount, applyStockInOut, getWarehouseDetail } from './warehouseDetails'
+import { applyStockCount, applyStockInOut, getWarehouseDetail, stockOutViolation } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { TODAY } from './master'
 import {
@@ -163,9 +163,9 @@ export function wmsAdjustmentWarehouseOptions(): { value: string; label: string 
   return [...seen.entries()].map(([value, label]) => ({ value, label }))
 }
 
-/** Count tasks still open (not yet counted or completed) — badge for the "Count task" tab. */
+/** Count tasks still open (not yet counted, completed, or closed) — badge for the "Count task" tab. */
 export function openWmsCountTaskCount(): number {
-  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status !== 'completed' && a.status !== 'counted').length
+  return wmsStockAdjustments.filter((a) => a.kind === 'count' && a.status !== 'completed' && a.status !== 'counted' && a.status !== 'closed').length
 }
 
 /** Count tasks counted but not yet reviewed by a manager — badge for the "Awaiting approval" tab. */
@@ -187,6 +187,28 @@ export function cancelWmsAdjustment(id: string, reason?: string): void {
   const a = wmsStockAdjustments.find((x) => x.id === id)
   if (!a || !canCancelWmsAdjustment(a)) return
   a.status = 'canceled'
+  a.canceledDate = new Date().toISOString()
+  if (reason) a.canceledReason = reason
+  persist()
+}
+
+/** Same eligibility as cancel — an operator can only close a count that hasn't
+ *  been submitted for approval yet. */
+export function canCloseWmsCount(a: StockAdjustment): boolean {
+  return a.kind === 'count' && (a.status === 'not_started' || a.status === 'in_progress')
+}
+
+/** Close a cycle count task the operator is walking away from mid-count — any
+ *  counted quantities saved so far are discarded (a.lines cleared) so the
+ *  details page shows every SKU as uncounted, not a stale partial result.
+ *  Terminal, view-only; the record itself is kept for the audit trail, same
+ *  as cancel — just a distinct status/label so it doesn't read as "never
+ *  happened" when real counting work may have gone into it. */
+export function closeWmsCount(id: string, reason?: string): void {
+  const a = wmsStockAdjustments.find((x) => x.id === id)
+  if (!a || !canCloseWmsCount(a)) return
+  a.status = 'closed'
+  a.lines = undefined
   a.canceledDate = new Date().toISOString()
   if (reason) a.canceledReason = reason
   persist()
@@ -234,6 +256,37 @@ export function addWmsAdjustment(input: AdjustmentInput & { skipStockMutation?: 
   wmsStockAdjustments.unshift(adj)
   persist()
   return adj
+}
+
+export type WmsInOutCheck = { ok: true } | { ok: false; reason: string }
+
+/**
+ * Can this stock in/out be applied? A negative ("out") line must not remove more
+ * than is on hand, nor eat into stock already reserved for open orders — either
+ * would break `available = onHand − reserved`. Positive ("in") lines are always
+ * fine. Cycle-count adjustments don't mutate stock here, so they always pass.
+ */
+export function canApplyWmsInOut(input: Pick<AdjustmentInput, 'kind' | 'warehouseId' | 'lines'>): WmsInOutCheck {
+  if (input.kind !== 'in-out') return { ok: true }
+  const v = stockOutViolation(input.warehouseId, input.lines)
+  if (v) {
+    return { ok: false, reason: `STOCK_OUT_EXCEEDS_AVAILABLE: ${v.sku} (out ${v.requested}, on-hand ${v.onHand}, available ${v.available})` }
+  }
+  return { ok: true }
+}
+
+/**
+ * Guarded `addWmsAdjustment`: for a stock in/out, refuses (without mutating
+ * stock) when the out-quantities would drive a SKU negative or below reserved.
+ * The UI calls this; the raw `addWmsAdjustment` stays for internal callers that
+ * pass `skipStockMutation` (e.g. the inbound cancel cascade).
+ */
+export function addWmsAdjustmentSafe(
+  input: AdjustmentInput & { skipStockMutation?: boolean },
+): { ok: true; adjustment: StockAdjustment } | { ok: false; reason: string } {
+  const check = canApplyWmsInOut(input)
+  if (!check.ok) return check
+  return { ok: true, adjustment: addWmsAdjustment(input) }
 }
 
 export function startWmsCount(id: string): StockAdjustment | undefined {

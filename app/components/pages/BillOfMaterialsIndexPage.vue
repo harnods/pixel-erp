@@ -164,6 +164,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
+    :search="search"
     has-checkbox
     bulk-label="bill of materials"
     bulk-label-plural="bill of materials"
@@ -264,16 +265,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Number — View details on row hover ── -->
     <template #cell-number="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as BillOfMaterials)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text" @click.stop="viewDetails(row as unknown as BillOfMaterials)">{{ value }}</a>
     </template>
 
     <!-- ── Name — wraps to multiple lines (long variant names) ── -->
@@ -417,22 +409,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .bom-finished-good { white-space: normal; }
 .bom-description { white-space: normal; }
 
-/* Number cell hover chip */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 /* Kebab — 20px tall so the actions cell stays within the 40px text-only row */
 .row-kebab {

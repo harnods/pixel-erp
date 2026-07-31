@@ -10,12 +10,12 @@
   <MpPopover
     id="header-user-menu"
     placement="bottom-end"
+    trigger="hover"
     use-portal
-    is-close-on-blur
     is-close-on-escape
-    is-focus-on-close
     v-slot="{ onClosePopover }"
-    @close="view = 'main'"
+    @open="onPopoverOpen"
+    @close="onPopoverClose"
   >
     <MpPopoverTrigger>
       <div class="erp-user" role="button" tabindex="0" aria-label="Open account menu">
@@ -168,6 +168,21 @@ const primaryItems = [
 // Which panel of the popover is showing: the account menu, or the WMS scenario picker.
 const view = ref<"main" | "wms">("main");
 
+// Reset to the main view only on a GENUINE close. A hover popover does a transient
+// close→reopen when you click inside it (e.g. tapping "Switch to WMS"), which would
+// otherwise snap the sub-view straight back to main before you can pick a scenario.
+// Debounce: the immediate reopen cancels the pending reset, so the wms view sticks;
+// a real close (cursor left, stays gone) resets after the delay. Same pattern as
+// ErpQuickCreateMenu.
+let resetTimer: ReturnType<typeof setTimeout> | null = null;
+function onPopoverOpen() {
+  if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+}
+function onPopoverClose() {
+  if (resetTimer) clearTimeout(resetTimer);
+  resetTimer = setTimeout(() => { view.value = "main"; resetTimer = null; }, 300);
+}
+
 // Scenarios the user can switch into. ERP is the default (no WMS selected initially).
 const scenarios: Scenario[] = ["ERP", "WMS Standalone", "WMS Ops", "WMS Ops 2"];
 const { activeScenario, setScenario } = useScenario();
@@ -265,6 +280,10 @@ function toggleReview(closePopover: () => void) {
 :global(.mp-popover.user-menu) {
   /* Above the header (sticky 1100) and the table's sticky cells/headers */
   z-index: var(--mp-z-indices-popover, 1600);
+  /* Raise 6px so its top lines up with the quick-create ("+") popover — the
+     avatar+name trigger sits 6px lower than the +'s icon button, so floating-ui
+     otherwise drops this menu 6px below the shortcut menu. */
+  margin-top: -6px;
   width: 277px;
   padding: var(--mp-spacing-2) 0 0;
   background: var(--mp-colors-background-stage, #ffffff);

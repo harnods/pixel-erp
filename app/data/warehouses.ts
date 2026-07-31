@@ -124,6 +124,10 @@ const SEED_WAREHOUSES: Warehouse[] = [
     address: 'Jl. POM X No. 33, Kelurahan Srijaya, Kecamatan Alang-Alang Lebar, Kota Palembang, Sumatera Selatan 30153',
     status: 'active',
     hasTransactions: true,
+    // Intentionally location-less: a small regional warehouse that does NOT use
+    // bin-level storage. Its stock lives as "general stock" (bins render "—"),
+    // a supported product scenario (see the "no storage locations" banners in
+    // WarehouseTransferFormPage). Kept as the seed demo of that feature.
     hasStorageLocations: false,
     updatedAt: '2026-06-01T17:25:00',
     updatedBy: 'Yusuf Hakim',

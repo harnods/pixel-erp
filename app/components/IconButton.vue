@@ -5,6 +5,10 @@
     :class="buttonClass"
   >
     <MpIcon :name="icon" color="icon.inverse" />
+    <template v-if="showBadge">
+      <span class="icon-button__badge-ping" aria-hidden="true" />
+      <span class="icon-button__badge" aria-hidden="true" />
+    </template>
   </button>
 </template>
 
@@ -20,12 +24,15 @@ interface IconButtonProps {
   icon: IconName;
   /** Visual active/pressed state. Changes background color when true */
   isActive?: boolean;
+  /** Small red dot in the top-right corner — signals unread/pending items */
+  showBadge?: boolean;
 }
 
 const props = defineProps<IconButtonProps>();
 
 const buttonClass = computed(() =>
   css({
+    position: "relative",
     height: "9",
     width: "9",
     display: "flex",
@@ -47,3 +54,39 @@ const buttonClass = computed(() =>
   })
 );
 </script>
+
+<style scoped>
+/* Matches Jurnal's header notification dot: small red circle with a border
+   matching the surrounding surface, so it reads as a cutout rather than a
+   flat overlay. A second identically-positioned circle pulses outward and
+   fades behind it (Jurnal's "ping" ring) to draw the eye on load. */
+.icon-button__badge,
+.icon-button__badge-ping {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  width: var(--mp-sizes-3, 12px);
+  height: var(--mp-sizes-3, 12px);
+  border-radius: 9999px;
+  background: var(--mp-colors-red-500, #ef4444);
+  border: 2px solid var(--mp-colors-background-header, #142d26);
+  pointer-events: none;
+}
+
+.icon-button__badge-ping {
+  background: var(--mp-colors-teal-300, #92ded6);
+  border-color: transparent;
+}
+
+.icon-button__badge-ping {
+  animation: icon-button-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes icon-button-ping {
+  75%,
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+</style>

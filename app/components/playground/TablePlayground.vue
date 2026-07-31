@@ -153,7 +153,7 @@ function formatDate(iso: string) {
             </select>
           </div>
           <div class="f-right">
-            <input v-model="search" class="f-search" type="text" placeholder="Search number or customer..." />
+            <input v-model="search" class="f-search" type="text" placeholder="Search..." />
           </div>
         </template>
 

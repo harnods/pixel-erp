@@ -65,12 +65,16 @@ const pageRegistry: Record<string, Component> = {
   'Work orders':        defineAsyncComponent(() => import('~/components/pages/WorkOrdersIndexPage.vue')),
   'Bill of materials':  defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsIndexPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
+  'Inbox':             defineAsyncComponent(() => import('~/components/pages/InboxPage.vue')),
   'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
+  // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
+  'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
+  'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
@@ -104,6 +108,7 @@ const DeliveryTaskDetailsPage = asyncPage(() => import('~/components/pages/Deliv
 const HandoverToCourierPage = asyncPage(() => import('~/components/pages/HandoverToCourierPage.vue'))
 const NewShipmentPage = asyncPage(() => import('~/components/pages/NewShipmentPage.vue'))
 const ShipmentDetailsPage = asyncPage(() => import('~/components/pages/ShipmentDetailsPage.vue'))
+const CompleteShipmentPage = asyncPage(() => import('~/components/pages/CompleteShipmentPage.vue'))
 const OutgoingOrderDetailsPage = asyncPage(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
 const WarehouseTransferDetailsPage = asyncPage(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
 const WarehouseTransferFormPage = asyncPage(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
@@ -137,6 +142,9 @@ const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTask
 const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
+const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
+const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
+const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -171,8 +179,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CreateBillOfMaterialsPage, id: 'new' }
     return { component: BillOfMaterialsDetailsPage, id: segs[1]! }
   }
-  // /warehouse-transfers/new → create form; /:id/edit → edit form; /:id → detail.
-  // The bare index falls through to the registry.
+  // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
+  // forms (not built yet → placeholder). The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
     if (segs[1] === 'new') return { component: WarehouseTransferFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: WarehouseTransferFormPage, id: segs[1]! }
@@ -216,6 +224,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /outbound-delivery/new-shipment/create → build a shipment by scanning packing nos.
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'new-shipment' && segs[2] === 'create') {
     return { component: NewShipmentPage, id: 'create' }
+  }
+  // /outbound-delivery/shipment/:seq/complete → Complete shipment (proof-of-delivery) form page
+  if (segs.length >= 4 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment' && segs[3] === 'complete') {
+    return { component: CompleteShipmentPage, id: segs[2]! }
   }
   // /outbound-delivery/shipment/:seq → a saved shipment batch's details (Print PDF lives here)
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment') {
@@ -266,6 +278,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // fragment — decode it back here.
   if (segs.length >= 4 && segs[0] === 'product-list' && segs[2] === 'batches') {
     return { component: BatchDetailsPage, id: `${segs[1]}::${decodeURIComponent(segs[3]!)}` }
+  }
+  // /warehouses/:whId/batches/:sku/:batchNo → warehouse-scoped batch detail (same
+  // BatchDetailsPage, stays under /warehouses; id encodes the warehouse context).
+  if (segs.length >= 5 && segs[0] === 'warehouses' && segs[2] === 'batches') {
+    return { component: BatchDetailsPage, id: `${segs[1]}::${segs[3]}::${decodeURIComponent(segs[4]!)}` }
   }
   // /product-list/:sku → product detail
   if (segs.length >= 2 && segs[0] === 'product-list') {
@@ -347,10 +364,13 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
+  // WMS Overview — mirrored for the WMS menu (/overview) and WMS Reports (/wms-report)
+  'Overview':          ['Outbound delivery', 'Inbound delivery'],
+  'Wms report':        ['Outbound delivery', 'Inbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
-  'Expenses': ['Bills', 'Awaiting approval', 'Review files'],
+  'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -400,7 +420,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Expenses') {
     const out: Record<string, number> = {}
-    if (bills.length) out['Awaiting approval'] = bills.length
+    if (bills.length) out['Awaiting Approval'] = bills.length
     if (reviewFiles.length) out['Review files'] = reviewFiles.length
     return out
   }
@@ -448,6 +468,17 @@ const currentTabs = computed<string[]>(() => {
     return true
   })
 })
+// Tab display labels — the tab key stays the internal id (URL query, page
+// registry, counts, navigation), only the visible text differs. Outbound's
+// "Ready to ship" tab actually holds shipping tasks across several statuses (ready
+// to ship being just one of them), so it reads as "Shipping"; the shipment docs
+// tab reads as "Shipping document".
+const TAB_LABELS: Record<string, string> = {
+  'Ready to ship': 'Shipping',
+  'Shipments': 'Shipping document',
+}
+function tabLabel(tab: string): string { return TAB_LABELS[tab] ?? tab }
+
 const activeTab = ref('')
 watch([currentPageKey, () => route.query.tab, detailMatch], () => {
   // Detail routes (e.g. /stock-adjustments/:id) render via `detailMatch`, bypassing
@@ -472,11 +503,12 @@ function selectTab(tab: string) {
   router.push({ query: { ...route.query, tab } })
 }
 
-// Daily banner (Cycle counts index, all tabs) — top 3 recommended product names,
-// only shown once the Recommendations tab actually has SKUs flagged for counting.
+// Daily banner (Cycle counts index, Count task tab only) — top 3 recommended
+// product names, only shown once the Recommendations tab actually has SKUs
+// flagged for counting.
 const cycleCountBannerNames = computed(() => topRecommendedProductNames(3))
 const cycleCountBannerVisible = computed(() =>
-  currentPageKey.value === 'Cycle counts' && cycleCountBannerNames.value.length > 0,
+  currentPageKey.value === 'Cycle counts' && activeTab.value === 'Count task' && cycleCountBannerNames.value.length > 0,
 )
 
 // Real component to render in the stage for a given page + tab (else placeholder).
@@ -499,7 +531,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   },
   'Expenses': {
     'Bills': BillsIndexPage,
-    'Awaiting approval': BillsAwaitingApprovalPage,
+    'Awaiting Approval': BillsAwaitingApprovalPage,
     'Review files': BillsReviewFilesPage,
   },
   'Stock adjustments': {
@@ -855,6 +887,11 @@ function scrollChatToBottom() {
 // Expose sendMessage so popover can call it
 provide('sendAireneMessage', sendMessage)
 
+// Bridge: let components above the page (e.g. the header search) drive the panel.
+const aireneBridge = useAireneBridge()
+watch(aireneBridge.toggleSignal, () => toggleAirene())
+watch(aireneBridge.sendSignal, () => { if (aireneBridge.pendingText.value) sendMessage(aireneBridge.pendingText.value) })
+
 // ── Resize panel ──────────────────────────────────────────────────────────
 const PANEL_MIN = 320
 const PANEL_MAX = 640
@@ -895,7 +932,7 @@ function startResize(e: MouseEvent) {
       <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
 
       <template v-else>
-      <div class="page-title-bar">
+      <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
@@ -1100,8 +1137,8 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <button class="import-item">Import from spreadsheet</button>
-                <button class="import-item import-item--ai">
+                <MpButton class="import-item">Import from spreadsheet</MpButton>
+                <MpButton class="import-item import-item--ai">
                   <span>Upload bills</span>
                   <span class="ai-badge">
                     <img
@@ -1110,7 +1147,7 @@ function startResize(e: MouseEvent) {
                     />
                     <span class="ai-badge__label">AI</span>
                   </span>
-                </button>
+                </MpButton>
               </div>
 
               <!-- Group 2: Forward bills to -->
@@ -1236,15 +1273,8 @@ function startResize(e: MouseEvent) {
           :aria-selected="activeTab === tab"
           @click="selectTab(tab)"
         >
-          {{ tab }}
-          <MpBadge
-            v-if="currentTabCounts[tab] != null"
-            for="additionalInformation"
-            type="warning"
-            class="page-tab-count"
-          >
-            {{ currentTabCounts[tab] }}
-          </MpBadge>
+          {{ tabLabel(tab) }}
+          <span v-if="currentTabCounts[tab] != null" class="page-tab-count">{{ currentTabCounts[tab] }}</span>
         </button>
       </div>
 
@@ -1259,7 +1289,7 @@ function startResize(e: MouseEvent) {
         </MpBanner>
         <component v-if="activeTabComponent" :is="activeTabComponent" />
         <div v-else-if="currentTabs.length" class="tab-stage-placeholder">
-          <p class="tab-stage-placeholder__title">{{ activeTab }}</p>
+          <p class="tab-stage-placeholder__title">{{ tabLabel(activeTab) }}</p>
           <p class="tab-stage-placeholder__desc">Page content goes here.</p>
         </div>
         <component v-else :is="currentComponent" />
@@ -1590,13 +1620,14 @@ function startResize(e: MouseEvent) {
 }
 
 .import-item {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: var(--mp-spacing-2);
-  width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: none;
-  border: none;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: none !important;
+  border: none !important;
   cursor: pointer;
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-regular);
@@ -1605,7 +1636,7 @@ function startResize(e: MouseEvent) {
   text-align: left;
 }
 .import-item:hover {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle) !important;
 }
 
 .import-item--ai {

@@ -3,15 +3,12 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
   MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpCheckbox, css, toast,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpDatePicker, MpInput, MpTextarea, MpButton,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { useTableState } from '~/composables/useTableState'
-import { listShipments, completeShipment } from '~/data/deliveryTasks'
+import { listShipments } from '~/data/deliveryTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 
@@ -47,7 +44,8 @@ const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 // ─── Rows — one per shipment batch (a batch can cover several deliveries) ───────
 interface Row {
   shipmentSeq: string; shipmentNo: string; transactionDate: string; assignee: string
-  warehouseId: string; warehouseName: string; deliveryCount: number; status: 'open' | 'completed'
+  warehouseId: string; warehouseName: string; courier: string; deliveryCount: number; status: 'open' | 'completed'
+  needsCancelAck: boolean
 }
 const baseRows = computed<Row[]>(() => {
   if (demoState.value !== 'data') return []
@@ -58,8 +56,12 @@ const baseRows = computed<Row[]>(() => {
     assignee: h.assignee,
     warehouseId: h.warehouseId,
     warehouseName: h.warehouseName,
+    // A shipment batch is split by courier at creation, so every delivery in it
+    // shares one courier — take the first non-empty one.
+    courier: h.deliveries.find(d => d.courier)?.courier ?? '',
     deliveryCount: h.deliveries.length,
     status: h.status,
+    needsCancelAck: h.needsCancelAck,
   }))
 })
 
@@ -68,6 +70,7 @@ const columns: TableColumn[] = [
   { key: 'shipmentNo',      label: 'Shipment no.',      width: '180px', sortType: 'text' },
   { key: 'transactionDate', label: 'Date',              width: '170px', sortType: 'date' },
   { key: 'warehouseName',   label: 'Warehouse',         width: '180px', sortType: 'text' },
+  { key: 'courier',         label: 'Courier',           width: '160px', sortType: 'text' },
   { key: 'assignee',        label: 'Assignee',          width: '160px', sortType: 'text' },
   { key: 'deliveryCount',   label: 'Delivery qty',      width: '120px', align: 'right', sortType: 'number' },
   { key: 'status',          label: 'Status',            width: '130px', sortType: 'text' },
@@ -122,6 +125,24 @@ function toggleStatus(v: string) {
   else statusFilter.value = [...statusFilter.value, v]
 }
 
+// Courier filter — options are the distinct couriers actually present on shipments.
+const courierFilter = ref<string[]>([])
+const courierOptions = computed(() => {
+  const names = [...new Set(baseRows.value.map(r => r.courier).filter(Boolean))]
+  return names.sort((a, b) => a.localeCompare(b)).map(c => ({ label: c, value: c }))
+})
+const courierLabel = computed(() => {
+  const n = courierFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return courierFilter.value[0]
+  return `${n} couriers`
+})
+function toggleCourier(v: string) {
+  const idx = courierFilter.value.indexOf(v)
+  if (idx >= 0) courierFilter.value = courierFilter.value.filter(x => x !== v)
+  else courierFilter.value = [...courierFilter.value, v]
+}
+
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
@@ -132,15 +153,17 @@ const {
       || row.shipmentNo.toLowerCase().includes(s)
       || row.assignee.toLowerCase().includes(s)
       || row.warehouseName.toLowerCase().includes(s)
+      || row.courier.toLowerCase().includes(s)
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     const matchesStatus = !statusFilter.value.length || statusFilter.value.includes(row.status)
-    return matchesSearch && matchesWarehouse && matchesStatus
+    const matchesCourier = !courierFilter.value.length || courierFilter.value.includes(row.courier)
+    return matchesSearch && matchesWarehouse && matchesStatus && matchesCourier
   },
 })
-watch([warehouseFilter, statusFilter], () => setPage(1))
+watch([warehouseFilter, statusFilter, courierFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = [] }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0 || courierFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = []; courierFilter.value = [] }
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -150,55 +173,19 @@ const router = useRouter()
 function viewDetails(row: Row) { router.push(`/outbound-delivery/shipment/${row.shipmentSeq}`) }
 function viewWarehouse(id: string) { router.push(`/warehouses/${id}`) }
 
-// ─── Complete shipment — courier/customer has signed for the goods ────────────
-function toDisplayDate(iso: string) {
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-function toISODate(display: string) {
-  const [d, m, y] = display.split('/')
-  return `${y}-${m}-${d}`
-}
-const todayDisplay = toDisplayDate(new Date().toISOString().slice(0, 10))
-
-const completeOpen = ref(false)
-const shipmentToComplete = ref<Row | null>(null)
-const receivedDate = ref(todayDisplay)
-const receivedBy = ref('')
-const receivedByError = ref('')
-const note = ref('')
-const fileInput = ref<HTMLInputElement | null>(null)
-const attachedFiles = ref<File[]>([])
-
-function onFileChange(ev: Event) {
-  const files = (ev.target as HTMLInputElement).files
-  for (const f of Array.from(files ?? [])) {
-    if (!attachedFiles.value.some(x => x.name === f.name)) attachedFiles.value.push(f)
-  }
-  if (fileInput.value) fileInput.value.value = ''
-}
-function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter(f => f.name !== name) }
-
+// ─── Complete shipment — proof-of-delivery is its own full-page form
+// (CompleteShipmentPage.vue at /outbound-delivery/shipment/:seq/complete),
+// same as the Shipment details "Complete shipment" button. The page handles
+// the needsCancelAck guard itself. ────────────────────────────────────────────
 function openComplete(row: Row) {
-  shipmentToComplete.value = row
-  receivedDate.value = todayDisplay
-  receivedBy.value = ''
-  receivedByError.value = ''
-  note.value = ''
-  attachedFiles.value = []
-  completeOpen.value = true
-}
-function confirmComplete() {
-  if (!shipmentToComplete.value) return
-  if (!receivedBy.value.trim()) { receivedByError.value = 'You must fill in received by'; return }
-  completeShipment(shipmentToComplete.value.shipmentSeq, {
-    receivedDate: toISODate(receivedDate.value),
-    receivedBy: receivedBy.value.trim(),
-    note: note.value.trim() || undefined,
-    proofFile: attachedFiles.value[0]?.name,
-  })
-  toast.notify({ variant: 'success', title: 'Shipment completed', maxWidth: 'max-content' })
-  completeOpen.value = false
+  // A shipment with a still-attached canceled order must be acknowledged first —
+  // block at click here (same as the Shipment details button), don't just rely on
+  // the CompleteShipmentPage guard, so the halt happens even from this index.
+  if (row.needsCancelAck) {
+    toast.notify({ variant: 'error', title: 'Acknowledge the canceled order before completing this shipment', maxWidth: 'max-content' })
+    return
+  }
+  router.push(`/outbound-delivery/shipment/${row.shipmentSeq}/complete`)
 }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
@@ -247,6 +234,32 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   {{ opt.label }}
                 </MpCheckbox>
               </label>
+            </div>
+          </MpPopoverContent>
+        </MpPopover>
+
+        <MpPopover id="shp-courier-filter" :is-close-on-select="false">
+          <MpPopoverTrigger>
+            <MpSelect
+              id="shp-courier-select" placeholder="Courier" :model-value="courierFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="courierFilter = []"
+            >
+              <option v-if="courierFilter.length" value="set">{{ courierLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
+            <div class="checkbox-filter-list">
+              <label v-for="opt in courierOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`shp-courier-${opt.value}`"
+                  :is-checked="courierFilter.includes(opt.value)"
+                  @change="toggleCourier(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+              <p v-if="!courierOptions.length" class="checkbox-filter-empty">No couriers yet.</p>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -308,34 +321,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Shipment no. — View details chip on hover ── -->
     <template #cell-shipmentNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text shp-no">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as Row)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text shp-no" @click.stop="viewDetails(row as unknown as Row)">{{ value }}</a>
     </template>
 
     <!-- ── Transaction date ── -->
     <template #cell-transactionDate="{ value }">{{ value ? formatDateTime(value as string) : '—' }}</template>
 
     <!-- ── Assignee / Warehouse — View details chip on hover ── -->
+    <template #cell-courier="{ value }">{{ value || '—' }}</template>
     <template #cell-assignee="{ value }">{{ value || '—' }}</template>
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text shp-warehouse">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as Row).warehouseId)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text shp-warehouse" @click.stop="viewWarehouse((row as unknown as Row).warehouseId)">{{ value }}</a>
     </template>
 
     <!-- ── Numeric cells ── -->
@@ -376,62 +372,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
   </ErpTablePage>
 
-  <!-- ── Complete shipment ── -->
-  <MpModal
-    id="shp-complete" :is-open="completeOpen" size="md"
-    is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="completeOpen = false"
-  >
-    <MpModalContent>
-      <MpModalHeader>Complete shipment<MpModalCloseButton /></MpModalHeader>
-      <MpModalBody>
-        <MpFormControl id="shp-received-date" is-required class="shp-complete-field">
-          <MpFormLabel>Date received</MpFormLabel>
-          <div class="shp-datepicker">
-            <MpDatePicker id="shp-received-date-dp" v-model="receivedDate" format="DD/MM/YYYY" value-type="format" use-portal />
-          </div>
-        </MpFormControl>
-
-        <MpFormControl id="shp-received-by" is-required :is-invalid="!!receivedByError" class="shp-complete-field">
-          <MpFormLabel>Received by</MpFormLabel>
-          <MpInput
-            id="shp-received-by-input" v-model="receivedBy" placeholder="Recipient name"
-            @update:model-value="receivedByError = ''"
-          />
-          <MpFormErrorMessage>{{ receivedByError }}</MpFormErrorMessage>
-        </MpFormControl>
-
-        <MpFormControl id="shp-note" class="shp-complete-field">
-          <MpFormLabel>Note</MpFormLabel>
-          <MpTextarea id="shp-note-textarea" v-model="note" is-full-width :rows="3" />
-        </MpFormControl>
-
-        <MpFormControl id="shp-attachment" class="shp-complete-field">
-          <MpFormLabel>Attachment</MpFormLabel>
-          <div class="shp-attachment">
-            <input ref="fileInput" type="file" accept=".pdf,.jpg,.jpeg,.png" class="shp-file-hidden" @change="onFileChange" />
-            <div class="shp-attachment-row">
-              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
-              <span class="shp-attach-or">or drag and drop here</span>
-            </div>
-            <ul v-if="attachedFiles.length" class="shp-file-list">
-              <li v-for="f in attachedFiles" :key="f.name" class="shp-file-item">
-                <span class="shp-file-name">{{ f.name }}</span>
-                <button class="shp-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
-              </li>
-            </ul>
-          </div>
-        </MpFormControl>
-      </MpModalBody>
-      <MpModalFooter>
-        <div class="shp-modal-footer">
-          <MpButton variant="ghost" is-rounded @click="completeOpen = false">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="confirmComplete">Complete shipment</MpButton>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
-
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="shp-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
@@ -461,6 +401,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
+.checkbox-filter-empty { margin: 0; padding: var(--mp-spacing-2) 10px; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -490,22 +431,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-/* Shipment no. cell — View details chip on hover */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Shipment no. cell — value is a link to detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .shp-no { color: var(--mp-text-default); }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 .shp-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
@@ -518,20 +446,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
-
-/* Complete shipment modal */
-.shp-complete-field { margin-bottom: var(--mp-spacing-4); }
-.shp-datepicker :deep(.mp-date-picker) { width: 100%; }
-.shp-attachment { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.shp-file-hidden { display: none; }
-.shp-attachment-row { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.shp-attach-or { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.shp-file-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.shp-file-item { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.shp-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shp-file-remove { display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer; color: var(--mp-text-secondary); }
-.shp-file-remove:hover { color: var(--mp-text-default); }
-.shp-modal-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }

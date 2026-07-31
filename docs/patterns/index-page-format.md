@@ -100,6 +100,8 @@ These change for every module. **If any are unknown, ask the user before generat
    **format**:
    - date → `DD/MM/YYYY` · currency → IDR · number → custom (e.g. `Sales Order #10090`)
    - status → `ErpStatusBadge` · tags → chips · plain text
+   - A clickable identifier / vendor / customer cell is a **text link** (`.cell-link`),
+     never a hover chip — see [ErpTablePage.md](./ErpTablePage.md#clickable-cells--text-links-cell-link).
    - The **first column** is where the checkbox merges (usually a date or the primary id).
    - Right-align numeric/currency columns.
 3. **Status set + badge mapping** — list every status and its `ErpStatusBadge` type

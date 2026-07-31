@@ -93,6 +93,9 @@ export const WH_STORAGE_PROFILES: Record<string, WhStorageProfile> = {
   'wh-005': { levels: ['Bin'], multiLoc: [], binPad: 2 },
   'wh-006': { levels: ['Bin'], multiLoc: [], binPad: 2 },
   'wh-007': { levels: ['Bin'], multiLoc: [], binPad: 2 },
+  // NOTE: wh-008 (Gudang Palembang) is intentionally absent — it's the seed's
+  // location-less warehouse (hasStorageLocations: false), demoing the supported
+  // "general stock, no bins" scenario. Do not add a profile for it.
   'wh-009': {
     levels: ['Bin'], binPad: 2,
     multiLoc: [
