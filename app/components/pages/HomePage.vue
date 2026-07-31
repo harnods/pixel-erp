@@ -3,7 +3,7 @@ import { computed, inject, ref } from 'vue'
 import { MpIcon, toast } from '@mekari/pixel3'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { picForWarehouse } from '~/data/warehouses'
-import HomeActionsModal from '~/components/HomeActionsModal.vue'
+import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import { selectedActions, type HomeActionDef } from '~/data/homeActions'
 
 // What's-new card art — cropped from the Figma design (the mock-UI preview band).
@@ -352,7 +352,7 @@ const learn: LearnCard[] = [
       </section>
     </div>
 
-    <HomeActionsModal v-model:isOpen="manageActionsOpen" />
+    <HomeActionsDrawer v-model:isOpen="manageActionsOpen" />
   </div>
 </template>
 
