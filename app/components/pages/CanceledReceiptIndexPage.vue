@@ -162,39 +162,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Cell: Purchase no. — memo + View details chip on hover ── -->
+    <!-- ── Cell: Purchase no. — the number links to the receipt detail ── -->
     <template #cell-purchaseNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="rcv-po">
-          <span class="cell-text rcv-po__no">{{ value }}</span>
-          <span v-if="(row as unknown as Receipt).memo" class="rcv-po__memo">{{ (row as unknown as Receipt).memo }}</span>
-        </span>
-        <button
-          class="row-hover-btn"
-          :class="{ 'row-hover-btn--top': (row as unknown as Receipt).memo }"
-          @click.stop="viewDetails(row as unknown as Receipt)"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <span class="rcv-po">
+        <a class="cell-link cell-text rcv-po__no" @click.stop="viewDetails(row as unknown as Receipt)">{{ value }}</a>
+        <span v-if="(row as unknown as Receipt).memo" class="rcv-po__memo">{{ (row as unknown as Receipt).memo }}</span>
+      </span>
     </template>
 
-    <!-- ── Warehouse — View details chip on hover ── -->
+    <!-- ── Warehouse — the name links to the warehouse detail ── -->
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="rcv-warehouse">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as Receipt).warehouseId}`)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link rcv-warehouse" @click.stop="router.push(`/warehouses/${(row as unknown as Receipt).warehouseId}`)">{{ value }}</a>
     </template>
     <template #cell-skuQty="{ value }">{{ formatNum(value as number) }}</template>
     <template #cell-purchaseQty="{ value }">{{ formatNum(value as number) }}</template>
@@ -280,25 +258,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-.cell-with-action { position: relative; display: flex; align-items: center; }
 .rcv-po { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.rcv-po__no { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.rcv-po__no { font-weight: var(--mp-font-weights-semi-bold); }
 .rcv-po__memo { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-/* Purchase no. cell grows to 2 lines when a memo is present — anchor near the
-   top line instead of centering across both lines. */
-.row-hover-btn--top { top: var(--mp-spacing-2\.5, 10px); transform: none; }
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 .rcv-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }

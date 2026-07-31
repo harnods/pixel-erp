@@ -206,4 +206,34 @@ describe('ManageBatchDrawer — put-away scan (active bin) and Reset count', () 
     expect(destLocRowsInDom(wrapper)).toContainEqual({ loc: 'Rak-01', qty: '1' })
     wrapper.unmount()
   })
+
+  // Regression (UT bug): after assigning a bin, clicking the storage-location
+  // dropdown again switches the input to search mode (blank); closing it WITHOUT
+  // picking anything must restore the already-chosen bin, not leave the field
+  // detached/blank. The picker was missing the close-time reset its siblings have.
+  it('reopening the storage-location picker after assigning does NOT blank the chosen bin', async () => {
+    const wrapper = mountDrawer({})
+    await flushPromises()
+
+    await scan(wrapper, 'Rak-02')
+    await scan(wrapper, 'B-002') // B-002 row now shows Rak-02 in its location input
+
+    const locInput = wrapper.findAll('.mbd-pa-loc-input').find(i => (i.element as HTMLInputElement).value === 'Rak-02')!
+    expect(locInput).toBeTruthy()
+
+    // Click the dropdown again → focus switches it into search mode (blank).
+    await locInput.trigger('focus')
+    await flushPromises()
+    expect((locInput.element as HTMLInputElement).value).toBe('')
+
+    // Close WITHOUT selecting → the chosen bin must come back.
+    const locPopovers = wrapper.findAllComponents({ name: 'MpPopover' })
+      .filter(p => String(p.props('id') ?? '').startsWith('mbd-pa-loc-'))
+    expect(locPopovers.length).toBeGreaterThan(0)
+    for (const p of locPopovers) p.vm.$emit('close')
+    await flushPromises()
+
+    expect((locInput.element as HTMLInputElement).value).toBe('Rak-02')
+    wrapper.unmount()
+  })
 })

@@ -18,6 +18,7 @@ import {
 import { addPackingTask, getPackingTask, getPackingForOrder, endPacking } from '~/data/packingTasks'
 import {
   addDeliveryTaskFromPackingTasks, handoverToCourierBulk, completeShipment, getDeliveryTask,
+  acknowledgeCanceledShipment,
 } from '~/data/deliveryTasks'
 import { cancelOutboundOrder, syncOutboundOrderStatuses } from '~/data/outboundSync'
 
@@ -270,15 +271,20 @@ describe('G7 shared shipment · cancel one · rest still completes', () => {
     expect(getDeliveryTask(delB.id)!.status).toBe('out for delivery')
   })
 
-  it('G7.2 cancel A while OUT for delivery in a shared shipment, then complete → B ships, A stays canceled', () => {
+  it('G7.2 cancel A while OUT for delivery in a shared shipment, then ack & complete → B ships, A stays canceled', () => {
     const a = order([line(A, 2)]), b = order([line(B, 3)])
     const delA = shipReadyDelivery(a, A, 2), delB = shipReadyDelivery(b, B, 3)
     const [s] = handoverToCourierBulk([delA.id, delB.id], { assignee: 'Op', transactionDate: '2026-07-20' })
     expect(getDeliveryTask(delA.id)!.status).toBe('out for delivery')
     expect(cancelOutboundOrder(a.id).ok).toBe(true)
     expect(getDeliveryTask(delA.id)!.status).toBe('canceled')
-    // Completing the shared shipment must NOT be blocked by the cancelled A.
-    completeShipment(s!.shipmentSeq, { receivedDate: '2026-07-21', receivedBy: 'Rina' })
+    // A shared shipment with an unacknowledged cancel must NOT complete yet —
+    // the operator has to acknowledge (detach) the canceled A first. Nothing posts.
+    expect(completeShipment(s!.shipmentSeq, { receivedDate: '2026-07-21', receivedBy: 'Rina' }).ok).toBe(false)
+    expect(getDeliveryTask(delB.id)!.status).toBe('out for delivery')
+    // Acknowledge → detaches A → now completion posts only the live B.
+    acknowledgeCanceledShipment(s!.shipmentSeq)
+    expect(completeShipment(s!.shipmentSeq, { receivedDate: '2026-07-21', receivedBy: 'Rina' }).ok).toBe(true)
     expect(getDeliveryTask(delB.id)!.status).toBe('shipped')  // B posted
     expect(getDeliveryTask(delA.id)!.status).toBe('canceled') // A never ships
     expect(getDeliveryTask(delA.id)!.shippedQty).toBe(0)

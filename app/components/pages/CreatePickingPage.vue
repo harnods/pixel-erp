@@ -10,7 +10,7 @@ import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/Ma
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { pickableOrders, isMarketplaceOrder, type OutgoingOrder } from '~/data/outgoing'
 import {
-  addPickingTask, pickedQtyForOrderSku, pickedKeysForOrder, type PickingLine,
+  addPickingTask, pickedQtyForOrderSku, committedQtyForOrderSku, pickedKeysForOrder, type PickingLine,
   type PickingBatchPick, type PickingSerialPick,
 } from '~/data/pickingTasks'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
@@ -135,7 +135,10 @@ function orderLines(o: OutgoingOrder): SkuLine[] {
   const lines: SkuLine[] = []
   for (const l of orderSkuLines(o)) {
     if (covered.has(`${o.id}::${l.sku}`)) continue
-    const picked = pickedQtyForOrderSku(o.id, l.sku)
+    // `picked` = qty already committed elsewhere (finished tasks' actual picks +,
+    // when partial picking is on, open tasks' claimed qty) — so a new list offers
+    // only the unclaimed remainder, not the full order qty (PRD 1.2 D3).
+    const picked = committedQtyForOrderSku(o.id, l.sku)
     if (l.qty - picked <= 0) continue
     lines.push({
       sku: l.sku, product: l.product.name, desc: l.product.desc, img: l.product.img,
@@ -775,7 +778,7 @@ async function doCreate() {
                   <th class="pk-th">SKU</th>
                   <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th">Storage location</th>
                   <th class="pk-th pk-th--num">Order qty</th>
-                  <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
+                  <th v-if="hasPriorPicks" class="pk-th pk-th--num">On other lists</th>
                   <th class="pk-th pk-th--num">Qty to pick</th>
                   <th class="pk-th">Unit</th>
                   <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th pk-th--action"></th>
@@ -947,7 +950,7 @@ async function doCreate() {
                       <th class="pk-th">Product</th>
                       <th class="pk-th">SKU</th>
                       <th class="pk-th pk-th--num">Order qty</th>
-                      <th v-if="hasPriorPicks" class="pk-th pk-th--num">Picked qty</th>
+                      <th v-if="hasPriorPicks" class="pk-th pk-th--num">On other lists</th>
                       <th class="pk-th pk-th--num">Qty to pick</th>
                       <th class="pk-th">Unit</th>
                     </tr>

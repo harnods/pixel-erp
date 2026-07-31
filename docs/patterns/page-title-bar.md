@@ -13,6 +13,11 @@ formats reference this doc instead of re-specifying it.
 Rendered in `app/pages/[...slug].vue` (the shell `.page-title-bar`) for top-level
 pages; detail pages render their own bar with the **same** dimensions.
 
+> **Status tabs** (section switchers, e.g. Receipts / Receiving / Put-away) sit
+> directly **below** this title bar and **outside** the white stage. They are
+> NOT `MpTabs` in the page — register them in `pageTabs` in `[...slug].vue`.
+> See **[tabs.md](tabs.md)** for the full rule (and the correct active color).
+
 ---
 
 ## Fixed dimensions — identical for every page

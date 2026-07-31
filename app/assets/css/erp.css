@@ -373,3 +373,17 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* ─── Table cell link ─────────────────────────────────────────────────────────
+   The identifier value in a table cell (e.g. an order no., product name) is a
+   text link that opens the row's detail/preview. Replaces the old row-hover
+   "View details" / "Open preview" chip. Underlines on hover; sits inline so it
+   still truncates via the cell's own .cell-text rule. */
+.cell-link {
+  /* !important so this utility wins over per-cell value classes that set their
+     own color (e.g. .rcv-po__no { color: var(--mp-text-default) }). */
+  color: var(--mp-text-link) !important;
+  cursor: pointer;
+  text-decoration: none;
+}
+.cell-link:hover { text-decoration: underline; }

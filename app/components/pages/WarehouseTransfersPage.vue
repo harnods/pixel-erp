@@ -11,8 +11,8 @@ import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import {
   warehouseTransfers, transferWarehouseOptions, transferMemo, transferUpdatedBy, transferUpdatedAt,
-  transferApprovalLog, canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer,
-  type WarehouseTransfer, type ApprovalLog,
+  transferApprovalLog, canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer, canApproveTransfer,
+  type WarehouseTransfer, type ApprovalLog, type TransferApproveCheck,
 } from '~/data/warehouseTransfers'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -123,8 +123,21 @@ function duplicate(row: WarehouseTransfer) {
   const copy = duplicateTransfer(row.id)
   if (copy) router.push(`/warehouse-transfers/${copy.id}/edit`)
 }
+// Map an approval refusal reason to a human-readable toast title.
+function approveErrorTitle(check: TransferApproveCheck): string {
+  if (check.ok) return "Can't approve this transfer"
+  if (check.reason.startsWith('INSUFFICIENT_STOCK')) return "Can't approve: not enough stock at origin"
+  if (check.reason === 'WAREHOUSE_ARCHIVED') return "Can't approve: a warehouse involved is archived"
+  if (check.reason === 'SAME_WAREHOUSE') return "Can't approve: origin and destination are the same"
+  return "Can't approve this transfer"
+}
 function approve(row: WarehouseTransfer) {
-  approveTransfer(row.id)
+  const wasDraft = row.status === 'draft'
+  const result = approveTransfer(row.id)
+  if (wasDraft && result === undefined) {
+    toast.notify({ variant: 'error', title: approveErrorTitle(canApproveTransfer(row.id)) , maxWidth: 'max-content'})
+    return
+  }
   toast.notify({ variant: 'success', title: `${row.number} approved` , maxWidth: 'max-content'})
 }
 
@@ -144,9 +157,20 @@ function selectedTransfersOf(sel: Set<number>): WarehouseTransfer[] {
 }
 function bulkApprove(sel: Set<number>, deselectAll: () => void) {
   const rows = selectedTransfersOf(sel)
-  for (const row of rows) approveTransfer(row.id)
+  let approved = 0
+  const failed: string[] = []
+  for (const row of rows) {
+    const wasDraft = row.status === 'draft'
+    const result = approveTransfer(row.id)
+    if (wasDraft && result === undefined) failed.push(row.number)
+    else approved++
+  }
   deselectAll()
-  toast.notify({ variant: 'success', title: `${rows.length} transfer${rows.length > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
+  if (failed.length) {
+    toast.notify({ variant: 'error', title: `${failed.length} transfer${failed.length > 1 ? 's' : ''} couldn't be approved (not enough stock at origin): ${failed.join(', ')}` , maxWidth: 'max-content'})
+    return
+  }
+  toast.notify({ variant: 'success', title: `${approved} transfer${approved > 1 ? 's' : ''} approved` , maxWidth: 'max-content'})
 }
 
 // ─── Bulk cancel — draft transfers only; once approved, stock has already moved
@@ -306,16 +330,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Number — View details chip on hover; memo below when the toggle is on ── -->
     <template #cell-number="{ value, row }">
       <div class="wt-number-cell">
-        <div class="cell-with-action">
-          <span class="cell-text wt-link">{{ value }}</span>
-          <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as WarehouseTransfer)">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span class="row-hover-btn__label">VIEW DETAILS</span>
-          </button>
-        </div>
+        <a class="cell-link cell-text wt-link" @click.stop="viewDetails(row as unknown as WarehouseTransfer)">{{ value }}</a>
         <ClampText v-if="colVis.memo" :text="transferMemo(row as unknown as WarehouseTransfer)" :lines="2" class="wt-memo" />
       </div>
     </template>
@@ -324,30 +339,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Origin — View details chip → warehouse detail ── -->
     <template #cell-originName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as WarehouseTransfer).originId)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text" @click.stop="viewWarehouse((row as unknown as WarehouseTransfer).originId)">{{ value }}</a>
     </template>
 
     <!-- ── Destination — View details chip → warehouse detail ── -->
     <template #cell-destinationName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="viewWarehouse((row as unknown as WarehouseTransfer).destinationId)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text" @click.stop="viewWarehouse((row as unknown as WarehouseTransfer).destinationId)">{{ value }}</a>
     </template>
 
     <!-- ── Last updated — timestamp + who (opt-in column) ── -->
@@ -575,8 +572,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-/* Cell hover chip */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .wt-link { color: var(--mp-text-default); }
 
@@ -588,18 +583,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .wt-updated { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .wt-updated-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
 .wt-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 /* Kebab */
 .row-kebab {

@@ -454,14 +454,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                     <!-- Production request no. — one per child row (Product/Request column) -->
                     <td class="pr-td pr-child-td pr-child-request">
                       <div class="pr-request-cell">
-                        <span class="pr-request-no">{{ r.requestNo }}</span>
-                        <button v-if="r.producedQty > 0" class="pr-preview-btn" @click.stop="openPreview(p, src, r)">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" stroke-width="1.5"/>
-                            <circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.5"/>
-                          </svg>
-                          Open preview
-                        </button>
+                        <a v-if="r.producedQty > 0" class="cell-link pr-request-no" @click.stop="openPreview(p, src, r)">{{ r.requestNo }}</a>
+                        <span v-else class="pr-request-no">{{ r.requestNo }}</span>
                       </div>
                     </td>
                     <!-- Sales order — spans the requests it raised -->
@@ -534,8 +528,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Empty state ── -->
     <div v-else class="empty-full">
       <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-      <p class="empty-full-title">{{ hasActiveFilter ? (search ? `"${search}" not found` : 'Production request not found') : 'No production requests' }}</p>
-      <p class="empty-full-desc">{{ hasActiveFilter ? (search ? 'Recheck the keywords you have typed and try searching again.' : 'Your filter criteria didn\'t match any available production request. Try adjusting your filter.') : 'Production request will appear here.' }}</p>
+      <p class="empty-full-title">{{ hasActiveFilter ? (search ? `"${search}" not found` : 'No production requests match your filters') : 'No production requests' }}</p>
+      <p class="empty-full-desc">{{ hasActiveFilter ? (search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.') : 'Production request will appear here.' }}</p>
       <a v-if="hasActiveFilter" class="empty-clear" @click="clearFilters">Clear filters</a>
     </div>
   </div>
@@ -701,19 +695,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Production request no. — reveals an "Open preview" button on row hover */
 .pr-request-cell { position: relative; display: flex; align-items: center; min-width: 0; }
 .pr-request-no { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-/* Chip style matches the canonical WMS row-hover chip (.row-hover-btn) — only the
-   icon + label differ (eye + "Open preview", keeping its distinct preview action). */
-.pr-preview-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%);
-  display: none; align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap;
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-}
-.pr-child:hover .pr-preview-btn { display: inline-flex; }
 
 /* Sales order — merged (row-spanning) cell, boxed with side borders. Highlights
    together with its request rows on hover (not as a separate cell). */

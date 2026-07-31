@@ -64,13 +64,12 @@ const columns: TableColumn[] = [
   { key: 'status',        label: 'Status',      width: '130px', sortType: 'text' },
   { key: 'shippedDate',   label: 'Ship date',   width: '170px', sortType: 'date' },
 ]
-// Column show/hide — Delivery no. and Assignee are hidden by default (not
-// important here — assignee means the packer pre-handover but the handover person
-// post-handover, and that's already shown properly on Packing / the Shipped tab).
-// The sort menu's "Hide column" flips others off, the ColumnSettings menu turns
-// them back on.
+// Column show/hide — Delivery no. is hidden by default; Assignee is shown (the
+// person handling the shipping task: the packer pre-handover, then the shipment
+// creator once a shipment doc is made). The sort menu's "Hide column" flips others
+// off, the ColumnSettings menu turns them back on.
 const colVis = reactive<Record<string, boolean>>(
-  Object.fromEntries(columns.map(c => [c.key, c.key !== 'taskNo' && c.key !== 'assignee'])),
+  Object.fromEntries(columns.map(c => [c.key, c.key !== 'taskNo'])),
 )
 const visibleColumns = computed(() => columns.filter(c => colVis[c.key]))
 const columnItems = columns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
@@ -297,37 +296,22 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Sales order no. — View details chip opens the sales order detail ── -->
     <template #cell-salesNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text del-so">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/${(row as unknown as DeliveryTask).salesOrderId}`)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text del-so" @click.stop="router.push(`/outbound-delivery/${(row as unknown as DeliveryTask).salesOrderId}`)">{{ value }}</a>
     </template>
 
     <!-- ── Packing no. — joins all covered packing tasks when a delivery bundles
          several; View details chip opens the (primary) packing task on hover ── -->
     <template #cell-packingTaskNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="cell-text del-no">{{ (row as unknown as DeliveryTask).packingTaskNos?.length
+      <a
+        v-if="(row as unknown as DeliveryTask).packingTaskId"
+        class="cell-link cell-text del-no"
+        @click.stop="router.push(`/packing/${(row as unknown as DeliveryTask).packingTaskId}`)"
+      >{{ (row as unknown as DeliveryTask).packingTaskNos?.length
+          ? (row as unknown as DeliveryTask).packingTaskNos!.join(', ')
+          : (value || '—') }}</a>
+      <span v-else class="cell-text del-no">{{ (row as unknown as DeliveryTask).packingTaskNos?.length
           ? (row as unknown as DeliveryTask).packingTaskNos!.join(', ')
           : (value || '—') }}</span>
-        <button
-          v-if="(row as unknown as DeliveryTask).packingTaskId"
-          class="row-hover-btn"
-          @click.stop="router.push(`/packing/${(row as unknown as DeliveryTask).packingTaskId}`)"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
     </template>
 
     <!-- ── Delivery no. ── -->
@@ -342,16 +326,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Warehouse — View details chip on hover ── -->
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="del-warehouse">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as DeliveryTask).warehouseId}`)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link del-warehouse" @click.stop="router.push(`/warehouses/${(row as unknown as DeliveryTask).warehouseId}`)">{{ value }}</a>
     </template>
 
     <!-- ── Assignee ── -->
@@ -461,23 +436,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 
-/* Number cell — View details chip on hover */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Number cell — the value links to the record's detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .del-no { color: var(--mp-text-default); }
 .del-so { color: var(--mp-text-default); }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 .del-warehouse {
   white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;

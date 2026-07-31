@@ -68,10 +68,8 @@ const props = withDefaults(defineProps<{
   hasActiveSearch?: boolean
   /** True when a status/dropdown filter is active. */
   hasActiveFilter?: boolean
-  /** The current search term — used in the search empty state title. */
-  searchQuery?: string
-  /** Singular lowercase object label for filter empty state, e.g. "expense", "file". */
-  objectLabel?: string
+  /** Current search keyword — used to branch filter-only vs search empty state copy. */
+  search?: string
   /** Returns a context label string for a given row — shown as a chip in the AI chat input */
   contextLabel?: (row: Record<string, unknown>) => string
   /** Return true for rows that cannot be selected (checkbox disabled) */
@@ -93,8 +91,7 @@ const props = withDefaults(defineProps<{
   loading: false,
   hasActiveSearch: false,
   hasActiveFilter: false,
-  searchQuery: '',
-  objectLabel: 'result',
+  search: '',
   contextLabel: undefined,
   rowDisabled: undefined,
   bulkLabel: 'item',
@@ -617,24 +614,13 @@ const bulkCountLabel = computed(() => {
               class="erp-td erp-td--empty"
               :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
             >
-              <!-- Inline empty — search/filter eliminated all results (no illustration) -->
-              <!-- Search + filter both active -->
-              <div v-if="props.hasActiveSearch && props.hasActiveFilter" class="empty-inline">
-                <p class="empty-inline-title">"{{ props.searchQuery }}" not found</p>
-                <p class="empty-inline-desc">Your search and filter criteria didn't match any available {{ props.objectLabel }}. Try adjusting your search or filter.</p>
-                <a class="empty-inline-clear" @click="emit('clearAll')">Clear search and filters</a>
-              </div>
-              <!-- Search only -->
-              <div v-else-if="props.hasActiveSearch" class="empty-inline">
-                <p class="empty-inline-title">"{{ props.searchQuery }}" not found</p>
-                <p class="empty-inline-desc">Recheck the keywords you have typed and try searching again.</p>
-                <a class="empty-inline-clear" @click="emit('clearSearch')">Clear search</a>
-              </div>
-              <!-- Filter only -->
-              <div v-else-if="props.hasActiveFilter" class="empty-inline">
-                <p class="empty-inline-title">{{ props.objectLabel.charAt(0).toUpperCase() + props.objectLabel.slice(1) }} not found</p>
-                <p class="empty-inline-desc">Your filter criteria didn't match any available {{ props.objectLabel }}. Try adjusting your filter.</p>
-                <a class="empty-inline-clear" @click="emit('clearFilters')">Clear filters</a>
+              <!-- Inline empty — search/filter eliminated all results (same illustration as
+                   the full empty state, so both empty states read consistently) -->
+              <div v-if="hasActiveFilter" class="empty-inline">
+                <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
+                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No results match your filters` }}</p>
+                <p class="empty-inline-desc">{{ props.search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.' }}</p>
+                <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
               </div>
               <slot v-else name="empty">
                 <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
@@ -827,7 +813,16 @@ const bulkCountLabel = computed(() => {
   width: 100%;
   min-width: 0;
 }
-.erp-cell-check > :last-child { flex: 1 1 auto; min-width: 0; }
+/* min-width defaults to auto here (not 0) — so plain text hugs its full width instead of
+   shrinking below the visible glyphs and letting them spill past the box. Slotted cells
+   that need to fill the column (e.g. a right-aligned chip) still get flex-grow. */
+.erp-cell-check > :last-child { flex: 1 1 auto; }
+/* The `:last-child` rule above assumes the last child is the wrapped cell
+   content — but when a cell's content is bare text (not wrapped in an
+   element, e.g. a plain date string), the checkbox <label> becomes the only
+   (and therefore "last") element child, so it wrongly inherits flex-shrink
+   and gets crushed. Pin the checkbox to its natural size unconditionally. */
+.erp-cell-check > [data-pixel-component="MpCheckbox"] { flex: 0 0 auto; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
@@ -882,7 +877,7 @@ const bulkCountLabel = computed(() => {
 
 /* ── Column sort menu (ERP behaviour) ── */
 /* header content wraps label + sort icon; right-aligned columns push it to the end */
-.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); max-width: 100%; }
+.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; }
 .erp-th--right .th-inner { flex-direction: row-reverse; }
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
@@ -993,7 +988,7 @@ const bulkCountLabel = computed(() => {
   width: var(--erp-actions-width, var(--mp-sizes-11));
   min-width: var(--erp-actions-width, var(--mp-sizes-11));
   text-align: right;
-  padding: 2px var(--mp-spacing-2);
+  padding: var(--mp-sizes-0\.5, 2px) var(--mp-spacing-2) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-4);
 }
 
 /* AI chat cell */

@@ -44,8 +44,8 @@ function close() { emit('update:isOpen', false) }
         <table class="jed-table">
           <colgroup>
             <col />
-            <col style="width: 180px" />
-            <col style="width: 180px" />
+            <col class="jed-col-num" />
+            <col class="jed-col-num" />
           </colgroup>
           <thead>
             <tr>
@@ -79,8 +79,8 @@ function close() { emit('update:isOpen', false) }
 .jed-heading { margin: 0 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
 .jed-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-.jed-th {
-  height: 28px; text-align: left;
+.jed-col-num { width: 180px; }
+.jed-th { height: 28px; text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-surface, #f1f5f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);

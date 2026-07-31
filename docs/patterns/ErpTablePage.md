@@ -266,48 +266,49 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) }) // swap f
 
 ***
 
-## Row hover actions — View details / Open preview
+## Clickable cells — text links (`.cell-link`)
 
-Some cells reveal an inline action button anchored to the right of the cell **onrow hover** (`.cell-with-action` + `.row-hover-btn`). Two standard actions:
+A cell that navigates or opens a record is a **text link**, not a hover chip/button.
+The identifier column (transaction / document **number**) links to the record's
+detail page; a **Customer / Vendor** cell links to that record too (its detail page
+is where the preview / attachment lives).
 
-| Action | Column | What it does |
-| ------ | ------ | ------------ |
-| **View details** | the transaction / document **number** column | go to the record's detail page |
-| **Open preview** | **Customer / Vendor** column — *always* | open a quick preview (drawer/popover) without leaving the list |
+> **Rule (applies to every ERP table).** Clickable cells use the shared `.cell-link`
+> utility (defined once in `app/assets/css/erp.css`) — a plain text link in
+> `--mp-text-link` that underlines on hover. **Do not** use a right-anchored
+> reveal-on-hover chip/button. The old `.cell-with-action` + `.row-hover-btn`
+> pattern is **deprecated** — do not add it to new tables, and migrate any that
+> still use it.
 
-**Rules (apply to every ERP table):**
+**Which cells get a link:**
 
-* A column whose record has a **detail page** shows **View details** on hover — in
-    practice the document/transaction **number** column.
-* **Customer and Vendor columns always** get **Open preview**.
-* For **any other column** it's **conditional** — when building a table, **ask whichcolumns should have View details vs Open preview** (or none). Don't assume.
+* The document / transaction **number** column → links to the detail page.
+* **Customer and Vendor** columns → link to that record's detail page.
+* Any other column is **conditional** — when in doubt, ask; don't assume.
 
-This is a **page-level cell-slot pattern**, not built into `ErpTablePage` (the
-icon/label/handler differ per column). Copy the markup + CSS from a reference page
-([SalesOrdersPage.vue](../../app/components/pages/SalesOrdersPage.vue) /
-[SalesInvoicesPage.vue](../../app/components/pages/SalesInvoicesPage.vue)).
+Text links are a **page-level cell-slot pattern** (the handler differs per column).
+`.cell-text` is the per-page truncation helper (ellipsis on overflow); combine it
+with `.cell-link`. Always `@click.stop` so the cell click doesn't also trigger the
+row's own click/expand handler.
 
 ```vue
-<template #cell-number="{ value }">
-  <div class="cell-with-action">
-    <span class="cell-text">{{ value }}</span>
-    <button class="row-hover-btn" @click.stop>
-      <svg …/><span class="row-hover-btn__label">VIEW DETAILS</span>
-    </button>
-  </div>
+<!-- identifier column → detail page -->
+<template #cell-number="{ value, row }">
+  <a class="cell-link cell-text" @click.stop="goDetail((row as Row).id)">{{ formatNumber(value as number) }}</a>
+</template>
+
+<!-- vendor / customer → detail page (preview lives there) -->
+<template #cell-beneficiaryName="{ value, row }">
+  <a class="cell-link cell-text" @click.stop="goDetail((row as Row).id)">{{ value }}</a>
 </template>
 ```
 
 ```css
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* .cell-link is global (erp.css) — do not redefine per page. Per-page truncation: */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn { position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-sm); }
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  text-transform: uppercase; color: var(--mp-text-secondary); }
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }   /* reveal on row hover */
 ```
+
+Reference: [BillsIndexPage.vue](../../app/components/pages/BillsIndexPage.vue).
 
 ***
 

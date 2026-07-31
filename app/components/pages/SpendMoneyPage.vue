@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import {
   MpButton, MpInput, MpAutocomplete, MpDatePicker, MpInputTag, MpTextarea, MpUpload, MpUploadList,
-  MpIcon, MpFormControl, MpFormLabel, MpFormErrorMessage, toast,
+  MpIcon, MpFormControl, MpFormLabel, MpFormErrorMessage, MpTextlink, toast,
   type DataInterface,
 } from '@mekari/pixel3'
 import { bills } from '~/data/bills'
@@ -225,8 +225,8 @@ function handleSave() {
 
         <!-- Line item type — Expense selected; Account isn't wired up for this flow -->
         <div class="ex-segmented" role="tablist" aria-label="Line item type">
-          <button type="button" class="ex-segmented-part ex-segmented-part--active">Expense</button>
-          <button type="button" class="ex-segmented-part" disabled>Account</button>
+          <MpButton class="ex-segmented-part ex-segmented-part--active">Expense</MpButton>
+          <MpButton class="ex-segmented-part" disabled>Account</MpButton>
         </div>
 
         <!-- Line items -->
@@ -269,9 +269,9 @@ function handleSave() {
                     </div>
                   </td>
                   <td class="ex-td ex-td--del">
-                    <button class="ex-del-btn" type="button" :disabled="!row.removable" @click="removeRow(row.id)">
+                    <MpButton class="ex-del-btn" :disabled="!row.removable" @click="removeRow(row.id)">
                       <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    </MpButton>
                   </td>
                 </tr>
                 <tr class="ex-tr">
@@ -349,7 +349,7 @@ function handleSave() {
   <!-- Not found fallback -->
   <div v-else class="bd-not-found">
     <p>Expense not found.</p>
-    <button class="detail-breadcrumb" @click="router.push({ path: '/expenses', query: { tab: 'Bills' } })">Back to Expenses</button>
+    <MpTextlink id="sm-not-found-back" as="a" class="detail-breadcrumb" @click.prevent="router.push({ path: '/expenses', query: { tab: 'Bills' } })">Back to Expenses</MpTextlink>
   </div>
 </template>
 
@@ -381,7 +381,7 @@ function handleSave() {
 }
 
 /* ── Single-panel stage — same rounded-corner shell as NewExpensePage's two-panel one ── */
-.ex-stage { flex: 1; min-height: 0; display: flex; position: relative; background: #EFF1F1; border-radius: 12px 12px 0 0; overflow: hidden; }
+.ex-stage { flex: 1; min-height: 0; display: flex; position: relative; background: var(--mp-colors-gray-50, #EFF1F1); border-radius: 12px 12px 0 0; overflow: hidden; }
 .sm-right { border-radius: 12px 12px 0 0; }
 .ex-right { flex: 1; min-width: 0; overflow-y: auto; background: var(--mp-background-neutral, white); padding: 24px; container-type: inline-size; }
 
@@ -410,14 +410,15 @@ function handleSave() {
 /* ── Segmented control (Expense/Account) ─────────────────────────────────── */
 .ex-segmented {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
-  padding: 4px; border-radius: var(--mp-radii-full, 999px);
+  padding: var(--mp-spacing-1, 4px); border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-neutral, #fff);
   border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
   margin-bottom: 20px;
 }
 .ex-segmented-part {
-  border: none; background: none; cursor: pointer;
-  padding: 4px 8px; border-radius: var(--mp-radii-full, 999px);
+  border: none !important; background: none !important; cursor: pointer;
+  padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px) !important; min-width: 0 !important;
+  border-radius: var(--mp-radii-full, 999px) !important;
   font: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px);
   color: var(--mp-text-secondary);
 }
@@ -426,7 +427,7 @@ function handleSave() {
    in this app's token set — fallback hex pinned to the values Figma actually resolves
    to for this component (get_variable_defs on the Segmented control node). */
 .ex-segmented-part--active {
-  background: var(--mp-background-neutral-subtle-hovered, #ebf0f1);
+  background: var(--mp-background-neutral-subtle-hovered, #ebf0f1) !important;
   color: var(--mp-text-secondary-pressed, #243032);
 }
 
@@ -452,7 +453,7 @@ function handleSave() {
 .ex-th--del { padding: 0; }
 
 .ex-td {
-  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
+  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default);
   vertical-align: middle;
@@ -477,7 +478,7 @@ function handleSave() {
 .ex-amount-cell { display: flex; align-items: stretch; height: 100%; min-height: 52px; }
 .ex-amount-prefix {
   flex-shrink: 0; display: flex; justify-content: center;
-  padding: 16px var(--mp-spacing-2) 0;
+  padding: var(--mp-spacing-4, 16px) var(--mp-spacing-2) 0;
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); border-radius: 0;
@@ -485,11 +486,12 @@ function handleSave() {
 .ex-amount-input { flex: 1; min-width: 0; }
 
 .ex-del-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border: none; background: none; border-radius: var(--mp-radii-sm);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
   cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
 }
-.ex-del-btn:hover { background: var(--mp-background-neutral); color: var(--mp-text-danger, #dc2626); }
+.ex-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger, #dc2626); }
 .ex-del-btn:disabled { cursor: not-allowed; opacity: 0.4; }
 .ex-del-btn:disabled:hover { background: none; color: var(--mp-text-secondary); }
 

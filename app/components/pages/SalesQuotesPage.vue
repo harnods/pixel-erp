@@ -19,7 +19,7 @@ const columns: TableColumn[] = [
   { key: 'date',           label: 'Date',            width: '120px',                                sortType: 'date'   },
   { key: 'number',         label: 'Number',          width: '200px', sortable: true,                sortType: 'number' },
   { key: 'customerName',   label: 'Customer',        width: '240px', sortable: true,                sortType: 'text'   },
-  { key: 'expirationDate', label: 'Expiration date', width: '140px',                                sortType: 'date'   },
+  { key: 'expirationDate', label: 'Valid until',      width: '140px',                                sortType: 'date'   },
   { key: 'status',         label: 'Status',          width: '140px',                                sortType: 'text'   },
   { key: 'total',          label: 'Total',           width: '160px', align: 'right', sortable: true, sortType: 'number' },
   { key: 'tags',           label: 'Tags',            width: '160px'                                 },
@@ -107,6 +107,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="!!search || !!statusFilter"
+    :search="search"
     has-checkbox
     :context-label="(row) => `Sales Quote #${row.number}`"
     @page-change="setPage"
@@ -208,30 +209,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
     <!-- ── Cell: Number — "View details" on row hover (record has a detail page) ── -->
     <template #cell-number="{ value }">
-      <div class="cell-with-action">
-        <span class="cell-text cell-number">Sales Quote #{{ value }}</span>
-        <button class="row-hover-btn" @click.stop>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text cell-number" @click.stop>Sales Quote #{{ value }}</a>
     </template>
 
     <!-- ── Cell: Customer — "Open preview" on row hover (customer/vendor always previewable) ── -->
     <template #cell-customerName="{ value }">
-      <div class="cell-with-action">
-        <span class="cell-text">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <rect x="1.5" y="1.5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1.2"/>
-            <path d="M4.5 1.5v9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-          </svg>
-          <span class="row-hover-btn__label">OPEN PREVIEW</span>
-        </button>
-      </div>
+      <a class="cell-link cell-text" @click.stop>{{ value }}</a>
     </template>
 
     <!-- ── Cell: Expiration date ── -->
@@ -344,50 +327,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   color: var(--mp-text-default);
 }
 
-/* Cell with hover action button (View details / Open preview) */
-.cell-with-action {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-}
-
 .cell-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-
-.row-hover-btn {
-  position: absolute;
-  right: 0;
-  top: var(--mp-spacing-2\.5, 10px);
-  transform: translateY(-50%);
-  display: none;
-  align-items: center;
-  gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1;
-}
-
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px);
-  color: var(--mp-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-}
-
-:global(.erp-tr:hover .row-hover-btn) {
-  display: flex;
 }
 
 .row-kebab {
