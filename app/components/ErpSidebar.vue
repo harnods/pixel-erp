@@ -77,6 +77,12 @@
                   class="panel-item-icon"
                   alt=""
                 />
+                <img
+                  v-else-if="sub.iconType === 'settings'"
+                  :src="settingsIcon"
+                  class="panel-item-icon"
+                  alt=""
+                />
               </button>
             </template>
           </template>
@@ -456,7 +462,7 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Storage locations' },
           { label: 'Couriers' },
           { label: 'Warehouse reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'WMS' } },
-          { label: 'Warehouse settings', iconType: 'shortcut' },
+          { label: 'Warehouse settings', iconType: 'settings' },
         ],
       ],
     },

@@ -15,9 +15,9 @@
       <ErpWarehouseSwitcher v-if="hasWarehouseContext" />
     </MpFlex>
 
-    <!-- Center: Search -->
+    <!-- Center: Search — hidden on Home, which has its own hero search -->
     <MpFlex class="erp-header__center">
-      <QuickSearch />
+      <QuickSearch v-if="currentPageKey !== 'Home'" />
     </MpFlex>
 
     <!-- Right: Actions + User -->
@@ -54,7 +54,7 @@ const { hasWarehouseContext } = useWarehouseContext();
 
 // Notification icon → Inbox page (not part of the sidebar tree, so set the
 // title bar label explicitly instead of relying on the sidebar to publish it)
-const { setActiveMenuLabel } = useNavigation();
+const { setActiveMenuLabel, currentPageKey } = useNavigation();
 const router = useRouter();
 function goToInbox() {
   setActiveMenuLabel("Notifications");
