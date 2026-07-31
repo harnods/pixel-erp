@@ -3,6 +3,8 @@ import { computed, inject, ref } from 'vue'
 import { MpIcon, toast } from '@mekari/pixel3'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { picForWarehouse } from '~/data/warehouses'
+import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
+import { selectedActions, type HomeActionDef } from '~/data/homeActions'
 
 // What's-new card art — cropped from the Figma design (the mock-UI preview band).
 import whatsnewReconciliation from '~/assets/images/home/whatsnew-reconciliation.png?url'
@@ -35,21 +37,16 @@ const todayLabel = new Date().toLocaleDateString('en-GB', {
 })
 
 // ── Quick-action chips ────────────────────────────────────────────────────────
-interface Chip { label: string; icon: string; go: () => void }
+// Pills are user-managed: pick up to 6 from a catalog + drag to reorder via the
+// "Add actions" modal (opened by the "Actions" pill). Selection persists (mini-DB).
 function soon(what: string) {
   toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
 }
-const chipRow1: Chip[] = [
-  { label: 'New sales invoice',    icon: 'sales',    go: () => router.push('/sales-invoices') },
-  { label: 'New sales order',      icon: 'sales',    go: () => router.push('/sales-orders') },
-  { label: 'New purchase invoice', icon: 'cart',     go: () => router.push('/purchase-invoices') },
-  { label: 'New expense',          icon: 'expenses', go: () => soon('New expense') },
-]
-const chipRow2: Chip[] = [
-  { label: 'View profit and loss report', icon: 'reports', go: () => soon('Profit & loss report') },
-  { label: 'Reconcile bank',              icon: 'bank',    go: () => soon('Reconcile bank') },
-  { label: 'Actions',                     icon: 'add',     go: () => soon('More actions') },
-]
+function runAction(a: HomeActionDef) {
+  if (a.path === '#') soon(a.label)
+  else router.push(a.path)
+}
+const manageActionsOpen = ref(false)
 
 // ── Tasks: anomaly alerts ─────────────────────────────────────────────────────
 // A collapsed stack (deck) when there's more than one; "Show more" expands the list.
@@ -72,7 +69,6 @@ const anomalies: Anomaly[] = [
   },
 ]
 const anomalyExpanded = ref(false)
-function markAnomaly() { toast.notify({ variant: 'success', title: 'Marked as anomaly', maxWidth: 'max-content' }) }
 
 // ── Tasks: awaiting approvals ─────────────────────────────────────────────────
 // Grounded in the real mock DB (vendors, staff, warehouses, products) so it stays
@@ -146,15 +142,13 @@ const learn: LearnCard[] = [
 
         <div class="chips">
           <div class="chips__row">
-            <button v-for="c in chipRow1" :key="c.label" class="chip" type="button" @click="c.go()">
-              <MpIcon :name="c.icon" size="md" class="chip__icon" />
-              {{ c.label }}
+            <button v-for="a in selectedActions" :key="a.key" class="chip" type="button" @click="runAction(a)">
+              <MpIcon :name="a.icon" size="md" class="chip__icon" />
+              {{ a.label }}
             </button>
-          </div>
-          <div class="chips__row">
-            <button v-for="c in chipRow2" :key="c.label" class="chip" type="button" @click="c.go()">
-              <MpIcon :name="c.icon" size="md" class="chip__icon" />
-              {{ c.label }}
+            <button class="chip" type="button" @click="manageActionsOpen = true">
+              <MpIcon name="add" size="md" class="chip__icon" />
+              Actions
             </button>
           </div>
         </div>
@@ -185,8 +179,7 @@ const learn: LearnCard[] = [
               <p class="anomaly__body">{{ a.body }}</p>
               <div class="anomaly__actions">
                 <button class="btn btn--ghost" type="button" @click="soon('Ignore')">Ignore</button>
-                <button class="btn btn--secondary" type="button" @click="soon('View details')">View details</button>
-                <button class="btn btn--brand" type="button" @click="markAnomaly">Mark as anomaly</button>
+                <button class="btn btn--secondary" type="button" @click="soon('Review')">Review</button>
               </div>
             </div>
 
@@ -358,6 +351,8 @@ const learn: LearnCard[] = [
         </div>
       </section>
     </div>
+
+    <HomeActionsDrawer v-model:isOpen="manageActionsOpen" />
   </div>
 </template>
 

@@ -13,6 +13,9 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.spec.ts', 'tests/**/*.behavior.spec.ts'],
     environment: 'node',
+    // Fills the getBoundingClientRect gap on Comment/Text nodes so floating-ui's
+    // post-unmount async positioning can't throw (see tests/setup.ts).
+    setupFiles: ['./tests/setup.ts'],
     // happy-dom has no layout engine / no network, so Pixel's floating-ui
     // tooltips and incidental <img> loads emit async unhandled rejections AFTER
     // their tests have already passed. They are environmental noise, not test
