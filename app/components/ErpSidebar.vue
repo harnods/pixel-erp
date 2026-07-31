@@ -80,7 +80,7 @@
                 <img
                   v-else-if="sub.iconType === 'settings'"
                   :src="settingsIcon"
-                  class="panel-item-icon"
+                  class="panel-item-icon panel-item-icon--settings"
                   alt=""
                 />
               </button>
@@ -1261,6 +1261,9 @@ function cancelClose() {
   flex-shrink: 0;
   filter: brightness(0) opacity(0.5);
 }
+
+/* Settings gear renders at the default 20px in the level-2 panel. */
+.panel-item-icon--settings { width: var(--mp-sizes-5); height: var(--mp-sizes-5); }
 
 /* Task-count indicator — right-aligned; appearance (color/shape/size) comes
    from MpBadge itself (for="additionalInformation" type="warning" size="sm"). */
