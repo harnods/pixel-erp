@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { MpIcon, toast } from '@mekari/pixel3'
+import { MpIcon, MpTooltip, toast } from '@mekari/pixel3'
 
 const props = withDefaults(defineProps<{
   placeholder?: string
@@ -70,7 +70,103 @@ const QUICK_ACTIONS: Record<string, SearchItem[]> = {
   Files: [],
 }
 const quickActions = computed<SearchItem[]>(() => QUICK_ACTIONS[activeSearchTab.value] ?? [])
+// Quick actions / files narrow down to whatever's typed, same as results do —
+// e.g. typing "Sales order" leaves only "New sales order" in Quick actions.
+const filteredQuickActions = computed<SearchItem[]>(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return quickActions.value
+  return quickActions.value.filter(a => a.label.toLowerCase().includes(q))
+})
+const filteredFiles = computed<SearchItem[]>(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return files.value
+  return files.value.filter(f => f.label.toLowerCase().includes(q))
+})
 function clearSearchHistory() { recent.value = []; files.value = [] }
+
+// ── Query-driven results ─────────────────────────────────────────────────────
+// Mock per-scope transaction catalog, keyed by the active "Search in" tab.
+// Numbers deliberately overlap across types within a scope (e.g. #10021 exists
+// as a Sales Invoice, Sales Order, and Sales Quote) so a number-only search can
+// demonstrate a mixed-type result list.
+interface TxType { type: string; keywords: string[]; numbers: string[]; go: () => void }
+const TX_TYPES: Record<string, TxType[]> = {
+  Sales: [
+    { type: 'Sales Invoice', keywords: ['sales invoice', 'invoice'], numbers: ['10021', '10022', '10023', '10024'], go: nav('/sales-invoices') },
+    { type: 'Sales Order', keywords: ['sales order', 'order'], numbers: ['10021', '10005', '10012'], go: nav('/sales-orders') },
+    { type: 'Sales Quote', keywords: ['sales quote', 'quote'], numbers: ['10021', '10010'], go: nav('/sales-quotes') },
+  ],
+  Purchases: [
+    { type: 'Purchase Invoice', keywords: ['purchase invoice', 'invoice'], numbers: ['10012', '10013', '10014'], go: nav('/purchase-invoices') },
+    { type: 'Purchase Order', keywords: ['purchase order', 'order'], numbers: ['10012', '10500', '10501'], go: todo('Purchase order') },
+    { type: 'Purchase Request', keywords: ['purchase request', 'request'], numbers: ['10012', '10600'], go: todo('Purchase request') },
+  ],
+  Expenses: [
+    { type: 'Expense', keywords: ['expense'], numbers: ['20011', '20012', '20013'], go: todo('Expense') },
+  ],
+  Products: [
+    { type: 'Product', keywords: ['product'], numbers: ['P-1001', 'P-1002', 'P-1003'], go: nav('/product-list') },
+  ],
+  Contacts: [
+    { type: 'Customer', keywords: ['customer'], numbers: ['C-001', 'C-002'], go: todo('Customer') },
+    { type: 'Vendor', keywords: ['vendor'], numbers: ['V-001', 'V-002'], go: todo('Vendor') },
+  ],
+  Files: [
+    { type: 'File', keywords: ['file'], numbers: [], go: todo('Open file') },
+  ],
+}
+// Split the free-typed query into a trailing number/code (e.g. "10021" or
+// "P-1001") and the leading type text (e.g. "sales invoice").
+const queryNumber = computed(() => searchQuery.value.match(/#?([a-z0-9-]*\d[a-z0-9-]*)/i)?.[1] ?? '')
+const queryTypeText = computed(() => searchQuery.value.replace(/#?[a-z0-9-]*\d[a-z0-9-]*/i, '').trim().toLowerCase())
+const matchedType = computed<TxType | null>(() => {
+  const text = queryTypeText.value
+  if (!text) return null
+  const types = TX_TYPES[activeSearchTab.value] ?? []
+  let best: TxType | null = null
+  let bestLen = 0
+  for (const t of types) {
+    for (const candidate of [t.type.toLowerCase(), ...t.keywords]) {
+      if (text.includes(candidate) && candidate.length > bestLen) { best = t; bestLen = candidate.length }
+    }
+  }
+  return best
+})
+type SearchMode = 'default' | 'summary' | 'flat'
+const searchMode = computed<SearchMode>(() => {
+  if (!searchQuery.value.trim()) return 'default'
+  if (matchedType.value) return queryNumber.value ? 'flat' : 'summary'
+  if (queryNumber.value) return 'flat'
+  return 'default'
+})
+interface ResultItem { type: string; number: string; go: () => void }
+const searchResults = computed<ResultItem[]>(() => {
+  if (searchMode.value === 'default') return []
+  if (matchedType.value) {
+    return matchedType.value.numbers
+      .filter(n => n.toLowerCase().includes(queryNumber.value.toLowerCase()))
+      .map(n => ({ type: matchedType.value!.type, number: n, go: matchedType.value!.go }))
+  }
+  // Number-only: mix every type in the current scope that has a matching number.
+  const types = TX_TYPES[activeSearchTab.value] ?? []
+  const out: ResultItem[] = []
+  for (const t of types) {
+    for (const n of t.numbers) {
+      if (n.toLowerCase().includes(queryNumber.value.toLowerCase())) out.push({ type: t.type, number: n, go: t.go })
+    }
+  }
+  return out
+})
+function goResult(r: ResultItem) { closeSearch(); r.go() }
+function viewAllResults() { soon(`All ${matchedType.value?.type ?? 'results'}`) }
+// True once a typed query turns up nothing anywhere — no matching results,
+// quick action, or file — same "not found" state used across ERP index pages.
+const isSearchEmpty = computed(() =>
+  !!searchQuery.value.trim()
+  && searchResults.value.length === 0
+  && filteredQuickActions.value.length === 0
+  && filteredFiles.value.length === 0,
+)
 
 // ── AI Mode ─────────────────────────────────────────────────────────────────
 const aiMode = ref(false)
@@ -92,6 +188,21 @@ function clearAiChats() { recentChats.value = [] }
 function setAi(v: boolean) { aiMode.value = v; emit('aimode', v) }
 // AI Mode button: switch to AI mode (prompts) — does NOT open the chat drawer.
 function toggleAiMode() { setAi(!aiMode.value); searchOpen.value = true }
+// MpTooltip has no width prop and its portal content carries no id/class hook
+// to scope by, so pin this tooltip's width by matching its own label text.
+const aiTooltipLabel = computed(() => aiMode.value
+  ? 'Switch to regular search.'
+  : 'Ask AI to analyze, summarize, and explain your data.')
+function onAiTooltipOpen() {
+  requestAnimationFrame(() => {
+    const el = Array.from(document.querySelectorAll('.mp-tooltip'))
+      .find(node => node.textContent?.trim() === aiTooltipLabel.value)
+    if (!el) return
+    // Long label wraps to a fixed 214px box; the short "switch back" label
+    // just hugs its own text instead of stretching to that same width.
+    (el as HTMLElement).style.width = aiMode.value ? '' : '214px'
+  })
+}
 // Sending a prompt opens the Airene chat drawer with that prompt.
 function askAi(text: string) {
   const t = (text ?? '').trim()
@@ -129,13 +240,27 @@ onUnmounted(() => document.removeEventListener('click', onSearchOutside))
           @keydown="onSearchKeydown"
         >
         <span v-if="collapsed" class="search__cmdk">⌘K</span>
-        <button v-else class="ai-mode" :class="{ 'ai-mode--active': aiMode }" type="button" @click.stop="toggleAiMode()">
-          <svg class="ai-mode__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M10.9077 8.22842L10.5112 8.17805C9.1059 7.99858 8.00071 6.89127 7.82266 5.48602L7.77514 5.11147C7.69781 4.49787 7.09344 4.08431 6.45714 4.08431C5.82793 4.08431 5.22497 4.48085 5.1441 5.09232L5.09374 5.48885C4.91427 6.8941 3.80695 7.99929 2.4017 8.17734L2.02716 8.22487C1.40008 8.30645 1 8.90657 1 9.54287C1 10.1792 1.3788 10.7793 2.00801 10.8559L2.40454 10.9063C3.80979 11.0857 4.91498 12.1931 5.09303 13.5983L5.14056 13.9728C5.21788 14.6113 5.82226 15 6.45856 15C7.08776 15 7.69852 14.5715 7.77159 13.992L7.82195 13.5955C8.00142 12.1902 9.10874 11.085 10.514 10.907L10.8885 10.8594C11.5192 10.7793 11.9157 10.1777 11.9157 9.54145C11.9157 8.90515 11.5199 8.30503 10.9077 8.22842Z" fill="currentColor"/>
-            <path d="M14.4956 3.07205L14.2977 3.04651C13.5955 2.95643 13.0422 2.40312 12.9535 1.70085L12.9301 1.51358C12.8911 1.20643 12.5889 1 12.2711 1C11.9561 1 11.6553 1.19791 11.6142 1.50436L11.5887 1.70227C11.4986 2.40454 10.9453 2.95784 10.243 3.04651L10.0557 3.06992C9.7422 3.11107 9.54216 3.41113 9.54216 3.72892C9.54216 4.04672 9.73156 4.34749 10.0465 4.38579L10.2444 4.41133C10.9467 4.50142 11.5 5.05472 11.5887 5.75699L11.6121 5.94427C11.6504 6.26348 11.9533 6.45785 12.2711 6.45785C12.586 6.45785 12.8911 6.24362 12.9279 5.95349L12.9535 5.75558C13.0436 5.05331 13.5969 4.5 14.2991 4.41133L14.4864 4.38792C14.8021 4.3482 15 4.04672 15 3.72892C15 3.41113 14.8021 3.11107 14.4956 3.07205Z" fill="currentColor"/>
-          </svg>
-          AI Mode
-        </button>
+        <MpTooltip
+          v-else
+          id="search-ai-mode-tooltip"
+          :label="aiTooltipLabel"
+          placement="top"
+          use-portal
+          @open="onAiTooltipOpen"
+        >
+          <button
+            class="ai-mode"
+            :class="{ 'ai-mode--active': aiMode }"
+            type="button"
+            @click.stop="toggleAiMode()"
+          >
+            <svg class="ai-mode__icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M10.9077 8.22842L10.5112 8.17805C9.1059 7.99858 8.00071 6.89127 7.82266 5.48602L7.77514 5.11147C7.69781 4.49787 7.09344 4.08431 6.45714 4.08431C5.82793 4.08431 5.22497 4.48085 5.1441 5.09232L5.09374 5.48885C4.91427 6.8941 3.80695 7.99929 2.4017 8.17734L2.02716 8.22487C1.40008 8.30645 1 8.90657 1 9.54287C1 10.1792 1.3788 10.7793 2.00801 10.8559L2.40454 10.9063C3.80979 11.0857 4.91498 12.1931 5.09303 13.5983L5.14056 13.9728C5.21788 14.6113 5.82226 15 6.45856 15C7.08776 15 7.69852 14.5715 7.77159 13.992L7.82195 13.5955C8.00142 12.1902 9.10874 11.085 10.514 10.907L10.8885 10.8594C11.5192 10.7793 11.9157 10.1777 11.9157 9.54145C11.9157 8.90515 11.5199 8.30503 10.9077 8.22842Z" fill="currentColor"/>
+              <path d="M14.4956 3.07205L14.2977 3.04651C13.5955 2.95643 13.0422 2.40312 12.9535 1.70085L12.9301 1.51358C12.8911 1.20643 12.5889 1 12.2711 1C11.9561 1 11.6553 1.19791 11.6142 1.50436L11.5887 1.70227C11.4986 2.40454 10.9453 2.95784 10.243 3.04651L10.0557 3.06992C9.7422 3.11107 9.54216 3.41113 9.54216 3.72892C9.54216 4.04672 9.73156 4.34749 10.0465 4.38579L10.2444 4.41133C10.9467 4.50142 11.5 5.05472 11.5887 5.75699L11.6121 5.94427C11.6504 6.26348 11.9533 6.45785 12.2711 6.45785C12.586 6.45785 12.8911 6.24362 12.9279 5.95349L12.9535 5.75558C13.0436 5.05331 13.5969 4.5 14.2991 4.41133L14.4864 4.38792C14.8021 4.3482 15 4.04672 15 3.72892C15 3.41113 14.8021 3.11107 14.4956 3.07205Z" fill="currentColor"/>
+            </svg>
+            AI Mode
+          </button>
+        </MpTooltip>
       </div>
 
       <div v-if="searchOpen" class="search__panel">
@@ -177,32 +302,80 @@ onUnmounted(() => document.removeEventListener('click', onSearchOutside))
             >{{ t }}</button>
           </div>
 
-          <div v-if="recent.length" class="search__group">
-            <div class="search__group-head">
-              <span class="search__group-title">Recent searches</span>
-              <button class="search__clear" type="button" @click.stop="clearSearchHistory">Clear</button>
+          <!-- No match anywhere for the typed query — same illustrated "not found"
+               pattern used across ERP index pages (ErpTablePage's inline empty
+               state), so search reads consistently with the rest of the app. -->
+          <div v-if="isSearchEmpty" class="empty-inline">
+            <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240">
+            <p class="empty-inline-title">"{{ searchQuery.trim() }}" not found</p>
+            <p class="empty-inline-desc">Recheck the keywords you have typed and try searching again.</p>
+          </div>
+
+          <!-- Flat mode: a specific type+number, or a bare number that mixes types
+               within the current scope — just the plain result list, no other
+               sections. -->
+          <template v-else-if="searchMode === 'flat'">
+            <div class="search__group search__group--flat">
+              <button
+                v-for="(r, i) in searchResults"
+                :key="`${r.type}-${r.number}`"
+                class="search__result-item"
+                type="button"
+                @click="goResult(r)"
+              >
+                <span>{{ r.type }} #{{ r.number }}</span>
+                <MpIcon v-if="i === 0" name="time" size="md" class="search__result-icon" />
+              </button>
             </div>
-            <button v-for="r in recent" :key="r.label" class="search__item" type="button" @click="r.go()">
-              <MpIcon name="time" size="md" class="search__item-icon" />
-              <span>{{ r.label }}</span>
-            </button>
-          </div>
+          </template>
 
-          <div v-if="quickActions.length" class="search__group">
-            <span class="search__group-title">Quick actions</span>
-            <button v-for="q in quickActions" :key="q.label" class="search__item" type="button" @click="q.go()">
-              <MpIcon name="add" size="md" class="search__item-icon" />
-              <span>{{ q.label }}</span>
-            </button>
-          </div>
+          <template v-else>
+            <!-- Summary mode: query matches a known type — swap "Recent searches"
+                 for a "Results" list, keep Quick actions / Files below. -->
+            <div v-if="searchMode === 'summary'" class="search__group">
+              <div class="search__group-head">
+                <span class="search__group-title">Results</span>
+                <button class="search__viewall" type="button" @click.stop="viewAllResults">View all</button>
+              </div>
+              <button
+                v-for="(r, i) in searchResults"
+                :key="`${r.type}-${r.number}`"
+                class="search__result-item"
+                type="button"
+                @click="goResult(r)"
+              >
+                <span>{{ r.type }} #{{ r.number }}</span>
+                <MpIcon v-if="i === 0" name="time" size="md" class="search__result-icon" />
+              </button>
+            </div>
 
-          <div v-if="files.length" class="search__group">
-            <span class="search__group-title">Files</span>
-            <button v-for="f in files" :key="f.label" class="search__item" type="button" @click="f.go()">
-              <MpIcon name="pdf" size="md" class="search__item-icon" />
-              <span>{{ f.label }}</span>
-            </button>
-          </div>
+            <div v-else-if="!searchQuery.trim() && recent.length" class="search__group">
+              <div class="search__group-head">
+                <span class="search__group-title">Recent searches</span>
+                <button class="search__clear" type="button" @click.stop="clearSearchHistory">Clear</button>
+              </div>
+              <button v-for="r in recent" :key="r.label" class="search__item" type="button" @click="r.go()">
+                <MpIcon name="time" size="md" class="search__item-icon" />
+                <span>{{ r.label }}</span>
+              </button>
+            </div>
+
+            <div v-if="filteredQuickActions.length" class="search__group">
+              <span class="search__group-title">Quick actions</span>
+              <button v-for="q in filteredQuickActions" :key="q.label" class="search__item" type="button" @click="q.go()">
+                <MpIcon name="add" size="md" class="search__item-icon" />
+                <span>{{ q.label }}</span>
+              </button>
+            </div>
+
+            <div v-if="filteredFiles.length" class="search__group">
+              <span class="search__group-title">Files</span>
+              <button v-for="f in filteredFiles" :key="f.label" class="search__item" type="button" @click="f.go()">
+                <MpIcon name="pdf" size="md" class="search__item-icon" />
+                <span>{{ f.label }}</span>
+              </button>
+            </div>
+          </template>
         </template>
 
         <div class="search__foot">
@@ -330,6 +503,7 @@ onUnmounted(() => document.removeEventListener('click', onSearchOutside))
 
 /* AI Mode button */
 .ai-mode {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--mp-spacing-1\.5, 6px);
@@ -345,6 +519,26 @@ onUnmounted(() => document.removeEventListener('click', onSearchOutside))
   flex-shrink: 0;
 }
 .ai-mode:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+/* Hover preview: the same moving gradient the button gets once AI Mode is
+   active, but as a thin 2px ring sitting outside the button, plus a subtle
+   XS elevation lift — a hint of what clicking will turn on. */
+.ai-mode:not(.ai-mode--active):hover {
+  box-shadow: var(--mp-shadows-xs, 0 2px 4px rgba(0, 0, 0, 0.06));
+}
+.ai-mode:not(.ai-mode--active):hover::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(from var(--ai-angle), #8270db, #6aa1ff, #b39dff, #8270db);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: ai-border-spin 3s linear infinite;
+  pointer-events: none;
+}
 .ai-mode__icon { color: #8270db; }
 .ai-mode--active {
   background: #8270db;
@@ -368,23 +562,32 @@ onUnmounted(() => document.removeEventListener('click', onSearchOutside))
   flex-wrap: wrap;
   gap: var(--mp-spacing-1, 4px);
   padding: 0 var(--mp-spacing-4) var(--mp-spacing-4);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.search__scope-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-right: var(--mp-spacing-1); }
+.search__scope-label {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--mp-text-secondary, #3a4749);
+  margin-right: var(--mp-spacing-1);
+}
 .scope-pill {
   padding: 2px var(--mp-spacing-3);
   border-radius: var(--mp-radii-full, 999px);
   border: none;
   background: transparent;
-  font-size: var(--mp-font-sizes-sm);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
   color: var(--mp-text-secondary, #3a4749);
   cursor: pointer;
 }
 .scope-pill:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .scope-pill--active {
-  background: var(--mp-background-brand-selected, #d6f4e9);
-  color: var(--mp-text-selected, #0f6d4d);
-  font-weight: var(--mp-font-weights-semi-bold);
+  background: #1c8459;
+  color: #fff;
+  font-weight: 600;
 }
+.scope-pill--active:hover { background: #1c8459; }
 .search__group { display: flex; flex-direction: column; padding: var(--mp-spacing-2) var(--mp-spacing-2) 0; }
 .search__group-head { display: flex; align-items: center; justify-content: space-between; }
 .search__group-title {
@@ -411,6 +614,55 @@ onUnmounted(() => document.removeEventListener('click', onSearchOutside))
 .search__item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .search__item-icon { color: var(--mp-text-secondary, #3a4749); flex-shrink: 0; }
 .search__item-icon--ai { color: #8270db; }
+.search__viewall { background: none; border: none; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); padding: 0 var(--mp-spacing-2) var(--mp-spacing-1); }
+.search__viewall:hover { text-decoration: underline; }
+/* Query-matched result row: plain text (no leading icon column), matching the
+   flatter look of the "Results" / flat-list search states. */
+.search__result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-3);
+  padding: 10px var(--mp-spacing-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--mp-radii-md, 8px);
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default, #080d0e);
+  width: 100%;
+}
+.search__result-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.search__result-icon { color: var(--mp-text-secondary, #3a4749); flex-shrink: 0; }
+.search__group--flat { padding-bottom: var(--mp-spacing-2); }
+/* "Not found" — same illustrated empty state as ErpTablePage's inline empty
+   (search-active variant), scaled down to fit this narrower dropdown. */
+.empty-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-6, 24px) var(--mp-spacing-4) var(--mp-spacing-4);
+  text-align: center;
+}
+.empty-inline-illustration {
+  width: 120px;
+  height: 100px;
+  object-fit: contain;
+  margin-bottom: var(--mp-spacing-1);
+}
+.empty-inline-title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.empty-inline-desc {
+  margin: 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
 .search__foot {
   margin-top: var(--mp-spacing-3);
   border-top: 1px solid var(--mp-border-default, #e3e7e9);
