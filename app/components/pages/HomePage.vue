@@ -8,6 +8,7 @@ import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { picForWarehouse } from '~/data/warehouses'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import { selectedActions, type HomeActionDef } from '~/data/homeActions'
+import { infoToast } from '~/utils/toasts'
 
 // What's-new card art — cropped from the Figma design (the mock-UI preview band).
 import whatsnewReconciliation from '~/assets/images/home/whatsnew-reconciliation.png?url'
@@ -16,7 +17,6 @@ import whatsnewProduction from '~/assets/images/home/whatsnew-production.png?url
 import setupBuilding from '~/assets/images/home/setup-building.png?url'
 
 const router = useRouter()
-const { navigate } = useNavigation()
 // Open the Airene chat panel (provided by [...slug].vue) from the Useful links.
 const toggleAirene = inject<() => void>('toggleAirene', () => {})
 // Drives the hero glow — the SearchBox emits its AI-mode state up.
@@ -43,7 +43,7 @@ const todayLabel = new Date().toLocaleDateString('en-GB', {
 // Pills are user-managed: pick up to 6 from a catalog + drag to reorder via the
 // "Add actions" modal (opened by the "Actions" pill). Selection persists (mini-DB).
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — coming soon`)
 }
 function runAction(a: HomeActionDef) {
   if (a.path === '#') soon(a.label)
@@ -297,7 +297,7 @@ const learn: LearnCard[] = [
               class="setup-step"
               :class="{ 'setup-step--active': i === 0 }"
               type="button"
-              @click="navigate('Company profile')"
+              @click="soon(s.label)"
             >
               <span class="setup-step__check" :class="{ 'setup-step__check--done': s.done }">
                 <MpIcon v-if="s.done" name="check" size="sm" />
@@ -314,7 +314,7 @@ const learn: LearnCard[] = [
               <h4 class="setup__heading">Fill in important information<br>about your company</h4>
               <p class="setup__sub">Organize company info to activate features like multi-currency, formats, and tax inclusive.</p>
               <div class="setup__actions">
-                <button class="btn btn--brand" type="button" @click="navigate('Company profile')">Set up now</button>
+                <button class="btn btn--brand" type="button" @click="soon('Set up now')">Set up now</button>
                 <button class="btn btn--secondary btn--icon" type="button" @click="soon('Watch video')">
                   <MpIcon name="play-video" size="md" />
                   Watch video
@@ -693,6 +693,11 @@ const learn: LearnCard[] = [
   color: var(--mp-text-secondary, #3a4749);
 }
 .appr__main { flex: 1; min-width: 0; }
+/* Truncate with ellipsis when the row is tight — never let the text collapse to
+   one-character-per-line (min-width:0 flex child + long unbroken content). */
+.appr__title,
+.appr__party,
+.appr__by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .appr__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .appr__party { margin: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .appr__by { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -720,7 +725,9 @@ const learn: LearnCard[] = [
 .whatsnew { position: relative; }
 .whatsnew__track {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Reflow: keep a readable min card width and wrap to fewer columns when the
+     content area narrows (tablet/mobile) — never squish below 240px. */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .wn {
@@ -900,7 +907,7 @@ const learn: LearnCard[] = [
 /* ── Learn ────────────────────────────────────────────────────────────────── */
 .learn {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .learn-card {
@@ -937,7 +944,7 @@ const learn: LearnCard[] = [
 /* ── Useful links ─────────────────────────────────────────────────────────── */
 .useful {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .useful-link {
@@ -955,4 +962,67 @@ const learn: LearnCard[] = [
 .useful-link__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .useful-link__desc { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); max-width: 280px; }
 .useful-link:hover .useful-link__title { text-decoration: underline; }
+
+/* ── Responsive ───────────────────────────────────────────────────────────────
+   Cards/sections reflow (grids wrap via auto-fit above; splits stack here). Data
+   tables are NOT touched — they keep their own horizontal scroll so columns stay
+   full-width and readable (see ErpTablePage .erp-table-wrapper). */
+
+/* Tablet — the two-pane Set up card can't hold a 328px list + detail side by side */
+@media (max-width: 900px) {
+  .setup { flex-direction: column; }
+  .setup__list {
+    width: 100%;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  }
+}
+
+/* Mobile — tighten spacing, shrink the hero, stack the setup detail */
+@media (max-width: 600px) {
+  .home { gap: var(--mp-spacing-6); }
+
+  .hero { padding: var(--mp-spacing-4); }
+  .hero__line { font-size: var(--mp-font-sizes-xl); line-height: 28px; }
+
+  /* Quick shortcuts: compact so they pack horizontally and wrap (2–3 per row on
+     a phone) instead of stacking one-per-line. */
+  .chips { margin-top: var(--mp-spacing-4); }
+  .chips__row { gap: var(--mp-spacing-2); justify-content: center; }
+  .chip {
+    height: 32px;
+    padding: 0 var(--mp-spacing-3);
+    font-size: var(--mp-font-sizes-sm);
+    gap: var(--mp-spacing-1);
+  }
+  .chip__icon { width: 16px; height: 16px; }
+
+  .setup__detail {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mp-spacing-4);
+    padding: var(--mp-spacing-5);
+  }
+  .setup__illus { display: none; }
+  .setup__actions { flex-wrap: wrap; }
+
+  .setup-progress { width: 100%; }
+
+  /* Awaiting-approval is a list, not a table — stack each item vertically:
+     title (+ kebab pinned top-right), then party, requester, amount, Approve. */
+  .appr {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mp-spacing-1);
+    position: relative;
+    padding-right: var(--mp-spacing-10, 40px);   /* clear the top-right kebab */
+  }
+  .appr__thumb { display: none; }
+  .appr__main { width: 100%; }
+  .appr__amount { text-align: left; margin-left: 0; }
+  .appr__amount-main { font-weight: var(--mp-font-weights-semi-bold); }
+  .appr__kebab { position: absolute; top: var(--mp-spacing-3); right: var(--mp-spacing-4); }
+  .appr > .btn { align-self: flex-start; margin-top: var(--mp-spacing-2); }
+}
 </style>

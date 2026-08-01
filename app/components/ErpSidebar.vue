@@ -278,8 +278,17 @@ let closeTimer: ReturnType<typeof setTimeout> | null = null
 
 // ─── Computed ─────────────────────────────────────────────────────────────────
 
-// Main nav collapses while a panel is open
-const navExpanded = computed(() => isExpanded.value && !activePanel.value)
+// Below tablet width the expanded nav (216px) starves the content area, so we
+// force the collapsed icon rail there regardless of the saved preference.
+const isNarrowViewport = ref(false)
+if (import.meta.client) {
+  const mq = window.matchMedia('(max-width: 1024px)')
+  isNarrowViewport.value = mq.matches
+  mq.addEventListener('change', (e) => { isNarrowViewport.value = e.matches })
+}
+
+// Main nav collapses while a panel is open, or on narrow (tablet/mobile) viewports
+const navExpanded = computed(() => isExpanded.value && !activePanel.value && !isNarrowViewport.value)
 // Arrow points left when nav is expanded OR when a panel is visible
 const arrowPointsLeft = computed(() => navExpanded.value || (!!activePanel.value && isPanelVisible.value))
 

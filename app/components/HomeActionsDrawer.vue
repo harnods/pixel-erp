@@ -39,14 +39,14 @@ const selected = computed(() =>
 function add(key: string) {
   if (draft.value.includes(key)) return
   if (draft.value.length >= MAX_ACTIONS) {
-    toast.notify({ variant: 'info', title: `You can show up to ${MAX_ACTIONS} actions`, maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: `You can show up to ${MAX_ACTIONS} actions`, maxWidth: 'max-content' })
     return
   }
   draft.value.push(key)
 }
 function remove(key: string) {
   if (draft.value.length <= MIN_ACTIONS) {
-    toast.notify({ variant: 'info', title: 'Keep at least one action', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: 'Keep at least one action', maxWidth: 'max-content' })
     return
   }
   draft.value = draft.value.filter((k) => k !== key)
