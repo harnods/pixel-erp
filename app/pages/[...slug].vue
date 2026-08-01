@@ -1006,7 +1006,7 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Product list'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
+          <button class="btn-enterprise btn-enterprise--secondary page-import-btn">
             Import
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/product-list/new')">
@@ -1559,6 +1559,11 @@ function startResize(e: MouseEvent) {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-3);
+}
+
+/* Import is a secondary action — hide it on mobile to keep the title bar clean. */
+@media (max-width: 600px) {
+  .page-import-btn { display: none; }
 }
 
 .page-title-text {

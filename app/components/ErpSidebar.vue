@@ -28,9 +28,9 @@
       </div>
     </nav>
 
-    <!-- Secondary sidebar panel -->
+    <!-- Secondary sidebar panel (hidden on narrow viewports to free content width) -->
     <Transition name="panel">
-      <div v-if="activePanel && isPanelVisible" class="sidebar-panel">
+      <div v-if="activePanel && isPanelVisible && !isNarrowViewport" class="sidebar-panel">
         <div class="panel-header">
           <span class="panel-title">{{ activePanel.title.toUpperCase() }}</span>
         </div>
@@ -905,9 +905,8 @@ function handleNavClick(item: NavItem) {
     flyoutItem.value = null
     // Nav item that directly opens a panel (e.g. Reports)
     if (activePanel.value?.parentNavName === item.name) {
-      // Clicking same item again — close panel
-      closePanel()
-      activeItem.value = ''
+      // Already in this section — keep the level-2 panel open (no toggle-close).
+      isPanelVisible.value = true
     } else {
       const firstItem = item.panelSubmenu[0][0]
       openPanel({ title: item.name, groups: item.panelSubmenu, parentNavName: item.name })
@@ -916,11 +915,9 @@ function handleNavClick(item: NavItem) {
       activeItem.value = item.name
     }
   } else if (item.expandOnClick && activePanel.value?.parentNavName === item.name) {
-    // Its own promoted panel is open — clicking the icon again closes it,
-    // returning to normal hover-flyout behaviour.
+    // Already in this section — keep the level-2 panel open (no toggle-close).
     flyoutItem.value = null
-    closePanel()
-    activeItem.value = ''
+    isPanelVisible.value = true
   } else if (!item.submenu) {
     // Simple leaf nav item (e.g. Home, Expenses, Settings)
     flyoutItem.value = null
