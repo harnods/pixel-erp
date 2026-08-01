@@ -70,3 +70,16 @@ export function approveBill(id: string): void {
   const bill = bills.find((b) => b.id === id)
   if (bill && bill.status === 'draft') bill.status = 'unpaid'
 }
+
+/** Delete one or more bills from the list (bulk or single). Returns the count actually removed. */
+export function deleteBills(ids: string[]): number {
+  const idSet = new Set(ids)
+  let removed = 0
+  for (let i = bills.length - 1; i >= 0; i--) {
+    if (idSet.has(bills[i]!.id)) {
+      bills.splice(i, 1)
+      removed++
+    }
+  }
+  return removed
+}
