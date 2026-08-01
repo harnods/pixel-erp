@@ -867,7 +867,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary);
 }
-.track-modal__remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical); }
+.track-modal__remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical, var(--mp-text-danger)); }
 .track-modal__add {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
   margin-top: var(--mp-spacing-3); padding: 0;

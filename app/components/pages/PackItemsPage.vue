@@ -663,8 +663,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pak-td--input--error { background: #FCEEED; border-bottom-color: #E2483D; }
 .pak-qty-tooltip-wrap { display: block; width: 100%; }
 .pak-qty-input { display: block; width: 100%; box-sizing: border-box; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: right; font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md); }
-.pak-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
-.pak-outstanding { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium); }
+.pak-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }
+.pak-outstanding { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium, 500); }
 .pak-sentinel { height: 1px; }
 .pak-loading { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-secondary); }
 .pak-loading--inline { justify-content: center; padding: var(--mp-spacing-3); }

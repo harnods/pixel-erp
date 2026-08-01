@@ -481,7 +481,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
-.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
@@ -542,7 +542,7 @@ function goBack() { router.push({ path: '/outbound-delivery', query: { tab: 'Rea
 .del-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
 .linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .del-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.del-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
+.del-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium, 500); }
 .del-linked-wrap { overflow-x: auto; }
 .del-linked { width: 100%; border-collapse: collapse; }
 .del-link-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

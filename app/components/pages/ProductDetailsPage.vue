@@ -284,9 +284,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </ContentList>
           </div>
           <div class="pd-field-col pd-field-col--flex">
-            <ContentList label="On hand qty" :value="formatQty(product.onHand, product.unit)" />
-            <ContentList label="Reserved qty" :value="formatQty(product.reserved, product.unit)" />
-            <ContentList label="Available qty" :value="formatQty(product.available, product.unit)" />
+            <ContentList label="On hand" :value="formatQty(product.onHand, product.unit)" />
+            <ContentList label="Reserved" :value="formatQty(product.reserved, product.unit)" />
+            <ContentList label="Available" :value="formatQty(product.available, product.unit)" />
             <ContentList label="Min. stock" :value="formatQty(product.minStock, product.unit)" />
           </div>
         </div>
@@ -514,9 +514,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <th class="pd-th">Number</th>
                     <th class="pd-th">Expiration date</th>
                     <th class="pd-th">Description</th>
-                    <th class="pd-th pd-th--num">On hand qty</th>
-                    <th class="pd-th pd-th--num">Reserved qty</th>
-                    <th class="pd-th pd-th--num">Available qty</th>
+                    <th class="pd-th pd-th--num">On hand</th>
+                    <th class="pd-th pd-th--num">Reserved</th>
+                    <th class="pd-th pd-th--num">Available</th>
                     <th class="pd-th">Unit</th>
                     <th class="pd-th"></th>
                   </tr>
@@ -589,8 +589,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <thead>
                   <tr>
                     <th class="pd-th">Warehouse</th>
-                    <th class="pd-th">Available qty</th>
-                    <th class="pd-th">Reserved qty</th>
+                    <th class="pd-th">Available</th>
+                    <th class="pd-th">Reserved</th>
                   </tr>
                 </thead>
                 <tbody>

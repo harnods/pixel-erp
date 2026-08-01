@@ -719,9 +719,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 
 .detail-bar-right { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5); flex-shrink: 0; }
 .pck-last-updated-label { font-size: var(--mp-font-sizes-xs, 11px); color: var(--mp-text-secondary); }
-.pck-last-updated-val { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pck-last-updated-val { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 
-.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
@@ -804,7 +804,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .pck-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
 .pck-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
 .pck-qty--zero { color: var(--mp-text-placeholder); }
-.pck-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
+.pck-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium, 500); }
 
 .detail-td--action { text-align: center; white-space: nowrap; }
 /* Sticky action column — stays visible when the table scrolls wider than the stage */
@@ -822,7 +822,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .pck-linked { width: 100%; border-collapse: collapse; }
 .pck-linked-num { color: var(--mp-text-link); }
 .pck-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.pck-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
+.pck-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium, 500); }
 .pck-linked .detail-td--number { position: relative; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }

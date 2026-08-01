@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
-import { MpIcon, toast } from '@mekari/pixel3'
+import {
+  MpIcon, toast,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { picForWarehouse } from '~/data/warehouses'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
@@ -102,6 +105,14 @@ const news: NewsCard[] = [
   { key: 'yellow', title: ['Detect your financial', 'anomalies earlier'],  desc: 'Identify unusual transactions in 1 click.',                            art: whatsnewAnomaly },
   { key: 'green',  title: ['Plan production with', 'confidence'],          desc: 'Stay ahead with clear schedules and real-time visibility.',            art: whatsnewProduction },
 ]
+// ─── Demo scenario state (FAB) ───────────────────────────────────────────────
+type WhatsNewDemoState = 'default' | 'more'
+const whatsNewDemoState = ref<WhatsNewDemoState>('default')
+const whatsNewDemoStates: { value: WhatsNewDemoState; label: string }[] = [
+  { value: 'default', label: "What's new — Default" },
+  { value: 'more', label: "What's new — >3" },
+]
+const whatsNewHasPagination = computed(() => whatsNewDemoState.value === 'more')
 
 // ── Set up Mekari ERP ─────────────────────────────────────────────────────────
 interface SetupStep { label: string; time: string; done: boolean }
@@ -254,11 +265,11 @@ const learn: LearnCard[] = [
               </div>
             </article>
           </div>
-          <button class="whatsnew__next" type="button" aria-label="Next" @click="soon('More updates')">
+          <button v-if="whatsNewHasPagination" class="whatsnew__next" type="button" aria-label="Next" @click="soon('More updates')">
             <MpIcon name="chevrons-right" size="md" />
           </button>
         </div>
-        <div class="whatsnew__dots">
+        <div v-if="whatsNewHasPagination" class="whatsnew__dots">
           <span class="dot dot--active" />
           <span class="dot" />
           <span class="dot" />
@@ -353,6 +364,26 @@ const learn: LearnCard[] = [
     </div>
 
     <HomeActionsDrawer v-model:isOpen="manageActionsOpen" />
+
+    <!-- ── Demo scenario FAB ── -->
+    <MpPopover id="home-demo-fab" is-close-on-select use-portal placement="top-end">
+      <MpPopoverTrigger>
+        <button class="demo-fab" aria-label="Change scenario state"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+      </MpPopoverTrigger>
+      <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+        <p class="demo-fab-heading">Scenarios</p>
+        <MpPopoverList>
+          <MpPopoverListItem
+            v-for="s in whatsNewDemoStates"
+            :key="s.value"
+            :is-active="s.value === whatsNewDemoState"
+            @click="whatsNewDemoState = s.value"
+          >
+            {{ s.label }}
+          </MpPopoverListItem>
+        </MpPopoverList>
+      </MpPopoverContent>
+    </MpPopover>
   </div>
 </template>
 
@@ -362,6 +393,18 @@ const learn: LearnCard[] = [
   flex-direction: column;
   gap: var(--mp-spacing-10, 40px);
 }
+
+/* Demo FAB */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+}
+.demo-fab:hover { opacity: 0.9; }
+.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Hero ─────────────────────────────────────────────────────────────────── */
 /* An inset rounded gradient block — the stage's own 24px side padding keeps the
@@ -681,16 +724,17 @@ const learn: LearnCard[] = [
   gap: var(--mp-spacing-6);
 }
 .wn {
+  position: relative;
   height: 400px;
   border-radius: var(--mp-radii-xl, 12px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-.wn--green    { background: #edf9f2; }
-.wn--yellow   { background: #fdf6dd; }
-.wn--blue     { background: #eaf4fc; }
-.wn__head { padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
+.wn--green    { --wn-bg: #edf9f2; background: var(--wn-bg); }
+.wn--yellow   { --wn-bg: #FFF9EA; background: var(--wn-bg); }
+.wn--blue     { --wn-bg: #eaf4fc; background: var(--wn-bg); }
+.wn__head { position: relative; z-index: 1; padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
 .wn__title {
   margin: 0 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-lg);
@@ -704,15 +748,42 @@ const learn: LearnCard[] = [
   line-height: var(--mp-line-heights-md, 20px);
   color: var(--mp-text-secondary);
 }
-/* Fill the space between the head and the foot, showing the artwork's bottom edge
-   (object-position bottom) — so the cover stays bottom-aligned and the Learn more /
-   Try feature foot is never pushed out of the fixed-height card. */
-.wn__art { display: block; width: 100%; flex: 1 1 0; min-height: 0; object-fit: cover; object-position: center bottom; }
+/* Full card width, natural aspect ratio (the PNGs already carry their own
+   rounded-card + shadow look). Bottom-anchored via absolute positioning
+   (not a flex margin-top: auto) so it's always aligned center-bottom even
+   when an art asset is taller than the space below the head — any excess
+   height extends upward and is clipped by .wn's overflow: hidden, keeping
+   the bottom of the artwork (where the foot floats) always visible. */
+.wn__art {
+  display: block;
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  width: 100%;
+  height: auto;
+}
+/* Pinned to the card's bottom edge (absolute, out of flow — so it overlaps
+   the bottom of .wn__art rather than pushing below it), floating on top of
+   the art. A gradient in the card's own pastel color (::before) fades from
+   solid at the very bottom up to transparent over the art, so the buttons
+   read as sitting on the card background rather than directly on the artwork. */
 .wn__foot {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 1;
   padding: var(--mp-spacing-4) var(--mp-spacing-6) var(--mp-spacing-6);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: var(--mp-spacing-4);
+}
+.wn__foot::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  top: -40px;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--wn-bg) 0%, var(--wn-bg) 30%, transparent 100%);
 }
 .wn__link {
   background: none; border: none; cursor: pointer;
