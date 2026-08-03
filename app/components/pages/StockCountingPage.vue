@@ -689,7 +689,7 @@ onUnmounted(() => {
             <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/>
             <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="sc-search" type="text" placeholder="Search..." />
+          <input v-model="search" class="sc-search" type="text" placeholder="Search product or SKU" />
           <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -700,7 +700,7 @@ onUnmounted(() => {
 
       <!-- Scan bar -->
       <div class="sc-scanbar-row">
-      <ScanBar placeholder="Scan barcode..." @scan="handleScan">
+      <ScanBar placeholder="Scan barcode" @scan="handleScan">
         <div v-if="activeBin" class="sc-active-bin">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -997,7 +997,7 @@ onUnmounted(() => {
           </button>
         </div>
         <div class="loc-drw-search-wrap">
-          <input v-model="locDrawerSearch" class="loc-drw-search-input" type="text" placeholder="Search..." />
+          <input v-model="locDrawerSearch" class="loc-drw-search-input" type="text" placeholder="Search location" />
           <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="locDrawerSearch = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
