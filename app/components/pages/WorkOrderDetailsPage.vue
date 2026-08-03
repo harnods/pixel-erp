@@ -8,17 +8,20 @@
  * Status-aware: the header primary action, the raw-material/routing status columns,
  * and the reserved/consumed/start/end values all reflect the work order's status.
  */
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, css,
+  MpIcon, MpSelect, MpDatePicker, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
+import { recordsForWorkOrder } from '~/data/materialConsumeReturn'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -28,6 +31,7 @@ const wo = computed<WorkOrder | undefined>(() => workOrders.find(w => w.id === p
 const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
 
 function goList() { router.push('/work-orders') }
+function goNewRecord() { router.push(`/work-orders/${props.orderId}/material-record/new`) }
 
 // ── Flow (Default vs From production request) ────────────────────────────────
 // From-PR adds the "Linked transactions" bottom tab. Preselected via ?source=pr.
@@ -44,6 +48,11 @@ const bottomTabs = computed(() =>
   fromProductionRequest.value ? ['Partial production', 'Linked transactions'] : ['Partial production'],
 )
 const activeBottomTab = ref('Partial production')
+
+// ── Top-level tabs (Overview / Material consume & return) ────────────────────
+const topTabs = ['Overview', 'Material consume & return'] as const
+type TopTab = typeof topTabs[number]
+const activeTopTab = ref<TopTab>(route.query.tab === 'material-consume-return' ? 'Material consume & return' : 'Overview')
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 function formatIDR(n: number) {
@@ -119,6 +128,91 @@ const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
 const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
+
+// ── Material consume & return — sourced from the persisted store ────────────
+// Seeded with one Consume record per raw material actually consumed (mirrors
+// the Raw materials "Consumed qty" column) plus excess-Return records for every
+// other material; new records the user saves via "New record" are appended
+// there too. "View serial number" / "View batch" tracking links follow the same
+// odd-index-material / last-material convention the seed uses.
+interface CrrRecord {
+  id: string
+  number: string
+  type: 'Consume' | 'Return'
+  product: string
+  sku: string
+  date: string
+  qty: number
+  unit: string
+  memo: string
+  recordedBy: string
+  trackingLabel?: string
+}
+function trackingLabelFor(materialIndex: number, type: 'Consume' | 'Return', totalMaterials: number): string | undefined {
+  if (materialIndex < 0) return undefined
+  if (type === 'Consume') return materialIndex % 2 === 1 ? 'View serial number' : undefined
+  return materialIndex === totalMaterials - 1 ? 'View batch' : undefined
+}
+const consumeReturnRecords = computed<CrrRecord[]>(() => {
+  if (!wo.value) return []
+  return recordsForWorkOrder(wo.value.id).map(r => {
+    const p = catalogProduct(r.productId)
+    const materialIndex = rawMaterials.value.findIndex(m => m.sku === p?.sku)
+    return {
+      id: r.id,
+      number: r.number,
+      type: r.type,
+      product: p?.name ?? '—',
+      sku: p?.sku ?? '—',
+      date: r.date,
+      qty: r.qty,
+      unit: r.unit,
+      memo: r.memo || '-',
+      recordedBy: r.recordedBy,
+      trackingLabel: trackingLabelFor(materialIndex, r.type, rawMaterials.value.length),
+    }
+  })
+})
+
+const crrColumns: TableColumn[] = [
+  { key: 'number',      label: 'Number',                    width: '200px' },
+  { key: 'product',     label: 'Product',                   width: '240px' },
+  { key: 'date',        label: 'Date',                       width: '120px' },
+  { key: 'qty',         label: 'Qty to consume / return',   width: '190px', align: 'right' },
+  { key: 'unit',        label: 'Unit',                       width: '80px'  },
+  { key: 'memo',        label: 'Memo',                       width: '160px' },
+  { key: 'recordedBy',  label: 'Recorded by',                width: '160px' },
+]
+const CRR_TYPE_OPTIONS: { label: string; value: 'Consume' | 'Return' }[] = [
+  { label: 'Consume', value: 'Consume' },
+  { label: 'Return', value: 'Return' },
+]
+const crrTypeFilter = ref<'Consume' | 'Return' | ''>('')
+const crrTypeLabel = computed(() => CRR_TYPE_OPTIONS.find(o => o.value === crrTypeFilter.value)?.label ?? '')
+const crrDateFilter = ref('') // DD/MM/YYYY
+
+const {
+  search: crrSearch, currentPage: crrCurrentPage, paginated: crrPaginated,
+  total: crrTotal, perPage: crrPerPage, setPage: crrSetPage, setPerPage: crrSetPerPage,
+} = useTableState<CrrRecord>(consumeReturnRecords, {
+  perPage: 25,
+  filterFn: (row, s) => {
+    const matchesSearch = !s || row.number.toLowerCase().includes(s) || row.product.toLowerCase().includes(s)
+    const matchesType = !crrTypeFilter.value || row.type === crrTypeFilter.value
+    const m = crrDateFilter.value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+    const filterDate = m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null
+    const matchesDate = !filterDate || new Date(row.date).toDateString() === filterDate.toDateString()
+    return matchesSearch && matchesType && matchesDate
+  },
+})
+watch([crrTypeFilter, crrDateFilter], () => crrSetPage(1))
+const crrHasActiveFilter = computed(() => !!crrSearch.value || !!crrTypeFilter.value || !!crrDateFilter.value)
+
+const crrColumnVisibility = reactive<Record<string, boolean>>(
+  Object.fromEntries(crrColumns.map(c => [c.key, true])),
+)
+const crrColumnItems = crrColumns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
+const crrVisibleColumns = computed<TableColumn[]>(() => crrColumns.filter(c => crrColumnVisibility[c.key]))
 
 const PRODUCTION_COST_GROUPS = ['Labor', 'Overhead', 'Other'] as const
 const productionCost = computed(() => PRODUCTION_COST_GROUPS.map(g => {
@@ -209,8 +303,18 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
       </div>
     </header>
 
+    <!-- ── Top-level tabs ── -->
+    <div class="detail-toptabs" role="tablist">
+      <button
+        v-for="tab in topTabs" :key="tab"
+        class="detail-toptab" :class="{ 'detail-toptab--active': activeTopTab === tab }"
+        role="tab" :aria-selected="activeTopTab === tab"
+        @click="activeTopTab = tab"
+      >{{ tab }}</button>
+    </div>
+
     <!-- ── Scrollable stage ── -->
-    <div class="detail-stage">
+    <div v-if="activeTopTab === 'Overview'" class="detail-stage">
 
       <!-- ── Work order info ── -->
       <section class="wod-section">
@@ -507,6 +611,133 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 
     </div>
 
+    <!-- ── Material consume & return — no records at all: illustration only, no filter bar ── -->
+    <div v-else-if="consumeReturnRecords.length === 0" class="detail-stage detail-stage--crr">
+      <div class="crr-full-empty">
+        <img src="/illustrations/empty-folder.png" alt="" class="crr-empty-illustration" width="288" height="240" />
+        <p class="wod-empty-title">No material consume & return</p>
+        <p class="wod-empty-desc">Material consume & return will appear here.</p>
+        <button class="detail-btn detail-btn--secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</button>
+      </div>
+    </div>
+
+    <!-- ── Material consume & return — with records ── -->
+    <div v-else class="detail-stage detail-stage--crr">
+      <ErpTablePage
+        :columns="crrVisibleColumns"
+        :rows="(crrPaginated as unknown as Record<string, unknown>[])"
+        :total="crrTotal"
+        :current-page="crrCurrentPage"
+        :per-page="crrPerPage"
+        :has-active-filter="crrHasActiveFilter"
+        actions-width="44px"
+        @page-change="crrSetPage"
+        @per-page-change="crrSetPerPage"
+        @clear-filters="crrTypeFilter = ''; crrDateFilter = ''; crrSearch = ''"
+      >
+        <!-- ── Filter bar ── -->
+        <template #filters>
+          <div class="filter-left">
+            <MpPopover id="crr-type-filter" is-close-on-select>
+              <MpPopoverTrigger>
+                <MpSelect
+                  id="crr-type-select"
+                  placeholder="Record type"
+                  :model-value="crrTypeFilter"
+                  is-clearable
+                  :class="css({ width: '160px' })"
+                  @mousedown.prevent
+                  @clear="crrTypeFilter = ''"
+                >
+                  <option v-if="crrTypeFilter" :value="crrTypeFilter">{{ crrTypeLabel }}</option>
+                </MpSelect>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+                <MpPopoverList>
+                  <MpPopoverListItem
+                    v-for="opt in CRR_TYPE_OPTIONS"
+                    :key="opt.value"
+                    :is-active="opt.value === crrTypeFilter"
+                    @click="crrTypeFilter = opt.value"
+                  >{{ opt.label }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+
+            <MpDatePicker
+              id="crr-date-filter" v-model="crrDateFilter"
+              placeholder="Date" format="DD/MM/YYYY" value-type="format"
+              is-clearable use-portal :class="css({ width: '160px' })"
+            />
+          </div>
+
+          <div class="filter-right">
+            <div class="filter-btn-group">
+              <ColumnSettingsMenu id="crr-columns" :items="crrColumnItems" :visibility="crrColumnVisibility" />
+            </div>
+
+            <div class="filter-search">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <input v-model="crrSearch" class="filter-search-input" type="text" placeholder="Search..." />
+            </div>
+          </div>
+        </template>
+
+        <!-- ── Number — record type sub-label ── -->
+        <template #cell-number="{ value, row }">
+          <div class="crr-product">
+            <span>{{ value }}</span>
+            <span class="wod-product-sub">{{ (row as unknown as CrrRecord).type }}</span>
+          </div>
+        </template>
+
+        <!-- ── Product — SKU sub-label ── -->
+        <template #cell-product="{ row }">
+          <div class="crr-product">
+            <span>{{ (row as unknown as CrrRecord).product }}</span>
+            <span class="wod-product-sub">SKU {{ (row as unknown as CrrRecord).sku }}</span>
+          </div>
+        </template>
+
+        <!-- ── Date ── -->
+        <template #cell-date="{ value }">{{ formatDate(value as string) }}</template>
+
+        <!-- ── Qty — tracking link (serial/batch) below the value ── -->
+        <template #cell-qty="{ value, row }">
+          <div class="crr-qty">
+            <span>{{ num(value as number) }}</span>
+            <a v-if="(row as unknown as CrrRecord).trackingLabel" class="crr-tracking" @click.prevent>{{ (row as unknown as CrrRecord).trackingLabel }}</a>
+          </div>
+        </template>
+
+        <!-- ── Actions kebab ── -->
+        <template #actions="{ row }">
+          <MpPopover :id="`crr-actions-${(row as unknown as CrrRecord).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="row-kebab" aria-label="More actions">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '190px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem>View picking document</MpPopoverListItem>
+                <MpPopoverListItem>View journal entry</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </template>
+
+      </ErpTablePage>
+
+      <div class="crr-footer">
+        <button class="detail-btn detail-btn--secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</button>
+      </div>
+    </div>
+
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wod-flow-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
@@ -558,6 +789,49 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 .wod-flow-fab:hover { opacity: 0.9; }
 .wod-flow-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
+/* ── Material consume & return ───────────────────────────────────────────── */
+.detail-stage--crr { display: flex; flex-direction: column; }
+
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-search {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
+}
+.filter-search-input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default); min-width: 0;
+}
+.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+
+.crr-product { display: flex; flex-direction: column; white-space: normal; }
+.crr-qty { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.crr-tracking { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; white-space: nowrap; }
+.crr-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+.crr-full-empty {
+  display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-16, 96px) 0 0;
+}
+.crr-full-empty .detail-btn { margin-top: var(--mp-spacing-4); }
+.crr-empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+
+.crr-footer { display: flex; justify-content: flex-end; padding-top: var(--mp-spacing-6); flex-shrink: 0; }
+
+.row-kebab {
+  display: flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);
+  margin: 0 auto; border: none; background: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary);
+}
+.row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+
 /* ── Page shell (shared detail-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
@@ -572,6 +846,19 @@ const finishedGoodsTotal = computed(() => mainOutputSubtotal.value + otherOutput
 }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+
+/* ── Top-level tabs (Overview / Material consume & return) ──────────────────── */
+.detail-toptabs {
+  flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-5);
+  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.detail-toptab {
+  position: relative; background: none; border: none; padding: var(--mp-spacing-3) 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md);
+}
+.detail-toptab--active { color: var(--mp-text-selected); font-weight: var(--mp-font-weights-semi-bold); }
+.detail-toptab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--mp-background-brand-bold, #029861); }
 .detail-title {
   margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);

@@ -1,0 +1,368 @@
+<script setup lang="ts">
+/**
+ * New material record — Work order detail → Material consume & return → New
+ * record. Built from the Figma reference (Work Order Details / Partial
+ * Consumption / New Consume · New Return) using the ERP create-page shell
+ * (.detail-page + scrollable stage + sticky footer).
+ *
+ * One form, one Record type radio (Consume / Return) — switching it swaps the
+ * line-item columns (Needed/On hand/Qty to consume vs Consumed/Qty to return).
+ * Saving creates one persisted record per checked row (see
+ * ~/data/materialConsumeReturn.ts) and returns to the work order's Material
+ * consume & return tab.
+ */
+import { ref, reactive, computed } from 'vue'
+import {
+  MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpAutocomplete, MpDatePicker, MpInput, MpTextarea, MpButton, MpIcon,
+  MpCheckbox, MpRadio, toast,
+} from '@mekari/pixel3'
+import { workOrders } from '~/data/workOrders'
+import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
+import { warehouses } from '~/data/warehouses'
+import { recordsForWorkOrder, addMaterialConsumeReturnRecord } from '~/data/materialConsumeReturn'
+
+const props = defineProps<{ orderId: string }>()
+const router = useRouter()
+const route = useRoute()
+
+const wo = computed(() => workOrders.find(w => w.id === props.orderId))
+const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
+
+function goBack() { router.push(`/work-orders/${props.orderId}?tab=material-consume-return`) }
+
+// ── Record type ──────────────────────────────────────────────────────────────
+type RecordType = 'consume' | 'return'
+const recordType = ref<RecordType>(route.query.type === 'return' ? 'return' : 'consume')
+const isConsume = computed(() => recordType.value === 'consume')
+
+// ── Header fields ────────────────────────────────────────────────────────────
+const recordDate = ref('') // DD/MM/YYYY
+const recordDateError = ref(false)
+const warehouseId = ref('')
+const warehouseError = ref(false)
+const memo = ref('')
+const MEMO_MAX = 256
+
+const warehouseOptions = warehouses
+  .filter(w => !w.isDefault && w.status === 'active')
+  .map(w => ({ id: w.id, name: w.name }))
+
+// ── Line items — one row per BOM raw material ────────────────────────────────
+interface MaterialRow {
+  productId: string
+  product: string
+  sku: string
+  unit: string
+  neededQty: number
+  onHandQty: number
+  consumedQty: number // net already consumed for this work order + product
+  qtyValue: string
+  selected: boolean
+  trackingType?: 'serial' | 'batch'
+}
+
+function trackingTypeFor(i: number): 'serial' | 'batch' | undefined {
+  if (i % 4 === 3) return 'batch'
+  if (i % 3 === 2) return 'serial'
+  return undefined
+}
+
+function netConsumed(productId: string): number {
+  if (!wo.value) return 0
+  return recordsForWorkOrder(wo.value.id)
+    .filter(r => r.productId === productId)
+    .reduce((s, r) => s + r.qty, 0)
+}
+
+const rows = reactive<MaterialRow[]>(
+  (bom.value?.rawMaterials ?? []).map((r, i) => {
+    const p = catalogProduct(r.productId)
+    return {
+      productId: r.productId,
+      product: p?.name ?? '—',
+      sku: p?.sku ?? '—',
+      unit: r.unit,
+      neededQty: r.needed,
+      onHandQty: r.needed,
+      consumedQty: Math.max(0, netConsumed(r.productId)),
+      qtyValue: '0',
+      selected: true,
+      trackingType: trackingTypeFor(i),
+    }
+  }),
+)
+
+const num = (v: string) => Number(v) || 0
+const remainingQty = (row: MaterialRow) =>
+  isConsume.value
+    ? Math.max(0, row.onHandQty - num(row.qtyValue))
+    : Math.max(0, row.consumedQty - num(row.qtyValue))
+
+// ── Row selection (header checkbox) ─────────────────────────────────────────
+const allSelected = computed(() => rows.length > 0 && rows.every(r => r.selected))
+const someSelected = computed(() => rows.some(r => r.selected) && !allSelected.value)
+function toggleAll() {
+  const next = !allSelected.value
+  rows.forEach(r => { r.selected = next })
+}
+
+// ── Save ─────────────────────────────────────────────────────────────────────
+const CURRENT_USER = 'Rizal Candra'
+
+function parseDMY(v: string): string {
+  const [dd, mm, yyyy] = v.split('/')
+  const today = new Date().toISOString().slice(0, 10)
+  return dd && mm && yyyy ? `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}` : today
+}
+
+function validate() {
+  let ok = true
+  if (!recordDate.value) { recordDateError.value = true; ok = false }
+  if (!warehouseId.value) { warehouseError.value = true; ok = false }
+  return ok
+}
+
+function handleSave() {
+  if (!wo.value || !validate()) return
+  const isoDate = parseDMY(recordDate.value)
+  let saved = 0
+  rows.forEach(row => {
+    if (!row.selected) return
+    const qty = num(row.qtyValue)
+    if (qty <= 0) return
+    addMaterialConsumeReturnRecord({
+      workOrderId: wo.value!.id,
+      type: isConsume.value ? 'Consume' : 'Return',
+      productId: row.productId,
+      date: isoDate,
+      qty: isConsume.value ? qty : -qty,
+      unit: row.unit,
+      warehouseId: warehouseId.value,
+      memo: memo.value,
+      recordedBy: CURRENT_USER,
+    })
+    saved++
+  })
+  if (saved === 0) {
+    toast.notify({ variant: 'warning', title: 'Enter a quantity for at least one product' })
+    return
+  }
+  toast.notify({ variant: 'success', title: 'Material record saved' })
+  goBack()
+}
+</script>
+
+<template>
+  <div v-if="wo" class="detail-page">
+    <!-- ── Title bar ── -->
+    <header class="detail-bar">
+      <div class="detail-bar-left">
+        <button class="detail-breadcrumb" @click="goBack">Work Order #{{ wo.number.split('-').pop() }}</button>
+        <div class="detail-titlerow-left">
+          <h1 class="detail-title">New material record</h1>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── Scrollable stage ── -->
+    <div class="detail-stage">
+      <div class="mr-body">
+
+        <!-- ── Record type ── -->
+        <MpFormControl id="mr-type" is-required>
+          <MpFormLabel>Record type</MpFormLabel>
+          <div class="mr-radio-group">
+            <label class="mr-radio-item">
+              <MpRadio id="mr-type-consume" name="mr-type" value="consume" :is-checked="recordType === 'consume'" @change="recordType = 'consume'" />
+              <span>Consume</span>
+            </label>
+            <label class="mr-radio-item">
+              <MpRadio id="mr-type-return" name="mr-type" value="return" :is-checked="recordType === 'return'" @change="recordType = 'return'" />
+              <span>Return</span>
+            </label>
+          </div>
+        </MpFormControl>
+
+        <!-- ── Date + Warehouse ── -->
+        <div class="mr-grid">
+          <MpFormControl id="mr-date" is-required :is-invalid="recordDateError">
+            <MpFormLabel>{{ isConsume ? 'Consume date' : 'Return date' }}</MpFormLabel>
+            <div class="mr-datepicker">
+              <MpDatePicker
+                id="mr-date-dp" v-model="recordDate" format="DD/MM/YYYY" value-type="format"
+                placeholder="Select date" is-clearable use-portal
+                @update:model-value="recordDateError = false"
+              />
+            </div>
+            <MpFormErrorMessage>You must select a date</MpFormErrorMessage>
+          </MpFormControl>
+
+          <MpFormControl id="mr-warehouse" is-required :is-invalid="warehouseError">
+            <MpFormLabel>{{ isConsume ? 'Pick from warehouse' : 'Return to warehouse' }}</MpFormLabel>
+            <MpAutocomplete
+              id="mr-warehouse-ac" v-model="warehouseId" :data="warehouseOptions"
+              label-prop="name" value-prop="id" placeholder="Select warehouse"
+              is-searchable is-clearable use-portal is-full-width :is-invalid="warehouseError"
+              @update:model-value="warehouseError = false"
+            />
+            <MpFormErrorMessage>You must select a warehouse</MpFormErrorMessage>
+          </MpFormControl>
+        </div>
+
+        <!-- ── Memo ── -->
+        <MpFormControl id="mr-memo" class="mr-memo">
+          <div class="mr-memo-label-row">
+            <MpFormLabel>Memo</MpFormLabel>
+            <span class="mr-memo-counter">{{ memo.length }} / {{ MEMO_MAX }}</span>
+          </div>
+          <MpTextarea id="mr-memo-textarea" v-model="memo" is-full-width :rows="3" :maxlength="MEMO_MAX" />
+        </MpFormControl>
+
+        <!-- ── Line items ── -->
+        <div class="mr-table-scroll">
+          <table class="mr-table" :class="{ 'mr-table--return': !isConsume }">
+            <thead>
+              <tr>
+                <th class="mr-th mr-th--check">
+                  <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" />
+                </th>
+                <th class="mr-th">Product</th>
+                <th class="mr-th">SKU</th>
+                <template v-if="isConsume">
+                  <th class="mr-th mr-th--right">Needed qty</th>
+                  <th class="mr-th mr-th--right">Consumed qty</th>
+                  <th class="mr-th mr-th--right">On hand qty</th>
+                  <th class="mr-th">Qty to consume</th>
+                </template>
+                <template v-else>
+                  <th class="mr-th mr-th--right">Consumed qty</th>
+                  <th class="mr-th">Qty to return</th>
+                </template>
+                <th class="mr-th mr-th--right">Remaining qty</th>
+                <th class="mr-th">Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in rows" :key="row.productId" class="mr-tr">
+                <td class="mr-td mr-td--check">
+                  <MpCheckbox :id="`mr-row-${row.productId}`" :is-checked="row.selected" @change="() => row.selected = !row.selected" />
+                </td>
+                <td class="mr-td">{{ row.product }}</td>
+                <td class="mr-td">{{ row.sku }}</td>
+                <template v-if="isConsume">
+                  <td class="mr-td mr-td--num">{{ row.neededQty }}</td>
+                  <td class="mr-td mr-td--num">{{ row.consumedQty }}</td>
+                  <td class="mr-td mr-td--num">{{ row.onHandQty }}</td>
+                  <td class="mr-td mr-td--input">
+                    <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
+                    <a v-if="row.trackingType === 'serial'" class="mr-tracking" @click.prevent>Manage serial number</a>
+                    <a v-else-if="row.trackingType === 'batch'" class="mr-tracking" @click.prevent>Manage batch</a>
+                  </td>
+                </template>
+                <template v-else>
+                  <td class="mr-td mr-td--num">{{ row.consumedQty }}</td>
+                  <td class="mr-td mr-td--input">
+                    <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width />
+                    <a v-if="row.trackingType === 'serial'" class="mr-tracking" @click.prevent>Manage serial number</a>
+                    <a v-else-if="row.trackingType === 'batch'" class="mr-tracking" @click.prevent>Manage batch</a>
+                  </td>
+                </template>
+                <td class="mr-td mr-td--num">{{ remainingQty(row) }}</td>
+                <td class="mr-td">{{ row.unit }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Sticky footer ── -->
+    <footer class="detail-footer">
+      <MpButton variant="ghost" is-rounded @click="goBack">Cancel</MpButton>
+      <MpButton variant="primary" is-rounded @click="handleSave">Save</MpButton>
+    </footer>
+  </div>
+
+  <!-- Not found -->
+  <div v-else class="detail-page">
+    <header class="detail-bar">
+      <div class="detail-bar-left">
+        <button class="detail-breadcrumb" @click="router.push('/work-orders')">Work orders</button>
+        <div class="detail-titlerow-left"><h1 class="detail-title">Work order not found</h1></div>
+      </div>
+    </header>
+  </div>
+</template>
+
+<style scoped>
+/* ── Page shell (shared create-page pattern) ─────────────────────────────── */
+.detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.detail-bar {
+  flex-shrink: 0; min-height: var(--mp-sizes-18, 72px); box-sizing: border-box;
+  background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+}
+.detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
+.detail-breadcrumb {
+  align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
+}
+.detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
+.detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.detail-title {
+  margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
+  color: var(--mp-text-default);
+}
+.detail-stage {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
+  border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
+}
+.detail-footer {
+  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-4) var(--mp-spacing-6);
+  background: var(--mp-background-stage); border-top: 1px solid var(--mp-border-default);
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+.mr-body { display: flex; flex-direction: column; gap: var(--mp-spacing-6); padding-top: var(--mp-spacing-2); }
+.mr-radio-group { display: flex; align-items: center; gap: var(--mp-spacing-6); height: var(--mp-sizes-10, 40px); }
+.mr-radio-item { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+.mr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 318px)); gap: var(--mp-spacing-4) var(--mp-spacing-6); }
+.mr-datepicker { width: 100%; }
+.mr-datepicker :deep(.mp-datepicker__root) { width: 100%; }
+
+.mr-memo { max-width: 660px; }
+.mr-memo-label-row { display: flex; align-items: center; justify-content: space-between; }
+.mr-memo-counter { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+/* ── Line-item table ──────────────────────────────────────────────────────── */
+.mr-table-scroll { overflow-x: auto; border-top: 1px solid var(--mp-border-default); border-bottom: 1px solid var(--mp-border-default); }
+.mr-table { width: 100%; table-layout: auto; border-collapse: collapse; min-width: max-content; }
+.mr-th {
+  height: var(--mp-sizes-7, 28px); text-align: left; white-space: nowrap;
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); text-transform: uppercase;
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.mr-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+.mr-th--check { width: 44px; padding: var(--mp-spacing-1) var(--mp-spacing-2); }
+.mr-td {
+  padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle;
+  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+}
+.mr-tr:last-child .mr-td { border-bottom: none; }
+.mr-td--check { width: 44px; padding: 10px var(--mp-spacing-2); }
+.mr-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
+.mr-td--input { min-width: 160px; padding: var(--mp-spacing-1) var(--mp-spacing-2); vertical-align: top; }
+.mr-tracking { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
+.mr-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
+</style>
