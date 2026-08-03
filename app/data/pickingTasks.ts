@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import { warehouses } from "./warehouses";
 import { operatorForWarehouse } from "./warehouseTeam";
-import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, type OutgoingOrder } from "./outgoing";
+import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, readyToShipSeeds, type OutgoingOrder } from "./outgoing";
 import { orderSkuLines } from "./inventory";
 import {
   binForSku, getWarehouseDetail, getReservationsForOrder, releaseReservationsForOrderSku, reserveStock,
@@ -245,6 +245,48 @@ function seedTasks(): PickingTask[] {
     });
   }
   out.push(...seedShippedPicks(seq));
+  out.push(...seedReadyToShipPicks(seq + shippedSeeds.length));
+  return out;
+}
+
+// ── Seed: a COMPLETED picking task per ready-to-ship order (full pick, same as a
+// normal fully-picked list) — wired through to packing/delivery seeds so the Ready
+// to ship tab isn't empty out of the box. Unlike seedShippedPicks, these orders are
+// seeded "open" (pickable), so their stock is already reserved the normal way —
+// read it back with assignmentsFromReservations() instead of fabricating picks. ──
+function seedReadyToShipPicks(startSeq: number): PickingTask[] {
+  const out: PickingTask[] = [];
+  let seq = startSeq;
+  readyToShipSeeds.forEach((orderId, k) => {
+    const o = outgoingOrders.find((x) => x.id === orderId);
+    if (!o) return;
+    const lines = buildPickingLines([o.id], [o.salesNo]);
+    const pickedByKey: Record<string, number> = {};
+    let pickedQty = 0;
+    for (const l of lines) { pickedByKey[l.key] = l.qty; pickedQty += l.qty; }
+    const { batchPicks, serialPicks } = assignmentsFromReservations(lines, o.warehouseId);
+    trimPicksToPickedQty(serialPicks, batchPicks, pickedByKey);
+    const dayOffset = -(k + 1);
+    out.push({
+      id: `pick-rts-${String(k + 1).padStart(3, "0")}`,
+      taskNo: `Picking #${seq++}`,
+      salesOrderIds: [o.id],
+      salesNos: [o.salesNo],
+      warehouseId: o.warehouseId,
+      warehouseName: o.warehouseName,
+      assignee: operatorForWarehouse(o.warehouseId, k),
+      skuQty: lines.length,
+      toPickQty: lines.reduce((sum, l) => sum + l.qty, 0),
+      pickedQty,
+      status: "completed",
+      startDate: isoAt(dayOffset, 8, 30),
+      endDate: isoAt(dayOffset, 11, 15),
+      lines,
+      pickedByKey,
+      ...(Object.keys(batchPicks).length ? { batchPicks, plannedBatchPicks: clonePicks(batchPicks) } : {}),
+      ...(Object.keys(serialPicks).length ? { serialPicks, plannedSerialPicks: clonePicks(serialPicks) } : {}),
+    });
+  });
   return out;
 }
 

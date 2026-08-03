@@ -278,6 +278,44 @@ function generateShipped(count = 10): OutgoingOrder[] {
   return out;
 }
 
+/**
+ * Orders packed and waiting to leave (delivery created, nothing shipped yet) — used
+ * to demo the Ready to ship tab (and its Courier filter / bulk "Create shipment")
+ * out of the box. Both seeded in the SAME warehouse with the SAME courier pre-set,
+ * so the courier filter's bulk create-shipment action has something to batch.
+ * Their full picking → packing → delivery chain is wired up in the task seeds (see
+ * pickingTasks/packingTasks/deliveryTasks), same as generateShipped() above, just
+ * stopping one stage earlier (delivery stays "ready to ship", never "shipped").
+ */
+function generateReadyToShip(count = 2): OutgoingOrder[] {
+  const out: OutgoingOrder[] = [];
+  const wh = SHIPPING_WAREHOUSES.find((w) => w.id === "wh-001") ?? SHIPPING_WAREHOUSES[0]!;
+  for (let k = 0; k < count; k++) {
+    const i = 300 + k; // numbering kept clear of every other seed group
+    const id = `out-rts-${String(k + 1).padStart(3, "0")}`;
+    const seed = Number(id.replace(/\D/g, ""));
+    const skuQty = (hash100(i * 23) % 3) + 1; // 1..3 distinct SKUs
+    let orderQty = 0;
+    for (let s = 0; s < skuQty; s++) orderQty += skuLineQty(seed, s);
+    out.push({
+      id,
+      number: `OUT-2026-${String(850 + k).padStart(4, "0")}`,
+      salesNo: `Sales Order #${10160 + k}`,
+      source: "Sales Order",
+      warehouseId: wh.id,
+      warehouseName: wh.name,
+      skuQty,
+      orderQty,
+      shippedQty: 0,
+      status: "open", // re-derived to "in progress" by syncOutboundOrderStatuses once its delivery exists
+      dueDate: isoOffset(2 + k),
+      memo: generateMemo(i, isoOffset(2 + k)),
+      customer: CUSTOMERS[hash100(i * 31) % CUSTOMERS.length],
+    });
+  }
+  return out;
+}
+
 const CANCEL_REASONS = [
   "Customer canceled order",
   "Duplicate order",
@@ -438,7 +476,10 @@ function generateTrackingScenario(): OutgoingOrder[] {
 // "Reset demo data" clears it.
 const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
-  outgoingSnapshot ?? [...generateTrackingScenario(), ...generateOrders(), ...generateShipped(3), ...generateCanceled()],
+  outgoingSnapshot ?? [
+    ...generateTrackingScenario(), ...generateOrders(), ...generateShipped(3),
+    ...generateReadyToShip(2), ...generateCanceled(),
+  ],
 );
 
 // Open / in-process / partially-shipped orders are pickable. (A partially shipped
@@ -474,6 +515,12 @@ export interface ShippedSeed { id: string; partial: boolean }
 export const shippedSeeds: ShippedSeed[] = outgoingOrders
   .filter((o) => o.id.startsWith("out-sh-"))
   .map((o) => ({ id: o.id, partial: o.status === "partially shipped" }));
+
+/** Orders with a pre-wired ready-to-ship chain — consumed by the task seeds
+ *  (fully picked + packed, delivery stays "ready to ship", nothing shipped). */
+export const readyToShipSeeds: string[] = outgoingOrders
+  .filter((o) => o.id.startsWith("out-rts-"))
+  .map((o) => o.id);
 
 /** Persist the outgoing snapshot (call after any mutation). */
 export function persistOutgoing(): void {

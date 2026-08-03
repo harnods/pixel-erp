@@ -141,7 +141,7 @@ function seedTasks(): PackingTask[] {
   // demoable and its business rules (e.g. marketplace must be fully picked across
   // ALL its lists) stay in charge — this naive per-task seed doesn't know about
   // them. Only the pre-shipped chain seeds packing here.
-  for (const pick of pickingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pick-sh-") && !t.id.startsWith("pick-demo-") && !t.id.startsWith("pick-new-"))) {
+  for (const pick of pickingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pick-sh-") && !t.id.startsWith("pick-rts-") && !t.id.startsWith("pick-demo-") && !t.id.startsWith("pick-new-"))) {
     pick.salesOrderIds.forEach((orderId, j) => {
       const order = outgoingOrders.find((o) => o.id === orderId);
       if (!order) return;
@@ -185,6 +185,50 @@ function seedTasks(): PackingTask[] {
     });
   }
   out.push(...seedShippedPacks(seq));
+  // +50 keeps this clear of whatever seq seedShippedPacks just consumed internally
+  // (its own local seq counter, never reported back) — a gap is harmless, a taskNo
+  // COLLISION isn't, so leave plenty of headroom rather than counting exactly.
+  out.push(...seedReadyToShipPacks(seq + 50));
+  return out;
+}
+
+// ── Seed: a COMPLETED packing task per ready-to-ship order's completed picking
+// (packs everything that was picked, full). Wired through to the delivery seed so
+// the Ready to ship tab isn't empty out of the box. ──
+function seedReadyToShipPacks(startSeq: number): PackingTask[] {
+  const out: PackingTask[] = [];
+  let seq = startSeq;
+  const rtsPicks = pickingTasks.filter((t) => t.id.startsWith("pick-rts-"));
+  rtsPicks.forEach((pick, k) => {
+    const orderId = pick.salesOrderIds[0]!;
+    const order = outgoingOrders.find((o) => o.id === orderId);
+    if (!order) return;
+    const lines = pickingLinesOf(pick).filter((l) => l.orderId === orderId)
+      .map((l) => ({ key: l.key, picked: pick.pickedByKey?.[l.key] ?? 0 }));
+    const toPackQty = lines.reduce((s, l) => s + l.picked, 0);
+    if (toPackQty <= 0) return;
+    const packedByKey: Record<string, number> = {};
+    for (const l of lines) packedByKey[l.key] = l.picked;
+    const dayOffset = -(k + 1);
+    out.push({
+      id: `pack-rts-${String(k + 1).padStart(3, "0")}`,
+      taskNo: `Packing #${seq++}`,
+      salesOrderId: orderId,
+      salesNo: order.salesNo,
+      pickingTaskId: pick.id,
+      pickingTaskNo: pick.taskNo,
+      warehouseId: pick.warehouseId,
+      warehouseName: pick.warehouseName,
+      assignee: operatorForWarehouse(pick.warehouseId, k),
+      skuQty: lines.length,
+      toPackQty,
+      packedQty: toPackQty,
+      status: "completed",
+      startDate: isoAt(dayOffset, 9, 0),
+      endDate: isoAt(dayOffset, 10, 30),
+      packedByKey,
+    });
+  });
   return out;
 }
 

@@ -103,7 +103,7 @@ function seedTasks(): DeliveryTask[] {
   const out: DeliveryTask[] = [];
   let seq = 50090;
   let idx = 0;
-  for (const pack of packingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pack-sh-"))) {
+  for (const pack of packingTasks.filter((t) => t.status === "completed" && !t.id.startsWith("pack-sh-") && !t.id.startsWith("pack-rts-"))) {
     idx++;
     const order = outgoingOrders.find((o) => o.id === pack.salesOrderId);
     const status = SEED_STATUSES[idx % SEED_STATUSES.length]!;
@@ -144,6 +144,43 @@ function seedTasks(): DeliveryTask[] {
     void order;
   }
   out.push(...seedShippedDeliveries(seq));
+  out.push(...seedReadyToShipDeliveries(seq + 50));
+  return out;
+}
+
+// ── Seed: a "ready to ship" delivery per pre-packed ready-to-ship order — nothing
+// shipped yet. Both share the same courier + warehouse out of the box so the Ready
+// to ship tab's Courier filter and its bulk "Create shipment" action are demoable
+// without first walking a whole order through picking/packing by hand. ──
+const READY_TO_SHIP_COURIER = "JNE";
+function seedReadyToShipDeliveries(startSeq: number): DeliveryTask[] {
+  const out: DeliveryTask[] = [];
+  let seq = startSeq;
+  const rtsPacks = packingTasks.filter((t) => t.id.startsWith("pack-rts-"));
+  rtsPacks.forEach((pack, k) => {
+    const order = outgoingOrders.find((o) => o.id === pack.salesOrderId);
+    const toShipQty = pack.toPackQty;
+    const thisSeq = seq++;
+    out.push({
+      id: `del-rts-${String(k + 1).padStart(3, "0")}`,
+      taskNo: `Delivery #${thisSeq}`,
+      salesOrderId: pack.salesOrderId,
+      salesNo: pack.salesNo,
+      packingTaskId: pack.id,
+      packingTaskNo: pack.taskNo,
+      warehouseId: pack.warehouseId,
+      warehouseName: pack.warehouseName,
+      assignee: operatorForWarehouse(pack.warehouseId, k),
+      skuQty: pack.skuQty,
+      orderQty: order?.orderQty ?? toShipQty,
+      toShipQty,
+      shippedQty: 0,
+      status: "ready to ship",
+      deliveryMethod: "online",
+      courier: READY_TO_SHIP_COURIER,
+      trackingNo: `SD${String(9800 + thisSeq).padStart(7, "0")}`,
+    });
+  });
   return out;
 }
 
