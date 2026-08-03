@@ -185,7 +185,7 @@ function handleSave() {
               :is-invalid="payFromError"
               @update:model-value="payFromError = false"
             />
-            <MpFormErrorMessage>Please select an account to pay from</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select pay from</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="sm-payee" class="ex-field-flex">
             <MpFormLabel>Payee</MpFormLabel>
@@ -211,7 +211,7 @@ function handleSave() {
               <MpFormLabel>Transaction no.</MpFormLabel>
               <span class="ex-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
             </div>
-            <MpInput id="sm-transno-input" v-model="transactionNo" placeholder="[Auto]" is-full-width is-disabled />
+            <MpInput id="sm-transno-input" v-model="transactionNo" placeholder="Auto" is-full-width is-disabled />
           </MpFormControl>
           <MpFormControl id="sm-refno">
             <MpFormLabel>Reference no.</MpFormLabel>
@@ -298,7 +298,7 @@ function handleSave() {
                 <MpFormLabel>Message</MpFormLabel>
                 <MpTextarea id="sm-message-textarea" v-model="message" is-full-width :rows="3" />
               </MpFormControl>
-              <p class="ex-helper-text">Visible to customer/vendor</p>
+              <p class="ex-helper-text">Visible to vendor</p>
             </div>
 
             <div class="ex-section">
