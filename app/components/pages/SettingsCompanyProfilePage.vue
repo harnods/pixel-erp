@@ -520,7 +520,7 @@ const ADVANCED_TOGGLES = [
     <MpModal id="cp-multicurrency-modal" :is-open="mcModalOpen" is-centered :is-keep-alive="false" @close="cancelMultiCurrency">
       <MpModalContent>
         <MpModalHeader>
-          Activate Multi-currency
+          Activate Multi-currency?
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
