@@ -671,7 +671,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalContent>
       <MpModalHeader>Cancel {{ cancelIds.length > 1 ? cancelIds.length + ' stock adjustments' : 'stock adjustment' }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <p>{{ cancelIds.length > 1 ? 'These adjustments' : 'This adjustment' }} will be canceled and can no longer be approved. This can't be undone.</p>
+        <p>{{ cancelIds.length > 1 ? 'These adjustments' : 'This adjustment' }} will be canceled and can no longer be approved. This cannot be undone.</p>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
