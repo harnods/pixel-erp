@@ -16,6 +16,8 @@ import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { storageLevels, updateStorageLevel } from '~/data/storageLevels'
 
+const { t } = useLocale()
+
 // Rows = the shared master levels (persisted), with a display Level number (order).
 type LevelRow = (typeof storageLevels)[number] & { level: number }
 const levels = computed<LevelRow[]>(() =>
@@ -88,8 +90,8 @@ async function saveEdit() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -109,11 +111,11 @@ async function saveEdit() {
       </colgroup>
       <thead>
         <tr>
-          <th class="sl-th">Level</th>
-          <th v-if="colVis.name" class="sl-th">Name</th>
-          <th v-if="colVis.description" class="sl-th">Description</th>
-          <th v-if="colVis.defaultType" class="sl-th">Storing preference</th>
-          <th v-if="colVis.lastUpdated" class="sl-th">Last updated</th>
+          <th class="sl-th">{{ t('Level') }}</th>
+          <th v-if="colVis.name" class="sl-th">{{ t('Name') }}</th>
+          <th v-if="colVis.description" class="sl-th">{{ t('Description') }}</th>
+          <th v-if="colVis.defaultType" class="sl-th">{{ t('Storing preference') }}</th>
+          <th v-if="colVis.lastUpdated" class="sl-th">{{ t('Last updated') }}</th>
           <th class="sl-th" />
         </tr>
       </thead>
@@ -125,11 +127,11 @@ async function saveEdit() {
           <td v-if="colVis.defaultType" class="sl-td">{{ lvl.defaultType }}</td>
           <td v-if="colVis.lastUpdated" class="sl-td"><LastUpdatedCell v-bind="luFor(lvl)" /></td>
           <td class="sl-td sl-td--action">
-            <MpButton class="sl-edit-btn" variant="ghost" left-icon="edit" aria-label="Edit" @click="openEdit(lvl)" />
+            <MpButton class="sl-edit-btn" variant="ghost" left-icon="edit" :aria-label="t('Edit')" @click="openEdit(lvl)" />
           </td>
         </tr>
         <tr v-if="!filteredLevels.length">
-          <td class="sl-td sl-empty" colspan="6">No results found.</td>
+          <td class="sl-td sl-empty" colspan="6">{{ t('No results found') }}</td>
         </tr>
       </tbody>
     </table>
@@ -146,28 +148,28 @@ async function saveEdit() {
     >
       <MpModalContent>
         <MpModalHeader>
-          Edit storage level
+          {{ t('Edit storage level') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
           <div class="sl-form">
             <MpFormControl id="sl-edit-name">
-              <MpFormLabel>Name</MpFormLabel>
-              <MpInput id="sl-edit-name-input" v-model="editName" is-full-width placeholder="Level name" />
+              <MpFormLabel>{{ t('Name') }}</MpFormLabel>
+              <MpInput id="sl-edit-name-input" v-model="editName" is-full-width :placeholder="t('Level name')" />
             </MpFormControl>
             <MpFormControl id="sl-edit-desc">
-              <MpFormLabel>Description</MpFormLabel>
-              <textarea id="sl-edit-desc-input" v-model="editDesc" class="sl-textarea" rows="3" placeholder="Describe this storage level" />
+              <MpFormLabel>{{ t('Description') }}</MpFormLabel>
+              <textarea id="sl-edit-desc-input" v-model="editDesc" class="sl-textarea" rows="3" :placeholder="t('Describe this storage level')" />
             </MpFormControl>
             <MpFormControl id="sl-edit-type">
-              <MpFormLabel>Storing preference</MpFormLabel>
+              <MpFormLabel>{{ t('Storing preference') }}</MpFormLabel>
               <MpAutocomplete
                 id="sl-edit-type-ac"
                 v-model="editType"
                 :data="TYPE_OPTIONS"
                 label-prop="label"
                 value-prop="value"
-                placeholder="Select type"
+                :placeholder="t('Select type')"
                 use-portal
                 is-full-width
               />
@@ -176,8 +178,8 @@ async function saveEdit() {
         </MpModalBody>
         <MpModalFooter>
           <div class="sl-modal-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">{{ isSaving ? 'Saving…' : 'Save changes' }}</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">{{ isSaving ? t('Saving…') : t('Save changes') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>

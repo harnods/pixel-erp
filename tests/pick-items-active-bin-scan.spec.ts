@@ -86,17 +86,22 @@ describe('PickItemsPage — active-bin scan model (reverse of put-away)', () => 
     wrapper.unmount()
   })
 
-  it('scanning a DIFFERENT bin than the batch\'s own location, then the batch, is rejected', async () => {
+  it('scanning a valid bin different from the batch\'s recorded location, then the batch, is accepted', async () => {
+    // A batch number uniquely identifies the physical lot, and the same batch can
+    // legitimately sit in (or be added to) more than one bin — which the single-
+    // location stock model can't represent. Enforcing activeBin === batch.location
+    // produced false "wrong bin" errors, so the bin no longer gates a batch scan
+    // (the scan-a-bin-first requirement above still stands).
     const batch = getWarehouseDetail(WAREHOUSE_ID)!.stock.find((s) => s.sku === BATCH_SKU)!.batches![0]!
-    const wrongBin = stockLocationPaths(WAREHOUSE_ID).find((p) => p !== batch.location)!
+    const otherBin = stockLocationPaths(WAREHOUSE_ID).find((p) => p && p !== batch.location)!
     const taskId = makeOrderAndTask(BATCH_SKU, 3, 'Test ActiveBin 3')
     const wrapper = mount(PickItemsPage, { props: { orderId: taskId } })
     await flushPromises()
 
-    await scan(wrapper, wrongBin)
+    await scan(wrapper, otherBin)
     await scan(wrapper, batch.batchNo)
 
-    expect(pickedQtyStat(wrapper)).toBe('0') // rejected — wrong bin, no assignment made
+    expect(Number(pickedQtyStat(wrapper))).toBeGreaterThan(0) // accepted — bin no longer gates the batch
     wrapper.unmount()
   })
 
@@ -113,6 +118,26 @@ describe('PickItemsPage — active-bin scan model (reverse of put-away)', () => 
     await scan(wrapper, anyBin)
     await scan(wrapper, PLAIN_SKU)
     expect(pickedQtyStat(wrapper)).toBe('1') // any valid bin is fine — no fixed origin to match for plain SKUs
+    wrapper.unmount()
+  })
+
+  it('a plain SKU\'s Storage location shows the bin actually scanned, not the static primary bin', async () => {
+    const PLAIN_SKU = '3004'
+    const primaryBin = getWarehouseDetail(WAREHOUSE_ID)!.stock.find((s) => s.sku === PLAIN_SKU)!.locations[0]!
+    const scanBin = stockLocationPaths(WAREHOUSE_ID).find((p) => p && p !== primaryBin)!
+    const taskId = makeOrderAndTask(PLAIN_SKU, 5, 'Test ActiveBin Plain Loc')
+    const wrapper = mount(PickItemsPage, { props: { orderId: taskId } })
+    await flushPromises()
+
+    await scan(wrapper, scanBin)   // physically at a DIFFERENT bin than the primary
+    await scan(wrapper, PLAIN_SKU)
+    expect(pickedQtyStat(wrapper)).toBe('1')
+
+    // The row now reflects where it was actually picked from (scanBin), not locations[0].
+    const locCell = wrapper.find('.pik-td--location-summary')
+    expect(locCell.exists()).toBe(true)
+    const shown = locCell.findAll('.pik-location-summary-item').map((x) => x.text())
+    expect(shown).toEqual([scanBin])
     wrapper.unmount()
   })
 })

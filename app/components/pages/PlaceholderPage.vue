@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { t } = useLocale()
 const { currentPageKey } = useNavigation()
 </script>
 
@@ -6,7 +7,7 @@ const { currentPageKey } = useNavigation()
   <div class="placeholder-page">
     <div class="placeholder-content">
       <p class="placeholder-label">{{ currentPageKey }}</p>
-      <p class="placeholder-hint">Page content goes here.</p>
+      <p class="placeholder-hint">{{ t('Page content goes here.') }}</p>
     </div>
   </div>
 </template>

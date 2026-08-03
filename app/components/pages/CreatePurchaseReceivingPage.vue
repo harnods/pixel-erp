@@ -16,6 +16,7 @@ import { getWarehouseOperators } from '~/data/warehouseTeam'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const receipt = computed<Receipt | null>(() => receipts.find(r => r.id === props.orderId) ?? null)
 
@@ -198,7 +199,7 @@ function handleCreate() {
   // Button is always active — validate on submit and surface the error inline.
   if (!assigneeId.value) { assigneeError.value = true; scrollToFirstError(); return }
   if (!keptItems.value.length) {
-    toast.notify({ variant: 'error', title: 'You must include at least one SKU to receive', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('You must include at least one SKU to receive'), maxWidth: 'max-content' })
     return
   }
   if (receipt.value) {
@@ -210,7 +211,7 @@ function handleCreate() {
       skus: keptItems.value.map((i) => i.sku),
       targetQtyBySku: targetQtyBySku.value,
     })
-    toast.notify({ variant: 'success', title: 'Receiving task created' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'success', title: t('Receiving task created') , maxWidth: 'max-content'})
     router.push(task ? `/receiving/${task.id}` : `/inbound-delivery/${props.orderId}`)
   }
 }
@@ -223,12 +224,12 @@ function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goReceipts">Receipts</button>
+          <button class="detail-breadcrumb" @click="goReceipts">{{ t('Receipts') }}</button>
           <span class="detail-breadcrumb-sep">/</span>
           <button class="detail-breadcrumb" @click="goBack">{{ receipt.purchaseNo }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Create purchase receiving</h1>
+          <h1 class="detail-title">{{ t('Create purchase receiving') }}</h1>
         </div>
       </div>
     </header>
@@ -238,26 +239,26 @@ function handleCreate() {
 
       <!-- PO content list (header) -->
       <div class="pr-header">
-        <ContentList label="Purchase no." :value="receipt.purchaseNo" />
-        <ContentList label="Description" :value="receipt.memo ?? '—'" />
+        <ContentList :label="t('Purchase no.')" :value="receipt.purchaseNo" />
+        <ContentList :label="t('Description')" :value="receipt.memo ?? '—'" />
         <ContentList
-          label="Tracking no."
+          :label="t('Tracking no.')"
           :value="receipt.trackingNos.length ? receipt.trackingNos.join(', ') : '—'"
         />
-        <ContentList label="Estimated arrival" :value="formatDateLong(receipt.estimatedArrival)" />
+        <ContentList :label="t('Estimated arrival')" :value="formatDateLong(receipt.estimatedArrival)" />
       </div>
 
       <!-- Assignee — select spans 3 of the 6-col (558px) form grid -->
       <div class="pr-section pr-grid">
         <MpFormControl id="pr-assignee" is-required :is-invalid="assigneeError" :class="css({ gridColumn: 'span 3' })">
-          <MpFormLabel>Assignee</MpFormLabel>
+          <MpFormLabel>{{ t('Assignee') }}</MpFormLabel>
           <MpAutocomplete
             id="pr-assignee-ac"
             v-model="assigneeId"
             :data="ASSIGNEES"
             label-prop="name"
             value-prop="id"
-            placeholder="Select assignee"
+            :placeholder="t('Select assignee')"
             is-searchable is-clearable use-portal is-full-width
             :is-invalid="assigneeError"
           >
@@ -271,26 +272,26 @@ function handleCreate() {
               </div>
             </template>
           </MpAutocomplete>
-          <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('You must select assignee') }}</MpFormErrorMessage>
         </MpFormControl>
       </div>
 
       <!-- SKU table — scope is whatever stays here -->
       <div class="pr-sku-section">
-        <h2 class="pr-section-title">SKU to receive</h2>
+        <h2 class="pr-section-title">{{ t('SKU to receive') }}</h2>
 
         <!-- Filter bar: scope count (left) + search (always right) -->
         <div class="pr-filter-bar">
           <div class="pr-filter-left">
-            <span class="pr-sku-count">{{ keptItems.length }} of {{ lineItems.length }} included</span>
-            <MpButton v-if="hasRemoved" variant="textLink" size="sm" @click="resetItems">Reset</MpButton>
+            <span class="pr-sku-count">{{ keptItems.length }} {{ t('of') }} {{ lineItems.length }} {{ t('included') }}</span>
+            <MpButton v-if="hasRemoved" variant="textLink" size="sm" @click="resetItems">{{ t('Reset') }}</MpButton>
           </div>
           <div class="pr-filter-search">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pr-filter-search-input" type="text" placeholder="Search..." />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <input v-model="search" class="pr-filter-search-input" type="text" :placeholder="t('Search...')" />
+            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -300,8 +301,8 @@ function handleCreate() {
 
         <!-- Empty — search matched nothing -->
         <div v-if="!visibleItems.length" class="pr-empty">
-          <p class="pr-empty-title">No results found</p>
-          <p class="pr-empty-desc">No SKU matches your search. Try a different keyword.</p>
+          <p class="pr-empty-title">{{ t('No results found') }}</p>
+          <p class="pr-empty-desc">{{ t('No SKU matches your search. Try a different keyword.') }}</p>
         </div>
 
         <!-- Table — outside border + internal scroll only when progressive (>10 SKUs) -->
@@ -320,13 +321,13 @@ function handleCreate() {
               </colgroup>
               <thead>
                 <tr>
-                  <th class="pr-th">Product</th>
-                  <th class="pr-th">SKU</th>
-                  <th class="pr-th pr-th--num">Purchase qty</th>
-                  <th class="pr-th pr-th--num">Expected qty</th>
-                  <th v-if="hasExistingReceivingTasks" class="pr-th pr-th--num">Received qty</th>
-                  <th v-if="hasExistingReceivingTasks" class="pr-th pr-th--num">Remaining qty to receive</th>
-                  <th class="pr-th">Unit</th>
+                  <th class="pr-th">{{ t('Product') }}</th>
+                  <th class="pr-th">{{ t('SKU') }}</th>
+                  <th class="pr-th pr-th--num">{{ t('Purchase qty') }}</th>
+                  <th class="pr-th pr-th--num">{{ t('Expected qty') }}</th>
+                  <th v-if="hasExistingReceivingTasks" class="pr-th pr-th--num">{{ t('Received qty') }}</th>
+                  <th v-if="hasExistingReceivingTasks" class="pr-th pr-th--num">{{ t('Remaining qty to receive') }}</th>
+                  <th class="pr-th">{{ t('Unit') }}</th>
                   <th class="pr-th pr-th--action" aria-hidden="true" />
                 </tr>
               </thead>
@@ -342,7 +343,7 @@ function handleCreate() {
                       class="pr-qty-input"
                       type="number" min="0" :max="outstandingQty(it)"
                       :value="targetQtyBySku[it.sku] ?? outstandingQty(it)"
-                      :aria-label="`Expected qty for ${it.productName}`"
+                      :aria-label="`${t('Expected qty for')} ${it.productName}`"
                       @input="onTargetQtyInput(it.sku, outstandingQty(it), $event)"
                     />
                   </td>
@@ -351,18 +352,18 @@ function handleCreate() {
                   <td class="pr-td">{{ it.unit }}</td>
                   <td class="pr-td pr-td--action">
                     <template v-if="removed.has(it.productId)">
-                      <MpTooltip :id="`pr-rs-${it.productId}`" label="Restore" placement="left" use-portal>
+                      <MpTooltip :id="`pr-rs-${it.productId}`" :label="t('Restore')" placement="left" use-portal>
                         <MpButton
-                          :aria-label="`Restore ${it.productName}`"
+                          :aria-label="`${t('Restore')} ${it.productName}`"
                           variant="ghost" left-icon="add"
                           @click="restoreItem(it.productId)"
                         />
                       </MpTooltip>
                     </template>
                     <template v-else>
-                      <MpTooltip :id="`pr-rm-${it.productId}`" label="Remove" placement="left" use-portal>
+                      <MpTooltip :id="`pr-rm-${it.productId}`" :label="t('Remove')" placement="left" use-portal>
                         <MpButton
-                          :aria-label="`Remove ${it.productName}`"
+                          :aria-label="`${t('Remove')} ${it.productName}`"
                           variant="ghost" left-icon="minus-circular"
                           @click="removeItem(it.productId)"
                         />
@@ -375,11 +376,11 @@ function handleCreate() {
             <!-- sentinel observed for auto lazy-load + inline loading row -->
             <div ref="itemsSentinelEl" class="pr-items-sentinel" aria-hidden="true" />
             <div v-if="loadingMore" class="pr-loading pr-items-loading">
-              <MpSpinner size="sm" /> Loading SKUs…
+              <MpSpinner size="sm" /> {{ t('Loading SKUs…') }}
             </div>
           </div>
           <div class="pr-items-count">
-            <span>Showing {{ pagedItems.length }} of {{ visibleItems.length }} SKUs</span>
+            <span>{{ t('Showing') }} {{ pagedItems.length }} {{ t('of') }} {{ visibleItems.length }} {{ t('SKUs') }}</span>
           </div>
         </section>
       </div>
@@ -387,17 +388,17 @@ function handleCreate() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goBack">Cancel</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
       <MpButton variant="primary" is-rounded @click="handleCreate">
-        Save
+        {{ t('Save') }}
       </MpButton>
     </footer>
   </div>
 
   <!-- Not found fallback -->
   <div v-else class="pr-not-found">
-    <p>Purchase order not found.</p>
-    <button class="detail-breadcrumb" @click="router.push('/inbound-delivery')">Back to Inbound delivery</button>
+    <p>{{ t('Purchase order not found') }}</p>
+    <button class="detail-breadcrumb" @click="router.push('/inbound-delivery')">{{ t('Back to Inbound delivery') }}</button>
   </div>
 </template>
 

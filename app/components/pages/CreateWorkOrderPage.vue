@@ -22,6 +22,7 @@ import { formatDate } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
 import { addWorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 
+const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 function goList() { router.push('/work-orders') }
@@ -31,8 +32,8 @@ function goList() { router.push('/work-orders') }
 type Flow = 'default' | 'production-request'
 const flow = ref<Flow>(route.query.source === 'pr' ? 'production-request' : 'default')
 const flowOptions: { value: Flow; label: string }[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'production-request', label: 'From production request' },
+  { value: 'default', label: t('Default') },
+  { value: 'production-request', label: t('From production request') },
 ]
 const fromProductionRequest = computed(() => flow.value === 'production-request')
 
@@ -361,13 +362,13 @@ function saveWorkOrder() {
 function handleSave() {
   if (!validate()) return
   const wo = saveWorkOrder()
-  toast.notify({ variant: 'success', title: 'Work order saved' })
+  toast.notify({ variant: 'success', title: t('Work order saved') })
   router.push(`/work-orders/${wo.id}${fromProductionRequest.value ? '?source=pr' : ''}`)
 }
 function handleSaveDraft() {
   if (!validate()) return
   const wo = saveWorkOrder()
-  toast.notify({ variant: 'success', title: 'Work order saved as draft' })
+  toast.notify({ variant: 'success', title: t('Work order saved as draft') })
   router.push(`/work-orders/${wo.id}${fromProductionRequest.value ? '?source=pr' : ''}`)
 }
 
@@ -398,10 +399,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goList">Work orders</button>
+          <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New work order</h1>
+          <h1 class="detail-title">{{ t('New work order') }}</h1>
         </div>
       </div>
     </header>
@@ -412,90 +413,90 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
         <!-- ══ Work order info ══════════════════════════════════════════════ -->
         <section class="wo-section">
-          <h2 class="wo-section-title">Work order info</h2>
+          <h2 class="wo-section-title">{{ t('Work order info') }}</h2>
           <div class="wo-grid">
             <!-- Work order no. (auto) -->
             <MpFormControl id="wo-no" is-required>
               <div class="wo-label-row">
-                <MpFormLabel>Work order no.</MpFormLabel>
-                <span class="wo-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
+                <MpFormLabel>{{ t('Work order no.') }}</MpFormLabel>
+                <span class="wo-label-icon" :title="t('Auto-generated')"><MpIcon name="settings" size="sm" /></span>
               </div>
-              <MpInput id="wo-no-input" model-value="" placeholder="Auto" is-full-width is-disabled />
+              <MpInput id="wo-no-input" model-value="" :placeholder="t('Auto')" is-full-width is-disabled />
             </MpFormControl>
 
             <!-- Category -->
             <MpFormControl id="wo-category" is-required :is-invalid="categoryError">
-              <MpFormLabel>Category</MpFormLabel>
+              <MpFormLabel>{{ t('Category') }}</MpFormLabel>
               <MpAutocomplete
                 id="wo-category-ac" v-model="category" :data="CATEGORY_OPTIONS"
-                label-prop="name" value-prop="id" placeholder="Select category"
+                label-prop="name" value-prop="id" :placeholder="t('Select category')"
                 is-clearable use-portal is-full-width :is-invalid="categoryError"
                 @update:model-value="categoryError = false"
               />
-              <MpFormErrorMessage>You must select category</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select category') }}</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- BOM name -->
             <MpFormControl id="wo-bom" is-required :is-invalid="bomError">
-              <MpFormLabel>BOM name</MpFormLabel>
+              <MpFormLabel>{{ t('BOM name') }}</MpFormLabel>
               <MpAutocomplete
                 id="wo-bom-ac" v-model="bomId" :data="BOM_OPTIONS"
-                label-prop="name" value-prop="id" placeholder="Select BOM"
+                label-prop="name" value-prop="id" :placeholder="t('Select BOM')"
                 is-searchable is-clearable use-portal is-full-width :is-invalid="bomError"
                 @update:model-value="onBomSelect"
               />
-              <MpFormErrorMessage>You must select BOM name</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select BOM name') }}</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- BOM no. (read-only, derived from the selected BOM) -->
             <MpFormControl id="wo-bomno">
-              <MpFormLabel>BOM no.</MpFormLabel>
-              <MpInput id="wo-bomno-input" :model-value="bomNo" placeholder="Auto" is-full-width is-disabled />
+              <MpFormLabel>{{ t('BOM no.') }}</MpFormLabel>
+              <MpInput id="wo-bomno-input" :model-value="bomNo" :placeholder="t('Auto')" is-full-width is-disabled />
             </MpFormControl>
 
             <!-- Work order type -->
             <MpFormControl id="wo-type" is-required :is-invalid="workOrderTypeError">
-              <MpFormLabel>Work order type</MpFormLabel>
+              <MpFormLabel>{{ t('Work order type') }}</MpFormLabel>
               <MpAutocomplete
                 id="wo-type-ac" v-model="workOrderType" :data="WO_TYPE_OPTIONS"
-                label-prop="name" value-prop="id" placeholder="Select type"
+                label-prop="name" value-prop="id" :placeholder="t('Select type')"
                 is-clearable use-portal is-full-width :is-invalid="workOrderTypeError"
                 @update:model-value="workOrderTypeError = false"
               />
-              <MpFormErrorMessage>You must select work order type</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select work order type') }}</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- Track routing -->
             <MpFormControl id="wo-routing" is-required>
-              <MpFormLabel>Track routing</MpFormLabel>
+              <MpFormLabel>{{ t('Track routing') }}</MpFormLabel>
               <div class="wo-radio-group">
                 <label class="wo-radio-item">
                   <MpRadio id="wo-routing-yes" name="wo-routing" value="yes" :is-checked="trackRouting === 'yes'" @change="trackRouting = 'yes'" />
-                  <span>Yes</span>
+                  <span>{{ t('Yes') }}</span>
                 </label>
                 <label class="wo-radio-item">
                   <MpRadio id="wo-routing-no" name="wo-routing" value="no" :is-checked="trackRouting === 'no'" @change="trackRouting = 'no'" />
-                  <span>No</span>
+                  <span>{{ t('No') }}</span>
                 </label>
               </div>
             </MpFormControl>
 
             <!-- Production plan dates -->
             <MpFormControl id="wo-plan" is-required :is-invalid="planDatesError">
-              <MpFormLabel>Production plan dates</MpFormLabel>
+              <MpFormLabel>{{ t('Production plan dates') }}</MpFormLabel>
               <div class="wo-datepicker">
                 <MpDatePicker
                   id="wo-plan-dp" v-model="planDates" is-range format="DD/MM/YYYY"
-                  value-type="format" range-separator=" - " placeholder="Select date range"
+                  value-type="format" range-separator=" - " :placeholder="t('Select date range')"
                   use-portal @update:model-value="planDatesError = false"
                 />
               </div>
-              <MpFormErrorMessage>You must select production plan dates</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select production plan dates') }}</MpFormErrorMessage>
             </MpFormControl>
 
             <!-- Produced qty — input with an attached "Pcs" suffix addon -->
             <MpFormControl id="wo-qty">
-              <MpFormLabel>Produced qty</MpFormLabel>
+              <MpFormLabel>{{ t('Produced qty') }}</MpFormLabel>
               <MpInputGroup id="wo-qty-group" is-full-width>
                 <MpInput id="wo-qty-input" v-model="producedQty" type="number" placeholder="0" is-full-width />
                 <MpInputRightAddon>Pcs</MpInputRightAddon>
@@ -505,17 +506,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <!-- Attachment -->
           <div class="wo-attachment">
-            <div class="wo-section-label">Attachment</div>
+            <div class="wo-section-label">{{ t('Attachment') }}</div>
             <input
               ref="fileInput" type="file" multiple
               accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
               class="wo-file-hidden" @change="onFileChange"
             />
             <div class="wo-attachment-row">
-              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
-              <span class="wo-attach-or">or drag and drop here</span>
+              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">{{ t('Choose file') }}</MpButton>
+              <span class="wo-attach-or">{{ t('or drag and drop here') }}</span>
             </div>
-            <p class="wo-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per work order</p>
+            <p class="wo-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per work order') }}</p>
             <ul v-if="attachedFiles.length" class="wo-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="wo-file-item">
                 <MpIcon name="document" size="sm" />
@@ -527,18 +528,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <label class="wo-checkbox-row">
             <MpCheckbox id="wo-subassembly" :is-checked="createAsSubAssembly" @change="createAsSubAssembly = !createAsSubAssembly" />
-            <span>Set as sub-assembly</span>
+            <span>{{ t('Set as sub-assembly') }}</span>
           </label>
         </section>
 
         <!-- ══ Raw materials ════════════════════════════════════════════════ -->
         <!-- The line-item sections appear only once a BOM is chosen (it defines them). -->
         <section v-if="hasBom" class="wo-section">
-          <h2 class="wo-section-title">Raw materials</h2>
-          <p class="wo-section-desc">Unit purchase cost may change when inventory value adjusts.</p>
+          <h2 class="wo-section-title">{{ t('Raw materials') }}</h2>
+          <p class="wo-section-desc">{{ t('Unit purchase cost may change when inventory value adjusts.') }}</p>
           <label class="wo-checkbox-row wo-checkbox-row--tight">
             <MpCheckbox id="wo-bulk-wh" :is-checked="bulkSetWarehouse" @change="bulkSetWarehouse = !bulkSetWarehouse" />
-            <span>Bulk set warehouse</span>
+            <span>{{ t('Bulk set warehouse') }}</span>
           </label>
           <div class="wo-table-scroll">
             <table class="wo-table">
@@ -549,9 +550,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wo-th">Product</th><th class="wo-th">Purchase cost</th><th class="wo-th">Warehouse</th>
-                  <th class="wo-th">Needed qty</th><th class="wo-th">Unit</th><th class="wo-th">Required date</th>
-                  <th class="wo-th wo-th--right">Estimated cost</th><th class="wo-th wo-th--del" />
+                  <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('Purchase cost') }}</th><th class="wo-th">{{ t('Warehouse') }}</th>
+                  <th class="wo-th">{{ t('Needed qty') }}</th><th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Required date') }}</th>
+                  <th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
@@ -563,15 +564,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <tbody v-else>
                 <tr v-for="row in rawRows" :key="row.id" class="wo-tr">
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`raw-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" placeholder="Select product" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRawProduct(row, v)" />
+                    <MpAutocomplete :id="`raw-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" :placeholder="t('Select product')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRawProduct(row, v)" />
                   </td>
                   <td class="wo-td wo-td--num"><template v-if="row.productId">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</template></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" placeholder="Select warehouse" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" :placeholder="t('Select warehouse')" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`raw-need-${row.id}`" v-model="row.needed" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select unit')" is-searchable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input">
                     <div v-if="row.productId" class="wo-datepicker"><MpDatePicker :id="`raw-date-${row.id}`" v-model="row.requiredDate" format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY" is-clearable use-portal /></div>
@@ -585,14 +586,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="wo-subtotal-row">
-            <span>Estimated raw materials subtotal</span>
+            <span>{{ t('Estimated raw materials subtotal') }}</span>
             <span class="wo-subtotal-amount">{{ formatIDR(rawSubtotal) }}</span>
           </div>
         </section>
 
         <!-- ══ Production cost ══════════════════════════════════════════════ -->
         <section v-if="hasBom" class="wo-section">
-          <h2 class="wo-section-title">Production cost</h2>
+          <h2 class="wo-section-title">{{ t('Production cost') }}</h2>
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
@@ -601,8 +602,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wo-th">Other cost</th><th class="wo-th">Cost driver</th><th class="wo-th">Estimated unit cost</th>
-                  <th class="wo-th">Multiplier</th><th class="wo-th wo-th--right">Amount</th><th class="wo-th wo-th--del" />
+                  <th class="wo-th">{{ t('Other cost') }}</th><th class="wo-th">{{ t('Cost driver') }}</th><th class="wo-th">{{ t('Estimated unit cost') }}</th>
+                  <th class="wo-th">{{ t('Multiplier') }}</th><th class="wo-th wo-th--right">{{ t('Amount') }}</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
@@ -614,10 +615,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <tbody v-else>
                 <tr v-for="row in costRows" :key="row.id" class="wo-tr">
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`cost-acc-${row.id}`" v-model="row.account" :data="COST_ACCOUNT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select cost account" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onCostAccount(row, v)" />
+                    <MpAutocomplete :id="`cost-acc-${row.id}`" v-model="row.account" :data="COST_ACCOUNT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select cost account')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onCostAccount(row, v)" />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.account" :id="`cost-drv-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" placeholder="Select cost driver" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.account" :id="`cost-drv-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select cost driver')" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-unit-${row.id}`" v-model="row.estUnitCost" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-mult-${row.id}`" v-model="row.multiplier" type="number" placeholder="0" is-full-width /></td>
@@ -630,14 +631,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="wo-subtotal-row">
-            <span>Production cost subtotal</span>
+            <span>{{ t('Production cost subtotal') }}</span>
             <span class="wo-subtotal-amount">{{ formatIDR(productionCostSubtotal) }}</span>
           </div>
         </section>
 
         <!-- ══ Routing ══════════════════════════════════════════════════════ -->
         <section v-if="hasBom" class="wo-section">
-          <h2 class="wo-section-title">Routing</h2>
+          <h2 class="wo-section-title">{{ t('Routing') }}</h2>
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
@@ -646,8 +647,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wo-th">Process</th><th class="wo-th">Description</th><th class="wo-th">Account mapping</th>
-                  <th class="wo-th wo-th--right">Amount</th><th class="wo-th wo-th--del" />
+                  <th class="wo-th">{{ t('Process') }}</th><th class="wo-th">{{ t('Description') }}</th><th class="wo-th">{{ t('Account mapping') }}</th>
+                  <th class="wo-th wo-th--right">{{ t('Amount') }}</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
@@ -659,11 +660,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <tbody v-else>
                 <tr v-for="row in routeRows" :key="row.id" class="wo-tr">
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`route-proc-${row.id}`" v-model="row.process" :data="PROCESS_OPTIONS" label-prop="name" value-prop="id" placeholder="Select process" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRouteProcess(row, v)" />
+                    <MpAutocomplete :id="`route-proc-${row.id}`" v-model="row.process" :data="PROCESS_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select process')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRouteProcess(row, v)" />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.process" :id="`route-desc-${row.id}`" v-model="row.description" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select account mapping')" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.process" :id="`route-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
@@ -674,25 +675,25 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="wo-subtotal-row">
-            <span>Routing cost subtotal</span>
+            <span>{{ t('Routing cost subtotal') }}</span>
             <span class="wo-subtotal-amount">{{ formatIDR(routingSubtotal) }}</span>
           </div>
 
           <!-- Cost summary -->
           <div class="wo-summary">
-            <div class="wo-summary-row"><span>Estimated raw materials subtotal</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>Production cost subtotal</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>Routing cost subtotal</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-            <div class="wo-summary-row wo-summary-row--total"><span>Estimated total production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+            <div class="wo-summary-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
+            <div class="wo-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+            <div class="wo-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+            <div class="wo-summary-row wo-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
           </div>
         </section>
 
         <!-- ══ Finished goods ═══════════════════════════════════════════════ -->
         <section v-if="hasBom" class="wo-section" :class="{ 'wo-section--last': !fromProductionRequest }">
-          <h2 class="wo-section-title">Finished goods</h2>
+          <h2 class="wo-section-title">{{ t('Finished goods') }}</h2>
 
           <!-- Main output -->
-          <h3 class="wo-subsection-title">Main output</h3>
+          <h3 class="wo-subsection-title">{{ t('Main output') }}</h3>
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
@@ -701,8 +702,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wo-th">Product</th><th class="wo-th">SKU</th><th class="wo-th">Produced qty</th>
-                  <th class="wo-th">Unit</th><th class="wo-th">Percentage</th><th class="wo-th wo-th--right">Estimated cost</th><th class="wo-th wo-th--del" />
+                  <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('SKU') }}</th><th class="wo-th">{{ t('Produced qty') }}</th>
+                  <th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Percentage') }}</th><th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
@@ -726,12 +727,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="wo-subtotal-row">
-            <span>Estimated main output subtotal</span>
+            <span>{{ t('Estimated main output subtotal') }}</span>
             <span class="wo-subtotal-amount">{{ formatIDR(mainOutputSubtotal) }}</span>
           </div>
 
           <!-- Other outputs -->
-          <h3 class="wo-subsection-title">Other outputs</h3>
+          <h3 class="wo-subsection-title">{{ t('Other outputs') }}</h3>
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
@@ -740,8 +741,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wo-th">Product</th><th class="wo-th">SKU</th><th class="wo-th">Produced qty</th>
-                  <th class="wo-th">Unit</th><th class="wo-th">Percentage</th><th class="wo-th wo-th--right">Estimated cost</th><th class="wo-th wo-th--del" />
+                  <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('SKU') }}</th><th class="wo-th">{{ t('Produced qty') }}</th>
+                  <th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Percentage') }}</th><th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
@@ -753,12 +754,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <tbody v-else>
                 <tr v-for="row in otherRows" :key="row.id" class="wo-tr">
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`other-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" placeholder="Select product" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onOtherProduct(row, v)" />
+                    <MpAutocomplete :id="`other-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" :placeholder="t('Select product')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onOtherProduct(row, v)" />
                   </td>
                   <td class="wo-td"><template v-if="row.productId">{{ row.sku || '—' }}</template></td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-qty-${row.id}`" v-model="row.producedQty" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select unit')" is-searchable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.productId" :id="`other-cost-${row.id}`" v-model="row.estCost" type="number" placeholder="0" is-full-width /></td>
@@ -770,12 +771,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="wo-subtotal-row">
-            <span>Estimated other outputs subtotal</span>
+            <span>{{ t('Estimated other outputs subtotal') }}</span>
             <span class="wo-subtotal-amount">{{ formatIDR(otherOutputsSubtotal) }}</span>
           </div>
 
           <!-- Production waste -->
-          <h3 class="wo-subsection-title">Production waste</h3>
+          <h3 class="wo-subsection-title">{{ t('Production waste') }}</h3>
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
@@ -784,8 +785,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wo-th">Account mapping</th><th class="wo-th">Allocation method</th><th class="wo-th">Percentage</th>
-                  <th class="wo-th wo-th--right">Amount</th><th class="wo-th wo-th--del" />
+                  <th class="wo-th">{{ t('Account mapping') }}</th><th class="wo-th">{{ t('Allocation method') }}</th><th class="wo-th">{{ t('Percentage') }}</th>
+                  <th class="wo-th wo-th--right">{{ t('Amount') }}</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
@@ -797,10 +798,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <tbody v-else>
                 <tr v-for="row in wasteRows" :key="row.id" class="wo-tr">
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete :id="`waste-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onWasteMapping(row, v)" />
+                    <MpAutocomplete :id="`waste-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select account mapping')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onWasteMapping(row, v)" />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" placeholder="Select allocation method" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select allocation method')" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input"><MpInput v-if="row.accountMapping" :id="`waste-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.accountMapping" :id="`waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
@@ -812,36 +813,36 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="wo-subtotal-row">
-            <span>Estimated production waste subtotal</span>
+            <span>{{ t('Estimated production waste subtotal') }}</span>
             <span class="wo-subtotal-amount">{{ formatIDR(wasteSubtotal) }}</span>
           </div>
 
           <!-- Finished goods summary -->
           <div class="wo-summary">
-            <div class="wo-summary-row"><span>Estimated main output subtotal</span><span>{{ formatIDR(mainOutputSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>Estimated other outputs subtotal</span><span>{{ formatIDR(otherOutputsSubtotal) }}</span></div>
-            <div class="wo-summary-row"><span>Estimated production waste subtotal</span><span>{{ formatIDR(wasteSubtotal) }}</span></div>
-            <div class="wo-summary-row wo-summary-row--total"><span>Estimated finished goods total</span><span>{{ formatIDR(finishedGoodsTotal) }}</span></div>
+            <div class="wo-summary-row"><span>{{ t('Estimated main output subtotal') }}</span><span>{{ formatIDR(mainOutputSubtotal) }}</span></div>
+            <div class="wo-summary-row"><span>{{ t('Estimated other outputs subtotal') }}</span><span>{{ formatIDR(otherOutputsSubtotal) }}</span></div>
+            <div class="wo-summary-row"><span>{{ t('Estimated production waste subtotal') }}</span><span>{{ formatIDR(wasteSubtotal) }}</span></div>
+            <div class="wo-summary-row wo-summary-row--total"><span>{{ t('Estimated finished goods total') }}</span><span>{{ formatIDR(finishedGoodsTotal) }}</span></div>
           </div>
         </section>
 
         <!-- ══ Linked transactions — from production request flow only ═══════ -->
         <section v-if="fromProductionRequest" class="wo-section wo-section--last">
-          <h2 class="wo-section-title">Linked transactions</h2>
+          <h2 class="wo-section-title">{{ t('Linked transactions') }}</h2>
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup><col style="width:280px" /><col style="width:160px" /><col style="width:120px" /><col style="width:180px" /></colgroup>
               <thead>
                 <tr>
-                  <th class="wo-th">Number</th><th class="wo-th wo-th--right">Qty to produce</th><th class="wo-th">Unit</th><th class="wo-th">Due date</th>
+                  <th class="wo-th">{{ t('Number') }}</th><th class="wo-th wo-th--right">{{ t('Qty to produce') }}</th><th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Due date') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="t in workOrderLinks" :key="t.number" class="wo-tr">
-                  <td class="wo-td">{{ t.number }}</td>
-                  <td class="wo-td wo-td--num wo-td--right">{{ t.qtyToProduce }}</td>
-                  <td class="wo-td">{{ t.unit }}</td>
-                  <td class="wo-td">{{ formatDate(t.dueDate) }}</td>
+                <tr v-for="link in workOrderLinks" :key="link.number" class="wo-tr">
+                  <td class="wo-td">{{ link.number }}</td>
+                  <td class="wo-td wo-td--num wo-td--right">{{ link.qtyToProduce }}</td>
+                  <td class="wo-td">{{ link.unit }}</td>
+                  <td class="wo-td">{{ formatDate(link.dueDate) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -853,18 +854,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goList">Cancel</MpButton>
-      <MpButton variant="secondary" is-rounded @click="handleSaveDraft">Save as draft</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleSave">Save</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goList">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="secondary" is-rounded @click="handleSaveDraft">{{ t('Save as draft') }}</MpButton>
+      <MpButton variant="primary" is-rounded @click="handleSave">{{ t('Save') }}</MpButton>
     </footer>
 
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wo-flow-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="wo-flow-fab" aria-label="Change creation flow"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <button class="wo-flow-fab" :aria-label="t('Change creation flow')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
-        <p class="wo-flow-fab-heading">Creation flow</p>
+        <p class="wo-flow-fab-heading">{{ t('Creation flow') }}</p>
         <MpPopoverList>
           <MpPopoverListItem v-for="o in flowOptions" :key="o.value" :is-active="o.value === flow" @click="flow = o.value">{{ o.label }}</MpPopoverListItem>
         </MpPopoverList>

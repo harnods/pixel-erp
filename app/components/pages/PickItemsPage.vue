@@ -33,6 +33,7 @@ import { playScanSuccessSound } from '~/utils/sound'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const task = computed(() => getPickingTask(props.orderId))
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
@@ -472,13 +473,11 @@ function handleScan(rawValue: string) {
       notifyScanError('Scan a bin first before scanning batch numbers')
       return
     }
-    // The batch's own fixed bin must match the active one — catches an
-    // operator scanning the right batch while standing at the wrong location.
-    const knownLoc = stockMap.value.get(item.skuCode)?.batches?.find(b => b.batchNo === resolved.batchNo)?.location
-    if (knownLoc && !sameCode(knownLoc, activeBin.value)) {
-      notifyScanError(`${resolved.batchNo}: stored in ${knownLoc}, not ${activeBin.value}`)
-      return
-    }
+    // No bin-match check: a batch number already uniquely identifies the physical
+    // lot, and the same batch can legitimately sit in (or be added to) more than one
+    // bin — which the single-location stock model can't represent, so enforcing
+    // activeBin === batch.location produced false "wrong bin" errors. The active-bin
+    // requirement above (physical-presence confirmation) is kept.
     if (addOrIncrementBatch(item, resolved.batchNo!)) {
       playScanSuccessSound()
       flashRow(item.skuCode)
@@ -522,7 +521,14 @@ function handleScan(rawValue: string) {
     notifyScanError('Scan a bin first before scanning SKU numbers')
     return
   }
+  // Attribute this unit to the bin the operator is physically at (active bin), so
+  // the row shows where it was ACTUALLY picked from — not the SKU's static primary bin.
+  const bin = activeBin.value
   draftQty.value = { ...draftQty.value, [item.key]: (draftQty.value[item.key] ?? 0) + 1 }
+  plainScanBins.value = {
+    ...plainScanBins.value,
+    [item.key]: { ...(plainScanBins.value[item.key] ?? {}), [bin]: (plainScanBins.value[item.key]?.[bin] ?? 0) + 1 },
+  }
   if (showQtyErrors.value) showQtyErrors.value = false
   if (finishError.value) finishError.value = ''
   playScanSuccessSound()
@@ -602,11 +608,17 @@ const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
 // ── Draft picked qty (keyed by line key) ──────────────────────────────────────
 const draftQty = ref<Record<string, number>>({})
+// Plain (untracked) SKUs carry no per-unit bin data, so each plain pick is
+// attributed to the bin the operator actually scanned (the active bin) and shown
+// in place of the SKU's static primary bin. Session-only — a plain pick persists
+// as a bare qty (no bin), so this is a display aid, cleared on seed/reset.
+const plainScanBins = ref<Record<string, Record<string, number>>>({}) // lineKey → bin → qty
 const search = ref('')
 function seedDraftQty() {
   const map: Record<string, number> = {}
   for (const it of lineItems.value) map[it.key] = it.pickedQty
   draftQty.value = map
+  plainScanBins.value = {}
 }
 watch([() => props.orderId, lineItems], () => {
   seedDraftQty()
@@ -788,8 +800,46 @@ function onQtyInput(key: string, expected: number, e: Event) {
   if (!Number.isFinite(n) || n < 0) n = 0
   if (n > expected) n = expected
   draftQty.value = { ...draftQty.value, [key]: n }
+  trimPlainScanBins(key, n)
   if (showQtyErrors.value) showQtyErrors.value = false
   if (finishError.value) finishError.value = ''
+}
+/** Bins a plain (untracked) SKU line was actually picked from — the active bin(s)
+ *  the operator scanned. Units entered manually (no scan) have no bin, so they
+ *  fall back to the line's reserved primary bin. Nothing picked yet → show that
+ *  primary bin, exactly as before. */
+function plainPickedBins(keys: string[], fallbackBin: string): string[] {
+  const bins = new Set<string>()
+  for (const key of keys) {
+    const scanned = plainScanBins.value[key] ?? {}
+    let scannedTotal = 0
+    for (const [b, q] of Object.entries(scanned)) if (q > 0) { bins.add(b); scannedTotal += q }
+    const total = draftQty.value[key] ?? 0
+    if (total > scannedTotal) {
+      const primary = itemByKey.value.get(key)?.binLocation
+      if (primary) bins.add(primary)
+    }
+  }
+  if (!bins.size && fallbackBin) bins.add(fallbackBin)
+  return [...bins]
+}
+/** Keep scanned-bin attribution from exceeding the line's total when the operator
+ *  lowers the qty by hand — trim the excess off the most-recently-scanned bins. */
+function trimPlainScanBins(key: string, cap: number): void {
+  const bins = plainScanBins.value[key]
+  if (!bins) return
+  let total = Object.values(bins).reduce((a, b) => a + b, 0)
+  if (total <= cap) return
+  const next: Record<string, number> = { ...bins }
+  const binKeys = Object.keys(next)
+  for (let i = binKeys.length - 1; i >= 0 && total > cap; i--) {
+    const bk = binKeys[i]!
+    const remove = Math.min(next[bk]!, total - cap)
+    next[bk]! -= remove
+    total -= remove
+    if (next[bk]! <= 0) delete next[bk]
+  }
+  plainScanBins.value = { ...plainScanBins.value, [key]: next }
 }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
@@ -826,7 +876,7 @@ const showConfirm = ref(false)
 function endPickingClick() {
   if (draftPickedTotal.value === 0) {
     showQtyErrors.value = true
-    finishError.value = 'You must fill in picked qty for at least 1 item'
+    finishError.value = t('You must fill in picked qty for at least 1 item')
     return
   }
   finishError.value = ''
@@ -855,14 +905,14 @@ function commitPicking(createPacking = false) {
   if (blockPacking) {
     toast.notify({
       variant: 'error',
-      title: 'Saved as partially picked',
-      description: 'Marketplace orders must be fully picked (across their picking lists) before a packing task can be created.',
+      title: t('Saved as partially picked'),
+      description: t('Marketplace orders must be fully picked (across their picking lists) before a packing task can be created.'),
       maxWidth: 'max-content',
     })
   } else {
     toast.notify({
       variant: 'success',
-      title: complete ? 'Picking finished, ready to pack' : 'Picking finished (partially picked)',
+      title: complete ? t('Picking finished, ready to pack') : t('Picking finished (partially picked)'),
       maxWidth: 'max-content',
     })
   }
@@ -870,7 +920,7 @@ function commitPicking(createPacking = false) {
 }
 function saveDraft() {
   savePickingDraft(props.orderId, buildPickedMap(), buildAssignments())
-  toast.notify({ variant: 'success', title: 'Picking draft saved' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Picking draft saved') , maxWidth: 'max-content'})
   disableUnsavedChangesGuard()
   router.push(`/picking/${props.orderId}`)
 }
@@ -891,7 +941,7 @@ const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
   hasUnsavedChanges: () => draftPickedTotal.value > 0,
   saveDraft: () => {
     savePickingDraft(props.orderId, buildPickedMap(), buildAssignments())
-    toast.notify({ variant: 'success', title: 'Picking draft saved', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Picking draft saved'), maxWidth: 'max-content' })
   },
 })
 
@@ -935,12 +985,12 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPicking">Picking</button>
+          <button class="detail-breadcrumb" @click="goPicking">{{ t('Picking') }}</button>
           <span class="detail-breadcrumb-sep">/</span>
           <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Picking list</h1>
+          <h1 class="detail-title">{{ t('Picking list') }}</h1>
         </div>
       </div>
     </header>
@@ -949,31 +999,31 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     <div ref="stageEl" class="detail-stage">
 
       <div class="pik-header">
-        <ContentList label="Warehouse" :value="task.warehouseName" />
-        <ContentList label="Assignee" :value="task.assignee" />
-        <ContentList label="Start date" :value="startDateLabel" />
-        <ContentList label="End date" :value="task.endDate ? formatDateTimeLong(task.endDate) : '—'" />
+        <ContentList :label="t('Warehouse')" :value="task.warehouseName" />
+        <ContentList :label="t('Assignee')" :value="task.assignee" />
+        <ContentList :label="t('Start date')" :value="startDateLabel" />
+        <ContentList :label="t('End date')" :value="task.endDate ? formatDateTimeLong(task.endDate) : '—'" />
       </div>
 
       <div class="pik-summary">
-        <div class="pik-stat"><span class="pik-stat-label">SKU qty</span><span class="pik-stat-val">{{ fmt(groupedItems.length) }}</span></div>
-        <div class="pik-stat"><span class="pik-stat-label">Qty to pick</span><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span></div>
-        <div class="pik-stat"><span class="pik-stat-label">Picked qty</span><span class="pik-stat-val">{{ fmt(draftPickedTotal) }}</span></div>
-        <div class="pik-stat"><span class="pik-stat-label">Remaining qty to pick</span><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">{{ t('SKU qty') }}</span><span class="pik-stat-val">{{ fmt(groupedItems.length) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">{{ t('Qty to pick') }}</span><span class="pik-stat-val">{{ fmt(toPickTotal) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">{{ t('Picked qty') }}</span><span class="pik-stat-val">{{ fmt(draftPickedTotal) }}</span></div>
+        <div class="pik-stat"><span class="pik-stat-label">{{ t('Remaining qty to pick') }}</span><span class="pik-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pik-sku-section">
         <div class="pik-filter-bar">
           <div class="detail-loc-toggle">
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">Combined</button>
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">By orders</button>
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">{{ t('Combined') }}</button>
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">{{ t('By orders') }}</button>
           </div>
           <div class="pik-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pik-search" type="text" placeholder="Search..." />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <input v-model="search" class="pik-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -981,19 +1031,19 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
           </div>
         </div>
 
-        <ScanBar placeholder="Scan barcode..." @scan="handleScan">
+        <ScanBar :placeholder="t('Scan barcode...')" @scan="handleScan">
           <div v-if="activeBin" class="pik-active-bin">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <span>{{ activeBin }}</span>
-            <button class="pik-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+            <button class="pik-active-bin-clear" type="button" :aria-label="t('Clear active bin')" @click="activeBin = null">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
               </svg>
             </button>
           </div>
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">Reset count</button>
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">{{ t('Reset count') }}</button>
         </ScanBar>
 
         <p v-if="finishError" class="pik-finish-error">{{ finishError }}</p>
@@ -1013,13 +1063,13 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
               </colgroup>
               <thead>
                 <tr>
-                  <th class="pik-th">Product</th>
-                  <th class="pik-th">SKU</th>
-                  <th class="pik-th">Storage location</th>
-                  <th class="pik-th pik-th--num">Qty to pick</th>
-                  <th class="pik-th pik-th--num">Picked qty</th>
-                  <th class="pik-th pik-th--num">Remaining qty to pick</th>
-                  <th class="pik-th">Unit</th>
+                  <th class="pik-th">{{ t('Product') }}</th>
+                  <th class="pik-th">{{ t('SKU') }}</th>
+                  <th class="pik-th">{{ t('Storage location') }}</th>
+                  <th class="pik-th pik-th--num">{{ t('Qty to pick') }}</th>
+                  <th class="pik-th pik-th--num">{{ t('Picked qty') }}</th>
+                  <th class="pik-th pik-th--num">{{ t('Remaining qty to pick') }}</th>
+                  <th class="pik-th">{{ t('Unit') }}</th>
                   <th class="pik-th pik-th--action"></th>
                 </tr>
               </thead>
@@ -1049,7 +1099,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                       <MpTooltip
                         v-else
                         :id="`pik-tt-loc-${row.item.key}`"
-                        :label="isBatchTrackedSku(row.item.skuCode) ? 'View via Manage batch' : 'View via Manage serial numbers'"
+                        :label="isBatchTrackedSku(row.item.skuCode) ? t('View via Manage batch') : t('View via Manage serial numbers')"
                         placement="top"
                         use-portal
                       >
@@ -1057,7 +1107,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                       </MpTooltip>
                     </div>
                   </td>
-                  <td v-else class="pik-td">{{ row.item.binLocation }}</td>
+                  <td v-else class="pik-td pik-td--location-summary">
+                    <div class="pik-location-summary-wrap">
+                      <span v-for="loc in plainPickedBins(row.item.memberKeys, row.item.binLocation)" :key="loc" class="pik-location-summary-item">{{ loc }}</span>
+                    </div>
+                  </td>
 
                   <!-- Qty to pick: static total for the group, unless split per bin — a
                        bin row has no separate plan of its own, so it mirrors that bin's
@@ -1086,7 +1140,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                     <MpTooltip
                       v-if="qtyScanRequired(row.item.expectedQty)"
                       :id="`pik-tt-scan-${row.item.key}`"
-                      label="Qty at or below the scan threshold — scan the barcode instead of typing"
+                      :label="t('Qty at or below the scan threshold — scan the barcode instead of typing')"
                       placement="top"
                       use-portal
                     >
@@ -1094,7 +1148,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                         class="pik-qty-input"
                         type="number" min="0" :max="row.item.expectedQty"
                         :value="groupDraftQty(row.item)"
-                        :aria-label="`Picked qty for ${row.item.productName}`"
+                        :aria-label="`${t('Picked qty for')} ${row.item.productName}`"
                         disabled
                       />
                     </MpTooltip>
@@ -1103,7 +1157,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                       class="pik-qty-input"
                       type="number" min="0" :max="row.item.expectedQty"
                       :value="groupDraftQty(row.item)"
-                      :aria-label="`Picked qty for ${row.item.productName}`"
+                      :aria-label="`${t('Picked qty for')} ${row.item.productName}`"
                       @input="onGroupQtyInput(row.item, $event)"
                     />
                   </td>
@@ -1120,14 +1174,14 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                        "first order first" fill order as scanning/qty entry. Merged across
                        a group's own bin-split rows — one button per SKU, not per bin. -->
                   <td v-if="row.groupIndex === 0 && isBatchTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
-                    <MpTooltip :id="`pik-tt-batch-${row.item.key}`" label="Manage batch" placement="top" use-portal>
+                    <MpTooltip :id="`pik-tt-batch-${row.item.key}`" :label="t('Manage batch')" placement="top" use-portal>
                       <button class="pik-manage-icon-btn" type="button" @click="openBatchDrawer(row.item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
                   </td>
                   <td v-else-if="row.groupIndex === 0 && isSerialTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
-                    <MpTooltip :id="`pik-tt-serial-${row.item.key}`" label="Manage serial numbers" placement="top" use-portal>
+                    <MpTooltip :id="`pik-tt-serial-${row.item.key}`" :label="t('Manage serial numbers')" placement="top" use-portal>
                       <button class="pik-manage-icon-btn" type="button" @click="openSerialDrawer(row.item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
@@ -1136,14 +1190,14 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                   <td v-else-if="row.groupIndex === 0" :rowspan="row.groupSize" class="pik-td pik-td--action"></td>
                 </tr>
                 <tr v-if="!filteredItems.length">
-                  <td class="pik-td pik-empty" colspan="8">No products match your search.</td>
+                  <td class="pik-td pik-empty" colspan="8">{{ t('No products match your search.') }}</td>
                 </tr>
               </tbody>
             </table>
             <div ref="itemsSentinelEl" class="pik-sentinel" aria-hidden="true" />
-            <div v-if="loadingMore" class="pik-loading pik-loading--inline"><MpSpinner size="sm" /> Loading products…</div>
+            <div v-if="loadingMore" class="pik-loading pik-loading--inline"><MpSpinner size="sm" /> {{ t('Loading products…') }}</div>
           </div>
-          <div class="pik-items-count"><span>Showing {{ pagedItems.length }} of {{ filteredItems.length }} products</span></div>
+          <div class="pik-items-count"><span>{{ t('Showing') }} {{ pagedItems.length }} {{ t('of') }} {{ filteredItems.length }} {{ t('products') }}</span></div>
         </section>
 
         <!-- By orders — read-only breakdown of the same live draft state, one
@@ -1161,7 +1215,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                 <MpTooltip
                   v-if="group.isMarketplace"
                   :id="`pik-mkt-${group.orderId}`"
-                  label="Marketplace orders must be picked in full. Items can't be removed."
+                  :label="t('Marketplace orders must be picked in full. Items can\'t be removed.')"
                   placement="top"
                   use-portal
                 >
@@ -1213,7 +1267,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                           <span v-else class="pik-location-summary-item">—</span>
                         </div>
                       </td>
-                      <td v-else class="pik-td">{{ row.item.binLocation }}</td>
+                      <td v-else class="pik-td pik-td--location-summary">
+                        <div class="pik-location-summary-wrap">
+                          <span v-for="loc in plainPickedBins([row.item.key], row.item.binLocation)" :key="loc" class="pik-location-summary-item">{{ loc }}</span>
+                        </div>
+                      </td>
 
                       <td class="pik-td pik-td--num">{{ fmt(row.groupSize > 1 ? row.binQty : row.item.expectedQty) }}</td>
                       <td class="pik-td pik-td--num">
@@ -1232,15 +1290,15 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                            write to. Merged across a group's own bin-split rows, same
                            as Combined's own Action column. -->
                       <td v-if="row.groupIndex === 0 && isBatchTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
-                        <MpTooltip :id="`pik-tt-batch-order-${row.item.key}`" label="View batch" placement="top" use-portal>
-                          <button class="pik-manage-icon-btn" type="button" aria-label="View batch" @click="openViewBatchForLine(row.item)">
+                        <MpTooltip :id="`pik-tt-batch-order-${row.item.key}`" :label="t('View batch')" placement="top" use-portal>
+                          <button class="pik-manage-icon-btn" type="button" :aria-label="t('View batch')" @click="openViewBatchForLine(row.item)">
                             <MpIcon name="competencies" size="md" />
                           </button>
                         </MpTooltip>
                       </td>
                       <td v-else-if="row.groupIndex === 0 && isSerialTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
-                        <MpTooltip :id="`pik-tt-serial-order-${row.item.key}`" label="View serial number" placement="top" use-portal>
-                          <button class="pik-manage-icon-btn" type="button" aria-label="View serial number" @click="openViewSerialForLine(row.item)">
+                        <MpTooltip :id="`pik-tt-serial-order-${row.item.key}`" :label="t('View serial number')" placement="top" use-portal>
+                          <button class="pik-manage-icon-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerialForLine(row.item)">
                             <MpIcon name="competencies" size="md" />
                           </button>
                         </MpTooltip>
@@ -1259,46 +1317,45 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="pik-btn pik-btn--ghost" @click="goBack">Cancel</button>
-      <button class="pik-btn pik-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="pik-btn pik-btn--primary" @click="endPickingClick">Finish picking</button>
+      <button class="pik-btn pik-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
+      <button class="pik-btn pik-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</button>
+      <button class="pik-btn pik-btn--primary" @click="endPickingClick">{{ t('Finish picking') }}</button>
     </footer>
   </div>
 
   <div v-else class="pik-not-found">
-    <p>Picking task not found.</p>
-    <button class="detail-breadcrumb" @click="goPicking">Back to Picking</button>
+    <p>{{ t('Picking task not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goPicking">{{ t('Back to Picking') }}</button>
   </div>
 
   <!-- ── Finish picking confirmation ── -->
   <MpModal id="pik-confirm" :is-open="showConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showConfirm = false">
     <MpModalContent>
       <MpModalHeader>
-        {{ draftOutstanding > 0 ? 'Finish picking with a short pick?' : 'Finish picking?' }}
+        {{ draftOutstanding > 0 ? t('Finish picking with a short pick?') : t('Finish picking?') }}
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
         <template v-if="draftOutstanding > 0">
-          {{ fmt(draftOutstanding) }} of {{ fmt(toPickTotal) }} units couldn't be picked
-          across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'item' : 'items' }}.
-          This picking will be saved as <strong>partially picked</strong>.
+          {{ fmt(draftOutstanding) }} {{ t('of') }} {{ fmt(toPickTotal) }} {{ t("units couldn't be picked across") }} {{ shortItemsCount }} {{ shortItemsCount === 1 ? t('item') : t('items') }}.
+          {{ t('This picking will be saved as') }} <strong>{{ t('partially picked') }}</strong>.
           <template v-if="hasMarketplaceOrder">
             {{ marketplaceWarningText }}
           </template>
         </template>
         <template v-else>
-          All {{ fmt(toPickTotal) }} units have been picked.
+          {{ t('All') }} {{ fmt(toPickTotal) }} {{ t('units have been picked.') }}
         </template>
       </MpModalBody>
       <MpModalFooter>
         <div class="pik-modal-footer">
-          <button class="pik-btn pik-btn--ghost" @click="showConfirm = false">Cancel</button>
-          <button class="pik-btn pik-btn--secondary" @click="commitPicking(false)">Finish picking</button>
+          <button class="pik-btn pik-btn--ghost" @click="showConfirm = false">{{ t('Cancel') }}</button>
+          <button class="pik-btn pik-btn--secondary" @click="commitPicking(false)">{{ t('Finish picking') }}</button>
           <button
             v-if="wouldHaveAnyPackableOrder"
             class="pik-btn pik-btn--primary"
             @click="commitPicking(true)"
-          >Finish &amp; create packing</button>
+          >{{ t('Finish & create packing') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

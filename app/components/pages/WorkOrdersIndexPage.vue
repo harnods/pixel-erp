@@ -20,6 +20,7 @@ import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 
 const toggleAirene = inject<() => void>('toggleAirene')
+const { t } = useLocale()
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
@@ -47,12 +48,12 @@ const typeLabel = computed(() => TYPE_OPTIONS.find(o => o.value === typeFilter.v
 
 // Status — the six work-order statuses. Clearing (x) resets to show-all.
 const STATUS_OPTIONS: { label: string; value: WorkOrderStatus }[] = [
-  { label: 'Not started',          value: 'not started'          },
-  { label: 'In progress',          value: 'in progress'          },
-  { label: 'Partially produced',   value: 'partially produced'   },
-  { label: 'Partially completed',  value: 'partially completed'  },
-  { label: 'Completed',            value: 'completed'            },
-  { label: 'Canceled',             value: 'canceled'             },
+  { label: t('Not started'),          value: 'not started'          },
+  { label: t('In progress'),          value: 'in progress'          },
+  { label: t('Partially produced'),   value: 'partially produced'   },
+  { label: t('Partially completed'),  value: 'partially completed'  },
+  { label: t('Completed'),            value: 'completed'            },
+  { label: t('Canceled'),             value: 'canceled'             },
 ]
 const statusFilter = ref('')
 const statusLabel = computed(() => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '')
@@ -182,7 +183,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverTrigger>
             <MpSelect
               id="wo-type-select"
-              placeholder="Type"
+              :placeholder="t('Type')"
               :model-value="typeFilter"
               is-clearable
               :class="css({ width: '160px' })"
@@ -208,7 +209,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverTrigger>
             <MpSelect
               id="wo-status-select"
-              placeholder="Status"
+              :placeholder="t('Status')"
               :model-value="statusFilter"
               is-clearable
               :class="css({ width: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
@@ -232,7 +233,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
         <button class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
           <MpIcon name="filter" size="sm" />
-          All filters
+          {{ t('All filters') }}
         </button>
       </div>
 
@@ -240,8 +241,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="filter-right">
         <div class="filter-btn-group">
           <ColumnSettingsMenu id="wo-columns" :items="columnItems" :visibility="columnVisibility" />
-          <MpTooltip id="tt-wo-export" label="Export" placement="bottom" use-portal>
-            <button class="filter-icon-btn" aria-label="Export">
+          <MpTooltip id="tt-wo-export" :label="t('Export')" placement="bottom" use-portal>
+            <button class="filter-icon-btn" :aria-label="t('Export')">
               <MpIcon name="download" size="md" />
             </button>
           </MpTooltip>
@@ -251,7 +252,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
         </div>
       </div>
     </template>
@@ -267,13 +268,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <!-- ── Track routing — Yes / No ── -->
-    <template #cell-trackRouting="{ value }">{{ value ? 'Yes' : 'No' }}</template>
+    <template #cell-trackRouting="{ value }">{{ value ? t('Yes') : t('No') }}</template>
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ value }">
       <ErpStatusBadge
         :status="(value as string)"
-        :label="value === 'in progress' ? 'In progress' : undefined"
+        :label="value === 'in progress' ? t('In progress') : undefined"
       />
     </template>
 
@@ -308,7 +309,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`wo-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" aria-label="More actions">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -316,13 +317,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails(row as unknown as WorkOrder)">View details</MpPopoverListItem>
-            <MpPopoverListItem>Duplicate</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails(row as unknown as WorkOrder)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
             <!-- Cancel — only a not-started WO can be canceled (nothing produced yet) -->
             <MpPopoverListItem
               v-if="(row as unknown as WorkOrder).status === 'not started'"
               :class="css({ color: 'var(--mp-text-critical)' })"
-            >Cancel</MpPopoverListItem>
+            >{{ t('Cancel') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -332,8 +333,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No work orders</p>
-        <p class="empty-full-desc">Work orders will appear here.</p>
+        <p class="empty-full-title">{{ t('No work orders') }}</p>
+        <p class="empty-full-desc">{{ t('Work orders will appear here.') }}</p>
       </div>
     </template>
   </ErpTablePage>
@@ -350,15 +351,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="wo-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change scenario state">
+      <button class="demo-fab" :aria-label="t('Change scenario state')">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Scenario state</p>
+      <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
       <MpPopoverList>
-        <MpPopoverListItem :is-active="previewMode === 'data'" @click="previewMode = 'data'">With data</MpPopoverListItem>
-        <MpPopoverListItem :is-active="previewMode === 'empty'" @click="previewMode = 'empty'">Empty state</MpPopoverListItem>
+        <MpPopoverListItem :is-active="previewMode === 'data'" @click="previewMode = 'data'">{{ t('With data') }}</MpPopoverListItem>
+        <MpPopoverListItem :is-active="previewMode === 'empty'" @click="previewMode = 'empty'">{{ t('Empty state') }}</MpPopoverListItem>
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>

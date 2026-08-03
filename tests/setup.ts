@@ -17,6 +17,22 @@
  * comment/text node's box, so nothing else is affected. Skipped entirely in the
  * plain 'node' environment (no DOM globals there).
  */
+/**
+ * `useLocale` is a Nuxt auto-imported composable (app/composables/useLocale.ts).
+ * Vitest has no auto-import layer, so components that call the bare `useLocale()`
+ * would throw "useLocale is not defined". Provide a minimal identity stub on the
+ * global scope: default locale 'en' and an identity `t`, which is exactly the
+ * English text every spec asserts against. Reactive `locale` via a plain ref so
+ * switching is harmless if any component reads it.
+ */
+import { ref } from 'vue'
+const _locale = ref<'en' | 'id'>('en')
+;(globalThis as unknown as { useLocale: () => unknown }).useLocale = () => ({
+  locale: _locale,
+  setLocale: (next: 'en' | 'id') => { _locale.value = next },
+  t: (en: string) => en,
+})
+
 const g = globalThis as unknown as { Node?: { prototype: Record<string, unknown> } }
 
 if (typeof g.Node !== 'undefined' && typeof g.Node.prototype.getBoundingClientRect !== 'function') {

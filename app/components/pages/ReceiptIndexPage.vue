@@ -17,6 +17,7 @@ import { canCreateReceivingTask, receivingTasksForReceipt } from '~/data/receivi
 import { cancelInboundReceipt } from '~/data/inboundSync'
 
 const toggleAirene = inject<() => void>('toggleAirene')
+const { t } = useLocale()
 
 // ─── Demo scenario state (FAB) ─────────────────────────────────────────────────
 // Default screen shows the populated table; the FAB flips to the empty (first-run)
@@ -316,7 +317,7 @@ function closeCloseModal() { closeModalOpen.value = false; receiptToClose.value 
 function confirmClose() {
   if (receiptToClose.value) closeReceipt(receiptToClose.value.id)
   closeCloseModal()
-  toast.notify({ variant: 'success', title: 'Receipt closed', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Receipt closed'), maxWidth: 'max-content' })
 }
 
 // Delete confirmation — manually-created receipts only (no real PO behind them).
@@ -359,12 +360,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
          tracking no. / Cancel still work across the whole selection. -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <span v-if="(selectedRows as Set<number>).size > 1" class="rcv-bulk-hint">
-        A receiving task can only be created for one order at a time.
+        {{ t('A receiving task can only be created for one order at a time.') }}
       </span>
       <MpPopover id="rcv-bulk-actions" is-close-on-select placement="bottom-start" use-portal>
         <MpPopoverTrigger>
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-after">
-            Actions
+            {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="display:block">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -375,13 +376,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem
               v-if="canBulkCreateReceiving(selectedRows as Set<number>)"
               @click="bulkCreateReceiving(selectedRows as Set<number>, deselectAll)"
-            >Create purchase receiving</MpPopoverListItem>
-            <MpPopoverListItem @click="bulkEditTracking(selectedRows as Set<number>, deselectAll)">Edit tracking no.</MpPopoverListItem>
+            >{{ t('Create purchase receiving') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="bulkEditTracking(selectedRows as Set<number>, deselectAll)">{{ t('Edit tracking no.') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="bulkCancelable(selectedRows as Set<number>)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openBulkCancelModal(selectedRows as Set<number>, deselectAll)"
-            >Cancel receipt</MpPopoverListItem>
+            >{{ t('Cancel receipt') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -393,7 +394,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover v-if="!isScoped" id="rcv-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="rcv-wh-select" placeholder="Warehouse"
+              id="rcv-wh-select" :placeholder="t('Warehouse')"
               :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
               :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = []"
             >
@@ -420,7 +421,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover id="rcv-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="rcv-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+              id="rcv-status-select" :placeholder="t('Status')" :model-value="statusFilter.length ? 'set' : ''" is-clearable
               :class="css({ width: '180px' })" @mousedown.prevent @clear="resetStatus"
             >
               <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
@@ -435,7 +436,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   @change="toggleStatus(s)"
                   @click.stop
                 >
-                  {{ s }}
+                  {{ t(s) }}
                 </MpCheckbox>
               </label>
             </div>
@@ -446,7 +447,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopover id="rcv-arrival-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
-              id="rcv-arrival-select" placeholder="Arrival date" :model-value="arrivalPreset" is-clearable
+              id="rcv-arrival-select" :placeholder="t('Arrival date')" :model-value="arrivalPreset" is-clearable
               :class="css({ width: '200px' })" @mousedown.prevent @clear="clearArrival"
             >
               <option v-if="arrivalPreset" :value="arrivalPreset">{{ arrivalLabel }}</option>
@@ -458,12 +459,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 v-for="opt in arrivalPresets" :key="opt.value"
                 :is-active="opt.value === arrivalPreset"
                 @click="arrivalPreset = opt.value"
-              >{{ opt.label }}</MpPopoverListItem>
+              >{{ t(opt.label) }}</MpPopoverListItem>
             </MpPopoverList>
             <!-- Custom date range inputs -->
             <div v-if="arrivalPreset === 'custom'" class="arrival-custom">
-              <MpDatePicker id="rcv-arrival-from" v-model="customFrom" placeholder="From" format="DD/MM/YYYY" use-portal />
-              <MpDatePicker id="rcv-arrival-to" v-model="customTo" placeholder="To" format="DD/MM/YYYY" use-portal />
+              <MpDatePicker id="rcv-arrival-from" v-model="customFrom" :placeholder="t('From')" format="DD/MM/YYYY" use-portal />
+              <MpDatePicker id="rcv-arrival-to" v-model="customTo" :placeholder="t('To')" format="DD/MM/YYYY" use-portal />
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -471,8 +472,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <MpTooltip id="tt-rcv-airene" label="Ask Airene" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+          <MpTooltip id="tt-rcv-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+            <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -480,8 +481,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </button>
           </MpTooltip>
           <ColumnSettingsMenu id="rcv-col-settings" :items="columnItems" :visibility="colVis" />
-          <MpTooltip id="tt-rcv-export" label="Export" placement="bottom" use-portal>
-            <button class="filter-icon-btn" aria-label="Export">
+          <MpTooltip id="tt-rcv-export" :label="t('Export')" placement="bottom" use-portal>
+            <button class="filter-icon-btn" :aria-label="t('Export')">
               <MpIcon name="download" size="md" />
             </button>
           </MpTooltip>
@@ -491,8 +492,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -530,11 +531,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpTooltip
           v-if="hasReceivingTask((row as unknown as Receipt).id)"
           :id="`tt-recvtask-${row.id}`"
-          label="Purchase receiving created"
+          :label="t('Purchase receiving created')"
           placement="top"
           use-portal
         >
-          <span class="rcv-icon-indicator" aria-label="Purchase receiving created">
+          <span class="rcv-icon-indicator" :aria-label="t('Purchase receiving created')">
             <MpIcon name="doc" size="20px" />
           </span>
         </MpTooltip>
@@ -551,7 +552,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <button
           v-if="!isScoped"
           class="track-edit-btn"
-          aria-label="Edit tracking no."
+          :aria-label="t('Edit tracking no.')"
           @click.stop="openTrackingModal(row as unknown as Receipt)"
         >
           <MpIcon name="edit" size="sm" />
@@ -570,7 +571,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`rcv-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" aria-label="More actions">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -578,28 +579,28 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails(row as unknown as Receipt)">View details</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails(row as unknown as Receipt)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canCreateReceivingTask((row as unknown as Receipt).id)"
               @click="purchaseReceiving(row as unknown as Receipt)"
-            >Create purchase receiving</MpPopoverListItem>
+            >{{ t('Create purchase receiving') }}</MpPopoverListItem>
             <!-- A partially-received receipt is CLOSED (accept-as-final), never cancelled
                  (PRD C1 AC#5). Not-yet-received receipts can be Cancelled. Manual receipts
                  (no real PO) can also be Deleted outright. -->
             <MpPopoverListItem
               v-if="canCloseReceipt(row as unknown as Receipt)"
               @click="openCloseModal(row as unknown as Receipt)"
-            >Close receipt</MpPopoverListItem>
+            >{{ t('Close receipt') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canCancelReceipt(row as unknown as Receipt) && !canCloseReceipt(row as unknown as Receipt)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as Receipt)"
-            >Cancel receipt</MpPopoverListItem>
+            >{{ t('Cancel receipt') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="isManualReceipt(row as unknown as Receipt)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openDeleteModal(row as unknown as Receipt)"
-            >Delete</MpPopoverListItem>
+            >{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -609,8 +610,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No receipts</p>
-        <p class="empty-full-desc">Receipts will appear here.</p>
+        <p class="empty-full-title">{{ t('No receipts') }}</p>
+        <p class="empty-full-desc">{{ t('Receipts will appear here.') }}</p>
       </div>
     </template>
   </ErpTablePage>
@@ -621,7 +622,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
   >
     <MpModalContent>
-      <MpModalHeader>Cancel receipt?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Cancel receipt?') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         <template v-if="receiptsToCancel.length === 1">
           Receipt {{ receiptsToCancel[0]?.number }} will be cancelled. This can't be undone.
@@ -632,8 +633,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep receipt</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel receipt</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">{{ t('Keep receipt') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel receipt') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -646,15 +647,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCloseModal"
   >
     <MpModalContent>
-      <MpModalHeader>Close receipt?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Close receipt?') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         Receipt {{ receiptToClose?.number }} will be closed and accepted as final. What's
         already received is kept; the remaining quantity is abandoned. This can't be undone.
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCloseModal">Keep open</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmClose">Close receipt</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCloseModal">{{ t('Keep open') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmClose">{{ t('Close receipt') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -667,14 +668,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
   >
     <MpModalContent>
-      <MpModalHeader>Delete receipt?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Delete receipt?') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         Receipt {{ receiptToDelete?.number }} will be permanently deleted. This can't be undone.
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Keep receipt</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">{{ t('Keep receipt') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -687,7 +688,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeTrackingModal"
   >
     <MpModalContent>
-      <MpModalHeader>Edit tracking no.<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Edit tracking no.') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         <div
           v-for="(g, gi) in trackingGroups"
@@ -696,28 +697,28 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         >
           <p class="track-modal__po">{{ g.receipt.purchaseNo }}</p>
           <div class="track-modal__list">
-            <div v-for="(t, i) in g.nos" :key="i" class="track-modal__row">
+            <div v-for="(no, i) in g.nos" :key="i" class="track-modal__row">
               <MpInput
                 :id="`rcv-track-${gi}-${i}`"
                 v-model="g.nos[i]"
-                placeholder="Example: SD0009583"
+                :placeholder="t('Example: SD0009583')"
                 is-full-width
               />
-              <button class="track-modal__remove" aria-label="Remove tracking no." @click="removeTracking(gi, i)">
+              <button class="track-modal__remove" :aria-label="t('Remove tracking no.')" @click="removeTracking(gi, i)">
                 <MpIcon name="minus-circular" size="sm" />
               </button>
             </div>
           </div>
           <button class="track-modal__add" @click="addTracking(gi)">
             <MpIcon name="add" size="sm" />
-            Add tracking no.
+            {{ t('Add tracking no.') }}
           </button>
         </div>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeTrackingModal">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTracking">{{ isSaving ? 'Saving…' : 'Save changes' }}</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeTrackingModal">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveTracking">{{ isSaving ? t('Saving…') : t('Save changes') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -728,17 +729,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="rcv-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change scenario state">
+      <button class="demo-fab" :aria-label="t('Change scenario state')">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Scenario state</p>
+      <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
       <MpPopoverList>
         <MpPopoverListItem
           v-for="s in demoStates" :key="s.value"
           :is-active="s.value === demoState" @click="setDemoState(s.value)"
-        >{{ s.label }}</MpPopoverListItem>
+        >{{ t(s.label) }}</MpPopoverListItem>
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>

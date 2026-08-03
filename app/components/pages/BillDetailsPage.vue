@@ -13,6 +13,7 @@ import { bills, duplicateBill } from '~/data/bills'
 import { formatDate, formatDateLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
+const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
@@ -25,7 +26,7 @@ const showSetAsRecurring = false
 function duplicate() {
   if (!bill.value) return
   duplicateBill(bill.value.id)
-  toast.notify({ variant: 'success', title: 'Expense duplicated' })
+  toast.notify({ variant: 'success', title: t('Expense duplicated') })
 }
 
 // Awaiting-approval — same pattern as the Purchase Order detail page: a primary
@@ -35,7 +36,7 @@ function duplicate() {
 // entered (?approval=1) rather than bill.status.
 const isAwaitingApproval = computed(() => route.query.approval === '1')
 function approve() {
-  toast.notify({ variant: 'success', title: 'Expense approved' })
+  toast.notify({ variant: 'success', title: t('Expense approved') })
   router.push({ path: '/expenses', query: { tab: 'Awaiting Approval' } })
 }
 
@@ -109,27 +110,27 @@ function goExpenses() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <MpTextlink id="bd-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">Expenses</MpTextlink>
+          <MpTextlink id="bd-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">{{ t('Expenses') }}</MpTextlink>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Expense #{{ String(bill.number).padStart(5, '0') }}</h1>
+          <h1 class="detail-title">{{ t('Expense') }} #{{ String(bill.number).padStart(5, '0') }}</h1>
           <ErpStatusBadge :status="displayStatus" size="md" badge-for="additionalInformation" />
         </div>
       </div>
 
       <!-- Right-side header actions — only while awaiting approval, same icon row as the PO detail page -->
       <div v-if="isAwaitingApproval" class="detail-titlerow-right">
-        <MpTooltip id="detail-tt-applog" label="Approval log" placement="bottom" use-portal>
-          <MpButton class="detail-icon-btn" aria-label="Approval log">
+        <MpTooltip id="detail-tt-applog" :label="t('Approval log')" placement="bottom" use-portal>
+          <MpButton class="detail-icon-btn" :aria-label="t('Approval log')">
             <MpIcon name="task-todo" size="md" />
           </MpButton>
         </MpTooltip>
-        <MpTooltip id="detail-tt-comments" label="Comments" placement="bottom" use-portal>
-          <MpButton class="detail-icon-btn" aria-label="Comments">
+        <MpTooltip id="detail-tt-comments" :label="t('Comments')" placement="bottom" use-portal>
+          <MpButton class="detail-icon-btn" :aria-label="t('Comments')">
             <MpIcon name="comment" size="md" />
           </MpButton>
         </MpTooltip>
-        <button class="btn-enterprise btn-enterprise--primary" @click="approve">Approve</button>
+        <button class="btn-enterprise btn-enterprise--primary" @click="approve">{{ t('Approve') }}</button>
       </div>
     </header>
 
@@ -140,8 +141,8 @@ function goExpenses() {
     <MpBanner v-if="isAwaitingApproval" id="bd-approval-banner" variant="warning" is-inline class="detail-info-banner">
       <MpBannerIcon id="bd-approval-banner-icon" />
       <MpBannerDescription id="bd-approval-banner-desc">
-        Transaction requires approval before it can be processed.
-        <MpTextlink id="bd-approval-banner-link" as="a" @click.prevent>View approval rule</MpTextlink>
+        {{ t('Transaction requires approval before it can be processed.') }}
+        <MpTextlink id="bd-approval-banner-link" as="a" @click.prevent>{{ t('View approval rule') }}</MpTextlink>
       </MpBannerDescription>
     </MpBanner>
 
@@ -149,8 +150,8 @@ function goExpenses() {
     <MpBanner v-if="showBanner" id="bd-banner" variant="info" is-inline class="detail-info-banner">
       <MpBannerIcon id="bd-banner-icon" />
       <MpBannerDescription id="bd-banner-desc">
-        Transaction has been reconciled.
-        <MpTextlink id="bd-banner-link" as="a" @click.prevent="showMatchedDetails = true">View details</MpTextlink>
+        {{ t('Transaction has been reconciled.') }}
+        <MpTextlink id="bd-banner-link" as="a" @click.prevent="showMatchedDetails = true">{{ t('View details') }}</MpTextlink>
       </MpBannerDescription>
     </MpBanner>
 
@@ -158,7 +159,7 @@ function goExpenses() {
     <JournalEntryDrawer
       v-if="bill"
       v-model:is-open="showJournalEntry"
-      :heading="`Expense #${String(bill.number).padStart(5, '0')}`"
+      :heading="`${t('Expense')} #${String(bill.number).padStart(5, '0')}`"
       :rows="journalEntryRows"
     />
 
@@ -167,12 +168,12 @@ function goExpenses() {
 
       <!-- Beneficiary + Total — separated section, inline together -->
       <section class="bd-primary">
-        <ContentList label="Beneficiary" :value="bill.beneficiary.name" />
+        <ContentList :label="t('Beneficiary')" :value="bill.beneficiary.name" />
         <div class="detail-primary-total">
           <span class="detail-total-amount">
-            <span class="detail-total-label">{{ hasLess ? 'Balance due' : 'Total' }}</span> {{ formatIDR(hasLess ? balanceDue : groupTotal) }}
+            <span class="detail-total-label">{{ t(hasLess ? 'Balance due' : 'Total') }}</span> {{ formatIDR(hasLess ? balanceDue : groupTotal) }}
           </span>
-          <a class="detail-banner-link bd-journal-link" @click.prevent="showJournalEntry = true">View journal entry</a>
+          <a class="detail-banner-link bd-journal-link" @click.prevent="showJournalEntry = true">{{ t('View journal entry') }}</a>
         </div>
       </section>
 
@@ -181,18 +182,18 @@ function goExpenses() {
         <!-- Has a due date: [trx date/due date] [trx no./reference no.] [category] [tags] -->
         <template v-if="bill.status !== 'paid'">
           <div class="content-list-col">
-            <ContentList label="Transaction date" :value="formatDateLong(bill.date)" />
-            <ContentList label="Due date" :value="formatDateLong(bill.dueDate)" />
+            <ContentList :label="t('Transaction date')" :value="formatDateLong(bill.date)" />
+            <ContentList :label="t('Due date')" :value="formatDateLong(bill.dueDate)" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Transaction no." :value="`Expense #${String(bill.number).padStart(5, '0')}`" />
-            <ContentList label="Reference no." value="—" />
+            <ContentList :label="t('Transaction no.')" :value="`${t('Expense')} #${String(bill.number).padStart(5, '0')}`" />
+            <ContentList :label="t('Reference no.')" value="—" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Category" :value="bill.category" />
+            <ContentList :label="t('Category')" :value="bill.category" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Tags">
+            <ContentList :label="t('Tags')">
               <span v-if="bill.tags?.length">{{ bill.tags.join(', ') }}</span>
               <template v-else>—</template>
             </ContentList>
@@ -202,15 +203,15 @@ function goExpenses() {
         <!-- No due date: [trx date] [trx no.] [tags] / [category] [reference no.] -->
         <template v-else>
           <div class="content-list-col">
-            <ContentList label="Transaction date" :value="formatDateLong(bill.date)" />
-            <ContentList label="Category" :value="bill.category" />
+            <ContentList :label="t('Transaction date')" :value="formatDateLong(bill.date)" />
+            <ContentList :label="t('Category')" :value="bill.category" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Transaction no." :value="`Expense #${String(bill.number).padStart(5, '0')}`" />
-            <ContentList label="Reference no." value="—" />
+            <ContentList :label="t('Transaction no.')" :value="`${t('Expense')} #${String(bill.number).padStart(5, '0')}`" />
+            <ContentList :label="t('Reference no.')" value="—" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Tags">
+            <ContentList :label="t('Tags')">
               <span v-if="bill.tags?.length">{{ bill.tags.join(', ') }}</span>
               <template v-else>—</template>
             </ContentList>
@@ -223,15 +224,15 @@ function goExpenses() {
         <table class="detail-items">
           <thead>
             <tr>
-              <th class="detail-th">Account</th>
-              <th class="detail-th">Description</th>
-              <th class="detail-th">Tax</th>
-              <th class="detail-th detail-th--num">Amount</th>
+              <th class="detail-th">{{ t('Account') }}</th>
+              <th class="detail-th">{{ t('Description') }}</th>
+              <th class="detail-th">{{ t('Tax') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
             </tr>
           </thead>
           <tbody class="detail-items-body">
             <tr v-if="!bill.lineItems?.length">
-              <td class="detail-td detail-td--muted" colspan="4">No accounts.</td>
+              <td class="detail-td detail-td--muted" colspan="4">{{ t('No accounts.') }}</td>
             </tr>
             <tr v-for="(li, i) in bill.lineItems" :key="i" class="detail-item-row">
               <td class="detail-td">{{ li.account }}</td>
@@ -242,17 +243,17 @@ function goExpenses() {
           </tbody>
         </table>
         <div v-if="bill.lineItems?.length" class="detail-items-count">
-          <span>Showing {{ bill.lineItems.length }} of {{ bill.lineItems.length }} accounts</span>
+          <span>{{ t('Showing') }} {{ bill.lineItems.length }} {{ t('of') }} {{ bill.lineItems.length }} {{ t('accounts') }}</span>
         </div>
       </section>
 
       <!-- ── Notes + totals ── -->
       <section class="detail-notes">
         <div class="detail-notes-left">
-          <ContentList label="Memo" class="detail-memo-section">
+          <ContentList :label="t('Memo')" class="detail-memo-section">
             <p class="detail-note-text">{{ bill.memo || '—' }}</p>
           </ContentList>
-          <ContentList :label="`Attachment (${bill.attachments?.length ?? 0})`" class="detail-attachment-section">
+          <ContentList :label="`${t('Attachment')} (${bill.attachments?.length ?? 0})`" class="detail-attachment-section">
             <div v-if="bill.attachments?.length" class="detail-attach-list">
               <a
                 v-for="(a, i) in bill.attachments" :key="i" class="detail-attach"
@@ -271,7 +272,7 @@ function goExpenses() {
         <div class="detail-totals">
           <!-- Group 1: Subtotal + PPN -->
           <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--total">Subtotal</span>
+            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Subtotal') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(bill.subtotal ?? bill.total) }}</span>
           </div>
           <div class="detail-total-row">
@@ -282,22 +283,22 @@ function goExpenses() {
 
           <!-- Group 2: Total + Less: withholding / Less: payment -->
           <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--total">Total</span>
+            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(groupTotal) }}</span>
           </div>
           <div v-if="bill.withholding" class="detail-total-row">
-            <span class="detail-total-row-label">Less: {{ bill.withholding.name }}</span>
+            <span class="detail-total-row-label">{{ t('Less:') }} {{ bill.withholding.name }}</span>
             <span class="detail-total-row-amt">({{ formatIDR(bill.withholding.amount) }})</span>
           </div>
           <div v-if="bill.payment" class="detail-total-row">
-            <span class="detail-total-row-label">Less: payment</span>
+            <span class="detail-total-row-label">{{ t('Less: payment') }}</span>
             <span class="detail-total-row-amt">({{ formatIDR(bill.payment.amountPaid) }})</span>
           </div>
           <div v-if="hasLess" class="detail-total-rule detail-total-rule--dashed" />
 
           <!-- Group 3: Balance due — only when a deduction exists -->
           <div v-if="hasLess" class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--total">Balance due</span>
+            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Balance due') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(balanceDue) }}</span>
           </div>
         </div>
@@ -306,28 +307,28 @@ function goExpenses() {
       <!-- ── Payment tab — same tab-selected state (blue) as the creation page's payment tab ── -->
       <MpTabs v-if="showPaymentTab" id="bd-tabs" :default-value="0" variant-color="blue" class="detail-tabs">
         <MpTabList>
-          <MpTab id="bd-tab-payment" value="payment">Payment</MpTab>
+          <MpTab id="bd-tab-payment" value="payment">{{ t('Payment') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="payment">
-            <h3 class="detail-tab-heading">Transactions</h3>
+            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-payment">
               <thead>
                 <tr>
-                  <th class="detail-th">Date</th>
-                  <th class="detail-th">Number</th>
-                  <th class="detail-th">Pay from</th>
-                  <th class="detail-th detail-th--num">Amount</th>
-                  <th class="detail-th">Reference no.</th>
+                  <th class="detail-th">{{ t('Date') }}</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Pay from') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
+                  <th class="detail-th">{{ t('Reference no.') }}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!bill.payment">
-                  <td class="detail-td detail-td--muted" colspan="5">No payment recorded.</td>
+                  <td class="detail-td detail-td--muted" colspan="5">{{ t('No payment recorded.') }}</td>
                 </tr>
                 <tr v-else class="detail-item-row">
                   <td class="detail-td">{{ formatDate(bill.payment.paymentDate) }}</td>
-                  <td class="detail-td">Spend Money #{{ String(bill.number).padStart(5, '0') }}</td>
+                  <td class="detail-td">{{ t('Spend money') }} #{{ String(bill.number).padStart(5, '0') }}</td>
                   <td class="detail-td">{{ bill.payment.paymentAccount }}</td>
                   <td class="detail-td detail-td--num">{{ formatIDR(bill.payment.amountPaid) }}</td>
                   <td class="detail-td">{{ bill.payment.reference || '—' }}</td>
@@ -342,17 +343,17 @@ function goExpenses() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer">
-      <button class="detail-btn detail-btn--secondary btn-enterprise">Print PDF</button>
+      <button class="detail-btn detail-btn--secondary btn-enterprise">{{ t('Print PDF') }}</button>
 
       <button v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="detail-btn detail-btn--secondary btn-enterprise">
         <MpIcon name="mekari_pay" size="md" />
-        Pay with Mekari Pay
+        {{ t('Pay with Mekari Pay') }}
       </button>
 
       <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <button class="detail-btn btn-enterprise" :class="isAwaitingApproval ? 'detail-btn--secondary' : 'detail-btn--primary'">
-            Actions
+            {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -360,20 +361,20 @@ function goExpenses() {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Preview</MpPopoverListItem>
-            <MpPopoverListItem v-if="bill.status === 'unpaid' && !isAwaitingApproval" @click="router.push(`/expenses/${bill.id}/payment`)">Add payment</MpPopoverListItem>
-            <MpPopoverListItem v-if="showSetAsRecurring && !isAwaitingApproval">Set as recurring</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="bill.status === 'unpaid' && !isAwaitingApproval" @click="router.push(`/expenses/${bill.id}/payment`)">{{ t('Add payment') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="showSetAsRecurring && !isAwaitingApproval">{{ t('Set as recurring') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
-            <MpPopoverListItem @click="duplicate">Duplicate</MpPopoverListItem>
-            <MpPopoverListItem v-if="bill.status === 'unpaid' || isAwaitingApproval">Edit</MpPopoverListItem>
-            <MpTooltip v-if="isReconciled" id="detail-actions-delete-tt" label="Unmatch reconciliation to delete" placement="top" use-portal>
+            <MpPopoverListItem @click="duplicate">{{ t('Duplicate') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="bill.status === 'unpaid' || isAwaitingApproval">{{ t('Edit') }}</MpPopoverListItem>
+            <MpTooltip v-if="isReconciled" id="detail-actions-delete-tt" :label="t('Unmatch reconciliation to delete')" placement="top" use-portal>
               <span class="detail-actions-delete-tt-wrap">
-                <MpPopoverListItem is-disabled>Delete</MpPopoverListItem>
+                <MpPopoverListItem is-disabled>{{ t('Delete') }}</MpPopoverListItem>
               </span>
             </MpTooltip>
-            <MpPopoverListItem v-else>Delete</MpPopoverListItem>
+            <MpPopoverListItem v-else>{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -382,8 +383,8 @@ function goExpenses() {
 
   <!-- Not found fallback -->
   <div v-else class="bd-not-found">
-    <p>Expense not found.</p>
-    <MpTextlink id="bd-not-found-back" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">Back to Expenses</MpTextlink>
+    <p>{{ t('Expense not found.') }}</p>
+    <MpTextlink id="bd-not-found-back" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">{{ t('Back to Expenses') }}</MpTextlink>
   </div>
 </template>
 
