@@ -159,7 +159,7 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
         ? 'Internal rule'
         : (PURCHASE_REASON_DOC_TYPES.includes(docType) || docType === 'Expense')
         ? 'Amount limit'
-        : 'Overdue',
+        : 'Overdue limit',
     }
   })
 }
