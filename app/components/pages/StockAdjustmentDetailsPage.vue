@@ -852,7 +852,7 @@ onUnmounted(() => {
                 <th class="detail-th">SKU</th>
                 <template v-if="isCount">
                   <th class="detail-th detail-th--num">Prev. on hand qty</th>
-                  <th class="detail-th detail-th--num">Counted</th>
+                  <th class="detail-th detail-th--num">Counted qty</th>
                   <th class="detail-th detail-th--num">Difference</th>
                 </template>
                 <th v-else class="detail-th detail-th--num">Qty in/out</th>
@@ -1104,7 +1104,7 @@ onUnmounted(() => {
       <MpModalContent>
         <MpModalHeader>Cancel stock adjustment?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p>This adjustment will be canceled and can no longer be approved. This can't be undone.</p>
+          <p>This adjustment will be canceled and can no longer be approved. This cannot be undone.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
@@ -1124,7 +1124,7 @@ onUnmounted(() => {
       <MpModalContent>
         <MpModalHeader>Close this count task?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p>Counted data will be canceled and can't be resumed. This task will become read-only with a Closed status.</p>
+          <p>Counted data will be canceled and cannot be resumed. This task will become read-only with a Closed status.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
@@ -1142,13 +1142,13 @@ onUnmounted(() => {
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="startBlockedOpen = false"
     >
       <MpModalContent>
-        <MpModalHeader>Can't start counting yet<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>Cannot start counting yet<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           <p class="sad-blocked-intro">The following tasks are still in progress in this warehouse and share products with this count:</p>
           <ul class="sad-blocked-list">
             <li v-for="(c, i) in activeConflicts" :key="i">{{ c.type }} {{ c.taskNo }} — {{ c.skus.join(', ') }}</li>
           </ul>
-          <p>Wait until they're completed before starting this count.</p>
+          <p>Wait until they are completed before starting this count.</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
