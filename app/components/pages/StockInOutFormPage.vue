@@ -309,7 +309,7 @@ async function handleSave() {
   } else {
     addAdjustment(input)
   }
-  toast.notify({ variant: 'success', title: 'Stock in/out created' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: 'Stock in/out saved' , maxWidth: 'max-content'})
   // Already saved — the router.push below is this function's own doing, not
   // the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
