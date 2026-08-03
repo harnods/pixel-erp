@@ -127,6 +127,8 @@ function goNext() {
   flex: 1;
   height: calc(100vh - 220px);
   min-height: 480px;
+  /* bleed out of the shared .stage padding so this pane sits flush edge-to-edge */
+  margin: calc(var(--mp-spacing-6) * -1);
 }
 
 /* ── Left: list pane ── */

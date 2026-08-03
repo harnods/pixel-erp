@@ -27,7 +27,7 @@
         <ErpQuickCreateMenu v-if="!isWms" />
         <IconButton icon="help" />
         <IconButton v-if="!isWms" icon="desktop" />
-        <IconButton icon="inbox" @click="goToInbox" />
+        <IconButton icon="inbox" show-badge @click="goToInbox" />
       </MpFlex>
 
       <!-- User snapshot menu (avatar + name → account popover) -->
