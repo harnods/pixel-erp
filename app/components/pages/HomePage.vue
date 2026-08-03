@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
-import { MpIcon, toast } from '@mekari/pixel3'
+import {
+  MpIcon, toast,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { picForWarehouse } from '~/data/warehouses'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import { selectedActions, type HomeActionDef } from '~/data/homeActions'
+import { infoToast } from '~/utils/toasts'
 
 // What's-new card art — cropped from the Figma design (the mock-UI preview band).
 import whatsnewReconciliation from '~/assets/images/home/whatsnew-reconciliation.png?url'
@@ -13,7 +17,6 @@ import whatsnewProduction from '~/assets/images/home/whatsnew-production.png?url
 import setupBuilding from '~/assets/images/home/setup-building.png?url'
 
 const router = useRouter()
-const { navigate } = useNavigation()
 // Open the Airene chat panel (provided by [...slug].vue) from the Useful links.
 const toggleAirene = inject<() => void>('toggleAirene', () => {})
 // Drives the hero glow — the SearchBox emits its AI-mode state up.
@@ -40,7 +43,7 @@ const todayLabel = new Date().toLocaleDateString('en-GB', {
 // Pills are user-managed: pick up to 6 from a catalog + drag to reorder via the
 // "Add actions" modal (opened by the "Actions" pill). Selection persists (mini-DB).
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — coming soon`)
 }
 function runAction(a: HomeActionDef) {
   if (a.path === '#') soon(a.label)
@@ -102,6 +105,14 @@ const news: NewsCard[] = [
   { key: 'yellow', title: ['Detect your financial', 'anomalies earlier'],  desc: 'Identify unusual transactions in 1 click.',                            art: whatsnewAnomaly },
   { key: 'green',  title: ['Plan production with', 'confidence'],          desc: 'Stay ahead with clear schedules and real-time visibility.',            art: whatsnewProduction },
 ]
+// ─── Demo scenario state (FAB) ───────────────────────────────────────────────
+type WhatsNewDemoState = 'default' | 'more'
+const whatsNewDemoState = ref<WhatsNewDemoState>('default')
+const whatsNewDemoStates: { value: WhatsNewDemoState; label: string }[] = [
+  { value: 'default', label: "What's new — Default" },
+  { value: 'more', label: "What's new — >3" },
+]
+const whatsNewHasPagination = computed(() => whatsNewDemoState.value === 'more')
 
 // ── Set up Mekari ERP ─────────────────────────────────────────────────────────
 interface SetupStep { label: string; time: string; done: boolean }
@@ -254,11 +265,11 @@ const learn: LearnCard[] = [
               </div>
             </article>
           </div>
-          <button class="whatsnew__next" type="button" aria-label="Next" @click="soon('More updates')">
+          <button v-if="whatsNewHasPagination" class="whatsnew__next" type="button" aria-label="Next" @click="soon('More updates')">
             <MpIcon name="chevrons-right" size="md" />
           </button>
         </div>
-        <div class="whatsnew__dots">
+        <div v-if="whatsNewHasPagination" class="whatsnew__dots">
           <span class="dot dot--active" />
           <span class="dot" />
           <span class="dot" />
@@ -286,7 +297,7 @@ const learn: LearnCard[] = [
               class="setup-step"
               :class="{ 'setup-step--active': i === 0 }"
               type="button"
-              @click="navigate('Company profile')"
+              @click="soon(s.label)"
             >
               <span class="setup-step__check" :class="{ 'setup-step__check--done': s.done }">
                 <MpIcon v-if="s.done" name="check" size="sm" />
@@ -303,7 +314,7 @@ const learn: LearnCard[] = [
               <h4 class="setup__heading">Fill in important information<br>about your company</h4>
               <p class="setup__sub">Organize company info to activate features like multi-currency, formats, and tax inclusive.</p>
               <div class="setup__actions">
-                <button class="btn btn--brand" type="button" @click="navigate('Company profile')">Set up now</button>
+                <button class="btn btn--brand" type="button" @click="soon('Set up now')">Set up now</button>
                 <button class="btn btn--secondary btn--icon" type="button" @click="soon('Watch video')">
                   <MpIcon name="play-video" size="md" />
                   Watch video
@@ -353,6 +364,26 @@ const learn: LearnCard[] = [
     </div>
 
     <HomeActionsDrawer v-model:isOpen="manageActionsOpen" />
+
+    <!-- ── Demo scenario FAB ── -->
+    <MpPopover id="home-demo-fab" is-close-on-select use-portal placement="top-end">
+      <MpPopoverTrigger>
+        <button class="demo-fab" aria-label="Change scenario state"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+      </MpPopoverTrigger>
+      <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+        <p class="demo-fab-heading">Scenarios</p>
+        <MpPopoverList>
+          <MpPopoverListItem
+            v-for="s in whatsNewDemoStates"
+            :key="s.value"
+            :is-active="s.value === whatsNewDemoState"
+            @click="whatsNewDemoState = s.value"
+          >
+            {{ s.label }}
+          </MpPopoverListItem>
+        </MpPopoverList>
+      </MpPopoverContent>
+    </MpPopover>
   </div>
 </template>
 
@@ -362,6 +393,18 @@ const learn: LearnCard[] = [
   flex-direction: column;
   gap: var(--mp-spacing-10, 40px);
 }
+
+/* Demo FAB */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+}
+.demo-fab:hover { opacity: 0.9; }
+.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Hero ─────────────────────────────────────────────────────────────────── */
 /* An inset rounded gradient block — the stage's own 24px side padding keeps the
@@ -650,6 +693,11 @@ const learn: LearnCard[] = [
   color: var(--mp-text-secondary, #3a4749);
 }
 .appr__main { flex: 1; min-width: 0; }
+/* Truncate with ellipsis when the row is tight — never let the text collapse to
+   one-character-per-line (min-width:0 flex child + long unbroken content). */
+.appr__title,
+.appr__party,
+.appr__by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .appr__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .appr__party { margin: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .appr__by { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -677,20 +725,23 @@ const learn: LearnCard[] = [
 .whatsnew { position: relative; }
 .whatsnew__track {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Reflow: keep a readable min card width and wrap to fewer columns when the
+     content area narrows (tablet/mobile) — never squish below 240px. */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .wn {
+  position: relative;
   height: 400px;
   border-radius: var(--mp-radii-xl, 12px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-.wn--green    { background: #edf9f2; }
-.wn--yellow   { background: #fdf6dd; }
-.wn--blue     { background: #eaf4fc; }
-.wn__head { padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
+.wn--green    { --wn-bg: #edf9f2; background: var(--wn-bg); }
+.wn--yellow   { --wn-bg: #FFF9EA; background: var(--wn-bg); }
+.wn--blue     { --wn-bg: #eaf4fc; background: var(--wn-bg); }
+.wn__head { position: relative; z-index: 1; padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
 .wn__title {
   margin: 0 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-lg);
@@ -704,15 +755,42 @@ const learn: LearnCard[] = [
   line-height: var(--mp-line-heights-md, 20px);
   color: var(--mp-text-secondary);
 }
-/* Fill the space between the head and the foot, showing the artwork's bottom edge
-   (object-position bottom) — so the cover stays bottom-aligned and the Learn more /
-   Try feature foot is never pushed out of the fixed-height card. */
-.wn__art { display: block; width: 100%; flex: 1 1 0; min-height: 0; object-fit: cover; object-position: center bottom; }
+/* Full card width, natural aspect ratio (the PNGs already carry their own
+   rounded-card + shadow look). Bottom-anchored via absolute positioning
+   (not a flex margin-top: auto) so it's always aligned center-bottom even
+   when an art asset is taller than the space below the head — any excess
+   height extends upward and is clipped by .wn's overflow: hidden, keeping
+   the bottom of the artwork (where the foot floats) always visible. */
+.wn__art {
+  display: block;
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  width: 100%;
+  height: auto;
+}
+/* Pinned to the card's bottom edge (absolute, out of flow — so it overlaps
+   the bottom of .wn__art rather than pushing below it), floating on top of
+   the art. A gradient in the card's own pastel color (::before) fades from
+   solid at the very bottom up to transparent over the art, so the buttons
+   read as sitting on the card background rather than directly on the artwork. */
 .wn__foot {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 1;
   padding: var(--mp-spacing-4) var(--mp-spacing-6) var(--mp-spacing-6);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: var(--mp-spacing-4);
+}
+.wn__foot::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  top: -40px;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--wn-bg) 0%, var(--wn-bg) 30%, transparent 100%);
 }
 .wn__link {
   background: none; border: none; cursor: pointer;
@@ -829,7 +907,7 @@ const learn: LearnCard[] = [
 /* ── Learn ────────────────────────────────────────────────────────────────── */
 .learn {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .learn-card {
@@ -866,7 +944,7 @@ const learn: LearnCard[] = [
 /* ── Useful links ─────────────────────────────────────────────────────────── */
 .useful {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .useful-link {
@@ -884,4 +962,67 @@ const learn: LearnCard[] = [
 .useful-link__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .useful-link__desc { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); max-width: 280px; }
 .useful-link:hover .useful-link__title { text-decoration: underline; }
+
+/* ── Responsive ───────────────────────────────────────────────────────────────
+   Cards/sections reflow (grids wrap via auto-fit above; splits stack here). Data
+   tables are NOT touched — they keep their own horizontal scroll so columns stay
+   full-width and readable (see ErpTablePage .erp-table-wrapper). */
+
+/* Tablet — the two-pane Set up card can't hold a 328px list + detail side by side */
+@media (max-width: 900px) {
+  .setup { flex-direction: column; }
+  .setup__list {
+    width: 100%;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  }
+}
+
+/* Mobile — tighten spacing, shrink the hero, stack the setup detail */
+@media (max-width: 600px) {
+  .home { gap: var(--mp-spacing-6); }
+
+  .hero { padding: var(--mp-spacing-4); }
+  .hero__line { font-size: var(--mp-font-sizes-xl); line-height: 28px; }
+
+  /* Quick shortcuts: compact so they pack horizontally and wrap (2–3 per row on
+     a phone) instead of stacking one-per-line. */
+  .chips { margin-top: var(--mp-spacing-4); }
+  .chips__row { gap: var(--mp-spacing-2); justify-content: center; }
+  .chip {
+    height: 32px;
+    padding: 0 var(--mp-spacing-3);
+    font-size: var(--mp-font-sizes-sm);
+    gap: var(--mp-spacing-1);
+  }
+  .chip__icon { width: 16px; height: 16px; }
+
+  .setup__detail {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mp-spacing-4);
+    padding: var(--mp-spacing-5);
+  }
+  .setup__illus { display: none; }
+  .setup__actions { flex-wrap: wrap; }
+
+  .setup-progress { width: 100%; }
+
+  /* Awaiting-approval is a list, not a table — stack each item vertically:
+     title (+ kebab pinned top-right), then party, requester, amount, Approve. */
+  .appr {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mp-spacing-1);
+    position: relative;
+    padding-right: var(--mp-spacing-10, 40px);   /* clear the top-right kebab */
+  }
+  .appr__thumb { display: none; }
+  .appr__main { width: 100%; }
+  .appr__amount { text-align: left; margin-left: 0; }
+  .appr__amount-main { font-weight: var(--mp-font-weights-semi-bold); }
+  .appr__kebab { position: absolute; top: var(--mp-spacing-3); right: var(--mp-spacing-4); }
+  .appr > .btn { align-self: flex-start; margin-top: var(--mp-spacing-2); }
+}
 </style>

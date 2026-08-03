@@ -19,6 +19,12 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { formatDate } from '~/utils/date'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeSheetPdf, type BarcodeLabelInfo } from '~/utils/barcodeLabelPdf'
+import { getBatchBarcode, setBatchBarcode } from '~/data/productDetails'
+import { generateNextBarcode } from '~/data/barcodeConfig'
+import type jsPDF from 'jspdf'
 import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { outgoingOrders } from '~/data/outgoing'
 import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
@@ -562,6 +568,56 @@ const filteredSerialProducts = computed(() => {
   )
 })
 function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' : 'serial numbers'}` }
+
+// ── Print all barcode (per tab) ───────────────────────────────────────────────
+const printBarcodeOptionsOpen = ref(false)
+const printLabels = ref<BarcodeLabelInfo[]>([])
+const printFilename = ref('')
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+function openPrintAll(labels: BarcodeLabelInfo[], scope: string) {
+  if (!labels.length) return
+  printLabels.value = labels
+  printFilename.value = `Barcodes - ${warehouse.value?.name ?? 'warehouse'} (${scope}).pdf`
+  printBarcodeOptionsOpen.value = true
+}
+// Plain-SKU products — one label per SKU (the SKU's own barcode).
+function printAllPlainBarcodes() {
+  openPrintAll(
+    filteredStock.value.map((s) => ({ barcode: s.barcode, batchNo: '', productName: s.name, sku: s.sku })),
+    'products',
+  )
+}
+// Batch products — one label per batch (each batch's own barcode, generated on first use).
+function printAllBatchBarcodes() {
+  const labels: BarcodeLabelInfo[] = []
+  for (const s of filteredBatchProducts.value) {
+    for (const b of s.batches ?? []) {
+      let barcode = getBatchBarcode(s.sku, b.batchNo)
+      if (!barcode) { barcode = generateNextBarcode('batch'); setBatchBarcode(s.sku, b.batchNo, barcode) }
+      labels.push({ barcode, batchNo: b.batchNo, productName: s.name, sku: s.sku })
+    }
+  }
+  openPrintAll(labels, 'batches')
+}
+// Serial products — one label per serial (available + reserved); the SN is its barcode.
+function printAllSerialBarcodes() {
+  const labels: BarcodeLabelInfo[] = []
+  for (const s of filteredSerialProducts.value) {
+    for (const u of [...(s.serials?.available ?? []), ...(s.serials?.reserved ?? [])]) {
+      labels.push({ barcode: u.serial, batchNo: u.serial, productName: s.name, sku: s.sku })
+    }
+  }
+  openPrintAll(labels, 'serial numbers')
+}
+async function confirmPrintAllBarcodes({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  printBarcodeOptionsOpen.value = false
+  barcodePreviewDoc.value = await generateBarcodeSheetPdf(printLabels.value, columns, qty)
+  barcodePreviewFilename.value = printFilename.value
+  barcodePreviewOpen.value = true
+}
+
 const hasBatchMergedRows = computed(() => filteredBatchProducts.value.length > 0)
 // Min. stock and Unit are rowspan'd across a group's batch rows, so a child row never
 // gets its own cell for them — its actual last <td> is only the table's true right edge
@@ -874,6 +930,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                       </svg>
                     </button>
                   </div>
+                  <button v-if="filteredStock.length" class="wh-print-all-btn" type="button" @click="printAllPlainBarcodes">Print all barcode</button>
                 </div>
               </template>
 
@@ -1026,6 +1083,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     </svg>
                   </button>
                 </div>
+                <button v-if="filteredBatchProducts.length" class="wh-print-all-btn" type="button" @click="printAllBatchBarcodes">Print all barcode</button>
               </div>
             </div>
 
@@ -1174,6 +1232,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                     </svg>
                   </button>
                 </div>
+                <button v-if="filteredSerialProducts.length" class="wh-print-all-btn" type="button" @click="printAllSerialBarcodes">Print all barcode</button>
               </div>
             </div>
 
@@ -1737,6 +1796,19 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
       @update:open="serialDrawerOpen = $event"
     />
 
+    <PrintBarcodeOptionsModal
+      :open="printBarcodeOptionsOpen"
+      @close="printBarcodeOptionsOpen = false"
+      @confirm="confirmPrintAllBarcodes"
+    />
+    <PdfPreviewModal
+      :open="barcodePreviewOpen"
+      :doc="barcodePreviewDoc"
+      :filename="barcodePreviewFilename"
+      title="Barcode preview"
+      @close="barcodePreviewOpen = false"
+    />
+
   </div>
 </template>
 
@@ -2025,6 +2097,16 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
 }
 .wh-tool-btn:hover { background: var(--mp-background-neutral-hovered); }
 .wh-tool-btn--airene { color: var(--mp-airene-default, #651fff); }
+/* Secondary text button in a toolbar (Print all barcode) — matches search height. */
+.wh-print-all-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0;
+  height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-4);
+  border: 1px solid var(--mp-text-default, #080d0e); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  cursor: pointer; white-space: nowrap; font-family: inherit;
+}
+.wh-print-all-btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .wh-search {
   display: flex;
   align-items: center;

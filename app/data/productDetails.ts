@@ -106,6 +106,20 @@ export function getProductSerialStock(sku: string): ProductSerialStock[] {
   return out
 }
 
+/** Every serial number for a SKU (available + reserved) across all warehouses —
+ *  used to print a barcode label for each unit from the Stock by SN tab. */
+export function getProductAllSerials(sku: string): string[] {
+  const out: string[] = []
+  for (const wh of warehouses) {
+    if (wh.status === 'archived') continue
+    const item = getWarehouseDetail(wh.id)?.stock.find((s) => s.sku === sku)
+    if (!item?.serials) continue
+    for (const u of item.serials.available) out.push(u.serial)
+    for (const u of item.serials.reserved) out.push(u.serial)
+  }
+  return out
+}
+
 // ── Transaction (movement) ledger ───────────────────────────────────────────────
 export interface ProductTransaction {
   id: string

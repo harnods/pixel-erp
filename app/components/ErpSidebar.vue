@@ -16,23 +16,23 @@
           :key="item.name"
           class="nav-item"
           :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="item.name"
+          :title="t(item.name)"
           @click="() => handleNavClick(item)"
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
           @mouseleave="scheduleClose"
         >
           <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
           <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
-          <span class="nav-label">{{ item.name }}</span>
+          <span class="nav-label">{{ t(item.name) }}</span>
         </button>
       </div>
     </nav>
 
-    <!-- Secondary sidebar panel -->
+    <!-- Secondary sidebar panel (hidden on narrow viewports to free content width) -->
     <Transition name="panel">
-      <div v-if="activePanel && isPanelVisible" class="sidebar-panel">
+      <div v-if="activePanel && isPanelVisible && !isNarrowViewport" class="sidebar-panel">
         <div class="panel-header">
-          <span class="panel-title">{{ activePanel.title.toUpperCase() }}</span>
+          <span class="panel-title">{{ t(activePanel.title).toUpperCase() }}</span>
         </div>
         <div class="panel-list">
           <template v-for="(group, gi) in activePanel.groups" :key="gi">
@@ -45,7 +45,7 @@
                   :class="{ 'is-open': isAccordionOpen(sub) }"
                   @click="handlePanelAccordionClick(sub)"
                 >
-                  <span>{{ sub.label }}</span>
+                  <span>{{ t(sub.label) }}</span>
                   <svg class="panel-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                   </svg>
@@ -58,7 +58,7 @@
                   :class="{ active: activePanelSubItem === child.label }"
                   @click="handlePanelSubItemClick(child)"
                 >
-                  <span>{{ child.label }}</span>
+                  <span>{{ t(child.label) }}</span>
                   <MpBadge v-if="child.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ child.count }}</MpBadge>
                 </button>
               </template>
@@ -69,7 +69,7 @@
                 :class="{ active: activePanelSubItem === sub.label }"
                 @click="handlePanelSubItemClick(sub)"
               >
-                <span>{{ sub.label }}</span>
+                <span>{{ t(sub.label) }}</span>
                 <MpBadge v-if="sub.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ sub.count }}</MpBadge>
                 <img
                   v-else-if="sub.iconType === 'shortcut'"
@@ -80,7 +80,7 @@
                 <img
                   v-else-if="sub.iconType === 'settings'"
                   :src="settingsIcon"
-                  class="panel-item-icon"
+                  class="panel-item-icon panel-item-icon--settings"
                   alt=""
                 />
               </button>
@@ -109,7 +109,7 @@
             :class="{ active: activePanelSubItem === sub.label }"
             @click="handleFlyoutSubItemClick(sub)"
           >
-            <span>{{ sub.label }}</span>
+            <span>{{ t(sub.label) }}</span>
             <img v-if="sub.iconType === 'shortcut'" :src="shortcutIcon" class="submenu-item-icon submenu-item-icon--shortcut" alt="" />
             <img v-else-if="sub.iconType === 'settings'" :src="settingsIcon" class="submenu-item-icon" alt="" />
           </button>
@@ -246,6 +246,7 @@ const shortcutIcon = shortcutIconUrl
 const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
 const { navigate, currentPageKey, setActiveMenuLabel, activeSectionOverride } = useNavigation()
+const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
@@ -278,8 +279,17 @@ let closeTimer: ReturnType<typeof setTimeout> | null = null
 
 // ─── Computed ─────────────────────────────────────────────────────────────────
 
-// Main nav collapses while a panel is open
-const navExpanded = computed(() => isExpanded.value && !activePanel.value)
+// Below tablet width the expanded nav (216px) starves the content area, so we
+// force the collapsed icon rail there regardless of the saved preference.
+const isNarrowViewport = ref(false)
+if (import.meta.client) {
+  const mq = window.matchMedia('(max-width: 1024px)')
+  isNarrowViewport.value = mq.matches
+  mq.addEventListener('change', (e) => { isNarrowViewport.value = e.matches })
+}
+
+// Main nav collapses while a panel is open, or on narrow (tablet/mobile) viewports
+const navExpanded = computed(() => isExpanded.value && !activePanel.value && !isNarrowViewport.value)
 // Arrow points left when nav is expanded OR when a panel is visible
 const arrowPointsLeft = computed(() => navExpanded.value || (!!activePanel.value && isPanelVisible.value))
 
@@ -896,9 +906,8 @@ function handleNavClick(item: NavItem) {
     flyoutItem.value = null
     // Nav item that directly opens a panel (e.g. Reports)
     if (activePanel.value?.parentNavName === item.name) {
-      // Clicking same item again — close panel
-      closePanel()
-      activeItem.value = ''
+      // Already in this section — keep the level-2 panel open (no toggle-close).
+      isPanelVisible.value = true
     } else {
       const firstItem = item.panelSubmenu[0][0]
       openPanel({ title: item.name, groups: item.panelSubmenu, parentNavName: item.name })
@@ -907,11 +916,9 @@ function handleNavClick(item: NavItem) {
       activeItem.value = item.name
     }
   } else if (item.expandOnClick && activePanel.value?.parentNavName === item.name) {
-    // Its own promoted panel is open — clicking the icon again closes it,
-    // returning to normal hover-flyout behaviour.
+    // Already in this section — keep the level-2 panel open (no toggle-close).
     flyoutItem.value = null
-    closePanel()
-    activeItem.value = ''
+    isPanelVisible.value = true
   } else if (!item.submenu) {
     // Simple leaf nav item (e.g. Home, Expenses, Settings)
     flyoutItem.value = null
@@ -1261,6 +1268,9 @@ function cancelClose() {
   flex-shrink: 0;
   filter: brightness(0) opacity(0.5);
 }
+
+/* Settings gear renders at the default 20px in the level-2 panel. */
+.panel-item-icon--settings { width: var(--mp-sizes-5); height: var(--mp-sizes-5); }
 
 /* Task-count indicator — right-aligned; appearance (color/shape/size) comes
    from MpBadge itself (for="additionalInformation" type="warning" size="sm"). */

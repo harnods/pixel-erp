@@ -70,21 +70,19 @@ function drawLabelCell(doc: jsPDF, codeDataUrl: string, style: BarcodeStyle, inf
  * Returns the jsPDF instance for the caller to preview/save (doesn't save it
  * itself).
  */
-export async function generateBarcodeLabelPdf(
-  info: BarcodeLabelInfo,
-  qty: number,
-  columns: BarcodeLabelColumns,
-): Promise<jsPDF> {
-  const style = getWarehouseSettings().barcodeStyle
-  const codeDataUrl = await generateBarcodeDataUrl(info.barcode, style)
-  const count = Math.max(1, Math.floor(qty))
+/** Lays a list of pre-rendered label cells into the sticker grid (shared by the
+ *  single-label and per-serial sheet builders). Each cell carries its own barcode
+ *  image, so cells can be identical copies (one SKU/batch) or all distinct (one
+ *  per serial number). */
+function renderLabelGrid(cells: { codeDataUrl: string; info: BarcodeLabelInfo }[], style: BarcodeStyle, columns: BarcodeLabelColumns): jsPDF {
+  const count = cells.length
 
   if (columns === 1) {
     const orientation = orientationFor(GRID_CELL_WIDTH, GRID_CELL_HEIGHT)
     const doc = new jsPDF({ unit: 'pt', format: [GRID_CELL_WIDTH, GRID_CELL_HEIGHT], orientation })
     for (let i = 0; i < count; i++) {
       if (i > 0) doc.addPage([GRID_CELL_WIDTH, GRID_CELL_HEIGHT], orientation)
-      drawLabelCell(doc, codeDataUrl, style, info, 0, 0)
+      drawLabelCell(doc, cells[i]!.codeDataUrl, style, cells[i]!.info, 0, 0)
     }
     return doc
   }
@@ -97,7 +95,7 @@ export async function generateBarcodeLabelPdf(
   for (let i = 0; i < count; i++) {
     const row = Math.floor(i / columns)
     const col = i % columns
-    drawLabelCell(doc, codeDataUrl, style, info, col * GRID_CELL_WIDTH, row * GRID_CELL_HEIGHT)
+    drawLabelCell(doc, cells[i]!.codeDataUrl, style, cells[i]!.info, col * GRID_CELL_WIDTH, row * GRID_CELL_HEIGHT)
   }
 
   doc.setDrawColor(150)
@@ -116,4 +114,36 @@ export async function generateBarcodeLabelPdf(
   doc.setLineDashPattern([], 0)
 
   return doc
+}
+
+export async function generateBarcodeLabelPdf(
+  info: BarcodeLabelInfo,
+  qty: number,
+  columns: BarcodeLabelColumns,
+): Promise<jsPDF> {
+  const style = getWarehouseSettings().barcodeStyle
+  const codeDataUrl = await generateBarcodeDataUrl(info.barcode, style)
+  const count = Math.max(1, Math.floor(qty))
+  const cells = Array.from({ length: count }, () => ({ codeDataUrl, info }))
+  return renderLabelGrid(cells, style, columns)
+}
+
+/**
+ * One distinct barcode label per entry — e.g. a label for every serial number's
+ * own barcode — laid out in the same sticker grid. `qtyPer` copies of each label
+ * (default 1). Empty input yields a single blank label page.
+ */
+export async function generateBarcodeSheetPdf(
+  labels: BarcodeLabelInfo[],
+  columns: BarcodeLabelColumns,
+  qtyPer = 1,
+): Promise<jsPDF> {
+  const style = getWarehouseSettings().barcodeStyle
+  const per = Math.max(1, Math.floor(qtyPer))
+  const expanded = labels.flatMap((info) => Array.from({ length: per }, () => info))
+  const source = expanded.length ? expanded : [{ barcode: '', batchNo: '', productName: '', sku: '' }]
+  const cells = await Promise.all(
+    source.map(async (info) => ({ codeDataUrl: await generateBarcodeDataUrl(info.barcode, style), info })),
+  )
+  return renderLabelGrid(cells, style, columns)
 }

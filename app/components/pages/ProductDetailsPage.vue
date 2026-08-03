@@ -19,11 +19,11 @@ import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
 import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
-  type ProductBatchSummary,
+  getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { formatDateTimeLong } from '~/utils/date'
-import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
+import { generateBarcodeLabelPdf, generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
 import { TODAY } from '~/data/master'
 import type jsPDF from 'jspdf'
 
@@ -159,15 +159,34 @@ function viewBatch(batchNo: string) {
   router.push(`/product-list/${product.value.sku}/batches/${encodeURIComponent(batchNo)}`)
 }
 
-type PrintBarcodeTarget = { kind: 'batch'; batch: ProductBatchSummary } | { kind: 'sku' }
+type PrintBarcodeTarget =
+  | { kind: 'batch'; batch: ProductBatchSummary }
+  | { kind: 'sku' }
+  | { kind: 'serials'; serials: string[] }
+  | { kind: 'batches'; batches: ProductBatchSummary[] }
 const printBarcodeOptionsOpen = ref(false)
 const printBarcodeTarget = ref<PrintBarcodeTarget | null>(null)
 function printBatchBarcode(b: ProductBatchSummary) {
   printBarcodeTarget.value = { kind: 'batch', batch: b }
   printBarcodeOptionsOpen.value = true
 }
+// Print one barcode per batch currently listed (respects the archived toggle + search).
+function printAllBatchBarcodes() {
+  const batches = filteredBatches.value
+  if (!batches.length) return
+  printBarcodeTarget.value = { kind: 'batches', batches: [...batches] }
+  printBarcodeOptionsOpen.value = true
+}
 function printSkuBarcode() {
   printBarcodeTarget.value = { kind: 'sku' }
+  printBarcodeOptionsOpen.value = true
+}
+// Print one barcode per serial number (available + reserved) for this SKU.
+function printAllSerialBarcodes() {
+  if (!product.value) return
+  const serials = getProductAllSerials(product.value.sku)
+  if (!serials.length) return
+  printBarcodeTarget.value = { kind: 'serials', serials }
   printBarcodeOptionsOpen.value = true
 }
 
@@ -178,7 +197,27 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
   const target = printBarcodeTarget.value
   if (!product.value || !target) return
   printBarcodeOptionsOpen.value = false
-  if (target.kind === 'batch') {
+  if (target.kind === 'serials') {
+    // One label per serial number — its own barcode + the SN as the headline.
+    const labels = target.serials.map((sn) => ({
+      barcode: sn,
+      batchNo: sn,
+      productName: product.value!.name,
+      sku: product.value!.sku,
+    }))
+    barcodePreviewDoc.value = await generateBarcodeSheetPdf(labels, columns, qty)
+    barcodePreviewFilename.value = `Barcodes - ${product.value.sku} (serial numbers).pdf`
+  } else if (target.kind === 'batches') {
+    // One label per batch — the batch's own barcode + batch number headline.
+    const labels = target.batches.map((b) => ({
+      barcode: b.barcode,
+      batchNo: b.batchNo,
+      productName: product.value!.name,
+      sku: product.value!.sku,
+    }))
+    barcodePreviewDoc.value = await generateBarcodeSheetPdf(labels, columns, qty)
+    barcodePreviewFilename.value = `Barcodes - ${product.value.sku} (batches).pdf`
+  } else if (target.kind === 'batch') {
     const b = target.batch
     barcodePreviewDoc.value = await generateBarcodeLabelPdf({
       barcode: b.barcode,
@@ -209,6 +248,7 @@ const pagedSerialStock = computed(() => {
   return serialStock.value.slice(start, start + serialPerPage.value)
 })
 function serialCountLabel(n: number) { return `${n} ${n === 1 ? 'serial number' : 'serial numbers'}` }
+const serialTotal = computed(() => serialStock.value.reduce((n, s) => n + s.availableCount + s.reservedCount, 0))
 
 const serialDrawerOpen = ref(false)
 const serialDrawerProduct = ref<WarehouseStockItem | null>(null)
@@ -292,9 +332,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         </div>
       </section>
 
-      <!-- Purchase info / Sales info — ERP only, WMS doesn't deal in pricing/accounting -->
-      <div v-if="!isWms" class="pd-two-col">
-        <section class="pd-section pd-section--flex">
+      <!-- Purchase info / Sales info — ERP only, WMS doesn't deal in pricing/accounting.
+           Tax info sits in the same row but gates on product.djpCode independently,
+           since tax classification applies regardless of ERP/WMS scenario. -->
+      <div class="pd-two-col">
+        <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Purchase info</h2>
           <div class="pd-purchase-row">
             <div class="pd-field-col pd-field-col--flex">
@@ -310,14 +352,25 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </div>
           </div>
         </section>
-        <section class="pd-section pd-section--flex">
+        <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Sales info</h2>
-          <div class="pd-field-col" style="width: 270px">
+          <div class="pd-field-col pd-field-col--fixed">
             <ContentList label="Default sales price" :value="formatIDR(product.defaultSalesPrice)" />
             <ContentList label="Default sales account">
               <a class="pd-link">{{ product.defaultSalesAccount }}</a>
             </ContentList>
             <ContentList label="Default sales tax" :value="product.defaultSalesTax" />
+          </div>
+        </section>
+
+        <!-- Tax info — only shown once tax info has actually been filled in on the
+             product. Same vertical-list pattern as Sales info (single column, fixed 270px). -->
+        <section v-if="product.djpCode" class="pd-section pd-section--flex">
+          <h2 class="pd-section-title">Tax info</h2>
+          <div class="pd-field-col pd-field-col--fixed">
+            <ContentList label="Product classification" :value="product.productClassification" />
+            <ContentList label="DJP code" :value="product.djpCode" />
+            <ContentList label="DJP unit" :value="product.djpUnit" />
           </div>
         </section>
       </div>
@@ -340,7 +393,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </div>
           </section>
           <section class="pd-section pd-section--flex">
-            <div class="pd-field-col pd-field-col--djp-unit">
+            <div class="pd-field-col pd-field-col--fixed">
               <ContentList label="DJP unit" :value="product.djpUnit" />
             </div>
           </section>
@@ -494,6 +547,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     </svg>
                   </button>
                 </div>
+                <button
+                  v-if="filteredBatches.length"
+                  class="detail-btn detail-btn--secondary"
+                  type="button"
+                  @click="printAllBatchBarcodes"
+                >
+                  Print all barcode
+                </button>
               </div>
             </div>
 
@@ -578,7 +639,17 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 
           <!-- Stock by serial numbers (serial-tracked products) -->
           <MpTabPanel v-else-if="product.trackStockBy === 'Serial number'" value="serials">
-            <h3 class="linked-section-title">Serial numbers</h3>
+            <div class="pd-section-head">
+              <h3 class="linked-section-title">Serial numbers</h3>
+              <button
+                v-if="serialTotal > 0"
+                class="detail-btn detail-btn--secondary"
+                type="button"
+                @click="printAllSerialBarcodes"
+              >
+                Print all barcode
+              </button>
+            </div>
             <div v-if="pagedSerialStock.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
@@ -796,7 +867,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-field-col { display: flex; flex-direction: column; }
 .pd-field-col--flex { flex: 1; min-width: 0; }
-.pd-field-col--djp-unit { width: 270px; }
+.pd-field-col--fixed { width: 270px; }
 .pd-two-col { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .pd-purchase-row { display: flex; gap: var(--mp-spacing-6); }
 .pd-link { color: var(--mp-text-link); cursor: pointer; }
@@ -878,4 +949,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 
 /* Section title above a tab's table (matches PickingTaskDetailsPage.vue's "Sales orders") */
 .linked-section-title { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pd-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-2); }
+.pd-section-head .linked-section-title { margin: 0; }
+.detail-btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-text-default, #080d0e); color: var(--mp-text-default); }
+.detail-btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 </style>
