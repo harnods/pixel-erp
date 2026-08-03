@@ -339,7 +339,7 @@ function confirmBulkDelete() {
           <div class="stat-title">Overdue</div>
           <div class="stat-period">As of today</div>
           <div class="stat-amount stat-amount--danger">{{ formatIDR(overdueTotal) }}</div>
-          <a class="stat-link">{{ overdueBills.length }} bill{{ overdueBills.length !== 1 ? 's' : '' }}</a>
+          <a class="stat-link">{{ overdueBills.length }} expense{{ overdueBills.length !== 1 ? 's' : '' }}</a>
         </div>
 
         <!-- Card 2: Unpaid -->
@@ -347,7 +347,7 @@ function confirmBulkDelete() {
           <div class="stat-title">Unpaid</div>
           <div class="stat-period">As of today</div>
           <div class="stat-amount">{{ formatIDR(unpaidTotal) }}</div>
-          <a class="stat-link">{{ unpaidBills.length }} bill{{ unpaidBills.length !== 1 ? 's' : '' }}</a>
+          <a class="stat-link">{{ unpaidBills.length }} expense{{ unpaidBills.length !== 1 ? 's' : '' }}</a>
         </div>
 
         <!-- Card 3: Paid -->
@@ -355,7 +355,7 @@ function confirmBulkDelete() {
           <div class="stat-title">Paid</div>
           <div class="stat-period">Last 30 days</div>
           <div class="stat-amount">{{ formatIDR(paidTotal) }}</div>
-          <a class="stat-link">{{ paidBills.length }} bill{{ paidBills.length !== 1 ? 's' : '' }}</a>
+          <a class="stat-link">{{ paidBills.length }} expense{{ paidBills.length !== 1 ? 's' : '' }}</a>
         </div>
 
         <!-- Card 4: Upsell — Mekari Card — hidden when Airene panel is open or dismissed -->
