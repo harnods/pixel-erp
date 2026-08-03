@@ -98,8 +98,8 @@ function goNext() {
           </div>
         </template>
         <div v-else class="nv-empty">
-          <p class="nv-empty-title">No notifications found</p>
-          <p class="nv-empty-desc">Try a different search term.</p>
+          <p class="nv-empty-title">"{{ search }}" not found</p>
+          <p class="nv-empty-desc">Recheck the keywords you have typed and try searching again.</p>
         </div>
       </div>
     </div>
@@ -114,7 +114,7 @@ function goNext() {
         @next="goNext"
       />
       <div v-else class="nv-empty nv-empty--detail">
-        <p class="nv-empty-title">Notifications</p>
+        <p class="nv-empty-title">No notification selected</p>
         <p class="nv-empty-desc">Notifications will show up here.</p>
       </div>
     </div>
