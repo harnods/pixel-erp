@@ -44,8 +44,12 @@ function twoBinBatchSku() {
   seq++
   const batchA = `Batch #TEST-${seq}-A`
   const batchB = `Batch #TEST-${seq}-B`
-  registerNewBatch(found.warehouseId, found.sku, { batchNo: batchA, expiryDate: '2027-01-01', onHand: 10 })
-  registerNewBatch(found.warehouseId, found.sku, { batchNo: batchB, expiryDate: '2027-01-01', onHand: 10 })
+  // Register each batch into a DISTINCT existing bin — the model now keeps a
+  // registered batch in the bin it was added to (no round-robin spreading), so
+  // the two-bin scenario must place them explicitly.
+  const twoBins = getWarehouseDetail(found.warehouseId)!.stock.find((s) => s.sku === found!.sku)!.bins.map((b) => b.location)
+  registerNewBatch(found.warehouseId, found.sku, { batchNo: batchA, expiryDate: '2027-01-01', onHand: 10, location: twoBins[0] })
+  registerNewBatch(found.warehouseId, found.sku, { batchNo: batchB, expiryDate: '2027-01-01', onHand: 10, location: twoBins[1] })
   const refreshed = getWarehouseDetail(found.warehouseId)!.stock.find((s) => s.sku === found!.sku)!
   const b1 = refreshed.batches!.find((b) => b.batchNo === batchA)!
   const b2 = refreshed.batches!.find((b) => b.batchNo === batchB)!
