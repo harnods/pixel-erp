@@ -21,6 +21,7 @@ import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
+const { t } = useLocale()
 const detail = computed(() => getReceiptDetail(props.orderId))
 const activityOpen = ref(false)
 const activityEntries = computed(() => {
@@ -29,18 +30,18 @@ const activityEntries = computed(() => {
   const created = {
     date: d.lastUpdatedAt,
     user: d.lastUpdatedBy,
-    activity: 'Created',
+    activity: t('Created'),
     details: [
-      { label: 'Transaction no.', value: d.purchaseNo },
-      { label: 'Transaction date', value: formatDateLong(d.transactionDate) },
-      { label: 'Vendor', value: d.vendor ?? '—' },
-      { label: 'Warehouse', value: d.warehouseName },
+      { label: t('Transaction no.'), value: d.purchaseNo },
+      { label: t('Transaction date'), value: formatDateLong(d.transactionDate) },
+      { label: t('Vendor'), value: d.vendor ?? '—' },
+      { label: t('Warehouse'), value: d.warehouseName },
     ],
   }
   // Edit order entries (newest first) — the real before → after diff computed
   // by editInboundReceipt (inboundSync.ts) when the edit was saved.
   const edits = (currentReceipt.value?.editHistory ?? []).map((e) => ({
-    date: e.date, user: e.user, activity: 'Edited', details: e.changes,
+    date: e.date, user: e.user, activity: t('Edited'), details: e.changes,
   }))
   return [...edits, created]
 })
@@ -181,7 +182,7 @@ const isPartialClose = computed(() => currentReceipt.value?.status === 'partial 
 // Manual (Direct Inbound) receipts are cancellable too — they keep Delete as well,
 // so an operator can either void-and-keep (Cancel) or hard-remove (Delete).
 const canCancelAction = computed(() => !!currentReceipt.value && canCancelReceipt(currentReceipt.value))
-const cancelActionLabel = computed(() => (isPartialClose.value ? 'Close receipt' : 'Cancel receipt'))
+const cancelActionLabel = computed(() => (isPartialClose.value ? t('Close receipt') : t('Cancel receipt')))
 function openCloseReceiptModal() { cancelModalOpen.value = true }
 // Edit order — order-level action, same dropdown as Cancel/Close (mirrors the
 // outbound order detail's Edit order placement).
@@ -193,11 +194,11 @@ function confirmCancel() {
   const result = cancelInboundReceipt(props.orderId)
   closeCancelModal()
   if (!result.ok) {
-    toast.notify({ variant: 'error', title: "This receipt can't be canceled", maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t("This receipt can't be canceled"), maxWidth: 'max-content' })
     return
   }
   // Stay on this detail page — currentReceipt is now 'canceled' and the header shows it.
-  toast.notify({ variant: 'success', title: `Receipt ${wasPartial ? 'closed' : 'cancelled'}`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${t('Receipt')} ${wasPartial ? t('closed') : t('cancelled')}`, maxWidth: 'max-content' })
 }
 
 // Manually-created receipts (New receipt form) have no real PO behind them, so they
@@ -219,13 +220,13 @@ function confirmDelete() {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Receipts</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Receipts') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
           <ErpStatusBadge v-if="receipt" :status="receipt.status" :type="receipt.status === 'pending' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch transaction">
+              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -234,8 +235,8 @@ function confirmDelete() {
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search..." />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -246,7 +247,7 @@ function confirmDelete() {
                     <span class="detail-jump-item-number">{{ o.purchaseNo }}</span>
                     <span class="detail-jump-item-customer">{{ o.warehouseName }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -261,22 +262,22 @@ function confirmDelete() {
       <!-- ── Header summary (2 columns) ── -->
       <section class="rcd-summary">
         <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDateLong(detail.transactionDate)" />
-          <ContentList label="Transaction no." :value="detail.purchaseNo" />
-          <ContentList label="Vendor" :value="detail.vendor" />
+          <ContentList :label="t('Transaction date')" :value="formatDateLong(detail.transactionDate)" />
+          <ContentList :label="t('Transaction no.')" :value="detail.purchaseNo" />
+          <ContentList :label="t('Vendor')" :value="detail.vendor" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Estimated arrival date" :value="formatDateLong(detail.estimatedArrival)" />
-          <ContentList label="Ship via" :value="detail.shipVia" />
-          <ContentList label="Tracking no." :value="trackingText(detail.trackingNos)" />
-          <ContentList label="Warehouse">
+          <ContentList :label="t('Estimated arrival date')" :value="formatDateLong(detail.estimatedArrival)" />
+          <ContentList :label="t('Ship via')" :value="detail.shipVia" />
+          <ContentList :label="t('Tracking no.')" :value="trackingText(detail.trackingNos)" />
+          <ContentList :label="t('Warehouse')">
             <a class="cell-link" @click.stop="router.push(`/warehouses/${currentReceipt?.warehouseId}`)">{{ detail.warehouseName }}</a>
           </ContentList>
         </div>
         <div v-if="currentReceipt?.status === 'canceled'" class="content-list-col">
-          <ContentList label="Canceled date" :value="currentReceipt.canceledDate ? formatDateLong(currentReceipt.canceledDate) : '—'" />
-          <ContentList label="Reason" :value="currentReceipt.canceledReason ?? '—'" />
-          <ContentList label="Canceled by" :value="currentReceipt.canceledBy ?? '—'" />
+          <ContentList :label="t('Canceled date')" :value="currentReceipt.canceledDate ? formatDateLong(currentReceipt.canceledDate) : '—'" />
+          <ContentList :label="t('Reason')" :value="currentReceipt.canceledReason ?? '—'" />
+          <ContentList :label="t('Canceled by')" :value="currentReceipt.canceledBy ?? '—'" />
         </div>
       </section>
 
@@ -292,10 +293,10 @@ function confirmDelete() {
             </colgroup>
             <thead>
               <tr>
-                <th class="detail-th">Product</th>
-                <th class="detail-th">SKU</th>
-                <th class="detail-th detail-th--num">Purchase qty</th>
-                <th class="detail-th">Unit</th>
+                <th class="detail-th">{{ t('Product') }}</th>
+                <th class="detail-th">{{ t('SKU') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Purchase qty') }}</th>
+                <th class="detail-th">{{ t('Unit') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -313,20 +314,20 @@ function confirmDelete() {
           </table>
           <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
           <div v-if="loadingMore" class="detail-loading detail-items-loading">
-            <MpSpinner size="sm" /> Loading products…
+            <MpSpinner size="sm" /> {{ t('Loading products…') }}
           </div>
         </div>
         <div class="detail-items-count">
-          <span>Showing {{ visibleItems.length }} of {{ allItems.length }} products</span>
+          <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ allItems.length }} {{ t('products') }}</span>
         </div>
       </section>
 
       <!-- ── Memo + attachment ── -->
       <section class="rcd-notes">
-        <ContentList label="Memo">
+        <ContentList :label="t('Memo')">
           <p class="detail-note-text">{{ detail.memo }}</p>
         </ContentList>
-        <ContentList :label="`Attachment (${detail.attachments.length})`">
+        <ContentList :label="`${t('Attachment')} (${detail.attachments.length})`">
           <div v-if="detail.attachments.length" class="detail-attach-list">
             <a v-for="(a, i) in detail.attachments" :key="i" class="detail-attach" @click.prevent>
               <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -341,30 +342,30 @@ function confirmDelete() {
       </section>
 
       <!-- Last updated -->
-      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ detail.lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
 
       <!-- ── Receiving only (no put-away tasks) ── -->
       <MpTabs v-if="displayedReceivings.length > 0 && linkedPutAways.length === 0" id="rcd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="rcd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
+          <MpTab id="rcd-tab-pr" :value="0">{{ t('Purchase receiving') }} ({{ displayedReceivings.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <h3 class="linked-section-title">{{ t('Purchase receiving tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Date</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Expected qty</th>
-                    <th class="detail-th detail-th--num">Received qty</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Date') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Sku qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Expected qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -383,7 +384,7 @@ function confirmDelete() {
                       <span class="linked-end">
                         <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -397,26 +398,26 @@ function confirmDelete() {
       <!-- ── Receiving + put-away tabs ── -->
       <MpTabs v-else-if="displayedReceivings.length > 0 && linkedPutAways.length > 0" id="rcd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="rcd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
-          <MpTab id="rcd-tab-pa" :value="1">Put-away ({{ linkedPutAways.length }})</MpTab>
+          <MpTab id="rcd-tab-pr" :value="0">{{ t('Purchase receiving') }} ({{ displayedReceivings.length }})</MpTab>
+          <MpTab id="rcd-tab-pa" :value="1">{{ t('Put-away') }} ({{ linkedPutAways.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <h3 class="linked-section-title">{{ t('Purchase receiving tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Date</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Expected qty</th>
-                    <th class="detail-th detail-th--num">Received qty</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Date') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Sku qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Expected qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -435,7 +436,7 @@ function confirmDelete() {
                       <span class="linked-end">
                         <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -444,19 +445,19 @@ function confirmDelete() {
             </div>
           </MpTabPanel>
           <MpTabPanel :value="1">
-            <h3 class="linked-section-title">Put-away tasks</h3>
+            <h3 class="linked-section-title">{{ t('Put-away tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th detail-th--num">Item qty</th>
-                    <th class="detail-th">Destination</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Item qty') }}</th>
+                    <th class="detail-th">{{ t('Destination') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -473,7 +474,7 @@ function confirmDelete() {
                       <span class="linked-end">
                         <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
+                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -488,44 +489,44 @@ function confirmDelete() {
 
     <!-- ── Footer action bar — always at the bottom; border only when content scrolls ── -->
     <div class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="detail-btn detail-btn--secondary">Print PDF</button>
+      <button class="detail-btn detail-btn--secondary">{{ t('Print PDF') }}</button>
 
       <!-- Create purchase receiving — split button; the chevron holds the order-level
            Edit order / Cancel/Close / Delete actions (never a standalone footer button). -->
       <template v-if="canCreateReceivingTask(orderId)">
         <div v-if="canEdit || canCancelAction || isManual" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openPurchaseReceiving">Create purchase receiving</button>
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="openPurchaseReceiving">{{ t('Create purchase receiving') }}</button>
           <MpPopover id="rcd-actions-recv" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+                <MpPopoverListItem v-if="canEdit" @click="goEdit">{{ t('Edit order') }}</MpPopoverListItem>
                 <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">Delete</MpPopoverListItem>
+                <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">Create purchase receiving</button>
+        <button v-else class="detail-btn detail-btn--primary" @click="openPurchaseReceiving">{{ t('Create purchase receiving') }}</button>
       </template>
 
       <!-- No create action left, but the receipt is still editable/cancellable/deletable -->
       <MpPopover v-else-if="canEdit || canCancelAction || isManual" id="rcd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
-            Actions
+            {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem v-if="canEdit" @click="goEdit">Edit order</MpPopoverListItem>
+            <MpPopoverListItem v-if="canEdit" @click="goEdit">{{ t('Edit order') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="canCancelAction" :class="css({ color: 'var(--mp-text-critical)' })" @click="openCloseReceiptModal">{{ cancelActionLabel }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">Delete</MpPopoverListItem>
+            <MpPopoverListItem v-if="isManual" :class="css({ color: 'var(--mp-text-critical)' })" @click="openDeleteModal">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -537,15 +538,15 @@ function confirmDelete() {
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeCancelModal"
     >
       <MpModalContent>
-        <MpModalHeader>{{ isPartialClose ? 'Close receipt?' : 'Cancel receipt?' }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ isPartialClose ? t('Close receipt?') : t('Cancel receipt?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           <template v-if="isPartialClose">Receipt {{ detail?.purchaseNo }} will be closed. Unreceived items will not be processed. This can't be undone.</template>
           <template v-else>Receipt {{ detail?.purchaseNo }} will be cancelled. Its receiving/put-away tasks are cancelled too. This can't be undone.</template>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep receipt</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ isPartialClose ? 'Close receipt' : 'Cancel receipt' }}</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">{{ t('Keep receipt') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ isPartialClose ? t('Close receipt') : t('Cancel receipt') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -558,14 +559,14 @@ function confirmDelete() {
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="closeDeleteModal"
     >
       <MpModalContent>
-        <MpModalHeader>Delete receipt?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ t('Delete receipt?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           Receipt {{ detail?.purchaseNo }} will be permanently deleted. This can't be undone.
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">Keep receipt</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="closeDeleteModal">{{ t('Keep receipt') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>

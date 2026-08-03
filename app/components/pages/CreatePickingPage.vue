@@ -23,6 +23,7 @@ import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
+const { t } = useLocale()
 
 // ─── Pickable orders (open / in progress) ──────────────────────────────────────
 const allPickable = computed<OutgoingOrder[]>(() => pickableOrders())
@@ -173,7 +174,7 @@ const partialPickingAllowed = computed(() =>
 const lockedKeys = computed(() =>
   partialPickingAllowed.value ? new Set<string>() : new Set(pickRows.value.map(g => g.key)),
 )
-const partialPickingLockedMsg = "This warehouse doesn't allow partial picking."
+const partialPickingLockedMsg = t("This warehouse doesn't allow partial picking.")
 function isLocked(key: string) { return lockedKeys.value.has(key) }
 function isSelected(key: string) { return isLocked(key) || !excludedKeys.value.has(key) }
 function toggleLine(key: string) {
@@ -310,7 +311,7 @@ function targetQtyForSku(sku: string): number {
 const serialDrawerOrderQty = ref(0)
 function openSerialDrawer(sku: string) {
   if (!targetQtyForSku(sku)) {
-    toast.notify({ variant: 'error', title: 'Enter qty to pick first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: t('Enter qty to pick first') , maxWidth: 'max-content'})
     return
   }
   serialDrawerSku.value = sku
@@ -573,7 +574,7 @@ async function handleCreate() {
   if (!selectedOrders.value.length) valid = false
   if (!valid) { scrollToFirstError(); return }
   if (!selectedRows.value.length) {
-    toast.notify({ variant: 'error', title: 'You must include at least one SKU to pick', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('You must include at least one SKU to pick'), maxWidth: 'max-content' })
     return
   }
   if (isPartialPick.value) { showPartialConfirm.value = true; return }
@@ -674,10 +675,10 @@ async function doCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? 'Order details' : 'Picking' }}</button>
+          <button class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? t('Order details') : t('Picking') }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New picking list</h1>
+          <h1 class="detail-title">{{ t('New picking list') }}</h1>
         </div>
       </div>
     </header>
@@ -688,31 +689,31 @@ async function doCreate() {
       <!-- Warehouse + Assignee -->
       <div class="pk-section pk-grid">
         <MpFormControl id="pk-warehouse" is-required :is-invalid="warehouseError" :class="css({ gridColumn: 'span 3' })">
-          <MpFormLabel>Warehouse</MpFormLabel>
+          <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
           <MpAutocomplete
             id="pk-warehouse-ac"
             v-model="warehouseId"
             :data="availableWarehouses"
             label-prop="name"
             value-prop="id"
-            placeholder="Select warehouse"
+            :placeholder="t('Select warehouse')"
             is-searchable use-portal is-full-width
             :is-clearable="!isWarehouseLocked"
             :is-disabled="isWarehouseLocked"
             :is-invalid="warehouseError"
           />
-          <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('You must select warehouse') }}</MpFormErrorMessage>
         </MpFormControl>
 
         <MpFormControl id="pk-assignee" is-required :is-invalid="assigneeError" :class="css({ gridColumn: 'span 3' })">
-          <MpFormLabel>Assignee</MpFormLabel>
+          <MpFormLabel>{{ t('Assignee') }}</MpFormLabel>
           <MpAutocomplete
             id="pk-assignee-ac"
             v-model="assigneeId"
             :data="ASSIGNEES"
             label-prop="name"
             value-prop="id"
-            placeholder="Select assignee"
+            :placeholder="t('Select assignee')"
             is-searchable is-clearable use-portal is-full-width
             :is-invalid="assigneeError"
           >
@@ -726,36 +727,36 @@ async function doCreate() {
               </div>
             </template>
           </MpAutocomplete>
-          <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
+          <MpFormErrorMessage>{{ t('You must select assignee') }}</MpFormErrorMessage>
         </MpFormControl>
       </div>
 
       <!-- Picking list — a single list across the selected orders (sales order no.
            is irrelevant to picking; lines are ordered by storage location) -->
       <div v-if="selectedOrders.length" class="pk-sku-section">
-        <h2 class="pk-section-title">Picking list</h2>
-        <p class="pk-section-desc">Items to collect for this picking list. Pick any subset of SKUs and set the quantity to pick for each line.</p>
+        <h2 class="pk-section-title">{{ t('Picking list') }}</h2>
+        <p class="pk-section-desc">{{ t('Items to collect for this picking list. Pick any subset of SKUs and set the quantity to pick for each line.') }}</p>
         <div class="pk-summary">
           <div class="pk-stat">
-            <span class="pk-stat-label">Orders</span>
+            <span class="pk-stat-label">{{ t('Orders') }}</span>
             <span class="pk-stat-val">{{ formatNum(selectedOrders.length) }}</span>
           </div>
           <div class="pk-stat">
-            <span class="pk-stat-label">SKU qty</span>
+            <span class="pk-stat-label">{{ t('SKU qty') }}</span>
             <span class="pk-stat-val">{{ formatNum(totalSkus) }}</span>
           </div>
           <div class="pk-stat">
-            <span class="pk-stat-label">Qty to pick</span>
+            <span class="pk-stat-label">{{ t('Qty to pick') }}</span>
             <span class="pk-stat-val">{{ formatNum(totalToPick) }}</span>
           </div>
         </div>
 
         <div class="pk-filter-bar">
           <div class="detail-loc-toggle">
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">Combined</button>
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">By orders</button>
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">{{ t('Combined') }}</button>
+            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">{{ t('By orders') }}</button>
           </div>
-          <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">Reset</MpButton>
+          <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">{{ t('Reset') }}</MpButton>
         </div>
 
         <section v-if="viewMode === 'combined'" class="pk-items-section" :class="{ 'pk-items-section--bordered': itemsOverflowing }">
@@ -774,13 +775,13 @@ async function doCreate() {
               </colgroup>
               <thead>
                 <tr>
-                  <th class="pk-th">Product</th>
-                  <th class="pk-th">SKU</th>
-                  <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th">Storage location</th>
-                  <th class="pk-th pk-th--num">Order qty</th>
-                  <th v-if="hasPriorPicks" class="pk-th pk-th--num">On other lists</th>
-                  <th class="pk-th pk-th--num">Qty to pick</th>
-                  <th class="pk-th">Unit</th>
+                  <th class="pk-th">{{ t('Product') }}</th>
+                  <th class="pk-th">{{ t('SKU') }}</th>
+                  <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th">{{ t('Storage location') }}</th>
+                  <th class="pk-th pk-th--num">{{ t('Order qty') }}</th>
+                  <th v-if="hasPriorPicks" class="pk-th pk-th--num">{{ t('On other lists') }}</th>
+                  <th class="pk-th pk-th--num">{{ t('Qty to pick') }}</th>
+                  <th class="pk-th">{{ t('Unit') }}</th>
                   <th v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS" class="pk-th pk-th--action"></th>
                   <th class="pk-th pk-th--remove" aria-hidden="true" />
                 </tr>
@@ -801,12 +802,12 @@ async function doCreate() {
                        (their location is managed inside the drawer, per batch/serial unit). -->
                   <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
                     <td v-if="isBatchTrackedSku(row.sku)" class="pk-td">
-                      <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage batch" placement="top" use-portal>
+                      <MpTooltip :id="`tt-loc-${row.sku}`" :label="t('View via Manage batch')" placement="top" use-portal>
                         <span class="pk-loc-text">—</span>
                       </MpTooltip>
                     </td>
                     <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td">
-                      <MpTooltip :id="`tt-loc-${row.sku}`" label="View via Manage serial numbers" placement="top" use-portal>
+                      <MpTooltip :id="`tt-loc-${row.sku}`" :label="t('View via Manage serial numbers')" placement="top" use-portal>
                         <span class="pk-loc-text">—</span>
                       </MpTooltip>
                     </td>
@@ -825,7 +826,7 @@ async function doCreate() {
                       :value="targetQtyForSku(row.sku)"
                       :disabled="!isSelected(row.key) || isLocked(row.key)"
                       :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
-                      :aria-label="`Qty to pick for ${row.product}`"
+                      :aria-label="`${t('Qty to pick for')} ${row.product}`"
                       @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
                       @click.stop
                     />
@@ -836,7 +837,7 @@ async function doCreate() {
                       :value="targetQtyForSku(row.sku)"
                       :disabled="!isSelected(row.key) || isLocked(row.key)"
                       :title="isLocked(row.key) ? partialPickingLockedMsg : undefined"
-                      :aria-label="`Qty to pick for ${row.product}`"
+                      :aria-label="`${t('Qty to pick for')} ${row.product}`"
                       @input="setQty(row.sku, ($event.target as HTMLInputElement).value, stockOf(row.key).cap)"
                       @click.stop
                     />
@@ -857,14 +858,14 @@ async function doCreate() {
                   <!-- Action column: icon button for batch / serial management -->
                   <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
                     <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
-                      <MpTooltip :id="`tt-batch-${row.sku}`" label="Manage batch" placement="top" use-portal>
+                      <MpTooltip :id="`tt-batch-${row.sku}`" :label="t('Manage batch')" placement="top" use-portal>
                         <button class="pk-manage-icon-btn" type="button" @click.stop="openBatchDrawer(row.sku)">
                           <MpIcon name="competencies" size="md" />
                         </button>
                       </MpTooltip>
                     </td>
                     <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--action">
-                      <MpTooltip :id="`tt-serial-${row.sku}`" label="Manage serial numbers" placement="top" use-portal>
+                      <MpTooltip :id="`tt-serial-${row.sku}`" :label="t('Manage serial numbers')" placement="top" use-portal>
                         <button class="pk-manage-icon-btn" type="button" @click.stop="openSerialDrawer(row.sku)">
                           <MpIcon name="competencies" size="md" />
                         </button>
@@ -875,9 +876,9 @@ async function doCreate() {
 
                   <td class="pk-td pk-td--remove">
                     <template v-if="!isSelected(row.key)">
-                      <MpTooltip :id="`pk-rs-${row.key}`" label="Restore" placement="left" use-portal>
+                      <MpTooltip :id="`pk-rs-${row.key}`" :label="t('Restore')" placement="left" use-portal>
                         <MpButton
-                          :aria-label="`Restore ${row.product}`"
+                          :aria-label="`${t('Restore')} ${row.product}`"
                           variant="ghost" left-icon="add"
                           @click="toggleLine(row.key)"
                         />
@@ -886,11 +887,11 @@ async function doCreate() {
                     <template v-else>
                       <MpTooltip
                         :id="`pk-rm-${row.key}`"
-                        :label="isLocked(row.key) ? partialPickingLockedMsg : 'Remove'"
+                        :label="isLocked(row.key) ? partialPickingLockedMsg : t('Remove')"
                         placement="left" use-portal
                       >
                         <MpButton
-                          :aria-label="`Remove ${row.product}`"
+                          :aria-label="`${t('Remove')} ${row.product}`"
                           variant="ghost" left-icon="minus-circular"
                           @click="toggleLine(row.key)"
                         />
@@ -902,10 +903,10 @@ async function doCreate() {
             </table>
             <div ref="itemsSentinelEl" class="pk-items-sentinel" aria-hidden="true" />
             <div v-if="loadingMore" class="pk-loading pk-items-loading">
-              <MpSpinner size="sm" /> Loading SKUs…
+              <MpSpinner size="sm" /> {{ t('Loading SKUs…') }}
             </div>
             <div class="pk-items-count">
-              <span>Showing {{ visibleRows.length }} of {{ pickRows.length }} SKUs</span>
+              <span>{{ t('Showing') }} {{ visibleRows.length }} {{ t('of') }} {{ pickRows.length }} {{ t('SKUs') }}</span>
             </div>
           </div>
         </section>
@@ -926,7 +927,7 @@ async function doCreate() {
                 <MpTooltip
                   v-if="group.isMarketplace"
                   :id="`pk-mkt-${group.order.id}`"
-                  label="Marketplace orders must be picked in full. Items can't be removed."
+                  :label="t('Marketplace orders must be picked in full. Items can\'t be removed.')"
                   placement="top"
                   use-portal
                 >
@@ -947,12 +948,12 @@ async function doCreate() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <th class="pk-th">Product</th>
-                      <th class="pk-th">SKU</th>
-                      <th class="pk-th pk-th--num">Order qty</th>
-                      <th v-if="hasPriorPicks" class="pk-th pk-th--num">On other lists</th>
-                      <th class="pk-th pk-th--num">Qty to pick</th>
-                      <th class="pk-th">Unit</th>
+                      <th class="pk-th">{{ t('Product') }}</th>
+                      <th class="pk-th">{{ t('SKU') }}</th>
+                      <th class="pk-th pk-th--num">{{ t('Order qty') }}</th>
+                      <th v-if="hasPriorPicks" class="pk-th pk-th--num">{{ t('On other lists') }}</th>
+                      <th class="pk-th pk-th--num">{{ t('Qty to pick') }}</th>
+                      <th class="pk-th">{{ t('Unit') }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -983,8 +984,8 @@ async function doCreate() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': itemsOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goBack">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? t('Saving…') : t('Save') }}</MpButton>
     </footer>
   </div>
 
@@ -1021,19 +1022,18 @@ async function doCreate() {
     <MpModalOverlay />
     <MpModalContent>
       <MpModalHeader>
-        <span>Confirm partial pick</span>
+        <span>{{ t('Confirm partial pick') }}</span>
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
         <p style="margin:0;font-size:var(--mp-font-sizes-md);color:var(--mp-text-default)">
-          Total qty to pick (<strong>{{ totalToPick }}</strong>) is less than total order qty
-          (<strong>{{ totalOrderQty }}</strong>). The remaining items will not be picked in this task.
-          Are you sure you want to continue?
+          {{ t('Total qty to pick') }} (<strong>{{ totalToPick }}</strong>) {{ t('is less than total order qty') }}
+          (<strong>{{ totalOrderQty }}</strong>). {{ t('The remaining items will not be picked in this task. Are you sure you want to continue?') }}
         </p>
       </MpModalBody>
       <MpModalFooter>
-        <MpButton variant="ghost" is-rounded @click="showPartialConfirm = false">Cancel</MpButton>
-        <MpButton variant="primary" is-rounded @click="doCreate">Continue</MpButton>
+        <MpButton variant="ghost" is-rounded @click="showPartialConfirm = false">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="doCreate">{{ t('Continue') }}</MpButton>
       </MpModalFooter>
     </MpModalContent>
   </MpModal>

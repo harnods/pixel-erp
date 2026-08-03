@@ -37,6 +37,7 @@ import ErpPagination from './ErpPagination.vue'
 
 const sendAireneMessage = inject<(text: string, context?: string) => void>('sendAireneMessage')
 const slots = useSlots()
+const { t } = useLocale()
 
 export interface TableColumn {
   key: string
@@ -447,7 +448,7 @@ const bulkCountLabel = computed(() => {
                   @change="toggleAll"
                   @click.stop
                 />
-                <span v-if="!col.noHeader" class="th-label">{{ col.label }}</span>
+                <span v-if="!col.noHeader" class="th-label">{{ t(col.label) }}</span>
                 <!-- Optional per-column header extra (e.g. a settings icon) — opt-in via
                      #header-<key>; most columns don't provide it, so nothing renders. -->
                 <slot :name="`header-${col.key}`" />

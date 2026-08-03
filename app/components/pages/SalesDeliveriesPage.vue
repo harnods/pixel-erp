@@ -13,6 +13,7 @@ import { salesDeliveries } from '~/data'
 import type { SalesDelivery } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
+const { t } = useLocale()
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
@@ -62,14 +63,14 @@ watch(billingFilter, () => setPage(1))
 // ─── Filter options ───────────────────────────────────────────────────────────
 // Quick-filter options — NO "All …" entry; clearing (x) resets to show-all.
 const fulfillmentOptions = [
-  { label: 'In transit', value: 'in transit' },
-  { label: 'Direct',     value: 'direct'     },
-  { label: 'Delivered',  value: 'delivered'  },
+  { label: t('In transit'), value: 'in transit' },
+  { label: t('Direct'),     value: 'direct'     },
+  { label: t('Delivered'),  value: 'delivered'  },
 ]
 
 const billingOptions = [
-  { label: 'Unbilled', value: 'unbilled' },
-  { label: 'Invoiced', value: 'invoiced' },
+  { label: t('Unbilled'), value: 'unbilled' },
+  { label: t('Invoiced'), value: 'invoiced' },
 ]
 
 const fulfillmentLabel = computed(
@@ -129,7 +130,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     :has-active-filter="!!search || !!statusFilter || !!billingFilter"
     :search="search"
     has-checkbox
-    :context-label="(row) => `Sales Delivery #${row.number}`"
+    :context-label="(row) => `${t('Sales Delivery')} #${row.number}`"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -147,7 +148,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <MpPopoverTrigger>
             <MpSelect
               id="sd-fulfillment-select"
-              placeholder="Fulfillment status"
+              :placeholder="t('Fulfillment status')"
               :model-value="statusFilter"
               is-clearable
               :class="css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
@@ -176,7 +177,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <MpPopoverTrigger>
             <MpSelect
               id="sd-billing-select"
-              placeholder="Billing status"
+              :placeholder="t('Billing status')"
               :model-value="billingFilter"
               is-clearable
               :class="css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
@@ -202,7 +203,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
         <button class="filter-all-btn">
           <MpIcon name="filter" size="sm" />
-          All filters
+          {{ t('All filters') }}
         </button>
       </div>
 
@@ -210,8 +211,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <div class="filter-right">
         <div class="filter-btn-group">
           <!-- Airene -->
-          <MpTooltip id="tt-airene" label="Ask Airene" placement="bottom" use-portal>
-          <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+          <MpTooltip id="tt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+          <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
               <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -221,8 +222,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <!-- Column settings -->
           <ColumnSettingsMenu id="tt-columns" :items="columnItems" :visibility="columnVisibility" />
           <!-- Export -->
-          <MpTooltip id="tt-export" label="Export" placement="bottom" use-portal>
-          <button class="filter-icon-btn" aria-label="Export">
+          <MpTooltip id="tt-export" :label="t('Export')" placement="bottom" use-portal>
+          <button class="filter-icon-btn" :aria-label="t('Export')">
             <MpIcon name="download" size="md" />
           </button>
           </MpTooltip>
@@ -237,9 +238,9 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             v-model="search"
             class="filter-search-input"
             type="text"
-            placeholder="Search..."
+            :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -255,7 +256,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
     <!-- ── Cell: Number — "View details" on row hover (record has a detail page) ── -->
     <template #cell-number="{ value }">
-      <a class="cell-link cell-text cell-number" @click.stop>Sales Delivery #{{ value }}</a>
+      <a class="cell-link cell-text cell-number" @click.stop>{{ t('Sales Delivery') }} #{{ value }}</a>
     </template>
 
     <!-- ── Cell: Processed in fulfillment — icon-only column (no header), tooltip on hover.
@@ -264,11 +265,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <MpTooltip
         v-if="row.fulfillmentStatus !== 'direct'"
         :id="`tt-fulfillment-${row.id}`"
-        label="Processed in fulfillment"
+        :label="t('Processed in fulfillment')"
         placement="top"
         use-portal
       >
-        <button class="row-truck-btn" aria-label="Processed in fulfillment">
+        <button class="row-truck-btn" :aria-label="t('Processed in fulfillment')">
           <MpIcon name="truck" size="sm" />
         </button>
       </MpTooltip>
@@ -303,13 +304,13 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No sales deliveries</p>
-        <p class="empty-full-desc">Sales deliveries will appear here.</p>
+        <p class="empty-full-title">{{ t('No sales deliveries') }}</p>
+        <p class="empty-full-desc">{{ t('Sales deliveries will appear here.') }}</p>
         <button class="empty-cta">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          New sales delivery
+          {{ t('New sales delivery') }}
         </button>
       </div>
     </template>
@@ -319,7 +320,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <template #actions="{ row }">
       <MpPopover :id="`sd-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" aria-label="More actions">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" />
               <circle cx="12" cy="12" r="2" />
@@ -329,14 +330,14 @@ function hideColumn(key: string) { columnVisibility[key] = false }
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>View details</MpPopoverListItem>
-            <MpPopoverListItem>Create sales invoice</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Create sales invoice') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
-            <MpPopoverListItem>Share via WhatsApp</MpPopoverListItem>
-            <MpPopoverListItem>Share via email</MpPopoverListItem>
-            <MpPopoverListItem>Copy link</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -351,7 +352,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   <div class="preview-fab-wrap">
     <MpPopover id="preview-fab" placement="top-end" use-portal :is-keep-alive="false">
       <MpPopoverTrigger>
-        <button class="preview-fab" aria-label="Preview options">
+        <button class="preview-fab" :aria-label="t('Preview options')">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M2 12C2 12 5 5 12 5C19 5 22 12 22 12C22 12 19 19 12 19C5 19 2 12 2 12Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
@@ -364,13 +365,13 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             :class="css({ color: 'white', _hover: { background: 'transparent' } })"
             @click="previewMode = 'data'"
           >
-            View table with data
+            {{ t('View table with data') }}
           </MpPopoverListItem>
           <MpPopoverListItem
             :class="css({ color: 'white', _hover: { background: 'transparent' } })"
             @click="previewMode = 'empty'"
           >
-            View empty state
+            {{ t('View empty state') }}
           </MpPopoverListItem>
         </MpPopoverList>
       </MpPopoverContent>

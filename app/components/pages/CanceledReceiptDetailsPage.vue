@@ -18,6 +18,7 @@ import { getPutAwayForReceipt } from '~/data/putAwayTasks'
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
+const { t } = useLocale()
 const detail = computed(() => getReceiptDetail(props.orderId))
 const activityOpen = ref(false)
 const activityEntries = computed(() => {
@@ -26,12 +27,12 @@ const activityEntries = computed(() => {
   return [{
     date: d.lastUpdatedAt,
     user: d.lastUpdatedBy,
-    activity: 'Created',
+    activity: t('Created'),
     details: [
-      { label: 'Transaction no.', value: d.purchaseNo },
-      { label: 'Transaction date', value: formatDateLong(d.transactionDate) },
-      { label: 'Vendor', value: d.vendor ?? '—' },
-      { label: 'Warehouse', value: d.warehouseName },
+      { label: t('Transaction no.'), value: d.purchaseNo },
+      { label: t('Transaction date'), value: formatDateLong(d.transactionDate) },
+      { label: t('Vendor'), value: d.vendor ?? '—' },
+      { label: t('Warehouse'), value: d.warehouseName },
     ],
   }]
 })
@@ -161,13 +162,13 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Receipts</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Receipts') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ detail.purchaseNo }}</h1>
           <ErpStatusBadge v-if="receipt" :status="receipt.status" badge-for="additionalInformation" size="md" />
           <MpPopover id="cxd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch transaction">
+              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -176,8 +177,8 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search..." />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -188,7 +189,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                     <span class="detail-jump-item-number">{{ o.purchaseNo }}</span>
                     <span class="detail-jump-item-customer">{{ o.warehouseName }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -203,23 +204,23 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
       <!-- ── Header summary (3 columns) ── -->
       <section class="rcd-summary">
         <div class="content-list-col">
-          <ContentList label="Transaction date" :value="formatDateLong(detail.transactionDate)" />
-          <ContentList label="Transaction no." :value="detail.purchaseNo" />
-          <ContentList label="Vendor" :value="detail.vendor" />
+          <ContentList :label="t('Transaction date')" :value="formatDateLong(detail.transactionDate)" />
+          <ContentList :label="t('Transaction no.')" :value="detail.purchaseNo" />
+          <ContentList :label="t('Vendor')" :value="detail.vendor" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Estimated arrival date" :value="formatDateLong(detail.estimatedArrival)" />
-          <ContentList label="Ship via" :value="detail.shipVia" />
-          <ContentList label="Tracking no." :value="trackingText(detail.trackingNos)" />
-          <ContentList label="Warehouse">
+          <ContentList :label="t('Estimated arrival date')" :value="formatDateLong(detail.estimatedArrival)" />
+          <ContentList :label="t('Ship via')" :value="detail.shipVia" />
+          <ContentList :label="t('Tracking no.')" :value="trackingText(detail.trackingNos)" />
+          <ContentList :label="t('Warehouse')">
             <div class="wh-link-wrap">
               <a class="cell-link" @click.stop="router.push(`/warehouses/${receipt?.warehouseId}`)">{{ detail.warehouseName }}</a>
             </div>
           </ContentList>
         </div>
         <div class="content-list-col">
-          <ContentList label="Canceled date" :value="receipt?.canceledDate ? `${formatDateLong(receipt.canceledDate)}, by ${receipt.canceledBy ?? '—'}` : '—'" />
-          <ContentList label="Reason" :value="receipt?.canceledReason ?? '—'" />
+          <ContentList :label="t('Canceled date')" :value="receipt?.canceledDate ? `${formatDateLong(receipt.canceledDate)}, ${t('by')} ${receipt.canceledBy ?? '—'}` : '—'" />
+          <ContentList :label="t('Reason')" :value="receipt?.canceledReason ?? '—'" />
         </div>
       </section>
 
@@ -235,10 +236,10 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
             </colgroup>
             <thead>
               <tr>
-                <th class="detail-th">Product</th>
-                <th class="detail-th">SKU</th>
-                <th class="detail-th detail-th--num">Purchase qty</th>
-                <th class="detail-th">Unit</th>
+                <th class="detail-th">{{ t('Product') }}</th>
+                <th class="detail-th">{{ t('SKU') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Purchase qty') }}</th>
+                <th class="detail-th">{{ t('Unit') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -256,20 +257,20 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
           </table>
           <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
           <div v-if="loadingMore" class="detail-loading detail-items-loading">
-            <MpSpinner size="sm" /> Loading products…
+            <MpSpinner size="sm" /> {{ t('Loading products…') }}
           </div>
         </div>
         <div class="detail-items-count">
-          <span>Showing {{ visibleItems.length }} of {{ allItems.length }} products</span>
+          <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ allItems.length }} {{ t('products') }}</span>
         </div>
       </section>
 
       <!-- ── Memo + attachment ── -->
       <section class="rcd-notes">
-        <ContentList label="Memo">
+        <ContentList :label="t('Memo')">
           <p class="detail-note-text">{{ detail.memo }}</p>
         </ContentList>
-        <ContentList :label="`Attachment (${detail.attachments.length})`">
+        <ContentList :label="`${t('Attachment')} (${detail.attachments.length})`">
           <div v-if="detail.attachments.length" class="detail-attach-list">
             <a v-for="(a, i) in detail.attachments" :key="i" class="detail-attach" @click.prevent>
               <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -284,30 +285,30 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
       </section>
 
       <!-- Last updated -->
-      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ detail.lastUpdatedBy }} on {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ detail.lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(detail.lastUpdatedAt) }}</a>
 
       <!-- ── Receiving only (no put-away tasks) ── -->
       <MpTabs v-if="displayedReceivings.length > 0 && linkedPutAways.length === 0" id="cxd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="cxd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
+          <MpTab id="cxd-tab-pr" :value="0">{{ t('Purchase receiving') }} ({{ displayedReceivings.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <h3 class="linked-section-title">{{ t('Purchase receiving tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Date</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Expected qty</th>
-                    <th class="detail-th detail-th--num">Received qty</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Date') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Sku qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Expected qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -326,7 +327,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                       <span class="linked-end">
                         <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -340,26 +341,26 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
       <!-- ── Receiving + put-away tabs ── -->
       <MpTabs v-else-if="displayedReceivings.length > 0 && linkedPutAways.length > 0" id="cxd-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="cxd-tab-pr" :value="0">Purchase receiving ({{ displayedReceivings.length }})</MpTab>
-          <MpTab id="cxd-tab-pa" :value="1">Put-away ({{ linkedPutAways.length }})</MpTab>
+          <MpTab id="cxd-tab-pr" :value="0">{{ t('Purchase receiving') }} ({{ displayedReceivings.length }})</MpTab>
+          <MpTab id="cxd-tab-pa" :value="1">{{ t('Put-away') }} ({{ linkedPutAways.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <h3 class="linked-section-title">{{ t('Purchase receiving tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup><col /><col /><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Date</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Sku qty</th>
-                    <th class="detail-th detail-th--num">Expected qty</th>
-                    <th class="detail-th detail-th--num">Received qty</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Date') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Sku qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Expected qty') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -378,7 +379,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                       <span class="linked-end">
                         <span v-if="pr.endDate">{{ formatDateTime(pr.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} days</span>
+                        <span v-if="agingDays(pr.startDate, pr.endDate) > 1" class="linked-aging">{{ agingDays(pr.startDate, pr.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -387,19 +388,19 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
             </div>
           </MpTabPanel>
           <MpTabPanel :value="1">
-            <h3 class="linked-section-title">Put-away tasks</h3>
+            <h3 class="linked-section-title">{{ t('Put-away tasks') }}</h3>
             <div class="detail-linked-wrap">
               <table class="detail-linked">
                 <colgroup><col /><col /><col /><col /><col /><col /><col /></colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th detail-th--num">Item qty</th>
-                    <th class="detail-th">Destination</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th detail-th--num">{{ t('Item qty') }}</th>
+                    <th class="detail-th">{{ t('Destination') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -416,7 +417,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
                       <span class="linked-end">
                         <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} days</span>
+                        <span v-if="agingDays(pa.startDate, pa.endDate) > 1" class="linked-aging">{{ agingDays(pa.startDate, pa.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -434,7 +435,7 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
       <MpPopover id="cxd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--secondary">
-            Print
+            {{ t('Print') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -442,8 +443,8 @@ function goBack() { router.push({ path: '/inbound-delivery', query: { tab: 'Rece
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Print PDF</MpPopoverListItem>
-            <MpPopoverListItem>Print dot matrix</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+            <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>

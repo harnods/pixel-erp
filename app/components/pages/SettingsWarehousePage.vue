@@ -13,6 +13,8 @@ import {
 
 // ─── Persist ─────────────────────────────────────────────────────────────────
 
+const { t } = useLocale()
+
 function loadSettings(): WarehouseSettings { return getWarehouseSettings() }
 function persistSettings(v: WarehouseSettings): void { saveWarehouseSettings(v) }
 
@@ -79,7 +81,7 @@ async function saveEdit() {
   persistSettings({ ...committed })
   isSaving.value = false
   isEditing.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse settings saved', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Warehouse settings saved'), maxWidth: 'max-content' })
 }
 </script>
 
@@ -89,8 +91,8 @@ async function saveEdit() {
     <section class="ws-section">
       <div class="ws-section-header">
         <div class="ws-section-meta">
-          <h2 class="ws-section-title">Settings</h2>
-          <p class="ws-section-desc">Configure global warehouse rules for storage and outbound fulfillment.</p>
+          <h2 class="ws-section-title">{{ t('Settings') }}</h2>
+          <p class="ws-section-desc">{{ t('Configure global warehouse rules for storage and outbound fulfillment.') }}</p>
         </div>
         <button
           v-if="!isEditing"
@@ -98,36 +100,35 @@ async function saveEdit() {
           @click="startEdit"
         >
           <MpIcon name="edit" size="sm" />
-          Edit
+          {{ t('Edit') }}
         </button>
       </div>
 
       <div class="ws-toggle-list">
 
-        <h3 class="ws-subsection-title">Storage</h3>
+        <h3 class="ws-subsection-title">{{ t('Storage') }}</h3>
 
         <div class="ws-toggle-row">
           <div class="ws-toggle-info">
-            <span class="ws-toggle-title">Multi-location storage</span>
-            <span class="ws-toggle-desc">Allow a single product to be stored across multiple locations within the same warehouse.</span>
+            <span class="ws-toggle-title">{{ t('Multi-location storage') }}</span>
+            <span class="ws-toggle-desc">{{ t('Allow a single product to be stored across multiple locations within the same warehouse.') }}</span>
           </div>
           <MpToggle
             v-model:is-checked="draft.multiLocationStorage"
             :is-disabled="!isEditing"
-            aria-label="Multi-location storage"
+            :aria-label="t('Multi-location storage')"
           />
         </div>
 
-        <h3 class="ws-subsection-title ws-subsection-title--spaced">Outbound delivery</h3>
+        <h3 class="ws-subsection-title ws-subsection-title--spaced">{{ t('Outbound delivery') }}</h3>
         <p class="ws-subsection-desc">
-          WMS auto-selects a batch/serial at outbound task creation using the rule below, only
-          when the source doesn't already supply one. Supplied details are always honored as-is.
+          {{ t("WMS auto-selects a batch/serial at outbound task creation using the rule below, only when the source doesn't already supply one. Supplied details are always honored as-is.") }}
         </p>
 
         <div class="ws-toggle-row ws-toggle-row--rule">
           <div class="ws-toggle-info">
-            <span class="ws-toggle-title">Batch selection rule</span>
-            <span class="ws-toggle-desc">Falls back to batch created date (earliest first) when FEFO is selected but a batch has no expiry date.</span>
+            <span class="ws-toggle-title">{{ t('Batch selection rule') }}</span>
+            <span class="ws-toggle-desc">{{ t('Falls back to batch created date (earliest first) when FEFO is selected but a batch has no expiry date.') }}</span>
           </div>
           <MpAutocomplete
             v-if="isEditing"
@@ -144,8 +145,8 @@ async function saveEdit() {
 
         <div class="ws-toggle-row ws-toggle-row--rule">
           <div class="ws-toggle-info">
-            <span class="ws-toggle-title">Serial number selection rule</span>
-            <span class="ws-toggle-desc">Serial numbers have no expiry date, so FEFO doesn't apply. Pick a picking order instead.</span>
+            <span class="ws-toggle-title">{{ t('Serial number selection rule') }}</span>
+            <span class="ws-toggle-desc">{{ t("Serial numbers have no expiry date, so FEFO doesn't apply. Pick a picking order instead.") }}</span>
           </div>
           <MpAutocomplete
             v-if="isEditing"
@@ -160,12 +161,12 @@ async function saveEdit() {
           <span v-else class="ws-rule-value">{{ serialRuleLabel }}</span>
         </div>
 
-        <h3 class="ws-subsection-title ws-subsection-title--spaced">Print barcode</h3>
+        <h3 class="ws-subsection-title ws-subsection-title--spaced">{{ t('Print barcode') }}</h3>
 
         <div class="ws-toggle-row ws-toggle-row--rule">
           <div class="ws-toggle-info">
-            <span class="ws-toggle-title">Barcode format</span>
-            <span class="ws-toggle-desc">Symbology used when printing labels for SKUs, batches, serial numbers, and storage bins.</span>
+            <span class="ws-toggle-title">{{ t('Barcode format') }}</span>
+            <span class="ws-toggle-desc">{{ t('Symbology used when printing labels for SKUs, batches, serial numbers, and storage bins.') }}</span>
           </div>
           <MpAutocomplete
             v-if="isEditing"
@@ -183,9 +184,9 @@ async function saveEdit() {
       </div>
 
       <div v-if="isEditing" class="ws-action-bar">
-        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel">Cancel</button>
+        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel">{{ t('Cancel') }}</button>
         <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="requestSave">
-          {{ isSaving ? 'Saving…' : 'Save changes' }}
+          {{ isSaving ? t('Saving…') : t('Save changes') }}
         </button>
       </div>
     </section>
@@ -201,15 +202,15 @@ async function saveEdit() {
     >
       <MpModalContent>
         <MpModalHeader>
-          Discard unsaved changes?
+          {{ t('Discard unsaved changes?') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
-          <p class="ws-dialog-body">Your changes will not be saved.</p>
+          <p class="ws-dialog-body">{{ t('Your changes will not be saved.') }}</p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">Keep editing</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit">Discard</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">{{ t('Keep editing') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit">{{ t('Discard') }}</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -226,18 +227,17 @@ async function saveEdit() {
     >
       <MpModalContent>
         <MpModalHeader>
-          Apply new selection rule?
+          {{ t('Apply new selection rule?') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
           <p class="ws-dialog-body">
-            This only applies to orders created from now on. Orders that already reserved a
-            batch/serial keep their original pick — they won't be recalculated.
+            {{ t("This only applies to orders created from now on. Orders that already reserved a batch/serial keep their original pick — they won't be recalculated.") }}
           </p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">Keep editing</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">Save changes</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">{{ t('Keep editing') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">{{ t('Save changes') }}</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />

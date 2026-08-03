@@ -29,6 +29,7 @@ import { formatDateTimeLong } from '~/utils/date'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const warehouseId = computed(() => props.orderId.split('::')[0]!)
 const locId = computed(() => props.orderId.split('::')[1]!)
@@ -86,16 +87,16 @@ const totalProductsText = computed(() => {
   const n = node.value
   if (!n) return '—'
   return n.children.length
-    ? `${fmt(n.skuQty)} SKU across all sub-locations`
+    ? `${fmt(n.skuQty)} ${t('SKU across all sub-locations')}`
     : `${fmt(locStock.value.length)} SKU`
 })
 
 const levelNo = computed(() => (node.value ? STORAGE_LEVEL_KEYS.indexOf(node.value.level) + 1 : 0))
-const levelText = computed(() => (node.value ? `Level ${levelNo.value} - ${levelLabel(node.value.level)}` : '—'))
+const levelText = computed(() => (node.value ? `${t('Level')} ${levelNo.value} - ${levelLabel(node.value.level)}` : '—'))
 const typeDesc = computed(() =>
   node.value?.type === 'Storage'
-    ? 'Stock can be stored and tracked at this location.'
-    : 'For grouping only. Stock cannot be stored here directly.',
+    ? t('Stock can be stored and tracked at this location.')
+    : t('For grouping only. Stock cannot be stored here directly.'),
 )
 const lu = computed(() => lastUpdatedFor(`loc-${locId.value}`))
 
@@ -108,11 +109,11 @@ const activityEntries = computed<ActivityEntry[]>(() => {
   return [{
     date: lu.value.at,
     user: lu.value.by,
-    activity: 'Created',
+    activity: t('Created'),
     details: [
-      { label: 'Location name', value: n.name },
-      { label: 'Level', value: levelText.value },
-      { label: 'Location type', value: n.type },
+      { label: t('Location name'), value: n.name },
+      { label: t('Level'), value: levelText.value },
+      { label: t('Location type'), value: n.type },
     ],
   }]
 })
@@ -132,7 +133,7 @@ function confirmDeleteLocation() {
   if (node.value) {
     const res = deleteLocationSafe(warehouseId.value, node.value.id)
     if (!res.ok) {
-      toast.notify({ variant: 'error', title: "This location still holds stock and can't be deleted", maxWidth: 'max-content' })
+      toast.notify({ variant: 'error', title: t("This location still holds stock and can't be deleted"), maxWidth: 'max-content' })
       deleteConfirmOpen.value = false
       return
     }
@@ -148,9 +149,9 @@ function confirmDeleteLocation() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <div class="sld-crumbs">
-          <button class="detail-breadcrumb" @click="goAllWarehouses">All warehouses</button>
+          <button class="detail-breadcrumb" @click="goAllWarehouses">{{ t('All warehouses') }}</button>
           <span class="sld-crumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goWarehouse">{{ warehouse?.name ?? 'Warehouse' }}</button>
+          <button class="detail-breadcrumb" @click="goWarehouse">{{ warehouse?.name ?? t('Warehouse') }}</button>
         </div>
         <h1 class="detail-title">{{ node.name }}</h1>
       </div>
@@ -158,7 +159,7 @@ function confirmDeleteLocation() {
       <MpPopover id="sld-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
           <button class="detail-btn detail-btn--primary">
-            Actions
+            {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -166,10 +167,10 @@ function confirmDeleteLocation() {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="editOpen = true">Edit location</MpPopoverListItem>
-            <MpPopoverListItem v-if="isStorage" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
+            <MpPopoverListItem @click="editOpen = true">{{ t('Edit location') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="isStorage" @click="openPrintBarcode">{{ t('Print barcode') }}</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="deleteConfirmOpen = true">
-              Delete location
+              {{ t('Delete location') }}
             </MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -179,22 +180,22 @@ function confirmDeleteLocation() {
     <div class="detail-stage">
       <!-- Location info — horizontal label/value rows (label left, value right) -->
       <section class="sld-block">
-        <h2 class="sld-section-title">Location info</h2>
+        <h2 class="sld-section-title">{{ t('Location info') }}</h2>
         <dl class="sld-info">
           <div class="sld-info-row">
-            <dt class="sld-info-label">Location name</dt>
+            <dt class="sld-info-label">{{ t('Location name') }}</dt>
             <dd class="sld-info-value">{{ node.name }}</dd>
           </div>
           <div v-if="isStorage" class="sld-info-row">
-            <dt class="sld-info-label">Barcode</dt>
+            <dt class="sld-info-label">{{ t('Barcode') }}</dt>
             <dd class="sld-info-value">{{ locationBarcode }}</dd>
           </div>
           <div class="sld-info-row">
-            <dt class="sld-info-label">Level</dt>
+            <dt class="sld-info-label">{{ t('Level') }}</dt>
             <dd class="sld-info-value">{{ levelText }}</dd>
           </div>
           <div class="sld-info-row">
-            <dt class="sld-info-label">Path</dt>
+            <dt class="sld-info-label">{{ t('Path') }}</dt>
             <dd class="sld-info-value">
               <span class="sld-path">
                 <template v-for="(p, i) in path" :key="p.id">
@@ -205,27 +206,27 @@ function confirmDeleteLocation() {
             </dd>
           </div>
           <div class="sld-info-row">
-            <dt class="sld-info-label">Location type</dt>
+            <dt class="sld-info-label">{{ t('Location type') }}</dt>
             <dd class="sld-info-value">
               <span>{{ node.type }}</span>
               <span class="sld-type-desc">{{ typeDesc }}</span>
             </dd>
           </div>
           <div v-if="node.description" class="sld-info-row">
-            <dt class="sld-info-label">Description</dt>
+            <dt class="sld-info-label">{{ t('Description') }}</dt>
             <dd class="sld-info-value sld-info-value--desc">{{ node.description }}</dd>
           </div>
           <div class="sld-info-row">
-            <dt class="sld-info-label">Sub-locations</dt>
+            <dt class="sld-info-label">{{ t('Sub-locations') }}</dt>
             <dd class="sld-info-value">{{ fmt(subLocationCount) }}</dd>
           </div>
           <div class="sld-info-row">
-            <dt class="sld-info-label">Total products</dt>
+            <dt class="sld-info-label">{{ t('Total products') }}</dt>
             <dd class="sld-info-value">{{ totalProductsText }}</dd>
           </div>
         </dl>
         <a class="sld-lastupdated" @click.prevent="activityOpen = true">
-          Last updated by {{ lu.by }} on {{ formatDateTimeLong(lu.at) }}
+          {{ t('Last updated by') }} {{ lu.by }} {{ t('on') }} {{ formatDateTimeLong(lu.at) }}
         </a>
       </section>
 
@@ -236,7 +237,7 @@ function confirmDeleteLocation() {
         :stock="locStock"
         :warehouse-id="warehouseId"
         :subject="node.name"
-        extra-label="Storage location"
+        :extra-label="t('Storage location')"
         :exclude-columns="['minStock', 'locations', 'location']"
       >
         <template v-if="hasChildren" #extra>
@@ -245,7 +246,7 @@ function confirmDeleteLocation() {
       </StockTables>
 
       <section v-else class="sld-block">
-        <h2 class="sld-section-title">Sub-locations</h2>
+        <h2 class="sld-section-title">{{ t('Sub-locations') }}</h2>
         <StorageLocationTree :warehouse-id="warehouseId" :parent-id="node.id" />
       </section>
     </div>
@@ -267,7 +268,7 @@ function confirmDeleteLocation() {
       :open="barcodePreviewOpen"
       :doc="barcodePreviewDoc"
       :filename="barcodePreviewFilename"
-      title="Barcode preview"
+      :title="t('Barcode preview')"
       @close="barcodePreviewOpen = false"
     />
 
@@ -293,21 +294,21 @@ function confirmDeleteLocation() {
     >
       <MpModalContent>
         <MpModalHeader>
-          Delete location?
+          {{ t('Delete location?') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
           <template v-if="hasChildren">
-            Deleting <strong>{{ node.name }}</strong> also removes all of its sub-locations. This can't be undone.
+            {{ t('Deleting') }} <strong>{{ node.name }}</strong> {{ t("also removes all of its sub-locations. This can't be undone.") }}
           </template>
           <template v-else>
-            Delete <strong>{{ node.name }}</strong>? This can't be undone.
+            {{ t('Delete') }} <strong>{{ node.name }}</strong>? {{ t("This can't be undone.") }}
           </template>
         </MpModalBody>
         <MpModalFooter>
           <div class="sld-modal-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteConfirmOpen = false">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDeleteLocation">Delete</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteConfirmOpen = false">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDeleteLocation">{{ t('Delete') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -316,8 +317,8 @@ function confirmDeleteLocation() {
   </div>
 
   <div v-else class="sld-not-found">
-    <p>Storage location not found.</p>
-    <button class="detail-breadcrumb" @click="goWarehouse">Back</button>
+    <p>{{ t('Storage location not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goWarehouse">{{ t('Back') }}</button>
   </div>
 </template>
 

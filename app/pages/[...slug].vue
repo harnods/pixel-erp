@@ -32,6 +32,7 @@ import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuar
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 
 const { pageTitle, currentPageKey } = useNavigation()
+const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
 
@@ -474,7 +475,7 @@ const TAB_LABELS: Record<string, string> = {
   'Ready to ship': 'Shipping',
   'Shipments': 'Shipping document',
 }
-function tabLabel(tab: string): string { return TAB_LABELS[tab] ?? tab }
+function tabLabel(tab: string): string { return t(TAB_LABELS[tab] ?? tab) }
 
 const activeTab = ref('')
 watch([currentPageKey, () => route.query.tab, detailMatch], () => {
@@ -930,10 +931,10 @@ function startResize(e: MouseEvent) {
 
       <template v-else>
       <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
-        <h1 class="page-title-text">{{ pageTitle }}</h1>
+        <h1 class="page-title-text">{{ t(pageTitle) }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
-            Import
+            {{ t('Import') }}
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -947,7 +948,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Sales orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -958,7 +959,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Sales quotes'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -969,7 +970,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -980,13 +981,13 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Warehouses'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/warehouses/import')">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/warehouses/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            New warehouse
+            {{ t('New warehouse') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
@@ -1007,7 +1008,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Product list'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary page-import-btn">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/product-list/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1022,18 +1023,18 @@ function startResize(e: MouseEvent) {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              New put-away
+              {{ t('New put-away') }}
             </button>
           </template>
           <template v-else>
             <button class="btn-enterprise btn-enterprise--secondary">
-              Import
+              {{ t('Import') }}
             </button>
             <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/inbound-delivery/new')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              New receipt
+              {{ t('New receipt') }}
             </button>
           </template>
         </div>
@@ -1042,7 +1043,7 @@ function startResize(e: MouseEvent) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            New delivery order
+            {{ t('New delivery order') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Outbound delivery' && activeTab === 'Ready to ship'" class="page-title-actions">
@@ -1050,7 +1051,7 @@ function startResize(e: MouseEvent) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            New shipment
+            {{ t('New shipment') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">
@@ -1061,7 +1062,7 @@ function startResize(e: MouseEvent) {
               :class="{ 'btn-enterprise--active': importDropdownOpen }"
               @click.stop="importDropdownOpen = !importDropdownOpen"
             >
-              Import
+              {{ t('Import') }}
               <svg
                 width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
                 class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
@@ -1075,7 +1076,7 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <MpButton variant="ghost" class="import-item">Import from spreadsheet</MpButton>
+                <MpButton variant="ghost" class="import-item">{{ t('Import from spreadsheet') }}</MpButton>
                 <MpButton variant="ghost" class="import-item import-item--ai">
                   <span>Upload bills</span>
                   <span class="ai-badge">
@@ -1120,7 +1121,7 @@ function startResize(e: MouseEvent) {
               :class="{ 'btn-enterprise--active': importDropdownOpen }"
               @click.stop="importDropdownOpen = !importDropdownOpen"
             >
-              Import
+              {{ t('Import') }}
               <svg
                 width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
                 class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
@@ -1134,7 +1135,7 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <MpButton variant="ghost" class="import-item">Import from spreadsheet</MpButton>
+                <MpButton variant="ghost" class="import-item">{{ t('Import from spreadsheet') }}</MpButton>
                 <MpButton variant="ghost" class="import-item import-item--ai">
                   <span>Upload bills</span>
                   <span class="ai-badge">
@@ -1170,7 +1171,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="showNewPurchaseOrder" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1181,17 +1182,17 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="showNewWarehouseTransfer" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newWarehouseTransfer">
             <MpIcon name="add" size="md" color="icon.inverse" />
-            New warehouse transfer
+            {{ t('New warehouse transfer') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cycle counts' && activeTab === 'Count task'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/cycle-counts/new')">
             <MpIcon name="add" size="md" color="icon.inverse" />
-            New count task
+            {{ t('New count task') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock counts'" class="page-title-actions">
@@ -1219,7 +1220,7 @@ function startResize(e: MouseEvent) {
         <div v-else-if="currentPageKey === 'Stock inout'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockInOut">
             <MpIcon name="add" size="md" color="icon.inverse" />
-            New stock in/out
+            {{ t('New stock in/out') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock adjustments'" class="page-title-actions">
