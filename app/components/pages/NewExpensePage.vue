@@ -292,7 +292,7 @@ const dropzoneError = ref('')
 function validateDropzoneFile(file: File): string {
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
   if (!DROPZONE_ACCEPTED_TYPES.includes(file.type) && !DROPZONE_ACCEPTED_EXTENSIONS.includes(ext)) {
-    return 'File type not supported. Please upload a PDF, PNG, or JPG file.'
+    return 'File format not supported. Upload a PDF, PNG, or JPG file'
   }
   if (file.size > DROPZONE_MAX_SIZE) {
     return 'File size exceeds the 10 MB limit.'
@@ -315,7 +315,7 @@ function ingestFile(file: File) {
 function onDropzoneFileChange(files: FileList | null) {
   if (!files || files.length === 0) return
   if (files.length > 1) {
-    dropzoneError.value = 'Please upload only 1 file at a time.'
+    dropzoneError.value = 'Upload only one file at a time'
     return
   }
   const error = validateDropzoneFile(files[0])
@@ -536,13 +536,13 @@ function handleSave(mode: 'close' | 'new') {
           <template #idle="{ handleClickInput }">
             <img src="/illustrations/receipt-dropzone.png" alt="" class="ex-dropzone-thumb-img" />
             <p class="ex-dropzone-title">
-              Drop your receipt file here or
-              <MpTextlink id="ne-dropzone-browse" as="a" class="ex-dropzone-browse" @click.stop.prevent="handleClickInput">browse</MpTextlink>
+              Drop your file here or
+              <MpTextlink id="ne-dropzone-browse" as="a" class="ex-dropzone-browse" @click.stop.prevent="handleClickInput">choose</MpTextlink>
             </p>
             <p class="ex-dropzone-desc">
-              This feature will reduce your monthly AI token usage.
-              Supported formats: PDF, PNG and JPG.
-              Maximum file size 10 MB.
+              Airene will read your file and fill in the details automatically.
+              Supported formats: PDF, PNG, JPG.
+              Maximum file size: 10 MB.
             </p>
           </template>
           <template #loading>
@@ -622,14 +622,14 @@ function handleSave(mode: 'close' | 'new') {
                 @update:model-value="transactionDateError = false"
               />
             </div>
-            <MpFormErrorMessage>Please select a transaction date</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select transaction date</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="ex-transno" is-required>
             <div class="ex-label-row">
               <MpFormLabel>Transaction no.</MpFormLabel>
               <span class="ex-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
             </div>
-            <MpInput id="ex-transno-input" v-model="transactionNo" placeholder="[Auto]" is-full-width is-disabled />
+            <MpInput id="ex-transno-input" v-model="transactionNo" placeholder="Auto" is-full-width is-disabled />
           </MpFormControl>
           <!-- Due date — only relevant while the bill is still unpaid -->
           <MpFormControl v-if="!iHavePaid" id="ex-duedate" is-required :is-invalid="dueDateError">
@@ -640,7 +640,7 @@ function handleSave(mode: 'close' | 'new') {
                 @update:model-value="dueDateError = false"
               />
             </div>
-            <MpFormErrorMessage>Please select a due date</MpFormErrorMessage>
+            <MpFormErrorMessage>You must select due date</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="ex-refno">
             <MpFormLabel>Reference no.</MpFormLabel>
@@ -791,13 +791,13 @@ function handleSave(mode: 'close' | 'new') {
                   accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
                   is-multiple is-full-width
                   placeholder="or drag and drop here"
-                  button-text="Browse file"
+                  button-text="Choose file"
                   @change="onFormFileChange"
                   @dragover.prevent="formDragOver = true"
                   @dragleave.prevent="formDragOver = false"
                   @drop.prevent="onFormFileDrop"
                 />
-                <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
+                <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 5 files per transaction</p>
                 <MpUploadList
                   v-for="f in formAttachedFiles" :key="f.name"
                   :id="`ex-attachment-file-${f.name}`"
@@ -828,7 +828,7 @@ function handleSave(mode: 'close' | 'new') {
 
             <div class="ex-withholding-check">
               <MpCheckbox id="ex-less-wht" :is-checked="lessWithholding" @change="lessWithholding = !lessWithholding" />
-              <span>Less: Withholding</span>
+              <span>Less: Withholding tax</span>
             </div>
 
             <!-- Withholding detail rows — only when checked -->
@@ -996,7 +996,7 @@ function handleSave(mode: 'close' | 'new') {
         <footer class="ex-footer">
           <button class="btn-enterprise btn-enterprise--ghost" @click="goExpenses">Cancel</button>
           <button class="btn-enterprise btn-enterprise--secondary" @click="handleSave('close')">Save &amp; close</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="handleSave('new')">Save &amp; new</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="handleSave('new')">Save &amp; create another</button>
         </footer>
       </div>
     </div>
