@@ -10,7 +10,7 @@
   <MpPopover
     id="header-user-menu"
     placement="bottom-end"
-    trigger="hover"
+    trigger="click"
     use-portal
     is-close-on-escape
     v-slot="{ onClosePopover }"
@@ -66,9 +66,10 @@
             <span class="user-menu__label">Switch to WMS</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
-          <button type="button" class="user-menu__row">
+          <button type="button" class="user-menu__row" @click="view = 'language'">
             <span class="user-menu__label">Language</span>
-            <span class="user-menu__value">English</span>
+            <span class="user-menu__value">{{ language }}</span>
+            <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
           <button type="button" class="user-menu__row">
             <span class="user-menu__label">Sign out</span>
@@ -103,8 +104,41 @@
         </a>
       </template>
 
+      <!-- ── Change language ───────────────────────────────── -->
+      <template v-else-if="view === 'language'">
+        <div class="user-menu__subhead">
+          <button
+            type="button"
+            class="user-menu__back"
+            aria-label="Back"
+            @click="view = 'main'"
+          >
+            <MpIcon name="chevrons-left" size="md" color="icon.default" />
+          </button>
+          <span class="user-menu__subtitle">Change language</span>
+        </div>
+
+        <nav class="user-menu__group">
+          <button
+            v-for="lang in languages"
+            :key="lang"
+            type="button"
+            class="user-menu__row"
+            @click="selectLanguage(lang)"
+          >
+            <span class="user-menu__label">{{ lang }}</span>
+            <MpIcon
+              v-if="lang === language"
+              name="check"
+              size="md"
+              color="icon.brand"
+            />
+          </button>
+        </nav>
+      </template>
+
       <!-- ── Switch to WMS: select scenario ────────────────── -->
-      <template v-else>
+      <template v-else-if="view === 'wms'">
         <div class="user-menu__subhead">
           <button
             type="button"
@@ -166,14 +200,20 @@ const primaryItems = [
 ] as const;
 
 // Which panel of the popover is showing: the account menu, or the WMS scenario picker.
-const view = ref<"main" | "wms">("main");
+const view = ref<"main" | "wms" | "language">("main");
 
-// Reset to the main view only on a GENUINE close. A hover popover does a transient
-// close→reopen when you click inside it (e.g. tapping "Switch to WMS"), which would
-// otherwise snap the sub-view straight back to main before you can pick a scenario.
-// Debounce: the immediate reopen cancels the pending reset, so the wms view sticks;
-// a real close (cursor left, stays gone) resets after the delay. Same pattern as
-// ErpQuickCreateMenu.
+// Language switcher (prototype — swaps the displayed language only).
+const languages = ["English", "Bahasa Indonesia"] as const;
+const language = ref<(typeof languages)[number]>("English");
+function selectLanguage(lang: (typeof languages)[number]) {
+  language.value = lang;
+  view.value = "main";
+}
+
+// Reset to the main view when the popover closes, so reopening always starts on the
+// account menu. A click popover stays open while you interact (unlike hover, which
+// closed the moment a shorter sub-view shrank out from under the cursor) — the short
+// debounce just guards against any transient close→reopen from the portal.
 let resetTimer: ReturnType<typeof setTimeout> | null = null;
 function onPopoverOpen() {
   if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
