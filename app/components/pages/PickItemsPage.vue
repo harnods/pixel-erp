@@ -523,7 +523,14 @@ function handleScan(rawValue: string) {
     notifyScanError('Scan a bin first before scanning SKU numbers')
     return
   }
+  // Attribute this unit to the bin the operator is physically at (active bin), so
+  // the row shows where it was ACTUALLY picked from — not the SKU's static primary bin.
+  const bin = activeBin.value
   draftQty.value = { ...draftQty.value, [item.key]: (draftQty.value[item.key] ?? 0) + 1 }
+  plainScanBins.value = {
+    ...plainScanBins.value,
+    [item.key]: { ...(plainScanBins.value[item.key] ?? {}), [bin]: (plainScanBins.value[item.key]?.[bin] ?? 0) + 1 },
+  }
   if (showQtyErrors.value) showQtyErrors.value = false
   if (finishError.value) finishError.value = ''
   playScanSuccessSound()
@@ -603,11 +610,17 @@ const startDateLabel = computed(() => formatDateTimeLong(task.value?.startDate))
 
 // ── Draft picked qty (keyed by line key) ──────────────────────────────────────
 const draftQty = ref<Record<string, number>>({})
+// Plain (untracked) SKUs carry no per-unit bin data, so each plain pick is
+// attributed to the bin the operator actually scanned (the active bin) and shown
+// in place of the SKU's static primary bin. Session-only — a plain pick persists
+// as a bare qty (no bin), so this is a display aid, cleared on seed/reset.
+const plainScanBins = ref<Record<string, Record<string, number>>>({}) // lineKey → bin → qty
 const search = ref('')
 function seedDraftQty() {
   const map: Record<string, number> = {}
   for (const it of lineItems.value) map[it.key] = it.pickedQty
   draftQty.value = map
+  plainScanBins.value = {}
 }
 watch([() => props.orderId, lineItems], () => {
   seedDraftQty()
@@ -789,8 +802,46 @@ function onQtyInput(key: string, expected: number, e: Event) {
   if (!Number.isFinite(n) || n < 0) n = 0
   if (n > expected) n = expected
   draftQty.value = { ...draftQty.value, [key]: n }
+  trimPlainScanBins(key, n)
   if (showQtyErrors.value) showQtyErrors.value = false
   if (finishError.value) finishError.value = ''
+}
+/** Bins a plain (untracked) SKU line was actually picked from — the active bin(s)
+ *  the operator scanned. Units entered manually (no scan) have no bin, so they
+ *  fall back to the line's reserved primary bin. Nothing picked yet → show that
+ *  primary bin, exactly as before. */
+function plainPickedBins(keys: string[], fallbackBin: string): string[] {
+  const bins = new Set<string>()
+  for (const key of keys) {
+    const scanned = plainScanBins.value[key] ?? {}
+    let scannedTotal = 0
+    for (const [b, q] of Object.entries(scanned)) if (q > 0) { bins.add(b); scannedTotal += q }
+    const total = draftQty.value[key] ?? 0
+    if (total > scannedTotal) {
+      const primary = itemByKey.value.get(key)?.binLocation
+      if (primary) bins.add(primary)
+    }
+  }
+  if (!bins.size && fallbackBin) bins.add(fallbackBin)
+  return [...bins]
+}
+/** Keep scanned-bin attribution from exceeding the line's total when the operator
+ *  lowers the qty by hand — trim the excess off the most-recently-scanned bins. */
+function trimPlainScanBins(key: string, cap: number): void {
+  const bins = plainScanBins.value[key]
+  if (!bins) return
+  let total = Object.values(bins).reduce((a, b) => a + b, 0)
+  if (total <= cap) return
+  const next: Record<string, number> = { ...bins }
+  const binKeys = Object.keys(next)
+  for (let i = binKeys.length - 1; i >= 0 && total > cap; i--) {
+    const bk = binKeys[i]!
+    const remove = Math.min(next[bk]!, total - cap)
+    next[bk]! -= remove
+    total -= remove
+    if (next[bk]! <= 0) delete next[bk]
+  }
+  plainScanBins.value = { ...plainScanBins.value, [key]: next }
 }
 function fmt(n: number) { return n.toLocaleString('id-ID') }
 
@@ -1058,7 +1109,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                       </MpTooltip>
                     </div>
                   </td>
-                  <td v-else class="pik-td">{{ row.item.binLocation }}</td>
+                  <td v-else class="pik-td pik-td--location-summary">
+                    <div class="pik-location-summary-wrap">
+                      <span v-for="loc in plainPickedBins(row.item.memberKeys, row.item.binLocation)" :key="loc" class="pik-location-summary-item">{{ loc }}</span>
+                    </div>
+                  </td>
 
                   <!-- Qty to pick: static total for the group, unless split per bin — a
                        bin row has no separate plan of its own, so it mirrors that bin's
@@ -1214,7 +1269,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                           <span v-else class="pik-location-summary-item">—</span>
                         </div>
                       </td>
-                      <td v-else class="pik-td">{{ row.item.binLocation }}</td>
+                      <td v-else class="pik-td pik-td--location-summary">
+                        <div class="pik-location-summary-wrap">
+                          <span v-for="loc in plainPickedBins([row.item.key], row.item.binLocation)" :key="loc" class="pik-location-summary-item">{{ loc }}</span>
+                        </div>
+                      </td>
 
                       <td class="pik-td pik-td--num">{{ fmt(row.groupSize > 1 ? row.binQty : row.item.expectedQty) }}</td>
                       <td class="pik-td pik-td--num">

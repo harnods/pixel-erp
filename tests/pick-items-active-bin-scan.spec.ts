@@ -115,4 +115,24 @@ describe('PickItemsPage — active-bin scan model (reverse of put-away)', () => 
     expect(pickedQtyStat(wrapper)).toBe('1') // any valid bin is fine — no fixed origin to match for plain SKUs
     wrapper.unmount()
   })
+
+  it('a plain SKU\'s Storage location shows the bin actually scanned, not the static primary bin', async () => {
+    const PLAIN_SKU = '3004'
+    const primaryBin = getWarehouseDetail(WAREHOUSE_ID)!.stock.find((s) => s.sku === PLAIN_SKU)!.locations[0]!
+    const scanBin = stockLocationPaths(WAREHOUSE_ID).find((p) => p && p !== primaryBin)!
+    const taskId = makeOrderAndTask(PLAIN_SKU, 5, 'Test ActiveBin Plain Loc')
+    const wrapper = mount(PickItemsPage, { props: { orderId: taskId } })
+    await flushPromises()
+
+    await scan(wrapper, scanBin)   // physically at a DIFFERENT bin than the primary
+    await scan(wrapper, PLAIN_SKU)
+    expect(pickedQtyStat(wrapper)).toBe('1')
+
+    // The row now reflects where it was actually picked from (scanBin), not locations[0].
+    const locCell = wrapper.find('.pik-td--location-summary')
+    expect(locCell.exists()).toBe(true)
+    const shown = locCell.findAll('.pik-location-summary-item').map((x) => x.text())
+    expect(shown).toEqual([scanBin])
+    wrapper.unmount()
+  })
 })
