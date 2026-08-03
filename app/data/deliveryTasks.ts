@@ -1,7 +1,8 @@
 import { reactive } from "vue";
 import { operatorForWarehouse } from "./warehouseTeam";
-import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from "./outgoing";
-import { packingTasks, pickedLinesForPacking, getPackingTask, type PackingTask } from "./packingTasks";
+import { outgoingOrders, isMarketplaceOrder, addOutgoing, type OutgoingOrder } from "./outgoing";
+import { packingTasks, pickedLinesForPacking, getPackingTask, addPackingTask, startPacking, endPacking, type PackingTask } from "./packingTasks";
+import { addPickingTask, startPicking, endPicking } from "./pickingTasks";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { applyStockInOut, consumeReservation } from "./warehouseDetails";
 import { couriers } from "./couriers";
@@ -669,3 +670,57 @@ export function reassignDeliveryTasks(warehouseId: string, fromName: string, toN
 /** Available couriers for the ship form — sourced from the courier master
  *  (couriers.ts), so the picker and the CouriersPage manage the same list. */
 export const DELIVERY_COURIERS = couriers.map((c) => c.name);
+
+/**
+ * Demo seed: 2 ready-to-ship deliveries sharing the SAME warehouse + courier, so the
+ * Ready to ship tab's Courier filter and its bulk "Create shipment" action have
+ * something to batch out of the box (the naturally-seeded ready-to-ship deliveries
+ * above never share a courier). Built through the real order → picking → packing →
+ * delivery flow (same recipe as tests/create-shipment-courier-required.spec.ts)
+ * rather than hand-rolled records, so every downstream lookup (packing/picking
+ * detail links, reservations) stays consistent. Idempotent via a marker salesNo —
+ * addOutgoing()/addPickingTask()/etc. each persist immediately, so without this
+ * guard a fresh module load after the first would create duplicates.
+ */
+function seedReadyToShipDemoPair(): void {
+  // Client-only — this walks the full order → picking → packing → delivery mutation
+  // path (reserveStock etc.), real work that has no business running on every test
+  // file's module load (persist.ts's snapshot read/write already no-ops server-side
+  // the same way; this just extends that boundary to the seed itself).
+  if (!import.meta.client) return;
+  const MARKER = "Sales Order #19601";
+  if (outgoingOrders.some((o) => o.salesNo === MARKER)) return;
+  const WH_ID = "wh-001";
+  const WH_NAME = "Gudang Jakarta Pusat";
+  const COURIER = "JNE REG";
+  [MARKER, "Sales Order #19602"].forEach((salesNo, i) => {
+    const order = addOutgoing({
+      salesNo,
+      source: "Manual",
+      warehouseId: WH_ID,
+      warehouseName: WH_NAME,
+      skuQty: 1,
+      orderQty: 2,
+      shippedQty: 0,
+      status: "open",
+      dueDate: new Date().toISOString().slice(0, 10),
+      lines: [{ sku: "3004", productName: "Coffee Scale 2kg / 0.1g", desc: "", img: "", unit: "Unit", qty: 2 }],
+    });
+    const assignee = operatorForWarehouse(WH_ID, i);
+    const pick = addPickingTask({
+      salesOrderIds: [order.id], salesNos: [order.salesNo],
+      warehouseId: WH_ID, warehouseName: WH_NAME, assignee,
+    });
+    startPicking(pick.id);
+    endPicking(pick.id, { [`${order.id}::3004`]: 2 });
+    const pack = addPackingTask({
+      salesOrderId: order.id, salesNo: order.salesNo,
+      pickingTaskId: pick.id, pickingTaskNo: pick.taskNo,
+      warehouseId: WH_ID, warehouseName: WH_NAME, assignee,
+    });
+    startPacking(pack.id);
+    endPacking(pack.id, { [`${order.id}::3004`]: 2 });
+    addDeliveryTaskFromPackingTasks([getPackingTask(pack.id)!], { assignee, deliveryMethod: "online", courier: COURIER });
+  });
+}
+seedReadyToShipDemoPair();
