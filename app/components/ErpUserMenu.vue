@@ -50,7 +50,7 @@
             class="user-menu__row"
           >
             <MpIcon :name="item.icon" size="md" color="icon.brand" />
-            <span class="user-menu__label">{{ item.label }}</span>
+            <span class="user-menu__label">{{ t(item.label) }}</span>
           </button>
         </nav>
 
@@ -59,20 +59,20 @@
         <!-- Account controls -->
         <nav class="user-menu__group">
           <button type="button" class="user-menu__row">
-            <span class="user-menu__label">Switch company</span>
+            <span class="user-menu__label">{{ t('Switch company') }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
           <button type="button" class="user-menu__row" @click="view = 'wms'">
-            <span class="user-menu__label">Switch to WMS</span>
+            <span class="user-menu__label">{{ t('Switch to WMS') }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
           <button type="button" class="user-menu__row" @click="view = 'language'">
-            <span class="user-menu__label">Language</span>
-            <span class="user-menu__value">{{ language }}</span>
+            <span class="user-menu__label">{{ t('Language') }}</span>
+            <span class="user-menu__value">{{ currentLanguage }}</span>
             <MpIcon name="chevrons-right" size="md" color="icon.default" />
           </button>
           <button type="button" class="user-menu__row">
-            <span class="user-menu__label">Sign out</span>
+            <span class="user-menu__label">{{ t('Sign out') }}</span>
           </button>
         </nav>
 
@@ -81,23 +81,23 @@
         <!-- Prototype / demo controls -->
         <nav class="user-menu__group">
           <button type="button" class="user-menu__row" @click="resetData(onClosePopover)">
-            <span class="user-menu__label">Reset demo data</span>
+            <span class="user-menu__label">{{ t('Reset demo data') }}</span>
           </button>
           <button type="button" class="user-menu__row" @click="toggleReview(onClosePopover)">
-            <span class="user-menu__label">Review mode</span>
-            <span v-if="isReviewMode" class="user-menu__value">On</span>
+            <span class="user-menu__label">{{ t('Review mode') }}</span>
+            <span v-if="isReviewMode" class="user-menu__value">{{ t('On') }}</span>
           </button>
         </nav>
 
-        <p class="user-menu__company-id">Company ID: 680128</p>
+        <p class="user-menu__company-id">{{ t('Company ID: 680128') }}</p>
 
         <!-- Referral promo -->
         <a class="user-menu__promo" href="#" @click.prevent>
           <img class="user-menu__promo-art" :src="promoArt" alt="" />
           <span class="user-menu__promo-body">
-            <span class="user-menu__promo-title">Refer a friends,<br />earn cash reward</span>
+            <span class="user-menu__promo-title">{{ t('Refer a friends, earn cash reward') }}</span>
             <span class="user-menu__promo-cta">
-              Get started
+              {{ t('Get started') }}
               <MpIcon name="chevrons-right" size="sm" />
             </span>
           </span>
@@ -115,7 +115,7 @@
           >
             <MpIcon name="chevrons-left" size="md" color="icon.default" />
           </button>
-          <span class="user-menu__subtitle">Change language</span>
+          <span class="user-menu__subtitle">{{ t('Change language') }}</span>
         </div>
 
         <nav class="user-menu__group">
@@ -128,7 +128,7 @@
           >
             <span class="user-menu__label">{{ lang }}</span>
             <MpIcon
-              v-if="lang === language"
+              v-if="lang === currentLanguage"
               name="check"
               size="md"
               color="icon.brand"
@@ -148,7 +148,7 @@
           >
             <MpIcon name="chevrons-left" size="md" color="icon.default" />
           </button>
-          <span class="user-menu__subtitle">Select scenario</span>
+          <span class="user-menu__subtitle">{{ t('Select scenario') }}</span>
         </div>
 
         <nav class="user-menu__group">
@@ -202,11 +202,12 @@ const primaryItems = [
 // Which panel of the popover is showing: the account menu, or the WMS scenario picker.
 const view = ref<"main" | "wms" | "language">("main");
 
-// Language switcher (prototype — swaps the displayed language only).
+// Language switcher — wired to the global app locale (see useLocale).
+const { locale, setLocale, t } = useLocale();
 const languages = ["English", "Bahasa Indonesia"] as const;
-const language = ref<(typeof languages)[number]>("English");
+const currentLanguage = computed(() => (locale.value === "id" ? "Bahasa Indonesia" : "English"));
 function selectLanguage(lang: (typeof languages)[number]) {
-  language.value = lang;
+  setLocale(lang === "Bahasa Indonesia" ? "id" : "en");
   view.value = "main";
 }
 

@@ -16,14 +16,14 @@
           :key="item.name"
           class="nav-item"
           :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="item.name"
+          :title="t(item.name)"
           @click="() => handleNavClick(item)"
           @mouseenter="(e) => handleItemMouseEnter(e, item)"
           @mouseleave="scheduleClose"
         >
           <img :src="`https://cdn.mekari.design/icons/${item.icon}-outline.svg`" class="nav-icon-line" alt="" />
           <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="nav-icon-fill" alt="" />
-          <span class="nav-label">{{ item.name }}</span>
+          <span class="nav-label">{{ t(item.name) }}</span>
         </button>
       </div>
     </nav>
@@ -32,7 +32,7 @@
     <Transition name="panel">
       <div v-if="activePanel && isPanelVisible && !isNarrowViewport" class="sidebar-panel">
         <div class="panel-header">
-          <span class="panel-title">{{ activePanel.title.toUpperCase() }}</span>
+          <span class="panel-title">{{ t(activePanel.title).toUpperCase() }}</span>
         </div>
         <div class="panel-list">
           <template v-for="(group, gi) in activePanel.groups" :key="gi">
@@ -45,7 +45,7 @@
                   :class="{ 'is-open': isAccordionOpen(sub) }"
                   @click="handlePanelAccordionClick(sub)"
                 >
-                  <span>{{ sub.label }}</span>
+                  <span>{{ t(sub.label) }}</span>
                   <svg class="panel-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                   </svg>
@@ -58,7 +58,7 @@
                   :class="{ active: activePanelSubItem === child.label }"
                   @click="handlePanelSubItemClick(child)"
                 >
-                  <span>{{ child.label }}</span>
+                  <span>{{ t(child.label) }}</span>
                   <MpBadge v-if="child.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ child.count }}</MpBadge>
                 </button>
               </template>
@@ -69,7 +69,7 @@
                 :class="{ active: activePanelSubItem === sub.label }"
                 @click="handlePanelSubItemClick(sub)"
               >
-                <span>{{ sub.label }}</span>
+                <span>{{ t(sub.label) }}</span>
                 <MpBadge v-if="sub.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ sub.count }}</MpBadge>
                 <img
                   v-else-if="sub.iconType === 'shortcut'"
@@ -109,7 +109,7 @@
             :class="{ active: activePanelSubItem === sub.label }"
             @click="handleFlyoutSubItemClick(sub)"
           >
-            <span>{{ sub.label }}</span>
+            <span>{{ t(sub.label) }}</span>
             <img v-if="sub.iconType === 'shortcut'" :src="shortcutIcon" class="submenu-item-icon submenu-item-icon--shortcut" alt="" />
             <img v-else-if="sub.iconType === 'settings'" :src="settingsIcon" class="submenu-item-icon" alt="" />
           </button>
@@ -246,6 +246,7 @@ const shortcutIcon = shortcutIconUrl
 const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
 const { navigate, currentPageKey, setActiveMenuLabel, activeSectionOverride } = useNavigation()
+const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
