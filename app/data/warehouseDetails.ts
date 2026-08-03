@@ -585,7 +585,10 @@ function makeBatches(onHand: number, reserved: number, seed: number, i: number):
 
 // Serial units for a hardware product — a small, design-matching subset.
 function makeSerials(sku: string, onHand: number, reserved: number, seed: number, i: number): ProductSerials {
-  const prefix = (sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN')
+  // Full SKU (not just the first 3 chars) so serials are namespaced per SKU —
+  // SKUs sharing a 3-char prefix (2101, 2102, …) must never generate the same
+  // serial string, or resolveScan would map a scan to the wrong SKU.
+  const prefix = (sku.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'SN')
   const mk = (qty: number, base: number) =>
     Array.from({ length: qty }, (_, k) => ({
       serial: `${prefix}${String(base + k).padStart(5, '0')}`,
@@ -612,9 +615,12 @@ function reconcileSerialQty(item: WarehouseStockItem): void {
   const delta = item.onHand - (item.serials.available.length + item.serials.reserved.length)
   if (delta === 0) return
   if (delta > 0) {
-    const prefix = item.sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN'
+    const prefix = item.sku.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'SN'
+    // Strip the exact prefix to get the numeric suffix — a plain replace(/\D/g)
+    // would keep the SKU's own digits for numeric SKUs (e.g. "2102") and blow up
+    // the next number, producing a double-prefixed serial.
     const nums = [...item.serials.available, ...item.serials.reserved]
-      .map((u) => parseInt(u.serial.replace(/\D/g, ''), 10))
+      .map((u) => parseInt(u.serial.startsWith(prefix) ? u.serial.slice(prefix.length) : u.serial.replace(/\D/g, ''), 10))
       .filter((n) => Number.isFinite(n))
     let next = (nums.length ? Math.max(...nums) : 0) + 1
     const loc = item.locations[0] ?? '—'

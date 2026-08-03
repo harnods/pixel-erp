@@ -152,7 +152,7 @@ const allRows = computed<SerialRow[]>(() => {
   const rows: SerialRow[] = existing.map((u, i) => ({ serial: u.serial, location: loc ?? u.location, counted: i < counted }))
 
   if (counted > existing.length) {
-    const prefix = (props.sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN')
+    const prefix = (props.sku.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'SN')
     const fallbackLoc = loc ?? existing[0]?.location ?? '—'
     for (let i = existing.length; i < counted; i++) {
       rows.push({
