@@ -9,7 +9,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import { useTableState } from '~/composables/useTableState'
-import { deliveryTasksFor, type DeliveryTask } from '~/data/deliveryTasks'
+import { deliveryTasksFor, DELIVERY_COURIERS, type DeliveryTask } from '~/data/deliveryTasks'
 import { outgoingOrders } from '~/data/outgoing'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
@@ -85,6 +85,7 @@ const activeWarehouseFilter = useActiveWarehouseFilter()
 watch(warehouseFilter, (v) => { activeWarehouseFilter.value = v }, { immediate: true })
 onUnmounted(() => { activeWarehouseFilter.value = [] })
 const statusFilter = ref<string[]>([])
+const courierFilter = ref<string[]>([])
 
 const baseTasks = computed<DeliveryRow[]>(() =>
   demoState.value === 'data'
@@ -128,6 +129,19 @@ function toggleStatus(v: string) {
   else statusFilter.value = [...statusFilter.value, v]
 }
 
+const courierOptions = DELIVERY_COURIERS.map(c => ({ label: c, value: c }))
+const courierLabel = computed(() => {
+  const n = courierFilter.value.length
+  if (n === 0) return ''
+  if (n === 1) return courierFilter.value[0] ?? ''
+  return `${n} couriers`
+})
+function toggleCourier(v: string) {
+  const idx = courierFilter.value.indexOf(v)
+  if (idx >= 0) courierFilter.value = courierFilter.value.filter(x => x !== v)
+  else courierFilter.value = [...courierFilter.value, v]
+}
+
 const {
   search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
@@ -141,13 +155,41 @@ const {
       || row.source.toLowerCase().includes(s)
     const matchesWarehouse = !warehouseFilter.value.length || warehouseFilter.value.includes(row.warehouseId)
     const matchesStatus    = !statusFilter.value.length || statusFilter.value.includes(row.status)
-    return matchesSearch && matchesWarehouse && matchesStatus
+    const matchesCourier   = !courierFilter.value.length || courierFilter.value.includes(row.courier ?? '')
+    return matchesSearch && matchesWarehouse && matchesStatus && matchesCourier
   },
 })
-watch([warehouseFilter, statusFilter], () => setPage(1))
+watch([warehouseFilter, statusFilter, courierFilter], () => setPage(1))
 
-const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0)
-function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = [] }
+const hasActiveFilter = computed(() => !!search.value || warehouseFilter.value.length > 0 || statusFilter.value.length > 0 || courierFilter.value.length > 0)
+function clearFilters() { search.value = ''; warehouseFilter.value = []; statusFilter.value = []; courierFilter.value = [] }
+
+// ─── Create shipment for every ready-to-ship delivery under one courier — lets the
+// user filter to a courier and hand the whole batch over without ticking rows one
+// by one. Mirrors bulkHandoverable's same-warehouse rule since a handover batch
+// ships from a single warehouse. ────────────────────────────────────────────────
+const courierShipmentRows = computed<DeliveryRow[]>(() => {
+  if (courierFilter.value.length !== 1) return []
+  const c = courierFilter.value[0]!
+  return baseTasks.value.filter(t =>
+    t.status === 'ready to ship'
+    && (t.courier ?? '') === c
+    && (!warehouseFilter.value.length || warehouseFilter.value.includes(t.warehouseId)),
+  )
+})
+const courierShipmentSameWarehouse = computed(() => {
+  const rows = courierShipmentRows.value
+  if (!rows.length) return false
+  const wh = rows[0]!.warehouseId
+  return rows.every(t => t.warehouseId === wh)
+})
+function createShipmentForCourier() {
+  if (!courierShipmentSameWarehouse.value) return
+  router.push({
+    path: '/outbound-delivery/handover/create',
+    query: { deliveryIds: courierShipmentRows.value.map(t => t.id).join(',') },
+  })
+}
 
 // ─── Formatters ────────────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
@@ -264,6 +306,39 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </div>
           </MpPopoverContent>
         </MpPopover>
+
+        <MpPopover id="del-courier-filter" :is-close-on-select="false">
+          <MpPopoverTrigger>
+            <MpSelect
+              id="del-courier-select" :placeholder="t('Courier')" :model-value="courierFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="courierFilter = []"
+            >
+              <option v-if="courierFilter.length" value="set">{{ courierLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+            <div class="checkbox-filter-list">
+              <label v-for="opt in courierOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`del-courier-${opt.value}`"
+                  :is-checked="courierFilter.includes(opt.value)"
+                  @change="toggleCourier(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
+          </MpPopoverContent>
+        </MpPopover>
+
+        <button
+          v-if="courierShipmentSameWarehouse"
+          class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+          @click="createShipmentForCourier"
+        >
+          {{ t('Create shipment') }} ({{ courierShipmentRows.length }})
+        </button>
       </div>
 
       <div class="filter-right">
