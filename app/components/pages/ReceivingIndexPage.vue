@@ -18,6 +18,7 @@ import { putAwayTasksFor } from '~/data/putAwayTasks'
 import { warehouses } from '~/data/warehouses'
 
 const toggleAirene = inject<() => void>('toggleAirene')
+const { t } = useLocale()
 
 // ─── Demo scenario state (FAB) ─────────────────────────────────────────────────
 type DemoState = 'empty' | 'data'
@@ -265,7 +266,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div class="filter-left">
         <MpPopover v-if="!isScoped" id="rcvg-wh-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <MpSelect id="rcvg-wh-select" placeholder="Warehouse"
+            <MpSelect id="rcvg-wh-select" :placeholder="t('Warehouse')"
               :model-value="warehouseFilter.length ? '__selected__' : undefined" is-clearable
               :class="css({ width: '180px' })" @mousedown.prevent @clear="warehouseFilter = []">
               <option v-if="warehouseFilter.length" value="__selected__">{{ warehouseLabel }}</option>
@@ -289,7 +290,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
         <MpPopover v-if="!isScoped" id="rcvg-assignee-filter" is-close-on-select>
           <MpPopoverTrigger>
-            <MpSelect id="rcvg-assignee-select" placeholder="Assignee" :model-value="assigneeFilter" is-clearable
+            <MpSelect id="rcvg-assignee-select" :placeholder="t('Assignee')" :model-value="assigneeFilter" is-clearable
               :class="css({ width: '170px' })" @mousedown.prevent @clear="assigneeFilter = ''">
               <option v-if="assigneeFilter" :value="assigneeFilter">{{ assigneeLabel }}</option>
             </MpSelect>
@@ -304,7 +305,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
         <MpPopover id="rcvg-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
-            <MpSelect id="rcvg-status-select" placeholder="Status" :model-value="statusFilter.length ? 'set' : ''" is-clearable
+            <MpSelect id="rcvg-status-select" :placeholder="t('Status')" :model-value="statusFilter.length ? 'set' : ''" is-clearable
               :class="css({ width: '160px' })" @mousedown.prevent @clear="statusFilter = []">
               <option v-if="statusFilter.length" value="set">{{ statusLabel }}</option>
             </MpSelect>
@@ -318,7 +319,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   @change="toggleStatus(opt.value)"
                   @click.stop
                 >
-                  {{ opt.label }}
+                  {{ t(opt.label) }}
                 </MpCheckbox>
               </label>
             </div>
@@ -328,8 +329,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <MpTooltip id="tt-rcvg-airene" label="Ask Airene" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+          <MpTooltip id="tt-rcvg-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+            <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -337,16 +338,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </button>
           </MpTooltip>
           <ColumnSettingsMenu id="rcvg-col-settings" :items="columnItems" :visibility="colVis" />
-          <MpTooltip id="tt-rcvg-export" label="Export" placement="bottom" use-portal>
-            <button class="filter-icon-btn" aria-label="Export"><MpIcon name="download" size="md" /></button>
+          <MpTooltip id="tt-rcvg-export" :label="t('Export')" placement="bottom" use-portal>
+            <button class="filter-icon-btn" :aria-label="t('Export')"><MpIcon name="download" size="md" /></button>
           </MpTooltip>
         </div>
         <div class="filter-search">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -381,19 +382,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 <div class="rcvg-bulk-bar__left">
                   <MpCheckbox id="rcvg-bulk-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
                   <span class="rcvg-bulk-bar__count">{{ bulkCountLabel }}</span>
-                  <button v-if="canCreatePutAway" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="bulkCreatePutAway">Create put-away</button>
+                  <button v-if="canCreatePutAway" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="bulkCreatePutAway">{{ t('Create put-away') }}</button>
                   <span v-else-if="selectedTasksSpanMultipleWarehouses" class="rcvg-bulk-bar__hint">
-                    Select tasks from a single warehouse to create put-away
+                    {{ t('Select tasks from a single warehouse to create put-away') }}
                   </span>
                   <button
                     v-if="bulkCancelable"
                     class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
                     :class="css({ color: 'var(--mp-text-critical)' })"
                     @click="bulkCancelOpen = true"
-                  >Cancel receiving task</button>
+                  >{{ t('Cancel receiving task') }}</button>
                 </div>
                 <div class="rcvg-bulk-bar__right">
-                  <span>Press</span><kbd class="rcvg-bulk-bar__kbd">Esc</kbd><span>to deselect</span>
+                  <span>{{ t('Press') }}</span><kbd class="rcvg-bulk-bar__kbd">Esc</kbd><span>{{ t('to deselect') }}</span>
                 </div>
               </div>
             </th>
@@ -402,80 +403,80 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <th class="rcvg-th">
               <div class="rcvg-num-head">
                 <MpCheckbox id="rcvg-head-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
-                <span>Receiving task no.</span>
+                <span>{{ t('Receiving task no.') }}</span>
               </div>
             </th>
-            <th v-if="colVis.purchaseNo" class="rcvg-th">Purchase order no.</th>
-            <th v-if="colVis.warehouseName" class="rcvg-th">Warehouse</th>
-            <th v-if="!isScoped && colVis.assignee" class="rcvg-th">Assignee</th>
-            <th v-if="colVis.skuCount" class="rcvg-th">Sku qty</th>
-            <th v-if="colVis.expectedQty" class="rcvg-th rcvg-th--right">Expected qty</th>
-            <th v-if="colVis.receivedQty" class="rcvg-th rcvg-th--right">Received qty</th>
-            <th v-if="colVis.status" class="rcvg-th">Status</th>
+            <th v-if="colVis.purchaseNo" class="rcvg-th">{{ t('Purchase order no.') }}</th>
+            <th v-if="colVis.warehouseName" class="rcvg-th">{{ t('Warehouse') }}</th>
+            <th v-if="!isScoped && colVis.assignee" class="rcvg-th">{{ t('Assignee') }}</th>
+            <th v-if="colVis.skuCount" class="rcvg-th">{{ t('Sku qty') }}</th>
+            <th v-if="colVis.expectedQty" class="rcvg-th rcvg-th--right">{{ t('Expected qty') }}</th>
+            <th v-if="colVis.receivedQty" class="rcvg-th rcvg-th--right">{{ t('Received qty') }}</th>
+            <th v-if="colVis.status" class="rcvg-th">{{ t('Status') }}</th>
             <th class="rcvg-th" />
-            <th v-if="colVis.startDate" class="rcvg-th">Start date</th>
-            <th v-if="colVis.endDate" class="rcvg-th">End date</th>
+            <th v-if="colVis.startDate" class="rcvg-th">{{ t('Start date') }}</th>
+            <th v-if="colVis.endDate" class="rcvg-th">{{ t('End date') }}</th>
             <th class="rcvg-th rcvg-th--actions" />
           </tr>
         </thead>
         <tbody>
           <tr
-            v-for="t in pagedTasks"
-            :key="t.id"
+            v-for="task in pagedTasks"
+            :key="task.id"
             class="rcvg-task-row"
-            :class="{ 'rcvg-task-row--selected': selectedTasks.has(t.id) }"
+            :class="{ 'rcvg-task-row--selected': selectedTasks.has(task.id) }"
           >
             <!-- Receiving task cell (first column) -->
             <td class="rcvg-td rcvg-td--task">
               <div class="rcvg-task-cell">
                 <span class="rcvg-check" @click.stop>
-                  <MpCheckbox :id="`rcvg-task-${t.id}`" :is-checked="selectedTasks.has(t.id)" @change="toggleTask(t.id)" />
+                  <MpCheckbox :id="`rcvg-task-${task.id}`" :is-checked="selectedTasks.has(task.id)" @change="toggleTask(task.id)" />
                 </span>
-                <a class="cell-link rcvg-task-no" @click.stop="viewDetails(t)">{{ t.taskNo }}</a>
+                <a class="cell-link rcvg-task-no" @click.stop="viewDetails(task)">{{ task.taskNo }}</a>
               </div>
             </td>
             <td v-if="colVis.purchaseNo" class="rcvg-td rcvg-td--po">
               <div class="rcvg-po-cell">
-                <a class="cell-link rcvg-po-no" @click.stop="router.push(`/inbound-delivery/${t.receiptId}`)">{{ t.purchaseNo }}</a>
+                <a class="cell-link rcvg-po-no" @click.stop="router.push(`/inbound-delivery/${task.receiptId}`)">{{ task.purchaseNo }}</a>
               </div>
             </td>
             <td v-if="colVis.warehouseName" class="rcvg-td rcvg-td--warehouse">
               <div class="rcvg-wh-cell">
-                <a class="cell-link" @click.stop="router.push(`/warehouses/${t.warehouseId}`)">{{ t.warehouseName }}</a>
+                <a class="cell-link" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">{{ task.warehouseName }}</a>
               </div>
             </td>
-            <td v-if="!isScoped && colVis.assignee" class="rcvg-td rcvg-td--assignee">{{ t.assignee }}</td>
-            <td v-if="colVis.skuCount" class="rcvg-td">{{ t.skuCount }}</td>
-            <td v-if="colVis.expectedQty" class="rcvg-td rcvg-td--right">{{ fmt(expectedQtyTotal(t)) }}</td>
-            <td v-if="colVis.receivedQty" class="rcvg-td rcvg-td--right">{{ fmt(t.receivedQty) }}</td>
-            <td v-if="colVis.status" class="rcvg-td"><ErpStatusBadge :status="t.status" /></td>
+            <td v-if="!isScoped && colVis.assignee" class="rcvg-td rcvg-td--assignee">{{ task.assignee }}</td>
+            <td v-if="colVis.skuCount" class="rcvg-td">{{ task.skuCount }}</td>
+            <td v-if="colVis.expectedQty" class="rcvg-td rcvg-td--right">{{ fmt(expectedQtyTotal(task)) }}</td>
+            <td v-if="colVis.receivedQty" class="rcvg-td rcvg-td--right">{{ fmt(task.receivedQty) }}</td>
+            <td v-if="colVis.status" class="rcvg-td"><ErpStatusBadge :status="task.status" /></td>
             <td class="rcvg-td">
               <div class="rcvg-icons-cell">
                 <MpTooltip
-                  v-if="hasPutAwayTask(t.id)"
-                  :id="`tt-putaway-${t.id}`"
-                  label="Put-away task created"
+                  v-if="hasPutAwayTask(task.id)"
+                  :id="`tt-putaway-${task.id}`"
+                  :label="t('Put-away task created')"
                   placement="top"
                   use-portal
                 >
-                  <span class="rcvg-icon-indicator" aria-label="Put-away task created">
+                  <span class="rcvg-icon-indicator" :aria-label="t('Put-away task created')">
                     <MpIcon name="doc" size="20px" />
                   </span>
                 </MpTooltip>
               </div>
             </td>
-            <td v-if="colVis.startDate" class="rcvg-td">{{ formatDateTime(t.startDate) }}</td>
+            <td v-if="colVis.startDate" class="rcvg-td">{{ formatDateTime(task.startDate) }}</td>
               <td v-if="colVis.endDate" class="rcvg-td">
                 <span class="rcvg-end">
-                  <span v-if="t.endDate">{{ formatDateTime(t.endDate) }}</span>
+                  <span v-if="task.endDate">{{ formatDateTime(task.endDate) }}</span>
                   <span v-else class="rcvg-end__ongoing">—</span>
-                  <span v-if="aging(t)" class="rcvg-aging">{{ aging(t) }} days</span>
+                  <span v-if="aging(task)" class="rcvg-aging">{{ aging(task) }} {{ t('days') }}</span>
                 </span>
               </td>
               <td class="rcvg-td rcvg-td--actions">
-                <MpPopover :id="`rcvg-actions-${t.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                <MpPopover :id="`rcvg-actions-${task.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                   <MpPopoverTrigger>
-                    <button class="row-kebab" aria-label="More actions" @click.stop>
+                    <button class="row-kebab" :aria-label="t('More actions')" @click.stop>
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                       </svg>
@@ -483,15 +484,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
-                      <MpPopoverListItem @click="viewDetails(t)">View details</MpPopoverListItem>
-                      <MpPopoverListItem v-if="t.status === 'open'" @click="startReceivingAndNavigate(t)">Start receiving</MpPopoverListItem>
-                      <MpPopoverListItem v-else-if="t.status === 'in progress'" @click="continueReceiving(t)">Continue receiving</MpPopoverListItem>
-                      <MpPopoverListItem v-if="t.status === 'pending put-away'" @click="createPutAway(t)">Create put-away</MpPopoverListItem>
+                      <MpPopoverListItem @click="viewDetails(task)">{{ t('View details') }}</MpPopoverListItem>
+                      <MpPopoverListItem v-if="task.status === 'open'" @click="startReceivingAndNavigate(task)">{{ t('Start receiving') }}</MpPopoverListItem>
+                      <MpPopoverListItem v-else-if="task.status === 'in progress'" @click="continueReceiving(task)">{{ t('Continue receiving') }}</MpPopoverListItem>
+                      <MpPopoverListItem v-if="task.status === 'pending put-away'" @click="createPutAway(task)">{{ t('Create put-away') }}</MpPopoverListItem>
                       <MpPopoverListItem
-                        v-if="canCancelReceivingTask(t)"
+                        v-if="canCancelReceivingTask(task)"
                         :class="css({ color: 'var(--mp-text-critical)' })"
-                        @click="openCancelModal(t)"
-                      >Cancel</MpPopoverListItem>
+                        @click="openCancelModal(task)"
+                      >{{ t('Cancel') }}</MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
@@ -512,8 +513,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Empty state ── -->
     <div v-else class="empty-full">
       <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-      <p class="empty-full-title">{{ hasActiveFilter ? 'No receiving tasks found' : 'No receiving tasks' }}</p>
-      <p class="empty-full-desc">{{ hasActiveFilter ? 'Try adjusting your filters.' : 'Receiving tasks will appear here.' }}</p>
+      <p class="empty-full-title">{{ hasActiveFilter ? t('No receiving tasks found') : t('No receiving tasks') }}</p>
+      <p class="empty-full-desc">{{ hasActiveFilter ? t('Try adjusting your filters.') : t('Receiving tasks will appear here.') }}</p>
     </div>
   </div>
 
@@ -523,12 +524,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalContent>
       <MpModalHeader>Cancel {{ taskToCancel?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        This receiving task will be canceled and can no longer be continued. This can't be undone.
+        {{ t('This receiving task will be canceled and can no longer be continued. This can\'t be undone.') }}
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">Keep task</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">Cancel task</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="closeCancelModal">{{ t('Keep task') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancelTask">{{ t('Cancel task') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -541,12 +542,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalContent>
       <MpModalHeader>Cancel {{ cancelableTaskObjs.length }} {{ cancelableTaskObjs.length === 1 ? 'task' : 'tasks' }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        The selected receiving tasks will be canceled and can no longer be continued. This can't be undone.
+        {{ t('The selected receiving tasks will be canceled and can no longer be continued. This can\'t be undone.') }}
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkCancelOpen = false">Keep tasks</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkCancel">Cancel tasks</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="bulkCancelOpen = false">{{ t('Keep tasks') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkCancel">{{ t('Cancel tasks') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -556,12 +557,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Demo scenario FAB ── -->
   <MpPopover id="rcvg-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change scenario state"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+      <button class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Scenario state</p>
+      <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
       <MpPopoverList>
-        <MpPopoverListItem v-for="s in demoStates" :key="s.value" :is-active="s.value === demoState" @click="demoState = s.value">{{ s.label }}</MpPopoverListItem>
+        <MpPopoverListItem v-for="s in demoStates" :key="s.value" :is-active="s.value === demoState" @click="demoState = s.value">{{ t(s.label) }}</MpPopoverListItem>
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>

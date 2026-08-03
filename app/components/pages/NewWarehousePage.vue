@@ -13,6 +13,7 @@ const props = defineProps<{ orderId?: string }>()
 const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
 
 const router = useRouter()
+const { t } = useLocale()
 
 const NAME_MAX = 60
 const CODE_MAX = 6
@@ -76,19 +77,19 @@ async function save() {
   picError.value = picData.value.length === 0
 
   if (!name.value.trim()) {
-    nameError.value = 'You must fill in warehouse name'
+    nameError.value = t('You must fill in warehouse name')
   } else {
     const nameLower = name.value.trim().toLowerCase()
     const dup = warehouses.some(w => w.name.toLowerCase() === nameLower && (!isEdit.value || w.id !== props.orderId))
-    if (dup) nameError.value = 'Warehouse name already taken'
+    if (dup) nameError.value = t('Warehouse name already taken')
   }
 
   if (!code.value.trim()) {
-    codeError.value = 'You must fill in warehouse code'
+    codeError.value = t('You must fill in warehouse code')
   } else {
     const codeUpper = code.value.trim().toUpperCase()
     const dup = warehouses.some(w => w.code.toUpperCase() === codeUpper && (!isEdit.value || w.id !== props.orderId))
-    if (dup) codeError.value = 'Warehouse code already taken'
+    if (dup) codeError.value = t('Warehouse code already taken')
   }
 
   if (nameError.value || codeError.value || picError.value) return
@@ -105,11 +106,11 @@ async function save() {
 
   if (isEdit.value) {
     updateWarehouse(props.orderId!, payload)
-    toast.notify({ variant: 'success', title: 'Warehouse updated' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'success', title: t('Warehouse updated') , maxWidth: 'max-content'})
     router.push(`/warehouses/${props.orderId}`)
   } else {
     addWarehouse(payload)
-    toast.notify({ variant: 'success', title: 'Warehouse saved' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'success', title: t('Warehouse saved') , maxWidth: 'max-content'})
     router.push('/warehouses')
   }
 }
@@ -121,8 +122,8 @@ async function save() {
     <!-- ── Page title bar (neutral-subtle bg, 72px, breadcrumb + title) ── -->
     <div class="nw-titlebar">
       <div class="nw-titlebar-left">
-        <button class="nw-breadcrumb" @click="goBack">Warehouses</button>
-        <h1 class="nw-title">{{ isEdit ? 'Edit warehouse' : 'New warehouse' }}</h1>
+        <button class="nw-breadcrumb" @click="goBack">{{ t('Warehouses') }}</button>
+        <h1 class="nw-title">{{ isEdit ? t('Edit warehouse') : t('New warehouse') }}</h1>
       </div>
     </div>
 
@@ -132,7 +133,7 @@ async function save() {
 
         <!-- ── Section: Warehouse info ── -->
         <div class="nw-section">
-          <h2 class="nw-section-title">Warehouse info</h2>
+          <h2 class="nw-section-title">{{ t('Warehouse info') }}</h2>
           <div class="nw-section-spacer" />
 
           <div class="nw-fields">
@@ -141,7 +142,7 @@ async function save() {
             <div class="nw-row">
               <MpFormControl id="warehouse-name" class="nw-field-name" is-required :is-invalid="!!nameError">
                 <div class="nw-label-row">
-                  <MpFormLabel>Warehouse name</MpFormLabel>
+                  <MpFormLabel>{{ t('Warehouse name') }}</MpFormLabel>
                   <span class="nw-counter">{{ name.length }} / {{ NAME_MAX }}</span>
                 </div>
                 <MpInput id="warehouse-name-input" v-model="name" :maxlength="NAME_MAX" @update:model-value="nameError = ''" />
@@ -150,7 +151,7 @@ async function save() {
 
               <MpFormControl id="warehouse-code" class="nw-field-code" is-required :is-invalid="!!codeError">
                 <div class="nw-label-row">
-                  <MpFormLabel>Warehouse code</MpFormLabel>
+                  <MpFormLabel>{{ t('Warehouse code') }}</MpFormLabel>
                   <span class="nw-counter">{{ code.length }} / {{ CODE_MAX }}</span>
                 </div>
                 <MpInput id="warehouse-code-input" v-model="code" :maxlength="CODE_MAX" @update:model-value="codeError = ''" />
@@ -160,7 +161,7 @@ async function save() {
 
             <!-- PIC (input tag, max 5, searchable user dropdown) -->
             <MpFormControl id="warehouse-pic" is-required :is-invalid="picError">
-              <MpFormLabel>PIC ({{ picCount }}/{{ PIC_MAX }})</MpFormLabel>
+              <MpFormLabel>{{ t('PIC') }} ({{ picCount }}/{{ PIC_MAX }})</MpFormLabel>
               <MpInputTag
                 id="warehouse-pic-input"
                 :data="picData"
@@ -172,20 +173,20 @@ async function save() {
                 :is-invalid="picError"
                 @change="handlePicChange"
               />
-              <MpFormErrorMessage>You must select at least one PIC</MpFormErrorMessage>
-              <MpFormHelpText>Get notified when stock runs low or a batch is near expiry</MpFormHelpText>
+              <MpFormErrorMessage>{{ t('You must select at least one PIC') }}</MpFormErrorMessage>
+              <MpFormHelpText>{{ t('Get notified when stock runs low or a batch is near expiry') }}</MpFormHelpText>
             </MpFormControl>
 
             <!-- Address -->
             <MpFormControl id="warehouse-address">
-              <MpFormLabel>Address</MpFormLabel>
+              <MpFormLabel>{{ t('Address') }}</MpFormLabel>
               <MpTextarea id="warehouse-address-input" v-model="address" is-full-width />
             </MpFormControl>
 
             <!-- Description -->
             <MpFormControl id="warehouse-description">
               <div class="nw-label-row">
-                <MpFormLabel>Description</MpFormLabel>
+                <MpFormLabel>{{ t('Description') }}</MpFormLabel>
                 <span class="nw-counter">{{ description.length }} / {{ DESC_MAX }}</span>
               </div>
               <MpTextarea id="warehouse-description-input" v-model="description" :maxlength="DESC_MAX" is-full-width />
@@ -197,8 +198,8 @@ async function save() {
         <!-- ── Action group ── -->
         <div class="nw-action-group">
           <div class="nw-action-right">
-            <button class="nw-btn-cancel" @click="goBack">Cancel</button>
-            <button class="nw-btn-save" :disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</button>
+            <button class="nw-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
+            <button class="nw-btn-save" :disabled="isSaving" @click="save">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</button>
           </div>
         </div>
 

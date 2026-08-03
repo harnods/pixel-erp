@@ -27,6 +27,7 @@ import {
 } from '~/data/billOfMaterials'
 import { updateBillOfMaterialsSafe } from '~/data/integrityGuards'
 
+const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 function goList() { router.push('/bill-of-materials') }
@@ -406,7 +407,7 @@ function saveBom(): string | null {
   if (isEditMode.value) {
     const res = updateBillOfMaterialsSafe(editingId, buildBomPayload())
     if (!res.ok) {
-      toast.notify({ variant: 'error', title: "This BOM is used by an active work order and can't be edited", maxWidth: 'max-content' })
+      toast.notify({ variant: 'error', title: t("This BOM is used by an active work order and can't be edited"), maxWidth: 'max-content' })
       return null
     }
     return editingId
@@ -417,13 +418,13 @@ function handleSave() {
   if (!validate()) return
   const id = saveBom()
   if (!id) return
-  toast.notify({ variant: 'success', title: isEditMode.value ? 'Bill of materials updated' : 'Bill of materials saved' })
+  toast.notify({ variant: 'success', title: isEditMode.value ? t('Bill of materials updated') : t('Bill of materials saved') })
   router.push(`/bill-of-materials/${id}`)
 }
 function handleSaveDraft() {
   const id = saveBom()
   if (!id) return
-  toast.notify({ variant: 'success', title: isEditMode.value ? 'Bill of materials updated' : 'Bill of materials saved as draft' })
+  toast.notify({ variant: 'success', title: isEditMode.value ? t('Bill of materials updated') : t('Bill of materials saved as draft') })
   router.push(`/bill-of-materials/${id}`)
 }
 
@@ -454,10 +455,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goList">Bill of materials</button>
+          <button class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ isEditMode ? 'Edit bill of materials' : 'New bill of materials' }}</h1>
+          <h1 class="detail-title">{{ isEditMode ? t('Edit bill of materials') : t('New bill of materials') }}</h1>
         </div>
       </div>
     </header>
@@ -468,16 +469,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
         <!-- ══ BOM info ══════════════════════════════════════════════════════ -->
         <section class="bf-section">
-          <h2 class="bf-section-title">Bill of materials info</h2>
+          <h2 class="bf-section-title">{{ t('Bill of materials info') }}</h2>
 
           <!-- BOM no. (auto) -->
           <div class="bf-field bf-field--sm">
             <MpFormControl id="bf-no" is-required>
               <div class="bf-label-row">
-                <MpFormLabel>BOM no.</MpFormLabel>
-                <span class="bf-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
+                <MpFormLabel>{{ t('BOM no.') }}</MpFormLabel>
+                <span class="bf-label-icon" :title="t('Auto-generated')"><MpIcon name="settings" size="sm" /></span>
               </div>
-              <MpInput id="bf-no-input" :model-value="editingNumber" placeholder="Auto" is-full-width is-disabled />
+              <MpInput id="bf-no-input" :model-value="editingNumber" :placeholder="t('Auto')" is-full-width is-disabled />
             </MpFormControl>
           </div>
 
@@ -485,7 +486,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="bf-field bf-field--lg">
             <MpFormControl id="bf-name" is-required :is-invalid="bomNameError">
               <div class="bf-label-row bf-label-row--between">
-                <MpFormLabel>BOM name</MpFormLabel>
+                <MpFormLabel>{{ t('BOM name') }}</MpFormLabel>
                 <span class="bf-counter">{{ bomName.length }} / {{ NAME_MAX }}</span>
               </div>
               <MpInput
@@ -493,32 +494,32 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 is-full-width :is-invalid="bomNameError"
                 @update:model-value="bomNameError = false"
               />
-              <MpFormErrorMessage>You must fill in BOM name</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must fill in BOM name') }}</MpFormErrorMessage>
             </MpFormControl>
           </div>
 
           <!-- Category | Costing reference -->
           <div class="bf-grid">
             <MpFormControl id="bf-category" is-required :is-invalid="categoryError">
-              <MpFormLabel>Category</MpFormLabel>
+              <MpFormLabel>{{ t('Category') }}</MpFormLabel>
               <MpAutocomplete
                 id="bf-category-ac" v-model="category" :data="CATEGORY_OPTIONS"
-                label-prop="name" value-prop="id" placeholder="Select category"
+                label-prop="name" value-prop="id" :placeholder="t('Select category')"
                 is-clearable use-portal is-full-width :is-invalid="categoryError"
                 @update:model-value="categoryError = false"
               />
-              <MpFormErrorMessage>You must select category</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select category') }}</MpFormErrorMessage>
             </MpFormControl>
 
             <MpFormControl id="bf-costing" is-required :is-invalid="costingError">
-              <MpFormLabel>Costing reference</MpFormLabel>
+              <MpFormLabel>{{ t('Costing reference') }}</MpFormLabel>
               <MpAutocomplete
                 id="bf-costing-ac" v-model="costingReference" :data="COSTING_OPTIONS"
-                label-prop="name" value-prop="id" placeholder="Select costing reference"
+                label-prop="name" value-prop="id" :placeholder="t('Select costing reference')"
                 is-clearable use-portal is-full-width :is-invalid="costingError"
                 @update:model-value="costingError = false"
               />
-              <MpFormErrorMessage>You must select costing reference</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select costing reference') }}</MpFormErrorMessage>
             </MpFormControl>
           </div>
 
@@ -526,7 +527,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="bf-field bf-field--lg bf-field--mt">
             <MpFormControl id="bf-desc">
               <div class="bf-label-row bf-label-row--between">
-                <MpFormLabel>Description</MpFormLabel>
+                <MpFormLabel>{{ t('Description') }}</MpFormLabel>
                 <span class="bf-counter">{{ description.length }} / {{ DESC_MAX }}</span>
               </div>
               <MpTextarea
@@ -538,17 +539,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
           <!-- Attachment -->
           <div class="bf-attachment">
-            <div class="bf-section-label">Attachment</div>
+            <div class="bf-section-label">{{ t('Attachment') }}</div>
             <input
               ref="fileInput" type="file" multiple
               accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
               class="bf-file-hidden" @change="onFileChange"
             />
             <div class="bf-attachment-row">
-              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
-              <span class="bf-attach-or">or drag and drop here</span>
+              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">{{ t('Choose file') }}</MpButton>
+              <span class="bf-attach-or">{{ t('or drag and drop here') }}</span>
             </div>
-            <p class="bf-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per BOM</p>
+            <p class="bf-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per BOM') }}</p>
             <ul v-if="attachedFiles.length" class="bf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="bf-file-item">
                 <MpIcon name="document" size="sm" />
@@ -562,20 +563,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <label class="bf-check">
             <MpCheckbox id="bf-adjust" :is-checked="allowBomAdjustment" @change="allowBomAdjustment = !allowBomAdjustment" />
             <span class="bf-check-body">
-              <span class="bf-check-title">Allow BOM adjustment</span>
-              <span class="bf-check-desc">You can add or reduce raw materials to the same SKU when creating a work order.</span>
+              <span class="bf-check-title">{{ t('Allow BOM adjustment') }}</span>
+              <span class="bf-check-desc">{{ t('You can add or reduce raw materials to the same SKU when creating a work order.') }}</span>
             </span>
           </label>
         </section>
 
         <!-- ══ Raw materials ═════════════════════════════════════════════════ -->
         <section class="bf-section">
-          <h2 class="bf-section-title">Raw materials</h2>
+          <h2 class="bf-section-title">{{ t('Raw materials') }}</h2>
           <div class="bf-toolbar">
             <!-- Placeholder action (non-functional in this prototype) -->
             <MpButton variant="secondary" size="sm" is-rounded @click.prevent>
               <template #leftIcon><MpIcon name="add" size="sm" /></template>
-              Sub-assembly product
+              {{ t('Sub-assembly product') }}
             </MpButton>
           </div>
           <div class="bf-table-scroll">
@@ -588,10 +589,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <thead>
                 <tr>
                   <th class="bf-th bf-th--grip" />
-                  <th class="bf-th">Product</th><th class="bf-th">SKU</th>
-                  <th class="bf-th">Needed qty</th><th class="bf-th">Unit</th>
-                  <th class="bf-th bf-th--right">Purchase cost</th>
-                  <th class="bf-th bf-th--right">Estimated cost</th><th class="bf-th bf-th--del" />
+                  <th class="bf-th">{{ t('Product') }}</th><th class="bf-th">SKU</th>
+                  <th class="bf-th">{{ t('Needed qty') }}</th><th class="bf-th">{{ t('Unit') }}</th>
+                  <th class="bf-th bf-th--right">{{ t('Purchase cost') }}</th>
+                  <th class="bf-th bf-th--right">{{ t('Estimated cost') }}</th><th class="bf-th bf-th--del" />
                 </tr>
               </thead>
               <tbody>
@@ -614,12 +615,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpIcon v-if="row.productId" name="drag" size="sm" />
                   </td>
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete :id="`raw-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" placeholder="Select product" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRawProduct(row, v)" />
+                    <MpAutocomplete :id="`raw-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" :placeholder="t('Select product')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRawProduct(row, v)" />
                   </td>
                   <td class="bf-td"><template v-if="row.productId">{{ row.sku || '—' }}</template></td>
                   <td class="bf-td bf-td--input"><MpInput v-if="row.productId" :id="`raw-need-${row.id}`" v-model="row.needed" type="number" placeholder="0" is-full-width /></td>
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select unit')" is-searchable use-portal is-full-width />
                   </td>
                   <td class="bf-td bf-td--num bf-td--right"><template v-if="row.productId">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</template></td>
                   <td class="bf-td bf-td--num bf-td--right"><template v-if="row.productId">{{ formatIDR(rawEstimated(row)) }}</template></td>
@@ -631,14 +632,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="bf-subtotal-row">
-            <span>Estimated raw materials subtotal</span>
+            <span>{{ t('Estimated raw materials subtotal') }}</span>
             <span class="bf-subtotal-amount">{{ formatIDR(rawSubtotal) }}</span>
           </div>
         </section>
 
         <!-- ══ Production cost ══════════════════════════════════════════════ -->
         <section class="bf-section">
-          <h2 class="bf-section-title">Production cost</h2>
+          <h2 class="bf-section-title">{{ t('Production cost') }}</h2>
           <div class="bf-table-scroll">
             <table class="bf-table">
               <colgroup>
@@ -648,17 +649,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <tbody v-for="group in costGroups" :key="group.key">
                 <tr>
                   <th class="bf-th">{{ group.label }}</th>
-                  <th class="bf-th">Cost driver</th>
+                  <th class="bf-th">{{ t('Cost driver') }}</th>
                   <th class="bf-th bf-th--spacer" />
-                  <th class="bf-th bf-th--right">Amount</th>
+                  <th class="bf-th bf-th--right">{{ t('Amount') }}</th>
                   <th class="bf-th bf-th--del" />
                 </tr>
                 <tr v-for="row in group.rows" :key="row.id" class="bf-tr">
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete :id="`cost-acc-${group.key}-${row.id}`" v-model="row.account" :data="COST_ACCOUNT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width @update:model-value="() => onCostAccount(group, row)" />
+                    <MpAutocomplete :id="`cost-acc-${group.key}-${row.id}`" v-model="row.account" :data="COST_ACCOUNT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select account mapping')" is-searchable is-clearable use-portal is-full-width @update:model-value="() => onCostAccount(group, row)" />
                   </td>
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete v-if="row.account" :id="`cost-drv-${group.key}-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" placeholder="Select cost driver" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.account" :id="`cost-drv-${group.key}-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select cost driver')" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="bf-td bf-td--spacer" />
                   <td class="bf-td bf-td--input bf-td--num-input">
@@ -675,14 +676,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="bf-subtotal-row">
-            <span>Production cost subtotal</span>
+            <span>{{ t('Production cost subtotal') }}</span>
             <span class="bf-subtotal-amount">{{ formatIDR(productionCostSubtotal) }}</span>
           </div>
         </section>
 
         <!-- ══ Routing ══════════════════════════════════════════════════════ -->
         <section class="bf-section">
-          <h2 class="bf-section-title">Routing</h2>
+          <h2 class="bf-section-title">{{ t('Routing') }}</h2>
           <div class="bf-table-scroll">
             <table class="bf-table">
               <colgroup>
@@ -691,18 +692,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="bf-th">Process</th><th class="bf-th">Description</th><th class="bf-th">Account mapping</th>
-                  <th class="bf-th bf-th--right">Amount</th><th class="bf-th bf-th--del" />
+                  <th class="bf-th">{{ t('Process') }}</th><th class="bf-th">{{ t('Description') }}</th><th class="bf-th">{{ t('Account mapping') }}</th>
+                  <th class="bf-th bf-th--right">{{ t('Amount') }}</th><th class="bf-th bf-th--del" />
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in routeRows" :key="row.id" class="bf-tr">
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete :id="`route-proc-${row.id}`" v-model="row.process" :data="PROCESS_OPTIONS" label-prop="name" value-prop="id" placeholder="Select process" is-searchable is-clearable use-portal is-full-width @update:model-value="() => onRouteProcess(row)" />
+                    <MpAutocomplete :id="`route-proc-${row.id}`" v-model="row.process" :data="PROCESS_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select process')" is-searchable is-clearable use-portal is-full-width @update:model-value="() => onRouteProcess(row)" />
                   </td>
-                  <td class="bf-td bf-td--input"><MpInput v-if="row.process" :id="`route-desc-${row.id}`" v-model="row.description" placeholder="Description" is-full-width /></td>
+                  <td class="bf-td bf-td--input"><MpInput v-if="row.process" :id="`route-desc-${row.id}`" v-model="row.description" :placeholder="t('Description')" is-full-width /></td>
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.process" :id="`route-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select account mapping')" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="bf-td bf-td--input bf-td--num-input">
                     <MpInputGroup v-if="row.process" :id="`route-amt-group-${row.id}`" is-full-width>
@@ -718,25 +719,25 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="bf-subtotal-row">
-            <span>Routing cost subtotal</span>
+            <span>{{ t('Routing cost subtotal') }}</span>
             <span class="bf-subtotal-amount">{{ formatIDR(routingSubtotal) }}</span>
           </div>
 
           <!-- Cost summary -->
           <div class="bf-summary">
-            <div class="bf-summary-row"><span>Estimated raw materials subtotal</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-            <div class="bf-summary-row"><span>Production cost subtotal</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-            <div class="bf-summary-row"><span>Routing cost subtotal</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-            <div class="bf-summary-row bf-summary-row--total"><span>Estimated total production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+            <div class="bf-summary-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
+            <div class="bf-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+            <div class="bf-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+            <div class="bf-summary-row bf-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
           </div>
         </section>
 
         <!-- ══ Finished goods ═══════════════════════════════════════════════ -->
         <section class="bf-section bf-section--last">
-          <h2 class="bf-section-title">Finished goods</h2>
+          <h2 class="bf-section-title">{{ t('Finished goods') }}</h2>
 
           <!-- Main output — a single editable row -->
-          <h3 class="bf-subsection-title">Main output</h3>
+          <h3 class="bf-subsection-title">{{ t('Main output') }}</h3>
           <div class="bf-table-scroll">
             <table class="bf-table">
               <colgroup>
@@ -745,19 +746,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="bf-th">Product</th><th class="bf-th">SKU</th><th class="bf-th">Produced qty</th>
-                  <th class="bf-th">Unit</th><th class="bf-th">Percentage</th><th class="bf-th bf-th--spacer" /><th class="bf-th bf-th--right">Estimated cost</th><th class="bf-th bf-th--del" />
+                  <th class="bf-th">{{ t('Product') }}</th><th class="bf-th">SKU</th><th class="bf-th">{{ t('Produced qty') }}</th>
+                  <th class="bf-th">{{ t('Unit') }}</th><th class="bf-th">{{ t('Percentage') }}</th><th class="bf-th bf-th--spacer" /><th class="bf-th bf-th--right">{{ t('Estimated cost') }}</th><th class="bf-th bf-th--del" />
                 </tr>
               </thead>
               <tbody>
                 <tr class="bf-tr">
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete id="main-prod" v-model="mainRow.productId" :data="productOptions" label-prop="name" value-prop="id" placeholder="Select product" is-searchable is-clearable use-portal is-full-width :is-invalid="mainProductError" @update:model-value="(v: string) => { onMainProduct(v); mainProductError = false }" />
+                    <MpAutocomplete id="main-prod" v-model="mainRow.productId" :data="productOptions" label-prop="name" value-prop="id" :placeholder="t('Select product')" is-searchable is-clearable use-portal is-full-width :is-invalid="mainProductError" @update:model-value="(v: string) => { onMainProduct(v); mainProductError = false }" />
                   </td>
                   <td class="bf-td"><template v-if="mainRow.productId">{{ mainRow.sku || '—' }}</template></td>
                   <td class="bf-td bf-td--input"><MpInput v-if="mainRow.productId" id="main-qty" v-model="mainRow.producedQty" type="number" placeholder="0" is-full-width /></td>
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete v-if="mainRow.productId" id="main-unit" v-model="mainRow.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="mainRow.productId" id="main-unit" v-model="mainRow.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select unit')" is-searchable use-portal is-full-width />
                   </td>
                   <td class="bf-td bf-td--input bf-td--pct">
                     <MpInputGroup v-if="mainRow.productId" id="main-pct-group" is-full-width>
@@ -773,12 +774,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="bf-subtotal-row">
-            <span>Estimated main output subtotal</span>
+            <span>{{ t('Estimated main output subtotal') }}</span>
             <span class="bf-subtotal-amount">{{ formatIDR(mainOutputSubtotal) }}</span>
           </div>
 
           <!-- Other outputs -->
-          <h3 class="bf-subsection-title">Other outputs</h3>
+          <h3 class="bf-subsection-title">{{ t('Other outputs') }}</h3>
           <div class="bf-table-scroll">
             <table class="bf-table">
               <colgroup>
@@ -787,19 +788,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="bf-th">Product</th><th class="bf-th">SKU</th><th class="bf-th">Produced qty</th>
-                  <th class="bf-th">Unit</th><th class="bf-th">Percentage</th><th class="bf-th bf-th--spacer" /><th class="bf-th bf-th--right">Estimated cost</th><th class="bf-th bf-th--del" />
+                  <th class="bf-th">{{ t('Product') }}</th><th class="bf-th">SKU</th><th class="bf-th">{{ t('Produced qty') }}</th>
+                  <th class="bf-th">{{ t('Unit') }}</th><th class="bf-th">{{ t('Percentage') }}</th><th class="bf-th bf-th--spacer" /><th class="bf-th bf-th--right">{{ t('Estimated cost') }}</th><th class="bf-th bf-th--del" />
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in otherRows" :key="row.id" class="bf-tr">
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete :id="`other-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" placeholder="Select product" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onOtherProduct(row, v)" />
+                    <MpAutocomplete :id="`other-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" :placeholder="t('Select product')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onOtherProduct(row, v)" />
                   </td>
                   <td class="bf-td"><template v-if="row.productId">{{ row.sku || '—' }}</template></td>
                   <td class="bf-td bf-td--input"><MpInput v-if="row.productId" :id="`other-qty-${row.id}`" v-model="row.producedQty" type="number" placeholder="0" is-full-width /></td>
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" placeholder="Select unit" is-searchable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.productId" :id="`other-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select unit')" is-searchable use-portal is-full-width />
                   </td>
                   <td class="bf-td bf-td--input bf-td--pct">
                     <MpInputGroup v-if="row.productId" :id="`other-pct-group-${row.id}`" is-full-width>
@@ -817,12 +818,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="bf-subtotal-row">
-            <span>Estimated other outputs subtotal</span>
+            <span>{{ t('Estimated other outputs subtotal') }}</span>
             <span class="bf-subtotal-amount">{{ formatIDR(otherOutputsSubtotal) }}</span>
           </div>
 
           <!-- Production waste -->
-          <h3 class="bf-subsection-title">Production waste</h3>
+          <h3 class="bf-subsection-title">{{ t('Production waste') }}</h3>
           <div class="bf-table-scroll">
             <table class="bf-table">
               <colgroup>
@@ -831,18 +832,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="bf-th">Account mapping</th><th class="bf-th bf-th--spacer" /><th class="bf-th">Allocation method</th>
-                  <th class="bf-th">Percentage</th><th class="bf-th bf-th--spacer" /><th class="bf-th bf-th--right">Amount</th><th class="bf-th bf-th--del" />
+                  <th class="bf-th">{{ t('Account mapping') }}</th><th class="bf-th bf-th--spacer" /><th class="bf-th">{{ t('Allocation method') }}</th>
+                  <th class="bf-th">{{ t('Percentage') }}</th><th class="bf-th bf-th--spacer" /><th class="bf-th bf-th--right">Amount</th><th class="bf-th bf-th--del" />
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in wasteRows" :key="row.id" class="bf-tr">
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete :id="`waste-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" placeholder="Select account mapping" is-searchable is-clearable use-portal is-full-width @update:model-value="() => onWasteMapping(row)" />
+                    <MpAutocomplete :id="`waste-map-${row.id}`" v-model="row.accountMapping" :data="ACCOUNT_MAPPING_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select account mapping')" is-searchable is-clearable use-portal is-full-width @update:model-value="() => onWasteMapping(row)" />
                   </td>
                   <td class="bf-td bf-td--spacer" />
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" placeholder="Select allocation method" is-searchable is-clearable use-portal is-full-width />
+                    <MpAutocomplete v-if="row.accountMapping" :id="`waste-alloc-${row.id}`" v-model="row.allocationMethod" :data="ALLOCATION_METHOD_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select allocation method')" is-searchable is-clearable use-portal is-full-width />
                   </td>
                   <td class="bf-td bf-td--input bf-td--pct">
                     <MpInputGroup v-if="row.accountMapping && isWasteByAmount(row)" :id="`waste-pct-group-${row.id}`" is-full-width>
@@ -870,16 +871,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
           <div class="bf-subtotal-row">
-            <span>Estimated production waste subtotal</span>
+            <span>{{ t('Estimated production waste subtotal') }}</span>
             <span class="bf-subtotal-amount">{{ formatIDR(wasteSubtotal) }}</span>
           </div>
 
           <!-- Finished goods summary -->
           <div class="bf-summary">
-            <div class="bf-summary-row"><span>Estimated main output subtotal</span><span>{{ formatIDR(mainOutputSubtotal) }}</span></div>
-            <div class="bf-summary-row"><span>Estimated other outputs subtotal</span><span>{{ formatIDR(otherOutputsSubtotal) }}</span></div>
-            <div class="bf-summary-row"><span>Estimated production waste subtotal</span><span>{{ formatIDR(wasteSubtotal) }}</span></div>
-            <div class="bf-summary-row bf-summary-row--total"><span>Estimated finished goods total</span><span>{{ formatIDR(finishedGoodsTotal) }}</span></div>
+            <div class="bf-summary-row"><span>{{ t('Estimated main output subtotal') }}</span><span>{{ formatIDR(mainOutputSubtotal) }}</span></div>
+            <div class="bf-summary-row"><span>{{ t('Estimated other outputs subtotal') }}</span><span>{{ formatIDR(otherOutputsSubtotal) }}</span></div>
+            <div class="bf-summary-row"><span>{{ t('Estimated production waste subtotal') }}</span><span>{{ formatIDR(wasteSubtotal) }}</span></div>
+            <div class="bf-summary-row bf-summary-row--total"><span>{{ t('Estimated finished goods total') }}</span><span>{{ formatIDR(finishedGoodsTotal) }}</span></div>
           </div>
         </section>
 
@@ -888,9 +889,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goList">Cancel</MpButton>
-      <MpButton variant="secondary" is-rounded @click="handleSaveDraft">Save as draft</MpButton>
-      <MpButton variant="primary" is-rounded @click="handleSave">Save</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goList">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="secondary" is-rounded @click="handleSaveDraft">{{ t('Save as draft') }}</MpButton>
+      <MpButton variant="primary" is-rounded @click="handleSave">{{ t('Save') }}</MpButton>
     </footer>
   </div>
 </template>

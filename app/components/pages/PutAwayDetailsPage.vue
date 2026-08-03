@@ -27,8 +27,9 @@ import type jsPDF from 'jspdf'
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
+const { t } = useLocale()
 
-const task = computed(() => putAwayTasks.find(t => t.id === props.orderId))
+const task = computed(() => putAwayTasks.find(pt => pt.id === props.orderId))
 const lineItems = computed(() => task.value ? getPutAwayLineItems(props.orderId) : [])
 
 // ── Progress stats ─────────────────────────────────────────────────────────
@@ -300,13 +301,13 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Put-away</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Put-away') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <ErpStatusBadge :status="task.status" badge-for="additionalInformation" size="md" />
           <MpPopover id="pad-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch task">
+              <button class="detail-jump-chevron" :aria-label="t('Switch task')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -315,8 +316,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search..." />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -327,7 +328,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.receivingTaskNos[0] }}{{ t.receivingTaskNos.length > 1 ? ` +${t.receivingTaskNos.length - 1} more` : '' }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No tasks found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No tasks found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -350,44 +351,44 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
           <path d="M10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.58 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
         </svg>
         <span class="pad-cancel-banner-text">
-          The purchase order behind this task's receiving was canceled. Nothing has been stored yet — acknowledging will cancel this put-away. Its linked receiving task stays completed (the received goods are a permanent record).
+          {{ t('The purchase order behind this task\'s receiving was canceled. Nothing has been stored yet — acknowledging will cancel this put-away. Its linked receiving task stays completed (the received goods are a permanent record).') }}
         </span>
-        <button class="pad-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">Acknowledge</button>
+        <button class="pad-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
       </div>
 
       <!-- ── Summary grid (2 cols) ── -->
       <section class="pad-summary">
         <div class="content-list-col">
-          <ContentList label="Warehouse">
+          <ContentList :label="t('Warehouse')">
             <div class="wh-link-wrap">
               <a class="cell-link" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">{{ task.warehouseName }}</a>
             </div>
           </ContentList>
-          <ContentList label="Assignee" :value="task.assignee" />
+          <ContentList :label="t('Assignee')" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Start date" :value="formatDateTimeLong(task.startDate)" />
+          <ContentList :label="t('Start date')" :value="formatDateTimeLong(task.startDate)" />
           <template v-if="task.status === 'canceled'">
-            <ContentList label="Canceled date" :value="formatDateTimeLong(task.canceledDate)" />
-            <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
-            <ContentList label="Canceled by" :value="task.canceledBy ?? '—'" />
+            <ContentList :label="t('Canceled date')" :value="formatDateTimeLong(task.canceledDate)" />
+            <ContentList :label="t('Reason')" :value="task.canceledReason ?? '—'" />
+            <ContentList :label="t('Canceled by')" :value="task.canceledBy ?? '—'" />
           </template>
-          <ContentList v-else label="End date" :value="formatDateTimeLong(task.endDate)" />
+          <ContentList v-else :label="t('End date')" :value="formatDateTimeLong(task.endDate)" />
         </div>
       </section>
 
       <!-- ── Progress stats ── -->
       <section class="pad-progress">
         <div class="pad-progress-stat">
-          <span class="pad-progress-label">SKU qty</span>
+          <span class="pad-progress-label">{{ t('SKU qty') }}</span>
           <span class="pad-progress-val">{{ fmt(lineItems.length) }}</span>
         </div>
         <div class="pad-progress-stat">
-          <span class="pad-progress-label">Received qty</span>
+          <span class="pad-progress-label">{{ t('Received qty') }}</span>
           <span class="pad-progress-val">{{ fmt(task.itemQty) }}</span>
         </div>
         <div class="pad-progress-stat">
-          <span class="pad-progress-label">Put-away qty</span>
+          <span class="pad-progress-label">{{ t('Put-away qty') }}</span>
           <span class="pad-progress-val">{{ fmt(storedQty) }}</span>
         </div>
       </section>
@@ -399,8 +400,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="pad-search" type="text" placeholder="Search..." />
-            <button v-if="itemSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="itemSearch = ''">
+            <input v-model="itemSearch" class="pad-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -418,12 +419,12 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
               </colgroup>
               <thead>
                 <tr>
-                  <th class="detail-th">Product</th>
-                  <th class="detail-th">SKU</th>
-                  <th class="detail-th detail-th--num">Received qty</th>
-                  <th v-if="task.status !== 'open'" class="detail-th">Storage location</th>
-                  <th class="detail-th detail-th--num">Put-away qty</th>
-                  <th class="detail-th">Unit</th>
+                  <th class="detail-th">{{ t('Product') }}</th>
+                  <th class="detail-th">{{ t('SKU') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                  <th v-if="task.status !== 'open'" class="detail-th">{{ t('Storage location') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Put-away qty') }}</th>
+                  <th class="detail-th">{{ t('Unit') }}</th>
                   <th class="detail-th detail-th--action"></th>
                 </tr>
               </thead>
@@ -445,13 +446,13 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                   </td>
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--secondary">{{ row.unit }}</td>
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="detail-td detail-td--action">
-                    <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pad-tt-batch-${row.rowId}`" label="View batch" placement="top" use-portal>
-                      <button class="pad-view-btn" type="button" aria-label="View batch" @click="openViewBatch(row)">
+                    <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pad-tt-batch-${row.rowId}`" :label="t('View batch')" placement="top" use-portal>
+                      <button class="pad-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(row)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pad-tt-serial-${row.rowId}`" label="View serial number" placement="top" use-portal>
-                      <button class="pad-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(row)">
+                    <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pad-tt-serial-${row.rowId}`" :label="t('View serial number')" placement="top" use-portal>
+                      <button class="pad-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(row)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -461,11 +462,11 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             </table>
             <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
             <div v-if="loadingMore" class="detail-loading detail-items-loading">
-              <MpSpinner size="sm" /> Loading products…
+              <MpSpinner size="sm" /> {{ t('Loading products…') }}
             </div>
           </div>
           <div class="detail-items-count">
-            Showing {{ visibleItems.length }} of {{ filteredItems.length }} products
+            {{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ filteredItems.length }} {{ t('products') }}
           </div>
         </section>
       </div>
@@ -473,11 +474,11 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       <!-- ── Linked transactions ── -->
       <MpTabs id="pad-tabs" :default-value="0" variant-color="green" class="pad-tabs">
         <MpTabList>
-          <MpTab id="pad-tab-linked" value="linked">Purchase receiving ({{ linkedReceivingTasks.length }})</MpTab>
+          <MpTab id="pad-tab-linked" value="linked">{{ t('Purchase receiving') }} ({{ linkedReceivingTasks.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="linked">
-            <h3 class="linked-section-title">Purchase receiving tasks</h3>
+            <h3 class="linked-section-title">{{ t('Purchase receiving tasks') }}</h3>
             <div class="pad-linked-wrap">
               <table class="pad-linked">
                 <colgroup>
@@ -485,12 +486,12 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Purchase order no.</th>
-                    <th class="detail-th">Warehouse</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Purchase order no.') }}</th>
+                    <th class="detail-th">{{ t('Warehouse') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -511,7 +512,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
                       <span class="linked-end">
                         <span v-if="rt.endDate">{{ formatDateTime(rt.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="agingDays(rt.startDate, rt.endDate) > 1" class="linked-aging">{{ agingDays(rt.startDate, rt.endDate) }} days</span>
+                        <span v-if="agingDays(rt.startDate, rt.endDate) > 1" class="linked-aging">{{ agingDays(rt.startDate, rt.endDate) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -526,18 +527,18 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
     <!-- ── Footer action bar ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="detail-btn detail-btn--secondary" @click="printPutAwaySlip">Print put-away slip</button>
+      <button class="detail-btn detail-btn--secondary" @click="printPutAwaySlip">{{ t('Print put-away slip') }}</button>
 
       <!-- Completed / canceled: stock already committed to its final location
            (or nothing left to cancel) — no actions left, terminal record. -->
       <template v-if="task.status === 'open' || task.status === 'in progress'">
         <div class="detail-split">
           <button class="detail-btn detail-btn--primary detail-split-main" @click="startPutAway">
-            {{ task.status === 'in progress' ? 'Continue put-away' : 'Start put-away' }}
+            {{ task.status === 'in progress' ? t('Continue put-away') : t('Start put-away') }}
           </button>
           <MpPopover id="pad-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-chevron" aria-label="More actions">
+              <button class="detail-btn detail-btn--primary detail-split-chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -545,7 +546,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -557,7 +558,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       :open="pdfPreviewOpen"
       :doc="pdfPreviewDoc"
       :filename="pdfPreviewFilename"
-      title="Put-away slip preview"
+      :title="t('Put-away slip preview')"
       @close="pdfPreviewOpen = false"
     />
 
@@ -567,12 +568,12 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
       <MpModalContent>
         <MpModalHeader>Cancel {{ task.taskNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          This put-away task will be canceled and can no longer be continued. This can't be undone.
+          {{ t('This put-away task will be canceled and can no longer be continued. This can\'t be undone.') }}
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">{{ t('Keep task') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel task') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -584,15 +585,15 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     <MpModal id="pad-ack-cancel" :is-open="ackCancelOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackCancelOpen = false">
       <MpModalContent>
-        <MpModalHeader>Acknowledge canceled purchase order?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ t('Acknowledge canceled purchase order?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           The purchase order behind this put-away's receiving task was canceled. Nothing has been stored yet —
           acknowledging will cancel {{ task?.taskNo }}. Its linked receiving task stays completed (the received goods are a permanent record). This can't be undone.
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">Review</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">Acknowledge</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">{{ t('Review') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -603,7 +604,7 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
 
   <!-- ── Not found ── -->
   <div v-else class="pad-not-found">
-    <p>Put-away task not found.</p>
+    <p>{{ t('Put-away task not found.') }}</p>
   </div>
 
   <ViewBatchDrawer
@@ -612,8 +613,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     :sku="viewBatchItem.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
-    qty-label="Put-away qty"
-    planned-qty-label="Received qty"
+    :qty-label="t('Put-away qty')"
+    :planned-qty-label="t('Received qty')"
     qty-before-location
     :qty-to-pick="viewBatchItem.qty"
     :picked-qty="viewBatchItem.stored"
@@ -629,15 +630,15 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     :sku="viewSerialItem.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
-    qty-label="Put-away qty"
-    planned-qty-label="Received qty"
+    :qty-label="t('Put-away qty')"
+    :planned-qty-label="t('Received qty')"
     :counted-total="(viewSerialItem.serialAssignments ?? []).length"
     :qty-to-pick="(viewSerialItem.serialAssignments ?? []).length"
     :picked-qty="(viewSerialItem.serialAssignments ?? []).filter(s => s.destLocationId).length"
     :planned-serials="(viewSerialItem.serialAssignments ?? []).map(s => ({ serial: s.serial, location: '' }))"
     :picked-serials="(viewSerialItem.serialAssignments ?? []).filter(s => s.destLocationId).map(s => ({ serial: s.serial, location: s.destLocationId! }))"
-    status-planned-label="Received"
-    status-picked-label="Assigned"
+    :status-planned-label="t('Received')"
+    :status-picked-label="t('Assigned')"
     :product-name="viewSerialItem.productName"
     :product-img="viewSerialItem.image"
     @update:open="viewSerialItem = null"

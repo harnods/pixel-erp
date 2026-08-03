@@ -30,6 +30,7 @@ type TaskStatus = 'open' | 'in progress' | 'pending put-away' | 'completed' | 'c
 const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
+const { t } = useLocale()
 
 const entry = computed(() => findTaskWithPO(props.orderId))
 const task  = computed(() => entry.value?.task)
@@ -221,7 +222,7 @@ function agingLabel(): string {
   if (!task.value) return ''
   // Use local end date/status so the badge updates the moment receiving is saved.
   const d = taskAgingDays({ ...task.value, endDate: localEndDate.value ?? undefined, status: localStatus.value })
-  return d > 1 ? `${d} days` : ''
+  return d > 1 ? `${d} ${t('days')}` : ''
 }
 
 // ── Search filter ──────────────────────────────────────────────────────────
@@ -332,13 +333,13 @@ function goBack() {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Receiving</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Receiving') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcvgd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch task">
+              <button class="detail-jump-chevron" :aria-label="t('Switch task')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -347,8 +348,8 @@ function goBack() {
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search..." />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -359,7 +360,7 @@ function goBack() {
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.purchaseNo }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No tasks found.</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No tasks found.') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -369,7 +370,7 @@ function goBack() {
 
       <!-- Last updated — only while in progress -->
       <div v-if="isInProgress && lastUpdated" class="detail-bar-right">
-        <span class="rcvgd-last-updated-label">Last updated</span>
+        <span class="rcvgd-last-updated-label">{{ t('Last updated') }}</span>
         <span class="rcvgd-last-updated-val">{{ formatDateTime(lastUpdated) }}</span>
       </div>
     </header>
@@ -394,23 +395,23 @@ function goBack() {
             The purchase order behind this task ({{ task.purchaseNo }}) was canceled. This task can no longer be continued.
           </template>
         </span>
-        <button class="rcvgd-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">Acknowledge</button>
+        <button class="rcvgd-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
       </div>
 
       <!-- ── Summary grid ── -->
       <section class="rcvgd-summary">
         <div class="content-list-col">
-          <ContentList label="Purchase order" :value="po.purchaseNo" />
-          <ContentList label="Warehouse">
+          <ContentList :label="t('Purchase order')" :value="po.purchaseNo" />
+          <ContentList :label="t('Warehouse')">
             <div class="wh-link-wrap">
               <a class="cell-link" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">{{ po.warehouseName }}</a>
             </div>
           </ContentList>
-          <ContentList label="Assignee" :value="task.assignee" />
+          <ContentList :label="t('Assignee')" :value="task.assignee" />
         </div>
         <div class="content-list-col">
-          <ContentList label="Start date" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
-          <ContentList label="End date">
+          <ContentList :label="t('Start date')" :value="task.startDate ? formatDateTimeLong(task.startDate) : '—'" />
+          <ContentList :label="t('End date')">
             <span class="rcvgd-end-cell">
               <span>{{ localEndDate ? formatDateTime(localEndDate) : '—' }}</span>
               <span v-if="agingLabel()" class="rcvgd-aging">{{ agingLabel() }}</span>
@@ -418,32 +419,32 @@ function goBack() {
           </ContentList>
         </div>
         <div v-if="isCanceled" class="content-list-col">
-          <ContentList label="Canceled date" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
-          <ContentList label="Reason" :value="task.canceledReason ?? '—'" />
-          <ContentList label="Canceled by" :value="task.canceledBy ?? '—'" />
+          <ContentList :label="t('Canceled date')" :value="task.canceledDate ? formatDateTimeLong(task.canceledDate) : '—'" />
+          <ContentList :label="t('Reason')" :value="task.canceledReason ?? '—'" />
+          <ContentList :label="t('Canceled by')" :value="task.canceledBy ?? '—'" />
         </div>
       </section>
 
       <!-- ── Progress stats ── -->
       <section class="rcvgd-progress">
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">SKU qty</span>
+          <span class="rcvgd-progress-label">{{ t('SKU qty') }}</span>
           <span class="rcvgd-progress-val">{{ task.skuCount }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">Purchase qty</span>
+          <span class="rcvgd-progress-label">{{ t('Purchase qty') }}</span>
           <span class="rcvgd-progress-val">{{ fmt(task.purchaseQty) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">Expected qty</span>
+          <span class="rcvgd-progress-label">{{ t('Expected qty') }}</span>
           <span class="rcvgd-progress-val">{{ fmt(expectedTotal) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">Received qty</span>
+          <span class="rcvgd-progress-label">{{ t('Received qty') }}</span>
           <span class="rcvgd-progress-val">{{ fmt(savedReceivedTotal) }}</span>
         </div>
         <div class="rcvgd-progress-stat">
-          <span class="rcvgd-progress-label">Remaining qty to receive</span>
+          <span class="rcvgd-progress-label">{{ t('Remaining qty to receive') }}</span>
           <span class="rcvgd-progress-val">{{ fmt(outstandingTotal) }}</span>
         </div>
       </section>
@@ -456,8 +457,8 @@ function goBack() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="itemSearch" class="rcvgd-search" type="text" placeholder="Search..." />
-            <button v-if="itemSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="itemSearch = ''">
+            <input v-model="itemSearch" class="rcvgd-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -479,13 +480,13 @@ function goBack() {
             </colgroup>
             <thead>
               <tr>
-                <th class="detail-th">Product</th>
-                <th class="detail-th">SKU</th>
-                <th class="detail-th detail-th--num">Purchase qty</th>
-                <th class="detail-th detail-th--num">Expected qty</th>
-                <th class="detail-th detail-th--num">Received qty</th>
-                <th class="detail-th detail-th--num">Remaining qty to receive</th>
-                <th class="detail-th">Unit</th>
+                <th class="detail-th">{{ t('Product') }}</th>
+                <th class="detail-th">{{ t('SKU') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Purchase qty') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Expected qty') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
+                <th class="detail-th detail-th--num">{{ t('Remaining qty to receive') }}</th>
+                <th class="detail-th">{{ t('Unit') }}</th>
                 <th class="detail-th detail-th--action"></th>
               </tr>
             </thead>
@@ -512,13 +513,13 @@ function goBack() {
                 <td class="detail-td">{{ item.unit }}</td>
                 <td class="detail-td detail-td--action">
                   <template v-if="localStatus !== 'open'">
-                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`rtd-tt-batch-${item.skuCode}`" label="View batch" placement="top" use-portal>
-                      <button class="rtd-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                    <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`rtd-tt-batch-${item.skuCode}`" :label="t('View batch')" placement="top" use-portal>
+                      <button class="rtd-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
-                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`rtd-tt-serial-${item.skuCode}`" label="View serial number" placement="top" use-portal>
-                      <button class="rtd-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                    <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`rtd-tt-serial-${item.skuCode}`" :label="t('View serial number')" placement="top" use-portal>
+                      <button class="rtd-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(item)">
                         <MpIcon name="competencies" size="md" />
                       </button>
                     </MpTooltip>
@@ -529,11 +530,11 @@ function goBack() {
           </table>
           <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
           <div v-if="loadingMore" class="detail-loading detail-items-loading">
-            <MpSpinner size="sm" /> Loading products…
+            <MpSpinner size="sm" /> {{ t('Loading products…') }}
           </div>
         </div>
         <div class="detail-items-count">
-          <span>Showing {{ visibleItems.length }} of {{ filteredItems.length }} products</span>
+          <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ filteredItems.length }} {{ t('products') }}</span>
         </div>
       </section>
       </div>
@@ -541,13 +542,13 @@ function goBack() {
       <!-- ── Linked transactions ── -->
       <MpTabs id="rcvgd-tabs" :default-value="0" variant-color="green" class="rcvgd-tabs">
         <MpTabList>
-          <MpTab id="rcvgd-tab-po" :value="0">Linked transactions</MpTab>
-          <MpTab v-if="linkedPutAway.length" id="rcvgd-tab-pa" :value="1">Put-away ({{ linkedPutAway.length }})</MpTab>
+          <MpTab id="rcvgd-tab-po" :value="0">{{ t('Linked transactions') }}</MpTab>
+          <MpTab v-if="linkedPutAway.length" id="rcvgd-tab-pa" :value="1">{{ t('Put-away') }} ({{ linkedPutAway.length }})</MpTab>
         </MpTabList>
         <MpTabPanels>
 
           <MpTabPanel :value="0">
-            <h3 class="linked-section-title">Purchase order</h3>
+            <h3 class="linked-section-title">{{ t('Purchase order') }}</h3>
             <div class="rcvgd-linked-wrap">
               <table class="rcvgd-linked">
                 <colgroup>
@@ -561,13 +562,13 @@ function goBack() {
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Warehouse</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">Estimated arrival</th>
-                    <th class="detail-th">SKU qty</th>
-                    <th class="detail-th">Purchase qty</th>
-                    <th class="detail-th">Received qty</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Warehouse') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('Estimated arrival') }}</th>
+                    <th class="detail-th">{{ t('SKU qty') }}</th>
+                    <th class="detail-th">{{ t('Purchase qty') }}</th>
+                    <th class="detail-th">{{ t('Received qty') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -588,7 +589,7 @@ function goBack() {
           </MpTabPanel>
 
           <MpTabPanel v-if="linkedPutAway.length" :value="1">
-            <h3 class="linked-section-title">Put-away tasks</h3>
+            <h3 class="linked-section-title">{{ t('Put-away tasks') }}</h3>
             <div class="rcvgd-linked-wrap">
               <table class="rcvgd-linked">
                 <colgroup>
@@ -603,14 +604,14 @@ function goBack() {
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="detail-th">Number</th>
-                    <th class="detail-th">Assignee</th>
-                    <th class="detail-th">Status</th>
-                    <th class="detail-th">SKU qty</th>
-                    <th class="detail-th">Received qty</th>
-                    <th class="detail-th">Put-away qty</th>
-                    <th class="detail-th">Start date</th>
-                    <th class="detail-th">End date</th>
+                    <th class="detail-th">{{ t('Number') }}</th>
+                    <th class="detail-th">{{ t('Assignee') }}</th>
+                    <th class="detail-th">{{ t('Status') }}</th>
+                    <th class="detail-th">{{ t('SKU qty') }}</th>
+                    <th class="detail-th">{{ t('Received qty') }}</th>
+                    <th class="detail-th">{{ t('Put-away qty') }}</th>
+                    <th class="detail-th">{{ t('Start date') }}</th>
+                    <th class="detail-th">{{ t('End date') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -628,7 +629,7 @@ function goBack() {
                       <span class="linked-end">
                         <span v-if="pa.endDate">{{ formatDateTime(pa.endDate) }}</span>
                         <span v-else class="linked-end__muted">—</span>
-                        <span v-if="paAging(pa) > 1" class="linked-aging">{{ paAging(pa) }} days</span>
+                        <span v-if="paAging(pa) > 1" class="linked-aging">{{ paAging(pa) }} {{ t('days') }}</span>
                       </span>
                     </td>
                   </tr>
@@ -644,43 +645,43 @@ function goBack() {
 
     <!-- ── Sticky footer — Print + Start/Continue (open & in-progress only) ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">Print receiving slip</button>
+      <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">{{ t('Print receiving slip') }}</button>
       <!-- Cancel task is an order-level action → it lives in the primary action's
            split-button dropdown, never as a standalone "Cancel" footer button. -->
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">Start receiving</button>
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
           <MpPopover id="rcvgd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem></MpPopoverList>
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">Start receiving</button>
+        <button v-else class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
       </template>
       <template v-else-if="localStatus === 'in progress'">
         <div v-if="canCancel" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="continueReceiving">Continue receiving</button>
+          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="continueReceiving">{{ t('Continue receiving') }}</button>
           <MpPopover id="rcvgd-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" aria-label="More actions">
+              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">Cancel task</MpPopoverListItem></MpPopoverList>
+              <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="continueReceiving">Continue receiving</button>
+        <button v-else class="detail-btn detail-btn--primary" @click="continueReceiving">{{ t('Continue receiving') }}</button>
       </template>
       <button v-else-if="localStatus === 'pending put-away'" class="detail-btn detail-btn--primary" @click="createPutAway">
-        Create put-away
+        {{ t('Create put-away') }}
       </button>
     </footer>
 
@@ -690,12 +691,12 @@ function goBack() {
       <MpModalContent>
         <MpModalHeader>Cancel {{ task?.taskNo }}?<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          This receiving task will be canceled and can no longer be continued. This can't be undone.
+          {{ t('This receiving task will be canceled and can no longer be continued. This can\'t be undone.') }}
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">Keep task</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">Cancel task</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">{{ t('Keep task') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel task') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -706,7 +707,7 @@ function goBack() {
     <MpModal id="rcvgd-ack-cancel" :is-open="ackCancelOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="ackCancelOpen = false">
       <MpModalContent>
-        <MpModalHeader>Acknowledge canceled purchase order?<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ t('Acknowledge canceled purchase order?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           <template v-if="task?.stockCommitted">
             The purchase order behind this task ({{ task?.purchaseNo }}) was canceled. Its goods were already
@@ -720,8 +721,8 @@ function goBack() {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">Review</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">Acknowledge</button>
+            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">{{ t('Review') }}</button>
+            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -732,7 +733,7 @@ function goBack() {
       :open="pdfPreviewOpen"
       :doc="pdfPreviewDoc"
       :filename="pdfPreviewFilename"
-      title="Receiving slip preview"
+      :title="t('Receiving slip preview')"
       @close="pdfPreviewOpen = false"
     />
 
@@ -740,8 +741,8 @@ function goBack() {
 
   <!-- Not found fallback -->
   <div v-else class="rcvgd-not-found">
-    <p>Receiving task not found.</p>
-    <button class="detail-breadcrumb" @click="goBack">Back to Receiving</button>
+    <p>{{ t('Receiving task not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to Receiving') }}</button>
   </div>
 
   <ViewBatchDrawer
@@ -750,7 +751,7 @@ function goBack() {
     :sku="viewBatchItem.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
-    qty-label="Received qty"
+    :qty-label="t('Received qty')"
     :picked-batches="viewBatchItem.batchLines ?? []"
     :product-name="viewBatchItem.productName"
     :product-img="viewBatchItem.image"
@@ -762,7 +763,7 @@ function goBack() {
     :sku="viewSerialItem.skuCode"
     :warehouse-id="task?.warehouseId ?? ''"
     kind="packing"
-    qty-label="Received qty"
+    :qty-label="t('Received qty')"
     :counted-total="(viewSerialItem.serialNumbers ?? []).length"
     :picked-serials="(viewSerialItem.serialNumbers ?? []).map(serial => ({ serial, location: '' }))"
     :product-name="viewSerialItem.productName"

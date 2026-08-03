@@ -9,6 +9,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { MpText, MpButton, MpIcon, css } from '@mekari/pixel3'
 
+const { t } = useLocale()
+
 // The stage renders a fixed 24px top border (a non-scrolling gap for normal
 // pages) and clips its overflow to the padding box, so a negative margin can't
 // reach past it. This hero must sit flush to the very top, so we zero that top
@@ -29,35 +31,35 @@ onBeforeUnmount(() => {
 })
 
 const COPY = {
-  heroTitle: 'Collect and disburse payments, right from your ERP',
+  heroTitle: t('Collect and disburse payments, right from your ERP'),
   heroBody:
-    'Accept customer payments, pay vendors, and reconcile every transaction automatically—no more switching between apps or manual matching.',
-  cta: 'Activate Mekari Pay',
+    t('Accept customer payments, pay vendors, and reconcile every transaction automatically—no more switching between apps or manual matching.'),
+  cta: t('Activate Mekari Pay'),
   steps: [
     {
-      label: 'Step 1', thumb: '/illustrations/paywall-step-1.svg',
-      title: 'Connect your Mekari Pay account',
-      body: 'Link Mekari Pay to start moving money in and out of your ERP.',
+      label: t('Step 1'), thumb: '/illustrations/paywall-step-1.svg',
+      title: t('Connect your Mekari Pay account'),
+      body: t('Link Mekari Pay to start moving money in and out of your ERP.'),
       points: [
-        ['Verify your business:', 'Complete a one-time KYC so we can enable payouts.'],
-        ['Link a settlement account:', 'Choose the bank account funds settle into.'],
-        ['Set permissions:', 'Decide who can initiate and approve payments.'],
+        [t('Verify your business:'), t('Complete a one-time KYC so we can enable payouts.')],
+        [t('Link a settlement account:'), t('Choose the bank account funds settle into.')],
+        [t('Set permissions:'), t('Decide who can initiate and approve payments.')],
       ],
     },
     {
-      label: 'Step 2', thumb: '/illustrations/paywall-step-2.svg',
-      title: 'Start transacting',
-      body: 'Once connected, payments flow straight into your invoices and bills.',
+      label: t('Step 2'), thumb: '/illustrations/paywall-step-2.svg',
+      title: t('Start transacting'),
+      body: t('Once connected, payments flow straight into your invoices and bills.'),
       points: [
-        ['Collect faster:', 'Add a pay link to sales invoices and get paid online.'],
-        ['Pay vendors:', 'Schedule and batch disbursements against purchase bills.'],
-        ['Auto-reconcile:', 'Matched transactions post to the ledger automatically.'],
+        [t('Collect faster:'), t('Add a pay link to sales invoices and get paid online.')],
+        [t('Pay vendors:'), t('Schedule and batch disbursements against purchase bills.')],
+        [t('Auto-reconcile:'), t('Matched transactions post to the ledger automatically.')],
       ],
     },
   ],
-  helpPrefix: 'Need help to set up? ',
-  helpLink: 'Reach out to our customer success team',
-  helpSuffix: ' for assistance.',
+  helpPrefix: t('Need help to set up? '),
+  helpLink: t('Reach out to our customer success team'),
+  helpSuffix: t(' for assistance.'),
 }
 
 // Bleed against the stage's 24px side padding so the hero spans edge to edge.

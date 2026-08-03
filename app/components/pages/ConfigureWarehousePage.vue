@@ -20,6 +20,7 @@ import SelectProductDrawer, { type PickerProduct } from '~/components/patterns/S
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 const { activeScenario } = useScenario()
 
 const warehouse = computed(() => getWarehouseDetail(props.orderId))
@@ -97,7 +98,7 @@ async function saveEdit() {
   saveWarehouseConfig(props.orderId, { ...committed })
   isSaving.value = false
   isEditing.value = false
-  toast.notify({ variant: 'success', title: 'Warehouse configuration saved', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Warehouse configuration saved'), maxWidth: 'max-content' })
 }
 
 // ─── Toggle-intercept confirm dialog (Picking / Put-away only — the other two
@@ -136,9 +137,9 @@ const storageLeaves = computed(() => getStorageLeaves(props.orderId).filter((l) 
 const locationPriorityPreview = computed(() => rankStorageLeaves(storageLeaves.value, draft.locationPriority))
 const locationPriorityIsCustom = computed(() => draft.locationPriority.length > 0)
 const locationPrioritySummary = computed(() => {
-  if (!storageLeaves.value.length) return 'No storage locations yet'
-  if (!locationPriorityIsCustom.value) return 'Default order (ascending name)'
-  return 'Custom order'
+  if (!storageLeaves.value.length) return t('No storage locations yet')
+  if (!locationPriorityIsCustom.value) return t('Default order (ascending name)')
+  return t('Custom order')
 })
 function onLocationPrioritySaved(order: string[]) {
   draft.locationPriority = order
@@ -157,19 +158,19 @@ const RULE_META: Record<RuleKey, {
   inputLabel: string; inputSuffix: string
 }> = {
   neg: {
-    draftKey: 'cycleCountRuleNeg', title: 'Negative stock', ariaLabel: 'Negative stock rule',
-    desc: 'Flag SKUs that went negative within the lookback window, a confirmed signal of a system-vs-physical mismatch.',
-    inputKey: 'cycleCountNegLookbackDays', inputLabel: 'Lookback window', inputSuffix: 'days',
+    draftKey: 'cycleCountRuleNeg', title: t('Negative stock'), ariaLabel: t('Negative stock rule'),
+    desc: t('Flag SKUs that went negative within the lookback window, a confirmed signal of a system-vs-physical mismatch.'),
+    inputKey: 'cycleCountNegLookbackDays', inputLabel: t('Lookback window'), inputSuffix: t('days'),
   },
   var: {
-    draftKey: 'cycleCountRuleVar', title: 'Variance signal', ariaLabel: 'Variance signal rule',
-    desc: 'Flag SKUs whose last count exceeded the variance tolerance, likely to drift again.',
-    inputKey: 'cycleCountVarianceThreshold', inputLabel: 'Variance threshold', inputSuffix: '%',
+    draftKey: 'cycleCountRuleVar', title: t('Variance signal'), ariaLabel: t('Variance signal rule'),
+    desc: t('Flag SKUs whose last count exceeded the variance tolerance, likely to drift again.'),
+    inputKey: 'cycleCountVarianceThreshold', inputLabel: t('Variance threshold'), inputSuffix: '%',
   },
   min: {
-    draftKey: 'cycleCountRuleMin', title: 'Min stock (watch list)', ariaLabel: 'Min stock rule',
-    desc: 'Flag watch-listed SKUs at or below their minimum stock level, a predictive signal for high-priority products.',
-    inputKey: 'cycleCountMinGuardDays', inputLabel: 'Count guard window', inputSuffix: 'days',
+    draftKey: 'cycleCountRuleMin', title: t('Min stock (watch list)'), ariaLabel: t('Min stock rule'),
+    desc: t('Flag watch-listed SKUs at or below their minimum stock level, a predictive signal for high-priority products.'),
+    inputKey: 'cycleCountMinGuardDays', inputLabel: t('Count guard window'), inputSuffix: t('days'),
   },
 }
 
@@ -209,19 +210,19 @@ function inputCaptionFor(key: RuleKey): string {
     const negOn = draft.cycleCountRuleNeg
     const varOn = draft.cycleCountRuleVar
     if (!negOn && !varOn) return ''
-    if (negOn && !varOn) return 'How far recent lookback negative stock period'
+    if (negOn && !varOn) return t('How far recent lookback negative stock period')
     return negOn
-      ? 'How far recent lookback negative stock & variance threshold period'
-      : 'How far recent lookback variance threshold period'
+      ? t('How far recent lookback negative stock & variance threshold period')
+      : t('How far recent lookback variance threshold period')
   }
   if (key === 'min') {
     const minOn = draft.cycleCountRuleMin
     const autoOn = draft.cycleCountAutoTask
     if (!minOn && !autoOn) return ''
-    if (minOn && !autoOn) return 'Used for min stock watchlist'
+    if (minOn && !autoOn) return t('Used for min stock watchlist')
     return minOn
-      ? 'Used for auto creation cycle count window & min stock watchlist'
-      : 'Used for auto creation cycle count window'
+      ? t('Used for auto creation cycle count window & min stock watchlist')
+      : t('Used for auto creation cycle count window')
   }
   return ''
 }
@@ -267,8 +268,8 @@ function applyWatchListPicker(skus: string[]) {
 const toggleConfirmTitle = computed(() => {
   const field = toggleConfirmField.value
   if (!field) return ''
-  const label = field === 'pickingEnabled' ? 'Picking' : 'Put-away'
-  return toggleConfirmNextValue.value ? `Turn on ${label} for this warehouse?` : `Turn off ${label} for this warehouse?`
+  const label = field === 'pickingEnabled' ? t('Picking') : t('Put-away')
+  return toggleConfirmNextValue.value ? `${t('Turn on')} ${label} ${t('for this warehouse?')}` : `${t('Turn off')} ${label} ${t('for this warehouse?')}`
 })
 
 const toggleConfirmItems = computed((): string[] => {
@@ -279,9 +280,9 @@ const toggleConfirmItems = computed((): string[] => {
   if (field === 'putAwayEnabled') {
     if (turningOn) {
       return [
-        'New receiving tasks will require a put-away step before completing.',
-        'Existing tasks in progress are not affected by this change.',
-        "Already-completed transactions aren't affected.",
+        t('New receiving tasks will require a put-away step before completing.'),
+        t('Existing tasks in progress are not affected by this change.'),
+        t("Already-completed transactions aren't affected."),
       ]
     }
     const { openPutAways, pendingReceiving } = previewDisablePutAway(props.orderId)
@@ -290,30 +291,30 @@ const toggleConfirmItems = computed((): string[] => {
     if (pendingReceiving > 0) parts.push(`${pendingReceiving} receiving task${pendingReceiving === 1 ? '' : 's'} awaiting put-away`)
     const existingNote = parts.length > 0
       ? `There ${parts.join(' and ')} — ${parts.length === 1 ? 'it' : 'they'} can still be completed normally.`
-      : 'No tasks are currently in progress or awaiting put-away.'
+      : t('No tasks are currently in progress or awaiting put-away.')
     return [
-      'New receiving tasks will skip put-away and complete immediately.',
+      t('New receiving tasks will skip put-away and complete immediately.'),
       existingNote,
-      "Already-completed put-away tasks aren't affected.",
+      t("Already-completed put-away tasks aren't affected."),
     ]
   }
 
   // pickingEnabled
   if (turningOn) {
     return [
-      'New outbound orders will require a picking step before packing.',
-      'Existing tasks in progress are not affected by this change.',
-      "Already-completed transactions aren't affected.",
+      t('New outbound orders will require a picking step before packing.'),
+      t('Existing tasks in progress are not affected by this change.'),
+      t("Already-completed transactions aren't affected."),
     ]
   }
   const { openPickings } = previewDisablePicking(props.orderId)
   const pickingNote = openPickings > 0
     ? `There ${openPickings === 1 ? 'is' : 'are'} ${openPickings} picking task${openPickings === 1 ? '' : 's'} in progress — ${openPickings === 1 ? 'it' : 'they'} can still be completed normally.`
-    : 'No picking tasks are currently in progress.'
+    : t('No picking tasks are currently in progress.')
   return [
-    'New outbound orders will skip picking and go straight to packing.',
+    t('New outbound orders will skip picking and go straight to packing.'),
     pickingNote,
-    "Already-completed picking tasks aren't affected.",
+    t("Already-completed picking tasks aren't affected."),
   ]
 })
 </script>
@@ -325,7 +326,7 @@ const toggleConfirmItems = computed((): string[] => {
     <div class="cw-titlebar">
       <div class="cw-titlebar-left">
         <button class="cw-breadcrumb" @click="goBack">{{ warehouse.name }}</button>
-        <h1 class="cw-title">Configure warehouse</h1>
+        <h1 class="cw-title">{{ t('Configure warehouse') }}</h1>
       </div>
     </div>
 
@@ -334,8 +335,8 @@ const toggleConfirmItems = computed((): string[] => {
       <section class="cw-section">
         <div class="cw-section-header">
           <div class="cw-section-meta">
-            <h2 class="cw-section-title">Settings</h2>
-            <p class="cw-section-desc">Configure how inbound and outbound tasks run in this warehouse.</p>
+            <h2 class="cw-section-title">{{ t('Settings') }}</h2>
+            <p class="cw-section-desc">{{ t('Configure how inbound and outbound tasks run in this warehouse.') }}</p>
           </div>
           <button
             v-if="!isEditing"
@@ -343,74 +344,74 @@ const toggleConfirmItems = computed((): string[] => {
             @click="startEdit"
           >
             <MpIcon name="edit" size="sm" />
-            Edit
+            {{ t('Edit') }}
           </button>
         </div>
 
         <div class="cw-toggle-list">
 
-          <h3 class="cw-subsection-title">Outbound delivery</h3>
+          <h3 class="cw-subsection-title">{{ t('Outbound delivery') }}</h3>
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
-              <span class="cw-toggle-title">Picking</span>
-              <span class="cw-toggle-desc">When off, outbound orders in this warehouse skip picking entirely and go straight to packing.</span>
+              <span class="cw-toggle-title">{{ t('Picking') }}</span>
+              <span class="cw-toggle-desc">{{ t('When off, outbound orders in this warehouse skip picking entirely and go straight to packing.') }}</span>
             </div>
             <MpToggle
               :is-checked="draft.pickingEnabled"
               :is-disabled="!isEditing"
-              aria-label="Picking"
+              :aria-label="t('Picking')"
               @update:is-checked="(v: boolean) => requestToggle('pickingEnabled', v)"
             />
           </div>
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
-              <span class="cw-toggle-title">Allow partial picking</span>
+              <span class="cw-toggle-title">{{ t('Allow partial picking') }}</span>
               <span class="cw-toggle-desc">
-                {{ partialPickingLocked ? "Not applicable while Picking is off." : "Let a picking list in this warehouse be finished with less than the full planned quantity." }}
+                {{ partialPickingLocked ? t("Not applicable while Picking is off.") : t("Let a picking list in this warehouse be finished with less than the full planned quantity.") }}
               </span>
             </div>
             <MpToggle
               v-model:is-checked="draft.allowPartialPicking"
               :is-disabled="!isEditing || partialPickingLocked"
-              aria-label="Allow partial picking"
+              :aria-label="t('Allow partial picking')"
             />
           </div>
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
-              <span class="cw-toggle-title">Require source shipping label</span>
-              <span class="cw-toggle-desc">Packing cannot begin until the shipping label from the order source (e.g. marketplace) has been received.</span>
+              <span class="cw-toggle-title">{{ t('Require source shipping label') }}</span>
+              <span class="cw-toggle-desc">{{ t('Packing cannot begin until the shipping label from the order source (e.g. marketplace) has been received.') }}</span>
             </div>
             <MpToggle
               v-model:is-checked="draft.requireSourceLabel"
               :is-disabled="!isEditing"
-              aria-label="Require source shipping label"
+              :aria-label="t('Require source shipping label')"
             />
           </div>
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
-              <span class="cw-toggle-title">Prevent duplicate packing label printing</span>
-              <span class="cw-toggle-desc">Once a packing label has been printed for an outbound order, it cannot be printed again. Prevents duplicate labels from being issued.</span>
+              <span class="cw-toggle-title">{{ t('Prevent duplicate packing label printing') }}</span>
+              <span class="cw-toggle-desc">{{ t('Once a packing label has been printed for an outbound order, it cannot be printed again. Prevents duplicate labels from being issued.') }}</span>
             </div>
             <MpToggle
               v-model:is-checked="draft.preventDuplicateLabel"
               :is-disabled="!isEditing"
-              aria-label="Prevent duplicate packing label printing"
+              :aria-label="t('Prevent duplicate packing label printing')"
             />
           </div>
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
-              <span class="cw-toggle-title">Storage location priority</span>
-              <span class="cw-toggle-desc">WMS reserves from the highest-priority location with available stock when an outbound doesn't already specify one.</span>
+              <span class="cw-toggle-title">{{ t('Storage location priority') }}</span>
+              <span class="cw-toggle-desc">{{ t("WMS reserves from the highest-priority location with available stock when an outbound doesn't already specify one.") }}</span>
             </div>
           </div>
 
           <div class="cw-sub-row">
-            <span class="cw-sub-label">Priority order</span>
+            <span class="cw-sub-label">{{ t('Priority order') }}</span>
             <div class="cw-sub-priority">
               <span class="cw-sub-value">{{ locationPrioritySummary }}</span>
               <button
@@ -418,38 +419,38 @@ const toggleConfirmItems = computed((): string[] => {
                 class="btn-enterprise btn-enterprise--secondary cw-manage-priority-btn"
                 @click="locationPriorityDrawerOpen = true"
               >
-                Manage storage priority
+                {{ t('Manage storage priority') }}
               </button>
             </div>
           </div>
 
-          <h3 class="cw-subsection-title cw-subsection-title--spaced">Inbound delivery</h3>
+          <h3 class="cw-subsection-title cw-subsection-title--spaced">{{ t('Inbound delivery') }}</h3>
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
-              <span class="cw-toggle-title">Put-away</span>
-              <span class="cw-toggle-desc">When off, receiving tasks in this warehouse skip put-away entirely. Finishing receiving completes the inbound flow.</span>
+              <span class="cw-toggle-title">{{ t('Put-away') }}</span>
+              <span class="cw-toggle-desc">{{ t('When off, receiving tasks in this warehouse skip put-away entirely. Finishing receiving completes the inbound flow.') }}</span>
             </div>
             <MpToggle
               :is-checked="draft.putAwayEnabled"
               :is-disabled="!isEditing"
-              aria-label="Put-away"
+              :aria-label="t('Put-away')"
               @update:is-checked="(v: boolean) => requestToggle('putAwayEnabled', v)"
             />
           </div>
 
-          <h3 class="cw-subsection-title cw-subsection-title--spaced">General settings</h3>
+          <h3 class="cw-subsection-title cw-subsection-title--spaced">{{ t('General settings') }}</h3>
 
           <div class="cw-toggle-row">
             <div class="cw-toggle-info">
-              <span class="cw-toggle-title">Barcode scan threshold</span>
-              <span class="cw-toggle-desc">Items at or below this quantity must be scanned one by one. Above the limit, operators can enter the quantity manually.</span>
+              <span class="cw-toggle-title">{{ t('Barcode scan threshold') }}</span>
+              <span class="cw-toggle-desc">{{ t('Items at or below this quantity must be scanned one by one. Above the limit, operators can enter the quantity manually.') }}</span>
             </div>
-            <MpToggle v-model:is-checked="draft.scanThreshold" :is-disabled="!isEditing" aria-label="Barcode scan threshold" />
+            <MpToggle v-model:is-checked="draft.scanThreshold" :is-disabled="!isEditing" :aria-label="t('Barcode scan threshold')" />
           </div>
 
           <div v-if="draft.scanThreshold" class="cw-sub-row">
-            <span class="cw-sub-label">Threshold qty</span>
+            <span class="cw-sub-label">{{ t('Threshold qty') }}</span>
             <template v-if="isEditing">
               <input
                 class="cw-sub-input"
@@ -459,21 +460,21 @@ const toggleConfirmItems = computed((): string[] => {
                 :value="draft.scanThresholdValue"
                 @input="draft.scanThresholdValue = Math.max(1, parseInt(($event.target as HTMLInputElement).value) || 1)"
               />
-              <span class="cw-sub-unit">pcs</span>
+              <span class="cw-sub-unit">{{ t('pcs') }}</span>
             </template>
-            <span v-else class="cw-sub-value">{{ draft.scanThresholdValue }} pcs</span>
+            <span v-else class="cw-sub-value">{{ draft.scanThresholdValue }} {{ t('pcs') }}</span>
           </div>
 
           <template v-if="activeScenario === 'WMS Standalone'">
-            <h3 class="cw-subsection-title cw-subsection-title--spaced">Cycle counts</h3>
+            <h3 class="cw-subsection-title cw-subsection-title--spaced">{{ t('Cycle counts') }}</h3>
 
             <!-- Cycle count recommendation master toggle -->
             <div class="cw-toggle-row">
               <div class="cw-toggle-info">
-                <span class="cw-toggle-title">Cycle count recommendation</span>
-                <span class="cw-toggle-desc">Show a recommendation board that surfaces which SKUs to prioritize for counting, based on negative stock, count variance, and minimum stock signals.</span>
+                <span class="cw-toggle-title">{{ t('Cycle count recommendation') }}</span>
+                <span class="cw-toggle-desc">{{ t('Show a recommendation board that surfaces which SKUs to prioritize for counting, based on negative stock, count variance, and minimum stock signals.') }}</span>
               </div>
-              <MpToggle v-model:is-checked="draft.cycleCountRec" :is-disabled="!isEditing" aria-label="Cycle count recommendation" />
+              <MpToggle v-model:is-checked="draft.cycleCountRec" :is-disabled="!isEditing" :aria-label="t('Cycle count recommendation')" />
             </div>
 
             <!-- Sub-settings: only visible when master toggle is ON -->
@@ -481,7 +482,7 @@ const toggleConfirmItems = computed((): string[] => {
 
               <!-- Recommendation priority (drag to reorder when editing) -->
               <div class="cw-rec-group" :class="{ 'cw-rec-group--editing': isEditing }">
-                <span class="cw-rec-group-label">Recommendation priority</span>
+                <span class="cw-rec-group-label">{{ t('Recommendation priority') }}</span>
 
                 <div
                   v-for="(ruleKey, i) in draft.cycleCountRuleOrder"
@@ -517,12 +518,12 @@ const toggleConfirmItems = computed((): string[] => {
                           use-portal
                         >
                           <template #label>
-                            <strong>Count priority rank: {{ weightRankFor(ruleKey as RuleKey) }}</strong><br />
-                            impact {{ weightPercentFor(ruleKey as RuleKey) }}% to recommendation priority
+                            <strong>{{ t('Count priority rank:') }} {{ weightRankFor(ruleKey as RuleKey) }}</strong><br />
+                            {{ t('impact') }} {{ weightPercentFor(ruleKey as RuleKey) }}% {{ t('to recommendation priority') }}
                           </template>
                           <MpBadge for="additionalInformation" type="information" size="sm">{{ weightPercentFor(ruleKey as RuleKey) }}%</MpBadge>
                         </MpTooltip>
-                        <MpBadge v-else for="additionalInformation" type="announcement" size="sm">Not applied</MpBadge>
+                        <MpBadge v-else for="additionalInformation" type="announcement" size="sm">{{ t('Not applied') }}</MpBadge>
                       </span>
                       <span class="cw-toggle-desc">{{ RULE_META[ruleKey as RuleKey].desc }}</span>
                     </div>
@@ -564,24 +565,24 @@ const toggleConfirmItems = computed((): string[] => {
               <!-- Auto-create toggle -->
               <div class="cw-toggle-row">
                 <div class="cw-toggle-info">
-                  <span class="cw-toggle-title">Auto-create cycle count tasks</span>
-                  <span class="cw-toggle-desc">Automatically create pending cycle count tasks for all recommended SKUs. When off, the recommendation board is advisory only; no tasks are created.</span>
+                  <span class="cw-toggle-title">{{ t('Auto-create cycle count tasks') }}</span>
+                  <span class="cw-toggle-desc">{{ t('Automatically create pending cycle count tasks for all recommended SKUs. When off, the recommendation board is advisory only; no tasks are created.') }}</span>
                 </div>
-                <MpToggle v-model:is-checked="draft.cycleCountAutoTask" :is-disabled="!isEditing" aria-label="Auto-create cycle count tasks" />
+                <MpToggle v-model:is-checked="draft.cycleCountAutoTask" :is-disabled="!isEditing" :aria-label="t('Auto-create cycle count tasks')" />
               </div>
 
               <!-- Cycle-count watch list -->
               <div class="cw-watchlist-row">
                 <div class="cw-toggle-info">
-                  <span class="cw-toggle-title">Cycle-count watch list</span>
-                  <span class="cw-toggle-desc">List of SKUs that will show on the cycle count recommendation list.</span>
+                  <span class="cw-toggle-title">{{ t('Cycle-count watch list') }}</span>
+                  <span class="cw-toggle-desc">{{ t('List of SKUs that will show on the cycle count recommendation list.') }}</span>
                 </div>
                 <button
                   class="btn-enterprise btn-enterprise--secondary"
                   :disabled="!isEditing"
                   @click="watchListDrawerOpen = true"
                 >
-                  Select product{{ draft.cycleCountWatchList.length ? ` (${draft.cycleCountWatchList.length})` : '' }}
+                  {{ t('Select product') }}{{ draft.cycleCountWatchList.length ? ` (${draft.cycleCountWatchList.length})` : '' }}
                 </button>
               </div>
 
@@ -591,9 +592,9 @@ const toggleConfirmItems = computed((): string[] => {
         </div>
 
         <div v-if="isEditing" class="cw-action-bar">
-          <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel">Cancel</button>
+          <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel">{{ t('Cancel') }}</button>
           <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="requestSave">
-            {{ isSaving ? 'Saving…' : 'Save changes' }}
+            {{ isSaving ? t('Saving…') : t('Save changes') }}
           </button>
         </div>
       </section>
@@ -610,15 +611,15 @@ const toggleConfirmItems = computed((): string[] => {
     >
       <MpModalContent>
         <MpModalHeader>
-          Discard unsaved changes?
+          {{ t('Discard unsaved changes?') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
-          <p class="cw-dialog-body">Your changes will not be saved.</p>
+          <p class="cw-dialog-body">{{ t('Your changes will not be saved.') }}</p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">Keep editing</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit">Discard</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">{{ t('Keep editing') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit">{{ t('Discard') }}</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -644,8 +645,8 @@ const toggleConfirmItems = computed((): string[] => {
           </ul>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="cancelToggleConfirm">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmToggle">Confirm</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="cancelToggleConfirm">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmToggle">{{ t('Confirm') }}</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -662,18 +663,17 @@ const toggleConfirmItems = computed((): string[] => {
     >
       <MpModalContent>
         <MpModalHeader>
-          Apply new storage location priority?
+          {{ t('Apply new storage location priority?') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
           <p class="cw-dialog-body">
-            This only applies to orders created from now on. Orders that already reserved a
-            storage location keep their original bin — they won't be recalculated.
+            {{ t("This only applies to orders created from now on. Orders that already reserved a storage location keep their original bin — they won't be recalculated.") }}
           </p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">Keep editing</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">Save changes</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">{{ t('Keep editing') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">{{ t('Save changes') }}</button>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />

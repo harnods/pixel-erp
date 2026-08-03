@@ -25,7 +25,7 @@ function isBatchSku(sku: string): boolean {
 
 /** Generate deterministic serial numbers for seed receiving data. */
 function seedSerials(sku: string, count: number, base: number): string[] {
-  const prefix = sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN';
+  const prefix = sku.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'SN';
   return Array.from({ length: count }, (_, k) =>
     `${prefix}${String(80000 + base + k).padStart(5, '0')}`,
   );

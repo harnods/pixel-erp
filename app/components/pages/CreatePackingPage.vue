@@ -25,6 +25,9 @@ import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route  = useRoute()
+const { t } = useLocale()
+// Alias for template regions where a `v-for="t in …"` loop variable shadows `t`.
+const tl = t
 
 // ─── Source picking task(s) ─────────────────────────────────────────────────────
 // Opened from one picking list (?pickingId) or a bulk selection (?pickingIds=a,b,c).
@@ -183,6 +186,7 @@ const sourcePickingLists = computed<PickingTask[]>(() => {
 // order it touches is packable. A picking list can bundle multiple sales
 // orders, so this can report more than one blocking reason.
 function pickingListBlockReasons(pt: PickingTask): string[] {
+  const tr = t
   const byOrderId = new Map(orderTables.value.map(t => [t.orderId, t]))
   const reasons: string[] = []
   for (const orderId of pt.salesOrderIds) {
@@ -191,9 +195,9 @@ function pickingListBlockReasons(pt: PickingTask): string[] {
     // (see canceledTables note), so it must not drag the whole picking list to
     // "Not packable". Skip it alongside already-packable orders.
     if (!t || t.packable || t.canceled) continue
-    if (t.alreadyPacked) reasons.push(`${t.salesNo} already has a packing task`)
-    else if (t.isMarketplace) reasons.push(`${t.salesNo} (marketplace) isn't fully picked yet across its picking lists`)
-    else reasons.push(`${t.salesNo} has nothing picked yet`)
+    if (t.alreadyPacked) reasons.push(`${t.salesNo} ${tr('already has a packing task')}`)
+    else if (t.isMarketplace) reasons.push(`${t.salesNo} ${tr("(marketplace) isn't fully picked yet across its picking lists")}`)
+    else reasons.push(`${t.salesNo} ${tr('has nothing picked yet')}`)
   }
   return reasons
 }
@@ -489,10 +493,10 @@ async function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPacking">Packing</button>
+          <button class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New packing</h1>
+          <h1 class="detail-title">{{ t('New packing') }}</h1>
         </div>
       </div>
     </header>
@@ -502,35 +506,35 @@ async function handleCreate() {
 
       <!-- Not found -->
       <div v-if="!hasSource" class="pk-empty">
-        <p class="pk-empty-title">Picking task not found</p>
-        <p class="pk-empty-desc">This packing task must be created from a completed picking task.</p>
+        <p class="pk-empty-title">{{ t('Picking task not found') }}</p>
+        <p class="pk-empty-desc">{{ t('This packing task must be created from a completed picking task.') }}</p>
       </div>
 
       <template v-else>
         <!-- Warehouse + Assignee -->
         <div class="pk-section pk-grid">
           <MpFormControl id="pc-warehouse" :class="css({ gridColumn: 'span 3' })">
-            <MpFormLabel>Warehouse</MpFormLabel>
+            <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
             <MpAutocomplete
               id="pc-warehouse-ac"
               v-model="warehouseId"
               :data="warehouseAc"
               label-prop="name"
               value-prop="id"
-              placeholder="Warehouse"
+              :placeholder="t('Warehouse')"
               use-portal is-full-width is-disabled
             />
           </MpFormControl>
 
           <MpFormControl id="pc-assignee" is-required :is-invalid="assigneeError" :class="css({ gridColumn: 'span 3' })">
-            <MpFormLabel>Assignee</MpFormLabel>
+            <MpFormLabel>{{ t('Assignee') }}</MpFormLabel>
             <MpAutocomplete
               id="pc-assignee-ac"
               v-model="assigneeId"
               :data="ASSIGNEES"
               label-prop="name"
               value-prop="id"
-              placeholder="Select assignee"
+              :placeholder="t('Select assignee')"
               is-searchable is-clearable use-portal is-full-width
               :is-invalid="assigneeError"
             >
@@ -544,7 +548,7 @@ async function handleCreate() {
                 </div>
               </template>
             </MpAutocomplete>
-            <MpFormErrorMessage>You must select assignee</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select assignee') }}</MpFormErrorMessage>
           </MpFormControl>
         </div>
 
@@ -554,17 +558,17 @@ async function handleCreate() {
           <MpAccordionItem id="pk-picking-lists-acc" icon-position="start">
             <MpAccordionHeader>
               <span class="pk-acc-chevron-wrap"><MpAccordionIcon /></span>
-              <span class="pk-acc-label">{{ sourcePickingLists.length > 1 ? 'Picking lists' : 'Picking list' }}</span>
+              <span class="pk-acc-label">{{ sourcePickingLists.length > 1 ? t('Picking lists') : t('Picking list') }}</span>
             </MpAccordionHeader>
             <MpAccordionPanel>
               <table class="pk-picking-table">
                 <thead>
                   <tr class="pk-thead-row--plain">
-                    <th class="pk-th">Picking no.</th>
-                    <th class="pk-th">Assignee</th>
-                    <th class="pk-th pk-th--num">SKU qty</th>
-                    <th class="pk-th pk-th--num">Picked qty</th>
-                    <th class="pk-th">Status</th>
+                    <th class="pk-th">{{ t('Picking no.') }}</th>
+                    <th class="pk-th">{{ t('Assignee') }}</th>
+                    <th class="pk-th pk-th--num">{{ t('SKU qty') }}</th>
+                    <th class="pk-th pk-th--num">{{ t('Picked qty') }}</th>
+                    <th class="pk-th">{{ t('Status') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -583,10 +587,10 @@ async function handleCreate() {
                           placement="top"
                           use-portal
                         >
-                          <MpBadge for="tableStatus" type="warning">Not packable</MpBadge>
+                          <MpBadge for="tableStatus" type="warning">{{ t('Not packable') }}</MpBadge>
                         </MpTooltip>
                       </template>
-                      <MpBadge v-else for="tableStatus" type="completed">Ready to pack</MpBadge>
+                      <MpBadge v-else for="tableStatus" type="completed">{{ t('Ready to pack') }}</MpBadge>
                     </td>
                   </tr>
                 </tbody>
@@ -597,25 +601,25 @@ async function handleCreate() {
 
         <!-- Items to pack, per sales order -->
         <div class="pk-sku-section">
-          <h2 class="pk-section-title">Items to pack</h2>
+          <h2 class="pk-section-title">{{ t('Items to pack') }}</h2>
           <div v-if="selectedTotals.orders" class="pk-picking-ref">
-            <span class="pk-picking-ref-label">Packing tasks</span>
+            <span class="pk-picking-ref-label">{{ t('Packing tasks') }}</span>
             <span class="pk-picking-ref-val">{{ formatNum(selectedTotals.orders) }}</span>
           </div>
           <p v-if="blockedTables.length" class="pk-tasks-note">
-            Note: {{ blockedTables.map(t => t.salesNo).join(', ') }} ({{ blockedTables.length > 1 ? 'marketplace orders' : 'marketplace order' }}) not fully picked yet across its picking lists, so {{ blockedTables.length > 1 ? 'they’re' : 'it’s' }} not included here — finish picking {{ blockedTables.length > 1 ? 'them' : 'it' }} to pack.
-            <template v-if="packableTables.length"> You can still save this packing for the order{{ packableTables.length > 1 ? 's' : '' }} below.</template>
+            {{ t('Note:') }} {{ blockedTables.map(t => t.salesNo).join(', ') }} ({{ blockedTables.length > 1 ? t('marketplace orders') : t('marketplace order') }}) {{ blockedTables.length > 1 ? t('are not fully picked yet across their picking lists, so they’re not included here — finish picking them to pack.') : t('is not fully picked yet across its picking lists, so it’s not included here — finish picking it to pack.') }}
+            <template v-if="packableTables.length"> {{ packableTables.length > 1 ? t('You can still save this packing for the orders below.') : t('You can still save this packing for the order below.') }}</template>
           </p>
           <p v-if="packedTables.length" class="pk-tasks-note">
-            Note: {{ packedTables.map(t => t.salesNo).join(', ') }} already {{ packedTables.length > 1 ? 'have' : 'has a' }} packing task, so {{ packedTables.length > 1 ? 'they’re' : 'it’s' }} not shown here.
+            {{ t('Note:') }} {{ packedTables.map(t => t.salesNo).join(', ') }} {{ packedTables.length > 1 ? t('already have a packing task, so they’re not shown here.') : t('already has a packing task, so it’s not shown here.') }}
           </p>
           <p v-if="canceledTables.length" class="pk-tasks-note">
-            Note: {{ canceledTables.map(t => t.salesNo).join(', ') }} {{ canceledTables.length > 1 ? 'were' : 'was' }} cancelled, so {{ canceledTables.length > 1 ? 'they’re' : 'it’s' }} not shown here — {{ canceledTables.length > 1 ? 'their' : 'its' }} reserved stock can be returned via Release reserved.
+            {{ t('Note:') }} {{ canceledTables.map(t => t.salesNo).join(', ') }} {{ canceledTables.length > 1 ? t('were cancelled, so they’re not shown here — their reserved stock can be returned via Release reserved.') : t('was cancelled, so it’s not shown here — its reserved stock can be returned via Release reserved.') }}
           </p>
           <p v-if="orderError" class="pk-tasks-error">
             {{ !isDirectMode && packableTables.length === 0
-              ? 'Marketplace orders must be fully picked (across their picking lists) before a packing task can be created.'
-              : 'You must select at least one SKU to pack' }}
+              ? t('Marketplace orders must be fully picked (across their picking lists) before a packing task can be created.')
+              : t('You must select at least one SKU to pack') }}
           </p>
 
           <div v-for="t in packableTables" :key="t.orderId" class="pk-order-block">
@@ -634,7 +638,7 @@ async function handleCreate() {
                 <MpTooltip
                   v-if="t.isMarketplace"
                   :id="`pc-mkt-${t.orderId}`"
-                  label="Marketplace orders must be packed in full. Items can't be removed."
+                  :label="tl(`Marketplace orders must be packed in full. Items can't be removed.`)"
                   placement="top"
                   use-portal
                 >
@@ -665,13 +669,13 @@ async function handleCreate() {
                           @change="toggleAllDirectLines"
                         />
                       </th>
-                      <th class="pk-th">Product</th>
-                      <th class="pk-th">SKU</th>
-                      <th v-if="!isDirectMode" class="pk-th">Storage location</th>
-                      <th class="pk-th pk-th--num">Order qty</th>
-                      <th v-if="!isDirectMode" class="pk-th pk-th--num">Picked qty</th>
-                      <th v-if="isDirectMode" class="pk-th pk-th--num">Pack qty</th>
-                      <th class="pk-th">Unit</th>
+                      <th class="pk-th">{{ tl('Product') }}</th>
+                      <th class="pk-th">{{ tl('SKU') }}</th>
+                      <th v-if="!isDirectMode" class="pk-th">{{ tl('Storage location') }}</th>
+                      <th class="pk-th pk-th--num">{{ tl('Order qty') }}</th>
+                      <th v-if="!isDirectMode" class="pk-th pk-th--num">{{ tl('Picked qty') }}</th>
+                      <th v-if="isDirectMode" class="pk-th pk-th--num">{{ tl('Pack qty') }}</th>
+                      <th class="pk-th">{{ tl('Unit') }}</th>
                       <th v-if="!isDirectMode" class="pk-th pk-th--action"></th>
                     </tr>
                   </thead>
@@ -722,20 +726,20 @@ async function handleCreate() {
                           type="number" min="0" :max="meta.row.picked" class="pk-qty-input"
                           :value="packQtyFor(meta.row)"
                           :disabled="!isLineSelected(meta.row.key)"
-                          :aria-label="`Pack qty for ${meta.row.product}`"
+                          :aria-label="`${tl('Pack qty for')} ${meta.row.product}`"
                           @input="setPackQty(meta.row.key, ($event.target as HTMLInputElement).value, meta.row.picked)"
                           @click.stop
                         />
                       </td>
                       <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td">{{ meta.row.unit }}</td>
                       <td v-if="!isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--action">
-                        <MpTooltip v-if="isBatchTrackedSku(meta.row.sku)" :id="`pc-tt-batch-${meta.row.key}`" label="View batch" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" aria-label="View batch" @click.stop="openViewBatch(t.orderId, meta.row)">
+                        <MpTooltip v-if="isBatchTrackedSku(meta.row.sku)" :id="`pc-tt-batch-${meta.row.key}`" :label="tl('View batch')" placement="top" use-portal>
+                          <button class="pk-view-btn" type="button" :aria-label="tl('View batch')" @click.stop="openViewBatch(t.orderId, meta.row)">
                             <MpIcon name="competencies" size="md" />
                           </button>
                         </MpTooltip>
-                        <MpTooltip v-else-if="isSerialTrackedSku(meta.row.sku)" :id="`pc-tt-serial-${meta.row.key}`" label="View serial number" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" aria-label="View serial number" @click.stop="openViewSerial(t.orderId, meta.row)">
+                        <MpTooltip v-else-if="isSerialTrackedSku(meta.row.sku)" :id="`pc-tt-serial-${meta.row.key}`" :label="tl('View serial number')" placement="top" use-portal>
+                          <button class="pk-view-btn" type="button" :aria-label="tl('View serial number')" @click.stop="openViewSerial(t.orderId, meta.row)">
                             <MpIcon name="competencies" size="md" />
                           </button>
                         </MpTooltip>
@@ -745,11 +749,11 @@ async function handleCreate() {
                 </table>
                 <div :ref="el => setSentinelRef(t.orderId, el)" class="pk-items-sentinel" aria-hidden="true" />
                 <div v-if="isLoadingMore(t.orderId)" class="pk-loading pk-items-loading">
-                  <MpSpinner size="sm" /> Loading products…
+                  <MpSpinner size="sm" /> {{ tl('Loading products…') }}
                 </div>
               </div>
               <div class="pk-items-count">
-                <span>Showing {{ visibleLines(t).length }} of {{ t.lines.length }} products</span>
+                <span>{{ tl('Showing') }} {{ visibleLines(t).length }} {{ tl('of') }} {{ t.lines.length }} {{ tl('products') }}</span>
               </div>
             </section>
           </div>
@@ -760,8 +764,8 @@ async function handleCreate() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goPacking">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goPacking">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleCreate">{{ isSaving ? t('Saving…') : t('Save') }}</MpButton>
     </footer>
   </div>
 

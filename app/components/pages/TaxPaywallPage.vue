@@ -8,6 +8,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { MpText, MpButton, MpIcon, css } from '@mekari/pixel3'
 
+const { t } = useLocale()
+
 // The stage renders a fixed 24px top border (a non-scrolling gap for normal
 // pages) and clips its overflow to the padding box, so a negative margin can't
 // reach past it. This hero must sit flush to the very top, so we zero that top
@@ -28,35 +30,35 @@ onBeforeUnmount(() => {
 })
 
 const COPY = {
-  heroTitle: 'Calculate, report, and file taxes from one place',
+  heroTitle: t('Calculate, report, and file taxes from one place'),
   heroBody:
-    'Compute VAT and withholding automatically, generate compliant tax reports, and e-file directly—no more spreadsheets or double entry.',
-  cta: 'Activate Mekari Tax',
+    t('Compute VAT and withholding automatically, generate compliant tax reports, and e-file directly—no more spreadsheets or double entry.'),
+  cta: t('Activate Mekari Tax'),
   steps: [
     {
-      label: 'Step 1', thumb: '/illustrations/paywall-step-1.png',
-      title: 'Connect your tax profile',
-      body: 'Link your tax identity so we can prepare and submit filings for you.',
+      label: t('Step 1'), thumb: '/illustrations/paywall-step-1.png',
+      title: t('Connect your tax profile'),
+      body: t('Link your tax identity so we can prepare and submit filings for you.'),
       points: [
-        ['Add your NPWP:', 'Register the company tax number used on every filing.'],
-        ['Map tax rates:', 'Match your VAT and withholding rates to each transaction type.'],
-        ['Set approvers:', 'Choose who reviews returns before they are submitted.'],
+        [t('Add your NPWP:'), t('Register the company tax number used on every filing.')],
+        [t('Map tax rates:'), t('Match your VAT and withholding rates to each transaction type.')],
+        [t('Set approvers:'), t('Choose who reviews returns before they are submitted.')],
       ],
     },
     {
-      label: 'Step 2', thumb: '/illustrations/paywall-step-2.png',
-      title: 'Report and file',
-      body: 'Once connected, every taxable transaction rolls up into your returns.',
+      label: t('Step 2'), thumb: '/illustrations/paywall-step-2.png',
+      title: t('Report and file'),
+      body: t('Once connected, every taxable transaction rolls up into your returns.'),
       points: [
-        ['Auto-calculate:', 'Tax on invoices and bills is computed as you post.'],
-        ['Generate reports:', 'Produce period tax reports ready for review.'],
-        ['E-file:', 'Submit returns to the tax authority without leaving the ERP.'],
+        [t('Auto-calculate:'), t('Tax on invoices and bills is computed as you post.')],
+        [t('Generate reports:'), t('Produce period tax reports ready for review.')],
+        [t('E-file:'), t('Submit returns to the tax authority without leaving the ERP.')],
       ],
     },
   ],
-  helpPrefix: 'Need help to set up? ',
-  helpLink: 'Reach out to our customer success team',
-  helpSuffix: ' for assistance.',
+  helpPrefix: t('Need help to set up? '),
+  helpLink: t('Reach out to our customer success team'),
+  helpSuffix: t(' for assistance.'),
 }
 
 // Bleed against the stage's 24px side padding so the hero spans edge to edge.
