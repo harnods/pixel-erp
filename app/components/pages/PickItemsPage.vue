@@ -473,13 +473,11 @@ function handleScan(rawValue: string) {
       notifyScanError('Scan a bin first before scanning batch numbers')
       return
     }
-    // The batch's own fixed bin must match the active one — catches an
-    // operator scanning the right batch while standing at the wrong location.
-    const knownLoc = stockMap.value.get(item.skuCode)?.batches?.find(b => b.batchNo === resolved.batchNo)?.location
-    if (knownLoc && !sameCode(knownLoc, activeBin.value)) {
-      notifyScanError(`${resolved.batchNo}: stored in ${knownLoc}, not ${activeBin.value}`)
-      return
-    }
+    // No bin-match check: a batch number already uniquely identifies the physical
+    // lot, and the same batch can legitimately sit in (or be added to) more than one
+    // bin — which the single-location stock model can't represent, so enforcing
+    // activeBin === batch.location produced false "wrong bin" errors. The active-bin
+    // requirement above (physical-presence confirmation) is kept.
     if (addOrIncrementBatch(item, resolved.batchNo!)) {
       playScanSuccessSound()
       flashRow(item.skuCode)
