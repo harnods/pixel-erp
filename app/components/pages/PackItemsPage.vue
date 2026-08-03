@@ -179,8 +179,10 @@ function handleScan(rawValue: string) {
   // Scanning the bare SKU can't verify a specific unit, so it just opens the view.
   if (isSerialTrackedSku(item.skuCode)) {
     if (resolved.kind !== 'serial') {
+      // Scanning the bare SKU can't verify a specific unit — open the read-only
+      // drawer so the operator can scan serials in its own scan bar. This is a
+      // deliberate shortcut (same as the other tracked drawers), not an error.
       openViewSerial(item)
-      notifyScanError(`${item.skuCode}: scan the serial number to verify this item`)
       return
     }
     const picked = (item.serialPicks ?? []).some(s => sameCode(s.serial, resolved.serial))
@@ -204,8 +206,10 @@ function handleScan(rawValue: string) {
   // the qty picked from that batch.
   if (isBatchTrackedSku(item.skuCode)) {
     if (resolved.kind !== 'batch') {
+      // Scanning the bare SKU can't verify a specific unit — open the read-only
+      // drawer so the operator can scan batches in its own scan bar. This is a
+      // deliberate shortcut (same as the other tracked drawers), not an error.
       openViewBatch(item)
-      notifyScanError(`${item.skuCode}: scan the batch number to verify this item`)
       return
     }
     const pick = (item.batchPicks ?? []).find(b => sameCode(b.batchNo, resolved.batchNo))

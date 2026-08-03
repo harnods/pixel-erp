@@ -1157,4 +1157,21 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Acknowledge & continue": "Konfirmasi & lanjutkan",
   "Closed": "Ditutup",
   'Import from spreadsheet': 'Impor dari spreadsheet',
+
+  // ── View batch / View serial drawers ────────────────────────────────────────
+  "Batch detail": "Detail batch",
+  "Previously shipped": "Sudah dikirim sebelumnya",
+  "Stock in/out qty": "Jumlah stok masuk/keluar",
+  "New on hand qty": "Jumlah stok fisik baru",
+  "Scan batch number to verify…": "Pindai nomor batch untuk verifikasi…",
+  "No batch data available.": "Tidak ada data batch.",
+  "Serial number detail": "Detail nomor seri",
+  "Scan serial number to verify…": "Pindai nomor seri untuk verifikasi…",
+  "Verified": "Terverifikasi",
+  "Not scanned": "Belum dipindai",
+  "Not counted": "Belum dihitung",
+  "No serial numbers match your search.": "Tidak ada nomor seri yang cocok dengan pencarian Anda.",
+  "No serial number data available.": "Tidak ada data nomor seri.",
+  "Loading…": "Memuat…",
+  "filtered from": "difilter dari",
 }
