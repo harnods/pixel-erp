@@ -17,6 +17,7 @@ import whatsnewProduction from '~/assets/images/home/whatsnew-production.png?url
 import setupBuilding from '~/assets/images/home/setup-building.png?url'
 
 const router = useRouter()
+const { t } = useLocale()
 // Open the Airene chat panel (provided by [...slug].vue) from the Useful links.
 const toggleAirene = inject<() => void>('toggleAirene', () => {})
 // Drives the hero glow — the SearchBox emits its AI-mode state up.
@@ -43,7 +44,7 @@ const todayLabel = new Date().toLocaleDateString('en-GB', {
 // Pills are user-managed: pick up to 6 from a catalog + drag to reorder via the
 // "Add actions" modal (opened by the "Actions" pill). Selection persists (mini-DB).
 function soon(what: string) {
-  infoToast(`${what} — coming soon`)
+  infoToast(`${what} — ${t('coming soon')}`)
 }
 function runAction(a: HomeActionDef) {
   if (a.path === '#') soon(a.label)
@@ -95,35 +96,35 @@ const approvals: Approval[] = [
 const actionsRequiredCount = 10
 
 function approve(a: Approval) {
-  toast.notify({ variant: 'success', title: `${a.title} approved`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${a.title} ${t('approved')}`, maxWidth: 'max-content' })
 }
 
 // ── What's new ────────────────────────────────────────────────────────────────
 interface NewsCard { key: string; title: string[]; desc: string; art: string }
 const news: NewsCard[] = [
-  { key: 'blue',   title: ['Smarter reconciliation', 'is now available'], desc: 'Speed up bank reconciliation with our AI tool for accurate matching.', art: whatsnewReconciliation },
-  { key: 'yellow', title: ['Detect your financial', 'anomalies earlier'],  desc: 'Identify unusual transactions in 1 click.',                            art: whatsnewAnomaly },
-  { key: 'green',  title: ['Plan production with', 'confidence'],          desc: 'Stay ahead with clear schedules and real-time visibility.',            art: whatsnewProduction },
+  { key: 'blue',   title: [t('Smarter reconciliation'), t('is now available')], desc: t('Speed up bank reconciliation with our AI tool for accurate matching.'), art: whatsnewReconciliation },
+  { key: 'yellow', title: [t('Detect your financial'), t('anomalies earlier')],  desc: t('Identify unusual transactions in 1 click.'),                            art: whatsnewAnomaly },
+  { key: 'green',  title: [t('Plan production with'), t('confidence')],          desc: t('Stay ahead with clear schedules and real-time visibility.'),            art: whatsnewProduction },
 ]
 // ─── Demo scenario state (FAB) ───────────────────────────────────────────────
 type WhatsNewDemoState = 'default' | 'more'
 const whatsNewDemoState = ref<WhatsNewDemoState>('default')
 const whatsNewDemoStates: { value: WhatsNewDemoState; label: string }[] = [
-  { value: 'default', label: "What's new — Default" },
-  { value: 'more', label: "What's new — >3" },
+  { value: 'default', label: t("What's new — Default") },
+  { value: 'more', label: t("What's new — >3") },
 ]
 const whatsNewHasPagination = computed(() => whatsNewDemoState.value === 'more')
 
 // ── Set up Mekari ERP ─────────────────────────────────────────────────────────
 interface SetupStep { label: string; time: string; done: boolean }
 const setupSteps: SetupStep[] = [
-  { label: 'Complete company settings',       time: 'APPROX. 2 MINUTES', done: true },
-  { label: 'Set up opening balances',         time: 'APPROX. 5 MINUTES', done: false },
-  { label: 'Add or import products',          time: 'APPROX. 4 MINUTES', done: false },
-  { label: 'Add or import contacts',          time: 'APPROX. 4 MINUTES', done: false },
-  { label: 'Add or import sales transactions', time: 'APPROX. 5 MINUTES', done: false },
-  { label: 'Connect your bank account',       time: 'APPROX. 3 MINUTES', done: false },
-  { label: 'Invite your team',                time: 'APPROX. 2 MINUTES', done: false },
+  { label: t('Complete company settings'),       time: t('APPROX. 2 MINUTES'), done: true },
+  { label: t('Set up opening balances'),         time: t('APPROX. 5 MINUTES'), done: false },
+  { label: t('Add or import products'),          time: t('APPROX. 4 MINUTES'), done: false },
+  { label: t('Add or import contacts'),          time: t('APPROX. 4 MINUTES'), done: false },
+  { label: t('Add or import sales transactions'), time: t('APPROX. 5 MINUTES'), done: false },
+  { label: t('Connect your bank account'),       time: t('APPROX. 3 MINUTES'), done: false },
+  { label: t('Invite your team'),                time: t('APPROX. 2 MINUTES'), done: false },
 ]
 const setupDone = computed(() => setupSteps.filter(s => s.done).length)
 const setupPercent = computed(() => Math.round((setupDone.value / setupSteps.length) * 100))
@@ -131,9 +132,9 @@ const setupPercent = computed(() => Math.round((setupDone.value / setupSteps.len
 // ── Learn Mekari ERP ────────────────────────────────────────────────────────
 interface LearnCard { tag: string; tone: 'blue' | 'neutral' | 'yellow'; title: string; desc: string; cta: string }
 const learn: LearnCard[] = [
-  { tag: 'Online training',  tone: 'blue',    title: 'Reporting & bookkeeping',    desc: 'Learn how to prepare and run the accounting process in Mekari ERP from start to finish.', cta: 'Sign up' },
-  { tag: 'Offline training', tone: 'neutral', title: 'Mekari ERP offline training', desc: 'Learn how to get started with Mekari ERP face to face with our product consultants.',      cta: 'Sign up' },
-  { tag: 'Tutorial video',   tone: 'yellow',  title: 'Demo: Mekari ERP',            desc: 'Watch a guided tutorial on how to get started with Mekari ERP.',                            cta: 'Watch video' },
+  { tag: t('Online training'),  tone: 'blue',    title: t('Reporting & bookkeeping'),    desc: t('Learn how to prepare and run the accounting process in Mekari ERP from start to finish.'), cta: t('Sign up') },
+  { tag: t('Offline training'), tone: 'neutral', title: t('Mekari ERP offline training'), desc: t('Learn how to get started with Mekari ERP face to face with our product consultants.'),      cta: t('Sign up') },
+  { tag: t('Tutorial video'),   tone: 'yellow',  title: t('Demo: Mekari ERP'),            desc: t('Watch a guided tutorial on how to get started with Mekari ERP.'),                            cta: t('Watch video') },
 ]
 </script>
 
@@ -145,8 +146,8 @@ const learn: LearnCard[] = [
       <div class="hero__inner">
         <p class="hero__date">{{ todayLabel }}</p>
         <div class="hero__greeting">
-          <h2 class="hero__line">Hello, {{ firstName }}</h2>
-          <h2 class="hero__line">What would you like to do today?</h2>
+          <h2 class="hero__line">{{ t('Hello') }}, {{ firstName }}</h2>
+          <h2 class="hero__line">{{ t('What would you like to do today?') }}</h2>
         </div>
 
         <SearchBox class="hero__search" @aimode="v => heroAi = v" />
@@ -159,7 +160,7 @@ const learn: LearnCard[] = [
             </button>
             <button class="chip" type="button" @click="manageActionsOpen = true">
               <MpIcon name="add" size="md" class="chip__icon" />
-              Actions
+              {{ t('Actions') }}
             </button>
           </div>
         </div>
@@ -169,7 +170,7 @@ const learn: LearnCard[] = [
     <div class="home__col">
       <!-- ── Tasks ──────────────────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">Tasks</h3>
+        <h3 class="sec__title">{{ t('Tasks') }}</h3>
 
         <!-- Anomaly alerts — a collapsed deck when there's more than one -->
         <div v-if="anomalies.length" class="anomaly-block">
@@ -189,8 +190,8 @@ const learn: LearnCard[] = [
               </div>
               <p class="anomaly__body">{{ a.body }}</p>
               <div class="anomaly__actions">
-                <button class="btn btn--ghost" type="button" @click="soon('Ignore')">Ignore</button>
-                <button class="btn btn--secondary" type="button" @click="soon('Review')">Review</button>
+                <button class="btn btn--ghost" type="button" @click="soon(t('Ignore'))">{{ t('Ignore') }}</button>
+                <button class="btn btn--secondary" type="button" @click="soon(t('Review'))">{{ t('Review') }}</button>
               </div>
             </div>
 
@@ -206,7 +207,7 @@ const learn: LearnCard[] = [
             @click="anomalyExpanded = !anomalyExpanded"
           >
             <MpIcon :name="anomalyExpanded ? 'caret-up' : 'caret-down'" size="sm" />
-            {{ anomalyExpanded ? 'Show less' : 'Show more' }}
+            {{ anomalyExpanded ? t('Show less') : t('Show more') }}
           </button>
         </div>
 
@@ -214,10 +215,10 @@ const learn: LearnCard[] = [
         <div class="card approvals">
           <div class="approvals__tabs">
             <button class="apptab apptab--active" type="button">
-              Awaiting approval <span class="apptab__count apptab__count--active">{{ approvals.length }}</span>
+              {{ t('Awaiting approval') }} <span class="apptab__count apptab__count--active">{{ approvals.length }}</span>
             </button>
-            <button class="apptab" type="button" @click="soon('Actions required')">
-              Actions required <span class="apptab__count">{{ actionsRequiredCount }}</span>
+            <button class="apptab" type="button" @click="soon(t('Actions required'))">
+              {{ t('Actions required') }} <span class="apptab__count">{{ actionsRequiredCount }}</span>
             </button>
           </div>
 
@@ -229,13 +230,13 @@ const learn: LearnCard[] = [
               <div class="appr__main">
                 <p class="appr__title">{{ a.title }}</p>
                 <p v-if="a.party" class="appr__party">{{ a.party }}</p>
-                <p class="appr__by">Requested by {{ a.by }}</p>
+                <p class="appr__by">{{ t('Requested by') }} {{ a.by }}</p>
               </div>
               <div class="appr__amount">
                 <p class="appr__amount-main">{{ a.amount }}</p>
                 <p v-if="a.amountSub" class="appr__amount-sub">{{ a.amountSub }}</p>
               </div>
-              <button class="btn btn--secondary btn--sm" type="button" @click.stop="approve(a)">Approve</button>
+              <button class="btn btn--secondary btn--sm" type="button" @click.stop="approve(a)">{{ t('Approve') }}</button>
               <button class="appr__kebab" type="button" @click.stop>
                 <MpIcon name="menu-kebab" size="md" />
               </button>
@@ -243,14 +244,14 @@ const learn: LearnCard[] = [
           </div>
 
           <button class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
-            View all awaiting approvals
+            {{ t('View all awaiting approvals') }}
           </button>
         </div>
       </section>
 
       <!-- ── What's new ─────────────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">What's new</h3>
+        <h3 class="sec__title">{{ t("What's new") }}</h3>
         <div class="whatsnew">
           <div class="whatsnew__track">
             <article v-for="n in news" :key="n.key" class="wn" :class="`wn--${n.key}`">
@@ -260,12 +261,12 @@ const learn: LearnCard[] = [
               </div>
               <img :src="n.art" alt="" class="wn__art">
               <div class="wn__foot">
-                <button class="wn__link" type="button" @click="soon('Learn more')">Learn more</button>
-                <button class="btn btn--secondary btn--sm" type="button" @click="soon('Try feature')">Try feature</button>
+                <button class="wn__link" type="button" @click="soon(t('Learn more'))">{{ t('Learn more') }}</button>
+                <button class="btn btn--secondary btn--sm" type="button" @click="soon(t('Try feature'))">{{ t('Try feature') }}</button>
               </div>
             </article>
           </div>
-          <button v-if="whatsNewHasPagination" class="whatsnew__next" type="button" aria-label="Next" @click="soon('More updates')">
+          <button v-if="whatsNewHasPagination" class="whatsnew__next" type="button" :aria-label="t('Next')" @click="soon(t('More updates'))">
             <MpIcon name="chevrons-right" size="md" />
           </button>
         </div>
@@ -279,12 +280,12 @@ const learn: LearnCard[] = [
       <!-- ── Set up Mekari ERP ──────────────────────────────────────────── -->
       <section class="sec">
         <div class="setup-head">
-          <h3 class="sec__title">Set up Mekari ERP</h3>
+          <h3 class="sec__title">{{ t('Set up Mekari ERP') }}</h3>
           <div class="setup-progress">
             <div class="setup-progress__bar"><div class="setup-progress__fill" :style="{ width: setupPercent + '%' }" /></div>
             <div class="setup-progress__meta">
               <span class="setup-progress__pct">{{ setupPercent }}%</span>
-              <span class="setup-progress__steps">{{ setupDone }} of {{ setupSteps.length }} steps completed</span>
+              <span class="setup-progress__steps">{{ setupDone }} {{ t('of') }} {{ setupSteps.length }} {{ t('steps completed') }}</span>
             </div>
           </div>
         </div>
@@ -311,13 +312,13 @@ const learn: LearnCard[] = [
 
           <div class="setup__detail">
             <div class="setup__copy">
-              <h4 class="setup__heading">Fill in important information<br>about your company</h4>
-              <p class="setup__sub">Organize company info to activate features like multi-currency, formats, and tax inclusive.</p>
+              <h4 class="setup__heading">{{ t('Fill in important information') }}<br>{{ t('about your company') }}</h4>
+              <p class="setup__sub">{{ t('Organize company info to activate features like multi-currency, formats, and tax inclusive.') }}</p>
               <div class="setup__actions">
-                <button class="btn btn--brand" type="button" @click="soon('Set up now')">Set up now</button>
-                <button class="btn btn--secondary btn--icon" type="button" @click="soon('Watch video')">
+                <button class="btn btn--brand" type="button" @click="soon(t('Set up now'))">{{ t('Set up now') }}</button>
+                <button class="btn btn--secondary btn--icon" type="button" @click="soon(t('Watch video'))">
                   <MpIcon name="play-video" size="md" />
-                  Watch video
+                  {{ t('Watch video') }}
                 </button>
               </div>
             </div>
@@ -328,7 +329,7 @@ const learn: LearnCard[] = [
 
       <!-- ── Learn Mekari ERP ───────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">Learn Mekari ERP</h3>
+        <h3 class="sec__title">{{ t('Learn Mekari ERP') }}</h3>
         <div class="learn">
           <article v-for="l in learn" :key="l.title" class="card learn-card">
             <span class="learn-tag" :class="`learn-tag--${l.tone}`">{{ l.tag }}</span>
@@ -343,20 +344,20 @@ const learn: LearnCard[] = [
 
       <!-- ── Useful links ───────────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">Useful links</h3>
+        <h3 class="sec__title">{{ t('Useful links') }}</h3>
         <div class="useful">
           <button class="useful-link" type="button" @click="toggleAirene()">
             <MpIcon name="chat" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
-              <span class="useful-link__title">Live chat</span>
-              <span class="useful-link__desc">Chat with our customer support for any questions or inquiries.</span>
+              <span class="useful-link__title">{{ t('Live chat') }}</span>
+              <span class="useful-link__desc">{{ t('Chat with our customer support for any questions or inquiries.') }}</span>
             </span>
           </button>
-          <button class="useful-link" type="button" @click="soon('Help center')">
+          <button class="useful-link" type="button" @click="soon(t('Help center'))">
             <MpIcon name="book" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
-              <span class="useful-link__title">Help center</span>
-              <span class="useful-link__desc">Guidelines for all features in Mekari ERP.</span>
+              <span class="useful-link__title">{{ t('Help center') }}</span>
+              <span class="useful-link__desc">{{ t('Guidelines for all features in Mekari ERP.') }}</span>
             </span>
           </button>
         </div>
@@ -368,10 +369,10 @@ const learn: LearnCard[] = [
     <!-- ── Demo scenario FAB ── -->
     <MpPopover id="home-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="demo-fab" aria-label="Change scenario state"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <button class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-        <p class="demo-fab-heading">Scenarios</p>
+        <p class="demo-fab-heading">{{ t('Scenarios') }}</p>
         <MpPopoverList>
           <MpPopoverListItem
             v-for="s in whatsNewDemoStates"

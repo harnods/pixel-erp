@@ -14,6 +14,7 @@ import { addBill } from '~/data/bills'
 import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
+const { t } = useLocale()
 
 function toDisplayDate(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -41,7 +42,7 @@ const ACCOUNT_OPTIONS = [
 ]
 const TAX_OPTIONS = [
   { id: 'ppn10', name: 'PPN 10%' },
-  { id: 'none', name: 'No tax' },
+  { id: 'none', name: t('No tax') },
 ]
 const BANK_ACCOUNT_OPTIONS = [
   { id: '1-10003', name: '1-10003 Bank BCA' },
@@ -170,7 +171,7 @@ interface WithholdingRow {
 let whSeq = 0
 function makeWithholdingRow(): WithholdingRow {
   return {
-    id: whSeq++, name: whSeq === 1 ? 'Withholding tax' : '', amount: '', unit: 'Rp', accountId: '',
+    id: whSeq++, name: whSeq === 1 ? t('Withholding tax') : '', amount: '', unit: 'Rp', accountId: '',
     nameError: false, amountError: false, accountError: false,
   }
 }
@@ -292,10 +293,10 @@ const dropzoneError = ref('')
 function validateDropzoneFile(file: File): string {
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
   if (!DROPZONE_ACCEPTED_TYPES.includes(file.type) && !DROPZONE_ACCEPTED_EXTENSIONS.includes(ext)) {
-    return 'File type not supported. Please upload a PDF, PNG, or JPG file.'
+    return t('File type not supported. Please upload a PDF, PNG, or JPG file.')
   }
   if (file.size > DROPZONE_MAX_SIZE) {
-    return 'File size exceeds the 10 MB limit.'
+    return t('File size exceeds the 10 MB limit.')
   }
   return ''
 }
@@ -315,7 +316,7 @@ function ingestFile(file: File) {
 function onDropzoneFileChange(files: FileList | null) {
   if (!files || files.length === 0) return
   if (files.length > 1) {
-    dropzoneError.value = 'Please upload only 1 file at a time.'
+    dropzoneError.value = t('Please upload only 1 file at a time.')
     return
   }
   const error = validateDropzoneFile(files[0])
@@ -406,7 +407,7 @@ function handleSave(mode: 'close' | 'new') {
   const lineItems = filledRows.map((r) => ({
     account: ACCOUNT_OPTIONS.find((a) => a.id === r.accountId)?.name ?? r.accountId,
     description: r.description,
-    tax: TAX_OPTIONS.find((t) => t.id === r.taxId)?.name ?? '—',
+    tax: TAX_OPTIONS.find((tax) => tax.id === r.taxId)?.name ?? '—',
     amount: Number(r.amount) || 0,
   }))
 
@@ -420,7 +421,7 @@ function handleSave(mode: 'close' | 'new') {
     taxAmount: ppnAmount.value,
     balanceDue: iHavePaid.value ? 0 : finalTotal.value,
     status: iHavePaid.value ? 'paid' : 'unpaid',
-    tags: tags.value.length ? tags.value.map((t) => String(t.name ?? t.id)) : undefined,
+    tags: tags.value.length ? tags.value.map((tag) => String(tag.name ?? tag.id)) : undefined,
     memo: memo.value.trim() || undefined,
     attachments: attachments.length ? attachments : undefined,
     lineItems: lineItems.length ? lineItems : undefined,
@@ -434,7 +435,7 @@ function handleSave(mode: 'close' | 'new') {
     } : undefined,
   })
 
-  toast.notify({ variant: 'success', title: 'Expense saved' })
+  toast.notify({ variant: 'success', title: t('Expense saved') })
   if (mode === 'close') {
     goExpenses()
   } else {
@@ -452,10 +453,10 @@ function handleSave(mode: 'close' | 'new') {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <MpTextlink id="ne-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">Expenses</MpTextlink>
+          <MpTextlink id="ne-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goExpenses">{{ t('Expenses') }}</MpTextlink>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New expense</h1>
+          <h1 class="detail-title">{{ t('New expense') }}</h1>
         </div>
       </div>
     </header>
@@ -466,7 +467,7 @@ function handleSave(mode: 'close' | 'new') {
       <!-- ── Docked rail — shown after a close that wasn't permanently suppressed ── -->
       <Transition name="ex-dock-fade">
         <div v-if="leftPanelDocked" class="ex-docked-rail">
-          <MpButton class="ex-docked-btn" aria-label="Open receipt autofill" @click="undockPanel">
+          <MpButton class="ex-docked-btn" :aria-label="t('Open receipt autofill')" @click="undockPanel">
             <MpIcon name="airene-brand" size="md" />
           </MpButton>
         </div>
@@ -482,9 +483,9 @@ function handleSave(mode: 'close' | 'new') {
           <template v-if="!uploadedFile">
             <div class="ex-left-header-title">
               <MpIcon name="airene-brand" size="md" />
-              <h2 class="ex-left-header-heading">Autofill fields</h2>
+              <h2 class="ex-left-header-heading">{{ t('Autofill fields') }}</h2>
             </div>
-            <MpButton class="ex-icon-btn" aria-label="Close receipt panel" @click="closePanel">
+            <MpButton class="ex-icon-btn" :aria-label="t('Close receipt panel')" @click="closePanel">
               <MpIcon name="close" size="sm" />
             </MpButton>
           </template>
@@ -497,13 +498,13 @@ function handleSave(mode: 'close' | 'new') {
               </div>
             </div>
             <div class="ex-file-controls">
-              <div class="ex-zoom-toggle" role="group" aria-label="Zoom">
+              <div class="ex-zoom-toggle" role="group" :aria-label="t('Zoom')">
                 <button
                   type="button"
                   class="ex-zoom-part"
                   :class="{ 'ex-zoom-part--active': zoomMode === 'fit' }"
                   @click="zoomMode = 'fit'"
-                >Fit</button>
+                >{{ t('Fit') }}</button>
                 <button
                   type="button"
                   class="ex-zoom-part"
@@ -511,7 +512,7 @@ function handleSave(mode: 'close' | 'new') {
                   @click="zoomMode = '100'"
                 >100%</button>
               </div>
-              <MpButton class="ex-icon-btn" aria-label="Close receipt panel" @click="closePanel">
+              <MpButton class="ex-icon-btn" :aria-label="t('Close receipt panel')" @click="closePanel">
                 <MpIcon name="close" size="sm" />
               </MpButton>
             </div>
@@ -529,26 +530,24 @@ function handleSave(mode: 'close' | 'new') {
           is-enable-input-file
           :is-loading="processingFile"
           :is-invalid="!!dropzoneError"
-          button-text="Replace your file here"
+          :button-text="t('Replace your file here')"
           @change="onDropzoneFileChange"
           @clear="clearUploadedFile"
         >
           <template #idle="{ handleClickInput }">
             <img src="/illustrations/receipt-dropzone.png" alt="" class="ex-dropzone-thumb-img" />
             <p class="ex-dropzone-title">
-              Drop your receipt file here or
-              <MpTextlink id="ne-dropzone-browse" as="a" class="ex-dropzone-browse" @click.stop.prevent="handleClickInput">browse</MpTextlink>
+              {{ t('Drop your receipt file here or') }}
+              <MpTextlink id="ne-dropzone-browse" as="a" class="ex-dropzone-browse" @click.stop.prevent="handleClickInput">{{ t('browse') }}</MpTextlink>
             </p>
             <p class="ex-dropzone-desc">
-              This feature will reduce your monthly AI token usage.
-              Supported formats: PDF, PNG and JPG.
-              Maximum file size 10 MB.
+              {{ t('This feature will reduce your monthly AI token usage. Supported formats: PDF, PNG and JPG. Maximum file size 10 MB.') }}
             </p>
           </template>
           <template #loading>
             <div class="ex-dropzone-loading">
               <div class="ex-dropzone-loader"><MpSpinner /></div>
-              <h2 class="ex-dropzone-loading-title">Processing autofill...</h2>
+              <h2 class="ex-dropzone-loading-title">{{ t('Processing autofill...') }}</h2>
             </div>
           </template>
         </MpDropzone>
@@ -558,20 +557,20 @@ function handleSave(mode: 'close' | 'new') {
         <!-- Uploaded-state footer: Airene disclaimer + feedback thumbs -->
         <div v-if="uploadedFile" class="ex-airene-disclaimer">
           <p class="ex-airene-disclaimer-text">
-            Airene responses can be inaccurate or misleading.
-            <MpTextlink id="ne-airene-learn-more" as="a" class="ex-airene-learn-more" @click.prevent>Learn more</MpTextlink>
+            {{ t('Airene responses can be inaccurate or misleading.') }}
+            <MpTextlink id="ne-airene-learn-more" as="a" class="ex-airene-learn-more" @click.prevent>{{ t('Learn more') }}</MpTextlink>
           </p>
           <div class="ex-airene-feedback">
             <button
               class="ex-icon-btn"
               :class="{ 'ex-icon-btn--active': autofillFeedback === 'up' }"
-              aria-label="Good autofill result"
+              :aria-label="t('Good autofill result')"
               @click="setAutofillFeedback('up')"
             ><MpIcon name="like" size="sm" /></button>
             <button
               class="ex-icon-btn"
               :class="{ 'ex-icon-btn--active': autofillFeedback === 'down' }"
-              aria-label="Poor autofill result"
+              :aria-label="t('Poor autofill result')"
               @click="setAutofillFeedback('down')"
             ><MpIcon name="dislike" size="sm" /></button>
           </div>
@@ -579,7 +578,7 @@ function handleSave(mode: 'close' | 'new') {
       </div>
 
       <!-- Resize divider — drag to resize the left panel (right panel absorbs the rest) -->
-      <div v-if="leftPanelOpen" class="ex-divider" aria-label="Resize panel" @mousedown="startPanelResize" />
+      <div v-if="leftPanelOpen" class="ex-divider" :aria-label="t('Resize panel')" @mousedown="startPanelResize" />
 
       <!-- ── Right panel: bill fields ── -->
       <div class="ex-right">
@@ -587,7 +586,7 @@ function handleSave(mode: 'close' | 'new') {
         <!-- Beneficiary + paid checkbox -->
         <div class="ex-row-1">
           <MpFormControl id="ex-beneficiary" class="ex-field-flex" is-required :is-invalid="beneficiaryError">
-            <MpFormLabel>Beneficiary</MpFormLabel>
+            <MpFormLabel>{{ t('Beneficiary') }}</MpFormLabel>
             <MpAutocomplete
               id="ex-beneficiary-ac"
               v-model="beneficiary"
@@ -601,53 +600,53 @@ function handleSave(mode: 'close' | 'new') {
               @button-action="onBeneficiaryAdd"
             >
               <template #buttonAction="{ currentSearch }">
-                {{ currentSearch ? `Add "${currentSearch}" as a new beneficiary` : 'Add new beneficiary' }}
+                {{ currentSearch ? `${t('Add')} "${currentSearch}" ${t('as a new beneficiary')}` : t('Add new beneficiary') }}
               </template>
             </MpAutocomplete>
-            <MpFormErrorMessage>You must select beneficiary</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select beneficiary') }}</MpFormErrorMessage>
           </MpFormControl>
           <div class="ex-paid-check">
             <MpCheckbox id="ex-paid" :is-checked="iHavePaid" @change="iHavePaid = !iHavePaid" />
-            <span>I have paid this bill</span>
+            <span>{{ t('I have paid this bill') }}</span>
           </div>
         </div>
 
         <!-- Transaction date -> Transaction no. -> Due date -> Reference no. -> Tag -->
         <div class="ex-grid-2 ex-section-divider">
           <MpFormControl id="ex-txdate" is-required :is-invalid="transactionDateError">
-            <MpFormLabel>Transaction date</MpFormLabel>
+            <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
             <div class="ex-datepicker">
               <MpDatePicker
                 id="ex-txdate-dp" v-model="transactionDate" format="DD/MM/YYYY" value-type="format" use-portal
                 @update:model-value="transactionDateError = false"
               />
             </div>
-            <MpFormErrorMessage>Please select a transaction date</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('Please select a transaction date') }}</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="ex-transno" is-required>
             <div class="ex-label-row">
-              <MpFormLabel>Transaction no.</MpFormLabel>
-              <span class="ex-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
+              <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
+              <span class="ex-label-icon" :title="t('Auto-generated')"><MpIcon name="settings" size="sm" /></span>
             </div>
             <MpInput id="ex-transno-input" v-model="transactionNo" placeholder="[Auto]" is-full-width is-disabled />
           </MpFormControl>
           <!-- Due date — only relevant while the bill is still unpaid -->
           <MpFormControl v-if="!iHavePaid" id="ex-duedate" is-required :is-invalid="dueDateError">
-            <MpFormLabel>Due date</MpFormLabel>
+            <MpFormLabel>{{ t('Due date') }}</MpFormLabel>
             <div class="ex-datepicker">
               <MpDatePicker
                 id="ex-duedate-dp" v-model="dueDate" format="DD/MM/YYYY" value-type="format" use-portal
                 @update:model-value="dueDateError = false"
               />
             </div>
-            <MpFormErrorMessage>Please select a due date</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('Please select a due date') }}</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="ex-refno">
-            <MpFormLabel>Reference no.</MpFormLabel>
+            <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
             <MpInput id="ex-refno-input" v-model="referenceNo" is-full-width />
           </MpFormControl>
           <MpFormControl id="ex-tags">
-            <MpFormLabel>Tag</MpFormLabel>
+            <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
             <MpInputTag id="ex-tags-input" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
           </MpFormControl>
         </div>
@@ -655,14 +654,14 @@ function handleSave(mode: 'close' | 'new') {
         <!-- Price includes tax -->
         <div class="ex-price-includes">
           <MpCheckbox id="ex-price-incl" :is-checked="priceIncludesTax" @change="priceIncludesTax = !priceIncludesTax" />
-          <span>Price includes tax</span>
+          <span>{{ t('Price includes tax') }}</span>
         </div>
 
         <!-- Line items -->
         <MpBanner v-if="lineItemsHaveError" id="ex-lineitems-error-banner" variant="danger" align-items="center" class="ex-lineitems-error-banner">
           <MpBannerIcon id="ex-lineitems-error-banner-icon" />
-          <MpBannerTitle>Failed to save</MpBannerTitle>
-          <MpBannerDescription>The transaction contains incomplete or invalid data. Review the highlighted fields.</MpBannerDescription>
+          <MpBannerTitle>{{ t('Failed to save') }}</MpBannerTitle>
+          <MpBannerDescription>{{ t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
         </MpBanner>
         <div class="ex-table-section">
           <div class="ex-table-scroll">
@@ -678,10 +677,10 @@ function handleSave(mode: 'close' | 'new') {
               <thead>
                 <tr>
                   <th class="ex-th ex-th--drag" />
-                  <th class="ex-th">Account</th>
-                  <th class="ex-th">Description</th>
-                  <th class="ex-th">Tax</th>
-                  <th class="ex-th">Amount</th>
+                  <th class="ex-th">{{ t('Account') }}</th>
+                  <th class="ex-th">{{ t('Description') }}</th>
+                  <th class="ex-th">{{ t('Tax') }}</th>
+                  <th class="ex-th">{{ t('Amount') }}</th>
                   <th class="ex-th ex-th--del" />
                 </tr>
               </thead>
@@ -697,7 +696,7 @@ function handleSave(mode: 'close' | 'new') {
                     <MpTooltip
                       v-if="row.accountError"
                       :id="`ex-account-tooltip-${row.id}`"
-                      label="You must select account"
+                      :label="t('You must select account')"
                       placement="top"
                       use-portal
                       class="ex-error-tooltip-wrap"
@@ -705,7 +704,7 @@ function handleSave(mode: 'close' | 'new') {
                       <MpAutocomplete
                         :id="`ex-account-${row.id}`" v-model="row.accountId" :data="ACCOUNT_OPTIONS"
                         label-prop="name" value-prop="id" is-searchable is-clearable use-portal is-full-width
-                        placeholder="Select account"
+                        :placeholder="t('Select account')"
                         @update:model-value="onAccountSelect(row)"
                       />
                     </MpTooltip>
@@ -713,7 +712,7 @@ function handleSave(mode: 'close' | 'new') {
                       v-else
                       :id="`ex-account-${row.id}`" v-model="row.accountId" :data="ACCOUNT_OPTIONS"
                       label-prop="name" value-prop="id" is-searchable is-clearable use-portal is-full-width
-                      placeholder="Select account"
+                      :placeholder="t('Select account')"
                       @update:model-value="onAccountSelect(row)"
                     />
                   </td>
@@ -725,14 +724,14 @@ function handleSave(mode: 'close' | 'new') {
                       <MpAutocomplete
                         :id="`ex-tax-${row.id}`" v-model="row.taxId" :data="TAX_OPTIONS"
                         label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-                        placeholder="Select tax"
+                        :placeholder="t('Select tax')"
                       />
                     </td>
                     <td class="ex-td ex-td--input ex-td--border ex-td--amount" :class="{ 'ex-td--error': row.amountError }">
                       <MpTooltip
                         v-if="row.amountError"
                         :id="`ex-amount-tooltip-${row.id}`"
-                        label="Amount must be more than 0"
+                        :label="t('Amount must be more than 0')"
                         placement="top"
                         use-portal
                         class="ex-error-tooltip-wrap"
@@ -772,16 +771,16 @@ function handleSave(mode: 'close' | 'new') {
             <!-- Memo -->
             <div class="ex-section ex-memo-section">
               <MpFormControl id="ex-memo">
-                <MpFormLabel>Memo</MpFormLabel>
+                <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
                 <MpTextarea id="ex-memo-textarea" v-model="memo" is-full-width :rows="4" />
               </MpFormControl>
-              <p class="ex-helper-text">Only visible to you and your team</p>
+              <p class="ex-helper-text">{{ t('Only visible to you and your team') }}</p>
             </div>
 
             <!-- Attachment -->
             <div class="ex-section ex-attachment-section">
               <div class="ex-section-label-row">
-                <div class="ex-section-label">Attachment</div>
+                <div class="ex-section-label">{{ t('Attachment') }}</div>
               </div>
               <div class="ex-attachment">
                 <MpUpload
@@ -790,18 +789,18 @@ function handleSave(mode: 'close' | 'new') {
                   :class="{ 'ex-attachment-upload--dragover': formDragOver }"
                   accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
                   is-multiple is-full-width
-                  placeholder="or drag and drop here"
-                  button-text="Browse file"
+                  :placeholder="t('or drag and drop here')"
+                  :button-text="t('Browse file')"
                   @change="onFormFileChange"
                   @dragover.prevent="formDragOver = true"
                   @dragleave.prevent="formDragOver = false"
                   @drop.prevent="onFormFileDrop"
                 />
-                <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
+                <p class="ex-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction') }}</p>
                 <MpUploadList
                   v-for="f in formAttachedFiles" :key="f.name"
                   :id="`ex-attachment-file-${f.name}`"
-                  :title="f.name" status="success" subtitle="Uploaded"
+                  :title="f.name" status="success" :subtitle="t('Uploaded')"
                   :icon-name="fileIconName(f.name)"
                   is-show-remove-button
                   @remove="removeFormFile(f.name)"
@@ -813,7 +812,7 @@ function handleSave(mode: 'close' | 'new') {
           <!-- Totals -->
           <div class="ex-totals">
             <div class="ex-total-row">
-              <span class="ex-total-label">Subtotal</span>
+              <span class="ex-total-label">{{ t('Subtotal') }}</span>
               <span class="ex-total-amt">{{ formatIDR(subtotal) }}</span>
             </div>
             <div v-if="hasPpnTax" class="ex-total-row">
@@ -822,13 +821,13 @@ function handleSave(mode: 'close' | 'new') {
             </div>
             <div class="ex-total-rule" />
             <div class="ex-total-row">
-              <span class="ex-total-label ex-total-label--strong">Total</span>
+              <span class="ex-total-label ex-total-label--strong">{{ t('Total') }}</span>
               <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(total) }}</span>
             </div>
 
             <div class="ex-withholding-check">
               <MpCheckbox id="ex-less-wht" :is-checked="lessWithholding" @change="lessWithholding = !lessWithholding" />
-              <span>Less: Withholding</span>
+              <span>{{ t('Less: Withholding') }}</span>
             </div>
 
             <!-- Withholding detail rows — only when checked -->
@@ -836,15 +835,15 @@ function handleSave(mode: 'close' | 'new') {
               <div v-for="(wh, idx) in withholdingRows" :key="wh.id" class="ex-withholding-row">
                 <div class="ex-withholding-toprow">
                   <MpFormControl :id="`ex-wh-name-${wh.id}`" is-required :is-invalid="wh.nameError">
-                    <MpFormLabel>Name</MpFormLabel>
+                    <MpFormLabel>{{ t('Name') }}</MpFormLabel>
                     <MpInput
                       :id="`ex-wh-name-input-${wh.id}`" v-model="wh.name" is-full-width
                       :is-invalid="wh.nameError" @update:model-value="wh.nameError = false"
                     />
-                    <MpFormErrorMessage>You must fill in name</MpFormErrorMessage>
+                    <MpFormErrorMessage>{{ t('You must fill in name') }}</MpFormErrorMessage>
                   </MpFormControl>
                   <MpFormControl :id="`ex-wh-amount-${wh.id}`" is-required :is-invalid="wh.amountError">
-                    <MpFormLabel>Amount</MpFormLabel>
+                    <MpFormLabel>{{ t('Amount') }}</MpFormLabel>
                     <MpInputGroup :id="`ex-wh-amount-group-${wh.id}`">
                       <MpInputLeftAddon has-background class="ex-wh-unit-addon">
                         <MpPopover :id="`ex-wh-unit-${wh.id}`" is-close-on-select placement="bottom-start" use-portal :is-keep-alive="false">
@@ -867,11 +866,11 @@ function handleSave(mode: 'close' | 'new') {
                         :is-invalid="wh.amountError" @update:model-value="wh.amountError = false"
                       />
                     </MpInputGroup>
-                    <MpFormErrorMessage>You must fill in amount</MpFormErrorMessage>
+                    <MpFormErrorMessage>{{ t('You must fill in amount') }}</MpFormErrorMessage>
                   </MpFormControl>
                 </div>
                 <MpFormControl :id="`ex-wh-account-${wh.id}`" is-required :is-invalid="wh.accountError" class="ex-wh-account">
-                  <MpFormLabel>Account</MpFormLabel>
+                  <MpFormLabel>{{ t('Account') }}</MpFormLabel>
                   <div class="ex-wh-account-row">
                     <MpAutocomplete
                       :id="`ex-wh-account-ac-${wh.id}`" v-model="wh.accountId" :data="BANK_ACCOUNT_OPTIONS"
@@ -882,15 +881,15 @@ function handleSave(mode: 'close' | 'new') {
                       <MpIcon name="minus-circular" size="sm" />
                     </MpButton>
                   </div>
-                  <MpFormErrorMessage>You must select account</MpFormErrorMessage>
+                  <MpFormErrorMessage>{{ t('You must select account') }}</MpFormErrorMessage>
                 </MpFormControl>
               </div>
-              <MpButton variant="textLink" size="sm" left-icon="add" @click="addWithholdingRow">Add withholding</MpButton>
+              <MpButton variant="textLink" size="sm" left-icon="add" @click="addWithholdingRow">{{ t('Add withholding') }}</MpButton>
             </div>
 
             <div v-if="lessWithholding" class="ex-total-rule" />
             <div v-if="lessWithholding" class="ex-total-row">
-              <span class="ex-total-label ex-total-label--strong">Total</span>
+              <span class="ex-total-label ex-total-label--strong">{{ t('Total') }}</span>
               <span class="ex-total-amt ex-total-amt--strong">{{ formatIDR(finalTotal) }}</span>
             </div>
           </div>
@@ -900,7 +899,7 @@ function handleSave(mode: 'close' | 'new') {
         <div v-if="iHavePaid" class="ex-section ex-payment-section">
           <MpTabs id="ex-payment-tabs" :default-value="0" variant-color="blue">
             <MpTabList>
-              <MpTab value="payment">Payment</MpTab>
+              <MpTab value="payment">{{ t('Payment') }}</MpTab>
             </MpTabList>
             <MpTabPanels>
               <MpTabPanel value="payment">
@@ -915,10 +914,10 @@ function handleSave(mode: 'close' | 'new') {
                       </colgroup>
                       <thead>
                         <tr>
-                          <th class="ex-th">Payment account</th>
-                          <th class="ex-th">Amount paid</th>
-                          <th class="ex-th">Payment date</th>
-                          <th class="ex-th">Reference</th>
+                          <th class="ex-th">{{ t('Payment account') }}</th>
+                          <th class="ex-th">{{ t('Amount paid') }}</th>
+                          <th class="ex-th">{{ t('Payment date') }}</th>
+                          <th class="ex-th">{{ t('Reference') }}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -927,7 +926,7 @@ function handleSave(mode: 'close' | 'new') {
                             <MpTooltip
                               v-if="paymentAccountError"
                               id="ex-pay-account-tooltip"
-                              label="You must select account"
+                              :label="t('You must select account')"
                               placement="top"
                               use-portal
                               class="ex-error-tooltip-wrap"
@@ -935,7 +934,7 @@ function handleSave(mode: 'close' | 'new') {
                               <MpAutocomplete
                                 id="ex-pay-account-ac" v-model="paymentAccountId" :data="BANK_ACCOUNT_OPTIONS"
                                 label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-                                placeholder="Select account"
+                                :placeholder="t('Select account')"
                                 @update:model-value="paymentAccountError = false"
                               />
                             </MpTooltip>
@@ -943,7 +942,7 @@ function handleSave(mode: 'close' | 'new') {
                               v-else
                               id="ex-pay-account-ac" v-model="paymentAccountId" :data="BANK_ACCOUNT_OPTIONS"
                               label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-                              placeholder="Select account"
+                              :placeholder="t('Select account')"
                               @update:model-value="paymentAccountError = false"
                             />
                           </td>
@@ -951,7 +950,7 @@ function handleSave(mode: 'close' | 'new') {
                             <MpTooltip
                               v-if="amountPaidError"
                               id="ex-pay-amount-tooltip"
-                              label="Amount must be more than 0"
+                              :label="t('Amount must be more than 0')"
                               placement="top"
                               use-portal
                               class="ex-error-tooltip-wrap"
@@ -994,9 +993,9 @@ function handleSave(mode: 'close' | 'new') {
 
         <!-- Footer actions -->
         <footer class="ex-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="goExpenses">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--secondary" @click="handleSave('close')">Save &amp; close</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="handleSave('new')">Save &amp; new</button>
+          <button class="btn-enterprise btn-enterprise--ghost" @click="goExpenses">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="handleSave('close')">{{ t('Save & close') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="handleSave('new')">{{ t('Save & new') }}</button>
         </footer>
       </div>
     </div>

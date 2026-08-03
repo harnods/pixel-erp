@@ -17,14 +17,14 @@ const { t } = useLocale()
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'date',              label: 'Date',              width: '120px',                                sortType: 'date'   },
-  { key: 'number',            label: 'Number',            width: '210px', sortable: true,                sortType: 'number' },
+  { key: 'date',              label: t('Date'),              width: '120px',                                sortType: 'date'   },
+  { key: 'number',            label: t('Number'),            width: '210px', sortable: true,                sortType: 'number' },
   { key: 'processed',         label: '',                  width: '44px',  align: 'center', noHeader: true },
-  { key: 'customerName',      label: 'Customer',          width: '240px', sortable: true,                sortType: 'text'   },
-  { key: 'fulfillmentStatus', label: 'Fulfillment status',width: '180px',                                sortType: 'text'   },
-  { key: 'billingStatus',     label: 'Billing status',    width: '160px',                                sortType: 'text'   },
-  { key: 'total',             label: 'Total',             width: '160px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'tags',              label: 'Tags',              width: '160px'                                 },
+  { key: 'customerName',      label: t('Customer'),          width: '240px', sortable: true,                sortType: 'text'   },
+  { key: 'fulfillmentStatus', label: t('Fulfillment status'),width: '180px',                                sortType: 'text'   },
+  { key: 'billingStatus',     label: t('Billing status'),    width: '160px',                                sortType: 'text'   },
+  { key: 'total',             label: t('Total'),             width: '160px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'tags',              label: t('Tags'),              width: '160px'                                 },
 ]
 
 // ─── Row type + flatten ─────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ function clearFilters() {
 }
 
 // Column show/hide (first column always on; Last updated appended, hidden by default)
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), width: '200px' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))

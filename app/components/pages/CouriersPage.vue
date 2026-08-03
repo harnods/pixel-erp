@@ -16,11 +16,13 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { couriers, addCourier, updateCourier, type Courier } from '~/data/couriers'
 import { deleteCourierSafe } from '~/data/integrityGuards'
 
+const { t } = useLocale()
+
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Courier name', width: '320px', sortable: true, sortType: 'text' },
+  { key: 'name', label: t('Courier name'), width: '320px', sortable: true, sortType: 'text' },
 ]
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: 'Last updated', width: '200px' }]
+const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), width: '200px' }]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'lastUpdated'])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
@@ -69,17 +71,17 @@ function openEdit(c: Courier) {
 }
 async function saveEdit() {
   if (!editName.value.trim()) {
-    toast.notify({ variant: 'error', title: 'Courier name is required' })
+    toast.notify({ variant: 'error', title: t('Courier name is required') })
     return
   }
   isSaving.value = true
   await new Promise(r => setTimeout(r, 400))
   if (isEdit.value && editingId.value) {
     updateCourier(editingId.value, editName.value)
-    toast.notify({ variant: 'success', title: 'Courier updated' })
+    toast.notify({ variant: 'success', title: t('Courier updated') })
   } else {
     addCourier(editName.value)
-    toast.notify({ variant: 'success', title: 'Courier added' })
+    toast.notify({ variant: 'success', title: t('Courier added') })
   }
   isSaving.value = false
   editOpen.value = false
@@ -96,11 +98,11 @@ function confirmDelete() {
   if (courierToDelete.value) {
     const res = deleteCourierSafe(courierToDelete.value.id)
     if (!res.ok) {
-      toast.notify({ variant: 'error', title: "Courier is still used by an active shipment and can't be deleted", maxWidth: 'max-content' })
+      toast.notify({ variant: 'error', title: t("Courier is still used by an active shipment and can't be deleted"), maxWidth: 'max-content' })
       courierToDelete.value = null
       return
     }
-    toast.notify({ variant: 'success', title: 'Courier deleted' })
+    toast.notify({ variant: 'success', title: t('Courier deleted') })
   }
   courierToDelete.value = null
 }
@@ -134,7 +136,7 @@ function confirmDelete() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
         </div>
       </div>
     </template>
@@ -148,7 +150,7 @@ function confirmDelete() {
     <template #actions="{ row }">
       <MpPopover :id="`courier-actions-${(row as unknown as Courier).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" aria-label="More actions">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -156,8 +158,8 @@ function confirmDelete() {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="openEdit(row as unknown as Courier)">Edit</MpPopoverListItem>
-            <MpPopoverListItem @click="openDeleteModal(row as unknown as Courier)">Delete</MpPopoverListItem>
+            <MpPopoverListItem @click="openEdit(row as unknown as Courier)">{{ t('Edit') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openDeleteModal(row as unknown as Courier)">{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -167,13 +169,13 @@ function confirmDelete() {
     <template #empty>
       <div class="empty-full">
         <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No couriers</p>
-        <p class="empty-full-desc">Couriers you add will appear here.</p>
+        <p class="empty-full-title">{{ t('No couriers') }}</p>
+        <p class="empty-full-desc">{{ t('Couriers you add will appear here.') }}</p>
         <button class="empty-full-btn" @click="openAdd">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          Add courier
+          {{ t('Add courier') }}
         </button>
       </div>
     </template>
@@ -186,16 +188,16 @@ function confirmDelete() {
   <Teleport to="body">
     <Transition name="cem">
       <div v-if="editOpen" class="cem-overlay" @click.self="editOpen = false">
-        <div class="cem-panel" role="dialog" aria-modal="true" :aria-label="isEdit ? 'Edit courier' : 'Add courier'">
-          <p class="cem-title">{{ isEdit ? 'Edit courier' : 'Add courier' }}</p>
+        <div class="cem-panel" role="dialog" aria-modal="true" :aria-label="isEdit ? t('Edit courier') : t('Add courier')">
+          <p class="cem-title">{{ isEdit ? t('Edit courier') : t('Add courier') }}</p>
           <MpFormControl id="courier-edit-name" class="cem-form">
-            <MpFormLabel>Courier name</MpFormLabel>
-            <MpInput id="courier-edit-name-input" v-model="editName" is-full-width placeholder="e.g. JNE REG" />
+            <MpFormLabel>{{ t('Courier name') }}</MpFormLabel>
+            <MpInput id="courier-edit-name-input" v-model="editName" is-full-width :placeholder="t('e.g. JNE REG')" />
           </MpFormControl>
           <div class="cem-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--ghost" @click="editOpen = false">{{ t('Cancel') }}</button>
             <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="saveEdit">
-              {{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}
+              {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
             </button>
           </div>
         </div>
@@ -206,9 +208,9 @@ function confirmDelete() {
   <!-- ── Delete confirmation ── -->
   <ConfirmModal
     v-model:is-open="isDeleteModalOpen"
-    title="Delete courier?"
-    :description="`${courierToDelete?.name ?? ''} will be removed from courier master data.`"
-    confirm-label="Delete"
+    :title="t('Delete courier?')"
+    :description="`${courierToDelete?.name ?? ''} ${t('will be removed from courier master data.')}`"
+    :confirm-label="t('Delete')"
     @confirm="confirmDelete"
   />
 </template>

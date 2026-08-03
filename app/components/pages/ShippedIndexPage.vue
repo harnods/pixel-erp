@@ -68,13 +68,13 @@ const baseRows = computed<Row[]>(() => {
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'shipmentNo',      label: 'Shipment no.',      width: '180px', sortType: 'text' },
-  { key: 'transactionDate', label: 'Date',              width: '170px', sortType: 'date' },
-  { key: 'warehouseName',   label: 'Warehouse',         width: '180px', sortType: 'text' },
-  { key: 'courier',         label: 'Courier',           width: '160px', sortType: 'text' },
-  { key: 'assignee',        label: 'Assignee',          width: '160px', sortType: 'text' },
-  { key: 'deliveryCount',   label: 'Delivery qty',      width: '120px', align: 'right', sortType: 'number' },
-  { key: 'status',          label: 'Status',            width: '130px', sortType: 'text' },
+  { key: 'shipmentNo',      label: t('Shipment no.'),      width: '180px', sortType: 'text' },
+  { key: 'transactionDate', label: t('Date'),              width: '170px', sortType: 'date' },
+  { key: 'warehouseName',   label: t('Warehouse'),         width: '180px', sortType: 'text' },
+  { key: 'courier',         label: t('Courier'),           width: '160px', sortType: 'text' },
+  { key: 'assignee',        label: t('Assignee'),          width: '160px', sortType: 'text' },
+  { key: 'deliveryCount',   label: t('Delivery qty'),      width: '120px', align: 'right', sortType: 'number' },
+  { key: 'status',          label: t('Status'),            width: '130px', sortType: 'text' },
 ]
 // Column show/hide — Shipment no. stays on; the sort menu's "Hide column" flips these off,
 // the ColumnSettings menu turns them back on.
@@ -103,7 +103,7 @@ const warehouseLabel = computed(() => {
   const n = warehouseFilter.value.length
   if (n === 0) return ''
   if (n === 1) return warehouseOptions.value.find(o => o.value === warehouseFilter.value[0])?.label ?? ''
-  return `${n} warehouses`
+  return `${n} ${t('warehouses')}`
 })
 function toggleWarehouse(id: string) {
   const idx = warehouseFilter.value.indexOf(id)
@@ -118,7 +118,7 @@ const statusLabel = computed(() => {
   const n = statusFilter.value.length
   if (n === 0) return ''
   if (n === 1) return statusOptions.find(o => o.value === statusFilter.value[0])?.label ?? ''
-  return `${n} statuses`
+  return `${n} ${t('statuses')}`
 })
 function toggleStatus(v: string) {
   const idx = statusFilter.value.indexOf(v)
@@ -136,7 +136,7 @@ const courierLabel = computed(() => {
   const n = courierFilter.value.length
   if (n === 0) return ''
   if (n === 1) return courierFilter.value[0]
-  return `${n} couriers`
+  return `${n} ${t('couriers')}`
 })
 function toggleCourier(v: string) {
   const idx = courierFilter.value.indexOf(v)
