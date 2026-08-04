@@ -144,6 +144,7 @@ const StockCountingPage = asyncPage(() => import('~/components/pages/StockCounti
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
 
@@ -363,8 +364,8 @@ const currentComponent = computed<Component>(
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
   // WMS Overview — mirrored for the WMS menu (/overview) and WMS Reports (/wms-report)
-  'Overview':          ['Outbound delivery', 'Inbound delivery'],
-  'Wms report':        ['Outbound delivery', 'Inbound delivery'],
+  'Overview':          ['Inbound delivery', 'Outbound delivery'],
+  'Wms report':        ['Inbound delivery', 'Outbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
@@ -386,6 +387,16 @@ const pageTabs: Record<string, string[]> = {
 const activeWarehouseFilter = useActiveWarehouseFilter()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
+  // WMS Overview / Reports tabs badge the actionable open work per direction.
+  if (currentPageKey.value === 'Overview' || currentPageKey.value === 'Wms report') {
+    const counts = receiptCountsByStage(wh)
+    const inbound = (counts['Pending'] ?? 0) + (counts['Open'] ?? 0) + (counts['In progress'] ?? 0) + (counts['Partial reception'] ?? 0)
+    const out: Record<string, number> = {}
+    if (inbound) out['Inbound delivery'] = inbound
+    const outbound = outgoingOpenCount(wh)
+    if (outbound) out['Outbound delivery'] = outbound
+    return out
+  }
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
@@ -511,6 +522,15 @@ const cycleCountBannerVisible = computed(() =>
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {
+  // WMS → Overview (and WMS Reports) — one analytics page, direction per tab.
+  'Overview': {
+    'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
+    'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
+  },
+  'Wms report': {
+    'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
+    'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
+  },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
