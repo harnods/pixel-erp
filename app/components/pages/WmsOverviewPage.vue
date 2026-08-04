@@ -559,7 +559,7 @@ function stageAccent(s: StageCard): string {
 .acc-states { display: flex; flex-direction: column; gap: 18px; }
 .acc-state { display: flex; flex-direction: column; gap: 8px; }
 .acc-state-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.acc-state-label { font-size: 15px; font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
+.acc-state-label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
 .acc-state-val { font-size: 14px; color: var(--mp-text-secondary); }
 .acc-state-val b { color: var(--mp-text-default); font-weight: 700; }
 .acc-state-track { height: 10px; border-radius: 999px; background: var(--mp-background-neutral-subtle, #eef0f1); overflow: hidden; }
