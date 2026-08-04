@@ -99,7 +99,7 @@ function saveTax() {
   if (!validateTax()) return
   Object.assign(tax, draftTax)
   editing.value = null
-  toast.notify({ variant: 'success', title: t('Changes saved'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
 }
 function validateField(name: string) {
   toast.notify({ variant: 'success', title: `${name} ${t('validated')}`, maxWidth: 'max-content' })
@@ -117,7 +117,7 @@ function savePayment() {
   if (!validatePayment()) return
   Object.assign(payment, draftPayment)
   editing.value = null
-  toast.notify({ variant: 'success', title: t('Changes saved'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
 }
 
 // ─── Advanced form + multi-currency modal ──────────────────────────────────────
@@ -149,7 +149,7 @@ function setAdvancedToggle(key: string, v: boolean) {
 function saveAdvanced() {
   Object.assign(advanced, draftAdvanced)
   editing.value = null
-  toast.notify({ variant: 'success', title: t('Changes saved'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
 }
 
 const ADVANCED_TOGGLES = [

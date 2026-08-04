@@ -51,7 +51,7 @@ const COSTING_OPTIONS = [
 const productOptions = CATALOG.map(p => ({ id: p.id, name: p.name, unit: p.unit, price: p.price, sku: p.sku }))
 const UNIT_OPTIONS = [...new Set(CATALOG.map(p => p.unit))].map(u => ({ id: u, name: u }))
 const COST_ACCOUNT_OPTIONS = [
-  { id: 'labour', name: 'Direct labour' },
+  { id: 'labour', name: 'Direct labor' },
   { id: 'worker', name: 'Worker' },
   { id: 'overhead', name: 'Manufacturing overhead' },
   { id: 'electricity', name: 'Electricity' },
@@ -59,8 +59,8 @@ const COST_ACCOUNT_OPTIONS = [
 ]
 const COST_DRIVER_OPTIONS = [
   { id: 'person', name: 'Person' },
-  { id: 'kwh', name: 'Kwh' },
-  { id: 'labour-hour', name: 'Labour hour' },
+  { id: 'kwh', name: 'kWh' },
+  { id: 'labour-hour', name: 'Labor hour' },
   { id: 'machine-hour', name: 'Machine hour' },
   { id: 'unit', name: 'Unit produced' },
 ]
@@ -407,7 +407,7 @@ function saveBom(): string | null {
   if (isEditMode.value) {
     const res = updateBillOfMaterialsSafe(editingId, buildBomPayload())
     if (!res.ok) {
-      toast.notify({ variant: 'error', title: t("This BOM is used by an active work order and can't be edited"), maxWidth: 'max-content' })
+      toast.notify({ variant: 'error', title: t('Failed to save. This BOM is used by an active work order'), maxWidth: 'max-content' })
       return null
     }
     return editingId
@@ -418,13 +418,13 @@ function handleSave() {
   if (!validate()) return
   const id = saveBom()
   if (!id) return
-  toast.notify({ variant: 'success', title: isEditMode.value ? t('Bill of materials updated') : t('Bill of materials saved') })
+  toast.notify({ variant: 'success', title: isEditMode.value ? t('Bill of materials changes saved') : t('Bill of materials saved') })
   router.push(`/bill-of-materials/${id}`)
 }
 function handleSaveDraft() {
   const id = saveBom()
   if (!id) return
-  toast.notify({ variant: 'success', title: isEditMode.value ? t('Bill of materials updated') : t('Bill of materials saved as draft') })
+  toast.notify({ variant: 'success', title: isEditMode.value ? t('Bill of materials changes saved') : t('Bill of materials saved as draft') })
   router.push(`/bill-of-materials/${id}`)
 }
 
@@ -656,7 +656,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 </tr>
                 <tr v-for="row in group.rows" :key="row.id" class="bf-tr">
                   <td class="bf-td bf-td--input">
-                    <MpAutocomplete :id="`cost-acc-${group.key}-${row.id}`" v-model="row.account" :data="COST_ACCOUNT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select account mapping')" is-searchable is-clearable use-portal is-full-width @update:model-value="() => onCostAccount(group, row)" />
+                    <MpAutocomplete :id="`cost-acc-${group.key}-${row.id}`" v-model="row.account" :data="COST_ACCOUNT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select cost account')" is-searchable is-clearable use-portal is-full-width @update:model-value="() => onCostAccount(group, row)" />
                   </td>
                   <td class="bf-td bf-td--input">
                     <MpAutocomplete v-if="row.account" :id="`cost-drv-${group.key}-${row.id}`" v-model="row.costDriver" :data="COST_DRIVER_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select cost driver')" is-searchable is-clearable use-portal is-full-width />

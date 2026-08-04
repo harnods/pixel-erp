@@ -277,7 +277,7 @@ const pagedWarehouseStock = computed(() => {
                     <th class="pd-th pd-th--num">On hand qty</th>
                     <th class="pd-th pd-th--num">Reserved qty</th>
                     <th class="pd-th pd-th--num">Available qty</th>
-                    <th class="pd-th pd-th--num">In transit</th>
+                    <th class="pd-th pd-th--num">In transit qty</th>
                     <th class="pd-th">Unit</th>
                   </tr>
                 </thead>
@@ -305,7 +305,7 @@ const pagedWarehouseStock = computed(() => {
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <p class="empty-full-title">No transactions</p>
-              <p class="empty-full-desc">Transactions for this batch will appear here.</p>
+              <p class="empty-full-desc">Batch transactions will appear here.</p>
             </div>
 
             <ErpPagination
@@ -337,7 +337,7 @@ const pagedWarehouseStock = computed(() => {
                     <th class="pd-th pd-th--num">On hand qty</th>
                     <th class="pd-th pd-th--num">Reserved qty</th>
                     <th class="pd-th pd-th--num">Available qty</th>
-                    <th class="pd-th pd-th--num">In transit</th>
+                    <th class="pd-th pd-th--num">In transit qty</th>
                     <th class="pd-th pd-th--num">Min. stock</th>
                     <th class="pd-th">Unit</th>
                   </tr>

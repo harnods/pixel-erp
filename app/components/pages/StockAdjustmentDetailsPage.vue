@@ -853,7 +853,7 @@ onUnmounted(() => {
                 <th class="detail-th">{{ t('SKU') }}</th>
                 <template v-if="isCount">
                   <th class="detail-th detail-th--num">{{ t('Prev. on hand qty') }}</th>
-                  <th class="detail-th detail-th--num">{{ t('Counted') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Counted qty') }}</th>
                   <th class="detail-th detail-th--num">{{ t('Difference') }}</th>
                 </template>
                 <th v-else class="detail-th detail-th--num">{{ t('Qty in/out') }}</th>
@@ -1105,7 +1105,7 @@ onUnmounted(() => {
       <MpModalContent>
         <MpModalHeader>{{ t('Cancel stock adjustment?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p>{{ t('This adjustment will be canceled and can no longer be approved. This can\'t be undone.') }}</p>
+          <p>{{ t('This adjustment will be canceled and can no longer be approved. This cannot be undone.') }}</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
@@ -1125,7 +1125,7 @@ onUnmounted(() => {
       <MpModalContent>
         <MpModalHeader>{{ t('Close this count task?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          <p>{{ t('Counted data will be canceled and can\'t be resumed. This task will become read-only with a Closed status.') }}</p>
+          <p>{{ t('Counted data will be canceled and cannot be resumed. This task will become read-only with a Closed status.') }}</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
@@ -1143,13 +1143,13 @@ onUnmounted(() => {
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="startBlockedOpen = false"
     >
       <MpModalContent>
-        <MpModalHeader>{{ t("Can't start counting yet") }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalHeader>{{ t('Cannot start counting yet') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           <p class="sad-blocked-intro">{{ t('The following tasks are still in progress in this warehouse and share products with this count:') }}</p>
           <ul class="sad-blocked-list">
             <li v-for="(c, i) in activeConflicts" :key="i">{{ c.type }} {{ c.taskNo }} — {{ c.skus.join(', ') }}</li>
           </ul>
-          <p>{{ t("Wait until they're completed before starting this count.") }}</p>
+          <p>{{ t('Wait until they are completed before starting this count.') }}</p>
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">

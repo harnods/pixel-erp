@@ -682,7 +682,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <p class="empty-full-title">No stock</p>
-              <p class="empty-full-desc">Warehouses will appear here.</p>
+              <p class="empty-full-desc">Serial numbers will appear here.</p>
             </div>
 
             <ErpPagination

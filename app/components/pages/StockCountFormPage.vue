@@ -324,11 +324,11 @@ async function handleSave() {
   }
   if (isWms.value) {
     const adj = addWmsAdjustment(input)
-    toast.notify({ variant: 'success', title: t('Cycle count created'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Cycle count saved'), maxWidth: 'max-content' })
     router.push(`/cycle-counts/${adj.id}`)
   } else {
     const adj = addAdjustment(input)
-    toast.notify({ variant: 'success', title: t('Stock count created'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Stock count saved'), maxWidth: 'max-content' })
     router.push(`/stock-adjustments/${adj.id}`)
   }
 }

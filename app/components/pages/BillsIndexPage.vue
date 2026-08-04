@@ -340,7 +340,7 @@ function confirmBulkDelete() {
           <div class="stat-title">{{ t('Overdue') }}</div>
           <div class="stat-period">{{ t('As of today') }}</div>
           <div class="stat-amount stat-amount--danger">{{ formatIDR(overdueTotal) }}</div>
-          <a class="stat-link">{{ overdueBills.length }} {{ t(overdueBills.length !== 1 ? 'bills' : 'bill') }}</a>
+          <a class="stat-link">{{ overdueBills.length }} {{ t(overdueBills.length !== 1 ? 'expenses' : 'expense') }}</a>
         </div>
 
         <!-- Card 2: Unpaid -->
@@ -348,7 +348,7 @@ function confirmBulkDelete() {
           <div class="stat-title">{{ t('Unpaid') }}</div>
           <div class="stat-period">{{ t('As of today') }}</div>
           <div class="stat-amount">{{ formatIDR(unpaidTotal) }}</div>
-          <a class="stat-link">{{ unpaidBills.length }} {{ t(unpaidBills.length !== 1 ? 'bills' : 'bill') }}</a>
+          <a class="stat-link">{{ unpaidBills.length }} {{ t(unpaidBills.length !== 1 ? 'expenses' : 'expense') }}</a>
         </div>
 
         <!-- Card 3: Paid -->
@@ -356,7 +356,7 @@ function confirmBulkDelete() {
           <div class="stat-title">{{ t('Paid') }}</div>
           <div class="stat-period">{{ t('Last 30 days') }}</div>
           <div class="stat-amount">{{ formatIDR(paidTotal) }}</div>
-          <a class="stat-link">{{ paidBills.length }} {{ t(paidBills.length !== 1 ? 'bills' : 'bill') }}</a>
+          <a class="stat-link">{{ paidBills.length }} {{ t(paidBills.length !== 1 ? 'expenses' : 'expense') }}</a>
         </div>
 
         <!-- Card 4: Upsell — Mekari Card — hidden when Airene panel is open or dismissed -->

@@ -186,7 +186,7 @@ function handleSave() {
               :is-invalid="payFromError"
               @update:model-value="payFromError = false"
             />
-            <MpFormErrorMessage>{{ t('Please select an account to pay from') }}</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select pay from') }}</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="sm-payee" class="ex-field-flex">
             <MpFormLabel>{{ t('Payee') }}</MpFormLabel>
@@ -212,7 +212,7 @@ function handleSave() {
               <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
               <span class="ex-label-icon" :title="t('Auto-generated')"><MpIcon name="settings" size="sm" /></span>
             </div>
-            <MpInput id="sm-transno-input" v-model="transactionNo" :placeholder="t('[Auto]')" is-full-width is-disabled />
+            <MpInput id="sm-transno-input" v-model="transactionNo" :placeholder="t('Auto')" is-full-width is-disabled />
           </MpFormControl>
           <MpFormControl id="sm-refno">
             <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
@@ -299,7 +299,7 @@ function handleSave() {
                 <MpFormLabel>{{ t('Message') }}</MpFormLabel>
                 <MpTextarea id="sm-message-textarea" v-model="message" is-full-width :rows="3" />
               </MpFormControl>
-              <p class="ex-helper-text">{{ t('Visible to customer/vendor') }}</p>
+              <p class="ex-helper-text">{{ t('Visible to vendor') }}</p>
             </div>
 
             <div class="ex-section">
