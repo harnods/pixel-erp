@@ -15,7 +15,7 @@ import { formatDate, formatDateTime } from '~/utils/date'
 import { warehouses } from '~/data/warehouses'
 import { TODAY } from '~/data/master'
 import { operatorOptionsMulti } from '~/data/wmsAnalytics'
-import { WMS_REPORTS, inboundAccuracyFilterOptions, type ReportColumn, type ReportFilter, type ReportRow } from '~/data/wmsReports'
+import { WMS_REPORTS, INBOUND_SOURCE_OPTIONS, inboundAccuracyFilterOptions, type ReportColumn, type ReportFilter, type ReportRow } from '~/data/wmsReports'
 import WmsReportFiltersDrawer, { type WmsReportFiltersValue } from '~/components/patterns/WmsReportFiltersDrawer.vue'
 
 const props = defineProps<{ orderId: string }>()
@@ -43,8 +43,10 @@ const receiveStateOptions = [
   { id: 'short', name: 'Short expected' },
   { id: 'over', name: 'Over expected' },
 ]
+// Source is a fixed set of inbound origin types (id === name, matched directly).
+const sourceOptions = INBOUND_SOURCE_OPTIONS.map((s) => ({ id: s, name: s }))
 const inboundAccOptions = computed(() =>
-  isInboundAccuracy.value ? inboundAccuracyFilterOptions() : { skus: [], sources: [] },
+  isInboundAccuracy.value ? inboundAccuracyFilterOptions() : { skus: [] },
 )
 const drawerValue = computed<WmsReportFiltersValue>(() => ({
   skus: skuFilter.value,
@@ -449,7 +451,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       v-model:is-open="isFiltersDrawerOpen"
       :model-value="drawerValue"
       :sku-options="inboundAccOptions.skus"
-      :source-options="inboundAccOptions.sources"
+      :source-options="sourceOptions"
       :receive-state-options="receiveStateOptions"
       @apply="applyDrawerFilters"
     />

@@ -37,7 +37,7 @@ export interface ReportFilter {
   customRange?: { from: string; to: string } | null
   /** inbound-accuracy only — selected product names; empty/undefined = all */
   skus?: string[]
-  /** inbound-accuracy only — selected inbound sources (supplier/sender); empty/undefined = all */
+  /** inbound-accuracy only — selected inbound origin types (see INBOUND_SOURCE_OPTIONS); empty/undefined = all */
   sources?: string[]
   /** inbound-accuracy only — received-vs-expected state per line; empty/undefined = all */
   receiveStates?: ('match' | 'short' | 'over')[]
@@ -170,23 +170,38 @@ function receiveState(receivedQty: number, expectedQty: number): 'match' | 'shor
   return 'match'
 }
 
-/** Distinct SKU/product and inbound-source options across all closed, non-cancelled
- *  receipts — feeds the Inbound accuracy "All filters" drawer (stable, date-agnostic). */
-export function inboundAccuracyFilterOptions(): { skus: string[]; sources: string[] } {
+/** Fixed origin types for an inbound receipt — the "Source" filter choices. */
+export const INBOUND_SOURCE_OPTIONS = [
+  'Purchase order',
+  'Sales return',
+  'Warehouse transfer',
+  'Marketplace',
+] as const
+
+/** Classify a receipt's inbound source. Desty/marketplace POs use the "#PO###"
+ *  purchase-no format (see receipts.ts); the rest are spread deterministically
+ *  across the remaining origins so every option has some rows. */
+function receiptSource(r: (typeof receipts)[number]): string {
+  if (r.purchaseNo.startsWith('#PO')) return 'Marketplace'
+  const h = r.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 10
+  if (h < 6) return 'Purchase order'      // ~60% of non-marketplace
+  if (h < 8) return 'Sales return'        // ~20%
+  return 'Warehouse transfer'             // ~20%
+}
+
+/** Distinct SKU/product options across all closed, non-cancelled receipts —
+ *  feeds the Inbound accuracy "All filters" drawer (stable, date-agnostic).
+ *  Source options are fixed (see INBOUND_SOURCE_OPTIONS). */
+export function inboundAccuracyFilterOptions(): { skus: string[] } {
   const byReceipt = recvTasksByReceipt()
   const skus = new Set<string>()
-  const sources = new Set<string>()
   for (const r of receipts) {
     if (r.status === 'canceled') continue
     const tasks = byReceipt.get(r.id)
     if (!isClosed(tasks)) continue
-    if (r.vendor) sources.add(r.vendor)
     for (const t of tasks!) for (const it of t.items) skus.add(it.productName)
   }
-  return {
-    skus: [...skus].sort((a, b) => a.localeCompare(b)),
-    sources: [...sources].sort((a, b) => a.localeCompare(b)),
-  }
+  return { skus: [...skus].sort((a, b) => a.localeCompare(b)) }
 }
 
 // 2 ── Inbound Accuracy — one row per receiving item (SKU line) ────────────────
@@ -195,8 +210,8 @@ function inboundAccuracyRows(f: ReportFilter): ReportRow[] {
   const out: ReportRow[] = []
   for (const r of receipts) {
     if (r.status === 'canceled' || !whOk(f, r.warehouseId)) continue
-    // Source of Inbound filter (supplier/sender) — receipt-level.
-    if (f.sources?.length && (!r.vendor || !f.sources.includes(r.vendor))) continue
+    // Source of Inbound filter (origin type) — receipt-level.
+    if (f.sources?.length && !f.sources.includes(receiptSource(r))) continue
     const tasks = byReceipt.get(r.id)
     if (!isClosed(tasks) || !inPeriod(f, closeDate(tasks!))) continue
     for (const t of tasks!) {
@@ -334,15 +349,15 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
     defaultPeriodDays: 7,
     columns: [
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
-      { key: 'inboundId', label: 'Inbound ID', sortType: 'text' },
+      { key: 'inboundId', label: 'Inbound number', sortType: 'text' },
       { key: 'expectedArrival', label: 'Inbound expected arrival at', sortType: 'date', dateOnly: true },
       { key: 'inboundClosing', label: 'Inbound closing time', sortType: 'date' },
-      { key: 'receivingId', label: 'Receiving ID', sortType: 'text' },
+      { key: 'receivingId', label: 'Receiving number', sortType: 'text' },
       { key: 'receiverName', label: 'Receiver name', sortType: 'text' },
       { key: 'receivingStart', label: 'Receiving start', sortType: 'date' },
       { key: 'receivingFinish', label: 'Receiving finish', sortType: 'date' },
       { key: 'putawayPic', label: 'Putaway PIC name', sortType: 'text' },
-      { key: 'putawayId', label: 'Putaway ID', sortType: 'text' },
+      { key: 'putawayId', label: 'Putaway number', sortType: 'text' },
       { key: 'putawayStart', label: 'Putaway start', sortType: 'date' },
       { key: 'putawayFinish', label: 'Putaway finish', sortType: 'date' },
     ],
@@ -353,16 +368,16 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
     direction: 'inbound',
     defaultPeriodDays: 7,
     columns: [
-      { key: 'supplierSender', label: 'Supplier / sender name', sortType: 'text' },
+      { key: 'supplierSender', label: 'Vendor', sortType: 'text' },
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
-      { key: 'inboundId', label: 'Inbound ID', sortType: 'text' },
+      { key: 'inboundId', label: 'Inbound number', sortType: 'text' },
       { key: 'productName', label: 'Product name', sortType: 'text' },
       { key: 'inboundQty', label: 'Purchase qty', sortType: 'number', align: 'right' },
       { key: 'receiverName', label: 'Receiver name', sortType: 'text' },
-      { key: 'receivingId', label: 'Receiving ID', sortType: 'text' },
+      { key: 'receivingId', label: 'Receiving number', sortType: 'text' },
       { key: 'receivingQty', label: 'Receiving qty', sortType: 'number', align: 'right' },
       { key: 'putawayPic', label: 'Putaway PIC', sortType: 'text' },
-      { key: 'putawayId', label: 'Putaway ID', sortType: 'text' },
+      { key: 'putawayId', label: 'Putaway number', sortType: 'text' },
       { key: 'putawayQty', label: 'Putaway qty', sortType: 'number', align: 'right' },
     ],
     rows: inboundAccuracyRows,
@@ -373,19 +388,19 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
     columns: [
       { key: 'customer', label: 'Customer / recipient name', sortType: 'text' },
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
-      { key: 'outboundId', label: 'Outbound ID', sortType: 'text' },
+      { key: 'outboundId', label: 'Outbound number', sortType: 'text' },
       { key: 'outboundClosing', label: 'Outbound closing time', sortType: 'date', dateOnly: true },
-      { key: 'pickingId', label: 'Picking ID', sortType: 'text' },
+      { key: 'pickingId', label: 'Picking number', sortType: 'text' },
       { key: 'pickerName', label: 'Picker name', sortType: 'text' },
       { key: 'pickingStart', label: 'Picking start', sortType: 'date' },
       { key: 'pickingFinish', label: 'Picking finish', sortType: 'date' },
       { key: 'packerName', label: 'Packer name', sortType: 'text' },
-      { key: 'packingId', label: 'Packing ID', sortType: 'text' },
+      { key: 'packingId', label: 'Packing number', sortType: 'text' },
       { key: 'packingStart', label: 'Packing start', sortType: 'date' },
       { key: 'packingFinish', label: 'Packing finish', sortType: 'date' },
       { key: 'shippingPic', label: 'Shipping PIC', sortType: 'text' },
       { key: 'courier', label: 'Courier name', sortType: 'text' },
-      { key: 'shippingId', label: 'Shipping ID', sortType: 'text' },
+      { key: 'shippingId', label: 'Shipping number', sortType: 'text' },
       { key: 'shippingAt', label: 'Shipping at', sortType: 'date' },
     ],
     rows: outboundTimelinessRows,
@@ -396,17 +411,17 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
     columns: [
       { key: 'customer', label: 'Customer / recipient name', sortType: 'text' },
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
-      { key: 'outboundId', label: 'Outbound ID', sortType: 'text' },
+      { key: 'outboundId', label: 'Outbound number', sortType: 'text' },
       { key: 'productName', label: 'Product name', sortType: 'text' },
       { key: 'outboundQty', label: 'Order qty', sortType: 'number', align: 'right' },
       { key: 'pickerName', label: 'Picker name', sortType: 'text' },
-      { key: 'pickingId', label: 'Picking ID', sortType: 'text' },
+      { key: 'pickingId', label: 'Picking number', sortType: 'text' },
       { key: 'pickedQty', label: 'Picked qty', sortType: 'number', align: 'right' },
       { key: 'packerName', label: 'Packer name', sortType: 'text' },
-      { key: 'packingId', label: 'Packing ID', sortType: 'text' },
+      { key: 'packingId', label: 'Packing number', sortType: 'text' },
       { key: 'packedQty', label: 'Packed qty', sortType: 'number', align: 'right' },
       { key: 'courierName', label: 'Courier name', sortType: 'text' },
-      { key: 'shippingId', label: 'Shipping ID', sortType: 'text' },
+      { key: 'shippingId', label: 'Shipping number', sortType: 'text' },
       { key: 'shippedQty', label: 'Shipped qty', sortType: 'number', align: 'right' },
     ],
     rows: outboundAccuracyRows,

@@ -2,10 +2,10 @@
 /**
  * WMS Inbound accuracy report — "All filters" drawer (Figma node 4545-45929).
  * Custom Teleport-style overlay (MpDrawer has no structural CSS in this Pixel3
- * build). SKU + Source are MpInputTag tag-fields (searchable suggestions, no
- * create-new); Completion state is a borderless checkbox group. Edits a local
- * draft; commits to the parent only on Apply, so Cancel/close-outside discards.
- */
+ * build). SKU is an MpInputTag tag-field (searchable suggestions, no create-new);
+ * Source and Completion state are borderless checkbox groups (fixed small option
+ * sets). Edits a local draft; commits to the parent only on Apply, so
+ * Cancel/close-outside discards. */
 import { MpIcon, MpCheckbox, MpFormControl, MpFormLabel, MpInputTag, type DataInterface } from '@mekari/pixel3'
 
 export interface WmsReportFiltersValue {
@@ -18,7 +18,7 @@ const props = defineProps<{
   isOpen: boolean
   modelValue: WmsReportFiltersValue
   skuOptions: string[]
-  sourceOptions: string[]
+  sourceOptions: { id: string; name: string }[]
   receiveStateOptions: { id: string; name: string }[]
 }>()
 const emit = defineEmits<{
@@ -28,41 +28,40 @@ const emit = defineEmits<{
 
 const { t } = useLocale()
 
-// SKU + Source selections live as DataInterface[] (MpInputTag's shape); the
-// completion-state checkboxes stay a plain string[].
+// SKU selections live as DataInterface[] (MpInputTag's shape); Source and
+// completion-state checkboxes stay plain string[].
 function toData(arr: string[]): DataInterface[] {
   return arr.map((s) => ({ id: s, text: s, value: s, isInvalid: false, isReadOnly: false }))
 }
 const skuData = ref<DataInterface[]>(toData(props.modelValue.skus))
-const sourceData = ref<DataInterface[]>(toData(props.modelValue.sources))
+const sources = ref<string[]>([...props.modelValue.sources])
 const receiveStates = ref<string[]>([...props.modelValue.receiveStates])
 
 watch(() => props.isOpen, (open) => {
   if (open) {
     skuData.value = toData(props.modelValue.skus)
-    sourceData.value = toData(props.modelValue.sources)
+    sources.value = [...props.modelValue.sources]
     receiveStates.value = [...props.modelValue.receiveStates]
   }
 })
 
-function onSkuChange(data: DataInterface[]) { skuData.value = data }
-function onSourceChange(data: DataInterface[]) { sourceData.value = data }
-function toggleReceiveState(id: string) {
-  receiveStates.value = receiveStates.value.includes(id)
-    ? receiveStates.value.filter((v) => v !== id)
-    : [...receiveStates.value, id]
+function toggle(list: Ref<string[]>, id: string) {
+  list.value = list.value.includes(id) ? list.value.filter((v) => v !== id) : [...list.value, id]
 }
+function onSkuChange(data: DataInterface[]) { skuData.value = data }
+function toggleSource(id: string) { toggle(sources, id) }
+function toggleReceiveState(id: string) { toggle(receiveStates, id) }
 
 function close() { emit('update:isOpen', false) }
 function apply() {
   emit('apply', {
     skus: skuData.value.map((d) => String(d.value ?? d.text)),
-    sources: sourceData.value.map((d) => String(d.value ?? d.text)),
+    sources: [...sources.value],
     receiveStates: [...receiveStates.value],
   })
   close()
 }
-function clearAll() { skuData.value = []; sourceData.value = []; receiveStates.value = [] }
+function clearAll() { skuData.value = []; sources.value = []; receiveStates.value = [] }
 </script>
 
 <template>
@@ -93,16 +92,17 @@ function clearAll() { skuData.value = []; sourceData.value = []; receiveStates.v
 
           <MpFormControl id="wrf-filters-source-fc">
             <MpFormLabel>{{ t('Source') }}</MpFormLabel>
-            <MpInputTag
-              id="wrf-filters-source"
-              :data="sourceData"
-              :suggestions="sourceOptions"
-              :is-show-suggestions="true"
-              :is-enable-create-new-tag="false"
-              :is-show-icon-chevron-down="true"
-              :placeholder="t('Search source...')"
-              @change="onSourceChange"
-            />
+            <div class="wrf-filters-checkbox-list">
+              <label v-for="opt in sourceOptions" :key="opt.id" class="wrf-filters-checkbox-item">
+                <MpCheckbox
+                  :id="`wrf-filters-source-${opt.id.replace(/\s+/g, '-')}`"
+                  :is-checked="sources.includes(opt.id)"
+                  @change="toggleSource(opt.id)"
+                >
+                  {{ t(opt.name) }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpFormControl>
 
           <MpFormControl id="wrf-filters-state-fc">
