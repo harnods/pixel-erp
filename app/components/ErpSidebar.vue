@@ -139,6 +139,9 @@ interface PanelSubItem {
    * "Inventory" list. Defaults to `label`.
    */
   to?: string
+  /** Explicit destination path (overrides label-based routing) — e.g. WMS
+   *  Standalone report items routing to /wms-report/<slug>. */
+  path?: string
   /** Task-count indicator shown right-aligned (e.g. items awaiting action). */
   count?: number
   /** Inline accordion inside the level-2 panel: this item becomes an expandable
@@ -593,11 +596,14 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Dashboard', icon: 'dashboard' },
     {
       name: 'Reports', icon: 'reports',
+      // WMS Standalone has no report index — the four reports (mirroring the ERP
+      // report pages) sit directly in the level-2 panel, led by Overview.
       panelSubmenu: [[
-        { label: 'Inbound timeliness' },
-        { label: 'Inbound accuracy' },
-        { label: 'Outbound timeliness' },
-        { label: 'Outbound accuracy' },
+        { label: 'Overview', path: '/overview' },
+        { label: 'Inbound timeliness', path: '/wms-report/inbound-timeliness' },
+        { label: 'Inbound accuracy', path: '/wms-report/inbound-accuracy' },
+        { label: 'Outbound timeliness', path: '/wms-report/outbound-timeliness' },
+        { label: 'Outbound accuracy', path: '/wms-report/outbound-accuracy' },
       ]],
     },
   ],
