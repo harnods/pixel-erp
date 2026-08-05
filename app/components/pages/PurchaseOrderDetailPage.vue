@@ -24,7 +24,7 @@ const hasApproval = true
 const openPurchaseOrder = inject<(id: string) => void>('openPurchaseOrder')
 const closePurchaseOrder = inject<() => void>('closePurchaseOrder')
 const approvePurchaseOrder = inject<(id: string) => void>('approvePurchaseOrder')
-const rejectPurchaseOrder = inject<(id: string) => void>('rejectPurchaseOrder')
+const rejectPurchaseOrder = inject<(id: string, reason: string) => void>('rejectPurchaseOrder')
 const duplicatePurchaseOrder = inject<(id: string, banner?: { user: string; date: string; reason?: string } | null) => void>('duplicatePurchaseOrder')
 
 const order = computed(() => getPurchaseOrderDetail(props.orderId))
@@ -42,21 +42,11 @@ const showRejectModal = ref(false)
 const rejectReason = ref('')
 const rejectReasonMax = 256
 
-interface RejectionBanner { user: string; date: string; reason: string }
-const rejectionBanner = ref<RejectionBanner | null>(null)
-
+const rejectionBanner = computed(() => order.value.rejection ?? null)
 
 function onReject() { showRejectModal.value = true }
 function onConfirmReject() {
-  rejectPurchaseOrder?.(props.orderId)
-  const d = new Date()
-  const day   = String(d.getDate()).padStart(2, '0')
-  const month = d.toLocaleString('en-US', { month: 'short' })
-  rejectionBanner.value = {
-    user: 'You',
-    date: `${day} ${month} ${d.getFullYear()}`,
-    reason: rejectReason.value,
-  }
+  rejectPurchaseOrder?.(props.orderId, rejectReason.value)
   showRejectModal.value = false
   rejectReason.value = ''
 }

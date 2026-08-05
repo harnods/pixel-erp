@@ -163,4 +163,6 @@ export interface PurchaseOrder {
   duplicatedFromId?: string
   /** Set via the form's "Send to fulfillment" action. */
   sentToFulfillment?: boolean
+  /** Set when this order is rejected — drives the persistent rejection banner. */
+  rejection?: { user: string; date: string; reason: string }
 }

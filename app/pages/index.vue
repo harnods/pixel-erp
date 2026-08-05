@@ -35,9 +35,15 @@ provide('approvePurchaseOrder', (id: string) => {
   if (o) o.status = 'approved'
   detailOrderId.value = null
 })
-provide('rejectPurchaseOrder', (id: string) => {
+provide('rejectPurchaseOrder', (id: string, reason: string) => {
   const o = purchaseOrders.find(x => x.id === id)
-  if (o) o.status = 'rejected'
+  if (o) {
+    o.status = 'rejected'
+    const d = new Date()
+    const day   = String(d.getDate()).padStart(2, '0')
+    const month = d.toLocaleString('en-US', { month: 'short' })
+    o.rejection = { user: 'You', date: `${day} ${month} ${d.getFullYear()}`, reason }
+  }
 })
 function openNewPurchaseOrderForm() {
   formOpen.value = true

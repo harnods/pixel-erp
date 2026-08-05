@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton } from '@mekari/pixel3'
+import { MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpBadge } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
@@ -28,6 +28,7 @@ import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
+import { purchaseOrders } from '~/data'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const route = useRoute()
@@ -67,6 +68,7 @@ const pageRegistry: Record<string, Component> = {
   'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
@@ -132,6 +134,51 @@ const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTask
 const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
+const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
+const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
+
+// ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
+// without real sub-routes yet — mirrors the pattern this feature was originally
+// built with; port to real routes if/when it needs deep-linking). ──────────────
+const purchaseOrdersTab = ref<'all' | 'awaiting' | 'rejected'>('all')
+provide('purchaseOrdersTab', purchaseOrdersTab)
+const poAwaitingCount = computed(() => purchaseOrders.filter(o => o.status === 'draft').length)
+const poRejectedCount = computed(() => purchaseOrders.filter(o => o.status === 'rejected').length)
+const poDetailOrderId = ref<string | null>(null)
+const poFormOpen = ref(false)
+const poFormDuplicateId = ref<string | null>(null)
+const poFormRejectionBanner = ref<{ user: string; date: string; reason?: string } | null>(null)
+const showPurchaseOrderDetail = computed(() => currentPageKey.value === 'Purchase orders' && !!poDetailOrderId.value && !poFormOpen.value)
+const showPurchaseOrderForm   = computed(() => currentPageKey.value === 'Purchase orders' && poFormOpen.value)
+provide('openPurchaseOrder',  (id: string) => { poDetailOrderId.value = id })
+provide('closePurchaseOrder', ()           => { poDetailOrderId.value = null })
+provide('approvePurchaseOrder', (id: string) => {
+  const o = purchaseOrders.find(x => x.id === id)
+  if (o) o.status = 'approved'
+  poDetailOrderId.value = null
+})
+provide('rejectPurchaseOrder', (id: string, reason: string) => {
+  const o = purchaseOrders.find(x => x.id === id)
+  if (o) {
+    o.status = 'rejected'
+    const d = new Date()
+    const day   = String(d.getDate()).padStart(2, '0')
+    const month = d.toLocaleString('en-US', { month: 'short' })
+    o.rejection = { user: 'You', date: `${day} ${month} ${d.getFullYear()}`, reason }
+  }
+})
+function openNewPurchaseOrderForm() {
+  poFormOpen.value = true
+  poFormDuplicateId.value = null
+  poFormRejectionBanner.value = null
+}
+provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: string; reason?: string } | null) => {
+  poFormOpen.value = true
+  poFormDuplicateId.value = id
+  poFormRejectionBanner.value = banner ?? null
+})
+provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
+watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -861,6 +908,10 @@ function startResize(e: MouseEvent) {
       <!-- Detail routes own their entire layout (title bar + stage) -->
       <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
 
+      <!-- Purchase Orders detail/form overlay — own layout, bypasses the title bar below -->
+      <component :is="PurchaseOrderFormPage" v-else-if="showPurchaseOrderForm" :duplicate-order-id="poFormDuplicateId ?? undefined" :rejection-banner="poFormRejectionBanner" />
+      <component :is="PurchaseOrderDetailPage" v-else-if="showPurchaseOrderDetail" :order-id="poDetailOrderId!" />
+
       <template v-else>
       <div class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
@@ -1129,6 +1180,47 @@ function startResize(e: MouseEvent) {
             Add courier
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Purchase orders'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="openNewPurchaseOrderForm">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New purchase order
+          </button>
+        </div>
+      </div>
+
+      <!-- Purchase Orders tab bar (custom .page-tab buttons, not the generic tabs system) -->
+      <div v-if="currentPageKey === 'Purchase orders'" class="page-tabs-bar">
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'all' }"
+          @click="purchaseOrdersTab = 'all'"
+        >
+          All purchase orders
+        </button>
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'awaiting' }"
+          @click="purchaseOrdersTab = 'awaiting'"
+        >
+          Awaiting approval
+          <MpBadge for="additionalInformation" size="sm" type="warning">{{ poAwaitingCount }}</MpBadge>
+        </button>
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'rejected' }"
+          @click="purchaseOrdersTab = 'rejected'"
+        >
+          Rejected
+          <MpBadge for="additionalInformation" size="sm" type="critical">{{ poRejectedCount }}</MpBadge>
+        </button>
       </div>
 
       <!-- Status tabs (below the title, outside the stage) — hidden when there's
@@ -1621,6 +1713,15 @@ function startResize(e: MouseEvent) {
 
 .page-tabs {
   display: flex;
+  gap: var(--mp-spacing-5);
+  padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0;
+}
+
+.page-tabs-bar {
+  display: flex;
+  align-items: flex-end;
   gap: var(--mp-spacing-5);
   padding: 0 var(--mp-spacing-6);
   background: var(--mp-background-neutral-subtle);
