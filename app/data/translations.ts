@@ -371,6 +371,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Remaining qty to receive": "Sisa jumlah yang harus diterima",
   "Enter the received qty for each item. For serial-tracked SKUs, use Manage serial number.": "Masukkan jumlah diterima untuk setiap item. Untuk SKU dengan nomor seri, gunakan Kelola nomor seri.",
   "Scan barcode...": "Pindai barcode...",
+  "Scan the storage location first before scanning the SKU.": "Pindai lokasi penyimpanan terlebih dahulu sebelum memindai SKU.",
   "Qty at or below the scan threshold — scan the barcode instead of typing": "Jumlah pada atau di bawah ambang pindai — pindai barcode alih-alih mengetik",
   "Received qty for": "Jumlah diterima untuk",
   "Manage batch": "Kelola batch",

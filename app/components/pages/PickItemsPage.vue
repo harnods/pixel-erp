@@ -1045,6 +1045,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
           </div>
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">{{ t('Reset count') }}</button>
         </ScanBar>
+        <p class="pik-scan-caption">{{ t('Scan the storage location first before scanning the SKU.') }}</p>
 
         <p v-if="finishError" class="pik-finish-error">{{ finishError }}</p>
 
@@ -1471,6 +1472,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-sku-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .pik-filter-bar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
 .pik-finish-error { flex-shrink: 0; margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
+.pik-scan-caption { flex-shrink: 0; margin: calc(var(--mp-spacing-1) - var(--mp-spacing-4)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 .pik-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
