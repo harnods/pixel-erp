@@ -28,6 +28,7 @@ const title = computed(() => def.value?.title ?? 'Report')
 const warehouseId = ref('all')
 const operator = ref('all')
 const periodDays = ref(30)
+const search = ref('')
 
 const filter = computed<ReportFilter>(() => ({
   warehouseId: warehouseId.value,
@@ -85,12 +86,19 @@ function sortValue(row: ReportRow, col: ReportColumn): string | number {
 
 // ── Rows: build → sort ─────────────────────────────────────────────────────────
 const baseRows = computed<ReportRow[]>(() => def.value ? def.value.rows(filter.value) : [])
+// Free-text search across every visible column's rendered cell text.
+const searchedRows = computed<ReportRow[]>(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return baseRows.value
+  const cols = visibleColumns.value
+  return baseRows.value.filter((row) => cols.some((c) => cellText(row, c).toLowerCase().includes(q)))
+})
 const sortedRows = computed<ReportRow[]>(() => {
-  if (!sortKey.value) return baseRows.value
+  if (!sortKey.value) return searchedRows.value
   const col = columns.value.find((c) => c.key === sortKey.value)
-  if (!col) return baseRows.value
+  if (!col) return searchedRows.value
   const dir = sortDir.value === 'asc' ? 1 : -1
-  return [...baseRows.value].sort((a, b) => {
+  return [...searchedRows.value].sort((a, b) => {
     const av = sortValue(a, col); const bv = sortValue(b, col)
     const aB = isBlank(av) || (typeof av === 'number' && Number.isNaN(av))
     const bB = isBlank(bv) || (typeof bv === 'number' && Number.isNaN(bv))
@@ -112,7 +120,7 @@ const pagedRows = computed(() => {
   const start = (currentPage.value - 1) * perPage.value
   return sortedRows.value.slice(start, start + perPage.value)
 })
-watch([warehouseId, operator, periodDays, () => props.orderId, perPage], () => { currentPage.value = 1 })
+watch([warehouseId, operator, periodDays, search, () => props.orderId, perPage], () => { currentPage.value = 1 })
 
 // ── Cell rendering ────────────────────────────────────────────────────────────────
 function fmtNum(n: number): string { return n.toLocaleString('id-ID') }
@@ -166,18 +174,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <button class="rpt-breadcrumb" @click="router.push('/wms-report')">{{ t('Reports') }}</button>
         <h1 class="rpt-title">{{ t(title) }}</h1>
       </div>
-      <button type="button" class="btn-enterprise btn-enterprise--secondary rpt-export" @click="exportCsv">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        {{ t('Export') }}
-      </button>
     </div>
 
     <!-- ── Stage ── -->
     <div class="rpt-stage">
-      <!-- Filter bar -->
+      <!-- Filter bar: filters on the left; Search + Export always on the right. -->
       <div class="rpt-filter-bar">
+        <div class="rpt-filter-left">
         <MpPopover :id="`rpt-period-${orderId}`" is-close-on-select>
           <MpPopoverTrigger>
             <button type="button" class="filter-trigger" :style="{ width: '210px' }">
@@ -225,6 +228,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
+        </div>
+
+        <div class="rpt-filter-right">
+          <div class="filter-search">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <button type="button" class="btn-enterprise btn-enterprise--secondary rpt-export" @click="exportCsv">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('Export') }}
+          </button>
+        </div>
       </div>
 
       <!-- Table + pagination -->
@@ -303,7 +327,26 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 
 /* ── Filter bar ── */
-.rpt-filter-bar { display: flex; gap: var(--mp-spacing-3); align-items: center; flex-wrap: wrap; }
+.rpt-filter-bar { display: flex; gap: var(--mp-spacing-3); align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.rpt-filter-left { display: flex; gap: var(--mp-spacing-3); align-items: center; flex-wrap: wrap; }
+.rpt-filter-right { display: flex; gap: var(--mp-spacing-3); align-items: center; margin-left: auto; }
+/* Search box — same pattern as the WMS index tables' filter search. */
+.filter-search {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  height: 40px; padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default); border-radius: 8px;
+  background: var(--mp-background-default, #fff); color: var(--mp-text-secondary); min-width: 220px;
+}
+.filter-search-input {
+  flex: 1; min-width: 0; border: none; background: transparent; outline: none;
+  font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); line-height: var(--mp-line-heights-md, 20px);
+}
+.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; background: none; color: var(--mp-icon-default); cursor: pointer; padding: 0; flex: none;
+}
+.search-clear-btn:hover { color: var(--mp-text-default); }
 .filter-trigger {
   display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
   height: 40px; padding: 0 12px;
@@ -320,7 +363,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
 /* ── Table ── */
 .rpt-table-section { display: flex; flex-direction: column; }
-.rpt-table-wrap { overflow-x: auto; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 8px); }
+/* ERP tables have NO outer border box — the header (bg + bottom border) and row
+   bottom-borders do the work; the wrapper is scroll-only. Same as .erp-table-wrapper. */
+.rpt-table-wrap { overflow-x: auto; }
 .rpt-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
 .rpt-th {
   position: sticky; top: 0;
