@@ -9,6 +9,7 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import ErpColumnSortMenu from '~/components/patterns/ErpColumnSortMenu.vue'
 import { formatDateTime } from '~/utils/date'
 import {
   receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask, startReceiving,
@@ -34,18 +35,20 @@ const scopedWarehouseIds = computed(() => assignedWarehouses.value.map(w => w.id
 const isScoped = computed(() => scopedWarehouseIds.value.length > 0)
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
-const baseColumnItems = [
-  { key: 'taskNo', label: 'Receiving task no.', disabled: true },
-  { key: 'purchaseNo', label: 'Purchase order no.' },
-  { key: 'warehouseName', label: 'Warehouse' },
-  { key: 'assignee', label: 'Assignee' },
-  { key: 'skuCount', label: 'Sku qty' },
-  { key: 'expectedQty', label: 'Expected qty' },
-  { key: 'receivedQty', label: 'Received qty' },
-  { key: 'status', label: 'Status' },
-  { key: 'startDate', label: 'Start date' },
-  { key: 'endDate', label: 'End date' },
+type SortType = 'text' | 'number' | 'date'
+const baseColumnItems: { key: string; label: string; disabled?: boolean; sortType: SortType }[] = [
+  { key: 'taskNo', label: 'Receiving task no.', disabled: true, sortType: 'text' },
+  { key: 'purchaseNo', label: 'Purchase order no.', sortType: 'text' },
+  { key: 'warehouseName', label: 'Warehouse', sortType: 'text' },
+  { key: 'assignee', label: 'Assignee', sortType: 'text' },
+  { key: 'skuCount', label: 'Sku qty', sortType: 'number' },
+  { key: 'expectedQty', label: 'Expected qty', sortType: 'number' },
+  { key: 'receivedQty', label: 'Received qty', sortType: 'number' },
+  { key: 'status', label: 'Status', sortType: 'text' },
+  { key: 'startDate', label: 'Start date', sortType: 'date' },
+  { key: 'endDate', label: 'End date', sortType: 'date' },
 ]
+const sortTypeOf = (key: string): SortType => baseColumnItems.find(c => c.key === key)?.sortType ?? 'text'
 const columnItems = computed(() => isScoped.value ? baseColumnItems.filter(c => c.key !== 'assignee') : baseColumnItems)
 const colVis = reactive<Record<string, boolean>>(Object.fromEntries(baseColumnItems.map(c => [c.key, true])))
 
@@ -134,13 +137,56 @@ function clearFilters() {
   search.value = ''; statusFilter.value = []; warehouseFilter.value = []; assigneeFilter.value = ''
 }
 
+// ─── Sort ─────────────────────────────────────────────────────────────────────
+// Same ERP column-header sort as every other index table (hover icon → menu).
+// Default is unsorted (insertion order) — mirrors the sibling task tables
+// (Put-away / Picking / Packing), which are transactional and don't preset a sort.
+const sortKey = ref('')
+const sortDir = ref<'asc' | 'desc'>('asc')
+function onSortChange(key: string, dir: 'asc' | 'desc') { sortKey.value = key; sortDir.value = dir }
+function hideColumn(key: string) { colVis[key] = false }
+
+// Raw sortable value per column (some columns are derived, not plain fields).
+function sortValueOf(t: ReceivingTask, key: string): string | number {
+  switch (key) {
+    case 'expectedQty': return expectedQtyTotal(t)
+    case 'skuCount':    return t.skuCount
+    case 'receivedQty': return t.receivedQty
+    case 'startDate':   return t.startDate ? new Date(t.startDate).getTime() : NaN
+    case 'endDate':     return t.endDate ? new Date(t.endDate).getTime() : NaN
+    default:            return (t as unknown as Record<string, unknown>)[key] as string ?? ''
+  }
+}
+const isBlank = (v: string | number) =>
+  v === '' || v === null || v === undefined || (typeof v === 'number' && Number.isNaN(v))
+
+const sortedTasks = computed<ReceivingTask[]>(() => {
+  if (!sortKey.value) return filteredTasks.value
+  const key = sortKey.value
+  const type = sortTypeOf(key)
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  return [...filteredTasks.value].sort((a, b) => {
+    const av = sortValueOf(a, key)
+    const bv = sortValueOf(b, key)
+    // Blanks/undefined (e.g. an ongoing task's end date) always sort last.
+    const aB = isBlank(av); const bB = isBlank(bv)
+    if (aB && bB) return 0
+    if (aB) return 1
+    if (bB) return -1
+    const cmp = (type === 'number' || type === 'date')
+      ? (av as number) - (bv as number)
+      : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
+    return cmp * dir
+  })
+})
+
 // ─── Pagination ───────────────────────────────────────────────────────────────
 const currentPage = ref(1)
 const perPage     = ref(25)
 const totalTasks  = computed(() => filteredTasks.value.length)
 const pagedTasks  = computed(() => {
   const start = (currentPage.value - 1) * perPage.value
-  return filteredTasks.value.slice(start, start + perPage.value)
+  return sortedTasks.value.slice(start, start + perPage.value)
 })
 watch([search, warehouseFilter, assigneeFilter, statusFilter, perPage], () => { currentPage.value = 1 })
 
@@ -412,18 +458,37 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <div class="rcvg-num-head">
                 <MpCheckbox id="rcvg-head-all" :is-checked="allSelected" :is-indeterminate="someSelected" @change="toggleAll" @click.stop />
                 <span>{{ t('Receiving task no.') }}</span>
+                <ErpColumnSortMenu col-key="taskNo" :sort-type="sortTypeOf('taskNo')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" />
               </div>
             </th>
-            <th v-if="colVis.purchaseNo" class="rcvg-th">{{ t('Purchase order no.') }}</th>
-            <th v-if="colVis.warehouseName" class="rcvg-th">{{ t('Warehouse') }}</th>
-            <th v-if="!isScoped && colVis.assignee" class="rcvg-th">{{ t('Assignee') }}</th>
-            <th v-if="colVis.skuCount" class="rcvg-th">{{ t('Sku qty') }}</th>
-            <th v-if="colVis.expectedQty" class="rcvg-th rcvg-th--right">{{ t('Expected qty') }}</th>
-            <th v-if="colVis.receivedQty" class="rcvg-th rcvg-th--right">{{ t('Received qty') }}</th>
-            <th v-if="colVis.status" class="rcvg-th">{{ t('Status') }}</th>
+            <th v-if="colVis.purchaseNo" class="rcvg-th">
+              <span class="rcvg-th-inner"><span>{{ t('Purchase order no.') }}</span><ErpColumnSortMenu col-key="purchaseNo" :sort-type="sortTypeOf('purchaseNo')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
+            <th v-if="colVis.warehouseName" class="rcvg-th">
+              <span class="rcvg-th-inner"><span>{{ t('Warehouse') }}</span><ErpColumnSortMenu col-key="warehouseName" :sort-type="sortTypeOf('warehouseName')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
+            <th v-if="!isScoped && colVis.assignee" class="rcvg-th">
+              <span class="rcvg-th-inner"><span>{{ t('Assignee') }}</span><ErpColumnSortMenu col-key="assignee" :sort-type="sortTypeOf('assignee')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
+            <th v-if="colVis.skuCount" class="rcvg-th">
+              <span class="rcvg-th-inner"><span>{{ t('Sku qty') }}</span><ErpColumnSortMenu col-key="skuCount" :sort-type="sortTypeOf('skuCount')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
+            <th v-if="colVis.expectedQty" class="rcvg-th rcvg-th--right">
+              <span class="rcvg-th-inner"><span>{{ t('Expected qty') }}</span><ErpColumnSortMenu col-key="expectedQty" :sort-type="sortTypeOf('expectedQty')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
+            <th v-if="colVis.receivedQty" class="rcvg-th rcvg-th--right">
+              <span class="rcvg-th-inner"><span>{{ t('Received qty') }}</span><ErpColumnSortMenu col-key="receivedQty" :sort-type="sortTypeOf('receivedQty')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
+            <th v-if="colVis.status" class="rcvg-th">
+              <span class="rcvg-th-inner"><span>{{ t('Status') }}</span><ErpColumnSortMenu col-key="status" :sort-type="sortTypeOf('status')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
             <th class="rcvg-th" />
-            <th v-if="colVis.startDate" class="rcvg-th">{{ t('Start date') }}</th>
-            <th v-if="colVis.endDate" class="rcvg-th">{{ t('End date') }}</th>
+            <th v-if="colVis.startDate" class="rcvg-th">
+              <span class="rcvg-th-inner"><span>{{ t('Start date') }}</span><ErpColumnSortMenu col-key="startDate" :sort-type="sortTypeOf('startDate')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
+            <th v-if="colVis.endDate" class="rcvg-th">
+              <span class="rcvg-th-inner"><span>{{ t('End date') }}</span><ErpColumnSortMenu col-key="endDate" :sort-type="sortTypeOf('endDate')" :sort-key="sortKey" :sort-dir="sortDir" @sort-change="onSortChange" @hide-column="hideColumn" /></span>
+            </th>
             <th class="rcvg-th rcvg-th--actions" />
           </tr>
         </thead>
@@ -635,6 +700,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   text-transform: uppercase; color: var(--mp-text-secondary); text-align: left; white-space: nowrap;
 }
 .rcvg-th--right { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+
+/* Column-header sort menu — label + hover-revealed sort icon (matches ErpTablePage) */
+.rcvg-th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; vertical-align: middle; }
+.rcvg-th--right .rcvg-th-inner { flex-direction: row-reverse; }
+/* icon hidden by default (child scoped style) → reveal on header hover / when active */
+.rcvg-th:hover :deep(.erp-sort-btn) { visibility: visible; }
 
 /* Checkbox column + bulk bar */
 /* Checkbox lives inside the Number column, next to the number */
