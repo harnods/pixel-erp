@@ -799,6 +799,7 @@ async function handleSave() {
             @click="resetPicked"
           >Reset count</button>
         </ScanBar>
+        <p v-if="isPutAway || isPicking" class="msn-scan-caption">Scan the storage location first before scanning the serial number.</p>
 
         <template v-if="rows.length === 0">
           <div class="msn-empty">
@@ -1180,6 +1181,7 @@ async function handleSave() {
   color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
 }
 .msn-active-bin-clear:hover { opacity: 1; }
+.msn-scan-caption { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-4) - 20px) 0 calc(var(--mp-spacing-4) - 20px); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 
 /* Form-table rules — only when INTO LOCATION is a real editable picker (transfer/
    put-away's destination bin). Read-only location display (picking) stays plain:
