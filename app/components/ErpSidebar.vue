@@ -778,7 +778,10 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
       for (const pGroup of item.panelSubmenu ?? []) {
         for (const p of pGroup) {
           if (!allowShortcuts && isPointer(p.iconType)) continue
-          if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
+          // Match an explicit `path` (e.g. WMS Standalone report items →
+          // /wms-report/<slug>) against the live route so the level-2 panel stays
+          // open on those pages; otherwise fall back to the label/slug round-trip.
+          if ((p.path && p.path === route.path) || labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
             return {
               nav: item.name,
               sub: p.label,
@@ -813,7 +816,7 @@ const SECTION_PARENT: Record<string, string> = {
   'Put away': 'Inbound delivery',
 }
 
-watch([currentPageKey, activeSectionOverride, () => route.query.tab, () => route.query.innerTab], ([urlKey, override]) => {
+watch([currentPageKey, activeSectionOverride, () => route.path, () => route.query.tab, () => route.query.innerTab], ([urlKey, override]) => {
   const key = override ?? urlKey
   // Inbox is reached from the header notification icon, not the sidebar tree —
   // open its own level-2 panel (titled INBOX) and don't highlight any nav item.
