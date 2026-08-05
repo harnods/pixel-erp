@@ -7,7 +7,7 @@
  * in [...slug].vue), so it draws its own title bar with a back link + Export (CSV).
  */
 import { ref, reactive, computed, watch } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, css } from '@mekari/pixel3'
 import ErpColumnSortMenu from '~/components/patterns/ErpColumnSortMenu.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
@@ -242,12 +242,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </svg>
             </button>
           </div>
-          <button type="button" class="btn-enterprise btn-enterprise--secondary rpt-export" @click="exportCsv">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {{ t('Export') }}
-          </button>
+          <div class="filter-btn-group">
+            <MpTooltip id="tt-rpt-export" :label="t('Export')" placement="bottom" use-portal>
+              <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="exportCsv">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpTooltip>
+          </div>
         </div>
       </div>
 
@@ -315,7 +318,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
 }
-.rpt-export { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
 
 /* ── Stage ── */
 .rpt-stage {
@@ -330,13 +332,22 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .rpt-filter-bar { display: flex; gap: var(--mp-spacing-3); align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .rpt-filter-left { display: flex; gap: var(--mp-spacing-3); align-items: center; flex-wrap: wrap; }
 .rpt-filter-right { display: flex; gap: var(--mp-spacing-3); align-items: center; margin-left: auto; }
-/* Search box — same pattern as the WMS index tables' filter search. */
+/* Search box — pill, same pattern as the ERP index tables' filter search. */
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   height: 40px; padding: 0 var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: 8px;
-  background: var(--mp-background-default, #fff); color: var(--mp-text-secondary); min-width: 220px;
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-secondary); min-width: 220px;
 }
+/* Filter-bar action icon buttons (Export) — same as ReceivingIndexPage. */
+.filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
+.filter-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  border: none; background: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary); padding: var(--mp-spacing-2);
+}
+.filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
 .filter-search-input {
   flex: 1; min-width: 0; border: none; background: transparent; outline: none;
   font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-default); line-height: var(--mp-line-heights-md, 20px);
