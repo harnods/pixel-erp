@@ -35,6 +35,12 @@ export interface ReportFilter {
   periodDays: number
   /** explicit inclusive ISO (yyyy-mm-dd) date range; overrides periodDays when set */
   customRange?: { from: string; to: string } | null
+  /** inbound-accuracy only — selected product names; empty/undefined = all */
+  skus?: string[]
+  /** inbound-accuracy only — selected inbound sources (supplier/sender); empty/undefined = all */
+  sources?: string[]
+  /** inbound-accuracy only — received-vs-expected state per line; empty/undefined = all */
+  receiveStates?: ('match' | 'short' | 'over')[]
 }
 
 export const DEFAULT_REPORT_FILTER: ReportFilter = { warehouseIds: [], operators: [], periodDays: 30, customRange: null }
@@ -157,18 +163,50 @@ function inboundTimelinessRows(f: ReportFilter): ReportRow[] {
   return out
 }
 
+/** received-vs-expected classification for one receiving SKU line. */
+function receiveState(receivedQty: number, expectedQty: number): 'match' | 'short' | 'over' {
+  if (receivedQty < expectedQty) return 'short'
+  if (receivedQty > expectedQty) return 'over'
+  return 'match'
+}
+
+/** Distinct SKU/product and inbound-source options across all closed, non-cancelled
+ *  receipts — feeds the Inbound accuracy "All filters" drawer (stable, date-agnostic). */
+export function inboundAccuracyFilterOptions(): { skus: string[]; sources: string[] } {
+  const byReceipt = recvTasksByReceipt()
+  const skus = new Set<string>()
+  const sources = new Set<string>()
+  for (const r of receipts) {
+    if (r.status === 'canceled') continue
+    const tasks = byReceipt.get(r.id)
+    if (!isClosed(tasks)) continue
+    if (r.vendor) sources.add(r.vendor)
+    for (const t of tasks!) for (const it of t.items) skus.add(it.productName)
+  }
+  return {
+    skus: [...skus].sort((a, b) => a.localeCompare(b)),
+    sources: [...sources].sort((a, b) => a.localeCompare(b)),
+  }
+}
+
 // 2 ── Inbound Accuracy — one row per receiving item (SKU line) ────────────────
 function inboundAccuracyRows(f: ReportFilter): ReportRow[] {
   const byReceipt = recvTasksByReceipt()
   const out: ReportRow[] = []
   for (const r of receipts) {
     if (r.status === 'canceled' || !whOk(f, r.warehouseId)) continue
+    // Source of Inbound filter (supplier/sender) — receipt-level.
+    if (f.sources?.length && (!r.vendor || !f.sources.includes(r.vendor))) continue
     const tasks = byReceipt.get(r.id)
     if (!isClosed(tasks) || !inPeriod(f, closeDate(tasks!))) continue
     for (const t of tasks!) {
       const pa = putAwayForReceiving(t.id)
       if (!opMatch(f, [t.assignee, pa?.assignee])) continue
       for (const it of t.items) {
+        // SKU / Product filter (by product name).
+        if (f.skus?.length && !f.skus.includes(it.productName)) continue
+        // Inbound Receive State filter (received vs expected).
+        if (f.receiveStates?.length && !f.receiveStates.includes(receiveState(it.receivedQty, it.expectedQty))) continue
         // Put-away qty for this SKU — summed across completedItems (blank if the
         // put-away never actually ran, which is the norm in the mock).
         const paItems = pa?.completedItems?.filter((ci) => ci.skuCode === it.sku)

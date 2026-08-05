@@ -15,7 +15,8 @@ import { formatDate, formatDateTime } from '~/utils/date'
 import { warehouses } from '~/data/warehouses'
 import { TODAY } from '~/data/master'
 import { operatorOptionsMulti } from '~/data/wmsAnalytics'
-import { WMS_REPORTS, type ReportColumn, type ReportFilter, type ReportRow } from '~/data/wmsReports'
+import { WMS_REPORTS, inboundAccuracyFilterOptions, type ReportColumn, type ReportFilter, type ReportRow } from '~/data/wmsReports'
+import WmsReportFiltersDrawer, { type WmsReportFiltersValue } from '~/components/patterns/WmsReportFiltersDrawer.vue'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -30,6 +31,37 @@ const title = computed(() => def.value?.title ?? 'Report')
 const warehouseFilter = ref<string[]>([])   // empty = all warehouses
 const operatorFilter = ref<string[]>([])     // empty = all operators
 const search = ref('')
+
+// ── "All filters" drawer — inbound-accuracy only ────────────────────────────────
+const isInboundAccuracy = computed(() => props.orderId === 'inbound-accuracy')
+const isFiltersDrawerOpen = ref(false)
+const skuFilter = ref<string[]>([])
+const sourceFilter = ref<string[]>([])
+const receiveStateFilter = ref<string[]>([])
+const receiveStateOptions = [
+  { id: 'match', name: 'Match expected' },
+  { id: 'short', name: 'Short expected' },
+  { id: 'over', name: 'Over expected' },
+]
+const inboundAccOptions = computed(() =>
+  isInboundAccuracy.value ? inboundAccuracyFilterOptions() : { skus: [], sources: [] },
+)
+const drawerValue = computed<WmsReportFiltersValue>(() => ({
+  skus: skuFilter.value,
+  sources: sourceFilter.value,
+  receiveStates: receiveStateFilter.value,
+}))
+function applyDrawerFilters(v: WmsReportFiltersValue) {
+  skuFilter.value = v.skus
+  sourceFilter.value = v.sources
+  receiveStateFilter.value = v.receiveStates
+}
+// Number of active drawer-filter groups — shown in the button label.
+const drawerFilterCount = computed(() =>
+  (skuFilter.value.length ? 1 : 0) + (sourceFilter.value.length ? 1 : 0) + (receiveStateFilter.value.length ? 1 : 0),
+)
+// Reset drawer filters when switching to another report (button only shows on inbound-accuracy).
+watch(() => props.orderId, () => { skuFilter.value = []; sourceFilter.value = []; receiveStateFilter.value = [] })
 
 // ── Warehouse (multi-select) ─────────────────────────────────────────────────────
 const warehouseOptions = computed(() =>
@@ -114,6 +146,10 @@ const filter = computed<ReportFilter>(() => ({
   operators: operatorFilter.value,
   periodDays: Number(periodPreset.value) || 30,
   customRange: customRange.value,
+  // Drawer filters apply to inbound-accuracy only; the other reports ignore them.
+  ...(isInboundAccuracy.value
+    ? { skus: skuFilter.value, sources: sourceFilter.value, receiveStates: receiveStateFilter.value as ('match' | 'short' | 'over')[] }
+    : {}),
 }))
 
 // ── Columns (with hide support via the shared sort menu) ─────────────────────────
@@ -176,7 +212,7 @@ const pagedRows = computed(() => {
   const start = (currentPage.value - 1) * perPage.value
   return sortedRows.value.slice(start, start + perPage.value)
 })
-watch([warehouseFilter, operatorFilter, periodPreset, customFrom, customTo, search, () => props.orderId, perPage], () => { currentPage.value = 1 })
+watch([warehouseFilter, operatorFilter, periodPreset, customFrom, customTo, search, skuFilter, sourceFilter, receiveStateFilter, () => props.orderId, perPage], () => { currentPage.value = 1 })
 
 // ── Cell rendering ────────────────────────────────────────────────────────────────
 function fmtNum(n: number): string { return n.toLocaleString('id-ID') }
@@ -236,7 +272,7 @@ onMounted(() => {
 })
 onUnmounted(() => filterRo?.disconnect())
 
-const hasFilter = computed(() => warehouseFilter.value.length > 0 || operatorFilter.value.length > 0 || periodPreset.value !== '30')
+const hasFilter = computed(() => warehouseFilter.value.length > 0 || operatorFilter.value.length > 0 || periodPreset.value !== '30' || drawerFilterCount.value > 0)
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
@@ -329,6 +365,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </div>
           </MpPopoverContent>
         </MpPopover>
+
+        <!-- All filters — inbound-accuracy only (SKU / Source / Receive state) -->
+        <button v-if="isInboundAccuracy" class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
+          <MpIcon name="filter" size="sm" />
+          {{ drawerFilterCount ? `${t('All filters')} (${drawerFilterCount})` : t('All filters') }}
+        </button>
         </div>
 
         <div class="rpt-filter-right">
@@ -400,6 +442,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <p class="empty-full-desc">{{ hasFilter ? t('Try adjusting your filters.') : t('Report data will appear here.') }}</p>
       </div>
     </div>
+
+    <!-- ── All filters drawer (inbound-accuracy only) ── -->
+    <WmsReportFiltersDrawer
+      v-if="isInboundAccuracy"
+      v-model:is-open="isFiltersDrawerOpen"
+      :model-value="drawerValue"
+      :sku-options="inboundAccOptions.skus"
+      :source-options="inboundAccOptions.sources"
+      :receive-state-options="receiveStateOptions"
+      @apply="applyDrawerFilters"
+    />
   </div>
 </template>
 
@@ -484,6 +537,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-3);
   border-top: 1px solid var(--mp-border-default);
 }
+
+/* "All filters" button (mirrors BillOfMaterialsIndexPage) */
+.filter-all-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
+  height: 40px;
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-full, 999px);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
+  cursor: pointer; white-space: nowrap;
+}
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Multi-select checkbox filter list (mirrors ReceivingIndexPage) */
 .checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
