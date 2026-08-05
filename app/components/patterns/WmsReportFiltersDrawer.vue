@@ -77,7 +77,7 @@ function clearAll() { skuData.value = []; sources.value = []; receiveStates.valu
 
         <div class="wrf-filters-body">
           <MpFormControl id="wrf-filters-sku-fc">
-            <MpFormLabel>{{ t('SKU') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Product name') }}</MpFormLabel>
             <MpInputTag
               id="wrf-filters-sku"
               :data="skuData"
@@ -85,7 +85,7 @@ function clearAll() { skuData.value = []; sources.value = []; receiveStates.valu
               :is-show-suggestions="true"
               :is-enable-create-new-tag="false"
               :is-show-icon-chevron-down="true"
-              :placeholder="t('Search SKU...')"
+              :placeholder="t('Search product name...')"
               @change="onSkuChange"
             />
           </MpFormControl>
