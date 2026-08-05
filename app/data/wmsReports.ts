@@ -18,7 +18,7 @@
 import { receipts } from './receipts'
 import { receivingTasks, type ReceivingTask } from './receivingTasks'
 import { putAwayTasks } from './putAwayTasks'
-import { outgoingOrders } from './outgoing'
+import { outgoingOrders, isMarketplaceOrder, type OutgoingOrder } from './outgoing'
 import { pickingTasks, pickedQtyForOrderSku } from './pickingTasks'
 import { packingTasks } from './packingTasks'
 import { deliveryTasks, shippedQtyBySkuForOrder } from './deliveryTasks'
@@ -307,10 +307,34 @@ function outboundTimelinessRows(f: ReportFilter): ReportRow[] {
   return out
 }
 
+/** Fixed origin types for an outbound order — the outbound "Source" filter choices. */
+export const OUTBOUND_SOURCE_OPTIONS = ['Sales order', 'Manual', 'Marketplace'] as const
+
+/** Classify an outbound order's source into a fixed category (mirrors receipts'
+ *  origin types on the inbound side). */
+function orderSource(o: OutgoingOrder): string {
+  if (isMarketplaceOrder(o)) return 'Marketplace'
+  if (o.source === 'Manual') return 'Manual'
+  return 'Sales order'
+}
+
+/** Distinct product names across closed outbound orders — feeds the Outbound
+ *  accuracy "All filters" drawer (Source is fixed; see OUTBOUND_SOURCE_OPTIONS). */
+export function outboundAccuracyFilterOptions(): { skus: string[] } {
+  const skus = new Set<string>()
+  for (const o of outgoingOrders) {
+    if (o.status !== 'completed') continue
+    for (const line of orderSkuLines(o)) skus.add(line.product.name)
+  }
+  return { skus: [...skus].sort((a, b) => a.localeCompare(b)) }
+}
+
 // 4 ── Outbound Accuracy — one row per order SKU line ──────────────────────────
 function outboundAccuracyRows(f: ReportFilter): ReportRow[] {
   const out: ReportRow[] = []
   for (const o of closedOrders(f)) {
+    // Source of Outbound filter (origin type) — order-level.
+    if (f.sources?.length && !f.sources.includes(orderSource(o))) continue
     const pack = packingTaskForOrder(o.id)
     const del = deliveryForOrder(o.id)
     const picks = pickingTasksForOrder(o.id)
@@ -318,6 +342,11 @@ function outboundAccuracyRows(f: ReportFilter): ReportRow[] {
     if (!opMatch(f, [pick?.assignee, pack?.assignee, del?.assignee])) continue
     const shippedBySku = shippedQtyBySkuForOrder(o.id)
     for (const line of orderSkuLines(o)) {
+      // Product name filter.
+      if (f.skus?.length && !f.skus.includes(line.product.name)) continue
+      const shippedQty = del ? (shippedBySku[line.sku] ?? 0) : null
+      // Fulfillment state filter (shipped vs order qty).
+      if (f.receiveStates?.length && !f.receiveStates.includes(receiveState(shippedQty ?? 0, line.qty))) continue
       out.push({
         customer: o.customer,
         warehouseName: o.warehouseName,
@@ -332,7 +361,7 @@ function outboundAccuracyRows(f: ReportFilter): ReportRow[] {
         packedQty: packedQtyForOrderSku(o.id, line.sku),
         courierName: del?.courier,
         shippingId: del?.taskNo,
-        shippedQty: del ? (shippedBySku[line.sku] ?? 0) : null,
+        shippedQty,
       })
     }
   }
@@ -385,6 +414,7 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
   'outbound-timeliness': {
     title: 'Outbound timeliness',
     direction: 'outbound',
+    defaultPeriodDays: 7,
     columns: [
       { key: 'customer', label: 'Customer / recipient name', sortType: 'text' },
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
@@ -408,8 +438,9 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
   'outbound-accuracy': {
     title: 'Outbound accuracy',
     direction: 'outbound',
+    defaultPeriodDays: 7,
     columns: [
-      { key: 'customer', label: 'Customer / recipient name', sortType: 'text' },
+      { key: 'customer', label: 'Customer', sortType: 'text' },
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
       { key: 'outboundId', label: 'Outbound number', sortType: 'text' },
       { key: 'productName', label: 'Product name', sortType: 'text' },

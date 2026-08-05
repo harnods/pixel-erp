@@ -15,7 +15,7 @@ import { formatDate, formatDateTime } from '~/utils/date'
 import { warehouses } from '~/data/warehouses'
 import { TODAY } from '~/data/master'
 import { operatorOptionsMulti } from '~/data/wmsAnalytics'
-import { WMS_REPORTS, INBOUND_SOURCE_OPTIONS, inboundAccuracyFilterOptions, type ReportColumn, type ReportFilter, type ReportRow } from '~/data/wmsReports'
+import { WMS_REPORTS, INBOUND_SOURCE_OPTIONS, OUTBOUND_SOURCE_OPTIONS, inboundAccuracyFilterOptions, outboundAccuracyFilterOptions, type ReportColumn, type ReportFilter, type ReportRow } from '~/data/wmsReports'
 import WmsReportFiltersDrawer, { type WmsReportFiltersValue } from '~/components/patterns/WmsReportFiltersDrawer.vue'
 
 const props = defineProps<{ orderId: string }>()
@@ -32,23 +32,38 @@ const warehouseFilter = ref<string[]>([])   // empty = all warehouses
 const operatorFilter = ref<string[]>([])     // empty = all operators
 const search = ref('')
 
-// ── "All filters" drawer — inbound-accuracy only ────────────────────────────────
+// ── "All filters" drawer — the two accuracy reports (inbound + outbound) ─────────
 const isInboundAccuracy = computed(() => props.orderId === 'inbound-accuracy')
+const isOutboundAccuracy = computed(() => props.orderId === 'outbound-accuracy')
+const isAccuracy = computed(() => isInboundAccuracy.value || isOutboundAccuracy.value)
 const isFiltersDrawerOpen = ref(false)
 const keywordFilter = ref('')
 const keywordColumnFilter = ref('all')
 const skuFilter = ref<string[]>([])
 const sourceFilter = ref<string[]>([])
 const receiveStateFilter = ref<string[]>([])
-const receiveStateOptions = [
-  { id: 'match', name: 'Match expected' },
-  { id: 'short', name: 'Short expected' },
-  { id: 'over', name: 'Over expected' },
-]
-// Source is a fixed set of inbound origin types (id === name, matched directly).
-const sourceOptions = INBOUND_SOURCE_OPTIONS.map((s) => ({ id: s, name: s }))
-const inboundAccOptions = computed(() =>
-  isInboundAccuracy.value ? inboundAccuracyFilterOptions() : { skus: [] },
+// Completion state — received-vs-expected inbound, shipped-vs-order outbound.
+const receiveStateOptions = computed(() =>
+  isOutboundAccuracy.value
+    ? [
+        { id: 'match', name: 'Match order qty' },
+        { id: 'short', name: 'Short of order qty' },
+        { id: 'over', name: 'Over order qty' },
+      ]
+    : [
+        { id: 'match', name: 'Match expected' },
+        { id: 'short', name: 'Short expected' },
+        { id: 'over', name: 'Over expected' },
+      ],
+)
+// Source is a fixed set of origin types per direction (id === name, matched directly).
+const sourceOptions = computed(() =>
+  (isOutboundAccuracy.value ? OUTBOUND_SOURCE_OPTIONS : INBOUND_SOURCE_OPTIONS).map((s) => ({ id: s, name: s })),
+)
+const accOptions = computed(() =>
+  isInboundAccuracy.value ? inboundAccuracyFilterOptions()
+    : isOutboundAccuracy.value ? outboundAccuracyFilterOptions()
+    : { skus: [] },
 )
 const drawerValue = computed<WmsReportFiltersValue>(() => ({
   keyword: keywordFilter.value,
@@ -158,8 +173,8 @@ const filter = computed<ReportFilter>(() => ({
   operators: operatorFilter.value,
   periodDays: Number(periodPreset.value) || 30,
   customRange: customRange.value,
-  // Drawer filters apply to inbound-accuracy only; the other reports ignore them.
-  ...(isInboundAccuracy.value
+  // Drawer filters apply to the accuracy reports only; the timeliness reports ignore them.
+  ...(isAccuracy.value
     ? { skus: skuFilter.value, sources: sourceFilter.value, receiveStates: receiveStateFilter.value as ('match' | 'short' | 'over')[] }
     : {}),
 }))
@@ -387,8 +402,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- All filters — inbound-accuracy only (SKU / Source / Receive state) -->
-        <button v-if="isInboundAccuracy" class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
+        <!-- All filters — accuracy reports only (Keywords / Product name / Source / Completion state) -->
+        <button v-if="isAccuracy" class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
           <MpIcon name="filter" size="sm" />
           {{ drawerFilterCount ? `${t('All filters')} (${drawerFilterCount})` : t('All filters') }}
         </button>
@@ -464,13 +479,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </div>
 
-    <!-- ── All filters drawer (inbound-accuracy only) ── -->
+    <!-- ── All filters drawer (accuracy reports only) ── -->
     <WmsReportFiltersDrawer
-      v-if="isInboundAccuracy"
+      v-if="isAccuracy"
       v-model:is-open="isFiltersDrawerOpen"
       :model-value="drawerValue"
       :columns="columns"
-      :sku-options="inboundAccOptions.skus"
+      :sku-options="accOptions.skus"
       :source-options="sourceOptions"
       :receive-state-options="receiveStateOptions"
       @apply="applyDrawerFilters"

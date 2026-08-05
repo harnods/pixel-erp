@@ -112,7 +112,7 @@ function clearAll() {
                 <MpPopoverTrigger>
                   <button type="button" class="wrf-keyword-scope">
                     <span class="wrf-keyword-scope-label">{{ keywordColumnLabel }}</span>
-                    <MpIcon name="chevron-down" size="sm" />
+                    <svg class="wrf-keyword-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   </button>
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })">
@@ -267,6 +267,7 @@ function clearAll() {
 }
 .wrf-keyword-scope:hover { background: var(--mp-background-neutral-hovered, #e6e8eb); }
 .wrf-keyword-scope-label { white-space: nowrap; }
+.wrf-keyword-chev { flex-shrink: 0; color: var(--mp-icon-default); }
 
 /* Completion state — plain checkbox group, no border box. */
 .wrf-filters-checkbox-list {
