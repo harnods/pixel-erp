@@ -12,6 +12,34 @@ import {
 
 const props = defineProps<{ direction: 'inbound' | 'outbound' }>()
 const { t } = useLocale()
+const router = useRouter()
+
+// Clicking a live-operations card opens the matching operational list, filtered
+// to its stage + status. Status casing matches each target page's own filter
+// (Receipts/Requests filter by capitalized stage; task lists by lowercase status).
+const STAGE_TARGETS: Record<'inbound' | 'outbound', Record<string, { tab: string; status: string }>> = {
+  inbound: {
+    pending:   { tab: 'Receipts',  status: 'Pending' },
+    receiving: { tab: 'Receiving', status: 'in progress' },
+    putaway:   { tab: 'Put-away',  status: 'in progress' },
+    closed:    { tab: 'Receipts',  status: 'Completed' },
+    noaction:  { tab: 'Receipts',  status: 'Open' },
+  },
+  outbound: {
+    pending:  { tab: 'Requests', status: 'Pending' },
+    picking:  { tab: 'Picking',  status: 'in progress' },
+    packing:  { tab: 'Packing',  status: 'in progress' },
+    shipping: { tab: 'Ready to ship', status: 'out for delivery' },
+    closed:   { tab: 'Requests', status: 'Completed' },
+    noaction: { tab: 'Requests', status: 'Open' },
+  },
+}
+const sectionPath = computed(() => props.direction === 'inbound' ? '/inbound-delivery' : '/outbound-delivery')
+function openStage(key: string) {
+  const target = STAGE_TARGETS[props.direction][key]
+  if (!target) return
+  router.push({ path: sectionPath.value, query: { tab: target.tab, status: target.status } })
+}
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 const warehouseId = ref<string>('all')
@@ -177,7 +205,7 @@ function stageAccent(s: StageCard): string {
       </div>
 
       <div class="funnel">
-        <div v-for="s in live.stages" :key="s.key" class="stat-card" :class="stageAccent(s)">
+        <div v-for="s in live.stages" :key="s.key" class="stat-card stat-card--clickable" :class="stageAccent(s)" role="button" tabindex="0" @click="openStage(s.key)" @keydown.enter="openStage(s.key)">
           <div class="stat-card-top">
             <span class="stat-card-title">{{ t(s.label) }}</span>
             <svg class="ext-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 17L17 7M17 7H7M17 7V17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -193,7 +221,7 @@ function stageAccent(s: StageCard): string {
         </div>
 
         <!-- No ongoing action -->
-        <div class="stat-card card--noaction">
+        <div class="stat-card stat-card--clickable card--noaction" role="button" tabindex="0" @click="openStage('noaction')" @keydown.enter="openStage('noaction')">
           <div class="stat-card-top">
             <span class="stat-card-title">{{ t('No ongoing action') }}</span>
             <svg class="ext-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 17L17 7M17 7H7M17 7V17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -438,6 +466,9 @@ function stageAccent(s: StageCard): string {
   border: 1px solid var(--mp-border-default); border-radius: 10px;
   padding: 16px; display: flex; flex-direction: column; gap: 8px;
 }
+.stat-card--clickable { cursor: pointer; transition: box-shadow 0.12s ease, border-color 0.12s ease; }
+.stat-card--clickable:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
+.stat-card--clickable:focus-visible { outline: 2px solid var(--mp-border-focused, #4b61dc); outline-offset: 1px; }
 .card--pending  { background: var(--mp-background-warning-subtle, #fdf7e7); border-color: var(--mp-border-warning, #ecd9a3); }
 .card--active   { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-default); }
 .card--closed   { background: var(--mp-background-success-subtle, #e9f5ed); border-color: var(--mp-border-success, #b6dcc1); }

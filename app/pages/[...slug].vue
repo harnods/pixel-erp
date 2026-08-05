@@ -363,9 +363,8 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  // WMS Overview — mirrored for the WMS menu (/overview) and WMS Reports (/wms-report)
+  // WMS Overview — only the WMS menu (/overview); NOT mirrored into Reports (/wms-report).
   'Overview':          ['Inbound delivery', 'Outbound delivery'],
-  'Wms report':        ['Inbound delivery', 'Outbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
@@ -387,8 +386,8 @@ const pageTabs: Record<string, string[]> = {
 const activeWarehouseFilter = useActiveWarehouseFilter()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
-  // WMS Overview / Reports tabs badge the actionable open work per direction.
-  if (currentPageKey.value === 'Overview' || currentPageKey.value === 'Wms report') {
+  // WMS Overview tabs badge the actionable open work per direction.
+  if (currentPageKey.value === 'Overview') {
     const counts = receiptCountsByStage(wh)
     const inbound = (counts['Pending'] ?? 0) + (counts['Open'] ?? 0) + (counts['In progress'] ?? 0) + (counts['Partial reception'] ?? 0)
     const out: Record<string, number> = {}
@@ -522,12 +521,8 @@ const cycleCountBannerVisible = computed(() =>
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {
-  // WMS → Overview (and WMS Reports) — one analytics page, direction per tab.
+  // WMS → Overview — one analytics page, direction per tab.
   'Overview': {
-    'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
-    'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
-  },
-  'Wms report': {
     'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
     'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
   },

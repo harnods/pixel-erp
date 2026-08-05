@@ -236,6 +236,14 @@ function aging(t: ReceivingTask) {
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
+const route = useRoute()
+// Deep-link from WMS Overview: ?status=<task status> pre-filters the list.
+onMounted(() => {
+  const s = route.query.status
+  if (typeof s === 'string' && statusOptions.some(o => o.value === s)) {
+    statusFilter.value = [s]
+  }
+})
 function viewDetails(t: ReceivingTask) { router.push(`/receiving/${t.id}`) }
 function startReceivingAndNavigate(t: ReceivingTask) {
   startReceiving(t.id)
