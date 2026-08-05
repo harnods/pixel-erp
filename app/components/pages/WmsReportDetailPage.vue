@@ -6,7 +6,7 @@
  * rows(filter) builder over the live mini-DB). Full-bleed (rendered via detailMatch
  * in [...slug].vue), so it draws its own title bar with a back link + Export (CSV).
  */
-import { ref, reactive, computed, watch, inject } from 'vue'
+import { ref, reactive, computed, watch, inject, onMounted, onUnmounted } from 'vue'
 import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, MpIcon, css } from '@mekari/pixel3'
 import ErpColumnSortMenu from '~/components/patterns/ErpColumnSortMenu.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -166,6 +166,24 @@ function exportCsv() {
   URL.revokeObjectURL(url)
 }
 
+// Compact mode: when the filter bar gets narrow, drop the AI + Column-settings
+// icon buttons so the right group stays on one line (no wrap). Export + Search stay.
+const filterBarEl = ref<HTMLElement | null>(null)
+const compact = ref(false)
+function checkCompact() {
+  const w = filterBarEl.value?.clientWidth ?? 9999
+  compact.value = w < 1000
+}
+let filterRo: ResizeObserver | null = null
+onMounted(() => {
+  checkCompact()
+  if (filterBarEl.value && 'ResizeObserver' in window) {
+    filterRo = new ResizeObserver(checkCompact)
+    filterRo.observe(filterBarEl.value)
+  }
+})
+onUnmounted(() => filterRo?.disconnect())
+
 const hasFilter = computed(() => warehouseId.value !== 'all' || operator.value !== 'all' || periodDays.value !== 30)
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -182,8 +200,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Stage ── -->
     <div class="rpt-stage">
-      <!-- Filter bar: filters on the left; Search + Export always on the right. -->
-      <div class="rpt-filter-bar">
+      <!-- Filter bar: filters on the left; Search + Export always on the right.
+           AI + Column-settings icons drop out in compact (narrow) mode. -->
+      <div ref="filterBarEl" class="rpt-filter-bar">
         <div class="rpt-filter-left">
         <MpPopover :id="`rpt-period-${orderId}`" is-close-on-select>
           <MpPopoverTrigger>
@@ -236,7 +255,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
         <div class="rpt-filter-right">
           <div class="filter-btn-group">
-            <MpTooltip id="tt-rpt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+            <MpTooltip v-if="!compact" id="tt-rpt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
               <button class="filter-icon-btn filter-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
@@ -244,7 +263,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                 </svg>
               </button>
             </MpTooltip>
-            <ColumnSettingsMenu :id="`rpt-col-settings-${orderId}`" :items="columnItems" :visibility="colVis" />
+            <ColumnSettingsMenu v-if="!compact" :id="`rpt-col-settings-${orderId}`" :items="columnItems" :visibility="colVis" />
             <MpTooltip id="tt-rpt-export" :label="t('Export')" placement="bottom" use-portal>
               <button class="filter-icon-btn" type="button" :aria-label="t('Export')" @click="exportCsv"><MpIcon name="download" size="md" /></button>
             </MpTooltip>
