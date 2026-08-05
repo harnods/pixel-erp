@@ -7,7 +7,7 @@
  * in [...slug].vue), so it draws its own title bar with a back link + Export (CSV).
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, MpIcon, MpCheckbox, MpDatePicker, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, MpIcon, MpCheckbox, css } from '@mekari/pixel3'
 import ErpColumnSortMenu from '~/components/patterns/ErpColumnSortMenu.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
@@ -131,8 +131,16 @@ const defaultPreset = () => String(def.value?.defaultPeriodDays ?? 30) as '7' | 
 const periodPreset = ref<'7' | '30' | '90' | 'custom'>(defaultPreset())
 const customFrom = ref('') // DD/MM/YYYY
 const customTo = ref('')
+// Custom range is picked in one inline calendar (two-click start→end), so
+// pendingStart holds the first click until the second completes the range.
+const pendingStart = ref<string | null>(null) // ISO yyyy-mm-dd
+const calYear = ref(TODAY.getFullYear())
+const calMonth = ref(TODAY.getMonth())
 // Switching to another report resets the date range to that report's default.
-watch(() => props.orderId, () => { periodPreset.value = defaultPreset(); customFrom.value = ''; customTo.value = '' })
+watch(() => props.orderId, () => {
+  periodPreset.value = defaultPreset(); customFrom.value = ''; customTo.value = ''
+  pendingStart.value = null; calYear.value = TODAY.getFullYear(); calMonth.value = TODAY.getMonth()
+})
 function parseDMY(s: string): Date | null {
   const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
   if (!m) return null
@@ -141,6 +149,10 @@ function parseDMY(s: string): Date | null {
 function toIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+function isoToDMY(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
 // Active custom range as inclusive ISO strings, or null when incomplete/not custom.
 const customRange = computed<{ from: string; to: string } | null>(() => {
   if (periodPreset.value !== 'custom') return null
@@ -148,6 +160,56 @@ const customRange = computed<{ from: string; to: string } | null>(() => {
   const to = parseDMY(customTo.value)
   return from && to ? { from: toIso(from), to: toIso(to) } : null
 })
+
+// ── Custom-range calendar (single field, two-click range; mirrors AdvanceDateFilter) ──
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTH_LABEL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+interface CalCell { iso: string; dayNum: number; inMonth: boolean }
+const calendarCells = computed<CalCell[]>(() => {
+  const first = new Date(calYear.value, calMonth.value, 1)
+  const gridStart = new Date(calYear.value, calMonth.value, 1 - first.getDay())
+  const cells: CalCell[] = []
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i)
+    cells.push({ iso: toIso(d), dayNum: d.getDate(), inMonth: d.getMonth() === calMonth.value })
+  }
+  return cells
+})
+const calMonthTitle = computed(() => `${MONTH_LABEL[calMonth.value]} ${calYear.value}`)
+const todayIso = computed(() => toIso(TODAY))
+function calPrevMonth() { if (calMonth.value === 0) { calMonth.value = 11; calYear.value-- } else calMonth.value-- }
+function calNextMonth() { if (calMonth.value === 11) { calMonth.value = 0; calYear.value++ } else calMonth.value++ }
+// Highlight bounds: the in-progress start, or the committed from…to range.
+const rangeBounds = computed<{ s: string; e: string } | null>(() => {
+  if (pendingStart.value) return { s: pendingStart.value, e: pendingStart.value }
+  const from = parseDMY(customFrom.value), to = parseDMY(customTo.value)
+  return from && to ? { s: toIso(from), e: toIso(to) } : null
+})
+function calCellInRange(iso: string): boolean {
+  const b = rangeBounds.value
+  return !!b && iso >= b.s && iso <= b.e // yyyy-mm-dd sorts lexicographically
+}
+function calCellIsEnd(iso: string): boolean {
+  const b = rangeBounds.value
+  return !!b && (iso === b.s || iso === b.e)
+}
+function onCalDayClick(cell: CalCell) {
+  // First click (or restart after a complete range): set the start, clear the rest.
+  if (!pendingStart.value || (customFrom.value && customTo.value)) {
+    pendingStart.value = cell.iso; customFrom.value = ''; customTo.value = ''
+    return
+  }
+  // Second click: order the two ends and commit.
+  const s = cell.iso < pendingStart.value ? cell.iso : pendingStart.value
+  const e = cell.iso < pendingStart.value ? pendingStart.value : cell.iso
+  customFrom.value = isoToDMY(s); customTo.value = isoToDMY(e)
+  pendingStart.value = null
+}
+const calHint = computed(() =>
+  pendingStart.value && !(customFrom.value && customTo.value)
+    ? t('Select the end date')
+    : t('Select a start and end date'),
+)
 
 function rangeLabel(days: number): string {
   const from = new Date(TODAY.getTime() - days * 86_400_000)
@@ -348,8 +410,32 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               </MpPopoverListItem>
             </MpPopoverList>
             <div v-if="periodPreset === 'custom'" class="period-custom">
-              <MpDatePicker :id="`rpt-period-from-${orderId}`" v-model="customFrom" :placeholder="t('From')" format="DD/MM/YYYY" use-portal />
-              <MpDatePicker :id="`rpt-period-to-${orderId}`" v-model="customTo" :placeholder="t('To')" format="DD/MM/YYYY" use-portal />
+              <div class="rpt-cal-header">
+                <button class="rpt-cal-nav" type="button" :aria-label="t('Previous month')" @click="calPrevMonth">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <span class="rpt-cal-title">{{ calMonthTitle }}</span>
+                <button class="rpt-cal-nav" type="button" :aria-label="t('Next month')" @click="calNextMonth">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+              <div class="rpt-cal-weekdays">
+                <span v-for="d in WEEKDAYS" :key="d">{{ d }}</span>
+              </div>
+              <div class="rpt-cal-days">
+                <button
+                  v-for="cell in calendarCells" :key="cell.iso" type="button"
+                  class="rpt-cal-day"
+                  :class="{
+                    'rpt-cal-day--muted': !cell.inMonth,
+                    'rpt-cal-day--today': cell.iso === todayIso,
+                    'rpt-cal-day--in-range': calCellInRange(cell.iso),
+                    'rpt-cal-day--end': calCellIsEnd(cell.iso),
+                  }"
+                  @click="onCalDayClick(cell)"
+                >{{ cell.dayNum }}</button>
+              </div>
+              <p class="rpt-cal-hint">{{ calHint }}</p>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -568,12 +654,46 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-trigger .cal-ico { color: var(--mp-icon-default); flex: none; }
 .period-opt { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; width: 100%; }
 .period-opt-range { font-size: 12px; color: var(--mp-text-subtle); }
-/* Custom date range inputs (mirrors ReceiptIndexPage .arrival-custom) */
+/* Custom range — single inline range calendar (two-click start→end; mirrors
+   AdvanceDateFilter's calendar). One field, not two From/To inputs. */
 .period-custom {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-3);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-3);
   border-top: 1px solid var(--mp-border-default);
+  min-width: 280px;
 }
+.rpt-cal-header { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.rpt-cal-nav {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
+  border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default);
+}
+.rpt-cal-nav:hover { background: var(--mp-background-neutral-hovered); }
+.rpt-cal-title {
+  flex: 1; text-align: center; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.rpt-cal-weekdays, .rpt-cal-days { display: grid; grid-template-columns: repeat(7, 1fr); }
+.rpt-cal-weekdays span {
+  display: flex; align-items: center; justify-content: center; height: 32px;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
+.rpt-cal-day {
+  display: flex; align-items: center; justify-content: center; height: 32px;
+  border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.rpt-cal-day:hover { background: var(--mp-background-neutral-hovered); }
+.rpt-cal-day--muted { color: var(--mp-text-disabled, rgba(29, 31, 36, 0.32)); }
+/* Days between the two ends — subtle band; the two ends themselves are bold. */
+.rpt-cal-day--in-range { background: var(--mp-background-brand-selected, #e4e7fb); border-radius: 0; color: var(--mp-text-default); }
+.rpt-cal-day--today { font-weight: var(--mp-font-weights-semi-bold); box-shadow: inset 0 0 0 1px var(--mp-border-bold, rgba(29, 31, 36, 0.32)); }
+.rpt-cal-day--end {
+  background: var(--mp-background-brand-bold, #4b61dc); color: var(--mp-text-inverse, #fff);
+  border-radius: var(--mp-radii-sm); font-weight: var(--mp-font-weights-semi-bold);
+}
+.rpt-cal-day--end:hover { background: var(--mp-background-brand-bold, #4b61dc); }
+.rpt-cal-hint { margin: var(--mp-spacing-1) 0 0; text-align: center; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* "All filters" button (mirrors BillOfMaterialsIndexPage) */
 .filter-all-btn {
