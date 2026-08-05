@@ -1656,7 +1656,12 @@ function fmtNum(n: number | null): string {
 }
 .mbd-col-batch   { width: 240px; }
 .mbd-col-expiry  { width: 172px; }
-.mbd-col-desc    { width: 120px; }
+/* No explicit width — under table-layout:fixed, when every other column is
+   pinned, the browser stretches ALL of them proportionally to fill the
+   table's 100%/min-width, so Del would land wider than 44px. Leaving
+   Description as the one flexible column (like ManageSerialDrawer's Serial
+   column) absorbs that leftover space instead, keeping Del exactly 44px. */
+.mbd-col-desc    { /* fills remaining */ }
 .mbd-col-location { width: 160px; }
 .mbd-col-num     { width: 150px; }
 .mbd-col-after   { width: 175px; }

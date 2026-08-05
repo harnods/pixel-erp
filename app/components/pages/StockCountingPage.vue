@@ -715,6 +715,7 @@ onUnmounted(() => {
         </div>
         <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetCount">{{ t('Reset count') }}</button>
       </ScanBar>
+      <p class="sc-scan-caption">{{ t('Scan the storage location first before scanning the SKU.') }}</p>
       </div>
 
       <!-- By location: accordion -->
@@ -1193,12 +1194,17 @@ onUnmounted(() => {
 .sc-items { width: 100%; border-collapse: collapse; }
 .sc-items--fixed { table-layout: fixed; width: 100%; }
 
-.sc-col-product { width: 240px; }
+/* No explicit width — under table-layout:fixed, when every other column is
+   pinned, the browser stretches ALL of them proportionally to fill the
+   table's 100%, so Manage/Del would land wider than 44px. Leaving Product
+   as the one flexible column (like ManageSerialDrawer's Serial column)
+   absorbs that leftover space instead, keeping Manage/Del exactly 44px. */
+.sc-col-product { /* fills remaining */ }
 .sc-col-sku     { width: 100px; }
 .sc-col-num     { width: 140px; }
 .sc-col-unit    { width: 90px; }
-.sc-col-manage  { width: 56px; }
-.sc-col-del     { width: 40px; }
+.sc-col-manage  { width: 44px; }
+.sc-col-del     { width: 44px; }
 
 .sc-th {
   height: var(--mp-sizes-7, 28px);
@@ -1236,8 +1242,13 @@ onUnmounted(() => {
 .sc-managed-total { font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
 .sc-managed-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-/* Manage action column */
-.sc-td--action { text-align: center; white-space: nowrap; background: var(--mp-background-neutral, #fff); }
+/* Manage action column — zeroed and re-centered: .sc-td's own padding is
+   asymmetric (more on the right than the left), which would otherwise push
+   the icon button off-center within the 44px column. */
+.sc-td--action {
+  padding: 0; text-align: center; vertical-align: middle;
+  white-space: nowrap; background: var(--mp-background-neutral, #fff);
+}
 .sc-view-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
@@ -1248,6 +1259,7 @@ onUnmounted(() => {
 
 .sc-scanbar-row { padding: 0 var(--mp-spacing-6) var(--mp-spacing-4); }
 .sc-scanbar-row .scan-bar { margin-bottom: 0; }
+.sc-scan-caption { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 
 /* Active bin chip + row flash on scan */
 .sc-active-bin {
