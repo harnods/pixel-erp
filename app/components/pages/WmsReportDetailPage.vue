@@ -335,10 +335,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 var(--mp-spacing-6); flex-shrink: 0;
 }
-.rpt-titlebar-left { display: flex; flex-direction: column; gap: 2px; }
+.rpt-titlebar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .rpt-breadcrumb {
   align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-sm, 13px); color: var(--mp-text-link); line-height: 1.4;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
 }
 .rpt-breadcrumb:hover { text-decoration: underline; }
 .rpt-title {
