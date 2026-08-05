@@ -1295,7 +1295,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
@@ -1767,6 +1767,12 @@ function startResize(e: MouseEvent) {
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);
+}
+/* Report index draws an edge-to-edge card grid — no stage padding/top gap. */
+.stage--flush {
+  padding: 0;
+  border-top-width: 0;
+  gap: 0;
 }
 
 /* ── Status tabs (between title bar and stage, on the gray surface) ───────── */
