@@ -25,17 +25,19 @@ import { deliveryTasks, shippedQtyBySkuForOrder } from './deliveryTasks'
 import { orderSkuLines } from './inventory'
 import { TODAY } from './master'
 
-// ── Filter shape (mirrors wmsAnalytics AnalyticsFilter) ───────────────────────
+// ── Filter shape ──────────────────────────────────────────────────────────────
 export interface ReportFilter {
-  /** warehouse id, or 'all' */
-  warehouseId: string
-  /** operator (assignee) name, or 'all' */
-  operator: string
-  /** performance period, inclusive, in days back from TODAY */
+  /** selected warehouse ids; empty = all */
+  warehouseIds: string[]
+  /** selected operator (assignee) names; empty = all */
+  operators: string[]
+  /** performance period, inclusive, in days back from TODAY — used when customRange is null */
   periodDays: number
+  /** explicit inclusive ISO (yyyy-mm-dd) date range; overrides periodDays when set */
+  customRange?: { from: string; to: string } | null
 }
 
-export const DEFAULT_REPORT_FILTER: ReportFilter = { warehouseId: 'all', operator: 'all', periodDays: 30 }
+export const DEFAULT_REPORT_FILTER: ReportFilter = { warehouseIds: [], operators: [], periodDays: 30, customRange: null }
 
 // ── Column + row types ────────────────────────────────────────────────────────
 export interface ReportColumn {
@@ -69,18 +71,29 @@ function parse(d?: string): Date | null {
 function periodStart(days: number): Date {
   return new Date(TODAY.getTime() - days * MS_DAY)
 }
+/** Date-range match — a custom range (inclusive, by calendar day) takes precedence
+ *  over the rolling periodDays window (D-periodDays … TODAY). */
 function inPeriod(f: ReportFilter, d?: string): boolean {
   const dt = parse(d)
   if (!dt) return false
+  if (f.customRange) {
+    const from = parse(f.customRange.from)
+    const to = parse(f.customRange.to)
+    if (!from || !to) return false
+    // inclusive: from 00:00 of `from` up to 23:59:59.999 of `to`
+    const end = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999)
+    const start = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+    return dt >= start && dt <= end
+  }
   return dt >= periodStart(f.periodDays) && dt <= TODAY
 }
 function whOk(f: ReportFilter, warehouseId: string): boolean {
-  return f.warehouseId === 'all' || f.warehouseId === warehouseId
+  return !f.warehouseIds.length || f.warehouseIds.includes(warehouseId)
 }
-/** Row-level operator match — passes when the filter is 'all' or any of the row's
+/** Row-level operator match — passes when the filter is empty or any of the row's
  *  operator names (receiver/putaway PIC, or picker/packer/shipping PIC) matches. */
 function opMatch(f: ReportFilter, names: (string | undefined)[]): boolean {
-  return f.operator === 'all' || names.some((n) => n === f.operator)
+  return !f.operators.length || names.some((n) => n !== undefined && f.operators.includes(n))
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -302,7 +315,7 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
       { key: 'inboundId', label: 'Inbound ID', sortType: 'text' },
       { key: 'productName', label: 'Product name', sortType: 'text' },
-      { key: 'inboundQty', label: 'Inbound qty', sortType: 'number', align: 'right' },
+      { key: 'inboundQty', label: 'Purchase qty', sortType: 'number', align: 'right' },
       { key: 'receiverName', label: 'Receiver name', sortType: 'text' },
       { key: 'receivingId', label: 'Receiving ID', sortType: 'text' },
       { key: 'receivingQty', label: 'Receiving qty', sortType: 'number', align: 'right' },
@@ -343,7 +356,7 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
       { key: 'outboundId', label: 'Outbound ID', sortType: 'text' },
       { key: 'productName', label: 'Product name', sortType: 'text' },
-      { key: 'outboundQty', label: 'Outbound qty', sortType: 'number', align: 'right' },
+      { key: 'outboundQty', label: 'Order qty', sortType: 'number', align: 'right' },
       { key: 'pickerName', label: 'Picker name', sortType: 'text' },
       { key: 'pickingId', label: 'Picking ID', sortType: 'text' },
       { key: 'pickedQty', label: 'Picked qty', sortType: 'number', align: 'right' },

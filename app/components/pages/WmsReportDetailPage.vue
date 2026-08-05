@@ -7,14 +7,14 @@
  * in [...slug].vue), so it draws its own title bar with a back link + Export (CSV).
  */
 import { ref, reactive, computed, watch, inject, onMounted, onUnmounted } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, MpIcon, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip, MpIcon, MpCheckbox, MpDatePicker, css } from '@mekari/pixel3'
 import ErpColumnSortMenu from '~/components/patterns/ErpColumnSortMenu.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import { formatDate, formatDateTime } from '~/utils/date'
 import { warehouses } from '~/data/warehouses'
 import { TODAY } from '~/data/master'
-import { operatorOptions } from '~/data/wmsAnalytics'
+import { operatorOptionsMulti } from '~/data/wmsAnalytics'
 import { WMS_REPORTS, type ReportColumn, type ReportFilter, type ReportRow } from '~/data/wmsReports'
 
 const props = defineProps<{ orderId: string }>()
@@ -27,29 +27,63 @@ const def = computed(() => WMS_REPORTS[props.orderId])
 const title = computed(() => def.value?.title ?? 'Report')
 
 // ── Filters ─────────────────────────────────────────────────────────────────────
-const warehouseId = ref('all')
-const operator = ref('all')
-const periodDays = ref(30)
+const warehouseFilter = ref<string[]>([])   // empty = all warehouses
+const operatorFilter = ref<string[]>([])     // empty = all operators
 const search = ref('')
 
-const filter = computed<ReportFilter>(() => ({
-  warehouseId: warehouseId.value,
-  operator: operator.value,
-  periodDays: periodDays.value,
-}))
+// ── Warehouse (multi-select) ─────────────────────────────────────────────────────
+const warehouseOptions = computed(() =>
+  warehouses.filter((w) => !w.isDefault && w.status === 'active').map((w) => ({ value: w.id, label: w.name })),
+)
+const warehouseLabel = computed(() => {
+  const n = warehouseFilter.value.length
+  if (n === 0) return t('All warehouses')
+  if (n === 1) return warehouseOptions.value.find((o) => o.value === warehouseFilter.value[0])?.label ?? ''
+  return `${n} ${t('warehouses')}`
+})
+function toggleWarehouse(id: string) {
+  warehouseFilter.value = warehouseFilter.value.includes(id)
+    ? warehouseFilter.value.filter((v) => v !== id)
+    : [...warehouseFilter.value, id]
+}
 
-const warehouseOptions = computed(() => [
-  { value: 'all', label: t('All warehouses') },
-  ...warehouses.filter((w) => !w.isDefault && w.status === 'active').map((w) => ({ value: w.id, label: w.name })),
-])
-const warehouseLabel = computed(() => warehouseOptions.value.find((o) => o.value === warehouseId.value)?.label ?? '')
+// ── Operator (multi-select, scoped to the selected warehouses) ────────────────────
+const operatorList = computed(() => def.value ? operatorOptionsMulti(def.value.direction, warehouseFilter.value) : [])
+const operatorLabel = computed(() => {
+  const n = operatorFilter.value.length
+  if (n === 0) return t('All operators')
+  if (n === 1) return operatorFilter.value[0]
+  return `${n} ${t('operators')}`
+})
+function toggleOperator(name: string) {
+  operatorFilter.value = operatorFilter.value.includes(name)
+    ? operatorFilter.value.filter((v) => v !== name)
+    : [...operatorFilter.value, name]
+}
+// When the warehouse selection narrows the operator pool, drop any now-invalid picks.
+watch(operatorList, (pool) => {
+  const kept = operatorFilter.value.filter((n) => pool.includes(n))
+  if (kept.length !== operatorFilter.value.length) operatorFilter.value = kept
+})
 
-const operatorList = computed(() => def.value ? operatorOptions(def.value.direction, warehouseId.value) : [])
-const operatorOpts = computed(() => [{ value: 'all', label: t('All operators') }, ...operatorList.value.map((n) => ({ value: n, label: n }))])
-const operatorLabel = computed(() => operator.value === 'all' ? t('All operators') : operator.value)
-// Reset a now-invalid operator when the warehouse changes narrows the pool.
-watch(warehouseId, () => {
-  if (operator.value !== 'all' && !operatorList.value.includes(operator.value)) operator.value = 'all'
+// ── Date (presets + custom range) ─────────────────────────────────────────────────
+const periodPreset = ref<'7' | '30' | '90' | 'custom'>('30')
+const customFrom = ref('') // DD/MM/YYYY
+const customTo = ref('')
+function parseDMY(s: string): Date | null {
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!m) return null
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]))
+}
+function toIso(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+// Active custom range as inclusive ISO strings, or null when incomplete/not custom.
+const customRange = computed<{ from: string; to: string } | null>(() => {
+  if (periodPreset.value !== 'custom') return null
+  const from = parseDMY(customFrom.value)
+  const to = parseDMY(customTo.value)
+  return from && to ? { from: toIso(from), to: toIso(to) } : null
 })
 
 function rangeLabel(days: number): string {
@@ -57,12 +91,26 @@ function rangeLabel(days: number): string {
   const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
   return `${fmt(from)} – ${fmt(TODAY)} ${TODAY.getFullYear()}`
 }
-const periodOptions = computed(() => [
-  { value: 7, label: 'Last 7 days', range: rangeLabel(7) },
-  { value: 30, label: 'Last 30 days', range: rangeLabel(30) },
-  { value: 90, label: 'Last 90 days', range: rangeLabel(90) },
-])
-const periodLabel = computed(() => periodOptions.value.find((o) => o.value === periodDays.value)?.label ?? '')
+const periodOptions = [
+  { value: '7' as const, label: 'Last 7 days' },
+  { value: '30' as const, label: 'Last 30 days' },
+  { value: '90' as const, label: 'Last 90 days' },
+]
+const periodLabel = computed(() => {
+  if (periodPreset.value === 'custom') {
+    const r = customRange.value
+    if (!r) return t('Custom range…')
+    const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+    return `${fmt(r.from)} – ${fmt(r.to)} ${new Date(r.to).getFullYear()}`
+  }
+  return t(periodOptions.find((o) => o.value === periodPreset.value)?.label ?? '')
+})
+const filter = computed<ReportFilter>(() => ({
+  warehouseIds: warehouseFilter.value,
+  operators: operatorFilter.value,
+  periodDays: Number(periodPreset.value) || 30,
+  customRange: customRange.value,
+}))
 
 // ── Columns (with hide support via the shared sort menu) ─────────────────────────
 const columns = computed<ReportColumn[]>(() => def.value?.columns ?? [])
@@ -124,7 +172,7 @@ const pagedRows = computed(() => {
   const start = (currentPage.value - 1) * perPage.value
   return sortedRows.value.slice(start, start + perPage.value)
 })
-watch([warehouseId, operator, periodDays, search, () => props.orderId, perPage], () => { currentPage.value = 1 })
+watch([warehouseFilter, operatorFilter, periodPreset, customFrom, customTo, search, () => props.orderId, perPage], () => { currentPage.value = 1 })
 
 // ── Cell rendering ────────────────────────────────────────────────────────────────
 function fmtNum(n: number): string { return n.toLocaleString('id-ID') }
@@ -184,7 +232,7 @@ onMounted(() => {
 })
 onUnmounted(() => filterRo?.disconnect())
 
-const hasFilter = computed(() => warehouseId.value !== 'all' || operator.value !== 'all' || periodDays.value !== 30)
+const hasFilter = computed(() => warehouseFilter.value.length > 0 || operatorFilter.value.length > 0 || periodPreset.value !== '30')
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
@@ -204,25 +252,34 @@ const emptyIllustration = '/illustrations/empty-folder.png'
            AI + Column-settings icons drop out in compact (narrow) mode. -->
       <div ref="filterBarEl" class="rpt-filter-bar">
         <div class="rpt-filter-left">
-        <MpPopover :id="`rpt-period-${orderId}`" is-close-on-select>
+        <!-- Date — presets + custom range -->
+        <MpPopover :id="`rpt-period-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
             <button type="button" class="filter-trigger" :style="{ width: '210px' }">
               <svg class="cal-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 2.5v3M16 2.5v3M3.5 9.5h17M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 19 20.5H5A1.5 1.5 0 0 1 3.5 19V6A1.5 1.5 0 0 1 5 4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <span class="filter-trigger-label">{{ t(periodLabel) }}</span>
+              <span class="filter-trigger-label">{{ periodLabel }}</span>
               <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '260px', width: 'max-content' })">
             <MpPopoverList>
               <MpPopoverListItem v-for="opt in periodOptions" :key="opt.value"
-                :is-active="opt.value === periodDays" @click="periodDays = opt.value">
-                <span class="period-opt"><span>{{ t(opt.label) }}</span><span class="period-opt-range">{{ opt.range }}</span></span>
+                :is-active="opt.value === periodPreset" @click="periodPreset = opt.value">
+                <span class="period-opt"><span>{{ t(opt.label) }}</span><span class="period-opt-range">{{ rangeLabel(Number(opt.value)) }}</span></span>
+              </MpPopoverListItem>
+              <MpPopoverListItem :is-active="periodPreset === 'custom'" @click="periodPreset = 'custom'">
+                {{ t('Custom range…') }}
               </MpPopoverListItem>
             </MpPopoverList>
+            <div v-if="periodPreset === 'custom'" class="period-custom">
+              <MpDatePicker :id="`rpt-period-from-${orderId}`" v-model="customFrom" :placeholder="t('From')" format="DD/MM/YYYY" use-portal />
+              <MpDatePicker :id="`rpt-period-to-${orderId}`" v-model="customTo" :placeholder="t('To')" format="DD/MM/YYYY" use-portal />
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover :id="`rpt-wh-${orderId}`" is-close-on-select>
+        <!-- Warehouse — multi-select -->
+        <MpPopover :id="`rpt-wh-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
             <button type="button" class="filter-trigger" :style="{ width: '200px' }">
               <span class="filter-trigger-label">{{ warehouseLabel }}</span>
@@ -230,14 +287,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem v-for="opt in warehouseOptions" :key="opt.value"
-                :is-active="opt.value === warehouseId" @click="warehouseId = opt.value">{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="opt in warehouseOptions" :key="opt.value" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`rpt-wh-${orderId}-${opt.value}`"
+                  :is-checked="warehouseFilter.includes(opt.value)"
+                  @change="toggleWarehouse(opt.value)"
+                  @click.stop
+                >
+                  {{ opt.label }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover :id="`rpt-op-${orderId}`" is-close-on-select>
+        <!-- Operator — multi-select, scoped to the selected warehouses -->
+        <MpPopover :id="`rpt-op-${orderId}`" :is-close-on-select="false">
           <MpPopoverTrigger>
             <button type="button" class="filter-trigger" :style="{ width: '190px' }">
               <span class="filter-trigger-label">{{ operatorLabel }}</span>
@@ -245,10 +311,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '190px', width: 'max-content', maxWidth: '320px' })">
-            <MpPopoverList>
-              <MpPopoverListItem v-for="opt in operatorOpts" :key="opt.value"
-                :is-active="opt.value === operator" @click="operator = opt.value">{{ opt.label }}</MpPopoverListItem>
-            </MpPopoverList>
+            <div class="checkbox-filter-list">
+              <label v-for="name in operatorList" :key="name" class="checkbox-filter-item">
+                <MpCheckbox
+                  :id="`rpt-op-${orderId}-${name}`"
+                  :is-checked="operatorFilter.includes(name)"
+                  @change="toggleOperator(name)"
+                  @click.stop
+                >
+                  {{ name }}
+                </MpCheckbox>
+              </label>
+            </div>
           </MpPopoverContent>
         </MpPopover>
         </div>
@@ -400,6 +474,21 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-trigger .cal-ico { color: var(--mp-icon-default); flex: none; }
 .period-opt { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; width: 100%; }
 .period-opt-range { font-size: 12px; color: var(--mp-text-subtle); }
+/* Custom date range inputs (mirrors ReceiptIndexPage .arrival-custom) */
+.period-custom {
+  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-3);
+  border-top: 1px solid var(--mp-border-default);
+}
+
+/* Multi-select checkbox filter list (mirrors ReceivingIndexPage) */
+.checkbox-filter-list { display: flex; flex-direction: column; padding: var(--mp-spacing-1); }
+.checkbox-filter-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) 10px; border-radius: var(--mp-radii-md);
+  cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 
 /* ── Table ── */
 .rpt-table-section { display: flex; flex-direction: column; }

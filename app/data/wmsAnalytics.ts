@@ -457,3 +457,15 @@ export function operatorOptions(direction: 'inbound' | 'outbound', warehouseId: 
   }
   return [...names].sort()
 }
+
+/** Union of operator names across the given warehouses. Empty list = all warehouses. */
+export function operatorOptionsMulti(direction: 'inbound' | 'outbound', warehouseIds: string[]): string[] {
+  const src = direction === 'inbound'
+    ? [...receivingTasks, ...putAwayTasks]
+    : [...pickingTasks, ...packingTasks, ...deliveryTasks]
+  const names = new Set<string>()
+  for (const t of src) {
+    if ((!warehouseIds.length || warehouseIds.includes(t.warehouseId)) && t.assignee) names.add(t.assignee)
+  }
+  return [...names].sort()
+}
