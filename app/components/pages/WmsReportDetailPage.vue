@@ -193,16 +193,19 @@ function selectPreset(v: Exclude<PeriodPreset, 'custom'>) {
 }
 function selectCustom() { periodPreset.value = 'custom'; pendingStart.value = null }
 
-// Highlight bounds: mid-pick start, committed custom range, or the active preset's
-// rolling window (so the calendar always reflects what's applied).
+// Resolved date range for a preset row (inclusive, N calendar days ending today) —
+// e.g. "20 Jun - 26 Jun 2026". Shown beside each preset in the list.
+function presetRangeLabel(days: number): string {
+  const start = new Date(TODAY.getTime() - (days - 1) * 86_400_000)
+  const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return `${fmt(start)} - ${fmt(TODAY)} ${TODAY.getFullYear()}`
+}
+
+// Calendar highlight (Custom mode only): mid-pick start, or the committed range.
 const rangeBounds = computed<{ s: string; e: string } | null>(() => {
-  if (periodPreset.value === 'custom') {
-    if (pendingStart.value) return { s: pendingStart.value, e: pendingStart.value }
-    const from = parseDMY(customFrom.value), to = parseDMY(customTo.value)
-    return from && to ? { s: toIso(from), e: toIso(to) } : null
-  }
-  const start = new Date(TODAY.getTime() - Number(periodPreset.value) * 86_400_000)
-  return { s: toIso(start), e: toIso(TODAY) }
+  if (pendingStart.value) return { s: pendingStart.value, e: pendingStart.value }
+  const from = parseDMY(customFrom.value), to = parseDMY(customTo.value)
+  return from && to ? { s: toIso(from), e: toIso(to) } : null
 })
 function calCellInRange(iso: string): boolean {
   const b = rangeBounds.value
@@ -410,24 +413,30 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ padding: '0', width: 'max-content' })">
             <div class="rpt-date-panel">
-              <!-- Left: time-range presets -->
-              <div class="rpt-date-sidebar">
+              <!-- Preset list. In preset mode each row shows its resolved date range;
+                   in Custom mode the list collapses to plain labels beside the calendar. -->
+              <div class="rpt-date-list" :class="{ 'rpt-date-list--compact': periodPreset === 'custom' }">
                 <button
                   v-for="opt in periodOptions" :key="opt.value" type="button"
-                  class="rpt-date-sidebar-item" :class="{ 'rpt-date-sidebar-item--active': periodPreset === opt.value }"
+                  class="rpt-date-item" :class="{ 'rpt-date-item--active': periodPreset === opt.value }"
                   @click="selectPreset(opt.value)"
-                >{{ t(opt.label) }}</button>
+                >
+                  <span class="rpt-date-item-label">{{ t(opt.label) }}</span>
+                  <span v-if="periodPreset !== 'custom'" class="rpt-date-item-range">{{ presetRangeLabel(Number(opt.value)) }}</span>
+                </button>
                 <div class="rpt-date-divider" />
                 <button
                   type="button"
-                  class="rpt-date-sidebar-item" :class="{ 'rpt-date-sidebar-item--active': periodPreset === 'custom' }"
+                  class="rpt-date-item" :class="{ 'rpt-date-item--active': periodPreset === 'custom' }"
                   @click="selectCustom"
-                >{{ t('Custom range') }}</button>
+                >
+                  <span class="rpt-date-item-label">{{ t('Custom range') }}</span>
+                </button>
               </div>
 
+              <!-- Two-month calendar — only in Custom range mode -->
+              <template v-if="periodPreset === 'custom'">
               <div class="rpt-date-divider-v" />
-
-              <!-- Right: two consecutive months -->
               <div class="rpt-date-months">
                 <div v-for="side in (['left', 'right'] as const)" :key="side" class="rpt-cal">
                   <div class="rpt-cal-header">
@@ -457,6 +466,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   </div>
                 </div>
               </div>
+              </template>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -677,19 +687,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
    two consecutive months. Enterprise green endpoints (#0f6d4d), light-green band
    (#d6f4e9), yellow today (#f5cd47). */
 .rpt-date-panel { display: flex; align-items: stretch; padding: var(--mp-spacing-3); }
-.rpt-date-sidebar {
-  display: flex; flex-direction: column; width: 140px; flex-shrink: 0;
+.rpt-date-list {
+  display: flex; flex-direction: column; flex-shrink: 0; min-width: 300px;
 }
-.rpt-date-sidebar-item {
-  display: block; width: 100%; text-align: left;
+/* Custom mode: list collapses to a plain-label sidebar beside the calendar. */
+.rpt-date-list--compact { min-width: 140px; }
+.rpt-date-item {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+  width: 100%; text-align: left;
   padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
   border: none; background: none; cursor: pointer;
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
-.rpt-date-sidebar-item:hover { background: var(--mp-background-neutral-hovered); }
-.rpt-date-sidebar-item--active,
-.rpt-date-sidebar-item--active:hover { background: var(--mp-background-neutral-selected, #f7f8f9); }
+.rpt-date-item:hover { background: var(--mp-background-neutral-hovered); }
+.rpt-date-item--active,
+.rpt-date-item--active:hover { background: var(--mp-background-neutral-subtle, #f0f1f3); }
+.rpt-date-item-label { white-space: nowrap; }
+.rpt-date-item-range { flex: 1; text-align: right; white-space: nowrap; color: var(--mp-text-default); }
 .rpt-date-divider { height: 1px; margin: var(--mp-spacing-2) 0; background: var(--mp-border-default); }
 .rpt-date-divider-v { width: 1px; flex-shrink: 0; margin: 0 var(--mp-spacing-3); background: var(--mp-border-default); }
 .rpt-date-months { display: flex; gap: var(--mp-spacing-5); }
