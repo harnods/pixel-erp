@@ -35,6 +35,8 @@ const search = ref('')
 // ── "All filters" drawer — inbound-accuracy only ────────────────────────────────
 const isInboundAccuracy = computed(() => props.orderId === 'inbound-accuracy')
 const isFiltersDrawerOpen = ref(false)
+const keywordFilter = ref('')
+const keywordColumnFilter = ref('all')
 const skuFilter = ref<string[]>([])
 const sourceFilter = ref<string[]>([])
 const receiveStateFilter = ref<string[]>([])
@@ -49,21 +51,29 @@ const inboundAccOptions = computed(() =>
   isInboundAccuracy.value ? inboundAccuracyFilterOptions() : { skus: [] },
 )
 const drawerValue = computed<WmsReportFiltersValue>(() => ({
+  keyword: keywordFilter.value,
+  keywordColumn: keywordColumnFilter.value,
   skus: skuFilter.value,
   sources: sourceFilter.value,
   receiveStates: receiveStateFilter.value,
 }))
 function applyDrawerFilters(v: WmsReportFiltersValue) {
+  keywordFilter.value = v.keyword
+  keywordColumnFilter.value = v.keywordColumn
   skuFilter.value = v.skus
   sourceFilter.value = v.sources
   receiveStateFilter.value = v.receiveStates
 }
 // Number of active drawer-filter groups — shown in the button label.
 const drawerFilterCount = computed(() =>
-  (skuFilter.value.length ? 1 : 0) + (sourceFilter.value.length ? 1 : 0) + (receiveStateFilter.value.length ? 1 : 0),
+  (keywordFilter.value.trim() ? 1 : 0) + (skuFilter.value.length ? 1 : 0)
+    + (sourceFilter.value.length ? 1 : 0) + (receiveStateFilter.value.length ? 1 : 0),
 )
 // Reset drawer filters when switching to another report (button only shows on inbound-accuracy).
-watch(() => props.orderId, () => { skuFilter.value = []; sourceFilter.value = []; receiveStateFilter.value = [] })
+watch(() => props.orderId, () => {
+  keywordFilter.value = ''; keywordColumnFilter.value = 'all'
+  skuFilter.value = []; sourceFilter.value = []; receiveStateFilter.value = []
+})
 
 // ── Warehouse (multi-select) ─────────────────────────────────────────────────────
 const warehouseOptions = computed(() =>
@@ -180,12 +190,21 @@ function sortValue(row: ReportRow, col: ReportColumn): string | number {
 
 // ── Rows: build → sort ─────────────────────────────────────────────────────────
 const baseRows = computed<ReportRow[]>(() => def.value ? def.value.rows(filter.value) : [])
-// Free-text search across every visible column's rendered cell text.
+// Free-text search across every visible column's rendered cell text, then the
+// drawer's Keywords filter (all columns, or a single column) — applied as AND.
 const searchedRows = computed<ReportRow[]>(() => {
+  let rows = baseRows.value
   const q = search.value.trim().toLowerCase()
-  if (!q) return baseRows.value
   const cols = visibleColumns.value
-  return baseRows.value.filter((row) => cols.some((c) => cellText(row, c).toLowerCase().includes(q)))
+  if (q) rows = rows.filter((row) => cols.some((c) => cellText(row, c).toLowerCase().includes(q)))
+  const kw = keywordFilter.value.trim().toLowerCase()
+  if (kw) {
+    const scoped = keywordColumnFilter.value === 'all'
+      ? cols
+      : cols.filter((c) => c.key === keywordColumnFilter.value)
+    rows = rows.filter((row) => scoped.some((c) => cellText(row, c).toLowerCase().includes(kw)))
+  }
+  return rows
 })
 const sortedRows = computed<ReportRow[]>(() => {
   if (!sortKey.value) return searchedRows.value
@@ -214,7 +233,7 @@ const pagedRows = computed(() => {
   const start = (currentPage.value - 1) * perPage.value
   return sortedRows.value.slice(start, start + perPage.value)
 })
-watch([warehouseFilter, operatorFilter, periodPreset, customFrom, customTo, search, skuFilter, sourceFilter, receiveStateFilter, () => props.orderId, perPage], () => { currentPage.value = 1 })
+watch([warehouseFilter, operatorFilter, periodPreset, customFrom, customTo, search, keywordFilter, keywordColumnFilter, skuFilter, sourceFilter, receiveStateFilter, () => props.orderId, perPage], () => { currentPage.value = 1 })
 
 // ── Cell rendering ────────────────────────────────────────────────────────────────
 function fmtNum(n: number): string { return n.toLocaleString('id-ID') }
@@ -450,6 +469,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       v-if="isInboundAccuracy"
       v-model:is-open="isFiltersDrawerOpen"
       :model-value="drawerValue"
+      :columns="columns"
       :sku-options="inboundAccOptions.skus"
       :source-options="sourceOptions"
       :receive-state-options="receiveStateOptions"
