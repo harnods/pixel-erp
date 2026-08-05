@@ -570,16 +570,7 @@ async function handleCreate() {
                 <tbody>
                   <tr v-for="pt in sourcePickingLists" :key="pt.id" class="pk-item-row">
                     <td class="pk-td pk-td--number">
-                      <div class="cell-with-action">
-                        <span>{{ pt.taskNo }}</span>
-                        <button class="row-hover-btn" type="button" @click.stop="router.push(`/picking/${pt.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link" @click.stop="router.push(`/picking/${pt.id}`)">{{ pt.taskNo }}</a>
                     </td>
                     <td class="pk-td">{{ pt.assignee }}</td>
                     <td class="pk-td pk-td--num">{{ formatNum(pt.skuQty) }}</td>
@@ -847,17 +838,8 @@ async function handleCreate() {
 .pk-acc-chevron-wrap { display: inline-flex; padding-left: 12px; }
 .pk-acc-label { flex: 1; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
-/* Picking list row — hover chip linking to the picking task's own detail page */
+/* Picking list row — task no. is a link to the picking task's own detail page */
 .pk-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
-.pk-item-row:hover .row-hover-btn { display: flex; }
 .pk-section { margin-bottom: var(--mp-spacing-6); }
 .pk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--mp-spacing-4); max-width: 558px; }
 .pk-assignee-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); }

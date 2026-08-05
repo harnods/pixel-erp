@@ -15,7 +15,8 @@ import { formatDateLong } from '~/utils/date'
 import {
   warehouseTransfers, getTransfer, transferLineItems, transferMemo, transferAttachments,
   transferUpdatedBy, transferUpdatedAt, transferActivityEntries, transferApprovalLog,
-  canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer,
+  canCancelTransfer, cancelTransfer, duplicateTransfer, approveTransfer, canApproveTransfer,
+  type TransferApproveCheck,
 } from '~/data/warehouseTransfers'
 import { useApprovalViewAs } from '~/composables/useApprovalViewAs'
 
@@ -41,9 +42,23 @@ const approvalLog = computed(() => transfer.value ? transferApprovalLog(transfer
 const approvalLogOpen = ref(false)
 // Approve is only offered to a manager viewing a transfer that's still awaiting approval.
 const canApprove = computed(() => viewAs.value === 'manager' && transfer.value?.status === 'draft')
+// Map an approval refusal reason to a human-readable toast title.
+function approveErrorTitle(check: TransferApproveCheck): string {
+  if (check.ok) return "Can't approve this transfer"
+  if (check.reason.startsWith('INSUFFICIENT_STOCK')) return "Can't approve: not enough stock at origin"
+  if (check.reason === 'WAREHOUSE_ARCHIVED') return "Can't approve: a warehouse involved is archived"
+  if (check.reason === 'SAME_WAREHOUSE') return "Can't approve: origin and destination are the same"
+  return "Can't approve this transfer"
+}
 function approve() {
   if (!transfer.value) return
-  approveTransfer(transfer.value.id)
+  const id = transfer.value.id
+  const wasDraft = transfer.value.status === 'draft'
+  const result = approveTransfer(id)
+  if (wasDraft && result === undefined) {
+    toast.notify({ variant: 'error', title: approveErrorTitle(canApproveTransfer(id)) , maxWidth: 'max-content'})
+    return
+  }
   toast.notify({ variant: 'success', title: `${transfer.value.number} approved` , maxWidth: 'max-content'})
 }
 
@@ -176,7 +191,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search transaction…" />
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search..." />
                   <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -219,28 +234,10 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
         </div>
         <div class="content-list-col">
           <ContentList label="Origin warehouse">
-            <div class="wh-link-wrap">
-              <span>{{ transfer.originName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${transfer.originId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
-            </div>
+            <a class="cell-link" @click.stop="router.push(`/warehouses/${transfer.originId}`)">{{ transfer.originName }}</a>
           </ContentList>
           <ContentList label="Destination warehouse">
-            <div class="wh-link-wrap">
-              <span>{{ transfer.destinationName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${transfer.destinationId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
-            </div>
+            <a class="cell-link" @click.stop="router.push(`/warehouses/${transfer.destinationId}`)">{{ transfer.destinationName }}</a>
           </ContentList>
         </div>
         <div class="content-list-col">
@@ -404,7 +401,7 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .detail-titlerow-right { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
 .detail-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
 .detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
-.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
+.detail-jump-chevron { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px); background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
@@ -490,18 +487,4 @@ onUnmounted(() => { ro?.disconnect(); stageEl.value?.removeEventListener('scroll
 .demo-fab:hover { opacity: 0.9; }
 .demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-/* Warehouse header fields — hover chip to jump to the warehouse's own page */
-.wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
 </style>

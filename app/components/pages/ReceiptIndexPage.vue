@@ -261,6 +261,24 @@ function bulkEditTracking(selectedRows: Set<number>, deselectAll: () => void) {
   deselectAll()
 }
 
+// "Create purchase receiving" is inherently per-order — its form walks the operator
+// through one receipt's SKUs/assignee — so it only appears in the menu when EXACTLY
+// one row is selected (and that receipt can actually start a task). A multi-select
+// drops it from the menu and shows an explanatory caption in the bulk bar instead.
+function singleSelectedReceipt(selectedRows: Set<number>): Receipt | null {
+  if (selectedRows.size !== 1) return null
+  return paginated.value[[...selectedRows][0]!] ?? null
+}
+function canBulkCreateReceiving(selectedRows: Set<number>): boolean {
+  const r = singleSelectedReceipt(selectedRows)
+  return !!r && canCreateReceivingTask(r.id)
+}
+function bulkCreateReceiving(selectedRows: Set<number>, deselectAll: () => void) {
+  const r = singleSelectedReceipt(selectedRows)
+  if (r) purchaseReceiving(r)
+  deselectAll()
+}
+
 // Cancel confirmation — shared by the single-row action and the bulk action.
 // Only receipts not yet completed/canceled are eligible — once fully received,
 // the PO is a permanent record. Partial reception is excluded: it's *closed*
@@ -335,10 +353,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @clear-filters="clearFilters"
   >
     <!-- ── Bulk actions ── -->
-    <!-- Purchase receiving is only ever created per-PO (its own form walks the
-         operator through picking SKUs/assignee for that one receipt) — no bulk
-         "create from multiple POs" action here, just Edit tracking no. / Cancel. -->
+    <!-- "Create purchase receiving" is per-order only, so it appears in the menu
+         ONLY on single-select; a multi-select drops it and shows a caption
+         explaining why (mirrors the outbound "single-warehouse" hint). Edit
+         tracking no. / Cancel still work across the whole selection. -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
+      <span v-if="(selectedRows as Set<number>).size > 1" class="rcv-bulk-hint">
+        A receiving task can only be created for one order at a time.
+      </span>
       <MpPopover id="rcv-bulk-actions" is-close-on-select placement="bottom-start" use-portal>
         <MpPopoverTrigger>
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm btn-enterprise--icon-after">
@@ -350,6 +372,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
+            <MpPopoverListItem
+              v-if="canBulkCreateReceiving(selectedRows as Set<number>)"
+              @click="bulkCreateReceiving(selectedRows as Set<number>, deselectAll)"
+            >Create purchase receiving</MpPopoverListItem>
             <MpPopoverListItem @click="bulkEditTracking(selectedRows as Set<number>, deselectAll)">Edit tracking no.</MpPopoverListItem>
             <MpPopoverListItem
               v-if="bulkCancelable(selectedRows as Set<number>)"
@@ -475,35 +501,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
 
-    <!-- ── Cell: Purchase no. — View details chip on hover ── -->
+    <!-- ── Cell: Purchase no. — the number is a link to the receipt detail ── -->
     <template #cell-purchaseNo="{ value, row }">
-      <div class="cell-with-action">
-        <span class="rcv-po">
-          <span class="cell-text rcv-po__no">{{ value }}</span>
-          <span v-if="colVis.memo && (row as unknown as Receipt).memo" class="rcv-po__memo">{{ (row as unknown as Receipt).memo }}</span>
-        </span>
-        <button class="row-hover-btn" @click.stop="viewDetails(row as unknown as Receipt)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <span class="rcv-po">
+        <a class="cell-link cell-text rcv-po__no" @click.stop="viewDetails(row as unknown as Receipt)">{{ value }}</a>
+        <span v-if="colVis.memo && (row as unknown as Receipt).memo" class="rcv-po__memo">{{ (row as unknown as Receipt).memo }}</span>
+      </span>
     </template>
 
-    <!-- ── Warehouse — wrap to 2 lines instead of bleeding; View details chip on hover ── -->
+    <!-- ── Warehouse — the name links to the warehouse detail ── -->
     <template #cell-warehouseName="{ value, row }">
-      <div class="cell-with-action">
-        <span class="rcv-warehouse">{{ value }}</span>
-        <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${(row as unknown as Receipt).warehouseId}`)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
-      </div>
+      <a class="cell-link rcv-warehouse" @click.stop="router.push(`/warehouses/${(row as unknown as Receipt).warehouseId}`)">{{ value }}</a>
     </template>
 
     <!-- ── Vendor ── -->
@@ -737,6 +745,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 </template>
 
 <style scoped>
+/* Bulk bar caption when a multi-select can't create a per-order receiving task
+   (mirrors OutgoingIndexPage's .out-bulk-hint). */
+.rcv-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+
 /* Filter bar — reused from index pages */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -855,7 +867,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-text-secondary);
 }
-.track-modal__remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical); }
+.track-modal__remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical, var(--mp-text-danger)); }
 .track-modal__add {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
   margin-top: var(--mp-spacing-3); padding: 0;
@@ -877,18 +889,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-:global(.erp-tr:hover .row-hover-btn) { display: flex; }
 
 /* Kebab — 20px tall so the actions cell stays within the 40px text-only row
    (10px vertical padding + 20px control = 40px → row stays middle-aligned). */

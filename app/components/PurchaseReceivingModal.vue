@@ -365,7 +365,7 @@ function handleCreate() {
 .pr-assignee-field { display: flex; flex-direction: column; }
 .pr-field-label {
   display: block; margin-bottom: var(--mp-spacing-1);
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default);
 }
 .pr-assignee-opt { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -458,11 +458,11 @@ function handleCreate() {
   width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-md); flex-shrink: 0;
   object-fit: cover; background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-subtle);
+  border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .pr-product-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); min-width: 0; }
 .pr-product-name {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pr-product-desc {
@@ -471,7 +471,7 @@ function handleCreate() {
 }
 .pr-sku-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pr-bin {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); letter-spacing: 0.02em;
 }
 /* Storage location — edit button reveals on row hover */

@@ -15,7 +15,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { addOutgoing } from '~/data/outgoing'
-import { addPickingTask, pickedKeysForOrder, pickedQtyForOrderSku, canPickOrder, type PickingLine } from '~/data/pickingTasks'
+import { addPickingTask, pickedKeysForOrder, pickedQtyForOrderSku, committedQtyForOrderSku, canPickOrder, type PickingLine } from '~/data/pickingTasks'
 
 const WAREHOUSE_ID = 'wh-006'
 const WAREHOUSE_NAME = 'Gudang Makassar Selatan'
@@ -109,5 +109,35 @@ describe('pickedKeysForOrder — an order SKU already on an OPEN picking task mu
 
     expect(pickedKeysForOrder(order.id).has(key)).toBe(false) // 3 left → still pickable
     expect(canPickOrder(order)).toBe(true)
+  })
+
+  // PRD 1.2 D3 (allow_partial_picking = TRUE — wh-006's default): an OPEN task that
+  // claims only PART of a SKU's qty leaves the remainder claimable on a second list,
+  // so a SKU can be split across two Open picking tasks (4 + 3 of 7). Coverage is
+  // qty-aware, not whole-line, when partial picking is on.
+  it('partial picking: an open task claiming only part of a SKU leaves the remainder pickable', () => {
+    const order = addOutgoing({
+      salesNo: 'Test Partial-Split Order', source: 'Manual',
+      warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME,
+      skuQty: 1, orderQty: 7, shippedQty: 0, status: 'open', dueDate: '2026-08-01',
+      lines: [{ sku: SKU_1, productName: 'Coffee Scale 2kg / 0.1g', desc: '', img: '', unit: 'Unit', qty: 7 }],
+    })
+    const key = `${order.id}::${SKU_1}`
+    const mkLine = (qty: number): PickingLine => ({
+      key, orderId: order.id, salesNo: order.salesNo,
+      sku: SKU_1, product: 'Coffee Scale 2kg / 0.1g', desc: '', img: '', unit: 'Unit', bin: '-', qty,
+    })
+
+    // Picking-1 claims 4 of 7 (Open). 3 still unclaimed → NOT covered, second list allowed.
+    addPickingTask({ salesOrderIds: [order.id], salesNos: [order.salesNo], warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME, assignee: 'Op', lines: [mkLine(4)] })
+    expect(committedQtyForOrderSku(order.id, SKU_1)).toBe(4)
+    expect(pickedKeysForOrder(order.id).has(key)).toBe(false)
+    expect(canPickOrder(order)).toBe(true)
+
+    // Picking-2 claims the remaining 3 (Open). Now fully committed → covered, no third list.
+    addPickingTask({ salesOrderIds: [order.id], salesNos: [order.salesNo], warehouseId: WAREHOUSE_ID, warehouseName: WAREHOUSE_NAME, assignee: 'Op', lines: [mkLine(3)] })
+    expect(committedQtyForOrderSku(order.id, SKU_1)).toBe(7)
+    expect(pickedKeysForOrder(order.id).has(key)).toBe(true)
+    expect(canPickOrder(order)).toBe(false)
   })
 })

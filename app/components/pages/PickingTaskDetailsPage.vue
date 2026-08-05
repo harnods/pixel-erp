@@ -587,7 +587,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search task or sales order…" />
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search..." />
                   <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -635,14 +635,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         <div class="content-list-col">
           <ContentList label="Warehouse">
             <div class="wh-link-wrap">
-              <span>{{ task.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">{{ task.warehouseName }}</a>
             </div>
           </ContentList>
           <ContentList label="Assignee" :value="task.assignee" />
@@ -927,16 +920,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                 <tbody>
                   <tr v-for="o in linkedOrders" :key="o.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="pkd-linked-num">{{ o.salesNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/outbound-delivery/${o.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link pkd-linked-num" @click.stop="router.push(`/outbound-delivery/${o.id}`)">{{ o.salesNo }}</a>
                     </td>
                     <td class="detail-td">{{ o.customer ?? '—' }}</td>
                     <td class="detail-td"><SourceLabel :source="o.source" /></td>
@@ -970,16 +954,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
                 <tbody>
                   <tr v-for="pk in linkedPacking" :key="pk.id" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="pkd-linked-num">{{ pk.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/packing/${pk.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link pkd-linked-num" @click.stop="router.push(`/packing/${pk.id}`)">{{ pk.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ pk.salesNo }}</td>
                     <td class="detail-td">{{ pk.assignee }}</td>
@@ -1169,12 +1144,12 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 
 .detail-bar-right { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5); flex-shrink: 0; }
 .pkd-last-updated-label { font-size: var(--mp-font-sizes-xs, 11px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-xs, 14px); }
-.pkd-last-updated-val { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.pkd-last-updated-val { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 
 .detail-jump-chevron {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
-  background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default);
+  background: none; border: none; padding: 0; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 .detail-jump { display: flex; flex-direction: column; }
@@ -1338,13 +1313,13 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 .pkd-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 .detail-items-count { display: flex; align-items: center; margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.pkd-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
+.pkd-qty--full { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }
 .pkd-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
 .pkd-qty--zero { color: var(--mp-text-placeholder); }
-.pkd-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
+.pkd-outstanding { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium, 500); }
 /* Linked-order due date + marketplace expiry caption */
 .pkd-due { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.pkd-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
+.pkd-due-expire { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium, 500); }
 
 /* Linked tabs */
 .pkd-tabs { flex-shrink: 0; }
@@ -1356,17 +1331,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 .pkd-linked { width: 100%; border-collapse: collapse; }
 .pkd-linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pkd-linked .detail-td--number { position: relative; }
-.cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5); padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label { font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase; }
-.detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 
 /* ── Footer ──────────────────────────────────────────────────────────────────── */
 .detail-footer {

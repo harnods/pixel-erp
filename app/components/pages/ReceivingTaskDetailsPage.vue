@@ -347,7 +347,7 @@ function goBack() {
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
-                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search task or PO…" />
+                  <input v-model="jumpSearch" class="detail-jump-search" type="text" placeholder="Search..." />
                   <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -403,14 +403,7 @@ function goBack() {
           <ContentList label="Purchase order" :value="po.purchaseNo" />
           <ContentList label="Warehouse">
             <div class="wh-link-wrap">
-              <span>{{ po.warehouseName }}</span>
-              <button class="row-hover-btn" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span class="row-hover-btn__label">VIEW DETAILS</span>
-              </button>
+              <a class="cell-link" @click.stop="router.push(`/warehouses/${task.warehouseId}`)">{{ po.warehouseName }}</a>
             </div>
           </ContentList>
           <ContentList label="Assignee" :value="task.assignee" />
@@ -580,16 +573,7 @@ function goBack() {
                 <tbody>
                   <tr class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="rcvgd-linked-num">{{ po.purchaseNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/inbound-delivery/${po.receiptId}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link rcvgd-linked-num" @click.stop="router.push(`/inbound-delivery/${po.receiptId}`)">{{ po.purchaseNo }}</a>
                     </td>
                     <td class="detail-td">{{ po.warehouseName }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="poStatus" /></td>
@@ -632,16 +616,7 @@ function goBack() {
                 <tbody>
                   <tr v-for="pa in linkedPutAway" :key="pa.taskNo" class="detail-item-row">
                     <td class="detail-td detail-td--number">
-                      <div class="cell-with-action">
-                        <span class="rcvgd-linked-num">{{ pa.taskNo }}</span>
-                        <button class="row-hover-btn" @click.stop="router.push(`/put-away/${pa.id}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link rcvgd-linked-num" @click.stop="router.push(`/put-away/${pa.id}`)">{{ pa.taskNo }}</a>
                     </td>
                     <td class="detail-td">{{ pa.assignee }}</td>
                     <td class="detail-td"><ErpStatusBadge :status="pa.status" /></td>
@@ -829,7 +804,7 @@ function goBack() {
   line-height: var(--mp-line-heights-xs, 14px);
 }
 .rcvgd-last-updated-val {
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); line-height: var(--mp-line-heights-sm);
   font-variant-numeric: tabular-nums;
 }
@@ -838,7 +813,7 @@ function goBack() {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-7, 28px);
   background: none; border: none; padding: 0; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
+  cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -999,34 +974,9 @@ function goBack() {
 .rcvgd-linked { width: 100%; border-collapse: collapse; }
 .rcvgd-linked .detail-th { background: var(--mp-background-neutral-subtle); }
 .rcvgd-linked-num { color: var(--mp-text-link); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-/* Number cell — "View details" chip on row hover */
+/* Number cell — name links to the linked record's detail page */
 .rcvgd-linked .detail-td--number { position: relative; }
-.rcvgd-linked .cell-with-action { display: flex; align-items: center; width: 100%; min-width: 0; }
-.rcvgd-linked .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.rcvgd-linked .row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.rcvgd-linked .detail-item-row:hover .row-hover-btn { display: flex; }
 .wh-link-wrap { position: relative; display: inline-flex; align-items: center; }
-.wh-link-wrap .row-hover-btn {
-  position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.wh-link-wrap .row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.wh-link-wrap:hover .row-hover-btn { display: flex; }
 .linked-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .linked-end__muted { color: var(--mp-text-secondary); }
 .linked-aging { display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1\.5); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg, 20px); white-space: nowrap; }
@@ -1036,10 +986,10 @@ function goBack() {
 .rcvgd-product-thumb {
   width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-md); flex-shrink: 0;
-  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle);
+  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .rcvgd-product-name {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -1050,10 +1000,10 @@ function goBack() {
 }
 
 /* Received qty coloring */
-.rcvgd-qty--full    { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
+.rcvgd-qty--full    { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }
 .rcvgd-qty--partial { color: var(--mp-text-warning-default, #854d0e); }
 .rcvgd-qty--zero    { color: var(--mp-text-placeholder); }
-.rcvgd-outstanding  { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium); }
+.rcvgd-outstanding  { color: var(--mp-text-warning-default, #854d0e); font-weight: var(--mp-font-weights-medium, 500); }
 
 /* ── Sticky footer — canonical pattern ───────────────────────────────────── */
 .detail-footer {

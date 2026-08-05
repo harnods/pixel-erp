@@ -325,7 +325,7 @@ function addToList() {
     // pattern as the dupes/already-received cases below), not a hard all-or-nothing block.
     let overLimit: string[] = []
     if (isReceiving.value) {
-      const budget = Math.max(0, receivingMaxCount.value - existing.size)
+      const budget = Math.max(0, (props.targetCount ?? 0) - existing.size)
       if (newOnes.length > budget) {
         overLimit = newOnes.slice(budget)
         newOnes = newOnes.slice(0, budget)
@@ -336,7 +336,7 @@ function addToList() {
     } else if (dupes.length) {
       addError.value = `Already in list: ${dupes.join(', ')}`
     } else if (overLimit.length) {
-      addError.value = `Exceeds purchase qty, not added: ${overLimit.join(', ')}`
+      addError.value = `Exceeds expected qty, not added: ${overLimit.join(', ')}`
     } else {
       addError.value = ''
     }
@@ -411,14 +411,21 @@ function handleDrawerScan(rawValue: string) {
       notifyScanError(`"${v}" belongs to SKU ${resolved.sku}, not ${props.sku}`)
       return
     }
+    // Receiving: a serial that already resolves to this SKU's real stock is one the
+    // system already knows about — receiving it again would double-count an existing
+    // unit, so reject it (error beep) instead of the misleading "not found" fallback.
+    if (isReceiving.value && resolved?.kind === 'serial' && resolved.sku === props.sku) {
+      notifyScanError(`"${v}" already exists in the system`)
+      return
+    }
     if (acceptsNewSerials.value && !resolved) {
       const blocked = new Set((props.blockedSerials ?? []).map(normalizeCode))
       if (isReceiving.value && blocked.has(normalizeCode(v))) {
         notifyScanError(`"${v}" was already received in a prior task`)
         return
       }
-      if (isReceiving.value && rows.value.length >= receivingMaxCount.value) {
-        notifyScanError(`"${v}": purchase qty already fully received`)
+      if (isReceiving.value && rows.value.length >= (props.targetCount ?? 0)) {
+        notifyScanError(`"${v}": expected qty already fully received`)
         return
       }
       rows.value.push({ serial: v, counted: true })
@@ -756,7 +763,7 @@ async function handleSave() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
-            <input v-model="search" class="msn-search-input" type="text" placeholder="Search serial number" />
+            <input v-model="search" class="msn-search-input" type="text" placeholder="Search..." />
             <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>

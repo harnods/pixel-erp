@@ -14,7 +14,8 @@
     use-portal
     is-close-on-escape
     v-slot="{ onClosePopover }"
-    @close="view = 'main'"
+    @open="onPopoverOpen"
+    @close="onPopoverClose"
   >
     <MpPopoverTrigger>
       <div class="erp-user" role="button" tabindex="0" aria-label="Open account menu">
@@ -166,6 +167,21 @@ const primaryItems = [
 
 // Which panel of the popover is showing: the account menu, or the WMS scenario picker.
 const view = ref<"main" | "wms">("main");
+
+// Reset to the main view only on a GENUINE close. A hover popover does a transient
+// close→reopen when you click inside it (e.g. tapping "Switch to WMS"), which would
+// otherwise snap the sub-view straight back to main before you can pick a scenario.
+// Debounce: the immediate reopen cancels the pending reset, so the wms view sticks;
+// a real close (cursor left, stays gone) resets after the delay. Same pattern as
+// ErpQuickCreateMenu.
+let resetTimer: ReturnType<typeof setTimeout> | null = null;
+function onPopoverOpen() {
+  if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+}
+function onPopoverClose() {
+  if (resetTimer) clearTimeout(resetTimer);
+  resetTimer = setTimeout(() => { view.value = "main"; resetTimer = null; }, 300);
+}
 
 // Scenarios the user can switch into. ERP is the default (no WMS selected initially).
 const scenarios: Scenario[] = ["ERP", "WMS Standalone", "WMS Ops", "WMS Ops 2"];

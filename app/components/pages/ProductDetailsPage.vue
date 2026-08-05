@@ -284,9 +284,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </ContentList>
           </div>
           <div class="pd-field-col pd-field-col--flex">
-            <ContentList label="On hand qty" :value="formatQty(product.onHand, product.unit)" />
-            <ContentList label="Reserved qty" :value="formatQty(product.reserved, product.unit)" />
-            <ContentList label="Available qty" :value="formatQty(product.available, product.unit)" />
+            <ContentList label="On hand" :value="formatQty(product.onHand, product.unit)" />
+            <ContentList label="Reserved" :value="formatQty(product.reserved, product.unit)" />
+            <ContentList label="Available" :value="formatQty(product.available, product.unit)" />
             <ContentList label="Min. stock" :value="formatQty(product.minStock, product.unit)" />
           </div>
         </div>
@@ -321,6 +321,31 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           </div>
         </section>
       </div>
+
+      <!-- Tax info — only shown once tax info has actually been filled in on the product.
+           Reuses Purchase/Sales info's exact column structure (pd-two-col flex:1 pair +
+           fixed 270px column) so Product classification/DJP code/DJP unit line up with
+           Default purchase cost/Default purchase account/Default sales price above. -->
+      <section v-if="product.djpCode" class="pd-section">
+        <h2 class="pd-section-title">Tax info</h2>
+        <div class="pd-two-col">
+          <section class="pd-section pd-section--flex">
+            <div class="pd-purchase-row">
+              <div class="pd-field-col pd-field-col--flex">
+                <ContentList label="Product classification" :value="product.productClassification" />
+              </div>
+              <div class="pd-field-col pd-field-col--flex">
+                <ContentList label="DJP code" :value="product.djpCode" />
+              </div>
+            </div>
+          </section>
+          <section class="pd-section pd-section--flex">
+            <div class="pd-field-col pd-field-col--djp-unit">
+              <ContentList label="DJP unit" :value="product.djpUnit" />
+            </div>
+          </section>
+        </div>
+      </section>
 
       <a class="detail-updated" @click.prevent="activityOpen = true">
         Created by {{ product.createdBy }} on {{ createdLabel }}
@@ -408,16 +433,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <tr v-for="tx in pagedTransactions" :key="tx.id" class="pd-tr">
                     <td class="pd-td">{{ formatDate(tx.date) }}</td>
                     <td class="pd-td">
-                      <div class="cell-with-action">
-                        <span class="cell-text">{{ tx.number }}</span>
-                        <button class="row-hover-btn" type="button">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link cell-text" @click.stop>{{ tx.number }}</a>
                     </td>
                     <td class="pd-td">
                       <div class="pd-movement" :class="tx.delta >= 0 ? 'pd-movement--pos' : 'pd-movement--neg'">
@@ -498,9 +514,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     <th class="pd-th">Number</th>
                     <th class="pd-th">Expiration date</th>
                     <th class="pd-th">Description</th>
-                    <th class="pd-th pd-th--num">On hand qty</th>
-                    <th class="pd-th pd-th--num">Reserved qty</th>
-                    <th class="pd-th pd-th--num">Available qty</th>
+                    <th class="pd-th pd-th--num">On hand</th>
+                    <th class="pd-th pd-th--num">Reserved</th>
+                    <th class="pd-th pd-th--num">Available</th>
                     <th class="pd-th">Unit</th>
                     <th class="pd-th"></th>
                   </tr>
@@ -508,16 +524,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <tbody>
                   <tr v-for="b in pagedBatches" :key="b.batchNo" class="pd-tr">
                     <td class="pd-td">
-                      <div class="cell-with-action">
-                        <span class="cell-text">{{ b.batchNo }}</span>
-                        <button class="row-hover-btn" type="button" @click.stop="viewBatch(b.batchNo)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link cell-text" @click.stop="viewBatch(b.batchNo)">{{ b.batchNo }}</a>
                     </td>
                     <td class="pd-td">
                       <span class="pd-expiry-cell" :class="{ 'pd-expiry-cell--danger': isExpiryWarning(b.expiryDate) }">
@@ -582,39 +589,20 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <thead>
                   <tr>
                     <th class="pd-th">Warehouse</th>
-                    <th class="pd-th">Available qty</th>
-                    <th class="pd-th">Reserved qty</th>
+                    <th class="pd-th">Available</th>
+                    <th class="pd-th">Reserved</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="s in pagedSerialStock" :key="s.warehouseId" class="pd-tr">
                     <td class="pd-td">
-                      <div class="cell-with-action">
-                        <span class="cell-text">{{ s.warehouseName }}</span>
-                        <button class="row-hover-btn" type="button" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link cell-text" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">{{ s.warehouseName }}</a>
                     </td>
                     <td class="pd-td">
-                      <div class="cell-with-action">
-                        <span class="cell-text">{{ serialCountLabel(s.availableCount) }}</span>
-                        <button class="row-hover-btn" type="button" @click.stop="openSerialDrawer(s.warehouseId, 'available')">
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link cell-text" @click.stop="openSerialDrawer(s.warehouseId, 'available')">{{ serialCountLabel(s.availableCount) }}</a>
                     </td>
                     <td class="pd-td">
-                      <div class="cell-with-action">
-                        <span class="cell-text">{{ serialCountLabel(s.reservedCount) }}</span>
-                        <button class="row-hover-btn" type="button" @click.stop="openSerialDrawer(s.warehouseId, 'reserved')">
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link cell-text" @click.stop="openSerialDrawer(s.warehouseId, 'reserved')">{{ serialCountLabel(s.reservedCount) }}</a>
                     </td>
                   </tr>
                 </tbody>
@@ -663,16 +651,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <tbody>
                   <tr v-for="s in pagedWarehouseStock" :key="s.warehouseId" class="pd-tr">
                     <td class="pd-td">
-                      <div class="cell-with-action">
-                        <span class="cell-text">{{ s.warehouseName }}</span>
-                        <button class="row-hover-btn" type="button" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link cell-text" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">{{ s.warehouseName }}</a>
                     </td>
                     <td class="pd-td pd-td--num">{{ s.onHand.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.reserved.toLocaleString('id-ID') }}</td>
@@ -817,6 +796,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .pd-field-col { display: flex; flex-direction: column; }
 .pd-field-col--flex { flex: 1; min-width: 0; }
+.pd-field-col--djp-unit { width: 270px; }
 .pd-two-col { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
 .pd-purchase-row { display: flex; gap: var(--mp-spacing-6); }
 .pd-link { color: var(--mp-text-link); cursor: pointer; }
@@ -868,21 +848,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 .pd-tr:hover .pd-td { background: var(--mp-background-neutral-hovered); }
 
-/* Number / Warehouse cells — "View details" chip on row hover */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Number / Warehouse cells — the value links to the record's detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.pd-tr:hover .row-hover-btn { display: flex; }
 
 /* Expiration date cell — warning icon + tint when a batch is near/past expiry
    (mirrors StockTables.vue's wh-expiry-cell) */

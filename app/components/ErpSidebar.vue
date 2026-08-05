@@ -37,22 +37,54 @@
         <div class="panel-list">
           <template v-for="(group, gi) in activePanel.groups" :key="gi">
             <div v-if="gi > 0" class="panel-divider" />
-            <button
-              v-for="sub in group"
-              :key="sub.label"
-              class="panel-item"
-              :class="{ active: activePanelSubItem === sub.label }"
-              @click="handlePanelSubItemClick(sub)"
-            >
-              <span>{{ sub.label }}</span>
-              <span v-if="sub.count != null" class="panel-item-count">{{ sub.count }}</span>
-              <img
-                v-else-if="sub.iconType === 'shortcut'"
-                :src="shortcutIcon"
-                class="panel-item-icon"
-                alt=""
-              />
-            </button>
+            <template v-for="sub in group" :key="sub.label">
+              <!-- Accordion item (e.g. Fixed assets): expandable header + children -->
+              <template v-if="sub.children">
+                <button
+                  class="panel-item panel-item--accordion"
+                  :class="{ 'is-open': isAccordionOpen(sub) }"
+                  @click="handlePanelAccordionClick(sub)"
+                >
+                  <span>{{ sub.label }}</span>
+                  <svg class="panel-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </button>
+                <button
+                  v-for="child in sub.children"
+                  v-show="isAccordionOpen(sub)"
+                  :key="child.label"
+                  class="panel-item panel-item--child"
+                  :class="{ active: activePanelSubItem === child.label }"
+                  @click="handlePanelSubItemClick(child)"
+                >
+                  <span>{{ child.label }}</span>
+                  <MpBadge v-if="child.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ child.count }}</MpBadge>
+                </button>
+              </template>
+              <!-- Plain item -->
+              <button
+                v-else
+                class="panel-item"
+                :class="{ active: activePanelSubItem === sub.label }"
+                @click="handlePanelSubItemClick(sub)"
+              >
+                <span>{{ sub.label }}</span>
+                <MpBadge v-if="sub.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ sub.count }}</MpBadge>
+                <img
+                  v-else-if="sub.iconType === 'shortcut'"
+                  :src="shortcutIcon"
+                  class="panel-item-icon"
+                  alt=""
+                />
+                <img
+                  v-else-if="sub.iconType === 'settings'"
+                  :src="settingsIcon"
+                  class="panel-item-icon"
+                  alt=""
+                />
+              </button>
+            </template>
           </template>
         </div>
       </div>
@@ -68,8 +100,8 @@
       @mouseenter="cancelClose"
       @mouseleave="scheduleClose"
     >
-      <template v-for="(group, gi) in flyoutItem.submenu" :key="gi">
-        <div class="submenu-group" :class="{ 'has-border': gi < (flyoutItem.submenu?.length ?? 0) - 1 }">
+      <template v-for="(group, gi) in flyoutGroups" :key="gi">
+        <div class="submenu-group" :class="{ 'has-border': gi < flyoutGroups.length - 1 }">
           <button
             v-for="sub in group"
             :key="sub.label"
@@ -88,11 +120,13 @@
 </template>
 
 <script setup lang="ts">
+import { MpIcon, MpBadge } from '@mekari/pixel3'
 import toggleIconUrl from '~/assets/images/sidebar-toggle.svg?url'
 import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import { receiptCountsByStage } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
+import { awaitingApprovalGroupCounts, awaitingApprovalTasks } from '~/data/tasks'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -107,17 +141,31 @@ interface PanelSubItem {
   to?: string
   /** Task-count indicator shown right-aligned (e.g. items awaiting action). */
   count?: number
+  /** Inline accordion inside the level-2 panel: this item becomes an expandable
+   *  header whose children render indented below it. The accordion is closed by
+   *  default and only expands while one of its children is the active page (e.g.
+   *  Accounting › Fixed assets → Assets / Depreciation schedule). Clicking the
+   *  header lands on the first child. */
+  children?: PanelSubItem[]
+  /** Cross-section shortcut: jump to another nav's panel item (e.g. a module's
+   *  "reports" shortcut opening Reports › Sales) instead of navigating in place. */
+  shortcutTo?: { nav: string; sub: string }
 }
 
 // Level-2 flyout item. If panelSubmenu is set, clicking it opens a level-3 panel.
 interface SubItem {
   label: string
   iconType?: 'shortcut' | 'settings'
+  /** Inline accordion children promoted into the level-2 panel (see
+   *  PanelSubItem.children) — carried through expandGroupsFor. */
+  children?: PanelSubItem[]
   panelSubmenu?: PanelSubItem[][]
   /** Override panel title. Defaults to parent nav item name. */
   panelTitle?: string
   /** Navigation identity (page label), when it differs from the display label. */
   to?: string
+  /** Cross-section shortcut: jump to another nav's panel item (e.g. Reports › Sales). */
+  shortcutTo?: { nav: string; sub: string }
 }
 
 interface NavItem {
@@ -127,6 +175,13 @@ interface NavItem {
   submenu?: SubItem[][]
   /** Level-2 panel opened directly by clicking the nav item (e.g. Reports) */
   panelSubmenu?: PanelSubItem[][]
+  /**
+   * Panel menus (panelSubmenu) open on click with no hover preview by default —
+   * like Inventory and Settings. Set this so hovering ALSO shows a flyout of the
+   * panel items (e.g. Reports); clicking a flyout item opens the full panel with
+   * that item selected. Opt-in, so Inventory/Settings stay click-only.
+   */
+  flyoutOnHover?: boolean
   /**
    * When set, clicking ANY flyout item (that doesn't already have its own
    * nested panelSubmenu) promotes it into a persistent level-2 panel instead
@@ -180,6 +235,11 @@ const isPanelVisible = ref(true)
 const activeItem = ref('Home')
 const activePanel = ref<ActivePanel | null>(null)
 const activePanelSubItem = ref<string | null>(null)
+// Which accordion (e.g. Fixed assets) the user has manually expanded in the
+// level-2 panel. Closed by default; toggled purely by clicking the header — it
+// never navigates on its own. (An accordion also shows open whenever one of its
+// children is the active page — see isAccordionOpen.)
+const expandedAccordion = ref<string | null>(null)
 
 const toggleIcon = toggleIconUrl
 const shortcutIcon = shortcutIconUrl
@@ -187,6 +247,30 @@ const settingsIcon = 'https://cdn.mekari.design/icons/settings-outline.svg'
 
 const { navigate, currentPageKey, setActiveMenuLabel, activeSectionOverride } = useNavigation()
 const router = useRouter()
+const route = useRoute()
+
+// Inbox level-2 panel — reached from the header notification icon (not the nav
+// tree). Its tabs route via ?tab= so the page key stays 'Inbox' (same pattern as
+// the Reports panel, but query-driven since it's a single page). "Awaiting
+// approval" is a non-clickable, always-expanded parent — only its per-category
+// children (counts live from awaitingApprovalGroupCounts) are navigable.
+const inboxPanelSubmenu = computed<PanelSubItem[][]>(() => {
+  const counts = awaitingApprovalGroupCounts()
+  return [[
+    { label: 'Notifications', path: '/inbox?tab=notifications' },
+    {
+      label: 'Awaiting approval',
+      children: [
+        { label: 'All', path: '/inbox?tab=awaiting-approval&innerTab=all', count: awaitingApprovalTasks.length || undefined },
+        { label: 'Sales', path: '/inbox?tab=awaiting-approval&innerTab=sales', count: counts.sales || undefined },
+        { label: 'Purchases', path: '/inbox?tab=awaiting-approval&innerTab=purchases', count: counts.purchases || undefined },
+        { label: 'Expenses', path: '/inbox?tab=awaiting-approval&innerTab=expenses', count: counts.expenses || undefined },
+        { label: 'Products', path: '/inbox?tab=awaiting-approval&innerTab=products', count: counts.products || undefined },
+        { label: 'Warehouse', path: '/inbox?tab=awaiting-approval&innerTab=warehouse', count: counts.warehouse || undefined },
+      ],
+    },
+  ]]
+})
 
 const flyoutItem = ref<NavItem | null>(null)
 const flyoutStyle = ref<Record<string, string>>({})
@@ -199,6 +283,13 @@ const navExpanded = computed(() => isExpanded.value && !activePanel.value)
 // Arrow points left when nav is expanded OR when a panel is visible
 const arrowPointsLeft = computed(() => navExpanded.value || (!!activePanel.value && isPanelVisible.value))
 
+// What the hover flyout renders: a submenu item's own flyout, or — for a panel
+// menu that opted into a hover preview (flyoutOnHover, e.g. Reports) — its panel
+// items. PanelSubItem is shape-compatible with SubItem for rendering + clicks.
+const flyoutGroups = computed<SubItem[][]>(
+  () => flyoutItem.value?.submenu ?? (flyoutItem.value?.panelSubmenu as SubItem[][] | undefined) ?? [],
+)
+
 // ─── Nav data ────────────────────────────────────────────────────────────────
 
 // Settings level-2 panel — shared so WMS Standalone shows the same Settings list as ERP.
@@ -209,11 +300,14 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Billing' },
   ],
   [
-    { label: 'Sales' },
-    { label: 'Purchases' },
-    { label: 'Inventory' },
+    // Own routing identity so these are the settings pages (e.g. /sales-settings),
+    // not the module list pages (/sales). The modules' own gear shortcuts point at
+    // these same pages; findActive lets Settings own the highlight (see below).
+    { label: 'Sales', to: 'Sales settings' },
+    { label: 'Purchases', to: 'Purchase settings' },
+    { label: 'Inventory', to: 'Inventory settings' },
     { label: 'Warehouses', to: 'Warehouse settings' },
-    { label: 'Production' },
+    { label: 'Production', to: 'Production settings' },
     { label: 'Default accounts' },
   ],
   [
@@ -222,8 +316,20 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Approval workflows' },
     { label: 'Tagging rules' },
   ],
-  // Tax rates / Currencies / Payment terms / Payment methods / Tags intentionally
-  // omitted here — they live under "Other lists" instead (no duplication).
+  [
+    // Moved back from "Other lists" — configuration lists that belong under
+    // Settings. Recurring transactions, Activity log, Export & import, File
+    // manager, and Cost recalculation stay in "Other lists".
+    { label: 'Tax rates' },
+    { label: 'Currencies' },
+    { label: 'Payment terms' },
+    { label: 'Payment methods' },
+    { label: 'Tags' },
+  ],
+  [
+    // Data migration sits on its own with a divider above it.
+    { label: 'Data migration' },
+  ],
 ]
 
 // Settings level-2 panel for WMS Standalone — a trimmed, warehouse-focused list.
@@ -246,15 +352,20 @@ const erpNavGroups: NavItem[][] = [
     { name: 'Dashboard', icon: 'dashboard' },
     {
       name: 'Reports', icon: 'reports',
+      flyoutOnHover: true,
+      // Each report has its own routing identity (`to`) so it never collides with
+      // the same-named module or Settings page (e.g. Reports › Sales → /sales-report,
+      // not /sales). Module "X reports" shortcuts point here via `shortcutTo`.
       panelSubmenu: [[
-        { label: 'Financials' },
-        { label: 'Sales' },
-        { label: 'Purchases' },
-        { label: 'Inventory' },
-        { label: 'Tax' },
-        { label: 'Cash & bank' },
-        { label: 'Production' },
-        { label: 'Fixed assets' },
+        { label: 'Financials', to: 'Financial report' },
+        { label: 'Sales', to: 'Sales report' },
+        { label: 'Purchases', to: 'Purchase report' },
+        { label: 'Inventory', to: 'Inventory report' },
+        { label: 'WMS', to: 'WMS report' },
+        { label: 'Tax', to: 'Tax report' },
+        { label: 'Cash & bank', to: 'Cash & bank report' },
+        { label: 'Production', to: 'Production report' },
+        { label: 'Fixed assets', to: 'Fixed assets report' },
       ]],
     },
     {
@@ -267,7 +378,10 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Consolidation' },
           { label: 'Chart of accounts' },
           { label: 'Close books' },
-          { label: 'Fixed assets' },
+          { label: 'Fixed assets', children: [
+            { label: 'Assets' },
+            { label: 'Depreciation schedule' },
+          ] },
           { label: 'Bank rules' },
         ],
         [{ label: 'Accounting settings', iconType: 'settings' }],
@@ -287,7 +401,7 @@ const erpNavGroups: NavItem[][] = [
         ],
         [
           { label: 'Customers', iconType: 'shortcut' },
-          { label: 'Sales reports', iconType: 'shortcut' },
+          { label: 'Sales reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'Sales' } },
           { label: 'Sales settings', iconType: 'settings' },
         ],
       ],
@@ -305,7 +419,7 @@ const erpNavGroups: NavItem[][] = [
         ],
         [
           { label: 'Vendors', iconType: 'shortcut' },
-          { label: 'Purchase reports', iconType: 'shortcut' },
+          { label: 'Purchase reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'Purchases' } },
           { label: 'Purchase settings', iconType: 'settings' },
         ],
       ],
@@ -327,7 +441,7 @@ const erpNavGroups: NavItem[][] = [
         ],
         [
           { label: 'Stock adjustments', iconType: 'shortcut' },
-          { label: 'Products reports', iconType: 'shortcut' },
+          { label: 'Products reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'Inventory' } },
           { label: 'Inventory settings', iconType: 'settings' },
         ],
       ],
@@ -337,6 +451,7 @@ const erpNavGroups: NavItem[][] = [
       expandOnClick: true,
       submenu: [
         [
+          { label: 'Overview' },
           { label: 'Warehouses' },
           { label: 'Outbound delivery' },
           { label: 'Inbound delivery' },
@@ -346,8 +461,8 @@ const erpNavGroups: NavItem[][] = [
         [
           { label: 'Storage locations' },
           { label: 'Couriers' },
-          { label: 'Warehouse reports', iconType: 'shortcut' },
-          { label: 'Warehouse settings', iconType: 'shortcut' },
+          { label: 'Warehouse reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'WMS' } },
+          { label: 'Warehouse settings', iconType: 'settings' },
         ],
       ],
     },
@@ -356,7 +471,7 @@ const erpNavGroups: NavItem[][] = [
       expandOnClick: true,
       submenu: [
         [{ label: 'Production plans' }, { label: 'Production request' }, { label: 'Work orders' }, { label: 'Bill of materials' }],
-        [{ label: 'Production reports', iconType: 'shortcut' }, { label: 'Production settings', iconType: 'settings' }],
+        [{ label: 'Production reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'Production' } }, { label: 'Production settings', iconType: 'settings' }],
       ],
     },
   ],
@@ -397,13 +512,13 @@ const erpNavGroups: NavItem[][] = [
       ],
     },
     {
-      name: 'Integrations', icon: 'connected_apps',
+      name: 'Integrations', icon: 'add-ons',
       submenu: [[
         { label: 'Omnichannel commerce', iconType: 'shortcut' },
         { label: 'CRM', iconType: 'shortcut' },
         { label: 'HR & Payroll', iconType: 'shortcut' },
         { label: 'e-Signature', iconType: 'shortcut' },
-        { label: 'Tax' },
+        // { label: 'Tax' }, // Klikpajak paywall/first-run hidden for now
         { label: 'Mekari Pay' },
         { label: 'Mekari Expense', iconType: 'shortcut' },
       ]],
@@ -412,10 +527,8 @@ const erpNavGroups: NavItem[][] = [
       name: 'Other lists', icon: 'table-view-list',
       expandOnClick: true,
       submenu: [[
-        { label: 'Recurring transactions' }, { label: 'Tax rates' }, { label: 'Currencies' },
-        { label: 'Payment terms' }, { label: 'Payment methods' }, { label: 'Tags' },
-        { label: 'Export & import' }, { label: 'File manager' }, { label: 'Activity log' },
-        { label: 'Data migration' }, { label: 'Cost recalculation' },
+        { label: 'Recurring transactions' }, { label: 'Activity log' },
+        { label: 'Export & import' }, { label: 'File manager' }, { label: 'Cost recalculation' },
       ]],
     },
     {
@@ -468,7 +581,15 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
   [
     { name: 'Home', icon: 'home' },
     { name: 'Dashboard', icon: 'dashboard' },
-    { name: 'Reports', icon: 'reports' },
+    {
+      name: 'Reports', icon: 'reports',
+      panelSubmenu: [[
+        { label: 'Inbound timeliness' },
+        { label: 'Inbound accuracy' },
+        { label: 'Outbound timeliness' },
+        { label: 'Outbound accuracy' },
+      ]],
+    },
   ],
   [
     // Inventory carries a level-2 panel (Products, Categories, …) — mirrors the ERP
@@ -490,6 +611,8 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
     { name: 'Inbound delivery', icon: 'cart' },
   ],
   [
+    // Mirrors the ERP "Warehouse transfers" module — same page (/warehouse-transfers).
+    { name: 'Warehouse transfers', icon: 'transfer' },
     {
       name: 'Stock adjustments', icon: 'table-view-list',
       panelSubmenu: [[
@@ -549,7 +672,17 @@ const navGroups = computed<NavItem[][]>(() => {
 // explicit array, or a verbatim mirror of its flyout submenu.
 function expandGroupsFor(item: NavItem): PanelSubItem[][] {
   if (Array.isArray(item.expandOnClick)) return item.expandOnClick
-  return (item.submenu ?? []).map((group) => group.map((s) => ({ label: s.label, iconType: s.iconType, to: s.to })))
+  return (item.submenu ?? []).map((group) => group.map((s) => ({ label: s.label, iconType: s.iconType, to: s.to, children: s.children })))
+}
+
+// A panel/flyout item flagged 'shortcut' or 'settings' is a POINTER into another
+// section's page, not that page's owner — e.g. a module's gear "Sales settings"
+// points at the Settings › Sales page; WMS's "Warehouse settings" too. On the
+// first resolution pass we skip pointers so the real owning section (Settings,
+// Reports) wins the highlight; the second pass (allowShortcuts=true) still lets a
+// standalone pointer resolve when nothing else claims the URL.
+function isPointer(iconType?: 'shortcut' | 'settings'): boolean {
+  return iconType === 'shortcut' || iconType === 'settings'
 }
 
 function findActive(pageKey: string, allowShortcuts: boolean): {
@@ -577,9 +710,17 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
         const groups = expandGroupsFor(item)
         for (const g of groups) {
           for (const p of g) {
-            if (!allowShortcuts && p.iconType === 'shortcut') continue
+            if (!allowShortcuts && isPointer(p.iconType)) continue
             if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
               return { nav: item.name, sub: p.label, panel: { title: item.name, groups, parentNavName: item.name } }
+            }
+            // Accordion children (e.g. Fixed assets › Assets): the active sub is the
+            // child, so a refresh on its page restores the panel with the accordion
+            // expanded (isAccordionOpen keys off the active child).
+            for (const child of p.children ?? []) {
+              if (labelToPath(child.to ?? child.label) === labelToPath(pageKey)) {
+                return { nav: item.name, sub: child.label, panel: { title: item.name, groups, parentNavName: item.name } }
+              }
             }
           }
         }
@@ -589,11 +730,19 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
           // Shortcut flyout items (e.g. WMS → "Warehouse settings") are pointers
           // into another module's page, not owners — skip on the first pass so the
           // real owning section (Settings) wins the active highlight.
-          if (!allowShortcuts && sub.iconType === 'shortcut') continue
-          if (sub.label === pageKey) return { nav: item.name, sub: sub.label, panel: null }
+          if (!allowShortcuts && isPointer(sub.iconType)) continue
+          // Only a leaf flyout item resolves to itself here. An item that owns a
+          // level-3 panel (e.g. Contacts › Customers) must fall through to the
+          // panelSubmenu loop so the panel is restored/opened, not left collapsed.
+          // Slug-based compare (like every other match) so labels whose casing/
+          // punctuation don't survive the URL round-trip still resolve — e.g.
+          // 'Mekari Pay' → /mekari-pay → 'Mekari pay', 'CRM' → 'Crm'.
+          if (!sub.panelSubmenu && labelToPath(sub.to ?? sub.label) === labelToPath(pageKey)) {
+            return { nav: item.name, sub: sub.label, panel: null }
+          }
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
-              if (!allowShortcuts && p.iconType === 'shortcut') continue
+              if (!allowShortcuts && isPointer(p.iconType)) continue
               if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
                 return {
                   nav: item.name,
@@ -612,7 +761,7 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
       }
       for (const pGroup of item.panelSubmenu ?? []) {
         for (const p of pGroup) {
-          if (!allowShortcuts && p.iconType === 'shortcut') continue
+          if (!allowShortcuts && isPointer(p.iconType)) continue
           if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
             return {
               nav: item.name,
@@ -648,8 +797,27 @@ const SECTION_PARENT: Record<string, string> = {
   'Put away': 'Inbound delivery',
 }
 
-watch([currentPageKey, activeSectionOverride], ([urlKey, override]) => {
+watch([currentPageKey, activeSectionOverride, () => route.query.tab, () => route.query.innerTab], ([urlKey, override]) => {
   const key = override ?? urlKey
+  // Inbox is reached from the header notification icon, not the sidebar tree —
+  // open its own level-2 panel (titled INBOX) and don't highlight any nav item.
+  if (key === 'Inbox') {
+    const tab = (route.query.tab as string | undefined) ?? 'notifications'
+    const groups = inboxPanelSubmenu.value
+    let matchLabel = groups[0][0]!.label // 'Notifications'
+    if (tab === 'awaiting-approval') {
+      const awaitingApproval = groups[0][1]!
+      const innerTab = (route.query.innerTab as string | undefined) ?? 'sales'
+      const child = awaitingApproval.children!.find(c => c.path?.includes(`innerTab=${innerTab}`))
+        ?? awaitingApproval.children![0]!
+      matchLabel = child.label
+    }
+    openPanel({ title: 'Inbox', groups, parentNavName: 'Inbox' })
+    activePanelSubItem.value = matchLabel
+    activeItem.value = ''
+    setActiveMenuLabel(matchLabel)
+    return
+  }
   let { nav, sub, panel } = resolveActive(key)
   // When the URL key isn't in this scenario's nav tree, try the canonical parent
   // section instead so the sidebar stays anchored (and the level-2 panel stays open).
@@ -763,12 +931,43 @@ function handleNavClick(item: NavItem) {
   }
 }
 
+// Jump to another nav section's panel item — used by module "reports" shortcuts,
+// which open the central Reports panel (e.g. Reports › Sales) rather than a report
+// page inside the module. Opens the target nav's panel, highlights the sub-item,
+// and navigates there so the sidebar shows Reports (not the originating module).
+function openShortcutTo(navName: string, subLabel: string) {
+  flyoutItem.value = null
+  const nav = navGroups.value.flat().find((n) => n.name === navName)
+  if (!nav?.panelSubmenu) return
+  openPanel({ title: nav.name, groups: nav.panelSubmenu, parentNavName: nav.name })
+  activePanelSubItem.value = subLabel
+  const target = nav.panelSubmenu.flat().find((s) => s.label === subLabel)
+  navigate(target?.to ?? subLabel)
+  activeItem.value = nav.name
+}
+
 function handlePanelSubItemClick(sub: PanelSubItem) {
+  if (sub.shortcutTo) { openShortcutTo(sub.shortcutTo.nav, sub.shortcutTo.sub); return }
   activePanelSubItem.value = sub.label
-  navigate(sub.to ?? sub.label)
+  if (sub.path) router.push(sub.path)
+  else navigate(sub.to ?? sub.label)
+}
+
+// An accordion (e.g. Fixed assets) shows open when the user manually expanded it
+// OR when one of its children is the active page (so it's expanded while you're
+// inside that section, and restores open on refresh). Closed by default.
+function isAccordionOpen(sub: PanelSubItem): boolean {
+  if (expandedAccordion.value === sub.label) return true
+  return sub.children?.some((c) => c.label === activePanelSubItem.value) ?? false
+}
+// Clicking the accordion header only expands/collapses it — it does NOT navigate.
+// The user then picks a child (e.g. Assets, Depreciation schedule) to go there.
+function handlePanelAccordionClick(sub: PanelSubItem) {
+  expandedAccordion.value = expandedAccordion.value === sub.label ? null : sub.label
 }
 
 function handleFlyoutSubItemClick(sub: SubItem) {
+  if (sub.shortcutTo) { openShortcutTo(sub.shortcutTo.nav, sub.shortcutTo.sub); return }
   const parentItem = flyoutItem.value!
   const parentName = parentItem.name
   flyoutItem.value = null
@@ -786,6 +985,26 @@ function handleFlyoutSubItemClick(sub: SubItem) {
     // clicked item (see NavItem.expandOnClick).
     const groups = expandGroupsFor(parentItem)
     openPanel({ title: parentName, groups, parentNavName: parentName })
+    activeItem.value = parentName
+    if (sub.children) {
+      // The hover flyout is a quick-jump: clicking an accordion item (e.g. Fixed
+      // assets) navigates straight to its default child (Assets) — the accordion
+      // then shows open in the panel because that child is active. (This differs
+      // from the panel header, which only toggles.)
+      const first = sub.children[0]
+      if (first) {
+        activePanelSubItem.value = first.label
+        navigate(first.to ?? first.label)
+      }
+    } else {
+      activePanelSubItem.value = sub.label
+      navigate(sub.to ?? sub.label)
+    }
+  } else if (parentItem.panelSubmenu) {
+    // Panel menu with a hover flyout (flyoutOnHover, e.g. Reports): clicking a
+    // flyout item opens the full level-2 panel with that item selected — same as
+    // clicking the panel item directly.
+    openPanel({ title: parentName, groups: parentItem.panelSubmenu, parentNavName: parentName })
     activePanelSubItem.value = sub.label
     navigate(sub.to ?? sub.label)
     activeItem.value = parentName
@@ -798,8 +1017,13 @@ function handleFlyoutSubItemClick(sub: SubItem) {
 }
 
 function handleItemMouseEnter(e: MouseEvent, item: NavItem) {
-  const ownPanelActive = item.expandOnClick && activePanel.value?.parentNavName === item.name
-  if (!item.submenu || ownPanelActive) {
+  // A panel menu previews on hover only if it opted in (flyoutOnHover, e.g. Reports).
+  const hasFlyout = !!item.submenu || (!!item.panelSubmenu && !!item.flyoutOnHover)
+  // Suppress the flyout while this item's OWN promoted/opted-in panel is open, so
+  // hovering it doesn't re-pop the preview over the panel it already expanded to.
+  const ownPanelActive =
+    (item.expandOnClick || item.flyoutOnHover) && activePanel.value?.parentNavName === item.name
+  if (!hasFlyout || ownPanelActive) {
     scheduleClose()
     return
   }
@@ -813,7 +1037,8 @@ function handleItemMouseEnter(e: MouseEvent, item: NavItem) {
 }
 
 function scheduleClose() {
-  closeTimer = setTimeout(() => { flyoutItem.value = null }, 150)
+  // Generous delay so crossing the gap from the rail to the flyout doesn't close it.
+  closeTimer = setTimeout(() => { flyoutItem.value = null }, 300)
 }
 
 function cancelClose() {
@@ -1017,6 +1242,19 @@ function cancelClose() {
   color: var(--mp-text-link, #165082);
 }
 
+/* Accordion header (e.g. Fixed assets) — chevron rotates when expanded */
+.panel-accordion-chevron {
+  flex-shrink: 0;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  transition: transform 150ms;
+}
+.panel-item--accordion.is-open .panel-accordion-chevron { transform: rotate(180deg); }
+
+/* Accordion children (e.g. Assets, Depreciation schedule) — indented under the
+   header, but with tighter left/right padding so longer labels like "Depreciation
+   schedule" stay on one line in the narrow panel. */
+.panel-item--child { padding-left: var(--mp-spacing-4); padding-right: var(--mp-spacing-1); }
+
 .panel-item-icon {
   width: var(--mp-sizes-4);
   height: var(--mp-sizes-4);
@@ -1024,24 +1262,33 @@ function cancelClose() {
   filter: brightness(0) opacity(0.5);
 }
 
-/* Task-count indicator — right-aligned pill */
+/* Task-count indicator — right-aligned; appearance (color/shape/size) comes
+   from MpBadge itself (for="additionalInformation" type="warning" size="sm"). */
 .panel-item-count {
   flex-shrink: 0;
-  min-width: var(--mp-sizes-5);
-  padding: 0 var(--mp-spacing-1\.5);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral-pressed);
-  font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg, 24px);
-  color: var(--mp-text-secondary);
-  text-align: center;
 }
 
-.panel-item.active .panel-item-count {
-  background: var(--mp-background-brand, var(--mp-text-selected));
-  color: var(--mp-text-inverse, #fff);
+/* Parent row (e.g. Awaiting approval) — not a nav target itself, just toggles
+   its children list; keeps the normal panel-item hover feedback. */
+.panel-item-chevron {
+  flex-shrink: 0;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  transition: transform 150ms ease;
 }
+.panel-item-chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
+/* Children indent 24px (--mp-spacing-6) from the panel edge; text/secondary
+   distinguishes them from top-level panel items. Active state matches
+   .panel-item.active exactly (same blue + bg) — no separate override, so a
+   selected child (e.g. "Sales") reads the same as a selected top-level item
+   (e.g. "Notifications"). */
+.panel-item--child {
+  padding-left: var(--mp-spacing-6, 24px);
+  color: var(--mp-text-secondary);
+}
+
 
 /* Slide-in transition */
 .panel-enter-active,
@@ -1074,6 +1321,17 @@ function cancelClose() {
   box-shadow: var(--mp-shadows-sm);
   padding: var(--mp-spacing-2) 0;
   font-family: var(--mp-fonts-body);
+}
+/* Invisible bridge over the 8px gap between the rail and the flyout, so moving
+   the cursor across it keeps the pointer "inside" the flyout and it doesn't
+   close before you reach it (hover-intent fix). */
+.submenu-flyout::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(-1 * var(--mp-spacing-3));
+  width: var(--mp-spacing-3);
+  height: 100%;
 }
 
 .submenu-group { display: flex; flex-direction: column; }

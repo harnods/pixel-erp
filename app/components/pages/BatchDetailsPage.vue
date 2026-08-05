@@ -15,22 +15,38 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
+import type jsPDF from 'jspdf'
 import {
-  getBatchDetail, getBatchTransactions, getBatchWarehouseStock,
+  getBatchDetail, getWarehouseBatchDetail, getBatchTransactions, getBatchWarehouseStock,
 } from '~/data/productDetails'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { formatDateTimeLong } from '~/utils/date'
 
-// orderId is "sku::batchNo" — same nested-route convention as StorageLocationDetailsPage.
+// orderId is "sku::batchNo" from the Products path, OR "warehouseId::sku::batchNo" when
+// opened from Warehouse Details — the batch page stays under /warehouses in that case,
+// same page format, just warehouse-scoped data + breadcrumb.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const route = useRoute()
 
-const sku = computed(() => props.orderId.split('::')[0]!)
-const batchNo = computed(() => props.orderId.split('::')[1]!)
-const batch = computed(() => getBatchDetail(sku.value, batchNo.value))
+const parts = computed(() => props.orderId.split('::'))
+const warehouseId = computed(() => (parts.value.length >= 3 ? parts.value[0]! : null))
+const sku = computed(() => (warehouseId.value ? parts.value[1]! : parts.value[0]!))
+const batchNo = computed(() => (warehouseId.value ? parts.value[2]! : parts.value[1]!))
+const warehouseName = computed(() => (warehouseId.value ? getWarehouseDetail(warehouseId.value)?.name ?? '' : ''))
+const batch = computed(() =>
+  warehouseId.value
+    ? getWarehouseBatchDetail(warehouseId.value, sku.value, batchNo.value)
+    : getBatchDetail(sku.value, batchNo.value),
+)
 
 function goToProduct() { router.push(`/product-list/${sku.value}`) }
 function goToProducts() { router.push('/product-list') }
+function goToWarehouse() { if (warehouseId.value) router.push(`/warehouses/${warehouseId.value}?tab=batches`) }
+function goToWarehouses() { router.push('/warehouses') }
 
 // ── Tabs — driven by ?section= (see ProductDetailsPage.vue for why not ?tab=). ──
 const TAB_NAMES = ['transactions', 'warehouses']
@@ -93,6 +109,26 @@ const pagedTransactions = computed(() => {
 })
 watch([txTypeFilter, txSearch], () => { txPage.value = 1 })
 
+// ── Print barcode (same options + preview flow as Product/Inventory batch print) ──
+const printBarcodeOptionsOpen = ref(false)
+const barcodePreviewOpen = ref(false)
+const barcodePreviewDoc = ref<jsPDF | null>(null)
+const barcodePreviewFilename = ref('')
+function openPrintBarcode() { printBarcodeOptionsOpen.value = true }
+async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 | 2 | 3 }) {
+  const b = batch.value
+  if (!b) return
+  printBarcodeOptionsOpen.value = false
+  barcodePreviewDoc.value = await generateBarcodeLabelPdf({
+    barcode: b.barcode,
+    batchNo: b.batchNo,
+    productName: b.productName,
+    sku: b.sku,
+  }, qty, columns)
+  barcodePreviewFilename.value = `Barcode - ${b.batchNo}.pdf`
+  barcodePreviewOpen.value = true
+}
+
 // ── Stock by warehouses tab ──────────────────────────────────────────────────────
 const warehouseStock = computed(() => batch.value ? getBatchWarehouseStock(sku.value, batchNo.value) : [])
 const whPage = ref(1)
@@ -109,7 +145,12 @@ const pagedWarehouseStock = computed(() => {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <div class="detail-breadcrumb-row">
+        <div v-if="warehouseId" class="detail-breadcrumb-row">
+          <button class="detail-breadcrumb" @click="goToWarehouses">Warehouses</button>
+          <span class="detail-breadcrumb-sep">/</span>
+          <button class="detail-breadcrumb" @click="goToWarehouse">{{ warehouseName }}</button>
+        </div>
+        <div v-else class="detail-breadcrumb-row">
           <button class="detail-breadcrumb" @click="goToProducts">Products</button>
           <span class="detail-breadcrumb-sep">/</span>
           <button class="detail-breadcrumb" @click="goToProduct">{{ batch.productName }}</button>
@@ -131,6 +172,7 @@ const pagedWarehouseStock = computed(() => {
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem>Edit</MpPopoverListItem>
+            <MpPopoverListItem @click="openPrintBarcode">Print barcode</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -243,16 +285,7 @@ const pagedWarehouseStock = computed(() => {
                   <tr v-for="tx in pagedTransactions" :key="tx.id" class="pd-tr">
                     <td class="pd-td">{{ formatDate(tx.date) }}</td>
                     <td class="pd-td">
-                      <div class="cell-with-action">
-                        <span class="cell-text">{{ tx.number }}</span>
-                        <button class="row-hover-btn" type="button">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link cell-text" @click.stop>{{ tx.number }}</a>
                     </td>
                     <td class="pd-td">
                       <div class="pd-movement" :class="tx.delta >= 0 ? 'pd-movement--pos' : 'pd-movement--neg'">
@@ -312,16 +345,7 @@ const pagedWarehouseStock = computed(() => {
                 <tbody>
                   <tr v-for="s in pagedWarehouseStock" :key="s.warehouseId" class="pd-tr">
                     <td class="pd-td">
-                      <div class="cell-with-action">
-                        <span class="cell-text">{{ s.warehouseName }}</span>
-                        <button class="row-hover-btn" type="button" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          <span class="row-hover-btn__label">VIEW DETAILS</span>
-                        </button>
-                      </div>
+                      <a class="cell-link cell-text" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">{{ s.warehouseName }}</a>
                     </td>
                     <td class="pd-td pd-td--num">{{ s.onHand.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.reserved.toLocaleString('id-ID') }}</td>
@@ -358,6 +382,20 @@ const pagedWarehouseStock = computed(() => {
       :subject="batch.batchNo"
       :entries="activityEntries"
       @close="activityOpen = false"
+    />
+
+    <PrintBarcodeOptionsModal
+      :open="printBarcodeOptionsOpen"
+      @close="printBarcodeOptionsOpen = false"
+      @confirm="confirmPrintBarcode"
+    />
+
+    <PdfPreviewModal
+      :open="barcodePreviewOpen"
+      :doc="barcodePreviewDoc"
+      :filename="barcodePreviewFilename"
+      title="Barcode preview"
+      @close="barcodePreviewOpen = false"
     />
   </div>
 
@@ -484,21 +522,8 @@ const pagedWarehouseStock = computed(() => {
 .pd-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .pd-tr:hover .pd-td { background: var(--mp-background-neutral-hovered); }
 
-/* Number / Warehouse cells — "View details" chip on row hover */
-.cell-with-action { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; }
+/* Number / Warehouse cells — value is a link to detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.row-hover-btn {
-  position: absolute; right: 0; top: var(--mp-spacing-2\.5, 10px); transform: translateY(-50%); display: none;
-  align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm); cursor: pointer; white-space: nowrap; line-height: 1; color: var(--mp-text-secondary);
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px); color: var(--mp-text-secondary); text-transform: uppercase;
-}
-.pd-tr:hover .row-hover-btn { display: flex; }
 
 /* Movement cell: signed delta (green/red) + small caption lines */
 .pd-movement { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }

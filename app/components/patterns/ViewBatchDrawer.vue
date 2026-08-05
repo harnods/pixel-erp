@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { MpIcon } from '@mekari/pixel3'
+import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 
@@ -83,9 +84,15 @@ const props = defineProps<{
   qtyBeforeLocation?: boolean
   productName: string
   productImg: string
+  /** Packing match-order verify mode: total units scanned/verified so far for
+   *  this line. When provided, the drawer shows a scan bar (emits 'scan') and a
+   *  "Verified x/y" stat so the operator confirms each batch matches the pick. */
+  verifiedQty?: number
 }>()
 
-const emit = defineEmits<{ 'update:open': [boolean] }>()
+const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
+function onScan(raw: string) { emit('scan', raw) }
+const isVerify = computed(() => props.verifiedQty !== undefined)
 const qtyLabel = computed(() => props.qtyLabel ?? 'Picked qty')
 const plannedQtyLabel = computed(() => props.plannedQtyLabel ?? 'Qty to pick')
 // batchPicks is ONE field, not "plan" + "actual" side by side — endPicking/
@@ -290,6 +297,10 @@ function close() { emit('update:open', false) }
                 <span class="vbd-stat-label">{{ qtyLabel }}</span>
                 <span class="vbd-stat-value">{{ fmt(pickedQty ?? totalPicked) }}</span>
               </div>
+              <div v-if="isVerify" class="vbd-stat">
+                <span class="vbd-stat-label">Verified</span>
+                <span class="vbd-stat-value">{{ fmt(verifiedQty ?? 0) }} / {{ fmt(pickedQty ?? totalPicked) }}</span>
+              </div>
               <div v-if="shippedQty !== undefined && shippedQty > 0" class="vbd-stat">
                 <span class="vbd-stat-label">Previously shipped</span>
                 <span class="vbd-stat-value">{{ fmt(shippedQty) }}</span>
@@ -326,6 +337,11 @@ function close() { emit('update:open', false) }
           </div>
         </div>
 
+        <!-- Match-order verify: scan each batch to confirm it matches the pick -->
+        <div v-if="isVerify" class="vbd-scan">
+          <ScanBar placeholder="Scan batch number to verify…" @scan="onScan" />
+        </div>
+
         <!-- Table -->
         <div class="vbd-table-wrap">
           <table class="vbd-table" :class="{ 'vbd-table--split': isSplit }">
@@ -336,10 +352,10 @@ function close() { emit('update:open', false) }
               <col v-if="!isPacking" class="vbd-col-num" />
               <template v-if="qtyBeforeLocation">
                 <col v-if="hasPlanned" class="vbd-col-num" />
-                <col v-if="isPacking" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
               </template>
               <template v-else>
-                <col v-if="isPacking" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
                 <col v-if="hasPlanned" class="vbd-col-num" />
               </template>
               <col class="vbd-col-num" />
@@ -354,10 +370,10 @@ function close() { emit('update:open', false) }
                 <th v-if="!isPacking" class="vbd-th vbd-th--num">On hand qty</th>
                 <template v-if="qtyBeforeLocation">
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
-                  <th v-if="isPacking" class="vbd-th">Storage location</th>
+                  <th v-if="isPacking && !isVerify" class="vbd-th">Storage location</th>
                 </template>
                 <template v-else>
-                  <th v-if="isPacking" class="vbd-th">Storage location</th>
+                  <th v-if="isPacking && !isVerify" class="vbd-th">Storage location</th>
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ plannedQtyLabel }}</th>
                 </template>
                 <th v-if="isPacking" class="vbd-th vbd-th--num">{{ hasPlanned ? qtyLabel : tableQtyLabel }}</th>
@@ -377,10 +393,10 @@ function close() { emit('update:open', false) }
                 <td v-if="!isPacking" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
                 <template v-if="qtyBeforeLocation">
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
-                  <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                 </template>
                 <template v-else>
-                  <td v-if="isPacking" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
                 </template>
                 <td v-if="isPacking || !isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
@@ -393,7 +409,7 @@ function close() { emit('update:open', false) }
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted vbd-td--unit">{{ row.unit }}</td>
               </tr>
               <tr v-if="!rows.length" class="vbd-tr">
-                <td :colspan="isPacking ? (hasPlanned ? 7 : 6) : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">No batch data available.</td>
+                <td :colspan="isPacking ? (hasPlanned ? 7 : (isVerify ? 5 : 6)) : (isInOut ? 7 : 6)" class="vbd-td vbd-td--empty">No batch data available.</td>
               </tr>
             </tbody>
           </table>
@@ -477,6 +493,7 @@ function close() { emit('update:open', false) }
 .vbd-stat--pos .vbd-stat-value { color: var(--mp-text-success, #18794e); }
 .vbd-stat--neg .vbd-stat-value { color: var(--mp-text-danger, #a8352d); }
 
+.vbd-scan { margin-bottom: var(--mp-spacing-3); }
 .vbd-table-wrap {
   border: 1px solid var(--mp-border-bold);
   border-radius: var(--mp-radii-md);

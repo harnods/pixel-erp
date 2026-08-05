@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpBadge } from '@mekari/pixel3'
+import { MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
@@ -24,6 +24,8 @@ import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
+import { bills } from '~/data/bills'
+import { reviewFiles } from '~/data/reviewFiles'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
@@ -64,6 +66,7 @@ const pageRegistry: Record<string, Component> = {
   'Work orders':        defineAsyncComponent(() => import('~/components/pages/WorkOrdersIndexPage.vue')),
   'Bill of materials':  defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsIndexPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
+  'Inbox':             defineAsyncComponent(() => import('~/components/pages/InboxPage.vue')),
   'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
@@ -71,6 +74,9 @@ const pageRegistry: Record<string, Component> = {
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
+  // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
+  'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
+  'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
@@ -81,6 +87,9 @@ const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/Warehous
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
+const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
+const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
+const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
 const PartialReceiptDetailsPage = asyncPage(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
@@ -101,6 +110,7 @@ const DeliveryTaskDetailsPage = asyncPage(() => import('~/components/pages/Deliv
 const HandoverToCourierPage = asyncPage(() => import('~/components/pages/HandoverToCourierPage.vue'))
 const NewShipmentPage = asyncPage(() => import('~/components/pages/NewShipmentPage.vue'))
 const ShipmentDetailsPage = asyncPage(() => import('~/components/pages/ShipmentDetailsPage.vue'))
+const CompleteShipmentPage = asyncPage(() => import('~/components/pages/CompleteShipmentPage.vue'))
 const OutgoingOrderDetailsPage = asyncPage(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
 const WarehouseTransferDetailsPage = asyncPage(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
 const WarehouseTransferFormPage = asyncPage(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
@@ -179,11 +189,26 @@ provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: st
 })
 provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
+const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
+const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /expenses/new → New expense form (full page, brings its own title bar)
+  if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
+    return { component: NewExpensePage, id: 'new' }
+  }
+  // /expenses/:id/payment → "Add payment" form for that unpaid bill (New spend money)
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment') {
+    return { component: SpendMoneyPage, id: segs[1]! }
+  }
+  // /expenses/:id → bill/expense detail page
+  if (segs.length >= 2 && segs[0] === 'expenses') {
+    return { component: BillDetailsPage, id: segs[1]! }
+  }
   // /work-orders/new → create a new work order (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
     return { component: CreateWorkOrderPage, id: 'new' }
@@ -198,8 +223,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CreateBillOfMaterialsPage, id: 'new' }
     return { component: BillOfMaterialsDetailsPage, id: segs[1]! }
   }
-  // /warehouse-transfers/new → create form; /:id/edit → edit form; /:id → detail.
-  // The bare index falls through to the registry.
+  // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
+  // forms (not built yet → placeholder). The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'warehouse-transfers') {
     if (segs[1] === 'new') return { component: WarehouseTransferFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: WarehouseTransferFormPage, id: segs[1]! }
@@ -243,6 +268,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /outbound-delivery/new-shipment/create → build a shipment by scanning packing nos.
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'new-shipment' && segs[2] === 'create') {
     return { component: NewShipmentPage, id: 'create' }
+  }
+  // /outbound-delivery/shipment/:seq/complete → Complete shipment (proof-of-delivery) form page
+  if (segs.length >= 4 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment' && segs[3] === 'complete') {
+    return { component: CompleteShipmentPage, id: segs[2]! }
   }
   // /outbound-delivery/shipment/:seq → a saved shipment batch's details (Print PDF lives here)
   if (segs.length >= 3 && segs[0] === 'outbound-delivery' && segs[1] === 'shipment') {
@@ -293,6 +322,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // fragment — decode it back here.
   if (segs.length >= 4 && segs[0] === 'product-list' && segs[2] === 'batches') {
     return { component: BatchDetailsPage, id: `${segs[1]}::${decodeURIComponent(segs[3]!)}` }
+  }
+  // /warehouses/:whId/batches/:sku/:batchNo → warehouse-scoped batch detail (same
+  // BatchDetailsPage, stays under /warehouses; id encodes the warehouse context).
+  if (segs.length >= 5 && segs[0] === 'warehouses' && segs[2] === 'batches') {
+    return { component: BatchDetailsPage, id: `${segs[1]}::${segs[3]}::${decodeURIComponent(segs[4]!)}` }
   }
   // /product-list/:sku → product detail
   if (segs.length >= 2 && segs[0] === 'product-list') {
@@ -374,9 +408,13 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
+  // WMS Overview — mirrored for the WMS menu (/overview) and WMS Reports (/wms-report)
+  'Overview':          ['Outbound delivery', 'Inbound delivery'],
+  'Wms report':        ['Outbound delivery', 'Inbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
+  'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -424,6 +462,12 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const awaiting = awaitingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
+  if (currentPageKey.value === 'Expenses') {
+    const out: Record<string, number> = {}
+    if (bills.length) out['Awaiting Approval'] = bills.length
+    if (reviewFiles.length) out['Review files'] = reviewFiles.length
+    return out
+  }
   if (currentPageKey.value === 'Stock adjustments') {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
@@ -468,6 +512,17 @@ const currentTabs = computed<string[]>(() => {
     return true
   })
 })
+// Tab display labels — the tab key stays the internal id (URL query, page
+// registry, counts, navigation), only the visible text differs. Outbound's
+// "Ready to ship" tab actually holds shipping tasks across several statuses (ready
+// to ship being just one of them), so it reads as "Shipping"; the shipment docs
+// tab reads as "Shipping document".
+const TAB_LABELS: Record<string, string> = {
+  'Ready to ship': 'Shipping',
+  'Shipments': 'Shipping document',
+}
+function tabLabel(tab: string): string { return TAB_LABELS[tab] ?? tab }
+
 const activeTab = ref('')
 watch([currentPageKey, () => route.query.tab, detailMatch], () => {
   // Detail routes (e.g. /stock-adjustments/:id) render via `detailMatch`, bypassing
@@ -492,11 +547,12 @@ function selectTab(tab: string) {
   router.push({ query: { ...route.query, tab } })
 }
 
-// Daily banner (Cycle counts index, all tabs) — top 3 recommended product names,
-// only shown once the Recommendations tab actually has SKUs flagged for counting.
+// Daily banner (Cycle counts index, Count task tab only) — top 3 recommended
+// product names, only shown once the Recommendations tab actually has SKUs
+// flagged for counting.
 const cycleCountBannerNames = computed(() => topRecommendedProductNames(3))
 const cycleCountBannerVisible = computed(() =>
-  currentPageKey.value === 'Cycle counts' && cycleCountBannerNames.value.length > 0,
+  currentPageKey.value === 'Cycle counts' && activeTab.value === 'Count task' && cycleCountBannerNames.value.length > 0,
 )
 
 // Real component to render in the stage for a given page + tab (else placeholder).
@@ -516,6 +572,11 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,
     'Awaiting approval': WarehouseTransfersPage,
+  },
+  'Expenses': {
+    'Bills': BillsIndexPage,
+    'Awaiting Approval': BillsAwaitingApprovalPage,
+    'Review files': BillsReviewFilesPage,
   },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
@@ -556,6 +617,7 @@ const showNewWarehouseTransfer = computed(() =>
   activeScenario.value === 'ERP' && currentPageKey.value === 'Warehouse transfers',
 )
 function newWarehouseTransfer() { router.push('/warehouse-transfers/new') }
+function newExpense() { router.push('/expenses/new') }
 
 // ── Airene panel open/close ───────────────────────────────────────────────
 const aireneOpen = ref(false)
@@ -869,6 +931,11 @@ function scrollChatToBottom() {
 // Expose sendMessage so popover can call it
 provide('sendAireneMessage', sendMessage)
 
+// Bridge: let components above the page (e.g. the header search) drive the panel.
+const aireneBridge = useAireneBridge()
+watch(aireneBridge.toggleSignal, () => toggleAirene())
+watch(aireneBridge.sendSignal, () => { if (aireneBridge.pendingText.value) sendMessage(aireneBridge.pendingText.value) })
+
 // ── Resize panel ──────────────────────────────────────────────────────────
 const PANEL_MIN = 320
 const PANEL_MAX = 640
@@ -913,7 +980,7 @@ function startResize(e: MouseEvent) {
       <component :is="PurchaseOrderDetailPage" v-else-if="showPurchaseOrderDetail" :order-id="poDetailOrderId!" />
 
       <template v-else>
-      <div class="page-title-bar">
+      <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
         <h1 class="page-title-text">{{ pageTitle }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
@@ -1096,6 +1163,65 @@ function startResize(e: MouseEvent) {
             New purchase invoice
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Expenses'" class="page-title-actions">
+          <!-- Import button + dropdown -->
+          <div ref="importBtnWrapEl" class="import-wrap">
+            <button
+              class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
+              :class="{ 'btn-enterprise--active': importDropdownOpen }"
+              @click.stop="importDropdownOpen = !importDropdownOpen"
+            >
+              Import
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
+              >
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+            <!-- Dropdown -->
+            <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
+
+              <!-- Group 1: spreadsheet + upload bills -->
+              <div class="import-group import-group--bordered">
+                <MpButton class="import-item">Import from spreadsheet</MpButton>
+                <MpButton class="import-item import-item--ai">
+                  <span>Upload bills</span>
+                  <span class="ai-badge">
+                    <img
+                      src="https://www.figma.com/api/mcp/asset/b87bbbb6-b7ca-46be-a6a9-755ab81fefe6"
+                      width="12" height="12" alt="" class="ai-badge__icon"
+                    />
+                    <span class="ai-badge__label">AI</span>
+                  </span>
+                </MpButton>
+              </div>
+
+              <!-- Group 2: Forward bills to -->
+              <div class="import-group">
+                <div class="import-forward">
+                  <div class="import-forward__labels">
+                    <span class="import-forward__title">Forward bills to</span>
+                    <span class="import-forward__email">dropbox.680128@jurnal.id</span>
+                  </div>
+                  <a class="import-forward__copy" @click.prevent>Copy address</a>
+                  <p class="import-forward__desc">
+                    Any bill or receipt attachment forwarded to this email will be automatically recorded as a draft.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newExpense">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New expense
+          </button>
+        </div>
         <div v-else-if="showNewPurchaseOrder" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
             Import
@@ -1236,7 +1362,7 @@ function startResize(e: MouseEvent) {
           :aria-selected="activeTab === tab"
           @click="selectTab(tab)"
         >
-          {{ tab }}
+          {{ tabLabel(tab) }}
           <span v-if="currentTabCounts[tab] != null" class="page-tab-count">{{ currentTabCounts[tab] }}</span>
         </button>
       </div>
@@ -1252,7 +1378,7 @@ function startResize(e: MouseEvent) {
         </MpBanner>
         <component v-if="activeTabComponent" :is="activeTabComponent" />
         <div v-else-if="currentTabs.length" class="tab-stage-placeholder">
-          <p class="tab-stage-placeholder__title">{{ activeTab }}</p>
+          <p class="tab-stage-placeholder__title">{{ tabLabel(activeTab) }}</p>
           <p class="tab-stage-placeholder__desc">Page content goes here.</p>
         </div>
         <component v-else :is="currentComponent" />
@@ -1583,13 +1709,14 @@ function startResize(e: MouseEvent) {
 }
 
 .import-item {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: var(--mp-spacing-2);
-  width: 100%;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: none;
-  border: none;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: none !important;
+  border: none !important;
   cursor: pointer;
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-regular);
@@ -1598,7 +1725,7 @@ function startResize(e: MouseEvent) {
   text-align: left;
 }
 .import-item:hover {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle) !important;
 }
 
 .import-item--ai {
@@ -1751,19 +1878,7 @@ function startResize(e: MouseEvent) {
 
 /* Count badge on a tab */
 .page-tab-count {
-  min-width: var(--mp-sizes-5);
-  padding: 0 var(--mp-spacing-1\.5);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral-pressed);
-  font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg, 24px);
-  color: var(--mp-text-secondary);
-  text-align: center;
-}
-.page-tab--active .page-tab-count {
-  background: var(--mp-background-brand, var(--mp-text-selected));
-  color: var(--mp-text-inverse, #fff);
+  margin-left: var(--mp-spacing-1);
 }
 
 .page-tab:not(.page-tab--active):hover {
@@ -1926,7 +2041,7 @@ function startResize(e: MouseEvent) {
   border: none;
   cursor: pointer;
   font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-medium);
+  font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default);
   text-align: left;
   border-radius: var(--mp-radii-md);

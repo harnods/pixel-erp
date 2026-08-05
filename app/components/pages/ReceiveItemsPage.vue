@@ -249,6 +249,15 @@ function handleScan(rawValue: string) {
   for (const [skuCode, batches] of Object.entries(batchLinesBySku.value)) {
     const bIdx = batches.findIndex(b => sameCode(b.batchNo, v))
     if (bIdx !== -1) {
+      // Expected qty (targetQty) is the hard cap — a batch re-scan must never push
+      // the SKU's received total past what the task expects, matching the plain-SKU
+      // and SN caps (PRD over-receipt guard, allow_receive_exceed_order = FALSE).
+      const batchItem = lineItems.value.find(it => sameCode(it.skuCode, skuCode))
+      const receivedTotal = batches.reduce((s, b) => s + (b.counted ?? 0), 0)
+      if (batchItem && receivedTotal >= batchItem.targetQty) {
+        notifyScanError(`${skuCode}: expected qty already fully received`)
+        return
+      }
       const newCounted = (batches[bIdx]!.counted ?? 0) + 1
       const updated = batches.map((b, i) => i === bIdx ? { ...b, counted: newCounted } : b)
       batchLinesBySku.value = { ...batchLinesBySku.value, [skuCode]: updated }
@@ -282,15 +291,11 @@ function handleScan(rawValue: string) {
     openSerialDrawer(sku)
     return
   }
+  // Expected qty (targetQty) is the hard cap — a task may never receive past what
+  // it expects (PRD over-receipt guard, allow_receive_exceed_order = FALSE).
   const current = draftQty.value[sku] ?? 0
-  if (current >= item.expectedQty) {
-    notifyScanError(`${sku}: purchase qty already fully received`)
-    return
-  }
-  // Past Expected qty but still within Purchase qty — confirm before counting
-  // it, rather than silently accepting an over-expected unit.
   if (current >= item.targetQty) {
-    exceedTargetConfirm.value = { sku, productName: item.productName, targetQty: item.targetQty }
+    notifyScanError(`${sku}: expected qty already fully received`)
     return
   }
   incrementDraftQty(sku)
@@ -304,17 +309,6 @@ function incrementDraftQty(sku: string) {
   flashRowId.value = sku
   if (flashTimer) clearTimeout(flashTimer)
   flashTimer = setTimeout(() => { flashRowId.value = null }, 700)
-}
-
-// ── Confirm counting a scan past Expected qty (still within Purchase qty) ──────
-const exceedTargetConfirm = ref<{ sku: string; productName: string; targetQty: number } | null>(null)
-function confirmExceedTarget() {
-  if (!exceedTargetConfirm.value) return
-  incrementDraftQty(exceedTargetConfirm.value.sku)
-  exceedTargetConfirm.value = null
-}
-function cancelExceedTarget() {
-  exceedTargetConfirm.value = null
 }
 
 const showQtyErrors = ref(false)
@@ -538,7 +532,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="ri-search" type="text" placeholder="Search product or SKU…" />
+            <input v-model="search" class="ri-search" type="text" placeholder="Search..." />
             <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
@@ -612,7 +606,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       <input
                         class="ri-qty-input"
                         type="number" min="0"
-                        :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
+                        :max="item.targetQty"
                         :value="draftQty[item.skuCode] ?? 0"
                         :aria-label="`Received qty for ${item.productName}`"
                         disabled
@@ -622,15 +616,15 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                       v-else
                       class="ri-qty-input"
                       type="number" min="0"
-                      :max="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0)"
+                      :max="item.targetQty"
                       :value="draftQty[item.skuCode] ?? 0"
                       :aria-label="`Received qty for ${item.productName}`"
-                      @input="onQtyInput(item.skuCode, item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0), $event)"
+                      @input="onQtyInput(item.skuCode, item.targetQty, $event)"
                     />
                   </td>
                   <td class="ri-td ri-td--num">
-                    <span :class="item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0) > 0 ? 'ri-outstanding' : 'ri-qty--full'">
-                      {{ fmt(item.expectedQty - (priorReceivedPerSku[item.skuCode] ?? 0) - (draftQty[item.skuCode] ?? 0)) }}
+                    <span :class="item.targetQty - (draftQty[item.skuCode] ?? 0) > 0 ? 'ri-outstanding' : 'ri-qty--full'">
+                      {{ fmt(item.targetQty - (draftQty[item.skuCode] ?? 0)) }}
                     </span>
                   </td>
                   <td class="ri-td">{{ item.unit }}</td>
@@ -716,34 +710,6 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
             @click="commitReceiving(false)"
           >{{ draftOutstanding > 0 ? 'Finish as incomplete' : 'Save' }}</button>
           <button v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" @click="commitReceiving(true)">Save &amp; create put-away</button>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
-
-  <!-- ── Confirm counting a scan past Expected qty ── -->
-  <MpModal
-    id="ri-exceed-target"
-    :is-open="!!exceedTargetConfirm"
-    size="md"
-    is-close-on-esc
-    :is-keep-alive="false"
-    @close="cancelExceedTarget"
-  >
-    <MpModalContent>
-      <MpModalHeader>
-        Count this unit anyway?
-        <MpModalCloseButton />
-      </MpModalHeader>
-      <MpModalBody>
-        {{ exceedTargetConfirm?.productName }} ({{ exceedTargetConfirm?.sku }}) has an expected qty of
-        {{ fmt(exceedTargetConfirm?.targetQty ?? 0) }}. This unit is beyond that — count it as received anyway?
-      </MpModalBody>
-      <MpModalFooter>
-        <div class="ri-modal-footer">
-          <button class="ri-btn ri-btn--ghost" @click="cancelExceedTarget">Cancel</button>
-          <button class="ri-btn ri-btn--primary" @click="confirmExceedTarget">Count it</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -848,7 +814,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 }
 .ri-filter-bar-left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .ri-editing-hint {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-normal);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-normal, 400);
   color: var(--mp-text-default);
 }
 .ri-search-wrap {
@@ -913,10 +879,10 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-product-thumb {
   width: var(--mp-sizes-10, 40px); height: var(--mp-sizes-10, 40px);
   border-radius: var(--mp-radii-md); flex-shrink: 0;
-  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle);
+  object-fit: cover; background: var(--mp-background-neutral); border: 1px solid var(--mp-border-subtle, var(--mp-border-default));
 }
 .ri-product-name {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-medium, 500);
   color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -949,8 +915,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 .ri-view-btn:hover { background: var(--mp-background-neutral-hovered); }
 
 /* Qty colors */
-.ri-qty--full   { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium); }
-.ri-outstanding { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium); }
+.ri-qty--full   { color: var(--mp-text-success-default, #15803d); font-weight: var(--mp-font-weights-medium, 500); }
+.ri-outstanding { color: var(--mp-text-default); font-weight: var(--mp-font-weights-medium, 500); }
 
 /* Progressive pagination */
 .ri-sentinel { height: 1px; }

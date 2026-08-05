@@ -7,7 +7,7 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { warehouses, archiveWarehouses, unarchiveWarehouses } from '~/data'
+import { warehouses, archiveWarehousesSafe, unarchiveWarehouses } from '~/data'
 import type { Warehouse } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -123,7 +123,12 @@ function closeArchiveModal() {
 
 function confirmArchive() {
   if (!warehouseToArchive.value) return
-  archiveWarehouses([warehouseToArchive.value.id])
+  const res = archiveWarehousesSafe([warehouseToArchive.value.id])
+  if (!res.ok) {
+    toast.notify({ variant: 'error', title: "Warehouse still has stock or open tasks and can't be archived" , maxWidth: 'max-content'})
+    closeArchiveModal()
+    return
+  }
   toast.notify({ variant: 'success', title: `${warehouseToArchive.value.name} archived` , maxWidth: 'max-content'})
   closeArchiveModal()
 }
@@ -167,7 +172,14 @@ function closeBulkArchiveModal() {
 
 function confirmBulkArchive() {
   const count = bulkArchiveCount.value
-  archiveWarehouses(bulkArchiveIds.value)
+  const res = archiveWarehousesSafe(bulkArchiveIds.value)
+  if (!res.ok) {
+    const blocked = res.reason.replace(/^WAREHOUSE_NOT_EMPTY:\s*/, '')
+    toast.notify({ variant: 'error', title: `Warehouse still has stock or open tasks and can't be archived: ${blocked}` , maxWidth: 'max-content'})
+    bulkArchiveDeselect?.()
+    closeBulkArchiveModal()
+    return
+  }
   toast.notify({ variant: 'success', title: `${count} warehouse${count !== 1 ? 's' : ''} archived` , maxWidth: 'max-content'})
   bulkArchiveDeselect?.()
   closeBulkArchiveModal()
@@ -370,7 +382,7 @@ const emptyDesc = computed(() =>
             v-model="search"
             class="filter-search-input"
             type="text"
-            placeholder="Search warehouse name..."
+            placeholder="Search..."
           />
         </div>
       </div>
@@ -379,15 +391,8 @@ const emptyDesc = computed(() =>
     <!-- ── Cell: Name — "View details" chip on row hover ── -->
     <template #cell-name="{ value, row }">
       <div class="cell-with-action">
-        <span class="cell-text">{{ value }}</span>
+        <a class="cell-link cell-text" @click.stop="goToDetail((row as unknown as Warehouse).id)">{{ value }}</a>
         <MpBadge v-if="(row as unknown as Warehouse).isDefault" for="tableStatus" type="announcement" size="sm" class="badge-wh-default">DEFAULT</MpBadge>
-        <button class="row-hover-btn" @click.stop="goToDetail((row as unknown as Warehouse).id)">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="row-hover-btn__label">VIEW DETAILS</span>
-        </button>
       </div>
     </template>
 
@@ -453,7 +458,7 @@ const emptyDesc = computed(() =>
               </MpPopoverListItem>
               <MpPopoverListItem
                 v-if="!(row as unknown as Warehouse).hasTransactions"
-                :class="css({ color: 'var(--mp-text-critical)' })"
+                :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
                 @click="openDeleteModal(row as unknown as Warehouse)"
               >
                 Delete
@@ -640,7 +645,7 @@ const emptyDesc = computed(() =>
                 v-model="exportColumnSearch"
                 class="export-col-search__input"
                 type="text"
-                placeholder="Search columns..."
+                placeholder="Search..."
               />
               <button v-if="exportColumnSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="exportColumnSearch = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -800,36 +805,6 @@ const emptyDesc = computed(() =>
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.row-hover-btn {
-  position: absolute;
-  right: 0;
-  top: var(--mp-spacing-2\.5, 10px);
-  transform: translateY(-50%);
-  display: none;
-  align-items: center;
-  gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1;
-}
-
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-2xs, 12px);
-  color: var(--mp-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-}
-
-:global(.erp-tr:hover .row-hover-btn) {
-  display: flex;
 }
 
 .cell-address {

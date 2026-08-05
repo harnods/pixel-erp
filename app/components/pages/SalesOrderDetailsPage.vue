@@ -169,7 +169,7 @@ function goBack() { router.push('/sales-orders') }
                     v-model="jumpSearch"
                     class="detail-jump-search"
                     type="text"
-                    placeholder="Search transaction…"
+                    placeholder="Search..."
                   />
                   <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -299,16 +299,9 @@ function goBack() { router.push('/sales-orders') }
               <td class="detail-td">
                 <div class="cell-with-action">
                   <span class="detail-item-primary">
-                    <span class="detail-item-name">{{ it.product }}</span>
+                    <a class="cell-link detail-item-name" @click.stop>{{ it.product }}</a>
                     <span class="detail-item-sku">SKU: {{ it.sku }}</span>
                   </span>
-                  <button class="row-hover-btn" @click.stop>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="row-hover-btn__label">VIEW DETAILS</span>
-                  </button>
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
@@ -418,16 +411,7 @@ function goBack() { router.push('/sales-orders') }
                 <tr v-for="(t, i) in order.linkedTransactions" :key="i" class="detail-item-row">
                   <td class="detail-td">{{ formatDateNumeric(t.date) }}</td>
                   <td class="detail-td">
-                    <div class="cell-with-action">
-                      <span class="cell-text">{{ t.type }} {{ t.number }}</span>
-                      <button class="row-hover-btn" @click.stop>
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                          <path d="M5 2H2.5C2.22 2 2 2.22 2 2.5v7c0 .28.22.5.5.5h7c.28 0 .5-.22.5-.5V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                          <path d="M7 2h3v3M10 2L6.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span class="row-hover-btn__label">VIEW DETAILS</span>
-                      </button>
-                    </div>
+                    <a class="cell-link cell-text" @click.stop>{{ t.type }} {{ t.number }}</a>
                   </td>
                   <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
                   <td class="detail-td"></td>
@@ -570,7 +554,7 @@ function goBack() { router.push('/sales-orders') }
   padding: 0;
   border-radius: var(--mp-radii-md);
   cursor: pointer;
-  color: var(--mp-icon-default);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -636,7 +620,7 @@ function goBack() { router.push('/sales-orders') }
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--mp-icon-default);
+  color: var(--mp-icon-default, var(--mp-text-secondary));
 }
 .detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
 
@@ -662,12 +646,12 @@ function goBack() { router.push('/sales-orders') }
   align-items: center;
   gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-information);
+  background: var(--mp-background-information, #e8f1ff);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
 }
-.detail-banner-icon { color: var(--mp-icon-information); flex-shrink: 0; }
+.detail-banner-icon { color: var(--mp-icon-information, #1d6fdc); flex-shrink: 0; }
 .detail-banner-text { flex: 1; }
 .detail-banner-link {
   color: var(--mp-text-link);
@@ -796,30 +780,8 @@ function goBack() { router.push('/sales-orders') }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 
-/* row-hover "View details" button (per ErpTablePage.md) */
 .cell-with-action { position: relative; }
 .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-hover-btn {
-  position: absolute;
-  right: 0;
-  top: var(--mp-spacing-2\.5, 10px);
-  transform: translateY(-50%);
-  display: none;
-  align-items: center;
-  gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1) var(--mp-spacing-1\.5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-sm);
-  cursor: pointer;
-}
-.row-hover-btn__label {
-  font-size: var(--mp-font-sizes-2xs, 10px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  text-transform: uppercase;
-  color: var(--mp-text-secondary);
-}
-.detail-item-row:hover .row-hover-btn { display: flex; }
 /* progressive pagination (load-more) row — see ErpPagination.md */
 .detail-items-count {
   display: flex;

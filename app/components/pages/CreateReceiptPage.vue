@@ -3,9 +3,12 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon,
-  MpDatePicker, MpTooltip, toast,
+  MpDatePicker, MpTooltip, MpSelect,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  css, toast,
 } from '@mekari/pixel3'
 import { warehouses } from '~/data/warehouses'
+import { couriers } from '~/data/couriers'
 import { addReceipt, nextReceiptNo, receipts, canEditReceipt } from '~/data/receipts'
 import { editInboundReceipt } from '~/data/inboundSync'
 import { lineItemsForReceipt } from '~/data/receiptLineItems'
@@ -72,6 +75,14 @@ const shipVia = ref('')
 const referenceNo = ref('')
 const trackingNo = ref('')
 const memo = ref('')
+
+// ── Courier picker (searchable MpPopover, sourced from master data couriers) ─
+const courierSearch = ref('')
+const couriersFiltered = computed(() => {
+  const q = courierSearch.value.trim().toLowerCase()
+  return couriers.filter((c) => !q || c.name.toLowerCase().includes(q))
+})
+function selectCourier(name: string) { shipVia.value = name }
 
 // ── Product line rows ─────────────────────────────────────────────────────
 interface LineRow {
@@ -447,8 +458,25 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <div class="cr-field-spacer" />
 
             <MpFormControl id="cr-shipvia">
-              <MpFormLabel>Ship via</MpFormLabel>
-              <MpInput id="cr-shipvia-input" v-model="shipVia" is-full-width />
+              <MpFormLabel>Courier</MpFormLabel>
+              <MpPopover id="cr-courier" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="courierSearch = ''">
+                <MpPopoverTrigger>
+                  <MpSelect id="cr-shipvia-input" :model-value="shipVia" placeholder="Select courier" is-full-width @mousedown.prevent>
+                    <option v-if="shipVia" :value="shipVia">{{ shipVia }}</option>
+                  </MpSelect>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ width: '320px', padding: '0' })">
+                  <div class="cr-courier-search-wrap">
+                    <input v-model="courierSearch" class="cr-courier-search" type="text" placeholder="Search..." autocomplete="off" />
+                  </div>
+                  <div class="cr-courier-list">
+                    <MpPopoverList>
+                      <MpPopoverListItem v-for="c in couriersFiltered" :key="c.id" :is-active="c.name === shipVia" @click="selectCourier(c.name)">{{ c.name }}</MpPopoverListItem>
+                    </MpPopoverList>
+                    <p v-if="!couriersFiltered.length" class="cr-courier-none">No couriers found.</p>
+                  </div>
+                </MpPopoverContent>
+              </MpPopover>
             </MpFormControl>
 
             <div class="cr-field-spacer" />
@@ -729,6 +757,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-header-2 { display: flex; gap: 24px; padding: 20px 0; }
 .cr-col { width: 318px; flex-shrink: 0; display: flex; flex-direction: column; }
 .cr-field-spacer { height: 16px; flex-shrink: 0; }
+
+/* Courier picker popover (searchable, from master data couriers) */
+.cr-courier-search-wrap { padding: var(--mp-spacing-3); }
+.cr-courier-search { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
+.cr-courier-search::placeholder { color: var(--mp-text-placeholder); }
+.cr-courier-list { max-height: 260px; overflow-y: auto; }
+.cr-courier-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 
 .cr-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cr-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }

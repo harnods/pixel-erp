@@ -64,8 +64,9 @@ const props = withDefaults(defineProps<{
   hasAiChat?: boolean
   /** Show skeleton placeholder rows instead of data (e.g. first load) */
   loading?: boolean
-  /** True when a search/filter is active — switches the empty state to the inline
-   *  "No results found" variant (vs the full illustrated empty state). */
+  /** True when a text search is active. */
+  hasActiveSearch?: boolean
+  /** True when a status/dropdown filter is active. */
   hasActiveFilter?: boolean
   /** Current search keyword — used to branch filter-only vs search empty state copy. */
   search?: string
@@ -88,6 +89,7 @@ const props = withDefaults(defineProps<{
   hasCheckbox: false,
   hasAiChat: false,
   loading: false,
+  hasActiveSearch: false,
   hasActiveFilter: false,
   search: '',
   contextLabel: undefined,
@@ -104,6 +106,8 @@ const emit = defineEmits<{
   sortChange: [key: string, dir: 'asc' | 'desc']
   hideColumn: [key: string]
   clearFilters: []
+  clearSearch: []
+  clearAll: []
   selectionChange: [count: number]
 }>()
 
@@ -127,7 +131,7 @@ const showSkeleton = computed(() => props.loading || paginating.value)
  *  state the table header is hidden so the empty state replaces the whole table.
  *  (The inline "no results" filtered state keeps the header.) */
 const isFullEmpty = computed(
-  () => !showSkeleton.value && displayRows.value.length === 0 && !props.hasActiveFilter,
+  () => !showSkeleton.value && displayRows.value.length === 0 && !props.hasActiveFilter && !props.hasActiveSearch,
 )
 
 /** Rows currently rendered — frozen during a pagination change so the OLD rows stay
@@ -486,6 +490,7 @@ const bulkCountLabel = computed(() => {
             <th
               v-if="$slots.actions && !loading"
               class="erp-th erp-th--actions erp-th--fixed"
+              :style="{ width: actionsWidth, minWidth: actionsWidth }"
             />
 
             <!-- AI chat th — outermost sticky right, 28px (hidden only on first-load skeleton) -->
@@ -543,6 +548,7 @@ const bulkCountLabel = computed(() => {
               <td
                 v-if="$slots.actions"
                 class="erp-td erp-td--actions erp-td--fixed"
+                :style="{ width: actionsWidth, minWidth: actionsWidth }"
               >
                 <slot name="actions" :row="row" />
               </td>
@@ -593,7 +599,11 @@ const bulkCountLabel = computed(() => {
                 />
               </td>
               <!-- match data-row columns during pagination; hidden on first load -->
-              <td v-if="$slots.actions && !loading" class="erp-td erp-td--actions erp-td--fixed" />
+              <td
+                v-if="$slots.actions && !loading"
+                class="erp-td erp-td--actions erp-td--fixed"
+                :style="{ width: actionsWidth, minWidth: actionsWidth }"
+              />
               <td v-if="hasAiChat && !loading" class="erp-td erp-td--ai" />
             </tr>
           </template>
@@ -612,8 +622,8 @@ const bulkCountLabel = computed(() => {
                 <p class="empty-inline-desc">{{ props.search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.' }}</p>
                 <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
               </div>
-              <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
               <slot v-else name="empty">
+                <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
                 <div class="empty-default">
                   <p class="empty-title">No data yet</p>
                   <p class="empty-hint">There's nothing here yet.</p>
@@ -803,7 +813,16 @@ const bulkCountLabel = computed(() => {
   width: 100%;
   min-width: 0;
 }
-.erp-cell-check > :last-child { flex: 1 1 auto; min-width: 0; }
+/* min-width defaults to auto here (not 0) — so plain text hugs its full width instead of
+   shrinking below the visible glyphs and letting them spill past the box. Slotted cells
+   that need to fill the column (e.g. a right-aligned chip) still get flex-grow. */
+.erp-cell-check > :last-child { flex: 1 1 auto; }
+/* The `:last-child` rule above assumes the last child is the wrapped cell
+   content — but when a cell's content is bare text (not wrapped in an
+   element, e.g. a plain date string), the checkbox <label> becomes the only
+   (and therefore "last") element child, so it wrongly inherits flex-shrink
+   and gets crushed. Pin the checkbox to its natural size unconditionally. */
+.erp-cell-check > [data-pixel-component="MpCheckbox"] { flex: 0 0 auto; }
 
 /* First-load skeleton — solid (no shimmer gradient, no animation) */
 .erp-skeleton {
@@ -858,7 +877,7 @@ const bulkCountLabel = computed(() => {
 
 /* ── Column sort menu (ERP behaviour) ── */
 /* header content wraps label + sort icon; right-aligned columns push it to the end */
-.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); max-width: 100%; }
+.th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; }
 .erp-th--right .th-inner { flex-direction: row-reverse; }
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
@@ -969,7 +988,7 @@ const bulkCountLabel = computed(() => {
   width: var(--erp-actions-width, var(--mp-sizes-11));
   min-width: var(--erp-actions-width, var(--mp-sizes-11));
   text-align: right;
-  padding: 2px var(--mp-spacing-2);
+  padding: var(--mp-sizes-0\.5, 2px) var(--mp-spacing-2) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-4);
 }
 
 /* AI chat cell */

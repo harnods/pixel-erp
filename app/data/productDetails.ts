@@ -299,23 +299,56 @@ export interface BatchDetail {
 
 export function getBatchDetail(sku: string, batchNo: string): BatchDetail | undefined {
   const row = productIndexRows().find((r) => r.sku === sku)
-  const batch = getProductBatches(sku).find((b) => b.batchNo === batchNo)
-  if (!row || !batch) return undefined
+  if (!row) return undefined
   const { at, by } = lastUpdatedFor(`batch-${sku}-${batchNo}`)
+  const batch = getProductBatches(sku).find((b) => b.batchNo === batchNo)
+  if (batch) {
+    return {
+      sku,
+      productName: row.name,
+      batchNo: batch.batchNo,
+      expiryDate: batch.expiryDate,
+      description: batch.description,
+      onHand: batch.onHand,
+      reserved: batch.reserved,
+      available: batch.available,
+      minStock: row.minStock,
+      unit: batch.unit,
+      updatedBy: by,
+      updatedAt: at,
+      barcode: batch.barcode,
+    }
+  }
+  // Fallback for a WAREHOUSE-LOT batch: Warehouse Details lists per-warehouse lots
+  // whose batchNos differ from the product-level summary batches above. Aggregate the
+  // lot's stock across every warehouse holding it so the same page/format renders
+  // (instead of "batch not found") when the batch is opened from Warehouse Details.
+  let onHand = 0, reserved = 0, available = 0, expiryDate = ''
+  let found = false
+  for (const w of warehouses) {
+    const lot = getWarehouseDetail(w.id)?.stock.find((s) => s.sku === sku)?.batches?.find((b) => b.batchNo === batchNo)
+    if (!lot) continue
+    found = true
+    onHand += lot.onHand; reserved += lot.reserved; available += lot.available
+    if (!expiryDate) expiryDate = lot.expiryDate
+  }
+  if (!found) return undefined
+  let barcode = getBatchBarcode(sku, batchNo)
+  if (!barcode) { barcode = generateNextBarcode('batch'); setBatchBarcode(sku, batchNo, barcode) }
   return {
     sku,
     productName: row.name,
-    batchNo: batch.batchNo,
-    expiryDate: batch.expiryDate,
-    description: batch.description,
-    onHand: batch.onHand,
-    reserved: batch.reserved,
-    available: batch.available,
+    batchNo,
+    expiryDate,
+    description: '',
+    onHand,
+    reserved,
+    available,
     minStock: row.minStock,
-    unit: batch.unit,
+    unit: row.unit,
     updatedBy: by,
     updatedAt: at,
-    barcode: batch.barcode,
+    barcode,
   }
 }
 
@@ -332,9 +365,56 @@ export function getBatchTransactions(sku: string, batchNo: string): ProductTrans
 /** A batch's stock split across the same warehouses the product itself stocks in,
  *  proportional to each warehouse's existing share of the product's on-hand total —
  *  so a batch's numbers always sum back to its own totals above. */
+/**
+ * Batch details for ONE warehouse's lot — same BatchDetail shape as getBatchDetail,
+ * but the qty fields are that warehouse's lot (not the product-wide total). Backs the
+ * warehouse-scoped batch-details page reached from Warehouse Details (stays under the
+ * /warehouses path, same page format).
+ */
+export function getWarehouseBatchDetail(warehouseId: string, sku: string, batchNo: string): BatchDetail | undefined {
+  const row = productIndexRows().find((r) => r.sku === sku)
+  const item = getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)
+  const lot = item?.batches?.find((b) => b.batchNo === batchNo)
+  if (!row || !item || !lot) return undefined
+  const { at, by } = lastUpdatedFor(`batch-${sku}-${batchNo}`)
+  let barcode = getBatchBarcode(sku, batchNo)
+  if (!barcode) { barcode = generateNextBarcode('batch'); setBatchBarcode(sku, batchNo, barcode) }
+  return {
+    sku,
+    productName: row.name,
+    batchNo,
+    expiryDate: lot.expiryDate,
+    description: '',
+    onHand: lot.onHand,
+    reserved: lot.reserved,
+    available: lot.available,
+    minStock: item.minStock,
+    unit: item.unit,
+    updatedBy: by,
+    updatedAt: at,
+    barcode,
+  }
+}
+
 export function getBatchWarehouseStock(sku: string, batchNo: string): ProductWarehouseStock[] {
   const batch = getProductBatches(sku).find((b) => b.batchNo === batchNo)
-  if (!batch) return []
+  if (!batch) {
+    // Warehouse-lot batch (see getBatchDetail fallback) — list each warehouse that
+    // actually holds this exact lot, from real warehouse stock.
+    const out: ProductWarehouseStock[] = []
+    for (const wh of warehouses) {
+      if (wh.isDefault || wh.status === 'archived') continue
+      const item = getWarehouseDetail(wh.id)?.stock.find((s) => s.sku === sku)
+      const lot = item?.batches?.find((b) => b.batchNo === batchNo)
+      if (!item || !lot || lot.onHand <= 0) continue
+      out.push({
+        warehouseId: wh.id, warehouseName: wh.name,
+        onHand: lot.onHand, reserved: lot.reserved, available: lot.available,
+        onTheWay: 0, minStock: item.minStock, unit: item.unit,
+      })
+    }
+    return out
+  }
   const productStock = getProductWarehouseStock(sku)
   const totalOnHand = productStock.reduce((sum, w) => sum + w.onHand, 0)
   if (totalOnHand === 0) return []

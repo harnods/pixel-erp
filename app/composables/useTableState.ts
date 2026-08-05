@@ -80,9 +80,14 @@ export function useTableState<T>(
     sortDir.value = dir
   }
 
+  const hasActiveSearch = computed(() => !!search.value.trim())
+  const hasActiveFilter = computed(() => !!statusFilter.value)
+
   return {
     search,
     statusFilter,
+    hasActiveSearch,
+    hasActiveFilter,
     currentPage,
     sortKey,
     sortDir,
