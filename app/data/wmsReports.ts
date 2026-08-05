@@ -57,6 +57,8 @@ export interface ReportDef {
   title: string
   /** which operator pool feeds the Operator filter dropdown */
   direction: 'inbound' | 'outbound'
+  /** initial date-range preset (days back from today); defaults to 30 */
+  defaultPeriodDays?: number
   columns: ReportColumn[]
   rows(filter: ReportFilter): ReportRow[]
 }
@@ -291,6 +293,7 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
   'inbound-timeliness': {
     title: 'Inbound timeliness',
     direction: 'inbound',
+    defaultPeriodDays: 7,
     columns: [
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },
       { key: 'inboundId', label: 'Inbound ID', sortType: 'text' },
@@ -310,6 +313,7 @@ export const WMS_REPORTS: Record<string, ReportDef> = {
   'inbound-accuracy': {
     title: 'Inbound accuracy',
     direction: 'inbound',
+    defaultPeriodDays: 7,
     columns: [
       { key: 'supplierSender', label: 'Supplier / sender name', sortType: 'text' },
       { key: 'warehouseName', label: 'Warehouse name', sortType: 'text' },

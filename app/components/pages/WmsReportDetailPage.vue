@@ -67,9 +67,13 @@ watch(operatorList, (pool) => {
 })
 
 // ── Date (presets + custom range) ─────────────────────────────────────────────────
-const periodPreset = ref<'7' | '30' | '90' | 'custom'>('30')
+// Initial preset comes from the report def (Inbound reports default to 7 days).
+const defaultPreset = () => String(def.value?.defaultPeriodDays ?? 30) as '7' | '30' | '90'
+const periodPreset = ref<'7' | '30' | '90' | 'custom'>(defaultPreset())
 const customFrom = ref('') // DD/MM/YYYY
 const customTo = ref('')
+// Switching to another report resets the date range to that report's default.
+watch(() => props.orderId, () => { periodPreset.value = defaultPreset(); customFrom.value = ''; customTo.value = '' })
 function parseDMY(s: string): Date | null {
   const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
   if (!m) return null
