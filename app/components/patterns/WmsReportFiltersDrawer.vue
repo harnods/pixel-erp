@@ -6,6 +6,7 @@
  * on Apply, so Cancel/close-outside discards in-progress edits.
  */
 import { MpIcon, MpCheckbox, MpFormControl, MpFormLabel } from '@mekari/pixel3'
+import TagMultiSelect from '~/components/patterns/TagMultiSelect.vue'
 
 export interface WmsReportFiltersValue {
   skus: string[]
@@ -68,37 +69,27 @@ function toggleReceiveState(id: string) { draft.receiveStates = toggle(draft.rec
 
         <div class="wrf-filters-body">
           <MpFormControl id="wrf-filters-sku-fc">
-            <MpFormLabel>{{ t('SKU / Product') }}</MpFormLabel>
-            <div class="wrf-filters-checkbox-list">
-              <label v-for="opt in skuOptions" :key="opt" class="wrf-filters-checkbox-item">
-                <MpCheckbox
-                  :id="`wrf-filters-sku-${opt}`"
-                  :is-checked="draft.skus.includes(opt)"
-                  @change="toggleSku(opt)"
-                >
-                  {{ opt }}
-                </MpCheckbox>
-              </label>
-            </div>
+            <MpFormLabel>{{ t('SKU') }}</MpFormLabel>
+            <TagMultiSelect
+              id="wrf-filters-sku"
+              v-model="draft.skus"
+              :options="skuOptions"
+              :placeholder="t('Select SKU')"
+            />
           </MpFormControl>
 
           <MpFormControl id="wrf-filters-source-fc">
-            <MpFormLabel>{{ t('Source of Inbound') }}</MpFormLabel>
-            <div class="wrf-filters-checkbox-list">
-              <label v-for="opt in sourceOptions" :key="opt" class="wrf-filters-checkbox-item">
-                <MpCheckbox
-                  :id="`wrf-filters-source-${opt}`"
-                  :is-checked="draft.sources.includes(opt)"
-                  @change="toggleSource(opt)"
-                >
-                  {{ opt }}
-                </MpCheckbox>
-              </label>
-            </div>
+            <MpFormLabel>{{ t('Source') }}</MpFormLabel>
+            <TagMultiSelect
+              id="wrf-filters-source"
+              v-model="draft.sources"
+              :options="sourceOptions"
+              :placeholder="t('Select source')"
+            />
           </MpFormControl>
 
           <MpFormControl id="wrf-filters-state-fc">
-            <MpFormLabel>{{ t('Inbound Receive State') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Completion state') }}</MpFormLabel>
             <div class="wrf-filters-checkbox-list">
               <label v-for="opt in receiveStateOptions" :key="opt.id" class="wrf-filters-checkbox-item">
                 <MpCheckbox
@@ -114,8 +105,11 @@ function toggleReceiveState(id: string) { draft.receiveStates = toggle(draft.rec
         </div>
 
         <footer class="wrf-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">{{ t('Reset filter') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">{{ t('Apply') }}</button>
+          <button class="wrf-filters-reset" type="button" @click="clearAll">{{ t('Reset') }}</button>
+          <div class="wrf-filters-footer-actions">
+            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">{{ t('Apply') }}</button>
+          </div>
         </footer>
       </div>
     </div>
@@ -177,8 +171,15 @@ function toggleReceiveState(id: string) { draft.receiveStates = toggle(draft.rec
 .wrf-filters-checkbox-item { display: flex; align-items: center; }
 
 .wrf-filters-footer {
-  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: var(--mp-spacing-4);
   border-top: 1px solid var(--mp-border-default);
 }
+.wrf-filters-footer-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.wrf-filters-reset {
+  border: none; background: none; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-secondary);
+}
+.wrf-filters-reset:hover { text-decoration: underline; }
 </style>
