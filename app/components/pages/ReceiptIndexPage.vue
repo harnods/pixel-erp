@@ -223,6 +223,12 @@ function hasReceivingTask(receiptId: string): boolean {
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
+const route = useRoute()
+// Deep-link from WMS Overview: ?status=Pending|Open|Completed pre-filters the list.
+onMounted(() => {
+  const s = route.query.status
+  if (typeof s === 'string' && STATUS_OPTIONS.includes(s)) statusFilter.value = [s]
+})
 function viewDetails(row: Receipt) { router.push(`/inbound-delivery/${row.id}`) }
 
 function purchaseReceiving(row: Receipt) { router.push(`/inbound-delivery/${row.id}/receive`) }

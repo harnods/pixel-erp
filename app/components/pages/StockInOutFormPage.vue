@@ -303,13 +303,13 @@ async function handleSave() {
     const res = addWmsAdjustmentSafe(input)
     if (!res.ok) {
       isSaving.value = false
-      toast.notify({ variant: 'error', title: "Can't remove more than available stock" , maxWidth: 'max-content'})
+      toast.notify({ variant: 'error', title: "Cannot remove more than available stock" , maxWidth: 'max-content'})
       return
     }
   } else {
     addAdjustment(input)
   }
-  toast.notify({ variant: 'success', title: 'Stock in/out created' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: 'Stock in/out saved' , maxWidth: 'max-content'})
   // Already saved — the router.push below is this function's own doing, not
   // the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
@@ -503,7 +503,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
                             <MpPopoverList>
                               <MpPopoverListItem v-for="opt in locOptionsFiltered(row)" :key="opt.id" :is-active="opt.id === locRow.locationId" @click="selectLocation(row, li, opt.id)">{{ opt.name }}</MpPopoverListItem>
-                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found.</p>
+                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found</p>
                             </MpPopoverList>
                           </MpPopoverContent>
                         </MpPopover>
@@ -581,7 +581,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           <MpPopoverContent :class="css({ width: '360px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">
                             <MpPopoverList>
                               <MpPopoverListItem v-for="opt in locOptionsFiltered(row)" :key="opt.id" @click="selectPendingLoc(row, opt.id)">{{ opt.name }}</MpPopoverListItem>
-                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found.</p>
+                              <p v-if="!locOptionsFiltered(row).length" class="sio-loc-none">No locations found</p>
                             </MpPopoverList>
                           </MpPopoverContent>
                         </MpPopover>

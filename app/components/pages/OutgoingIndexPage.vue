@@ -241,6 +241,14 @@ function hasShipment(orderId: string): boolean {
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
 const router = useRouter()
+const route = useRoute()
+// Deep-link from WMS Overview: ?status=Pending|Open|Completed pre-filters the list.
+onMounted(() => {
+  const s = route.query.status
+  if (typeof s === 'string' && STATUS_OPTIONS.includes(s)) {
+    statusFilter.value = [s]
+  }
+})
 function viewDetails(row: OutgoingOrder) { router.push(`/outbound-delivery/${row.id}`) }
 
 // Create a picking list for a single order → prefill the create form (warehouse

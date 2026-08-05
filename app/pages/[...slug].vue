@@ -76,6 +76,8 @@ const pageRegistry: Record<string, Component> = {
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
+  // Reports → WMS index (four report cards). Report detail pages resolve via detailMatch.
+  'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
@@ -144,6 +146,8 @@ const StockCountingPage = asyncPage(() => import('~/components/pages/StockCounti
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
+const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
 
@@ -151,6 +155,10 @@ const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
+  if (segs.length >= 2 && segs[0] === 'wms-report') {
+    return { component: WmsReportDetailPage, id: segs[1]! }
+  }
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
     return { component: NewExpensePage, id: 'new' }
@@ -362,9 +370,8 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  // WMS Overview — mirrored for the WMS menu (/overview) and WMS Reports (/wms-report)
-  'Overview':          ['Outbound delivery', 'Inbound delivery'],
-  'Wms report':        ['Outbound delivery', 'Inbound delivery'],
+  // WMS Overview — only the WMS menu (/overview); NOT mirrored into Reports (/wms-report).
+  'Overview':          ['Inbound delivery', 'Outbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
@@ -386,6 +393,16 @@ const pageTabs: Record<string, string[]> = {
 const activeWarehouseFilter = useActiveWarehouseFilter()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
+  // WMS Overview tabs badge the actionable open work per direction.
+  if (currentPageKey.value === 'Overview') {
+    const counts = receiptCountsByStage(wh)
+    const inbound = (counts['Pending'] ?? 0) + (counts['Open'] ?? 0) + (counts['In progress'] ?? 0) + (counts['Partial reception'] ?? 0)
+    const out: Record<string, number> = {}
+    if (inbound) out['Inbound delivery'] = inbound
+    const outbound = outgoingOpenCount(wh)
+    if (outbound) out['Outbound delivery'] = outbound
+    return out
+  }
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
@@ -511,6 +528,11 @@ const cycleCountBannerVisible = computed(() =>
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {
+  // WMS → Overview — one analytics page, direction per tab.
+  'Overview': {
+    'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
+    'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
+  },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
@@ -1273,7 +1295,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
@@ -1745,6 +1767,12 @@ function startResize(e: MouseEvent) {
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);
+}
+/* Report index draws an edge-to-edge card grid — no stage padding/top gap. */
+.stage--flush {
+  padding: 0;
+  border-top-width: 0;
+  gap: 0;
 }
 
 /* ── Status tabs (between title bar and stage, on the gray surface) ───────── */

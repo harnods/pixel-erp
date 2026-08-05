@@ -81,7 +81,7 @@ async function saveEdit() {
   persistSettings({ ...committed })
   isSaving.value = false
   isEditing.value = false
-  toast.notify({ variant: 'success', title: t('Warehouse settings saved'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Warehouse settings changes saved'), maxWidth: 'max-content' })
 }
 </script>
 
@@ -91,7 +91,7 @@ async function saveEdit() {
     <section class="ws-section">
       <div class="ws-section-header">
         <div class="ws-section-meta">
-          <h2 class="ws-section-title">{{ t('Settings') }}</h2>
+          <h2 class="ws-section-title">{{ t('Warehouse settings') }}</h2>
           <p class="ws-section-desc">{{ t('Configure global warehouse rules for storage and outbound fulfillment.') }}</p>
         </div>
         <button

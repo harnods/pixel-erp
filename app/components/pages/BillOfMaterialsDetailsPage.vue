@@ -412,7 +412,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
     v-if="bom"
     v-model:is-open="isDeleteModalOpen"
     :title="t('Archive bill of materials?')"
-    :description="`${bom.number} ${t('will be removed from the list. You can still find it via the Show archived BOM filter.')}`"
+    :description="t('Archiving hides this bill of materials from the list and new transactions. Historical data stays intact.')"
     :confirm-label="t('Archive')"
     @confirm="confirmDelete"
   />

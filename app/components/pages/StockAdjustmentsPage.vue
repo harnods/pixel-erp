@@ -672,7 +672,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalContent>
       <MpModalHeader>{{ t('Cancel') }} {{ cancelIds.length > 1 ? cancelIds.length + ' ' + t('stock adjustments') : t('stock adjustment') }}?<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
-        <p>{{ cancelIds.length > 1 ? t('These adjustments') : t('This adjustment') }} {{ t('will be canceled and can no longer be approved. This can\'t be undone.') }}</p>
+        <p>{{ cancelIds.length > 1 ? t('These adjustments') : t('This adjustment') }} {{ t('will be canceled and can no longer be approved. This cannot be undone.') }}</p>
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
