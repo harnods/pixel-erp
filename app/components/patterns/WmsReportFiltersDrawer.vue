@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * WMS Inbound accuracy report — "All filters" drawer. Same custom Teleport overlay
- * pattern as StockAdjustmentsFiltersDrawer.vue (MpDrawer has no structural CSS in
- * this Pixel3 build). Edits a local draft; only commits to the parent's filter refs
- * on Apply, so Cancel/close-outside discards in-progress edits.
+ * WMS Inbound accuracy report — "All filters" drawer (Figma node 4545-45929).
+ * Custom Teleport-style overlay (MpDrawer has no structural CSS in this Pixel3
+ * build). SKU + Source are MpInputTag tag-fields (searchable suggestions, no
+ * create-new); Completion state is a borderless checkbox group. Edits a local
+ * draft; commits to the parent only on Apply, so Cancel/close-outside discards.
  */
-import { MpIcon, MpCheckbox, MpFormControl, MpFormLabel } from '@mekari/pixel3'
-import TagMultiSelect from '~/components/patterns/TagMultiSelect.vue'
+import { MpIcon, MpCheckbox, MpFormControl, MpFormLabel, MpInputTag, type DataInterface } from '@mekari/pixel3'
 
 export interface WmsReportFiltersValue {
   skus: string[]
@@ -28,32 +28,41 @@ const emit = defineEmits<{
 
 const { t } = useLocale()
 
-const draft = reactive<WmsReportFiltersValue>({
-  skus: [...props.modelValue.skus],
-  sources: [...props.modelValue.sources],
-  receiveStates: [...props.modelValue.receiveStates],
-})
+// SKU + Source selections live as DataInterface[] (MpInputTag's shape); the
+// completion-state checkboxes stay a plain string[].
+function toData(arr: string[]): DataInterface[] {
+  return arr.map((s) => ({ id: s, text: s, value: s, isInvalid: false, isReadOnly: false }))
+}
+const skuData = ref<DataInterface[]>(toData(props.modelValue.skus))
+const sourceData = ref<DataInterface[]>(toData(props.modelValue.sources))
+const receiveStates = ref<string[]>([...props.modelValue.receiveStates])
+
 watch(() => props.isOpen, (open) => {
   if (open) {
-    draft.skus = [...props.modelValue.skus]
-    draft.sources = [...props.modelValue.sources]
-    draft.receiveStates = [...props.modelValue.receiveStates]
+    skuData.value = toData(props.modelValue.skus)
+    sourceData.value = toData(props.modelValue.sources)
+    receiveStates.value = [...props.modelValue.receiveStates]
   }
 })
 
+function onSkuChange(data: DataInterface[]) { skuData.value = data }
+function onSourceChange(data: DataInterface[]) { sourceData.value = data }
+function toggleReceiveState(id: string) {
+  receiveStates.value = receiveStates.value.includes(id)
+    ? receiveStates.value.filter((v) => v !== id)
+    : [...receiveStates.value, id]
+}
+
 function close() { emit('update:isOpen', false) }
-function apply() { emit('apply', { skus: [...draft.skus], sources: [...draft.sources], receiveStates: [...draft.receiveStates] }); close() }
-function clearAll() {
-  draft.skus = []
-  draft.sources = []
-  draft.receiveStates = []
+function apply() {
+  emit('apply', {
+    skus: skuData.value.map((d) => String(d.value ?? d.text)),
+    sources: sourceData.value.map((d) => String(d.value ?? d.text)),
+    receiveStates: [...receiveStates.value],
+  })
+  close()
 }
-function toggle(list: string[], id: string): string[] {
-  return list.includes(id) ? list.filter(v => v !== id) : [...list, id]
-}
-function toggleSku(id: string) { draft.skus = toggle(draft.skus, id) }
-function toggleSource(id: string) { draft.sources = toggle(draft.sources, id) }
-function toggleReceiveState(id: string) { draft.receiveStates = toggle(draft.receiveStates, id) }
+function clearAll() { skuData.value = []; sourceData.value = []; receiveStates.value = [] }
 </script>
 
 <template>
@@ -70,21 +79,29 @@ function toggleReceiveState(id: string) { draft.receiveStates = toggle(draft.rec
         <div class="wrf-filters-body">
           <MpFormControl id="wrf-filters-sku-fc">
             <MpFormLabel>{{ t('SKU') }}</MpFormLabel>
-            <TagMultiSelect
+            <MpInputTag
               id="wrf-filters-sku"
-              v-model="draft.skus"
-              :options="skuOptions"
-              :placeholder="t('Select SKU')"
+              :data="skuData"
+              :suggestions="skuOptions"
+              :is-show-suggestions="true"
+              :is-enable-create-new-tag="false"
+              :is-show-icon-chevron-down="true"
+              :placeholder="t('Search SKU...')"
+              @change="onSkuChange"
             />
           </MpFormControl>
 
           <MpFormControl id="wrf-filters-source-fc">
             <MpFormLabel>{{ t('Source') }}</MpFormLabel>
-            <TagMultiSelect
+            <MpInputTag
               id="wrf-filters-source"
-              v-model="draft.sources"
-              :options="sourceOptions"
-              :placeholder="t('Select source')"
+              :data="sourceData"
+              :suggestions="sourceOptions"
+              :is-show-suggestions="true"
+              :is-enable-create-new-tag="false"
+              :is-show-icon-chevron-down="true"
+              :placeholder="t('Search source...')"
+              @change="onSourceChange"
             />
           </MpFormControl>
 
@@ -94,7 +111,7 @@ function toggleReceiveState(id: string) { draft.receiveStates = toggle(draft.rec
               <label v-for="opt in receiveStateOptions" :key="opt.id" class="wrf-filters-checkbox-item">
                 <MpCheckbox
                   :id="`wrf-filters-state-${opt.id}`"
-                  :is-checked="draft.receiveStates.includes(opt.id)"
+                  :is-checked="receiveStates.includes(opt.id)"
                   @change="toggleReceiveState(opt.id)"
                 >
                   {{ t(opt.name) }}
@@ -162,18 +179,16 @@ function toggleReceiveState(id: string) { draft.receiveStates = toggle(draft.rec
   display: flex; flex-direction: column; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-4);
 }
+/* Completion state — plain checkbox group, no border box. */
 .wrf-filters-checkbox-list {
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
-  max-height: 200px; overflow-y: auto;
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
 }
-.wrf-filters-checkbox-item { display: flex; align-items: center; }
+.wrf-filters-checkbox-item { display: flex; align-items: flex-start; }
 
+/* Action group — no top border (per Figma). */
 .wrf-filters-footer {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
 }
 .wrf-filters-footer-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .wrf-filters-reset {
