@@ -2,7 +2,9 @@
 
 export type InvoiceStatus    = 'paid' | 'open' | 'overdue'
 export type BillStatus       = 'open' | 'paid' | 'unpaid' | 'overdue' | 'draft'
-export type FileClassification = 'bill' | 'receipt' | 'unclassified'
+/** 'bill' reviews as an Expense; 'invoice' as a Purchase invoice; 'receipt' as
+ *  a Payment receipt; 'unclassified' gets the "Other documents" action list. */
+export type FileClassification = 'bill' | 'invoice' | 'receipt' | 'unclassified'
 export type SalesOrderStatus = 'open' | 'partially processed' | 'closed' | 'voided'
 export type SalesQuoteStatus = 'open' | 'closed' | 'declined'
 export type ProductStatus    = 'active' | 'inactive'
@@ -133,7 +135,10 @@ export interface Bill {
 export interface ReviewFile {
   id: string
   file: string                               // uploaded filename
-  number: number                             // rendered as "Expense #00001"
+  /** Document number as OCR read it off the file — format varies by document
+   *  (invoice numbers, kwitansi numbers, etc. are never uniform), and it's
+   *  absent when OCR couldn't extract one (typically unclassified files). */
+  number?: string
   beneficiary: { id: string; name: string }  // customer or vendor
   confidence: number                         // AI extraction confidence, 0-100
   classification: FileClassification

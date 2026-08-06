@@ -29,11 +29,15 @@ import {
   type DataInterface,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import EditClassificationModal, { type Classification } from '~/components/patterns/EditClassificationModal.vue'
 import { reviewFiles, moveReviewFilesToPurchaseInvoice } from '~/data'
 import { addBill } from '~/data/bills'
 import { scrollToFirstError } from '~/utils/form'
 
-const props = defineProps<{ id: string }>()
+// `orderId` is the prop name [...slug].vue passes every detail route through
+// (`:order-id="detailMatch.id"`), so it has to be spelled that way here — as
+// `id` it silently never binds and the page falls back to the first file.
+const props = defineProps<{ orderId: string }>()
 
 const router = useRouter()
 const { t } = useLocale()
@@ -54,15 +58,27 @@ function goExpenses() {
 }
 
 // ── The file under review + its position in the queue ("3 of 5") ─────────────
-const reviewFile = computed(() => reviewFiles.find((rf) => rf.id === props.id) ?? reviewFiles[0])
+const reviewFile = computed(() => reviewFiles.find((rf) => rf.id === props.orderId) ?? reviewFiles[0])
 const queueIndex = computed(() => {
-  const i = reviewFiles.findIndex((rf) => rf.id === props.id)
+  const i = reviewFiles.findIndex((rf) => rf.id === props.orderId)
   return i === -1 ? 0 : i
 })
 const queueTotal = computed(() => reviewFiles.length)
 function goToFile(id: string) {
-  if (id !== props.id) router.push(`/expenses/review/${id}`)
+  if (id !== props.orderId) router.push(`/expenses/review/${id}`)
 }
+
+// ── Jump-to-file switcher (title-bar chevron) — same pattern as the detail
+// pages' jump-to-transaction popover (see PurchaseOrderDetailPage). Matches on
+// filename or beneficiary; the queue position is kept as the item's prefix
+// since the title reads "File review N of M".
+const jumpSearch = ref('')
+const jumpResults = computed(() => {
+  const q = jumpSearch.value.trim().toLowerCase()
+  return reviewFiles
+    .map((rf, i) => ({ ...rf, position: i + 1 }))
+    .filter((rf) => !q || rf.file.toLowerCase().includes(q) || rf.beneficiary.name.toLowerCase().includes(q))
+})
 function fileIconName(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
   if (ext === 'pdf') return 'pdf-document'
@@ -195,7 +211,16 @@ const matchAccordionOpen = ref(true)
 const matchChecked = ref(false)
 /** Items is Ready once the extracted line has been accepted into the table. */
 const itemsStatus = computed(() => (matchCard.value ? 'needs review' : 'ready'))
-const expenseStatus = computed(() => (itemsStatus.value === 'ready' && !!beneficiary.value ? 'ready' : 'needs review'))
+/** Ready once every required field this section owns is filled, Needs review
+ *  otherwise. Scoped to its own fields — an unmatched line is the Items
+ *  section's problem, not this one's. Transaction no. is auto-generated, and
+ *  Due date only applies while the bill is unpaid, so neither gates this. */
+const expenseStatus = computed(() => {
+  const filled = !!beneficiary.value
+    && !!transactionDate.value
+    && (iHavePaid.value || !!dueDate.value)
+  return filled ? 'ready' : 'needs review'
+})
 
 /** Accept the proposal (the ✓ on the card): the extracted line becomes a real
  *  line item and the Items section flips to the normal editable table. */
@@ -349,8 +374,8 @@ watch(total, (v) => {
 
 // ── Left panel resize + zoom (same as NewExpensePage) ────────────────────────
 const LEFT_PANEL_MIN = 320
-const LEFT_PANEL_MAX = 720
-const leftWidth = ref(552)
+const LEFT_PANEL_MAX = 640
+const leftWidth = ref(456)
 function startPanelResize(e: MouseEvent) {
   e.preventDefault()
   const startX = e.clientX
@@ -375,7 +400,17 @@ onBeforeUnmount(() => {
 })
 const zoomMode = ref<'fit' | '100'>('fit')
 
-// ── Reclassify (the ✎ next to the section title) ─────────────────────────────
+// ── Reclassify (the ✎ next to the section title, Figma 4707-65141) ───────────
+// The option list and the "hide the current classification" rule live in
+// EditClassificationModal, shared with the invoice and receipt review pages.
+const classificationModalOpen = ref(false)
+function openClassificationModal() {
+  classificationModalOpen.value = true
+}
+function closeClassificationModal() {
+  classificationModalOpen.value = false
+}
+
 function moveToPurchaseInvoice() {
   const file = reviewFile.value
   if (!file) return
@@ -383,6 +418,26 @@ function moveToPurchaseInvoice() {
   toast.notify({
     variant: 'success',
     title: `1 ${t('file')} ${t('moved to Purchase invoice')}`,
+    rootProps: { class: 'toast-enterprise' },
+  })
+  goExpenses()
+}
+
+/** Save the modal: the file leaves the Expense queue for whichever surface the
+ *  new classification belongs to. Invoice has a real destination store; Payment
+ *  receipt has none yet, so the file is simply dropped from the queue. */
+function saveClassification(next: Classification) {
+  classificationModalOpen.value = false
+  if (next === 'invoice') { moveToPurchaseInvoice(); return }
+
+  const file = reviewFile.value
+  if (file) {
+    const i = reviewFiles.findIndex((rf) => rf.id === file.id)
+    if (i !== -1) reviewFiles.splice(i, 1)
+  }
+  toast.notify({
+    variant: 'success',
+    title: `1 ${t('file')} ${t('moved to')} ${t('Payment receipt')}`,
     rootProps: { class: 'toast-enterprise' },
   })
   goExpenses()
@@ -419,7 +474,7 @@ function handleSave() {
 
   const file = reviewFile.value
   const filledRows = rows.value.filter((r) => r.accountId)
-  addBill({
+  const bill = addBill({
     beneficiary: { id: beneficiary.value, name: beneficiary.value },
     category: ACCOUNT_OPTIONS.find((a) => a.id === filledRows[0]?.accountId)?.name ?? 'Uncategorized',
     date: toISODate(transactionDate.value),
@@ -449,16 +504,17 @@ function handleSave() {
     } : undefined,
   })
 
-  // The reviewed file leaves the queue; move on to whatever is next in it.
-  const nextFile = reviewFiles[queueIndex.value + 1] ?? reviewFiles[queueIndex.value - 1]
-  const nextId = nextFile && file && nextFile.id !== file.id ? nextFile.id : null
+  // The reviewed file leaves the queue — it's now a real bill, not something
+  // left to review.
   if (file) {
     const i = reviewFiles.findIndex((rf) => rf.id === file.id)
     if (i !== -1) reviewFiles.splice(i, 1)
   }
   toast.notify({ variant: 'success', title: t('Expense saved'), rootProps: { class: 'toast-enterprise' } })
-  if (nextId) router.push(`/expenses/review/${nextId}`)
-  else goExpenses()
+  // Land on the bill's own detail page (Bills index → row) rather than the next
+  // file in the review queue — "Save & next" moves the user forward into the
+  // record they just created, not deeper into OCR review.
+  router.push(`/expenses/${bill.id}`)
 }
 
 /** Leave this file untouched in the queue and move to the next one. */
@@ -474,7 +530,7 @@ function skipWithoutSaving() {
 applyScenario(scenario.value)
 
 // Re-seed whenever the route points at a different file.
-watch(() => props.id, () => applyScenario(scenario.value))
+watch(() => props.orderId, () => applyScenario(scenario.value))
 </script>
 
 <template>
@@ -490,20 +546,39 @@ watch(() => props.id, () => applyScenario(scenario.value))
             {{ t('File review') }}
             <span class="detail-title-count">{{ queueIndex + 1 }} {{ t('of') }} {{ queueTotal }}</span>
           </h1>
-          <!-- Jump straight to any other file still in the review queue -->
+          <!-- Chevron → jump-to-file switcher (search + queue) -->
           <MpPopover id="br-file-nav" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <MpButton class="br-icon-btn" :aria-label="t('Switch file')">
-                <MpIcon name="caret-down" size="sm" />
-              </MpButton>
+              <button class="detail-jump-chevron" :aria-label="t('Switch file')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
             </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', maxWidth: '360px' })">
-              <MpPopoverList>
-                <MpPopoverListItem
-                  v-for="(rf, i) in reviewFiles" :key="rf.id"
-                  :is-active="rf.id === props.id" @click="goToFile(rf.id)"
-                >{{ i + 1 }}. {{ rf.file }}</MpPopoverListItem>
-              </MpPopoverList>
+            <MpPopoverContent :class="css({ width: '304px' })">
+              <div class="detail-jump">
+                <div class="detail-jump-search-wrap">
+                  <input
+                    v-model="jumpSearch"
+                    class="detail-jump-search"
+                    type="text"
+                    :placeholder="t('Search file…')"
+                  />
+                </div>
+                <div class="detail-jump-list">
+                  <button
+                    v-for="rf in jumpResults"
+                    :key="rf.id"
+                    class="detail-jump-item"
+                    :class="{ 'detail-jump-item--active': rf.id === props.orderId }"
+                    @click="goToFile(rf.id)"
+                  >
+                    <span class="detail-jump-item-number">{{ rf.position }}. {{ rf.file }}</span>
+                    <span class="detail-jump-item-customer">{{ rf.beneficiary.name }}</span>
+                  </button>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No files found.') }}</p>
+                </div>
+              </div>
             </MpPopoverContent>
           </MpPopover>
         </div>
@@ -553,18 +628,9 @@ watch(() => props.id, () => applyScenario(scenario.value))
             <div class="br-section-titlerow">
               <h2 class="br-section-title">{{ t('Expense') }}</h2>
               <!-- Reclassify — the file may not belong in Expenses at all -->
-              <MpPopover id="br-reclassify" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
-                <MpPopoverTrigger>
-                  <MpButton class="br-icon-btn" :aria-label="t('Change classification')">
-                    <MpIcon name="edit" size="sm" />
-                  </MpButton>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
-                  <MpPopoverList>
-                    <MpPopoverListItem @click="moveToPurchaseInvoice">{{ t('Move files to Purchase invoice') }}</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
+              <MpButton class="br-icon-btn" :aria-label="t('Edit classification')" @click="openClassificationModal">
+                <MpIcon name="edit" size="sm" />
+              </MpButton>
               <ErpStatusBadge :status="expenseStatus" badge-for="additionalInformation" />
             </div>
             <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="moreInfoOpen = !moreInfoOpen">
@@ -573,7 +639,7 @@ watch(() => props.id, () => applyScenario(scenario.value))
           </div>
 
           <!-- Beneficiary + paid checkbox -->
-          <div class="ex-row-1">
+          <div class="ex-row-1 ex-section-divider">
             <div class="br-ai-field ex-field-flex">
               <MpFormControl id="br-beneficiary" is-required :is-invalid="beneficiaryError" :class="{ 'br-ai-anchor': beneficiaryAiHint }">
                 <MpFormLabel>{{ t('Beneficiary') }}</MpFormLabel>
@@ -675,42 +741,49 @@ watch(() => props.id, () => applyScenario(scenario.value))
           <!-- ── To-match flow (ai_not_found / ai_matched) ── -->
           <template v-if="matchCard">
             <div class="br-accordion">
-              <button class="br-accordion-head" @click="matchAccordionOpen = !matchAccordionOpen">
+              <MpButton class="br-accordion-head" @click="matchAccordionOpen = !matchAccordionOpen">
                 <MpIcon :name="matchAccordionOpen ? 'chevrons-down' : 'chevrons-right'" size="sm" class="br-accordion-chevron" />
                 <span class="br-accordion-labels">
                   <span class="br-accordion-title">{{ t('To match') }}</span>
                   <span class="br-accordion-desc">{{ t('Start matching to add item lines') }}</span>
                 </span>
-              </button>
+              </MpButton>
 
               <div v-if="matchAccordionOpen" class="br-match-wrap">
                 <div class="br-match-card">
-                  <!-- Card header: what the doc says ⟷ what it maps to -->
+                  <!-- Card header: what the doc says ⟷ what it maps to. Both
+                       sides stack name-over-amount and lean toward the connector. -->
                   <div class="br-match-head">
-                    <div class="br-match-head-left">
-                      <MpCheckbox id="br-match-check" :is-checked="matchChecked" @change="matchChecked = !matchChecked" />
-                      <MpButton class="br-icon-btn" :aria-label="t('Toggle details')" @click="matchExpanded = !matchExpanded">
-                        <MpIcon :name="matchExpanded ? 'chevrons-down' : 'chevrons-right'" size="sm" />
-                      </MpButton>
-                      <div class="br-match-line">
-                        <span class="br-match-line-label">{{ matchCard.sourceLabel }}</span>
-                        <span class="br-match-line-amt">{{ formatIDR(matchCard.sourceAmount) }}</span>
+                    <div class="br-match-head-col br-match-head-col--src">
+                      <div class="br-match-head-controls">
+                        <MpCheckbox id="br-match-check" :is-checked="matchChecked" @change="matchChecked = !matchChecked" />
+                        <MpButton class="br-icon-btn" :aria-label="t('Toggle details')" @click="matchExpanded = !matchExpanded">
+                          <MpIcon :name="matchExpanded ? 'chevrons-down' : 'chevrons-right'" size="md" />
+                        </MpButton>
+                      </div>
+                      <div class="br-match-stack br-match-stack--end">
+                        <span class="br-match-name">{{ matchCard.sourceLabel }}</span>
+                        <span class="br-match-sub">{{ formatIDR(matchCard.sourceAmount) }}</span>
                       </div>
                     </div>
-                    <span class="br-match-link" aria-hidden="true" />
-                    <div class="br-match-head-right">
-                      <div class="br-match-line">
-                        <span class="br-match-line-label">
-                          {{ ACCOUNT_OPTIONS.find(a => a.id === matchCard!.productId)?.name || t('Not matched yet') }}
+
+                    <div class="br-match-link" aria-hidden="true"><span class="br-match-link-line" /></div>
+
+                    <div class="br-match-head-col br-match-head-col--dest">
+                      <div class="br-match-stack">
+                        <div class="br-match-name-row">
+                          <span class="br-match-name">
+                            {{ ACCOUNT_OPTIONS.find(a => a.id === matchCard!.productId)?.name || t('Not matched yet') }}
+                          </span>
                           <span v-if="matchCard.aiMatched" class="br-ai-badge">
                             <MpIcon name="airene-brand" size="sm" />{{ t('AI matched') }}
                           </span>
-                        </span>
-                        <span class="br-match-line-amt">{{ formatIDR(matchCard.sourceAmount) }}</span>
+                        </div>
+                        <span class="br-match-sub">{{ formatIDR(matchCard.sourceAmount) }}</span>
                       </div>
                       <MpTooltip id="br-accept-tip" :label="t('Accept match')" placement="top" use-portal>
                         <MpButton class="br-accept-btn" :aria-label="t('Accept match')" @click="acceptMatch">
-                          <MpIcon name="check" size="sm" />
+                          <MpIcon name="check" size="md" />
                         </MpButton>
                       </MpTooltip>
                     </div>
@@ -720,9 +793,11 @@ watch(() => props.id, () => applyScenario(scenario.value))
                   <div v-if="matchExpanded" class="br-match-body">
                     <div class="br-match-body-left">
                       <p class="br-match-body-title">{{ matchCard.sourceLabel }}</p>
-                      <div class="br-match-kv">
-                        <span class="br-match-kv-key">{{ t('Amount') }}</span>
-                        <span class="br-match-kv-val">{{ formatIDR(matchCard.sourceAmount) }}</span>
+                      <div class="br-match-rows">
+                        <div class="br-match-row">
+                          <span class="br-match-row-key">{{ t('Amount') }}</span>
+                          <span class="br-match-row-val">{{ formatIDR(matchCard.sourceAmount) }}</span>
+                        </div>
                       </div>
                     </div>
                     <div class="br-match-body-right">
@@ -730,31 +805,35 @@ watch(() => props.id, () => applyScenario(scenario.value))
                         <MpIcon name="airene-brand" size="sm" />
                         <span>{{ t('AI matched from previous transactions') }}</span>
                       </div>
-                      <MpFormControl id="br-match-product" is-required :is-invalid="matchCard.productError">
-                        <MpFormLabel>{{ t('Product') }}</MpFormLabel>
-                        <MpAutocomplete
-                          id="br-match-product-ac" v-model="matchCard.productId" :data="ACCOUNT_OPTIONS"
-                          label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-                          :placeholder="t('Select product')"
-                          :is-invalid="matchCard.productError"
-                          @update:model-value="matchCard.productError = false; itemsUnresolvedError = false"
-                        />
-                        <MpFormErrorMessage>{{ t('You must select product') }}</MpFormErrorMessage>
-                      </MpFormControl>
-                      <MpFormControl id="br-match-tax">
-                        <MpFormLabel>{{ t('Tax') }}</MpFormLabel>
-                        <MpAutocomplete
-                          id="br-match-tax-ac" v-model="matchCard.taxId" :data="TAX_OPTIONS"
-                          label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-                          :placeholder="t('Select tax')"
-                        />
-                      </MpFormControl>
-                      <div class="br-match-check">
-                        <MpCheckbox
-                          id="br-match-price-incl" :is-checked="matchCard.priceIncludesTax"
-                          @change="matchCard.priceIncludesTax = !matchCard.priceIncludesTax"
-                        />
-                        <span>{{ t('Price includes tax') }}</span>
+                      <div class="br-match-form">
+                        <MpFormControl id="br-match-product" is-required :is-invalid="matchCard.productError">
+                          <MpFormLabel>{{ t('Account') }}</MpFormLabel>
+                          <MpAutocomplete
+                            id="br-match-product-ac" v-model="matchCard.productId" :data="ACCOUNT_OPTIONS"
+                            label-prop="name" value-prop="id" is-searchable use-portal is-full-width
+                            :placeholder="t('Select account')"
+                            :is-invalid="matchCard.productError"
+                            @update:model-value="matchCard.productError = false; itemsUnresolvedError = false"
+                          />
+                          <MpFormErrorMessage>{{ t('You must select account') }}</MpFormErrorMessage>
+                        </MpFormControl>
+                        <div class="br-match-tax-group">
+                          <MpFormControl id="br-match-tax">
+                            <MpFormLabel>{{ t('Tax') }}</MpFormLabel>
+                            <MpAutocomplete
+                              id="br-match-tax-ac" v-model="matchCard.taxId" :data="TAX_OPTIONS"
+                              label-prop="name" value-prop="id" is-searchable use-portal is-full-width
+                              :placeholder="t('Select tax')"
+                            />
+                          </MpFormControl>
+                          <div class="br-match-check">
+                            <MpCheckbox
+                              id="br-match-price-incl" :is-checked="matchCard.priceIncludesTax"
+                              @change="matchCard.priceIncludesTax = !matchCard.priceIncludesTax"
+                            />
+                            <span>{{ t('Price includes tax') }}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1036,6 +1115,14 @@ watch(() => props.id, () => applyScenario(scenario.value))
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+
+    <!-- ── Edit classification modal (Figma 4707-65141) ── -->
+    <EditClassificationModal
+      :is-open="classificationModalOpen"
+      current="expense"
+      @close="closeClassificationModal"
+      @save="saveClassification"
+    />
   </div>
 </template>
 
@@ -1064,6 +1151,66 @@ watch(() => props.id, () => applyScenario(scenario.value))
 }
 /* "3 of 5" is the regular-weight counterpart to the semibold "File review" */
 .detail-title-count { font-weight: var(--mp-font-weights-regular); }
+
+/* chevron next to the title → jump-to-file switcher */
+.detail-jump-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mp-sizes-7, 28px);
+  height: var(--mp-sizes-7, 28px);
+  background: none;
+  border: none;
+  padding: 0;
+  border-radius: var(--mp-radii-md);
+  cursor: pointer;
+  color: var(--mp-icon-default);
+}
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+
+/* jump-to popover (304px): search on top (280px input, 12px padding), queue below */
+.detail-jump { display: flex; flex-direction: column; }
+.detail-jump-search-wrap { padding: var(--mp-spacing-3); }   /* 12px around the search */
+.detail-jump-search {
+  width: 100%;        /* = 280px inside the 304px popover minus 12px padding each side */
+  box-sizing: border-box;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold);
+  border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+  outline: none;
+}
+.detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
+.detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
+/* The detail pages cap this list at 5 recent records; the review queue is a
+   fixed run the user works through in order, so every file stays listed and
+   the list scrolls instead. */
+.detail-jump-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; }
+.detail-jump-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-0\.5);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  border-radius: var(--mp-radii-md);
+}
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+/* Not in the detail-page pattern — the queue has a "current" file the title
+   bar is already counting, so it's marked here too. */
+.detail-jump-item--active { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.detail-jump-empty {
+  margin: 0;
+  padding: var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
+}
 
 /* ── Two-panel stage ──────────────────────────────────────────────────────── */
 .ex-stage {
@@ -1173,15 +1320,19 @@ watch(() => props.id, () => applyScenario(scenario.value))
 .br-ai-banner--boxed {
   padding: var(--mp-spacing-1\.5); border-radius: var(--mp-radii-md); margin: 0;
 }
+/* Pill on the match card's destination line */
 .br-ai-badge {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
-  margin-left: var(--mp-spacing-2);
-  color: var(--mp-airene-banner-text, #5221a5); font-size: var(--mp-font-sizes-sm);
+  display: inline-flex; align-items: center; flex-shrink: 0; gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-1);
+  border-radius: var(--mp-radii-full);
+  background: var(--mp-airene-banner-bg, #f6f3ff);
+  color: var(--mp-airene-banner-text, #5221a5);
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
   white-space: nowrap;
 }
 /* The airene-brand glyph has no intrinsic box — MpIcon's size prop leaves it at
-   its natural (oversized) dimensions, so pin it to the 16px the badge expects. */
-.br-ai-badge :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
+   its natural (oversized) dimensions, so pin it to the 10px the pill expects. */
+.br-ai-badge :deep(svg) { width: 10px; height: 10px; flex-shrink: 0; }
 .br-ai-banner :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
 
 /* ── Header field rows (from NewExpensePage) ──────────────────────────────── */
@@ -1197,6 +1348,14 @@ watch(() => props.id, () => applyScenario(scenario.value))
   display: grid; grid-template-columns: repeat(auto-fill, var(--ex-field-width));
   justify-content: flex-start; gap: var(--mp-spacing-4) var(--mp-spacing-6); padding-top: var(--mp-spacing-5, 20px);
 }
+/* Dashed rule between the beneficiary row and the date grid — 20px clear on each
+   side. .br-section's 12px flex gap is cancelled so it doesn't stack onto the
+   grid's own 20px padding-top and push the rule off-centre. */
+.ex-section-divider {
+  border-bottom: 1px dashed var(--mp-border-default);
+  padding-bottom: var(--mp-spacing-5, 20px);
+  margin-bottom: calc(-1 * var(--mp-spacing-3));
+}
 .ex-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .ex-label-icon { display: flex; align-items: center; color: var(--mp-text-secondary); cursor: pointer; }
 .ex-datepicker { width: 100%; }
@@ -1211,8 +1370,10 @@ watch(() => props.id, () => applyScenario(scenario.value))
 .br-items-error-banner { margin-bottom: var(--mp-spacing-1); }
 .br-accordion { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .br-accordion-head {
-  display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
-  background: none; border: none; padding: 0; cursor: pointer; text-align: left; font: inherit;
+  display: flex !important; align-items: flex-start; gap: var(--mp-spacing-3);
+  width: auto !important; height: auto !important; min-width: 0 !important;
+  background: none !important; border: none !important; padding: 0 !important;
+  cursor: pointer; text-align: left; font: inherit;
 }
 .br-accordion-chevron { flex-shrink: 0; margin-top: var(--mp-spacing-0\.5, 2px); color: var(--mp-text-default); }
 .br-accordion-labels { display: flex; flex-direction: column; gap: 0; min-width: 0; }
@@ -1235,57 +1396,80 @@ watch(() => props.id, () => applyScenario(scenario.value))
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-md); overflow: hidden;
 }
+/* Header — a 60px band split source | connector | destination. Each half is a
+   flex-1 column so the connector always lands on the card's centre line. */
 .br-match-head {
-  display: flex; align-items: center; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  display: flex; align-items: stretch; min-height: 60px;
   background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.br-match-head-left,
-.br-match-head-right { display: flex; align-items: center; gap: var(--mp-spacing-2); flex: 1 1 0; min-width: 0; }
-/* Dotted connector between "what the doc says" and "what it maps to" */
-.br-match-link {
-  flex: 0 0 var(--mp-spacing-8, 32px); align-self: center;
-  border-top: 1px dashed var(--mp-border-bold);
+.br-match-head-col { display: flex; align-items: center; gap: var(--mp-spacing-4); flex: 1 1 0; min-width: 0; }
+.br-match-head-col--src { padding: var(--mp-spacing-2) var(--mp-spacing-3); }
+.br-match-head-col--dest { padding: var(--mp-spacing-2) var(--mp-spacing-6) var(--mp-spacing-2) var(--mp-spacing-3); }
+.br-match-head-controls { display: flex; align-items: center; flex-shrink: 0; }
+/* Connector between "what the doc says" and "what it maps to" */
+.br-match-link { flex: 0 0 52px; display: flex; align-items: center; justify-content: center; }
+.br-match-link-line { width: 24px; border-top: 1px solid var(--mp-border-bold, #758195); }
+
+.br-match-stack { display: flex; flex-direction: column; gap: var(--mp-spacing-1); flex: 1 1 0; min-width: 0; }
+/* The source side reads right-to-left into the connector */
+.br-match-stack--end { align-items: flex-end; text-align: right; }
+.br-match-name {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
-.br-match-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-2); flex: 1 1 0; min-width: 0; }
-.br-match-line-label {
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+.br-match-name-row { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.br-match-sub {
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
+  color: var(--mp-text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
-.br-match-line-amt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .br-accept-btn {
   flex-shrink: 0;
   display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
   padding: 0 !important;
-  border: 1px solid var(--mp-border-default) !important;
-  background: var(--mp-background-neutral) !important;
+  border: 2px solid var(--mp-border-bold, #758195) !important;
+  background: transparent !important;
   border-radius: var(--mp-radii-full) !important;
-  color: var(--mp-text-secondary); cursor: pointer;
+  color: var(--mp-border-bold, #758195); cursor: pointer;
 }
 .br-accept-btn:hover {
   border-color: var(--mp-border-selected, #029861) !important;
   color: var(--mp-border-selected, #029861);
 }
 
+/* Body — extracted values on the left, the fields they map to on the right,
+   split by the same rule that runs under the connector. */
 .br-match-body { display: flex; align-items: stretch; }
 .br-match-body-left {
   flex: 1 1 0; min-width: 0;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-4); border-right: 1px solid var(--mp-border-default);
+  display: flex; flex-direction: column;
+  padding: var(--mp-spacing-4) 38px var(--mp-spacing-4) var(--mp-spacing-6);
+  border-right: 1px solid var(--mp-border-default);
 }
 .br-match-body-title {
-  margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
+  margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-lg); color: var(--mp-text-default);
 }
-.br-match-kv { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-4); }
-.br-match-kv-key { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.br-match-kv-val { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.br-match-rows { display: flex; flex-direction: column; }
+.br-match-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); }
+.br-match-row-key {
+  flex: 0 0 160px; padding: var(--mp-spacing-1) 0;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
+}
+.br-match-row-val {
+  flex: 1 1 0; min-width: 0; padding: var(--mp-spacing-1) 0;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
+}
 .br-match-body-right {
   flex: 1 1 0; min-width: 0;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-4) var(--mp-spacing-6) var(--mp-spacing-4) 38px;
 }
+.br-match-form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.br-match-tax-group { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 /* Checkbox rows keep gap:0 — MpCheckbox brings its own control-to-label gap */
 .br-match-check { display: flex; align-items: center; gap: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 

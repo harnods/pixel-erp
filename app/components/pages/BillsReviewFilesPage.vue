@@ -9,17 +9,27 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { reviewFiles, addProcessingReviewFile, deleteReviewFiles, moveReviewFilesToPurchaseInvoice } from '~/data'
+import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile, deleteReviewFiles, moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses } from '~/data'
 import type { ReviewFile, FileClassification } from '~/data'
+
+/** Which surface's review queue this table is showing. Both Expenses and
+ *  Purchase invoices have a "Review files" tab over the same table; only the
+ *  underlying queue and the review route differ. */
+const props = withDefaults(defineProps<{ surface?: 'expenses' | 'purchase-invoices' }>(), {
+  surface: 'expenses',
+})
 
 const { t } = useLocale()
 const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
 
+const queue = computed(() => (props.surface === 'purchase-invoices' ? purchaseInvoiceReviewFiles : reviewFiles))
+const reviewBase = computed(() => (props.surface === 'purchase-invoices' ? '/purchase-invoices/review' : '/expenses/review'))
+
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'file',            label: 'File',           width: '220px', sortable: true,                 sortType: 'text'   },
-  { key: 'number',          label: 'Number',         width: '160px', sortable: true,                 sortType: 'number' },
+  { key: 'number',          label: 'Number',         width: '160px', sortable: true,                 sortType: 'text'   },
   { key: 'beneficiaryName', label: 'Beneficiary',    width: '220px', sortable: true,                 sortType: 'text'   },
   { key: 'confidence',      label: 'Confidence',     width: '120px', sortable: true,                 sortType: 'number' },
   { key: 'classification',  label: 'Classification', width: '160px',                                 sortType: 'text'   },
@@ -46,7 +56,7 @@ function iconForFile(name: string): string {
 // ─── Flatten + enrich ─────────────────────────────────────────────────────────
 
 const rows = computed<Row[]>(() =>
-  reviewFiles.map(rf => ({
+  queue.value.map(rf => ({
     ...rf,
     beneficiaryName: rf.beneficiary.name,
     fileIcon: iconForFile(rf.file),
@@ -67,10 +77,14 @@ const {
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 
+// OCR can classify an uploaded file as any of the four types no matter which
+// surface it landed on (see reviewFiles.ts), so both tabs filter across all
+// four rather than just the surface's "native" classification.
 const classificationOptions: { label: string; value: FileClassification | '' }[] = [
-  { label: t('Bill'),         value: 'bill'         },
-  { label: t('Receipt'),      value: 'receipt'      },
-  { label: t('Unclassified'), value: 'unclassified' },
+  { label: t('Expenses'),        value: 'bill'         },
+  { label: t('Invoice'),         value: 'invoice'      },
+  { label: t('Payment receipt'), value: 'receipt'      },
+  { label: t('Other documents'), value: 'unclassified' },
 ]
 
 const classificationLabel = computed(
@@ -93,8 +107,8 @@ function formatDate(iso: string) {
   }).format(new Date(iso))
 }
 
-function formatNumber(n: number) {
-  return `${t('Expense')} #${String(n).padStart(5, '0')}`
+function formatNumber(n: string | undefined) {
+  return n ?? '—'
 }
 
 function confidenceLabel(score: number): 'High' | 'Medium' | 'Low' {
@@ -120,7 +134,7 @@ function openFilePicker() { fileInputEl.value?.click() }
 
 function ingestFiles(files: FileList | null) {
   if (!files) return
-  for (const f of Array.from(files)) addProcessingReviewFile(f.name)
+  for (const f of Array.from(files)) addProcessingReviewFile(f.name, props.surface)
 }
 function onFileInputChange(ev: Event) {
   const input = ev.target as HTMLInputElement
@@ -138,21 +152,27 @@ function onDropzoneDrop(ev: DragEvent) {
 function bulkSelectedReviewFiles(selectedRows: Set<number>): Row[] {
   return [...selectedRows].map(i => paginated.value[i] as Row).filter(Boolean)
 }
-/** All selected rows share one classification, and it isn't 'bill' (i.e. all
- *  Receipt or all Unclassified) — these can be reviewed or moved elsewhere.
- *  Mixed selections, and all-Bill selections, fall back to Review + Delete only. */
-function allSelectedSameNonBillClassification(selectedRows: Set<number>): boolean {
+// Each surface's own classification — 'bill' reviews as an Expense here,
+// 'invoice' as a Purchase invoice there. A file OCR reads as anything else
+// doesn't belong to this surface and needs to be moved out via bulk action.
+const nativeClassification = computed<FileClassification>(() => (props.surface === 'purchase-invoices' ? 'invoice' : 'bill'))
+
+/** All selected rows share one classification, and it isn't this surface's
+ *  native one (i.e. all Receipt, all Invoice/Expenses, or all Unclassified)
+ *  — these can be reviewed or moved elsewhere. Mixed selections, and
+ *  all-native selections, fall back to Review + Delete only. */
+function allSelectedSameNonNativeClassification(selectedRows: Set<number>): boolean {
   const selected = bulkSelectedReviewFiles(selectedRows)
   if (!selected.length) return false
   const first = selected[0]!.classification
-  return first !== 'bill' && selected.every(rf => rf.classification === first)
+  return first !== nativeClassification.value && selected.every(rf => rf.classification === first)
 }
 
 // Review — opens the file-review page on the first selected file; the page's own
 // "Save & next" / "Skip without saving" walk the rest of the queue from there.
 function openReviewFiles(files: ReviewFile[]) {
   const first = files[0]
-  if (first) router.push(`/expenses/review/${first.id}`)
+  if (first) router.push(`${reviewBase.value}/${first.id}`)
 }
 function reviewSelected(selectedRows: Set<number>) {
   openReviewFiles(bulkSelectedReviewFiles(selectedRows))
@@ -163,14 +183,20 @@ function openRowReview(row: Row) {
   openReviewFiles([row])
 }
 
-// Move to Purchase invoice — handles the case where an uploaded file turns out
-// to be a purchase invoice, not a bill/receipt for Expenses.
-function moveSelectedToPurchaseInvoice(selectedRows: Set<number>, deselectAll: () => void) {
+// Move to the other surface's queue — handles the case where an uploaded
+// file turns out to belong to Purchase invoices while sitting in Expenses'
+// queue, or vice versa. Each tab only ever moves out towards the other one.
+const moveActionLabel = computed(() => (props.surface === 'purchase-invoices' ? 'Move files to Expenses' : 'Move files to Purchase invoice'))
+const movedToastLabel = computed(() => (props.surface === 'purchase-invoices' ? 'moved to Expenses' : 'moved to Purchase invoice'))
+
+function moveSelectedToOtherSurface(selectedRows: Set<number>, deselectAll: () => void) {
   const ids = bulkSelectedReviewFiles(selectedRows).map(rf => rf.id)
-  const count = moveReviewFilesToPurchaseInvoice(ids)
+  const count = props.surface === 'purchase-invoices'
+    ? moveReviewFilesToExpenses(ids)
+    : moveReviewFilesToPurchaseInvoice(ids)
   toast.notify({
     variant: 'success',
-    title: `${count} ${t(count !== 1 ? 'files' : 'file')} ${t('moved to Purchase invoice')}`,
+    title: `${count} ${t(count !== 1 ? 'files' : 'file')} ${t(movedToastLabel.value)}`,
     rootProps: { class: 'toast-enterprise' },
   })
   deselectAll()
@@ -189,7 +215,7 @@ function openBulkDeleteModal(selectedRows: Set<number>, deselectAll: () => void)
 }
 function closeBulkDeleteModal() { bulkDeleteModalOpen.value = false }
 function confirmBulkDelete() {
-  const count = deleteReviewFiles(bulkDeleteIds.value)
+  const count = deleteReviewFiles(bulkDeleteIds.value, props.surface)
   toast.notify({
     variant: 'success',
     title: `${count} ${t(count !== 1 ? 'files' : 'file')} ${t('deleted')}`,
@@ -221,7 +247,7 @@ function confirmBulkDelete() {
 
     <!-- ── Bulk actions ── -->
     <template #bulk-actions="{ selectedRows, deselectAll }">
-      <template v-if="allSelectedSameNonBillClassification(selectedRows as Set<number>)">
+      <template v-if="allSelectedSameNonNativeClassification(selectedRows as Set<number>)">
         <MpPopover id="review-files-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm btn-enterprise--icon-after">
@@ -234,7 +260,7 @@ function confirmBulkDelete() {
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem @click="reviewSelected(selectedRows as Set<number>)">{{ t('Review') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="moveSelectedToPurchaseInvoice(selectedRows as Set<number>, deselectAll)">{{ t('Move files to Purchase invoice') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="moveSelectedToOtherSurface(selectedRows as Set<number>, deselectAll)">{{ t(moveActionLabel) }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -390,7 +416,7 @@ function confirmBulkDelete() {
     <!-- ── Cell: Number ── -->
     <template #cell-number="{ row, value }">
       <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
-      <template v-else>{{ formatNumber(value as number) }}</template>
+      <template v-else>{{ formatNumber(value as string | undefined) }}</template>
     </template>
 
     <!-- ── Cell: Beneficiary ── -->
@@ -545,12 +571,12 @@ function confirmBulkDelete() {
 }
 
 /* Processing-row skeleton bar — matches Figma's OCR "processing" row state
-   (node 4260:65434): solid #ebebeb bar, no shimmer, full cell width. */
+   (node 4260:65434): solid neutral-subtle bar, no shimmer, full cell width. */
 .review-skeleton {
   display: block !important;
   width: 100%;
   background-image: none !important;
-  background-color: #ebebeb !important;
+  background-color: var(--mp-background-neutral-subtle, #ebebeb) !important;
   animation: none !important;
 }
 

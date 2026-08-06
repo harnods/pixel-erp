@@ -25,7 +25,7 @@ import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wms
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
-import { reviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
+import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
@@ -93,6 +93,7 @@ const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPa
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
+const PurchaseInvoicesPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
 const PartialReceiptDetailsPage = asyncPage(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
@@ -194,6 +195,9 @@ provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplic
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
+const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
+const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
+const UnclassifiedReviewPage = asyncPage(() => import('~/components/pages/UnclassifiedReviewPage.vue'))
 const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
@@ -211,9 +215,20 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
     return { component: NewExpensePage, id: 'new' }
   }
-  // /expenses/review/:id → OCR file review ("File review N of M")
-  if (segs.length >= 3 && segs[0] === 'expenses' && segs[1] === 'review') {
-    return { component: BillReviewPage, id: segs[2]! }
+  // OCR file review ("File review N of M"). The same run is reachable from both
+  // Expenses and Purchase invoices; the route prefix decides which queue is
+  // being worked through (see useReviewQueue) and the file's own classification
+  // decides which form renders.
+  if (segs.length >= 3 && segs[1] === 'review' && (segs[0] === 'expenses' || segs[0] === 'purchase-invoices')) {
+    const id = segs[2]!
+    const queue = segs[0] === 'purchase-invoices' ? purchaseInvoiceReviewFiles : reviewFiles
+    const classification = queue.find((rf) => rf.id === id)?.classification ?? 'bill'
+    const component =
+      classification === 'invoice'      ? InvoiceReviewPage
+      : classification === 'receipt'      ? ReceiptReviewPage
+      : classification === 'unclassified' ? UnclassifiedReviewPage
+      : BillReviewPage
+    return { component, id }
   }
   // /expenses/:id/payment → "Add payment" form for that unpaid bill (New spend money)
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment') {
@@ -428,6 +443,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
+  'Purchase invoices': ['All purchase invoices', 'Review files'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -605,6 +621,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Bills': BillsIndexPage,
     'Awaiting Approval': BillsAwaitingApprovalPage,
     'Review files': BillsReviewFilesPage,
+  },
+  // Purchase invoices reuses the same review-files table over its own queue —
+  // the `surface` prop swaps both the data and the review route.
+  'Purchase invoices': {
+    'All purchase invoices': PurchaseInvoicesPage,
+    'Review files': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
   },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
