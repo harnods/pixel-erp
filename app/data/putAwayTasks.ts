@@ -120,11 +120,11 @@ function seedTasks(): PutAwayTask[] {
   return out;
 }
 
-const snapshot = loadSnapshot<PutAwayTask>("putaway");
+const snapshot = loadSnapshot<PutAwayTask>("putaway-v2");
 export const putAwayTasks = reactive<PutAwayTask[]>(snapshot ?? seedTasks());
 
 function persistPutAways(): void {
-  saveSnapshot("putaway", putAwayTasks);
+  saveSnapshot("putaway-v2", putAwayTasks);
 }
 
 // On first load, mark each seed put-away's receiving task(s) Completed.

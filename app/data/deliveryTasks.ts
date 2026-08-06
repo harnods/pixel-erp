@@ -215,11 +215,11 @@ function seedShippedDeliveries(startSeq: number): DeliveryTask[] {
   return out;
 }
 
-const snapshot = loadSnapshot<DeliveryTask>("delivery-v2");
+const snapshot = loadSnapshot<DeliveryTask>("delivery-v3");
 export const deliveryTasks = reactive<DeliveryTask[]>(snapshot ?? seedTasks());
 
 function persistDelivery(): void {
-  saveSnapshot("delivery-v2", deliveryTasks);
+  saveSnapshot("delivery-v3", deliveryTasks);
 }
 
 let nextSeq = 50090 + deliveryTasks.length;

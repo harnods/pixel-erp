@@ -277,8 +277,9 @@ function generateOrders(count = 42): OutgoingOrder[] {
       orderQty,
       shippedQty: computeShipped(i, status, orderQty),
       status,
-      // completed orders fully shipped between due date and today
-      shippedDate: status === "completed" ? isoOffset(-((i % 10) + 1)) : undefined,
+      // Completed orders shipped 1..88 days ago (spread, so date-range filters on
+      // the Overview / Reports are meaningful rather than all bunched at "recent").
+      shippedDate: status === "completed" ? isoOffset(-(1 + ((i * 37) % 88))) : undefined,
       dueDate,
       memo: generateMemo(i, isoOffset(offset)),
       salesOrderId: so?.id,
@@ -325,7 +326,7 @@ function generateShipped(count = 10): OutgoingOrder[] {
       orderQty,
       shippedQty: 0, // re-derived by the sync from the delivery tasks
       status: partial ? "partially shipped" : "completed",
-      shippedDate: isoOffset(-((k % 10) + 1)),
+      shippedDate: isoOffset(-(1 + ((k * 37) % 88))),
       dueDate: isoOffset(-((k % 12) + 2)),
       memo: generateMemo(i, isoOffset(-((k % 12) + 2))),
       salesOrderId: so?.id,
@@ -626,7 +627,7 @@ function generateMultiOrderPickingScenario(): OutgoingOrder[] {
 // full snapshot so seed records mutated by the flow (status derivation, shipped
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
-const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
+const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing-v2");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
   outgoingSnapshot ?? [
     ...generateTrackingScenario(), ...generateMultiOrderPickingScenario(),
@@ -670,7 +671,7 @@ export const shippedSeeds: ShippedSeed[] = outgoingOrders
 
 /** Persist the outgoing snapshot (call after any mutation). */
 export function persistOutgoing(): void {
-  saveSnapshot("outgoing", outgoingOrders);
+  saveSnapshot("outgoing-v2", outgoingOrders);
 }
 
 let outgoingAddSeq = outgoingOrders.filter((o) => o.id.startsWith("out-new-")).length;

@@ -69,6 +69,9 @@ const filter = computed<AnalyticsFilter>(() => ({
   warehouseId: warehouseId.value,
   operator: operator.value,
   periodDays: periodDays.value,
+  // Live operations reference day (Today / Yesterday / N days ago) — local date,
+  // not toISOString (which would shift a day in +07:00).
+  asOf: `${liveDate.value.getFullYear()}-${String(liveDate.value.getMonth() + 1).padStart(2, '0')}-${String(liveDate.value.getDate()).padStart(2, '0')}`,
 }))
 const model = computed(() => props.direction === 'inbound' ? inboundAnalytics(filter.value) : outboundAnalytics(filter.value))
 const live = computed(() => model.value.live)

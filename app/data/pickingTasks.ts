@@ -429,11 +429,11 @@ function isoAt(dayOffset: number, hour: number, minute: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(hour)}:${p(minute)}:00`;
 }
 
-const snapshot = loadSnapshot<PickingTask>("picking");
+const snapshot = loadSnapshot<PickingTask>("picking-v2");
 export const pickingTasks = reactive<PickingTask[]>(snapshot ?? seedTasks());
 
 function persistPicking(): void {
-  saveSnapshot("picking", pickingTasks);
+  saveSnapshot("picking-v2", pickingTasks);
 }
 
 // Freeze the freshly-generated seed on first client load. The demo picking tasks
