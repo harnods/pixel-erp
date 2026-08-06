@@ -111,28 +111,24 @@ function stageVal(s: { avg: number | null; median: number | null }): number | nu
 }
 const barStages = computed(() => perf.value.stages.filter((s) => !s.total))
 const cycleStage = computed(() => perf.value.stages.find((s) => s.total))
-const barMax = computed(() => {
-  const vals = barStages.value.map((s) => stageVal(s) ?? 0)
-  return Math.max(1, ...vals)
-})
 const cycleVal = computed(() => stageVal(cycleStage.value ?? { avg: null, median: null }))
-// Idle time inside the cycle not covered by the measured stages.
 const stagesSum = computed(() => barStages.value.reduce((sum, s) => sum + (stageVal(s) ?? 0), 0))
+// Idle time inside the cycle not covered by the measured stages.
 const idleMin = computed(() => cycleVal.value != null ? Math.max(0, cycleVal.value - stagesSum.value) : 0)
 
-function barWidth(s: { avg: number | null; median: number | null }): string {
-  const v = stageVal(s) ?? 0
-  return `${Math.max(2, (v / barMax.value) * 100)}%`
-}
-// Cycle bar: stages laid end-to-end as a proportion of the full cycle.
-function cycleSeg(s: { avg: number | null; median: number | null }): string {
-  const v = stageVal(s) ?? 0
-  const total = cycleVal.value || 1
-  return `${(v / total) * 100}%`
-}
-const idleSeg = computed(() => {
-  const total = cycleVal.value || 1
-  return `${(idleMin.value / total) * 100}%`
+// Waterfall scale: everything is a proportion of the FULL cycle, and each stage
+// starts where the previous one ended (offset = cumulative time before it), so the
+// stage bars laid end-to-end line up with the full-width cycle bar at the bottom.
+const stageTotal = computed(() => (cycleVal.value && cycleVal.value > 0 ? cycleVal.value : stagesSum.value || 1))
+const stageBars = computed(() => {
+  let acc = 0
+  return barStages.value.map((s) => {
+    const v = stageVal(s) ?? 0
+    const left = (acc / stageTotal.value) * 100
+    const width = (v / stageTotal.value) * 100
+    acc += v
+    return { s, left, width }
+  })
 })
 
 function toneDot(kind: 'onTime' | 'late' | 'early'): string {
@@ -280,27 +276,26 @@ function stageAccent(s: StageCard): string {
         </div>
 
         <div class="stage-list">
-          <div v-for="s in barStages" :key="s.key" class="stage-row">
+          <div v-for="row in stageBars" :key="row.s.key" class="stage-row">
             <div class="stage-info">
-              <span class="stage-name">{{ t(s.label) }}</span>
-              <span class="stage-hint">{{ t(s.desc) }}</span>
+              <span class="stage-name">{{ t(row.s.label) }}</span>
+              <span class="stage-hint">{{ t(row.s.desc) }}</span>
             </div>
             <div class="stage-track">
-              <div class="stage-fill" :style="{ width: barWidth(s) }" />
+              <!-- offset so this stage starts where the previous one ended -->
+              <div class="stage-fill" :style="{ marginLeft: row.left + '%', width: Math.max(1, row.width) + '%' }" />
             </div>
-            <span class="stage-val">{{ fmtDur(stageVal(s)) }}</span>
+            <span class="stage-val">{{ fmtDur(stageVal(row.s)) }}</span>
           </div>
 
-          <!-- Cycle bar (stages end-to-end + idle) -->
+          <!-- Cycle bar — the whole span, one solid bar -->
           <div v-if="cycleStage" class="stage-row stage-row--cycle">
             <div class="stage-info">
               <span class="stage-name">{{ t(cycleStage.label) }}</span>
               <span class="stage-hint">{{ t(cycleStage.desc) }}</span>
             </div>
-            <div class="stage-track stage-track--cycle">
-              <div v-for="s in barStages" :key="s.key" class="cycle-seg" :class="`cycle-seg--${s.key}`"
-                :style="{ width: cycleSeg(s) }" :title="`${t(s.label)} ${fmtDur(stageVal(s))}`" />
-              <div v-if="idleMin > 0" class="cycle-seg cycle-seg--idle" :style="{ width: idleSeg }" :title="t('Idle time')" />
+            <div class="stage-track">
+              <div class="stage-fill stage-fill--cycle" :style="{ width: '100%' }" />
             </div>
             <span class="stage-val stage-val--strong">{{ fmtDur(cycleVal) }}</span>
           </div>
@@ -539,18 +534,14 @@ function stageAccent(s: StageCard): string {
 .stage-info { grid-column: span 2; display: flex; flex-direction: column; gap: 2px; }
 .stage-name { font-size: 13px; font-weight: 500; color: var(--mp-text-default); }
 .stage-hint { font-size: 11px; color: var(--mp-text-subtle); }
-.stage-track { grid-column: span 3; position: relative; height: 12px; background: #fff; border: 1px solid #EBF0F1; border-radius: 999px; display: flex; align-items: center; overflow: hidden; }
-.stage-fill { height: 100%; background: var(--mp-background-brand-bold, #4b61dc); border-radius: 999px; opacity: 0.9; }
+.stage-track { grid-column: span 3; position: relative; height: 12px; background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: 999px; display: flex; align-items: center; }
+/* Each stage is offset (margin-left, inline) so the bars lay end-to-end and the
+   cumulative run matches the full-width cycle bar below. Light green for stages. */
+.stage-fill { height: 100%; background: #93d3a6; border-radius: 999px; }
+.stage-fill--cycle { background: #2f9e5f; }
 .stage-val { grid-column: span 1; text-align: right; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); }
 .stage-val--strong { color: var(--mp-text-default); font-weight: 500; }
 .stage-row--cycle { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--mp-border-default); }
-.stage-track--cycle { overflow: hidden; }
-.cycle-seg { height: 100%; }
-.cycle-seg--wait { background: color-mix(in srgb, var(--mp-background-brand-bold, #4b61dc) 35%, transparent); }
-.cycle-seg--receiving, .cycle-seg--picking { background: color-mix(in srgb, var(--mp-background-brand-bold, #4b61dc) 70%, transparent); }
-.cycle-seg--putaway, .cycle-seg--packing { background: color-mix(in srgb, var(--mp-background-brand-bold, #4b61dc) 90%, transparent); }
-.cycle-seg--shipping { background: var(--mp-background-brand-bold, #4b61dc); }
-.cycle-seg--idle { background: repeating-linear-gradient(45deg, var(--mp-background-neutral-hovered), var(--mp-background-neutral-hovered) 4px, transparent 4px, transparent 8px); }
 
 /* Timeliness / Volume / Activity ratios — each stat is a white bordered card:
    title + shortcut, divider, then body. Cards in a grid stretch to equal height. */
