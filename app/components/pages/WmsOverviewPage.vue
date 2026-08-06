@@ -532,7 +532,9 @@ function stageAccent(s: StageCard): string {
 /* stage bars — fixed label, flexible bar (fills), fixed time. The bar track
    (1fr) fills all the space between the label and the time, no side gaps. */
 .stage-list { display: flex; flex-direction: column; gap: 14px; }
-.stage-row { display: grid; grid-template-columns: 280px 1fr max-content; gap: 16px; align-items: center; }
+/* Time column is a FIXED width (each row is its own grid, so max-content would
+   size the track differently per row and leave the track ends ragged). */
+.stage-row { display: grid; grid-template-columns: 280px 1fr 76px; gap: 16px; align-items: center; }
 .stage-info { display: flex; flex-direction: column; gap: 2px; }
 .stage-name { font-size: 13px; font-weight: 500; color: var(--mp-text-default); }
 .stage-hint { font-size: 11px; color: var(--mp-text-subtle); }
