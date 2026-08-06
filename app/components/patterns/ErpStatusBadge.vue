@@ -55,6 +55,7 @@ const statusConfig: Record<string, StatusConfig> = {
   shipped:    { type: 'completed',    label: 'Shipped'    },
   high:       { type: 'completed',    label: 'High'       },
   fulfilled:  { type: 'completed',    label: 'Fulfilled'  },
+  ready:      { type: 'completed',    label: 'Ready'      },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
@@ -81,6 +82,7 @@ const statusConfig: Record<string, StatusConfig> = {
   error:      { type: 'critical',     label: 'Error'      },
   declined:   { type: 'critical',     label: 'Declined'   },
   low:        { type: 'critical',     label: 'Low'        },
+  'needs review':{ type: 'critical',  label: 'Needs review' },
 
   // ── announcement — GRAY (neutral / final / inactive) ──
   draft:      { type: 'announcement', label: 'Draft'      },

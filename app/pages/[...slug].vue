@@ -25,7 +25,7 @@ import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wms
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
-import { reviewFiles } from '~/data/reviewFiles'
+import { reviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
@@ -193,6 +193,7 @@ provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: st
 provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
@@ -209,6 +210,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
     return { component: NewExpensePage, id: 'new' }
+  }
+  // /expenses/review/:id → OCR file review ("File review N of M")
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[1] === 'review') {
+    return { component: BillReviewPage, id: segs[2]! }
   }
   // /expenses/:id/payment → "Add payment" form for that unpaid bill (New spend money)
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment') {
@@ -661,6 +666,23 @@ function onImportOutsideClick(e: MouseEvent) {
   if (!importBtnWrapEl.value?.contains(e.target as Node)) {
     importDropdownOpen.value = false
   }
+}
+
+// "Upload bills" (Import dropdown, Expenses) — drops each file into the Review
+// files table as a processing row (see addProcessingReviewFile), same entry
+// point as the dropzone card on the Review files tab itself.
+const uploadBillsInputEl = ref<HTMLInputElement | null>(null)
+function openUploadBills() {
+  importDropdownOpen.value = false
+  uploadBillsInputEl.value?.click()
+}
+function onUploadBillsChange(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  if (input.files) {
+    for (const f of Array.from(input.files)) addProcessingReviewFile(f.name)
+    selectTab('Review files')
+  }
+  input.value = ''
 }
 
 // ── Stock adjustments "Actions" dropdown (page title) ─────────────────────
@@ -1209,13 +1231,18 @@ function startResize(e: MouseEvent) {
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
                 <MpButton variant="ghost" class="import-item">{{ t('Import from spreadsheet') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--ai">
+                <MpButton variant="ghost" class="import-item import-item--ai" @click="openUploadBills">
                   <span>Upload bills</span>
                   <span class="ai-badge">
                     <MpIcon name="airene-brand" size="xs" class="ai-badge__icon" />
                     <span class="ai-badge__label">AI</span>
                   </span>
                 </MpButton>
+                <input
+                  ref="uploadBillsInputEl" type="file" class="visually-hidden-input"
+                  accept=".csv,.png,.xlsx,.pdf,.jpg,.jpeg" multiple
+                  @change="onUploadBillsChange"
+                />
               </div>
 
               <!-- Group 2: Forward bills to -->
@@ -1694,6 +1721,16 @@ function startResize(e: MouseEvent) {
 
 .import-wrap {
   position: relative;
+}
+
+.visually-hidden-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .import-chevron {

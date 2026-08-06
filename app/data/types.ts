@@ -139,6 +139,9 @@ export interface ReviewFile {
   classification: FileClassification
   date: string
   amount: number
+  /** true while OCR is still extracting this file's fields — only the
+   *  filename is known yet, every other column renders a skeleton bar. */
+  processing?: boolean
 }
 
 export interface SalesOrderItem {
