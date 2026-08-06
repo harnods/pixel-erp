@@ -282,10 +282,11 @@ function stageAccent(s: StageCard): string {
               <span class="stage-hint">{{ t(row.s.desc) }}</span>
             </div>
             <div class="stage-track">
-              <!-- offset so this stage starts where the previous one ended -->
-              <div class="stage-fill" :style="{ marginLeft: row.left + '%', width: Math.max(1, row.width) + '%' }" />
+              <!-- offset so this stage starts where the previous one ended; a 0m
+                   stage renders no bar at all -->
+              <div v-if="row.width > 0" class="stage-fill" :style="{ marginLeft: row.left + '%', width: row.width + '%' }" />
             </div>
-            <span class="stage-val">{{ fmtDur(stageVal(row.s)) }}</span>
+            <span class="stage-val">{{ fmtDur(stageVal(row.s) ?? 0) }}</span>
           </div>
 
           <!-- Cycle bar — the whole span, one solid bar -->
