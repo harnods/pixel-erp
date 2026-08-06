@@ -241,7 +241,6 @@ function stageAccent(s: StageCard): string {
           <MpPopover :id="`ovw-period-${direction}`" is-close-on-select>
             <MpPopoverTrigger>
               <button type="button" class="filter-trigger filter-trigger--auto filter-trigger--ghost">
-                <svg class="cal-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 2.5v3M16 2.5v3M3.5 9.5h17M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 19 20.5H5A1.5 1.5 0 0 1 3.5 19V6A1.5 1.5 0 0 1 5 4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <span class="filter-trigger-label">{{ t('Period') }}: {{ t(periodLabel) }}</span>
                 <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
@@ -307,7 +306,7 @@ function stageAccent(s: StageCard): string {
 
       <!-- Timeliness -->
       <div class="sub-panel">
-        <div class="section-eyebrow">{{ t('Timeliness') }}</div>
+        <h3 class="section-eyebrow">{{ t('Timeliness') }}</h3>
         <div class="metric-grid" :style="{ gridTemplateColumns: metricCols }">
           <div v-for="b in perf.timeliness" :key="b.label" class="metric-card">
             <div class="metric-card-head">
@@ -335,7 +334,7 @@ function stageAccent(s: StageCard): string {
 
       <!-- Volume -->
       <div class="sub-panel">
-        <div class="section-eyebrow">{{ t('Volume') }}</div>
+        <h3 class="section-eyebrow">{{ t('Volume') }}</h3>
         <div class="metric-grid metric-grid--vol" :style="{ gridTemplateColumns: metricCols }">
           <div v-for="v in perf.volume" :key="v.label" class="stat-card stat-card--plain">
             <div class="stat-card-top">
@@ -370,7 +369,7 @@ function stageAccent(s: StageCard): string {
 
       <!-- Accuracy — completion state, one bar per state -->
       <div class="sub-panel">
-        <div class="section-eyebrow">{{ t('Accuracy') }}</div>
+        <h3 class="section-eyebrow">{{ t('Accuracy') }}</h3>
         <div class="metric-grid metric-grid--wide" :style="{ gridTemplateColumns: metricCols }">
           <div class="stat-card stat-card--plain">
             <div class="stat-card-top">
@@ -424,8 +423,9 @@ function stageAccent(s: StageCard): string {
 .filter-trigger--auto { width: auto; }
 .filter-trigger:hover { border-color: var(--mp-border-bold); }
 /* borderless variant — the Live operations date picker sits inline next to the title */
-.filter-trigger--ghost { border-color: transparent; background: transparent; padding-left: 4px; padding-right: 4px; }
-.filter-trigger--ghost:hover { border-color: transparent; background: var(--mp-background-neutral-subtle); }
+/* Overview date/period pickers: no box, just a bottom border (underline style). */
+.filter-trigger--ghost { border-color: transparent; border-radius: 0; border-bottom-color: var(--mp-border-form, var(--mp-border-default)); background: transparent; padding-left: 4px; padding-right: 4px; }
+.filter-trigger--ghost:hover { border-color: transparent; border-bottom-color: var(--mp-border-bold); background: var(--mp-background-neutral-subtle); }
 .filter-trigger-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filter-trigger .chev { color: var(--mp-icon-default); flex: none; }
 
@@ -435,7 +435,7 @@ function stageAccent(s: StageCard): string {
   gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
 }
 .section-head-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.section-title { font-size: 16px; font-weight: 600; color: var(--mp-text-default); margin: 0; }
+.section-title { font-size: var(--mp-font-sizes-xl, 18px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-xl, 26px); color: var(--mp-text-default); margin: 0; }
 .section-head-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .updated { font-size: 12px; color: var(--mp-text-subtle); }
 
@@ -475,7 +475,7 @@ function stageAccent(s: StageCard): string {
 .card--noaction { background: var(--mp-background-danger-subtle, #fdeeec); border-color: var(--mp-border-danger, #f1cbc5); }
 
 .stat-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.stat-card-title { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
+.stat-card-title { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
 .card--noaction .stat-card-title { color: var(--mp-text-danger, #c4362b); }
 .ext-ico { color: var(--mp-icon-subtle, #96a0a4); flex: none; }
 .card--noaction .ext-ico { color: var(--mp-text-danger, #c4362b); }
@@ -517,11 +517,12 @@ function stageAccent(s: StageCard): string {
   padding: 4px; border: none; background: none; color: var(--mp-icon-default); cursor: pointer;
 }
 .ov-shortcut:hover { color: var(--mp-text-default); }
-.sub-title { font-size: 14px; font-weight: 600; color: var(--mp-text-default); margin: 0; }
+.sub-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); margin: 0; }
 .sub-desc { font-size: 12px; color: var(--mp-text-secondary); margin: 0; max-width: 620px; line-height: 1.5; }
 .period-opt { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; width: 100%; }
 .period-opt-range { font-size: 12px; color: var(--mp-text-subtle); }
-.section-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-text-subtle); margin-bottom: 8px; }
+/* H3, black — Timeliness / Volume / Accuracy sub-headings. */
+.section-eyebrow { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); margin: 0 0 8px; }
 .cal-ico { color: var(--mp-icon-default); flex: none; }
 
 /* stage bars — 6-col grid: label (span 2) · bar (span 3) · aging (span 1) */
