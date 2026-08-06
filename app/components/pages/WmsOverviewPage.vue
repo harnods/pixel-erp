@@ -469,8 +469,9 @@ function stageAccent(s: StageCard): string {
   border: 1px solid var(--mp-border-default); border-radius: 10px;
   padding: 16px; display: flex; flex-direction: column; gap: 8px;
 }
-.stat-card--clickable { cursor: pointer; transition: box-shadow 0.12s ease, border-color 0.12s ease; }
-.stat-card--clickable:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
+.stat-card--clickable { cursor: pointer; transition: border-color 0.12s ease; }
+/* Hover affordance = a bolder border, not a drop-shadow. */
+.stat-card--clickable:hover { border-color: var(--mp-border-bold, #758195); }
 .stat-card--clickable:focus-visible { outline: 2px solid var(--mp-border-focused, #4b61dc); outline-offset: 1px; }
 .card--pending  { background: var(--mp-background-warning-subtle, #fdf7e7); border-color: var(--mp-border-warning, #ecd9a3); }
 .card--active   { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-default); }
@@ -505,11 +506,11 @@ function stageAccent(s: StageCard): string {
 /* ── Performance sub-panels ── */
 .sub-panel { padding: 24px 0 0; }
 .sub-panel:first-of-type { padding-top: 0; }
-/* Overview box — the time-per-stage chart lives in a gray card */
+/* Overview box — the time-per-stage chart lives in a white bordered card */
 .sub-panel--box {
   padding: 20px;
-  background: #F8F9F9;
-  border: 1px solid #EBF0F1;
+  background: var(--mp-background-default, #fff);
+  border: 1px solid var(--mp-border-default);
   border-radius: 10px;
 }
 .ov-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
@@ -556,8 +557,9 @@ function stageAccent(s: StageCard): string {
 /* --vol / --single / --wide inherit the base grid so every card is one column wide */
 .metric-card {
   background: var(--mp-background-default, #fff); border: 1px solid var(--mp-border-default); border-radius: 12px; padding: 20px;
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; transition: border-color 0.12s ease;
 }
+.metric-card:hover { border-color: var(--mp-border-bold, #758195); }
 .metric-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .metric-card-titles { display: flex; flex-direction: column; gap: 2px; }
 .metric-card-title { font-size: 15px; font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
@@ -573,8 +575,10 @@ function stageAccent(s: StageCard): string {
 .tl-stat-val--warn { color: var(--mp-text-warning, #c26a12); }
 .tl-note { margin-top: 16px; padding: 12px 14px; background: var(--mp-background-warning-subtle, #fdf7e3); border-radius: 8px; font-size: 12px; color: var(--mp-text-warning, #8a6d1a); line-height: 1.5; }
 
-/* Volume cards reuse the live-operations card format (.stat-card) but stay white. */
-.stat-card--plain { background: var(--mp-background-default, #fff); }
+/* Volume / Activity / Accuracy cards reuse the live-operations card format but
+   stay white; hover boldens the border (matching the live-ops cards). */
+.stat-card--plain { background: var(--mp-background-default, #fff); transition: border-color 0.12s ease; }
+.stat-card--plain:hover { border-color: var(--mp-border-bold, #758195); }
 .split-row--pos b { color: var(--mp-text-success, #028454); }
 
 /* large rows (activity ratios) */
