@@ -528,18 +528,19 @@ function stageAccent(s: StageCard): string {
 .section-eyebrow { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); margin: 0 0 8px; }
 .cal-ico { color: var(--mp-icon-default); flex: none; }
 
-/* stage bars — 12-col grid: label (span 3) · bar (span 7) · time (span 2) */
+/* stage bars — fixed label, flexible bar (fills), fixed time. The bar track
+   (1fr) fills all the space between the label and the time, no side gaps. */
 .stage-list { display: flex; flex-direction: column; gap: 14px; }
-.stage-row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; align-items: center; }
-.stage-info { grid-column: span 3; display: flex; flex-direction: column; gap: 2px; }
+.stage-row { display: grid; grid-template-columns: 280px 1fr max-content; gap: 16px; align-items: center; }
+.stage-info { display: flex; flex-direction: column; gap: 2px; }
 .stage-name { font-size: 13px; font-weight: 500; color: var(--mp-text-default); }
 .stage-hint { font-size: 11px; color: var(--mp-text-subtle); }
-.stage-track { grid-column: span 7; position: relative; height: 12px; background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: 999px; display: flex; align-items: center; }
+.stage-track { position: relative; height: 12px; background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: 999px; display: flex; align-items: center; }
 /* Each stage is offset (margin-left, inline) so the bars lay end-to-end and the
    cumulative run matches the full-width cycle bar below. Light green for stages. */
 .stage-fill { height: 100%; background: #93d3a6; border-radius: 999px; }
 .stage-fill--cycle { background: #2f9e5f; }
-.stage-val { grid-column: span 2; text-align: right; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); }
+.stage-val { text-align: right; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); white-space: nowrap; }
 .stage-val--strong { color: var(--mp-text-default); font-weight: 500; }
 .stage-row--cycle { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--mp-border-default); }
 
