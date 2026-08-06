@@ -137,6 +137,13 @@ function toggleStatus(v: string) {
 }
 
 const courierOptions = DELIVERY_COURIERS.map(c => ({ label: c, value: c }))
+// Searchable courier filter — the list can be long, so filter by typed text
+// (the popover itself caps the visible height to ~5 and scrolls; see CSS).
+const courierSearch = ref('')
+const filteredCourierOptions = computed(() => {
+  const q = courierSearch.value.trim().toLowerCase()
+  return q ? courierOptions.filter(o => o.label.toLowerCase().includes(q)) : courierOptions
+})
 const courierLabel = computed(() => {
   const n = courierFilter.value.length
   if (n === 0) return ''
@@ -323,18 +330,25 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <option v-if="courierFilter.length" value="set">{{ courierLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <div class="checkbox-filter-list">
-              <label v-for="opt in courierOptions" :key="opt.value" class="checkbox-filter-item">
-                <MpCheckbox
-                  :id="`del-courier-${opt.value}`"
-                  :is-checked="courierFilter.includes(opt.value)"
-                  @change="toggleCourier(opt.value)"
-                  @click.stop
-                >
-                  {{ opt.label }}
-                </MpCheckbox>
-              </label>
+          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', maxWidth: '280px' })">
+            <div class="courier-filter">
+              <input
+                v-model="courierSearch" class="courier-filter-search" type="text"
+                :placeholder="t('Search courier...')" @click.stop @keydown.stop
+              />
+              <div class="courier-filter-scroll">
+                <label v-for="opt in filteredCourierOptions" :key="opt.value" class="checkbox-filter-item">
+                  <MpCheckbox
+                    :id="`del-courier-${opt.value}`"
+                    :is-checked="courierFilter.includes(opt.value)"
+                    @change="toggleCourier(opt.value)"
+                    @click.stop
+                  >
+                    {{ opt.label }}
+                  </MpCheckbox>
+                </label>
+                <p v-if="!filteredCourierOptions.length" class="courier-filter-empty">{{ t('No couriers found') }}</p>
+              </div>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -490,6 +504,19 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
+
+/* Courier filter — searchable, capped to ~5 options with scroll inside the popover. */
+.courier-filter { display: flex; flex-direction: column; padding: var(--mp-spacing-1); min-width: 200px; }
+.courier-filter-search {
+  height: 32px; margin-bottom: var(--mp-spacing-1); padding: 0 10px;
+  border: 1px solid var(--mp-border-form, var(--mp-border-default)); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-default, #fff); outline: none;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.courier-filter-search:focus { border-color: var(--mp-border-bold); }
+.courier-filter-search::placeholder { color: var(--mp-text-placeholder); }
+.courier-filter-scroll { display: flex; flex-direction: column; max-height: 184px; overflow-y: auto; }
+.courier-filter-empty { padding: var(--mp-spacing-2) 10px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
