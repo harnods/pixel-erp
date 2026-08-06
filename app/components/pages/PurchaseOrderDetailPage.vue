@@ -327,10 +327,10 @@ function goBack() { closePurchaseOrder?.() }
     </header>
 
     <!-- ── Stage wrapper: 12px rounded top corners colored to match active banner ── -->
-    <div class="detail-stage-wrapper" :style="{ background: rejectionBanner ? 'var(--mp-colors-background-warning)' : (showBanner && order.banner ? 'var(--mp-colors-background-information)' : 'var(--mp-background-stage)') }">
+    <div class="detail-stage-wrapper" :style="{ background: rejectionBanner ? 'var(--mp-colors-background-danger, #fceeed)' : (showBanner && order.banner ? 'var(--mp-colors-background-information)' : 'var(--mp-background-stage)') }">
 
-    <!-- Rejection warning banner -->
-    <MpBanner v-if="rejectionBanner" id="rejection-banner" variant="warning" class="detail-rejection-banner">
+    <!-- Rejection danger banner -->
+    <MpBanner v-if="rejectionBanner" id="rejection-banner" variant="danger" class="detail-rejection-banner">
       <MpBannerIcon id="rejection-banner-icon" />
       <MpBannerTitle id="rejection-banner-title">Transaction rejected by {{ rejectionBanner.user }} on {{ rejectionBanner.date }}. Make sure you have made correction before saving this transaction.</MpBannerTitle>
       <MpBannerDescription v-if="rejectionBanner.reason" id="rejection-banner-desc">{{ rejectionBanner.reason }}</MpBannerDescription>
@@ -915,6 +915,7 @@ function goBack() { closePurchaseOrder?.() }
   display: flex;
   flex-direction: column;
   border-radius: 12px 12px 0 0;
+  overflow: hidden;
 }
 
 /* ── Stage ── */
@@ -924,6 +925,7 @@ function goBack() { closePurchaseOrder?.() }
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--mp-background-stage);
+  border-radius: 12px 12px 0 0;
   /* fixed 24px top border keeps content off the stage's top edge while scrolling */
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);

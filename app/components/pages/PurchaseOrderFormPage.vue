@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpButton, MpFormControl, MpFormLabel, MpInput, MpTextarea,
-  MpInputGroup, MpInputLeftAddon, MpInputRightAddon,
+  MpButton, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
+  MpInputGroup, MpInputLeftAddon,
   MpSelect, MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpTooltip,
   MpIcon,
   css,
 } from '@mekari/pixel3'
@@ -18,12 +19,21 @@ const props = defineProps<{
   rejectionBanner?: { user: string; date: string; reason?: string } | null
 }>()
 
+const router = useRouter()
+function goTo(path: string) { router.push(path) }
+
 const closePurchaseOrderForm = inject<() => void>('closePurchaseOrderForm')
 const openPurchaseOrder = inject<(id: string) => void>('openPurchaseOrder')
 
 const source = computed(() => props.duplicateOrderId ? getPurchaseOrderDetail(props.duplicateOrderId) : null)
 
 function todayISO() { return new Date().toISOString().slice(0, 10) }
+/** Default due date follows the Net 30 term shown in the design. */
+function inThirtyDaysISO() {
+  const d = new Date()
+  d.setDate(d.getDate() + 30)
+  return d.toISOString().slice(0, 10)
+}
 function isoToDMY(iso: string) {
   if (!iso) return ''
   const [y, m, d] = iso.split('-')
@@ -42,10 +52,10 @@ function toTagData(values: string[]): DataInterface[] {
 const vendor       = ref(source.value?.vendor.name ?? '')
 const emailTags    = ref<DataInterface[]>(toTagData(source.value?.email ?? []))
 const txDate       = ref(isoToDMY(source.value?.date ?? todayISO()))
-const dueDate      = ref(isoToDMY(source.value?.dueDate ?? ''))
+const dueDate      = ref(isoToDMY(source.value?.dueDate ?? inThirtyDaysISO()))
 const shipDate     = ref(isoToDMY(source.value?.shipDate ?? ''))
 const shipVia      = ref(source.value?.shipVia ?? '')
-const paymentTerms = ref(source.value?.paymentTerms ?? '')
+const paymentTerms = ref(source.value?.paymentTerms ?? 'Net 30')
 const referenceNo  = ref(source.value?.referenceNo ?? '')
 const warehouse    = ref(source.value?.warehouse ?? '')
 const trackingNo   = ref(source.value?.trackingNo ?? '')
@@ -124,8 +134,11 @@ const taxAmount   = computed(() => Math.round((subtotal.value - discountTotal.va
 const shippingFee = ref(source.value?.totals.shippingFee ?? 0)
 const grandTotal  = computed(() => subtotal.value - discountTotal.value - globalDiscountAmount.value + taxAmount.value + shippingFee.value)
 
+function fmtPlain(n: number) {
+  return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+}
 function fmt(n: number) {
-  return 'Rp' + new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+  return 'Rp' + fmtPlain(n)
 }
 
 const attachments = ref<POAttachment[]>((source.value?.attachments ?? []).map(a => ({ ...a })))
@@ -160,6 +173,42 @@ function nextPoId(): string {
   return `po-${String(nextSuffix(purchaseOrders.map(o => o.id))).padStart(3, '0')}`
 }
 
+/* ── Validation ──────────────────────────────────────────────────────────────
+   Errors stay hidden until the first save attempt, then track the live value so
+   they clear as soon as the field is filled in. */
+const showErrors = ref(false)
+
+const vendorError = computed(() =>
+  showErrors.value && !vendor.value.trim() ? 'You must fill in vendor' : '')
+
+function productError(item: EditableItem) {
+  return showErrors.value && !item.product.trim() ? 'You must select product' : ''
+}
+function qtyError(item: EditableItem) {
+  return showErrors.value && !(item.qty > 0) ? 'You must fill in qty' : ''
+}
+const noItemsError = computed(() =>
+  showErrors.value && !items.value.length ? 'You must select product' : '')
+
+/** Distinct messages, deduped for the summary banner above the table. */
+const lineItemErrors = computed(() => {
+  const msgs = new Set<string>()
+  if (noItemsError.value) msgs.add(noItemsError.value)
+  for (const it of items.value) {
+    if (productError(it)) msgs.add(productError(it))
+    if (qtyError(it)) msgs.add(qtyError(it))
+  }
+  return [...msgs]
+})
+
+const isValid = computed(() => !vendorError.value && !lineItemErrors.value.length)
+
+/** Returns false (and reveals the errors) when the form can't be saved yet. */
+function validate(): boolean {
+  showErrors.value = true
+  return isValid.value
+}
+
 function onCancel() { closePurchaseOrderForm?.() }
 
 /**
@@ -190,14 +239,14 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
 }
 
 function onSave() {
+  if (!validate()) return
   const newId = createDuplicateOrder()
   closePurchaseOrderForm?.()
   if (newId) openPurchaseOrder?.(newId)
 }
 
-function onSaveAndNew() { closePurchaseOrderForm?.() }
-
 function onSendToFulfillment() {
+  if (!validate()) return
   const newId = createDuplicateOrder({ sentToFulfillment: true })
   closePurchaseOrderForm?.()
   if (newId) openPurchaseOrder?.(newId)
@@ -211,7 +260,23 @@ function onSendToFulfillment() {
     <header class="po-form-bar">
       <div class="po-form-bar-left">
         <button class="po-crumb" @click="onCancel">Purchase orders</button>
-        <h1 class="po-form-h1">New purchase order</h1>
+        <div class="po-form-titlerow">
+          <h1 class="po-form-h1">New purchase order</h1>
+          <MpPopover id="po-form-title-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+            <MpPopoverTrigger>
+              <button class="po-form-title-caret" aria-label="Switch transaction type">
+                <MpIcon name="chevrons-down" size="sm" />
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem is-active>New purchase order</MpPopoverListItem>
+                <MpPopoverListItem @click="goTo('/purchase-invoices')">New purchase invoice</MpPopoverListItem>
+                <MpPopoverListItem @click="goTo('/bills')">New bill</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
       </div>
     </header>
 
@@ -233,14 +298,15 @@ function onSendToFulfillment() {
 
         <!-- ── Header section 1: Vendor + Email + Total ── -->
         <section class="po-header1 po-dashed-divider">
-          <MpFormControl id="f-vendor" class="po-field po-col-span-3">
+          <MpFormControl id="f-vendor" class="po-field po-col-span-3" :is-invalid="!!vendorError">
             <MpFormLabel>Vendor <span class="po-required">*</span></MpFormLabel>
-            <MpInput id="f-vendor-inp" v-model="vendor" is-full-width />
+            <MpInput id="f-vendor-inp" v-model="vendor" is-full-width :is-invalid="!!vendorError" />
+            <MpFormErrorMessage v-if="vendorError">{{ vendorError }}</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="f-email" class="po-field po-col-span-3">
             <MpFormLabel>Email</MpFormLabel>
-            <MpInputTag id="f-email-inp" :data="emailTags" placeholder="+ Add email" @change="onEmailChange" />
+            <MpInputTag id="f-email-inp" :data="emailTags" @change="onEmailChange" />
           </MpFormControl>
 
           <div class="po-header1-total">
@@ -298,7 +364,14 @@ function onSendToFulfillment() {
 
           <div class="po-header2-col po-col-span-3">
             <MpFormControl id="f-tx-no" class="po-field">
-              <MpFormLabel>Transaction no.</MpFormLabel>
+              <MpFormLabel>
+                <span class="po-label-with-icon">
+                  Transaction no.
+                  <button type="button" class="po-label-gear" aria-label="Transaction number settings">
+                    <MpIcon name="settings" size="sm" />
+                  </button>
+                </span>
+              </MpFormLabel>
               <MpInput id="f-tx-no-inp" placeholder="Auto" is-disabled is-full-width />
             </MpFormControl>
 
@@ -329,149 +402,213 @@ function onSendToFulfillment() {
             <MpCheckbox v-model:is-checked="priceIncludesTax">Price includes tax</MpCheckbox>
           </div>
 
-          <table class="po-items-table">
-            <thead>
-              <tr>
-                <th class="po-th po-th--drag" />
-                <th class="po-th po-th--product">PRODUCT</th>
-                <th class="po-th">DESCRIPTION</th>
-                <th class="po-th po-th--num">QTY</th>
-                <th class="po-th">UNIT</th>
-                <th class="po-th po-th--num">UNIT COST</th>
-                <th class="po-th po-th--num">DISCOUNT</th>
-                <th class="po-th">TAX</th>
-                <th class="po-th po-th--num">AMOUNT</th>
-                <th class="po-th po-th--remove" />
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in items" :key="item._key" class="po-item-row">
-                <td class="po-td po-td--drag">
-                  <MpButton variant="ghost" size="md" left-icon="drag" aria-label="Drag to reorder" />
-                </td>
-                <td class="po-td po-td--product">
-                  <MpPopover
-                    is-manual
-                    :is-open="openProductRow === item._key"
-                    is-close-on-select
-                    use-portal
-                    :is-keep-alive="false"
-                    placement="bottom-start"
-                    is-adaptive-width
-                    @close="openProductRow = null"
-                  >
-                    <MpPopoverTrigger>
+          <MpBanner v-if="lineItemErrors.length" id="po-lineitems-error-banner" variant="danger" align-items="center" class="po-items-error-banner">
+            <MpBannerIcon id="po-lineitems-error-banner-icon" />
+            <MpBannerTitle>Failed to save</MpBannerTitle>
+            <MpBannerDescription>The transaction contains incomplete or invalid data. Review the highlighted fields.</MpBannerDescription>
+          </MpBanner>
+
+          <div class="po-table-section">
+            <div class="po-table-scroll">
+              <table class="po-table po-lineitems-table">
+                <colgroup>
+                  <col class="po-col-drag" />
+                  <col class="po-col-product" />
+                  <col class="po-col-desc" />
+                  <col class="po-col-qty" />
+                  <col class="po-col-unit" />
+                  <col class="po-col-cost" />
+                  <col class="po-col-discount" />
+                  <col class="po-col-tax" />
+                  <col class="po-col-amount" />
+                  <col class="po-col-del" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="po-th po-th--drag" />
+                    <th class="po-th">Product</th>
+                    <th class="po-th">Description</th>
+                    <th class="po-th">Qty</th>
+                    <th class="po-th">Unit</th>
+                    <th class="po-th">Unit cost</th>
+                    <th class="po-th">Discount</th>
+                    <th class="po-th">Tax</th>
+                    <th class="po-th">Amount</th>
+                    <th class="po-th po-th--del" />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in items" :key="item._key" class="po-tr">
+                    <td class="po-td po-td--drag po-td--border"><MpIcon name="drag" size="sm" /></td>
+                    <td class="po-td po-td--input po-td--border po-td--product" :class="{ 'po-td--error': !!productError(item) }">
+                      <MpPopover
+                        is-manual
+                        :is-open="openProductRow === item._key"
+                        is-close-on-select
+                        use-portal
+                        :is-keep-alive="false"
+                        placement="bottom-start"
+                        is-adaptive-width
+                        @close="openProductRow = null"
+                      >
+                        <MpPopoverTrigger>
+                          <MpTooltip
+                            v-if="productError(item)" :id="`f-product-tt-${item._key}`"
+                            :label="productError(item)" placement="top" use-portal class="po-td-tooltip"
+                          >
+                            <MpInput
+                              :id="`f-product-${item._key}`"
+                              v-model="item.product"
+                              is-full-width
+                              :is-invalid="!!productError(item)"
+                              @focus="openProductRow = item._key"
+                            />
+                          </MpTooltip>
+                          <MpInput
+                            v-else
+                            :id="`f-product-${item._key}`"
+                            v-model="item.product"
+                            is-full-width
+                            @focus="openProductRow = item._key"
+                          />
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
+                          <MpPopoverList>
+                            <MpPopoverListItem
+                              v-for="p in productMatches(item.product)"
+                              :key="p.id"
+                              @click="selectProduct(item, p)"
+                            >
+                              {{ p.name }}
+                            </MpPopoverListItem>
+                            <MpPopoverListItem v-if="!productMatches(item.product).length" is-disabled>No results</MpPopoverListItem>
+                          </MpPopoverList>
+                        </MpPopoverContent>
+                      </MpPopover>
+                      <MpIcon name="chevrons-down" size="sm" class="po-product-caret" />
+                    </td>
+                    <td class="po-td po-td--input po-td--border">
+                      <MpInput :id="`f-desc-${item._key}`" v-model="item.description" is-full-width />
+                    </td>
+                    <td class="po-td po-td--input po-td--border" :class="{ 'po-td--error': !!qtyError(item) }">
+                      <MpTooltip
+                        v-if="qtyError(item)" :id="`f-qty-tt-${item._key}`"
+                        :label="qtyError(item)" placement="top" use-portal class="po-td-tooltip"
+                      >
+                        <MpInput
+                          :id="`f-qty-${item._key}`" type="number" :model-value="item.qty" is-full-width
+                          :is-invalid="!!qtyError(item)"
+                          @update:model-value="(v) => item.qty = Number(v)"
+                        />
+                      </MpTooltip>
                       <MpInput
-                        :id="`f-product-${item._key}`"
-                        v-model="item.product"
-                        is-full-width
-                        @focus="openProductRow = item._key"
+                        v-else
+                        :id="`f-qty-${item._key}`" type="number" :model-value="item.qty" is-full-width
+                        @update:model-value="(v) => item.qty = Number(v)"
                       />
-                    </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
-                      <MpPopoverList>
-                        <MpPopoverListItem
-                          v-for="p in productMatches(item.product)"
-                          :key="p.id"
-                          @click="selectProduct(item, p)"
-                        >
-                          {{ p.name }}
-                        </MpPopoverListItem>
-                        <MpPopoverListItem v-if="!productMatches(item.product).length" is-disabled>No results</MpPopoverListItem>
-                      </MpPopoverList>
-                    </MpPopoverContent>
-                  </MpPopover>
-                </td>
-                <td class="po-td">
-                  <MpInput v-model="item.description" is-full-width />
-                </td>
-                <td class="po-td po-td--num">
-                  <MpInput type="number" :model-value="item.qty" is-full-width
-                    @update:model-value="(v) => item.qty = Number(v)" />
-                </td>
-                <td class="po-td po-td--unit">
-                  <MpSelect v-model="item.unit" is-full-width>
-                    <option v-for="opt in unitOptions" :key="opt" :value="opt">{{ opt }}</option>
-                  </MpSelect>
-                </td>
-                <td class="po-td po-td--num">
-                  <MpInputGroup :id="`f-unitcost-group-${item._key}`">
-                    <MpInputLeftAddon>Rp</MpInputLeftAddon>
-                    <MpInput type="number" :model-value="item.unitPrice"
-                      @update:model-value="(v) => item.unitPrice = Number(v)" />
-                  </MpInputGroup>
-                </td>
-                <td class="po-td po-td--num">
-                  <MpInputGroup :id="`f-discount-group-${item._key}`">
-                    <MpInput type="number" :model-value="item.discountPct"
-                      @update:model-value="(v) => item.discountPct = Number(v)" />
-                    <MpInputRightAddon>%</MpInputRightAddon>
-                  </MpInputGroup>
-                </td>
-                <td class="po-td po-td--tax">
-                  <MpSelect v-model="item.taxLabel" is-full-width>
-                    <option v-for="opt in taxOptions" :key="opt" :value="opt">{{ opt }}</option>
-                  </MpSelect>
-                </td>
-                <td class="po-td po-td--num po-td--amount">{{ fmt(lineAmount(item)) }}</td>
-                <td class="po-td po-td--remove">
-                  <MpButton
-                    variant="ghost" size="sm" left-icon="minus-circular"
-                    :aria-label="`Remove ${item.product}`"
-                    @click="removeItem(item._key)"
-                  />
-                </td>
-              </tr>
-              <tr class="po-item-row po-item-row--empty">
-                <td class="po-td po-td--drag">
-                  <MpButton variant="ghost" size="md" left-icon="drag" aria-label="Drag to reorder" is-disabled />
-                </td>
-                <td class="po-td po-td--product">
-                  <MpPopover
-                    is-manual
-                    :is-open="openProductRow === NEW_ROW_KEY"
-                    is-close-on-select
-                    use-portal
-                    :is-keep-alive="false"
-                    placement="bottom-start"
-                    is-adaptive-width
-                    @close="openProductRow = null"
-                  >
-                    <MpPopoverTrigger>
-                      <MpInput
-                        id="f-product-new"
-                        v-model="newRowSearch"
-                        class="po-select--product"
-                        placeholder="Select product"
-                        is-full-width
-                        @focus="openProductRow = NEW_ROW_KEY"
-                      />
-                    </MpPopoverTrigger>
-                    <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
-                      <MpPopoverList>
-                        <MpPopoverListItem
-                          v-for="p in productMatches(newRowSearch)"
-                          :key="p.id"
-                          @click="selectNewProduct(p)"
-                        >
-                          {{ p.name }}
-                        </MpPopoverListItem>
-                        <MpPopoverListItem v-if="!productMatches(newRowSearch).length" is-disabled>No results</MpPopoverListItem>
-                      </MpPopoverList>
-                    </MpPopoverContent>
-                  </MpPopover>
-                </td>
-                <td class="po-td" />
-                <td class="po-td po-td--num" />
-                <td class="po-td po-td--unit" />
-                <td class="po-td po-td--num" />
-                <td class="po-td po-td--num" />
-                <td class="po-td po-td--tax" />
-                <td class="po-td po-td--num" />
-                <td class="po-td po-td--remove" />
-              </tr>
-            </tbody>
-          </table>
+                    </td>
+                    <td class="po-td po-td--input po-td--border">
+                      <MpSelect :id="`f-unit-${item._key}`" v-model="item.unit" is-full-width>
+                        <option v-for="opt in unitOptions" :key="opt" :value="opt">{{ opt }}</option>
+                      </MpSelect>
+                    </td>
+                    <td class="po-td po-td--input po-td--border po-td--affix">
+                      <div class="po-affix-cell">
+                        <span class="po-affix">Rp</span>
+                        <MpInput
+                          :id="`f-unitcost-${item._key}`" type="number" :model-value="item.unitPrice" is-full-width class="po-affix-input"
+                          @update:model-value="(v) => item.unitPrice = Number(v)"
+                        />
+                      </div>
+                    </td>
+                    <td class="po-td po-td--input po-td--border po-td--affix">
+                      <div class="po-affix-cell">
+                        <MpInput
+                          :id="`f-discount-${item._key}`" type="number" :model-value="item.discountPct" is-full-width class="po-affix-input"
+                          @update:model-value="(v) => item.discountPct = Number(v)"
+                        />
+                        <span class="po-affix">%</span>
+                      </div>
+                    </td>
+                    <td class="po-td po-td--input po-td--border">
+                      <MpSelect :id="`f-tax-${item._key}`" v-model="item.taxLabel" is-full-width>
+                        <option v-for="opt in taxOptions" :key="opt" :value="opt">{{ opt }}</option>
+                      </MpSelect>
+                    </td>
+                    <td class="po-td po-td--border po-td--affix po-td--amount">
+                      <div class="po-affix-cell">
+                        <span class="po-affix">Rp</span>
+                        <span class="po-affix-value">{{ fmtPlain(lineAmount(item)) }}</span>
+                      </div>
+                    </td>
+                    <td class="po-td po-td--del">
+                      <MpButton class="po-del-btn" :aria-label="`Remove ${item.product}`" @click="removeItem(item._key)">
+                        <MpIcon name="minus-circular" size="sm" />
+                      </MpButton>
+                    </td>
+                  </tr>
+
+                  <!-- Placeholder row — only the drag + product cells render until a
+                       product is picked, matching the Expense line-items table. -->
+                  <tr class="po-tr">
+                    <td class="po-td po-td--drag po-td--border"><MpIcon name="drag" size="sm" /></td>
+                    <td class="po-td po-td--input po-td--border po-td--product" :class="{ 'po-td--error': !!noItemsError }">
+                      <MpPopover
+                        is-manual
+                        :is-open="openProductRow === NEW_ROW_KEY"
+                        is-close-on-select
+                        use-portal
+                        :is-keep-alive="false"
+                        placement="bottom-start"
+                        is-adaptive-width
+                        @close="openProductRow = null"
+                      >
+                        <MpPopoverTrigger>
+                          <MpTooltip
+                            v-if="noItemsError" id="f-product-new-tt"
+                            :label="noItemsError" placement="top" use-portal class="po-td-tooltip"
+                          >
+                            <MpInput
+                              id="f-product-new"
+                              v-model="newRowSearch"
+                              class="po-select--product"
+                              placeholder="Select product"
+                              is-full-width
+                              :is-invalid="!!noItemsError"
+                              @focus="openProductRow = NEW_ROW_KEY"
+                            />
+                          </MpTooltip>
+                          <MpInput
+                            v-else
+                            id="f-product-new"
+                            v-model="newRowSearch"
+                            class="po-select--product"
+                            placeholder="Select product"
+                            is-full-width
+                            @focus="openProductRow = NEW_ROW_KEY"
+                          />
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '240px', overflowY: 'auto' })" @blur="openProductRow = null">
+                          <MpPopoverList>
+                            <MpPopoverListItem
+                              v-for="p in productMatches(newRowSearch)"
+                              :key="p.id"
+                              @click="selectNewProduct(p)"
+                            >
+                              {{ p.name }}
+                            </MpPopoverListItem>
+                            <MpPopoverListItem v-if="!productMatches(newRowSearch).length" is-disabled>No results</MpPopoverListItem>
+                          </MpPopoverList>
+                        </MpPopoverContent>
+                      </MpPopover>
+                      <MpIcon name="chevrons-down" size="sm" class="po-product-caret" />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </section>
 
         <!-- ── Notes + Attachment + Totals ── -->
@@ -518,7 +655,7 @@ function onSendToFulfillment() {
               <span>Subtotal</span>
               <span>{{ fmt(subtotal) }}</span>
             </div>
-            <div class="po-totals-row">
+            <div v-if="discountTotal" class="po-totals-row">
               <span>Discount per line</span>
               <span class="po-deduction">({{ fmt(discountTotal) }})</span>
             </div>
@@ -526,27 +663,37 @@ function onSendToFulfillment() {
               <span class="po-global-discount-label">
                 <span>Global discount</span>
                 <MpInputGroup id="f-global-discount-group" class="po-global-discount">
-                  <MpInputLeftAddon>
-                    <select class="po-prefix-toggle" v-model="globalDiscountType">
-                      <option value="%">%</option>
-                      <option value="Rp">Rp</option>
-                    </select>
+                  <MpInputLeftAddon has-background class="po-unit-addon">
+                    <MpPopover id="po-global-discount-unit" is-close-on-select placement="bottom-start" use-portal :is-keep-alive="false">
+                      <MpPopoverTrigger>
+                        <MpButton class="po-unit-trigger">
+                          <span>{{ globalDiscountType }}</span>
+                          <MpIcon name="chevrons-down" size="sm" />
+                        </MpButton>
+                      </MpPopoverTrigger>
+                      <MpPopoverContent :class="css({ minWidth: '64px', width: 'max-content' })">
+                        <MpPopoverList>
+                          <MpPopoverListItem :is-active="globalDiscountType === '%'" @click="globalDiscountType = '%'">%</MpPopoverListItem>
+                          <MpPopoverListItem :is-active="globalDiscountType === 'Rp'" @click="globalDiscountType = 'Rp'">Rp</MpPopoverListItem>
+                        </MpPopoverList>
+                      </MpPopoverContent>
+                    </MpPopover>
                   </MpInputLeftAddon>
-                  <MpInput type="number" :model-value="globalDiscountValue"
+                  <MpInput id="f-global-discount-input" type="number" :model-value="globalDiscountValue" is-full-width
                     @update:model-value="(v) => globalDiscountValue = Number(v)" />
                 </MpInputGroup>
               </span>
               <span class="po-deduction">({{ fmt(globalDiscountAmount) }})</span>
             </div>
-            <div class="po-totals-row">
+            <div v-if="taxAmount" class="po-totals-row">
               <span>PPN 11%</span>
               <span>{{ fmt(taxAmount) }}</span>
             </div>
-            <div class="po-totals-row">
+            <div v-if="requiresShipping" class="po-totals-row">
               <span>Shipping fee</span>
               <MpInputGroup id="f-shipping-fee-group" class="po-shipping-fee">
-                <MpInputLeftAddon>Rp</MpInputLeftAddon>
-                <MpInput type="number" :model-value="shippingFee"
+                <MpInputLeftAddon has-background class="po-unit-addon po-unit-addon--static">Rp</MpInputLeftAddon>
+                <MpInput id="f-shipping-fee-input" type="number" :model-value="shippingFee" is-full-width
                   @update:model-value="(v) => shippingFee = Number(v)" />
               </MpInputGroup>
             </div>
@@ -561,20 +708,7 @@ function onSendToFulfillment() {
         <footer class="po-form-footer">
           <button class="btn-enterprise btn-enterprise--ghost" @click="onCancel">Cancel</button>
 
-          <MpPopover id="po-save-close-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-            <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--secondary">
-                Save &amp; close
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <MpPopoverList>
-                <MpPopoverListItem @click="onSave">Save &amp; close</MpPopoverListItem>
-                <MpPopoverListItem @click="onSaveAndNew">Save &amp; new</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
+          <button class="btn-enterprise btn-enterprise--secondary" @click="onSave">Save &amp; close</button>
 
           <MpPopover id="po-save-share-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
@@ -660,6 +794,11 @@ function onSendToFulfillment() {
   text-align: left;
 }
 .po-crumb:hover { text-decoration: underline; text-underline-offset: 2px; }
+.po-form-titlerow {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+}
 .po-form-h1 {
   margin: 0;
   font-size: var(--mp-font-sizes-xl);
@@ -667,6 +806,38 @@ function onSendToFulfillment() {
   color: var(--mp-text-default);
   line-height: 1.2;
 }
+.po-form-title-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--mp-radii-sm, 4px);
+  background: transparent;
+  color: var(--mp-text-default);
+  cursor: pointer;
+}
+.po-form-title-caret:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
+
+/* Label with a trailing settings affordance (Transaction no.) */
+.po-label-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-1);
+}
+.po-label-gear {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--mp-text-secondary);
+  cursor: pointer;
+}
+.po-label-gear:hover { color: var(--mp-text-default); }
+.po-label-gear :deep(.mp-icon) { width: 16px; height: 16px; }
 
 /* ── Stage wrapper (matches detail-stage-wrapper) ── */
 .po-form-stage-wrapper {
@@ -705,22 +876,31 @@ function onSendToFulfillment() {
 /* ── 12-col grid utility — every field ≤ 3 cols, unused cols stay blank ── */
 .po-col-span-3 { grid-column: span 3; }
 
-/* ── Header section 1 ── */
+/* ── Header section 1 ──
+   align-items:start (not end) so Vendor's error message — which grows its
+   MpFormControl taller — never drags Email/Total's top edge down with it;
+   every field's top now anchors to the row's top regardless of sibling height. */
 .po-header1 {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   gap: var(--mp-spacing-4) var(--mp-spacing-5);
-  align-items: end;
+  align-items: start;
 }
 .po-header1-total {
   grid-column: 10 / span 3;
   justify-self: end;
-  align-self: end;
+  align-self: start;
+  display: flex;
+  align-items: flex-end;
+  /* Fixed to a normal (error-free) Label+Input stack's height (measured live:
+     ~20px label + 4px gap + 38px md input) so Total keeps sitting at the input's
+     baseline instead of the row's top, without depending on Vendor's own height. */
+  height: 62px;
 }
 .po-header1-total-value {
   margin: 0;
-  font-size: var(--mp-font-sizes-lg);
-  font-weight: var(--mp-font-weights-semi-bold);
+  font-size: var(--mp-font-sizes-xl);
+  font-weight: var(--mp-font-weights-bold);
   color: var(--mp-text-default);
   white-space: nowrap;
 }
@@ -756,72 +936,126 @@ function onSendToFulfillment() {
   justify-content: flex-end;
 }
 
-.po-items-table { width: 100%; border-collapse: collapse; font-size: var(--mp-font-sizes-md); }
+/* Table chrome mirrors the Expense line-items table (NewExpensePage.vue) for
+   structure, but row height follows the WMS item-table convention (40px —
+   e.g. ReceiveItemsPage's .ri-td) rather than Expense's 52px. */
+.po-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
+.po-table-scroll { overflow-x: auto; }
+.po-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; border-radius: 0; }
+.po-lineitems-table { min-width: 1140px; margin-right: auto; }
 
-/* Header row — same treatment as .erp-th (ErpTablePage.vue) but white background */
+.po-col-drag     { width: 44px; }
+.po-col-product  { width: 200px; }
+.po-col-desc     { width: auto; }
+.po-col-qty      { width: 80px; }
+.po-col-unit     { width: 110px; }
+.po-col-cost     { width: 150px; }
+.po-col-discount { width: 110px; }
+.po-col-tax      { width: 130px; }
+.po-col-amount   { width: 150px; }
+.po-col-del      { width: 44px; }
+
 .po-th {
-  height: var(--mp-sizes-7, 28px);
+  height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  text-align: left;
-  font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-  text-transform: uppercase;
-  letter-spacing: var(--mp-letter-spacings-normal);
-  border-bottom: 1px solid var(--mp-border-default);
-  background: var(--mp-background-neutral, #fff);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  font-style: normal; text-transform: uppercase; letter-spacing: var(--mp-letter-spacings-normal);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
   white-space: nowrap;
 }
-.po-th--drag   { width: 40px; padding: 0; }
-.po-th--num    { text-align: right; }
-.po-th--product { min-width: 200px; }
-.po-th--remove  { width: 40px; border-right: none; }
-.po-th { border-right: 1px solid var(--mp-border-default); }
+.po-th--drag, .po-th--del { padding: 0; }
 
-/* Rows — vertical column dividers only, no horizontal row separators */
 .po-td {
-  height: 52px;
-  box-sizing: border-box;
-  padding: var(--mp-spacing-4) var(--mp-spacing-2) 0;
-  vertical-align: top;
-  color: var(--mp-text-default);
-  border-right: 1px solid var(--mp-border-default);
+  height: var(--mp-sizes-10, 40px);
+  padding: 0 var(--mp-spacing-4) 0 var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default);
+  vertical-align: middle;
+  /* Table cells don't clip overflow by default — even under table-layout:fixed,
+     content wider than its column bleeds into the next cell instead of being
+     constrained. Since every cell here is sized to fit exactly, clip defensively
+     so a control's own intrinsic min-width can never bleed into its neighbor. */
+  overflow: hidden;
 }
-.po-td--remove { border-right: none; }
-.po-td--drag   { color: var(--mp-text-secondary); cursor: grab; width: 40px; padding: 0; text-align: center; }
-.po-td--num    { text-align: right; }
-.po-td--amount { font-weight: var(--mp-font-weights-regular); font-size: var(--mp-font-sizes-md); padding-top: var(--mp-spacing-4); }
-.po-td--remove { text-align: center; width: 40px; }
-.po-td--product { min-width: 200px; position: relative; }
-.po-td--unit, .po-td--tax { min-width: 104px; }
+.po-tr:last-child .po-td { border-bottom: none; }
+.po-td--border { border-right: 1px solid var(--mp-border-default); }
+.po-td--drag { padding: 0; text-align: center; vertical-align: middle; color: var(--mp-text-placeholder); cursor: grab; }
+.po-td--del  { padding: 0; text-align: center; vertical-align: middle; }
+.po-td--input { padding: 0; vertical-align: middle; }
+.po-td--input :deep([class*='input']), .po-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
+/* The inner control's own intrinsic min-width (browser default for a number
+   input, or MpSelect's ~88px floor) must yield to the column, not the reverse —
+   this is what let the Discount suffix bleed into the Tax column before. */
+.po-td--input :deep(.mp-input__root),
+.po-td--input :deep(.mp-select__root) { min-width: 0; width: 100%; }
+.po-td--input :deep(.mp-input__control),
+.po-td--input :deep(.mp-select__control) { min-width: 0; }
+/* Matches Expense's .ex-td--input:focus-within exactly. */
+.po-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
 
-/* Borderless MpInput/MpSelect chrome inside table cells, filled to row min-height */
-.po-td { padding-top: 0; padding-bottom: 0; }
-.po-td :deep(.mp-input__root),
-.po-td :deep(.mp-select__root),
-.po-td :deep(.mp-input-group__root) {
-  height: 52px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-}
-.po-td :deep(.mp-input__control),
-.po-td :deep(.mp-select__control),
-.po-td :deep(.mp-input-addon__root) {
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-}
-.po-td--amount { padding-top: 0; display: flex; align-items: center; justify-content: flex-end; }
-.po-td--drag :deep(.mp-button) { height: 52px; }
-.po-td--remove :deep(.mp-button__root) { height: 52px; }
+/* Invalid-cell treatment — same construction as Expense's .ex-td--error: a
+   subtle danger background plus an inset bottom rule, cell-scoped (not the
+   whole row), with a hover tooltip carrying the specific message. */
+.po-td--error { background: var(--mp-colors-background-danger, #fceeed); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
+.po-td--error :deep(.mp-input__root),
+.po-td--error :deep(.mp-select__root),
+.po-td--error :deep(.mp-input__control),
+.po-td--error :deep(.mp-select__control) { background: transparent; }
+/* MpTooltip's trigger wrapper is inline by default; force it to fill the cell
+   so the wrapped MpInput still reads as full-width. */
+.po-td-tooltip { display: block; width: 100%; }
+.po-td-tooltip :deep([class*='tooltip__trigger']) { display: block; width: 100%; }
 
-/* Prefix/suffix (Rp / %) containers get a neutral-subtle background */
-.po-td :deep(.mp-input-addon__root) {
+.po-td--product { position: relative; }
+.po-td--product :deep(.mp-input__control) { padding-right: var(--mp-spacing-8, 32px); }
+
+/* In-cell prefix/suffix — a flush neutral-subtle block beside a borderless input
+   (or, for Amount, a plain value), centered independent of row height so it
+   isn't tied to one fixed cell height like the padding-hack version was. */
+.po-td--affix { padding: 0; }
+.po-affix-cell { display: flex; align-items: stretch; height: 100%; min-width: 0; }
+.po-affix {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  padding: 0 var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); border-radius: 0;
 }
+.po-affix-input { flex: 1; min-width: 0; }
+.po-affix-value {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 var(--mp-spacing-4);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.po-del-btn {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px) !important; height: var(--mp-sizes-8, 32px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important;
+  cursor: pointer; color: var(--mp-text-secondary); flex-shrink: 0;
+}
+.po-del-btn:hover { background: var(--mp-background-neutral) !important; color: var(--mp-text-danger, #dc2626); }
+
+/* Expense's version sets margin-bottom: 20px directly (no flex gap in its
+   layout); .po-items-section already contributes 12px via its own gap, so
+   this only needs to make up the remaining 8px to match that 20px total. */
+.po-items-error-banner { border-radius: var(--mp-radii-md, 8px); margin-bottom: var(--mp-spacing-2, 8px); }
 
 .po-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
+
+/* Product cell reads as a select — caret sits inside the cell, clicks pass through
+   to the input underneath so the popover still opens on focus. */
+.po-product-caret {
+  position: absolute;
+  right: var(--mp-spacing-3, 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--mp-text-secondary);
+  pointer-events: none;
+}
 
 
 /* ── Notes + Attachment + Totals — 12-col grid, auto middle gap ── */
@@ -856,41 +1090,64 @@ function onSendToFulfillment() {
   font-weight: var(--mp-font-weights-semi-bold);
   font-size: var(--mp-font-sizes-lg);
 }
-.po-totals-row--total { padding-top: var(--mp-spacing-3); }
+.po-totals-row--total {
+  margin-top: var(--mp-spacing-2);
+  padding-top: var(--mp-spacing-3);
+  border-top: 1px dashed var(--mp-border-default);
+}
 .po-deduction { color: var(--mp-text-secondary); }
 
 .po-global-discount-label {
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-3);
+  white-space: nowrap;
 }
 .po-global-discount, .po-shipping-fee { max-width: 180px; }
-.po-global-discount :deep(.mp-input-addon__root),
-.po-shipping-fee :deep(.mp-input-addon__root) {
+
+/* Unit prefix — same construction as the Expense withholding amount field. */
+.po-unit-addon :deep(.mp-input-addon__root) {
+  padding: 0;
   background: var(--mp-background-neutral-subtle);
+  border-radius: var(--mp-radii-md);
 }
-.po-prefix-toggle {
-  border: none;
-  background: transparent;
-  font-size: var(--mp-font-sizes-sm);
+.po-unit-addon--static :deep(.mp-input-addon__root) {
+  padding: var(--mp-spacing-1\.5, 6px) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
-  cursor: pointer;
 }
+.po-unit-trigger {
+  display: flex !important; align-items: center; gap: 4px;
+  padding: var(--mp-spacing-1\.5, 6px) !important;
+  min-width: 0 !important;
+  background: none !important;
+  border: none !important;
+  cursor: pointer;
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.po-unit-trigger:hover { background: var(--mp-background-neutral-hovered) !important; }
+.po-unit-trigger :deep(svg) { width: 16px; height: 16px; flex-shrink: 0; }
+.po-global-discount :deep(.mp-input__control),
+.po-shipping-fee :deep(.mp-input__control) { padding: 2px; }
 
 /* ── Attachment — same column as Message/Memo, narrower (3/12) ── */
 .po-attachment-section {
   grid-column: 1 / span 3;
   grid-row: 3;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
+  /* 4px between the "Attachment" label and the upload field */
+  display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px);
 }
 .po-section-heading {
-  margin: 0 0 var(--mp-spacing-2);
+  margin: 0;
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
-.po-attachment-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.po-attachment-section .po-field-caption { margin-top: 0; }
+.po-attachment-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
 
 /* ── Footer — scrolls with content, not sticky ── */
 .po-form-footer {
