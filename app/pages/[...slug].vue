@@ -25,11 +25,12 @@ import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wms
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { bills } from '~/data/bills'
-import { reviewFiles } from '~/data/reviewFiles'
+import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile } from '~/data/reviewFiles'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
+import { purchaseOrders } from '~/data'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
@@ -71,6 +72,7 @@ const pageRegistry: Record<string, Component> = {
   'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
+  'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
@@ -91,6 +93,7 @@ const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPa
 const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage.vue'))
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
+const PurchaseInvoicesPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
 const PartialReceiptDetailsPage = asyncPage(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
@@ -145,7 +148,56 @@ const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTask
 const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
+const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
+const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
+
+// ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
+// without real sub-routes yet — mirrors the pattern this feature was originally
+// built with; port to real routes if/when it needs deep-linking). ──────────────
+const purchaseOrdersTab = ref<'all' | 'awaiting' | 'rejected'>('all')
+provide('purchaseOrdersTab', purchaseOrdersTab)
+const poAwaitingCount = computed(() => purchaseOrders.filter(o => o.status === 'draft').length)
+const poRejectedCount = computed(() => purchaseOrders.filter(o => o.status === 'rejected').length)
+const poDetailOrderId = ref<string | null>(null)
+const poFormOpen = ref(false)
+const poFormDuplicateId = ref<string | null>(null)
+const poFormRejectionBanner = ref<{ user: string; date: string; reason?: string } | null>(null)
+const showPurchaseOrderDetail = computed(() => currentPageKey.value === 'Purchase orders' && !!poDetailOrderId.value && !poFormOpen.value)
+const showPurchaseOrderForm   = computed(() => currentPageKey.value === 'Purchase orders' && poFormOpen.value)
+provide('openPurchaseOrder',  (id: string) => { poDetailOrderId.value = id })
+provide('closePurchaseOrder', ()           => { poDetailOrderId.value = null })
+provide('approvePurchaseOrder', (id: string) => {
+  const o = purchaseOrders.find(x => x.id === id)
+  if (o) o.status = 'approved'
+  poDetailOrderId.value = null
+})
+provide('rejectPurchaseOrder', (id: string, reason: string) => {
+  const o = purchaseOrders.find(x => x.id === id)
+  if (o) {
+    o.status = 'rejected'
+    const d = new Date()
+    const day   = String(d.getDate()).padStart(2, '0')
+    const month = d.toLocaleString('en-US', { month: 'short' })
+    o.rejection = { user: 'You', date: `${day} ${month} ${d.getFullYear()}`, reason }
+  }
+})
+function openNewPurchaseOrderForm() {
+  poFormOpen.value = true
+  poFormDuplicateId.value = null
+  poFormRejectionBanner.value = null
+}
+provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: string; reason?: string } | null) => {
+  poFormOpen.value = true
+  poFormDuplicateId.value = id
+  poFormRejectionBanner.value = banner ?? null
+})
+provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
+watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
+const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
+const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
+const UnclassifiedReviewPage = asyncPage(() => import('~/components/pages/UnclassifiedReviewPage.vue'))
 const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
@@ -162,6 +214,21 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
     return { component: NewExpensePage, id: 'new' }
+  }
+  // OCR file review ("File review N of M"). The same run is reachable from both
+  // Expenses and Purchase invoices; the route prefix decides which queue is
+  // being worked through (see useReviewQueue) and the file's own classification
+  // decides which form renders.
+  if (segs.length >= 3 && segs[1] === 'review' && (segs[0] === 'expenses' || segs[0] === 'purchase-invoices')) {
+    const id = segs[2]!
+    const queue = segs[0] === 'purchase-invoices' ? purchaseInvoiceReviewFiles : reviewFiles
+    const classification = queue.find((rf) => rf.id === id)?.classification ?? 'bill'
+    const component =
+      classification === 'invoice'      ? InvoiceReviewPage
+      : classification === 'receipt'      ? ReceiptReviewPage
+      : classification === 'unclassified' ? UnclassifiedReviewPage
+      : BillReviewPage
+    return { component, id }
   }
   // /expenses/:id/payment → "Add payment" form for that unpaid bill (New spend money)
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment') {
@@ -376,6 +443,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
+  'Purchase invoices': ['All purchase invoices', 'Review files'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -546,6 +614,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Awaiting Approval': BillsAwaitingApprovalPage,
     'Review files': BillsReviewFilesPage,
   },
+  // Purchase invoices reuses the same review-files table over its own queue —
+  // the `surface` prop swaps both the data and the review route.
+  'Purchase invoices': {
+    'All purchase invoices': PurchaseInvoicesPage,
+    'Review files': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
+  },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
     'Awaiting approval': StockAdjustmentsPage,
@@ -606,6 +680,23 @@ function onImportOutsideClick(e: MouseEvent) {
   if (!importBtnWrapEl.value?.contains(e.target as Node)) {
     importDropdownOpen.value = false
   }
+}
+
+// "Upload bills" (Import dropdown, Expenses) — drops each file into the Review
+// files table as a processing row (see addProcessingReviewFile), same entry
+// point as the dropzone card on the Review files tab itself.
+const uploadBillsInputEl = ref<HTMLInputElement | null>(null)
+function openUploadBills() {
+  importDropdownOpen.value = false
+  uploadBillsInputEl.value?.click()
+}
+function onUploadBillsChange(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  if (input.files) {
+    for (const f of Array.from(input.files)) addProcessingReviewFile(f.name)
+    selectTab('Review files')
+  }
+  input.value = ''
 }
 
 // ── Stock adjustments "Actions" dropdown (page title) ─────────────────────
@@ -943,6 +1034,10 @@ function startResize(e: MouseEvent) {
       <!-- Detail routes own their entire layout (title bar + stage) -->
       <component :is="detailMatch.component" v-if="detailMatch" :order-id="detailMatch.id" />
 
+      <!-- Purchase Orders detail/form overlay — own layout, bypasses the title bar below -->
+      <component :is="PurchaseOrderFormPage" v-else-if="showPurchaseOrderForm" :duplicate-order-id="poFormDuplicateId ?? undefined" :rejection-banner="poFormRejectionBanner" />
+      <component :is="PurchaseOrderDetailPage" v-else-if="showPurchaseOrderDetail" :order-id="poDetailOrderId!" />
+
       <template v-else>
       <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
         <h1 class="page-title-text">{{ t(pageTitle) }}</h1>
@@ -1150,13 +1245,18 @@ function startResize(e: MouseEvent) {
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
                 <MpButton variant="ghost" class="import-item">{{ t('Import from spreadsheet') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--ai">
+                <MpButton variant="ghost" class="import-item import-item--ai" @click="openUploadBills">
                   <span>Upload bills</span>
                   <span class="ai-badge">
                     <MpIcon name="airene-brand" size="xs" class="ai-badge__icon" />
                     <span class="ai-badge__label">AI</span>
                   </span>
                 </MpButton>
+                <input
+                  ref="uploadBillsInputEl" type="file" class="visually-hidden-input"
+                  accept=".csv,.png,.xlsx,.pdf,.jpg,.jpeg" multiple
+                  @change="onUploadBillsChange"
+                />
               </div>
 
               <!-- Group 2: Forward bills to -->
@@ -1267,6 +1367,47 @@ function startResize(e: MouseEvent) {
             Add courier
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Purchase orders'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary">
+            Import
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="openNewPurchaseOrderForm">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            New purchase order
+          </button>
+        </div>
+      </div>
+
+      <!-- Purchase Orders tab bar (custom .page-tab buttons, not the generic tabs system) -->
+      <div v-if="currentPageKey === 'Purchase orders'" class="page-tabs-bar">
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'all' }"
+          @click="purchaseOrdersTab = 'all'"
+        >
+          All purchase orders
+        </button>
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'awaiting' }"
+          @click="purchaseOrdersTab = 'awaiting'"
+        >
+          Awaiting approval
+          <MpBadge for="additionalInformation" size="sm" type="warning">{{ poAwaitingCount }}</MpBadge>
+        </button>
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'rejected' }"
+          @click="purchaseOrdersTab = 'rejected'"
+        >
+          Rejected
+          <MpBadge for="additionalInformation" size="sm" type="critical">{{ poRejectedCount }}</MpBadge>
+        </button>
       </div>
 
       <!-- Status tabs (below the title, outside the stage) — hidden when there's
@@ -1596,6 +1737,16 @@ function startResize(e: MouseEvent) {
   position: relative;
 }
 
+.visually-hidden-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .import-chevron {
   transition: transform 0.15s ease;
   flex-shrink: 0;
@@ -1771,6 +1922,15 @@ function startResize(e: MouseEvent) {
 
 .page-tabs {
   display: flex;
+  gap: var(--mp-spacing-5);
+  padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0;
+}
+
+.page-tabs-bar {
+  display: flex;
+  align-items: flex-end;
   gap: var(--mp-spacing-5);
   padding: 0 var(--mp-spacing-6);
   background: var(--mp-background-neutral-subtle);
