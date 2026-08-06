@@ -281,7 +281,7 @@ function generateCanceled(count = 7): Receipt[] {
 // full snapshot so seed records mutated by the flow (status derivation, received
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
-const receiptSnapshot = loadSnapshot<Receipt>("receipts-v3");
+const receiptSnapshot = loadSnapshot<Receipt>("receipts-v4");
 const initialReceipts = receiptSnapshot ?? [...generateDemoInbound(), ...generateReceipts(), ...generateCanceled()];
 // Keep the demo inbound PO pinned at the very top of the list, regardless of
 // where a persisted snapshot from an earlier session happened to leave it.
@@ -294,7 +294,7 @@ export const receipts = reactive<Receipt[]>(initialReceipts);
 
 /** Persist the receipts snapshot (call after any mutation). */
 export function persistReceipts(): void {
-  saveSnapshot("receipts-v3", receipts);
+  saveSnapshot("receipts-v4", receipts);
 }
 
 let receiptAddSeq = receipts.filter((r) => r.id.startsWith("rcv-new-")).length;

@@ -379,7 +379,7 @@ function patchMissingTargetQty(snap: ReceivingTask[]): ReceivingTask[] {
   });
 }
 
-const _snap = loadSnapshot<ReceivingTask>("receiving-v2");
+const _snap = loadSnapshot<ReceivingTask>("receiving-v3");
 const snapshot = _snap ? patchMissingTargetQty(patchSnapshotSerials(_snap)) : null;
 export const receivingTasks = reactive<ReceivingTask[]>(snapshot ?? seedTasks());
 
@@ -410,7 +410,7 @@ function rebuildPOs(): void {
 }
 
 function persistTasks(): void {
-  saveSnapshot("receiving-v2", receivingTasks);
+  saveSnapshot("receiving-v3", receivingTasks);
   rebuildPOs();
 }
 
@@ -424,7 +424,7 @@ function initInbound(): void {
     ids.forEach((id) => recomputeReceiptStatus(id));
   }
   // Always persist: captures fresh seed OR patched snapshot with added SNs
-  saveSnapshot("receiving-v2", receivingTasks);
+  saveSnapshot("receiving-v3", receivingTasks);
 }
 
 // ── PO status derivation ─────────────────────────────────────────────────────────

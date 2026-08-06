@@ -272,10 +272,11 @@ function generateOrders(count = 42): OutgoingOrder[] {
     const custName = so ? so.customer.name : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].name;
     const custId = so ? so.customer.id : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].id;
     const source = fromDesty ? `${MARKETPLACES[hash100(i * 29) % MARKETPLACES.length]}: ${STORE_NAME}` : "Sales Order";
-    // Marketplace source label (resi/AWB): always present once shipped; while a
-    // marketplace order is still in the warehouse, ~40% are still waiting for the
-    // label (so Print Shipping Label demos its disabled state). ERP/manual = none.
-    const waitingLabel = fromDesty && !hasLeft && hash100(i * 41) % 10 < 4;
+    // Marketplace source label (resi/AWB): almost always present (the channel
+    // issues it up front), so Print Shipping Label works out of the box. Only a
+    // small share of in-warehouse marketplace orders are still waiting for the
+    // label (so the disabled/"waiting" state is still demonstrable). ERP/manual = none.
+    const waitingLabel = fromDesty && !hasLeft && hash100(i * 41) % 10 === 0;
     const shippingLabel = fromDesty && !waitingLabel
       ? `SPXID${String(40000000 + i * 137).padStart(11, "0")}`
       : undefined;
@@ -641,7 +642,7 @@ function generateMultiOrderPickingScenario(): OutgoingOrder[] {
 // full snapshot so seed records mutated by the flow (status derivation, shipped
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
-const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing-v3");
+const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing-v4");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
   outgoingSnapshot ?? [
     ...generateTrackingScenario(), ...generateMultiOrderPickingScenario(),
@@ -685,7 +686,7 @@ export const shippedSeeds: ShippedSeed[] = outgoingOrders
 
 /** Persist the outgoing snapshot (call after any mutation). */
 export function persistOutgoing(): void {
-  saveSnapshot("outgoing-v3", outgoingOrders);
+  saveSnapshot("outgoing-v4", outgoingOrders);
 }
 
 let outgoingAddSeq = outgoingOrders.filter((o) => o.id.startsWith("out-new-")).length;
