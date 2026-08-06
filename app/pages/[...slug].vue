@@ -393,16 +393,8 @@ const pageTabs: Record<string, string[]> = {
 const activeWarehouseFilter = useActiveWarehouseFilter()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
-  // WMS Overview tabs badge the actionable open work per direction.
-  if (currentPageKey.value === 'Overview') {
-    const counts = receiptCountsByStage(wh)
-    const inbound = (counts['Pending'] ?? 0) + (counts['Open'] ?? 0) + (counts['In progress'] ?? 0) + (counts['Partial reception'] ?? 0)
-    const out: Record<string, number> = {}
-    if (inbound) out['Inbound delivery'] = inbound
-    const outbound = outgoingOpenCount(wh)
-    if (outbound) out['Outbound delivery'] = outbound
-    return out
-  }
+  // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
+  if (currentPageKey.value === 'Overview') return {}
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
