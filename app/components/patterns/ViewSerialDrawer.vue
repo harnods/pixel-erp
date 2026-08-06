@@ -79,6 +79,12 @@ const props = defineProps<{
    *  the drawer shows a scan bar (emits 'scan') and a Verified/Not-scanned badge
    *  per serial instead of the picking Picked/Reserved status. */
   verifiedSerials?: string[]
+  /** Count mode only — hides On hand qty/Difference (and the "Not counted" filler
+   *  rows the count-mode row builder otherwise generates from live warehouse
+   *  stock) while a cycle count is still blind — the operator shouldn't be able
+   *  to see the system's on-hand serial list before the count reaches Awaiting
+   *  approval, where the reviewing manager needs it. Other kinds never pass this. */
+  hideOnHand?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
@@ -95,7 +101,9 @@ const statusPickedLabel = computed(() => props.statusPickedLabel ?? 'Picked')
 // Packing mode normally has no status concept (just the picked list, as-is) — but
 // when plannedSerials is given (picking task view), rows carry a Reserved/Picked
 // status just like ManageSerialDrawer's picking-execution badges, so show the column.
-const hasStatus = computed(() => !isPacking.value || props.plannedSerials !== undefined)
+// Blind count (hideOnHand): every row is forced counted (see allRows below), so
+// the Counted/Not counted badge would just say "Counted" on every row — noise.
+const hasStatus = computed(() => (!isPacking.value && !props.hideOnHand) || props.plannedSerials !== undefined)
 
 const warehouseStock = computed(() => {
   const wh = getWarehouseDetail(props.warehouseId)
@@ -163,7 +171,11 @@ const allRows = computed<SerialRow[]>(() => {
     }
   }
 
-  return rows
+  // Blind count: the rows above are reconstructed straight from live warehouse
+  // stock (every on-hand serial, most marked "Not counted") — showing that list
+  // would reveal exactly the on-hand figure the stats above are hidden to
+  // protect. Drop everything but what was actually counted.
+  return props.hideOnHand ? rows.filter(r => r.counted) : rows
 })
 
 // ── Search ────────────────────────────────────────────────────────────────────
@@ -276,7 +288,7 @@ function close() { emit('update:open', false) }
               </div>
             </template>
             <template v-else>
-              <div class="vsd-stat">
+              <div v-if="!hideOnHand" class="vsd-stat">
                 <span class="vsd-stat-label">{{ t('Prev. on hand qty') }}</span>
                 <span class="vsd-stat-value">{{ fmt(totalOnHand) }}</span>
               </div>
@@ -284,7 +296,10 @@ function close() { emit('update:open', false) }
                 <span class="vsd-stat-label">{{ t('Counted qty') }}</span>
                 <span class="vsd-stat-value">{{ fmt(countedTotal) }}</span>
               </div>
+              <!-- Difference is derived from on-hand — hidden alongside it, or the
+                   operator could back-calculate the figure it's meant to hide. -->
               <div
+                v-if="!hideOnHand"
                 class="vsd-stat"
                 :class="{ 'vsd-stat--pos': difference > 0, 'vsd-stat--neg': difference < 0 }"
               >
@@ -345,7 +360,7 @@ function close() { emit('update:open', false) }
                     <MpBadge v-else-if="row.status === 'reserved'" for="tableStatus" type="warning">{{ t(statusPlannedLabel) }}</MpBadge>
                   </template>
                 </td>
-                <td v-else-if="!isPacking" class="vsd-td vsd-td--status">
+                <td v-else-if="!isPacking && hasStatus" class="vsd-td vsd-td--status">
                   <MpBadge v-if="row.counted" variant="success">{{ t('Counted') }}</MpBadge>
                   <MpBadge v-else variant="danger">{{ t('Not counted') }}</MpBadge>
                 </td>

@@ -112,4 +112,32 @@ describe('StockCountingPage — unsaved-changes guard is disabled on intentional
     await pending
     wrapper.unmount()
   })
+
+  it('choosing Leave without saving does not re-prompt on a second beforeEach pass before the page unmounts', async () => {
+    // Regression: Vue Router can re-run beforeEach for the same navigation (a
+    // redirect, the destination normalizing its own URL/query on mount, ...)
+    // before the outgoing page's onUnmounted has actually cleared the guard.
+    // The operator already answered "leave this page behind?" once — a second
+    // pass mid-transition must not pop the modal right back up.
+    const wrapper = mountCountingTask()
+    await flushPromises()
+
+    await scanUnlock(wrapper)
+    await wrapper.find('input.sc-qty-input').setValue('5') // dirty, nothing committed
+
+    const modal = useUnsavedChangesModalState()
+    const first = resolveNavigationAttempt()
+    await Promise.resolve()
+    expect(modal.isOpen.value).toBe(true)
+    modal.chooseLeave()
+    await expect(first).resolves.toBe(true)
+    expect(modal.isOpen.value).toBe(false)
+
+    // Component instance hasn't unmounted yet — simulates the guard still
+    // being registered when the next beforeEach pass fires.
+    await expect(resolveNavigationAttempt()).resolves.toBe(true)
+    expect(modal.isOpen.value).toBe(false) // never reopened
+
+    wrapper.unmount()
+  })
 })

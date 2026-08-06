@@ -686,7 +686,10 @@ onUnmounted(() => {
                   <colgroup>
                     <col class="detail-col-product" />
                     <col class="detail-col-sku" />
-                    <col class="detail-col-num" />
+                    <!-- Blind counting: On hand qty stays hidden from the operator until the
+                         count reaches Awaiting approval (status 'counted'), when the manager
+                         reviewing it needs to see it — same gate as Variance/Reason below. -->
+                    <col v-if="isCountedStatus" class="detail-col-num" />
                     <col class="detail-col-num" />
                     <col v-if="isCountedStatus" class="detail-col-num" />
                     <col class="detail-col-unit" />
@@ -697,7 +700,7 @@ onUnmounted(() => {
                     <tr>
                       <th class="detail-th">{{ t('Product') }}</th>
                       <th class="detail-th">{{ t('SKU') }}</th>
-                      <th class="detail-th detail-th--num">{{ t('On hand qty') }}</th>
+                      <th v-if="isCountedStatus" class="detail-th detail-th--num">{{ t('On hand qty') }}</th>
                       <th class="detail-th detail-th--num">{{ t('Counted qty') }}</th>
                       <th v-if="isCountedStatus" class="detail-th detail-th--num">{{ t('Variance') }}</th>
                       <th class="detail-th">{{ t('Unit') }}</th>
@@ -709,7 +712,7 @@ onUnmounted(() => {
                     <tr v-for="item in group.items" :key="item.key" class="detail-item-row">
                       <td class="detail-td detail-td--product"><ProductCell :name="item.product.name" :desc="item.product.desc" :image="item.product.img" /></td>
                       <td class="detail-td">{{ item.sku }}</td>
-                      <td class="detail-td detail-td--num">{{ fmt(item.prevOnHand) }}</td>
+                      <td v-if="isCountedStatus" class="detail-td detail-td--num">{{ fmt(item.prevOnHand) }}</td>
                       <td class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(item.counted) }}</td>
                       <td v-if="isCountedStatus" class="detail-td detail-td--num" :class="{ 'detail-diff--pos': item.difference > 0, 'detail-diff--neg': item.difference < 0 }">{{ diffLabel(item.difference) }}</td>
                       <td class="detail-td">{{ item.unit }}</td>
@@ -766,7 +769,8 @@ onUnmounted(() => {
               <tr>
                 <th class="detail-th">{{ t('Product') }}</th>
                 <th class="detail-th">{{ t('SKU') }}</th>
-                <th class="detail-th detail-th--num">{{ t('On hand qty') }}</th>
+                <!-- Blind counting: hidden until Awaiting approval, same as the by-location table. -->
+                <th v-if="isCountedStatus" class="detail-th detail-th--num">{{ t('On hand qty') }}</th>
                 <th class="detail-th detail-th--num">{{ t('Counted qty') }}</th>
                 <th v-if="isCountedStatus" class="detail-th detail-th--num">{{ t('Variance') }}</th>
                 <th class="detail-th">{{ t('Unit') }}</th>
@@ -777,7 +781,7 @@ onUnmounted(() => {
             </thead>
             <tbody>
               <tr v-if="!groupedBySku.length">
-                <td :colspan="isCountedStatus ? 9 : 7" class="detail-td detail-td--empty">
+                <td :colspan="isCountedStatus ? 9 : 6" class="detail-td detail-td--empty">
                   <div class="empty-inline">
                     <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
                     <p class="empty-inline-title">{{ t('No results found') }}</p>
@@ -789,7 +793,7 @@ onUnmounted(() => {
               <tr v-for="row in groupedBySku" :key="row.sku" class="detail-item-row">
                 <td class="detail-td detail-td--product"><ProductCell :name="row.product.name" :desc="row.product.desc" :image="row.product.img" /></td>
                 <td class="detail-td">{{ row.sku }}</td>
-                <td class="detail-td detail-td--num">{{ fmt(row.prevOnHand) }}</td>
+                <td v-if="isCountedStatus" class="detail-td detail-td--num">{{ fmt(row.prevOnHand) }}</td>
                 <td class="detail-td detail-td--num">{{ isNotStarted ? '—' : fmt(row.counted) }}</td>
                 <td v-if="isCountedStatus" class="detail-td detail-td--num" :class="{ 'detail-diff--pos': row.difference > 0, 'detail-diff--neg': row.difference < 0 }">{{ diffLabel(row.difference) }}</td>
                 <td class="detail-td">{{ row.unit }}</td>
@@ -1082,6 +1086,7 @@ onUnmounted(() => {
       :delta-total="isCount ? undefined : viewBatchItem.difference"
       :product-name="viewBatchItem.product.name"
       :product-img="viewBatchItem.product.img"
+      :hide-on-hand="isCount && !isCountedStatus"
       @update:open="viewBatchOpen = $event"
     />
 
@@ -1094,6 +1099,7 @@ onUnmounted(() => {
       :product-name="viewSerialItem.product.name"
       :product-img="viewSerialItem.product.img"
       :storage-location="viewSerialItem.storageLocation || undefined"
+      :hide-on-hand="!isCountedStatus"
       @update:open="viewSerialOpen = $event"
     />
 
@@ -1282,7 +1288,7 @@ onUnmounted(() => {
 .detail-col-sku { width: 90px; }
 .detail-col-num { width: 110px; }
 .detail-col-unit { width: 90px; }
-.detail-col-action { width: 56px; }
+.detail-col-action { width: 44px; }
 .detail-col-reason { width: 220px; }
 .detail-items--fixed.detail-items--with-reason { min-width: 1280px; }
 /* Reason select fills the FULL row height (flat, edge-to-edge trigger) instead of
@@ -1371,9 +1377,15 @@ onUnmounted(() => {
 }
 .detail-view-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* View batch/serial action column (WMS cycle count tables) */
-.detail-th--action { text-align: center; white-space: nowrap; }
-.detail-td--action { text-align: center; white-space: nowrap; }
+/* View batch/serial action column (WMS cycle count tables) — width applies to
+   the by-SKU table (table-layout:auto, no colgroup); the by-location table's
+   width instead comes from .detail-col-action below (table-layout:fixed).
+   Padding is zeroed (overriding .detail-td's own asymmetric default) so the
+   icon button centers exactly in the 44px column instead of drifting off
+   center — text-align:center alone isn't enough once the cell's padding
+   isn't equal on both sides. */
+.detail-th--action { width: 44px; text-align: center; white-space: nowrap; }
+.detail-td--action { width: 44px; padding: 0; text-align: center; white-space: nowrap; }
 .detail-view-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
