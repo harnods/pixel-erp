@@ -7,7 +7,10 @@
  * that doesn't belong to any transaction. Chrome comes from FileReviewShell.
  */
 import { ref, computed, watch } from 'vue'
-import { MpRadio, MpAutocomplete, MpFormControl, MpFormLabel, MpFormErrorMessage, toast } from '@mekari/pixel3'
+import {
+  MpRadio, MpAutocomplete, MpFormControl, MpFormLabel, MpFormErrorMessage, toast,
+  MpIcon, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
 import FileReviewShell from '~/components/patterns/FileReviewShell.vue'
 import { useReviewQueue } from '~/composables/useReviewQueue'
 
@@ -15,6 +18,14 @@ const props = defineProps<{ orderId: string }>()
 
 const { t } = useLocale()
 const { queue, backLabel, queueBase, goBack, removeFromQueue, goToNext } = useReviewQueue(() => props.orderId)
+
+// ── Scenario state (dev FAB) ─────────────────────────────────────────────────
+type Scenario = 'default' | 'unreadable'
+const scenario = ref<Scenario>('default')
+const scenarios: { value: Scenario; label: string }[] = [
+  { value: 'default',    label: t('Unclassified') },
+  { value: 'unreadable', label: t('Error - file unreadable') },
+]
 
 type Action = 'attach' | 'file_manager' | 'delete'
 const ACTIONS: { value: Action; label: string }[] = [
@@ -60,6 +71,7 @@ function handleSave() {
   <FileReviewShell
     :queue="queue" :file-id="props.orderId"
     :back-label="backLabel" :queue-base="queueBase"
+    :is-unreadable="scenario === 'unreadable'"
     @back="goBack"
   >
     <div class="uc-body">
@@ -103,6 +115,26 @@ function handleSave() {
       <button class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</button>
       <button class="btn-enterprise btn-enterprise--primary" :disabled="!action" @click="handleSave">{{ t('Save & next') }}</button>
     </footer>
+
+    <template #overlays>
+      <!-- ── Demo scenario FAB — same component as the other review pages ── -->
+      <MpPopover id="uc-demo-fab" is-close-on-select use-portal placement="top-end">
+        <MpPopoverTrigger>
+          <MpButton class="demo-fab" :aria-label="t('Change scenario state')">
+            <MpIcon name="sliders" size="md" color="icon.inverse" />
+          </MpButton>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+          <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
+          <MpPopoverList>
+            <MpPopoverListItem
+              v-for="s in scenarios" :key="s.value"
+              :is-active="s.value === scenario" @click="scenario = s.value"
+            >{{ s.label }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+    </template>
   </FileReviewShell>
 </template>
 
@@ -111,8 +143,8 @@ function handleSave() {
 /* Same section-title treatment the other review pages use for "Expense",
    "Invoice", "Payment Receipt". */
 .br-section-title {
-  margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg); color: var(--mp-text-default);
+  margin: 0; font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-xl); color: var(--mp-text-default);
 }
 .uc-desc {
   margin: var(--mp-spacing-1) 0 0;
@@ -140,5 +172,22 @@ function handleSave() {
   border-color: var(--mp-background-disabled, #f0f1f3);
   color: var(--mp-text-disabled, #9aa4b2);
   cursor: not-allowed;
+}
+
+/* ── Demo scenario FAB — mirrors the other review pages' .demo-fab ────────── */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  padding: 0 !important; min-width: 0 !important;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  border: none !important; border-radius: var(--mp-radii-full, 999px) !important;
+  background: var(--mp-background-inverse) !important; color: var(--mp-text-inverse);
+  cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2); /* pixel-police-allow-shadow: floating FAB trigger */
+}
+.demo-fab:hover { opacity: 0.9; background: var(--mp-background-inverse) !important; }
+.demo-fab-heading {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
 </style>

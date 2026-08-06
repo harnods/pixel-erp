@@ -24,6 +24,7 @@ import {
   MpInputTag, MpIcon, MpUpload, MpUploadList, toast, MpTooltip, MpSelect,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
   type DataInterface,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -80,13 +81,48 @@ const PAYMENT_TERM_OPTIONS = [
   { id: 'due-on-receipt', name: t('Due on receipt') },
 ]
 
-// ── Scenario state (dev FAB) ─────────────────────────────────────────────────
-type Scenario = 'first_run' | 'filled'
-const scenario = ref<Scenario>('first_run')
-const scenarios: { value: Scenario; label: string }[] = [
-  { value: 'first_run', label: t('First run') },
-  { value: 'filled',    label: t('Filled')    },
+/** >10 Products scenario — every line OCR lifted off a longer, multi-page
+ *  invoice (Figma's 2-page sample: coffee lines + merchandise + drip bags +
+ *  gift sets), none matched yet so the "to match" list actually stacks up. */
+const MANY_PRODUCTS_SOURCE: { label: string; qty: number; unit: string; unitCost: number }[] = [
+  { label: 'Kintamani Bali (250g)',        qty: 3,  unit: 'Pack', unitCost: 120_000 },
+  { label: 'House Blend (1kg)',            qty: 2,  unit: 'Pack', unitCost: 320_000 },
+  { label: 'Bali Honey (250g)',            qty: 4,  unit: 'Pack', unitCost: 140_000 },
+  { label: 'Single Origin Flores (250g)',  qty: 3,  unit: 'Pack', unitCost: 150_000 },
+  { label: 'Cold Brew Blend (1kg)',        qty: 2,  unit: 'Pack', unitCost: 340_000 },
+  { label: 'Merchandise - Tumbler',        qty: 5,  unit: 'Pcs',  unitCost: 110_000 },
+  { label: 'Merchandise - Tote Bag',       qty: 5,  unit: 'Pcs',  unitCost: 85_000  },
+  { label: 'Merchandise - Mug',            qty: 6,  unit: 'Pcs',  unitCost: 90_000  },
+  { label: 'Merchandise - Cap',            qty: 5,  unit: 'Pcs',  unitCost: 75_000  },
+  { label: 'Merchandise - T-Shirt (M)',    qty: 4,  unit: 'Pcs',  unitCost: 120_000 },
+  { label: 'Merchandise - T-Shirt (L)',    qty: 4,  unit: 'Pcs',  unitCost: 120_000 },
+  { label: 'Merchandise - Hoodie (M)',     qty: 2,  unit: 'Pcs',  unitCost: 250_000 },
+  { label: 'Merchandise - Hoodie (L)',     qty: 2,  unit: 'Pcs',  unitCost: 250_000 },
+  { label: 'Drip Bag - Kintamani Bali (10g)', qty: 10, unit: 'Box', unitCost: 80_000 },
+  { label: 'Drip Bag - House Blend (10g)', qty: 10, unit: 'Box', unitCost: 80_000  },
+  { label: 'Gift Box Set (2 x 250g)',      qty: 3,  unit: 'Set',  unitCost: 220_000 },
+  { label: 'Gift Box Set (3 x 250g)',      qty: 2,  unit: 'Set',  unitCost: 300_000 },
+  { label: 'Pour Over Dripper',            qty: 2,  unit: 'Pcs',  unitCost: 180_000 },
+  { label: 'Coffee Server 600ml',          qty: 2,  unit: 'Pcs',  unitCost: 220_000 },
+  { label: 'Coffee Scale',                 qty: 2,  unit: 'Pcs',  unitCost: 350_000 },
+  { label: 'Bali Blue Moon (250g)',        qty: 2,  unit: 'Pack', unitCost: 160_000 },
+  { label: 'Sunset Espresso Blend (1kg)',  qty: 1,  unit: 'Pack', unitCost: 330_000 },
+  { label: 'Decaf House Blend (250g)',     qty: 2,  unit: 'Pack', unitCost: 130_000 },
 ]
+
+// ── Scenario state (dev FAB) ─────────────────────────────────────────────────
+type Scenario = 'ai_not_found' | 'ai_matched' | 'filled' | 'many_products' | 'unreadable'
+const scenario = ref<Scenario>('ai_matched')
+const scenarios: { value: Scenario; label: string }[] = [
+  { value: 'ai_not_found',  label: t('AI not found')     },
+  { value: 'ai_matched',    label: t('AI matched')       },
+  { value: 'filled',        label: t('Filled')           },
+  { value: 'many_products', label: t('>10 Products')     },
+  { value: 'unreadable',    label: t('Error - file unreadable') },
+]
+/** Only the >10 Products scenario simulates a multi-page source document —
+ *  every other scenario is the usual single-page scan. */
+const pageCount = computed(() => (scenario.value === 'many_products' ? 2 : 1))
 
 // ── Header fields ────────────────────────────────────────────────────────────
 const vendor = ref('')
@@ -215,13 +251,28 @@ function toggleChecked(id: number) {
   if (s.has(id)) s.delete(id); else s.add(id)
   checkedCards.value = s
 }
+const allCardsChecked = computed(() => matchCards.value.length > 0 && matchCards.value.every((c) => checkedCards.value.has(c.id)))
+const someCardsChecked = computed(() => checkedCards.value.size > 0 && !allCardsChecked.value)
+function toggleSelectAllCards() {
+  checkedCards.value = allCardsChecked.value ? new Set() : new Set(matchCards.value.map((c) => c.id))
+}
 
 /** Products is Ready once every extracted line has been accepted into the table. */
-const productsStatus = computed(() => (matchCards.value.length ? 'needs review' : 'ready'))
+const productsStatus = computed(() => (matchCards.value.length || !rows.value.some((r) => r.productId)) ? 'needs review' : 'ready')
 const invoiceStatus = computed(() => {
   const filled = !!vendor.value && !!transactionDate.value && (!requiresShipping.value || !!warehouse.value)
   return filled ? 'ready' : 'needs review'
 })
+
+/** Accept every checked card at once — cards that still fail validation (e.g.
+ *  no product matched yet) stay checked and keep their error state. */
+function acceptCheckedMatches() {
+  for (const id of [...checkedCards.value]) {
+    const card = matchCards.value.find((c) => c.id === id)
+    if (card) acceptMatch(card)
+  }
+  checkedCards.value = new Set([...checkedCards.value].filter((id) => matchCards.value.some((c) => c.id === id)))
+}
 
 /** Accept one card's proposal — the extracted line becomes a real line item. */
 function acceptMatch(card: MatchCard) {
@@ -269,13 +320,13 @@ function applyScenario(s: Scenario) {
   transactionDate.value = '30/04/2026'
   dueDate.value = '30/05/2026'
   transactionNo.value = ''
-  vendor.value = 'EXPAT'
-  vendorAiHint.value = 'EXPAT Roasters Bali'
   shippingFee.value = '50000'
   message.value = 'Bank Details\n  Bank name: Bank Central Asia (BCA)\n  Branch: KCU Kuta\n  Account name: EXPAT ROASTERS\n  Account no: 147 2300 020\n  Swift code: CENAIDJA'
   memo.value = ''
 
   if (s === 'filled') {
+    vendor.value = 'EXPAT'
+    vendorAiHint.value = 'EXPAT Roasters Bali'
     matchCards.value = []
     openCardId.value = null
     rows.value = [
@@ -286,17 +337,48 @@ function applyScenario(s: Scenario) {
     return
   }
 
+  // A longer, multi-page invoice — every line lands as its own unmatched
+  // "to match" card, so the list actually stacks past ten.
+  if (s === 'many_products') {
+    vendor.value = 'EXPAT'
+    vendorAiHint.value = 'EXPAT Roasters Bali'
+    rows.value = [makeRow()]
+    matchCards.value = MANY_PRODUCTS_SOURCE.map((p) => ({
+      id: cardSeq++,
+      sourceLabel: p.label, sourceQty: p.qty, sourceUnit: p.unit,
+      sourceUnitCost: p.unitCost, sourceAmount: p.qty * p.unitCost,
+      productId: '', unitId: '', taxId: 'ppn10',
+      aiMatched: false, productError: false,
+    }))
+    openCardId.value = matchCards.value[0]!.id
+    return
+  }
+
+  // OCR couldn't read the file at all — no extracted proposal, so the form
+  // renders in its plain empty state (no AI hint, no "to match" cards).
+  if (s === 'unreadable') {
+    vendor.value = ''
+    vendorAiHint.value = ''
+    matchCards.value = []
+    openCardId.value = null
+    rows.value = [makeRow()]
+    return
+  }
+
   rows.value = [makeRow()]
+  const ai = s === 'ai_matched'
+  vendor.value = ai ? 'EXPAT' : ''
+  vendorAiHint.value = ai ? 'EXPAT Roasters Bali' : ''
   matchCards.value = [
     {
       id: cardSeq++,
       sourceLabel: 'Kintamani Bali (250g)', sourceQty: 3, sourceUnit: 'Pack',
       sourceUnitCost: 120_000, sourceAmount: 360_000,
-      productId: 'arabica-kintamani', unitId: 'pcs', taxId: 'ppn10',
-      aiMatched: true, productError: false,
+      productId: ai ? 'arabica-kintamani' : '', unitId: ai ? 'pcs' : '', taxId: 'ppn10',
+      aiMatched: ai, productError: false,
     },
     {
-      // Airene couldn't match the *product*, but the tax is stated on the
+      // Even when Airene can't match the *product*, the tax is stated on the
       // document itself, so the line still carries it — the totals reflect what
       // the invoice says (Rp100.000 PPN) rather than only the matched half.
       id: cardSeq++,
@@ -422,6 +504,8 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   <FileReviewShell
     :queue="queue" :file-id="props.orderId"
     :back-label="backLabel" :queue-base="queueBase"
+    :is-unreadable="scenario === 'unreadable'"
+    :page-count="pageCount"
     @back="goBack"
   >
     <!-- ══ Section: Invoice ══ -->
@@ -581,12 +665,20 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
           </div>
 
           <div class="br-match-wrap">
+            <!-- Bulk bar — appears once at least one match item is checked -->
+            <div v-if="checkedCards.size > 0" class="br-match-bulk-bar">
+              <div class="br-match-bulk-bar__left">
+                <MpCheckbox :is-checked="allCardsChecked" :is-indeterminate="someCardsChecked" @change="toggleSelectAllCards" />
+                <span class="br-match-bulk-bar__count">{{ checkedCards.size }} {{ t(checkedCards.size === 1 ? 'item selected' : 'items selected') }}</span>
+              </div>
+              <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="acceptCheckedMatches">{{ t('Accept match') }}</button>
+            </div>
             <div v-for="card in matchCards" :key="card.id" class="br-match-card">
               <!-- Card header: what the doc says ⟷ what it maps to -->
               <div class="br-match-head">
                 <div class="br-match-head-col br-match-head-col--src">
                   <div class="br-match-head-controls">
-                    <MpCheckbox :id="`iv-match-check-${card.id}`" :is-checked="checkedCards.has(card.id)" @change="toggleChecked(card.id)" />
+                    <MpCheckbox v-if="matchCards.length > 1" :id="`iv-match-check-${card.id}`" :is-checked="checkedCards.has(card.id)" @change="toggleChecked(card.id)" />
                     <MpButton class="br-icon-btn" :aria-label="t('Toggle details')" @click="toggleCard(card.id)">
                       <MpIcon :name="openCardId === card.id ? 'chevrons-down' : 'chevrons-right'" size="md" />
                     </MpButton>
@@ -603,7 +695,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
                   <div class="br-match-stack">
                     <div class="br-match-name-row">
                       <span class="br-match-name" :class="{ 'br-match-name--empty': !card.productId }">
-                        {{ PRODUCT_OPTIONS.find(p => p.id === card.productId)?.name || t('No match found') }}
+                        {{ PRODUCT_OPTIONS.find(p => p.id === card.productId)?.name || t('Match not found') }}
                       </span>
                       <span v-if="card.aiMatched" class="br-ai-badge">
                         <MpIcon name="airene-brand" size="sm" />{{ t('AI matched') }}
@@ -856,14 +948,23 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
         @save="saveClassification"
       />
 
-      <!-- ── Demo scenario FAB ── -->
-      <div class="demo-fab-wrap">
-        <button
-          v-for="s in scenarios" :key="s.value"
-          class="demo-fab-chip" :class="{ 'demo-fab-chip--active': s.value === scenario }"
-          @click="setScenario(s.value)"
-        >{{ s.label }}</button>
-      </div>
+      <!-- ── Demo scenario FAB — same component as the expense review ── -->
+      <MpPopover id="iv-demo-fab" is-close-on-select use-portal placement="top-end">
+        <MpPopoverTrigger>
+          <MpButton class="demo-fab" :aria-label="t('Change scenario state')">
+            <MpIcon name="sliders" size="md" color="icon.inverse" />
+          </MpButton>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+          <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
+          <MpPopoverList>
+            <MpPopoverListItem
+              v-for="s in scenarios" :key="s.value"
+              :is-active="s.value === scenario" @click="setScenario(s.value)"
+            >{{ s.label }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </template>
   </FileReviewShell>
 </template>
@@ -874,8 +975,8 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .br-section-header { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .br-section-titlerow { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .br-section-title {
-  margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg); color: var(--mp-text-default);
+  margin: 0; font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-xl); color: var(--mp-text-default);
 }
 .br-icon-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
@@ -937,9 +1038,11 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 }
 .iv-shipping-grid { padding-top: var(--mp-spacing-1); }
 
+/* Same text style/spacing as "I have paid this bill" on the expense review —
+   gap:0 since MpCheckbox renders its own 12px control-to-label gap. */
 .ex-price-includes {
-  display: flex; align-items: center; gap: var(--mp-spacing-2); justify-content: flex-end;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+  display: flex; align-items: center; gap: 0; justify-content: flex-end;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 
 /* ── "To match" accordion ─────────────────────────────────────────────────── */
@@ -964,6 +1067,17 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   border-radius: var(--mp-radii-md); padding: var(--mp-spacing-3);
   margin-left: var(--mp-spacing-8);
 }
+/* Bulk bar — mirrors ErpTablePage's erp-bulk-bar (checkbox + count on the
+   left, primary action flush right) for the "to match" checkbox selection. */
+.br-match-bulk-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-3);
+}
+.br-match-bulk-bar__left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
+.br-match-bulk-bar__count {
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default); white-space: nowrap;
+}
 .br-match-card {
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-md); overflow: hidden;
@@ -987,7 +1101,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
-/* "No match found" — nothing to name yet, so it reads as placeholder text */
+/* "Match not found" — nothing to name yet, so it reads as placeholder text */
 .br-match-name--empty { font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
 .br-match-name-row { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
 .br-match-sub {
@@ -1145,17 +1259,20 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   padding-top: var(--mp-spacing-6); padding-bottom: var(--mp-spacing-12, 48px);
 }
 
-/* ── Demo scenario switcher ───────────────────────────────────────────────── */
-.demo-fab-wrap {
-  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6); z-index: 40;
-  display: flex; gap: var(--mp-spacing-1); padding: var(--mp-spacing-1);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-full); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+/* ── Demo scenario FAB — mirrors BillReviewPage.vue's .demo-fab ──────────── */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  padding: 0 !important; min-width: 0 !important;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  border: none !important; border-radius: var(--mp-radii-full, 999px) !important;
+  background: var(--mp-background-inverse) !important; color: var(--mp-text-inverse);
+  cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2); /* pixel-police-allow-shadow: floating FAB trigger */
 }
-.demo-fab-chip {
-  border: none; background: none; cursor: pointer; font: inherit;
-  padding: var(--mp-spacing-1) var(--mp-spacing-3); border-radius: var(--mp-radii-full);
+.demo-fab:hover { opacity: 0.9; background: var(--mp-background-inverse) !important; }
+.demo-fab-heading {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
-.demo-fab-chip--active { background: var(--mp-background-neutral-subtle-selected, #dcdfe4); color: var(--mp-text-default); }
 </style>

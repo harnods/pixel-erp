@@ -18,6 +18,7 @@ import { ref, computed, onBeforeUnmount } from 'vue'
 import {
   MpIcon, MpTextlink, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
 } from '@mekari/pixel3'
 import type { ReviewFile } from '~/data'
 
@@ -30,9 +31,15 @@ const props = defineProps<{
   backLabel: string
   /** Route prefix the switcher navigates within, e.g. "/purchase-invoices/review" */
   queueBase: string
+  /** OCR couldn't read this file at all — left panel shows the warning banner,
+   *  right panel is left to the page (it renders nothing in this state). */
+  isUnreadable?: boolean
+  /** Number of pages the source document has — drives the "N page(s)" label
+   *  and how many preview panels stack in the left column. Defaults to 1. */
+  pageCount?: number
 }>()
 
-const emit = defineEmits<{ back: [] }>()
+const emit = defineEmits<{ back: []; reupload: [] }>()
 
 const router = useRouter()
 const { t } = useLocale()
@@ -70,7 +77,7 @@ const jumpResults = computed(() => {
 // ── Left panel resize ────────────────────────────────────────────────────────
 const LEFT_PANEL_MIN = 320
 const LEFT_PANEL_MAX = 640
-const leftWidth = ref(456)
+const leftWidth = ref(LEFT_PANEL_MAX)
 function startPanelResize(e: MouseEvent) {
   e.preventDefault()
   const startX = e.clientX
@@ -94,6 +101,7 @@ onBeforeUnmount(() => {
   document.body.style.userSelect = ''
 })
 const zoomMode = ref<'fit' | '100'>('fit')
+const pageCount = computed(() => props.pageCount ?? 1)
 
 defineExpose({ reviewFile, queueIndex, queueTotal })
 </script>
@@ -153,7 +161,7 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
             <MpIcon :name="fileIconName(reviewFile?.file ?? '')" size="sm" class="ex-file-meta-icon" />
             <div class="ex-file-meta-text">
               <span class="ex-file-name">{{ reviewFile?.file }}</span>
-              <span class="ex-file-size">1 {{ t('page') }}</span>
+              <span class="ex-file-size">{{ pageCount }} {{ pageCount > 1 ? t('pages') : t('page') }}</span>
             </div>
           </div>
           <div class="ex-zoom-toggle" role="group" :aria-label="t('Zoom')">
@@ -169,7 +177,21 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
             >100%</button>
           </div>
         </div>
-        <div class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }">
+        <MpBanner
+          v-if="isUnreadable"
+          id="frs-unreadable-banner" variant="warning" class="frs-unreadable-banner"
+        >
+          <MpBannerIcon id="frs-unreadable-banner-icon" />
+          <MpBannerTitle>{{ t("File couldn't be scanned properly") }}</MpBannerTitle>
+          <MpBannerDescription>
+            {{ t('This file is too blurry or dark to read. Upload a clearer file, or fill in the details manually.') }}
+            <MpTextlink id="frs-reupload-link" as="a" href="#" @click.prevent="emit('reupload')">{{ t('Reupload file') }}</MpTextlink>
+          </MpBannerDescription>
+        </MpBanner>
+        <div
+          v-for="page in pageCount" :key="page"
+          class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }"
+        >
           <img src="/illustrations/receipt-dropzone.png" alt="" class="br-preview-img" />
         </div>
       </div>
@@ -289,6 +311,7 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
   background: var(--mp-background-neutral-subtle-selected, #dcdfe4);
   color: var(--mp-text-secondary-pressed, #4c5460);
 }
+.frs-unreadable-banner { flex-shrink: 0; }
 .br-preview {
   flex-shrink: 0; background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);

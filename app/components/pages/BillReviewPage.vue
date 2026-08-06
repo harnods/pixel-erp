@@ -115,12 +115,13 @@ const BENEFICIARY_OPTIONS = [
 ]
 
 // ── Scenario state (dev FAB) ─────────────────────────────────────────────────
-type Scenario = 'ai_not_found' | 'ai_matched' | 'filled'
+type Scenario = 'ai_not_found' | 'ai_matched' | 'filled' | 'unreadable'
 const scenario = ref<Scenario>('ai_matched')
 const scenarios: { value: Scenario; label: string }[] = [
   { value: 'ai_not_found', label: t('AI not found') },
   { value: 'ai_matched',   label: t('AI matched')   },
   { value: 'filled',       label: t('Filled')       },
+  { value: 'unreadable',   label: t('Error - file unreadable') },
 ]
 
 // ── Header fields ────────────────────────────────────────────────────────────
@@ -208,9 +209,8 @@ interface MatchCard {
 const matchCard = ref<MatchCard | null>(null)
 const matchExpanded = ref(true)
 const matchAccordionOpen = ref(true)
-const matchChecked = ref(false)
 /** Items is Ready once the extracted line has been accepted into the table. */
-const itemsStatus = computed(() => (matchCard.value ? 'needs review' : 'ready'))
+const itemsStatus = computed(() => (matchCard.value || !rows.value.some((r) => r.accountId)) ? 'needs review' : 'ready')
 /** Ready once every required field this section owns is filled, Needs review
  *  otherwise. Scoped to its own fields — an unmatched line is the Items
  *  section's problem, not this one's. Transaction no. is auto-generated, and
@@ -252,7 +252,6 @@ function applyScenario(s: Scenario) {
   itemsUnresolvedError.value = false
   matchAccordionOpen.value = true
   matchExpanded.value = true
-  matchChecked.value = false
   priceIncludesTax.value = true
   beneficiaryError.value = false
   transactionDate.value = '30/04/2026'
@@ -278,6 +277,16 @@ function applyScenario(s: Scenario) {
       },
       makeRow(),
     ]
+    return
+  }
+
+  // OCR couldn't read the file at all — no extracted proposal, so the form
+  // renders in its plain empty state (no AI hint, no "to match" card).
+  if (s === 'unreadable') {
+    beneficiary.value = ''
+    beneficiaryAiHint.value = ''
+    matchCard.value = null
+    rows.value = [makeRow()]
     return
   }
 
@@ -375,7 +384,7 @@ watch(total, (v) => {
 // ── Left panel resize + zoom (same as NewExpensePage) ────────────────────────
 const LEFT_PANEL_MIN = 320
 const LEFT_PANEL_MAX = 640
-const leftWidth = ref(456)
+const leftWidth = ref(LEFT_PANEL_MAX)
 function startPanelResize(e: MouseEvent) {
   e.preventDefault()
   const startX = e.clientX
@@ -611,6 +620,17 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
             >100%</button>
           </div>
         </div>
+        <MpBanner
+          v-if="scenario === 'unreadable'"
+          id="br-unreadable-banner" variant="warning" class="br-unreadable-banner"
+        >
+          <MpBannerIcon id="br-unreadable-banner-icon" />
+          <MpBannerTitle>{{ t("File couldn't be scanned properly") }}</MpBannerTitle>
+          <MpBannerDescription>
+            {{ t('This file is too blurry or dark to read. Upload a clearer file, or fill in the details manually.') }}
+            <MpTextlink id="br-reupload-link" as="a" href="#" @click.prevent>{{ t('Reupload file') }}</MpTextlink>
+          </MpBannerDescription>
+        </MpBanner>
         <div class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }">
           <img src="/illustrations/receipt-dropzone.png" alt="" class="br-preview-img" />
         </div>
@@ -756,7 +776,6 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
                   <div class="br-match-head">
                     <div class="br-match-head-col br-match-head-col--src">
                       <div class="br-match-head-controls">
-                        <MpCheckbox id="br-match-check" :is-checked="matchChecked" @change="matchChecked = !matchChecked" />
                         <MpButton class="br-icon-btn" :aria-label="t('Toggle details')" @click="matchExpanded = !matchExpanded">
                           <MpIcon :name="matchExpanded ? 'chevrons-down' : 'chevrons-right'" size="md" />
                         </MpButton>
@@ -773,7 +792,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
                       <div class="br-match-stack">
                         <div class="br-match-name-row">
                           <span class="br-match-name">
-                            {{ ACCOUNT_OPTIONS.find(a => a.id === matchCard!.productId)?.name || t('Not matched yet') }}
+                            {{ ACCOUNT_OPTIONS.find(a => a.id === matchCard!.productId)?.name || t('Match not found') }}
                           </span>
                           <span v-if="matchCard.aiMatched" class="br-ai-badge">
                             <MpIcon name="airene-brand" size="sm" />{{ t('AI matched') }}
@@ -1253,6 +1272,8 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   color: var(--mp-text-secondary-pressed, #4c5460);
 }
 
+.br-unreadable-banner { flex-shrink: 0; }
+
 /* Document preview — Fit hugs the panel width, 100% overflows and scrolls */
 .br-preview {
   flex-shrink: 0; background: var(--mp-background-neutral);
@@ -1361,16 +1382,19 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .ex-datepicker { width: 100%; }
 .ex-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
+/* Same text style/spacing as .ex-paid-check ("I have paid this bill") —
+   gap:0 since MpCheckbox renders its own 12px control-to-label gap. */
 .ex-price-includes {
-  display: flex; align-items: center; gap: var(--mp-spacing-2); justify-content: flex-end;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+  display: flex; align-items: center; gap: 0; justify-content: flex-end;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 
 /* ── "To match" accordion ─────────────────────────────────────────────────── */
 .br-items-error-banner { margin-bottom: var(--mp-spacing-1); }
 .br-accordion { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .br-accordion-head {
-  display: flex !important; align-items: flex-start; gap: var(--mp-spacing-3);
+  display: flex !important; align-items: flex-start; justify-content: flex-start !important; gap: var(--mp-spacing-3);
+  align-self: flex-start !important;
   width: auto !important; height: auto !important; min-width: 0 !important;
   background: none !important; border: none !important; padding: 0 !important;
   cursor: pointer; text-align: left; font: inherit;
