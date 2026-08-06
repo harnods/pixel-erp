@@ -735,8 +735,11 @@ async function handleSave() {
           </div>
         </div>
 
-        <div v-if="!isTransfer && !isPicking" class="msn-form-section">
-          <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins. -->
+        <div v-if="!isTransfer && !isPicking && !isCountMode" class="msn-form-section">
+          <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins.
+               Also hidden for count (blind count): every serial must come from an actual scan —
+               a typed/pasted list would let the operator register one they never physically
+               checked, defeating the point of a blind count. -->
           <template v-if="!isPutAway">
             <label class="msn-form-label">Serial number</label>
             <MpTooltip
@@ -813,7 +816,8 @@ async function handleSave() {
           <div class="msn-empty">
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
             <p class="msn-empty-title">No serial numbers yet</p>
-            <p class="msn-empty-desc">Add serial numbers using the input above, or scan a barcode.</p>
+            <p v-if="isCountMode" class="msn-empty-desc">Scan a barcode to add a serial number.</p>
+            <p v-else class="msn-empty-desc">Add serial numbers using the input above, or scan a barcode.</p>
           </div>
         </template>
 
@@ -852,7 +856,10 @@ async function handleSave() {
             </colgroup>
             <thead>
               <tr>
-                <th class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ effectiveTargetCount }})</th>
+                <!-- Blind count: no "/ target" — the operator is only ever told how
+                     many they've scanned, never how many the system expects. -->
+                <th v-if="isCountMode" class="msn-th">SERIAL NUMBER ({{ countedCount }})</th>
+                <th v-else class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ effectiveTargetCount }})</th>
                 <th v-if="hasOriginLoc" class="msn-th">ORIGIN LOCATION</th>
                 <th v-if="hasDestLoc" class="msn-th">STORAGE LOCATION</th>
                 <th v-if="showStatusColumn" class="msn-th">STATUS</th>

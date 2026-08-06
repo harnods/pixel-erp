@@ -135,15 +135,24 @@ function seedCounts() {
     const totalForSku = mergedCountRows.value.filter(r => r.sku === row.sku).reduce((s, r) => s + r.prevOnHand, 0) || 1
     const seededForRow = saved && saved.qty > 0 ? Math.round(saved.qty * row.prevOnHand / totalForSku) : 0
     if (isBatchTrackedSku(row.sku)) {
+      // Blind count: only ever seed batches that actually had a prior counted
+      // qty (reopening a draft) — never the full batch list with counted:null
+      // placeholders, or the drawer would show every known batch as "Uncounted"
+      // before the operator has scanned anything. An uncounted batch simply
+      // isn't in the array; ManageBatchDrawer's own seedRows() then starts that
+      // SKU's table empty, exactly like a fresh count.
       const rowTotal = row.sources.reduce((s, src) => s + src.prevOnHand, 0) || 1
-      batches[row.key] = row.sources.map(src => {
-        const seededForSource = seededForRow > 0 ? Math.round(seededForRow * src.prevOnHand / rowTotal) : 0
-        return {
+      batches[row.key] = row.sources
+        .map(src => ({
+          src,
+          seededForSource: seededForRow > 0 ? Math.round(seededForRow * src.prevOnHand / rowTotal) : 0,
+        }))
+        .filter(({ seededForSource }) => seededForSource > 0)
+        .map(({ src, seededForSource }) => ({
           key: src.key, batchNo: src.batchNumber!, expiryDate: src.batchExpiry ?? '', desc: '',
-          onHand: src.prevOnHand, counted: seededForSource > 0 ? seededForSource : null,
+          onHand: src.prevOnHand, counted: seededForSource,
           unit: src.unit, location: src.storageLocation,
-        }
-      })
+        }))
     } else if (seededForRow > 0) {
       draft[row.key] = seededForRow
     }
