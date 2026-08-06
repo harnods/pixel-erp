@@ -28,6 +28,7 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePickingListPdf } from '~/utils/pickingListPdf'
+import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
 import { toast } from '@mekari/pixel3'
 import type jsPDF from 'jspdf'
 
@@ -171,6 +172,11 @@ const linkedOrders = computed(() =>
   (task.value?.salesOrderIds ?? []).map(id => outgoingOrders.find(o => o.id === id)).filter(Boolean) as typeof outgoingOrders,
 )
 const linkedPacking = computed(() => task.value ? getPackingForPickingTask(task.value.id) : [])
+
+// Print shipping label (source/marketplace or WMS label; D9 duplicate guard).
+// Kept clickable per the project no-disabled-buttons rule: when the marketplace
+// label hasn't arrived the handler toasts "Waiting for marketplace shipping label".
+const { pdfOpen: shipLabelOpen, pdfDoc: shipLabelDoc, pdfFilename: shipLabelName, printShippingLabels } = usePrintShippingLabel()
 // Whether there's still an order on THIS picking task without a packing task
 // created FROM IT yet — once every bundled order already has one (specifically
 // from this task, not just anywhere in the order's history), "Create packing" has
@@ -973,6 +979,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <button class="detail-btn detail-btn--secondary" @click="printPickingList">{{ t('Print picking list') }}</button>
+      <button class="detail-btn detail-btn--secondary" @click="printShippingLabels(linkedOrders)">{{ t('Print shipping label') }}</button>
       <!-- Cancel task lives in the primary action's split-button dropdown, never as a
            standalone "Cancel" footer button. -->
       <template v-if="localStatus === 'open'">
@@ -1100,6 +1107,14 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
     :filename="pdfPreviewFilename"
     :title="t('Picking list preview')"
     @close="pdfPreviewOpen = false"
+  />
+
+  <PdfPreviewModal
+    :open="shipLabelOpen"
+    :doc="shipLabelDoc"
+    :filename="shipLabelName"
+    :title="t('Shipping label preview')"
+    @close="shipLabelOpen = false"
   />
 
   <!-- Nothing can be packed yet — marketplace order(s) not fully picked -->

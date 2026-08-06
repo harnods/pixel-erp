@@ -23,9 +23,10 @@ import {
 } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
 import { getShipment, marketplaceShipping, type ShipmentSummary } from '~/data/deliveryTasks'
-import { outgoingOrders, outgoingStage, OUTGOING_TODAY, isMarketplaceOrder, canReleaseReservedForOrder, releaseReservedForCancelledOrder } from '~/data/outgoing'
+import { outgoingOrders, outgoingStage, OUTGOING_TODAY, canReleaseReservedForOrder, releaseReservedForCancelledOrder } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePackingListPdf } from '~/utils/packingListPdf'
+import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 
@@ -164,6 +165,12 @@ async function printPackingList() {
   pdfPreviewFilename.value = `Packing List - ${task.value.taskNo}.pdf`
   pdfPreviewOpen.value = true
 }
+
+// Print shipping label (source/marketplace or WMS label; D9 duplicate guard).
+// Clickable even when the marketplace label hasn't arrived (project no-disabled
+// rule) — the handler then toasts "Waiting for marketplace shipping label".
+const { pdfOpen: shipLabelOpen, pdfDoc: shipLabelDoc, pdfFilename: shipLabelName, printShippingLabels } = usePrintShippingLabel()
+function printShipLabel() { printShippingLabels(linkedOrder.value ? [linkedOrder.value] : []) }
 // Finishing packing auto-creates the delivery (see PackItemsPage.vue) — a
 // completed task always has one to jump to.
 function viewDelivery() {
@@ -603,7 +610,7 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="printPackingList">{{ t('Print packing list') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="isMarketplaceOrder(linkedOrder)">{{ t('Print shipping label') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="printShipLabel">{{ t('Print shipping label') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -702,6 +709,14 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
     :filename="pdfPreviewFilename"
     :title="t('Packing list preview')"
     @close="pdfPreviewOpen = false"
+  />
+
+  <PdfPreviewModal
+    :open="shipLabelOpen"
+    :doc="shipLabelDoc"
+    :filename="shipLabelName"
+    :title="t('Shipping label preview')"
+    @close="shipLabelOpen = false"
   />
 </template>
 
