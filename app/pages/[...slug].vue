@@ -33,6 +33,7 @@ import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders } from '~/data'
 
 const { pageTitle, currentPageKey } = useNavigation()
+const { t } = useLocale()
 const route = useRoute()
 const router = useRouter()
 
@@ -77,6 +78,8 @@ const pageRegistry: Record<string, Component> = {
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
+  // Reports → WMS index (four report cards). Report detail pages resolve via detailMatch.
+  'Wms report':         defineAsyncComponent(() => import('~/components/pages/WmsReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
 }
 
@@ -190,6 +193,8 @@ provide('duplicatePurchaseOrder', (id: string, banner?: { user: string; date: st
 provide('closePurchaseOrderForm', () => { poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
+const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
 
@@ -197,6 +202,10 @@ const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
+  if (segs.length >= 2 && segs[0] === 'wms-report') {
+    return { component: WmsReportDetailPage, id: segs[1]! }
+  }
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
     return { component: NewExpensePage, id: 'new' }
@@ -408,9 +417,8 @@ const currentComponent = computed<Component>(
 // Pages that show a status tab bar below the title (outside the stage). Keyed by
 // page label (currentPageKey). Add an entry to give a page its own tabs.
 const pageTabs: Record<string, string[]> = {
-  // WMS Overview — mirrored for the WMS menu (/overview) and WMS Reports (/wms-report)
-  'Overview':          ['Outbound delivery', 'Inbound delivery'],
-  'Wms report':        ['Outbound delivery', 'Inbound delivery'],
+  // WMS Overview — only the WMS menu (/overview); NOT mirrored into Reports (/wms-report).
+  'Overview':          ['Inbound delivery', 'Outbound delivery'],
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
@@ -432,6 +440,16 @@ const pageTabs: Record<string, string[]> = {
 const activeWarehouseFilter = useActiveWarehouseFilter()
 const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
+  // WMS Overview tabs badge the actionable open work per direction.
+  if (currentPageKey.value === 'Overview') {
+    const counts = receiptCountsByStage(wh)
+    const inbound = (counts['Pending'] ?? 0) + (counts['Open'] ?? 0) + (counts['In progress'] ?? 0) + (counts['Partial reception'] ?? 0)
+    const out: Record<string, number> = {}
+    if (inbound) out['Inbound delivery'] = inbound
+    const outbound = outgoingOpenCount(wh)
+    if (outbound) out['Outbound delivery'] = outbound
+    return out
+  }
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
@@ -521,7 +539,7 @@ const TAB_LABELS: Record<string, string> = {
   'Ready to ship': 'Shipping',
   'Shipments': 'Shipping document',
 }
-function tabLabel(tab: string): string { return TAB_LABELS[tab] ?? tab }
+function tabLabel(tab: string): string { return t(TAB_LABELS[tab] ?? tab) }
 
 const activeTab = ref('')
 watch([currentPageKey, () => route.query.tab, detailMatch], () => {
@@ -557,6 +575,11 @@ const cycleCountBannerVisible = computed(() =>
 
 // Real component to render in the stage for a given page + tab (else placeholder).
 const tabComponents: Record<string, Record<string, Component>> = {
+  // WMS → Overview — one analytics page, direction per tab.
+  'Overview': {
+    'Inbound delivery':  () => h(WmsOverviewPage, { direction: 'inbound' }),
+    'Outbound delivery': () => h(WmsOverviewPage, { direction: 'outbound' }),
+  },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
@@ -981,10 +1004,10 @@ function startResize(e: MouseEvent) {
 
       <template v-else>
       <div v-if="currentPageKey !== 'Home'" class="page-title-bar">
-        <h1 class="page-title-text">{{ pageTitle }}</h1>
+        <h1 class="page-title-text">{{ t(pageTitle) }}</h1>
         <div v-if="currentPageKey === 'Sales invoices'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
-            Import
+            {{ t('Import') }}
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -998,7 +1021,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Sales orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1009,7 +1032,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Sales quotes'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1020,7 +1043,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1031,13 +1054,13 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="currentPageKey === 'Warehouses'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/warehouses/import')">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/warehouses/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            New warehouse
+            {{ t('New warehouse') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
@@ -1057,8 +1080,8 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Product list'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+          <button class="btn-enterprise btn-enterprise--secondary page-import-btn">
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/product-list/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1073,18 +1096,18 @@ function startResize(e: MouseEvent) {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              New put-away
+              {{ t('New put-away') }}
             </button>
           </template>
           <template v-else>
             <button class="btn-enterprise btn-enterprise--secondary">
-              Import
+              {{ t('Import') }}
             </button>
             <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/inbound-delivery/new')">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              New receipt
+              {{ t('New receipt') }}
             </button>
           </template>
         </div>
@@ -1093,7 +1116,7 @@ function startResize(e: MouseEvent) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            New delivery order
+            {{ t('New delivery order') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Outbound delivery' && activeTab === 'Ready to ship'" class="page-title-actions">
@@ -1101,7 +1124,7 @@ function startResize(e: MouseEvent) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            New shipment
+            {{ t('New shipment') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase invoices'" class="page-title-actions">
@@ -1112,7 +1135,7 @@ function startResize(e: MouseEvent) {
               :class="{ 'btn-enterprise--active': importDropdownOpen }"
               @click.stop="importDropdownOpen = !importDropdownOpen"
             >
-              Import
+              {{ t('Import') }}
               <svg
                 width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
                 class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
@@ -1126,8 +1149,8 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <button class="import-item">Import from spreadsheet</button>
-                <button class="import-item import-item--ai">
+                <MpButton variant="ghost" class="import-item">{{ t('Import from spreadsheet') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--ai">
                   <span>Upload bills</span>
                   <span class="ai-badge">
                     <img
@@ -1136,7 +1159,7 @@ function startResize(e: MouseEvent) {
                     />
                     <span class="ai-badge__label">AI</span>
                   </span>
-                </button>
+                </MpButton>
               </div>
 
               <!-- Group 2: Forward bills to -->
@@ -1171,7 +1194,7 @@ function startResize(e: MouseEvent) {
               :class="{ 'btn-enterprise--active': importDropdownOpen }"
               @click.stop="importDropdownOpen = !importDropdownOpen"
             >
-              Import
+              {{ t('Import') }}
               <svg
                 width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
                 class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
@@ -1185,14 +1208,11 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <MpButton class="import-item">Import from spreadsheet</MpButton>
-                <MpButton class="import-item import-item--ai">
+                <MpButton variant="ghost" class="import-item">{{ t('Import from spreadsheet') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--ai">
                   <span>Upload bills</span>
                   <span class="ai-badge">
-                    <img
-                      src="https://www.figma.com/api/mcp/asset/b87bbbb6-b7ca-46be-a6a9-755ab81fefe6"
-                      width="12" height="12" alt="" class="ai-badge__icon"
-                    />
+                    <MpIcon name="airene-brand" size="xs" class="ai-badge__icon" />
                     <span class="ai-badge__label">AI</span>
                   </span>
                 </MpButton>
@@ -1224,7 +1244,7 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="showNewPurchaseOrder" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1235,17 +1255,17 @@ function startResize(e: MouseEvent) {
         </div>
         <div v-else-if="showNewWarehouseTransfer" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
-            Import
+            {{ t('Import') }}
           </button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newWarehouseTransfer">
             <MpIcon name="add" size="md" color="icon.inverse" />
-            New warehouse transfer
+            {{ t('New warehouse transfer') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Cycle counts' && activeTab === 'Count task'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/cycle-counts/new')">
             <MpIcon name="add" size="md" color="icon.inverse" />
-            New count task
+            {{ t('New count task') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock counts'" class="page-title-actions">
@@ -1273,7 +1293,7 @@ function startResize(e: MouseEvent) {
         <div v-else-if="currentPageKey === 'Stock inout'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newStockInOut">
             <MpIcon name="add" size="md" color="icon.inverse" />
-            New stock in/out
+            {{ t('New stock in/out') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Stock adjustments'" class="page-title-actions">
@@ -1363,11 +1383,11 @@ function startResize(e: MouseEvent) {
           @click="selectTab(tab)"
         >
           {{ tabLabel(tab) }}
-          <span v-if="currentTabCounts[tab] != null" class="page-tab-count">{{ currentTabCounts[tab] }}</span>
+          <MpBadge v-if="currentTabCounts[tab] != null" class="page-tab-count" for="additionalInformation" type="warning" size="sm">{{ currentTabCounts[tab] }}</MpBadge>
         </button>
       </div>
 
-      <div class="stage">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' }">
         <MpBanner v-if="cycleCountBannerVisible" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
           <MpBannerTitle>Recommended for counting today</MpBannerTitle>
@@ -1656,6 +1676,11 @@ function startResize(e: MouseEvent) {
   gap: var(--mp-spacing-3);
 }
 
+/* Import is a secondary action — hide it on mobile to keep the title bar clean. */
+@media (max-width: 600px) {
+  .page-import-btn { display: none; }
+}
+
 .page-title-text {
   margin: 0;
   font-size: var(--mp-font-sizes-2xl);
@@ -1834,6 +1859,12 @@ function startResize(e: MouseEvent) {
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-5);
+}
+/* Report index draws an edge-to-edge card grid — no stage padding/top gap. */
+.stage--flush {
+  padding: 0;
+  border-top-width: 0;
+  gap: 0;
 }
 
 /* ── Status tabs (between title bar and stage, on the gray surface) ───────── */

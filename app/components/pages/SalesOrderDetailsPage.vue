@@ -13,6 +13,8 @@ import { addProductionRequest } from '~/data/productionRequests'
 
 const props = defineProps<{ orderId: string }>()
 
+const { t } = useLocale()
+
 // Info banner temporarily hidden in the prototype (toggle back on when ready)
 const showBanner = false
 
@@ -28,22 +30,22 @@ const order = computed(() => getSalesOrderDetail(props.orderId))
 function handleCreateProductionRequest() {
   const created = addProductionRequest(order.value)
   if (!created.length) {
-    toast.notify({ variant: 'warning', title: 'No registered products on this order to produce' })
+    toast.notify({ variant: 'warning', title: t('No registered products on this order to produce') })
     return
   }
-  toast.notify({ variant: 'success', title: 'Production request saved' })
+  toast.notify({ variant: 'success', title: t('Production request saved') })
   router.push('/production-request')
 }
 const activityOpen = ref(false)
 const activityEntries = computed(() => [{
   date: order.value.lastUpdatedAt,
   user: order.value.lastUpdatedBy,
-  activity: 'Created',
+  activity: t('Created'),
   details: [
-    { label: 'Transaction no.', value: `Sales Order #${order.value.number}` },
-    { label: 'Transaction date', value: formatDateLong(order.value.date) },
-    { label: 'Customer', value: order.value.customer.name },
-    { label: 'Warehouse', value: order.value.warehouse },
+    { label: t('Transaction no.'), value: `${t('Sales Order')} #${order.value.number}` },
+    { label: t('Transaction date'), value: formatDateLong(order.value.date) },
+    { label: t('Customer'), value: order.value.customer.name },
+    { label: t('Warehouse'), value: order.value.warehouse },
   ],
 }])
 
@@ -148,15 +150,15 @@ function goBack() { router.push('/sales-orders') }
     <!-- ── Title bar (breadcrumb + title + status dropdown + icon actions) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Sales orders</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Sales orders') }}</button>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Sales Order #{{ order.number }}</h1>
+          <h1 class="detail-title">{{ t('Sales Order') }} #{{ order.number }}</h1>
           <ErpStatusBadge :status="order.status" badge-for="additionalInformation" size="md" />
 
           <!-- Chevron → jump-to-transaction switcher (search + 5 recent) -->
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch transaction">
+              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -169,9 +171,9 @@ function goBack() { router.push('/sales-orders') }
                     v-model="jumpSearch"
                     class="detail-jump-search"
                     type="text"
-                    placeholder="Search..."
+                    :placeholder="t('Search...')"
                   />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="jumpSearch = ''">
+                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
@@ -184,10 +186,10 @@ function goBack() { router.push('/sales-orders') }
                     class="detail-jump-item"
                     @click="jumpTo(o.id)"
                   >
-                    <span class="detail-jump-item-number">Sales Order #{{ o.number }}</span>
+                    <span class="detail-jump-item-number">{{ t('Sales Order') }} #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.customer.name }}</span>
                   </button>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">No transactions found</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -197,13 +199,13 @@ function goBack() { router.push('/sales-orders') }
 
       <!-- Right-side icon actions — only when the page has an approval flow -->
       <div v-if="hasApproval" class="detail-titlerow-right">
-          <MpTooltip id="detail-tt-tasks" label="Approval log" placement="bottom" use-portal>
-            <button class="detail-icon-btn" aria-label="Approval log">
+          <MpTooltip id="detail-tt-tasks" :label="t('Approval log')" placement="bottom" use-portal>
+            <button class="detail-icon-btn" :aria-label="t('Approval log')">
               <MpIcon name="task-todo" size="md" />
             </button>
           </MpTooltip>
-          <MpTooltip id="detail-tt-comments" label="Comments" placement="bottom" use-portal>
-            <button class="detail-icon-btn" aria-label="Comments">
+          <MpTooltip id="detail-tt-comments" :label="t('Comments')" placement="bottom" use-portal>
+            <button class="detail-icon-btn" :aria-label="t('Comments')">
               <MpIcon name="comment" size="md" />
             </button>
           </MpTooltip>
@@ -228,15 +230,15 @@ function goBack() { router.push('/sales-orders') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList label="Customer" :value="order.customer.name" />
+            <ContentList :label="t('Customer')" :value="order.customer.name" />
           </div>
           <div class="content-list-col">
-            <ContentList label="Email">
+            <ContentList :label="t('Email')">
               <span v-for="(e, i) in order.email" :key="i" class="content-list__line">{{ e }}</span>
             </ContentList>
           </div>
           <div class="detail-primary-total">
-            <span class="detail-total-label">Total</span>
+            <span class="detail-total-label">{{ t('Total') }}</span>
             <span class="detail-total-amount">{{ formatIDR(order.totals.total) }}</span>
           </div>
         </div>
@@ -247,30 +249,30 @@ function goBack() { router.push('/sales-orders') }
         <div class="content-list-grid">
           <!-- col 1: addresses -->
           <div class="content-list-col">
-            <ContentList label="Billing address" :value="order.billingAddress" />
-            <ContentList label="Ship to" :value="order.shipTo" />
+            <ContentList :label="t('Billing address')" :value="order.billingAddress" />
+            <ContentList :label="t('Ship to')" :value="order.shipTo" />
           </div>
           <!-- col 2: order dates -->
           <div class="content-list-col">
-            <ContentList label="Transaction date" :value="formatDateLong(order.date)" />
-            <ContentList label="Due date" :value="formatDateLong(order.dueDate)" />
-            <ContentList label="Payment terms" :value="order.paymentTerms" />
+            <ContentList :label="t('Transaction date')" :value="formatDateLong(order.date)" />
+            <ContentList :label="t('Due date')" :value="formatDateLong(order.dueDate)" />
+            <ContentList :label="t('Payment terms')" :value="order.paymentTerms" />
           </div>
           <!-- col 3: shipping -->
           <div class="content-list-col">
-            <ContentList label="Ship date" :value="formatDateLong(order.shipDate)" />
-            <ContentList label="Ship via" :value="order.shipVia" />
-            <ContentList label="Tracking no." :value="order.trackingNo" />
+            <ContentList :label="t('Ship date')" :value="formatDateLong(order.shipDate)" />
+            <ContentList :label="t('Ship via')" :value="order.shipVia" />
+            <ContentList :label="t('Tracking no.')" :value="order.trackingNo" />
           </div>
           <!-- col 4: references -->
           <div class="content-list-col">
-            <ContentList label="Transaction no." :value="`Sales Order #${order.number}`" />
-            <ContentList label="Reference no." :value="order.referenceNo" />
-            <ContentList label="Warehouse" :value="order.warehouse" />
+            <ContentList :label="t('Transaction no.')" :value="`${t('Sales Order')} #${order.number}`" />
+            <ContentList :label="t('Reference no.')" :value="order.referenceNo" />
+            <ContentList :label="t('Warehouse')" :value="order.warehouse" />
           </div>
           <!-- col 5: tags -->
           <div class="content-list-col">
-            <ContentList label="Tags">
+            <ContentList :label="t('Tags')">
               <ErpTagList v-if="order.tags?.length" :tags="order.tags" />
               <template v-else>—</template>
             </ContentList>
@@ -284,14 +286,14 @@ function goBack() { router.push('/sales-orders') }
         <table class="detail-items">
           <thead>
             <tr>
-              <th class="detail-th">Product</th>
-              <th class="detail-th">Description</th>
-              <th class="detail-th detail-th--num">Qty</th>
-              <th class="detail-th">Unit</th>
-              <th class="detail-th detail-th--num">Unit price</th>
-              <th class="detail-th detail-th--num">Discount</th>
-              <th class="detail-th">Tax</th>
-              <th class="detail-th detail-th--num">Amount</th>
+              <th class="detail-th">{{ t('Product') }}</th>
+              <th class="detail-th">{{ t('Description') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Qty') }}</th>
+              <th class="detail-th">{{ t('Unit') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Unit price') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Discount') }}</th>
+              <th class="detail-th">{{ t('Tax') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -300,7 +302,7 @@ function goBack() { router.push('/sales-orders') }
                 <div class="cell-with-action">
                   <span class="detail-item-primary">
                     <a class="cell-link detail-item-name" @click.stop>{{ it.product }}</a>
-                    <span class="detail-item-sku">SKU: {{ it.sku }}</span>
+                    <span class="detail-item-sku">{{ t('SKU') }}: {{ it.sku }}</span>
                   </span>
                 </div>
               </td>
@@ -317,11 +319,11 @@ function goBack() { router.push('/sales-orders') }
           <!-- sentinel observed for auto lazy-load + inline loading row -->
           <div ref="itemsSentinelEl" class="detail-items-sentinel" aria-hidden="true" />
           <div v-if="loadingMore" class="detail-loading detail-items-loading">
-            <MpSpinner size="sm" /> Loading items…
+            <MpSpinner size="sm" /> {{ t('Loading items…') }}
           </div>
         </div>
         <div class="detail-items-count">
-          <span>Showing {{ visibleItems.length }} of {{ order.lineItems.length }} products</span>
+          <span>{{ t('Showing') }} {{ visibleItems.length }} {{ t('of') }} {{ order.lineItems.length }} {{ t('products') }}</span>
         </div>
       </section>
 
@@ -329,13 +331,13 @@ function goBack() { router.push('/sales-orders') }
       <section class="detail-notes">
         <!-- Left: message / memo / attachment -->
         <div class="detail-notes-left">
-          <ContentList label="Message">
+          <ContentList :label="t('Message')">
             <p class="detail-note-text">{{ order.message }}</p>
           </ContentList>
-          <ContentList label="Memo">
+          <ContentList :label="t('Memo')">
             <p class="detail-note-text">{{ order.memo }}</p>
           </ContentList>
-          <ContentList :label="`Attachment (${order.attachments.length})`">
+          <ContentList :label="`${t('Attachment')} (${order.attachments.length})`">
             <div class="detail-attach-list">
               <a v-for="(a, i) in order.attachments" :key="i" class="detail-attach" @click.prevent>
                 <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -351,15 +353,15 @@ function goBack() { router.push('/sales-orders') }
         <!-- Right: totals summary -->
         <div class="detail-totals">
           <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--strong">Subtotal</span>
+            <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Subtotal') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--strong">{{ formatIDR(order.totals.subtotal) }}</span>
           </div>
           <div class="detail-total-row">
-            <span class="detail-total-row-label">Discount per line</span>
+            <span class="detail-total-row-label">{{ t('Discount per line') }}</span>
             <span class="detail-total-row-amt">{{ formatDeduction(order.totals.discountPerLine) }}</span>
           </div>
           <div class="detail-total-row">
-            <span class="detail-total-row-label">Global discount</span>
+            <span class="detail-total-row-label">{{ t('Global discount') }}</span>
             <span class="detail-total-row-amt">{{ formatDeduction(order.totals.globalDiscount) }}</span>
           </div>
           <div class="detail-total-row">
@@ -367,28 +369,28 @@ function goBack() { router.push('/sales-orders') }
             <span class="detail-total-row-amt">{{ formatIDR(order.totals.taxAmount) }}</span>
           </div>
           <div class="detail-total-row">
-            <span class="detail-total-row-label">Shipping fee</span>
+            <span class="detail-total-row-label">{{ t('Shipping fee') }}</span>
             <span class="detail-total-row-amt">{{ formatIDR(order.totals.shippingFee) }}</span>
           </div>
           <div class="detail-total-rule" />
           <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--total">Total</span>
+            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(order.totals.total) }}</span>
           </div>
         </div>
       </section>
 
       <!-- Last updated -->
-      <a class="detail-updated" @click.prevent="activityOpen = true">Last updated by {{ order.lastUpdatedBy }} on {{ formatUpdatedAt(order.lastUpdatedAt) }}</a>
+      <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ order.lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(order.lastUpdatedAt) }}</a>
 
       <!-- ── Tabs ── -->
       <MpTabs id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="detail-tab-linked" value="linked">Linked transactions</MpTab>
+          <MpTab id="detail-tab-linked" value="linked">{{ t('Linked transactions') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel value="linked">
-            <h3 class="detail-tab-heading">Transactions</h3>
+            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />
@@ -398,22 +400,22 @@ function goBack() { router.push('/sales-orders') }
               </colgroup>
               <thead>
                 <tr>
-                  <th class="detail-th">Date</th>
-                  <th class="detail-th">Number</th>
-                  <th class="detail-th">Status</th>
+                  <th class="detail-th">{{ t('Date') }}</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Status') }}</th>
                   <th class="detail-th" aria-hidden="true"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!order.linkedTransactions.length">
-                  <td class="detail-td detail-td--muted" colspan="4">No linked transactions</td>
+                  <td class="detail-td detail-td--muted" colspan="4">{{ t('No linked transactions') }}</td>
                 </tr>
-                <tr v-for="(t, i) in order.linkedTransactions" :key="i" class="detail-item-row">
-                  <td class="detail-td">{{ formatDateNumeric(t.date) }}</td>
+                <tr v-for="(txn, i) in order.linkedTransactions" :key="i" class="detail-item-row">
+                  <td class="detail-td">{{ formatDateNumeric(txn.date) }}</td>
                   <td class="detail-td">
-                    <a class="cell-link cell-text" @click.stop>{{ t.type }} {{ t.number }}</a>
+                    <a class="cell-link cell-text" @click.stop>{{ txn.type }} {{ txn.number }}</a>
                   </td>
-                  <td class="detail-td"><ErpStatusBadge :status="t.status" /></td>
+                  <td class="detail-td"><ErpStatusBadge :status="txn.status" /></td>
                   <td class="detail-td"></td>
                 </tr>
               </tbody>
@@ -428,7 +430,7 @@ function goBack() { router.push('/sales-orders') }
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
             <button class="detail-btn detail-btn--secondary">
-              Print &amp; share
+              {{ t('Print & share') }}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
@@ -436,14 +438,14 @@ function goBack() { router.push('/sales-orders') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>Print PDF</MpPopoverListItem>
-              <MpPopoverListItem>Print dot matrix</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
-              <MpPopoverListItem>Share via WhatsApp</MpPopoverListItem>
-              <MpPopoverListItem>Share via email</MpPopoverListItem>
-              <MpPopoverListItem>Copy link</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -452,7 +454,7 @@ function goBack() { router.push('/sales-orders') }
         <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
             <button class="detail-btn detail-btn--primary">
-              Actions
+              {{ t('Actions') }}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
@@ -460,16 +462,16 @@ function goBack() { router.push('/sales-orders') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>Preview</MpPopoverListItem>
-              <MpPopoverListItem @click="handleCreateProductionRequest">Create production request</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="handleCreateProductionRequest">{{ t('Create production request') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
-              <MpPopoverListItem>Edit</MpPopoverListItem>
-              <MpPopoverListItem>Set as recurring</MpPopoverListItem>
-              <MpPopoverListItem>Duplicate</MpPopoverListItem>
-              <MpPopoverListItem>Void</MpPopoverListItem>
-              <MpPopoverListItem>Delete</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
+              <MpPopoverListItem>{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -479,7 +481,7 @@ function goBack() { router.push('/sales-orders') }
 
     <ActivityLogModal
       :is-open="activityOpen"
-      :subject="`Sales Order #${order.number}`"
+      :subject="`${t('Sales Order')} #${order.number}`"
       :updated-by="order.lastUpdatedBy"
       :updated-at="order.lastUpdatedAt"
       :entries="activityEntries"

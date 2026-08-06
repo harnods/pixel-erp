@@ -27,6 +27,7 @@ import { playScanSuccessSound } from '~/utils/sound'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const adjustment = computed(() => getWmsAdjustment(props.orderId))
 
@@ -200,12 +201,12 @@ function handleScan(rawValue: string) {
 
   const resolved = resolveScan(adjustment.value.warehouseId, v)
   if (!resolved) {
-    notifyScanError(`Barcode not found: "${v}"`)
+    notifyScanError(`${t('Barcode not found:')} "${v}"`)
     return
   }
 
   if (!activeBin.value) {
-    notifyScanError('Scan a bin first before scanning products')
+    notifyScanError(t('Scan a bin first before scanning products'))
     return
   }
 
@@ -441,7 +442,7 @@ function addScannedProduct(sku: string, location: string): AddedLine {
   const p = PRODUCTS.find(x => x.sku === sku)
   const row: AddedLine = { id: `added-${++_addedId}`, sku, productName: p?.name ?? sku, counted: undefined }
   addedByLoc.value = { ...addedByLoc.value, [location]: [...(addedByLoc.value[location] ?? []), row] }
-  toast.notify({ variant: 'success', title: `${p?.name ?? sku} added to ${location === '—' ? 'this count' : location}`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${p?.name ?? sku} ${t('added to')} ${location === '—' ? t('this count') : location}`, maxWidth: 'max-content' })
   return row
 }
 
@@ -578,7 +579,7 @@ function buildLines(): { sku: string; qty: number; location?: string }[] {
 // ── Footer: Save draft ────────────────────────────────────────────────────────
 function saveDraft() {
   saveWmsCountDraft(props.orderId, buildLines())
-  toast.notify({ variant: 'success', title: 'Draft saved' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Draft saved') , maxWidth: 'max-content'})
   disableUnsavedChangesGuard()
   router.push(`/cycle-counts/${props.orderId}`)
 }
@@ -596,7 +597,7 @@ const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
   hasUnsavedChanges: () => countedTotal.value > 0,
   saveDraft: () => {
     saveWmsCountDraft(props.orderId, buildLines())
-    toast.notify({ variant: 'success', title: 'Draft saved', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Draft saved'), maxWidth: 'max-content' })
   },
 })
 
@@ -607,7 +608,7 @@ const showQtyErrors = ref(false)
 function clickFinish() {
   if (countedTotal.value === 0) {
     showQtyErrors.value = true
-    toast.notify({ variant: 'error', title: 'You must fill in counted qty for at least one item' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: t('You must fill in counted qty for at least one item') , maxWidth: 'max-content'})
     return
   }
   showConfirm.value = true
@@ -619,7 +620,7 @@ function commitFinish() {
   // Status becomes 'counted' (Awaiting approval) — the linked ERP Stock counts
   // row is only mirrored once a manager approves it (see approveWmsAdjustment).
   finishWmsCount(props.orderId, lines)
-  toast.notify({ variant: 'success', title: 'Cycle count submitted for approval', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Cycle count submitted for approval'), maxWidth: 'max-content' })
   // Already committed — the router.push below is this function's own doing,
   // not the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
@@ -660,12 +661,12 @@ onUnmounted(() => {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goList">Cycle counts</button>
+          <button class="detail-breadcrumb" @click="goList">{{ t('Cycle counts') }}</button>
           <span class="detail-breadcrumb-sep">/</span>
           <button class="detail-breadcrumb" @click="goBack">{{ adjustment.number }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Stock counting</h1>
+          <h1 class="detail-title">{{ t('Stock counting') }}</h1>
         </div>
       </div>
     </header>
@@ -675,11 +676,11 @@ onUnmounted(() => {
 
       <!-- Task header -->
       <div class="sc-header">
-        <ContentList label="Transaction no." :value="adjustment.number" />
-        <ContentList label="Warehouse" :value="adjustment.warehouseName" />
-        <ContentList label="Assignee" :value="adjustment.assignee || '—'" />
-        <ContentList v-if="adjustment.startDate" label="Start date" :value="formatDateTimeLong(adjustment.startDate)" />
-        <ContentList v-if="adjustment.startDate" label="End date" :value="adjustment.status === 'completed' && adjustment.endDate ? formatDateTimeLong(adjustment.endDate) : '—'" />
+        <ContentList :label="t('Transaction no.')" :value="adjustment.number" />
+        <ContentList :label="t('Warehouse')" :value="adjustment.warehouseName" />
+        <ContentList :label="t('Assignee')" :value="adjustment.assignee || '—'" />
+        <ContentList v-if="adjustment.startDate" :label="t('Start date')" :value="formatDateTimeLong(adjustment.startDate)" />
+        <ContentList v-if="adjustment.startDate" :label="t('End date')" :value="adjustment.status === 'completed' && adjustment.endDate ? formatDateTimeLong(adjustment.endDate) : '—'" />
       </div>
 
       <!-- Search bar -->
@@ -689,8 +690,8 @@ onUnmounted(() => {
             <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/>
             <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="sc-search" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <input v-model="search" class="sc-search" type="text" :placeholder="t('Search product or SKU')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -700,25 +701,25 @@ onUnmounted(() => {
 
       <!-- Scan bar -->
       <div class="sc-scanbar-row">
-      <ScanBar placeholder="Scan barcode..." @scan="handleScan">
+      <ScanBar :placeholder="t('Scan barcode')" @scan="handleScan">
         <div v-if="activeBin" class="sc-active-bin">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
           <span>{{ activeBin }}</span>
-          <button class="sc-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+          <button class="sc-active-bin-clear" type="button" :aria-label="t('Clear active bin')" @click="activeBin = null">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
             </svg>
           </button>
         </div>
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetCount">Reset count</button>
+        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetCount">{{ t('Reset count') }}</button>
       </ScanBar>
       </div>
 
       <!-- By location: accordion -->
       <div v-if="!groupedByLocation.length" class="sc-empty">
-        <p>No items match your search.</p>
+        <p>{{ t('No items match your search.') }}</p>
       </div>
       <MpAccordion v-else is-allow-multiple is-allow-toggle class="sc-accordions">
           <MpAccordionItem
@@ -730,7 +731,7 @@ onUnmounted(() => {
           >
             <MpAccordionHeader>
               <MpAccordionIcon />
-              <span class="sc-acc-label">{{ group.location === '—' ? 'No location assigned' : group.location }}</span>
+              <span class="sc-acc-label">{{ group.location === '—' ? t('No location assigned') : group.location }}</span>
               <span class="sc-acc-meta">{{ group.items.length }} SKU{{ group.items.length !== 1 ? 's' : '' }}</span>
             </MpAccordionHeader>
             <MpAccordionPanel>
@@ -747,10 +748,10 @@ onUnmounted(() => {
                     </colgroup>
                     <thead>
                       <tr>
-                        <th class="sc-th">Product</th>
-                        <th class="sc-th">SKU</th>
-                        <th class="sc-th sc-th--num">Counted qty</th>
-                        <th class="sc-th">Unit</th>
+                        <th class="sc-th">{{ t('Product') }}</th>
+                        <th class="sc-th">{{ t('SKU') }}</th>
+                        <th class="sc-th sc-th--num">{{ t('Counted qty') }}</th>
+                        <th class="sc-th">{{ t('Unit') }}</th>
                         <th class="sc-th" />
                         <th class="sc-th" />
                       </tr>
@@ -787,7 +788,7 @@ onUnmounted(() => {
                           <MpTooltip
                             v-if="!scannedKeys.has(item.key)"
                             :id="`sc-scan-lock-${item.key}`"
-                            label="Scan this product's barcode before entering a qty manually"
+                            :label="t('Scan this product\'s barcode before entering a qty manually')"
                             placement="top"
                             use-portal
                           >
@@ -795,7 +796,7 @@ onUnmounted(() => {
                               class="sc-qty-input"
                               type="number" min="0"
                               :value="draftCounted[item.key] ?? ''"
-                              :aria-label="`Counted qty for ${item.product.name}`"
+                              :aria-label="`${t('Counted qty for')} ${item.product.name}`"
                               disabled
                             />
                           </MpTooltip>
@@ -813,15 +814,15 @@ onUnmounted(() => {
 
                         <!-- Manage action column — icon button, batch/serial-tracked only -->
                         <td v-if="isBatchTrackedSku(item.sku)" class="sc-td sc-td--action">
-                          <MpTooltip :id="`sc-tt-batch-${item.key}`" label="Manage batch" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(item.key)">
+                          <MpTooltip :id="`sc-tt-batch-${item.key}`" :label="t('Manage batch')" placement="top" use-portal>
+                            <button class="sc-view-btn" type="button" :aria-label="t('Manage batch')" @click="openBatchDrawer(item.key)">
                               <MpIcon name="competencies" size="md" />
                             </button>
                           </MpTooltip>
                         </td>
                         <td v-else-if="isSerialTrackedSku(item.sku)" class="sc-td sc-td--action">
-                          <MpTooltip :id="`sc-tt-serial-${item.key}`" label="Manage serial numbers" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(item.key)">
+                          <MpTooltip :id="`sc-tt-serial-${item.key}`" :label="t('Manage serial numbers')" placement="top" use-portal>
+                            <button class="sc-view-btn" type="button" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(item.key)">
                               <MpIcon name="competencies" size="md" />
                             </button>
                           </MpTooltip>
@@ -855,7 +856,7 @@ onUnmounted(() => {
                           <MpTooltip
                             v-if="!scannedKeys.has(added.id)"
                             :id="`sc-scan-lock-${added.id}`"
-                            label="Scan this product's barcode before entering a qty manually"
+                            :label="t('Scan this product\'s barcode before entering a qty manually')"
                             placement="top"
                             use-portal
                           >
@@ -863,7 +864,7 @@ onUnmounted(() => {
                               class="sc-qty-input"
                               type="number" min="0"
                               :value="added.counted ?? ''"
-                              aria-label="Counted qty for added product"
+                              :aria-label="t('Counted qty for added product')"
                               disabled
                             />
                           </MpTooltip>
@@ -872,7 +873,7 @@ onUnmounted(() => {
                             class="sc-qty-input"
                             type="number" min="0"
                             :value="added.counted ?? ''"
-                            aria-label="Counted qty for added product"
+                            :aria-label="t('Counted qty for added product')"
                             @input="updateAddedQty(group.location, added.id, $event)"
                           />
                         </td>
@@ -880,15 +881,15 @@ onUnmounted(() => {
 
                         <!-- Manage action column — icon button, batch/serial-tracked only -->
                         <td v-if="isBatchTrackedSku(added.sku)" class="sc-td sc-td--action">
-                          <MpTooltip :id="`sc-tt-batch-${added.id}`" label="Manage batch" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" aria-label="Manage batch" @click="openBatchDrawer(added.id)">
+                          <MpTooltip :id="`sc-tt-batch-${added.id}`" :label="t('Manage batch')" placement="top" use-portal>
+                            <button class="sc-view-btn" type="button" :aria-label="t('Manage batch')" @click="openBatchDrawer(added.id)">
                               <MpIcon name="competencies" size="md" />
                             </button>
                           </MpTooltip>
                         </td>
                         <td v-else-if="isSerialTrackedSku(added.sku)" class="sc-td sc-td--action">
-                          <MpTooltip :id="`sc-tt-serial-${added.id}`" label="Manage serial numbers" placement="top" use-portal>
-                            <button class="sc-view-btn" type="button" aria-label="Manage serial numbers" @click="openSerialDrawer(added.id)">
+                          <MpTooltip :id="`sc-tt-serial-${added.id}`" :label="t('Manage serial numbers')" placement="top" use-portal>
+                            <button class="sc-view-btn" type="button" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(added.id)">
                               <MpIcon name="competencies" size="md" />
                             </button>
                           </MpTooltip>
@@ -896,7 +897,7 @@ onUnmounted(() => {
                         <td v-else class="sc-td sc-td--action" />
 
                         <td class="sc-td sc-td--del">
-                          <button class="sc-del-row-btn" type="button" aria-label="Remove product" @click="removeAddedRow(group.location, added.id)">
+                          <button class="sc-del-row-btn" type="button" :aria-label="t('Remove product')" @click="removeAddedRow(group.location, added.id)">
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                               <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
                               <path d="M5 8H11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -912,7 +913,7 @@ onUnmounted(() => {
                             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                               <path d="M7 2V12M2 7H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                             </svg>
-                            Add product
+                            {{ t('Add product') }}
                           </button>
                         </td>
                       </tr>
@@ -930,7 +931,7 @@ onUnmounted(() => {
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
             <path d="M7 2V12M2 7H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          Add location
+          {{ t('Add location') }}
         </button>
       </div>
 
@@ -938,17 +939,17 @@ onUnmounted(() => {
 
     <!-- ── Footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="sc-btn sc-btn--ghost" @click="goBack">Cancel</button>
-      <button class="sc-btn sc-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="sc-btn sc-btn--primary" @click="clickFinish">Finish counting</button>
+      <button class="sc-btn sc-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
+      <button class="sc-btn sc-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</button>
+      <button class="sc-btn sc-btn--primary" @click="clickFinish">{{ t('Finish counting') }}</button>
     </footer>
 
   </div>
 
   <!-- Not found -->
   <div v-else class="sc-not-found">
-    <p>Stock count not found.</p>
-    <button class="detail-breadcrumb" @click="goList">Back to Cycle counts</button>
+    <p>{{ t('Stock count not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goList">{{ t('Back to Cycle counts') }}</button>
   </div>
 
   <!-- ── Finish counting confirmation ── -->
@@ -961,16 +962,16 @@ onUnmounted(() => {
     @close="showConfirm = false"
   >
     <MpModalContent>
-      <MpModalHeader>Finish counting?<MpModalCloseButton /></MpModalHeader>
+      <MpModalHeader>{{ t('Finish counting?') }}<MpModalCloseButton /></MpModalHeader>
       <MpModalBody>
         <p class="sc-confirm-text">
-          Counted <strong>{{ fmt(countedTotal) }}</strong> units across <strong>{{ fmt(skuCount) }}</strong> SKUs. This will send the count for manager approval before stock on hand is updated.
+          {{ t('Counted') }} <strong>{{ fmt(countedTotal) }}</strong> {{ t('units across') }} <strong>{{ fmt(skuCount) }}</strong> {{ t('SKUs. This will send the count for manager approval before stock on hand is updated.') }}
         </p>
       </MpModalBody>
       <MpModalFooter>
         <div class="sc-modal-footer">
-          <button class="sc-btn sc-btn--ghost" @click="showConfirm = false">Cancel</button>
-          <button class="sc-btn sc-btn--primary" @click="commitFinish">Finish counting</button>
+          <button class="sc-btn sc-btn--ghost" @click="showConfirm = false">{{ t('Cancel') }}</button>
+          <button class="sc-btn sc-btn--primary" @click="commitFinish">{{ t('Finish counting') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -989,16 +990,16 @@ onUnmounted(() => {
   <!-- ── Add location drawer ── -->
   <Transition name="sc-loc-drw">
     <div v-if="locDrawerOpen" class="loc-drw-overlay" @click.self="locDrawerOpen = false">
-      <div class="loc-drw-panel" role="dialog" aria-label="Add location">
+      <div class="loc-drw-panel" role="dialog" :aria-label="t('Add location')">
         <div class="loc-drw-header">
-          <span class="loc-drw-title">Add location</span>
+          <span class="loc-drw-title">{{ t('Add location') }}</span>
           <button class="loc-drw-close" type="button" @click="locDrawerOpen = false">
             <MpIcon name="close" size="sm" />
           </button>
         </div>
         <div class="loc-drw-search-wrap">
-          <input v-model="locDrawerSearch" class="loc-drw-search-input" type="text" placeholder="Search..." />
-          <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="locDrawerSearch = ''">
+          <input v-model="locDrawerSearch" class="loc-drw-search-input" type="text" :placeholder="t('Search location')" />
+          <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="locDrawerSearch = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -1051,12 +1052,12 @@ onUnmounted(() => {
               </span>
             </div>
           </template>
-          <div v-if="!locDrawerItems.length" class="loc-drw-empty">No storage locations found</div>
+          <div v-if="!locDrawerItems.length" class="loc-drw-empty">{{ t('No storage locations found') }}</div>
         </div>
         <div class="loc-drw-footer">
-          <button class="sc-btn sc-btn--ghost" type="button" @click="locDrawerOpen = false">Cancel</button>
+          <button class="sc-btn sc-btn--ghost" type="button" @click="locDrawerOpen = false">{{ t('Cancel') }}</button>
           <button class="sc-btn sc-btn--primary" type="button" :disabled="!locDrawerSel.size" @click="confirmLocSelection">
-            Add{{ locDrawerSel.size ? ` (${locDrawerSel.size})` : '' }}
+            {{ t('Add') }}{{ locDrawerSel.size ? ` (${locDrawerSel.size})` : '' }}
           </button>
         </div>
       </div>

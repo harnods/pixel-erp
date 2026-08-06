@@ -24,6 +24,7 @@ import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 // The catch-all route binds the id via the generic `orderId` prop. 'new' → create mode.
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const isEdit = computed(() => props.orderId !== 'new')
 const editing = computed(() => (isEdit.value ? getTransfer(props.orderId) : undefined))
@@ -135,7 +136,7 @@ const serialDrawerOpen = computed({
 })
 function openSerialDrawer(row: LineRow) {
   if (!row.qty || Number(row.qty) < 1) {
-    toast.notify({ variant: 'error', title: 'Enter transfer qty first' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'error', title: t('Enter transfer qty first') , maxWidth: 'max-content'})
     return
   }
   serialDrawerRow.value = row
@@ -231,14 +232,14 @@ async function saveLocDrawer() {
   const filledDest = locDestRows.value.filter(r => r.locationId && Number(r.qty) > 0).map(({ locationId, qty }) => ({ locationId, qty }))
   // if both sections are filled, their totals must match
   if (filledOrigin.length && filledDest.length && locOriginTotal.value !== locDestTotal.value) {
-    locSaveError.value = `Origin total (${locOriginTotal.value}) doesn't match destination total (${locDestTotal.value})`
+    locSaveError.value = `${t('Origin total')} (${locOriginTotal.value}) ${t("doesn't match destination total")} (${locDestTotal.value})`
     return
   }
   // cap against available qty
   const total = locOriginTotal.value || locDestTotal.value
   const cap = availableFor(locDrawerRow.value.sku)
   if (total > cap) {
-    locSaveError.value = `Total qty (${total}) exceeds available qty (${cap})`
+    locSaveError.value = `${t('Total qty')} (${total}) ${t('exceeds available qty')} (${cap})`
     return
   }
   isSavingLoc.value = true
@@ -324,25 +325,25 @@ async function handleSave() {
   if (!destId.value) { destError.value = true; valid = false }
   if (originId.value && destId.value && originId.value === destId.value) {
     destError.value = true; valid = false
-    formError.value = 'Origin and destination warehouse must be different'
+    formError.value = t('Origin and destination warehouse must be different')
   }
   const filled = rows.value
-  if (!filled.length) { formError.value = formError.value || 'You must add at least one product to transfer'; valid = false }
+  if (!filled.length) { formError.value = formError.value || t('You must add at least one product to transfer'); valid = false }
   for (const row of filled) {
     if (isBatchTrackedSku(row.sku)) {
-      if (!batchHasCounts(row)) { row.qtyError = true; valid = false; formError.value = formError.value || 'You must fill in batch details for all batch-tracked products' }
-      else if (batchTotal(row) > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Transfer qty cannot exceed available stock' }
+      if (!batchHasCounts(row)) { row.qtyError = true; valid = false; formError.value = formError.value || t('You must fill in batch details for all batch-tracked products') }
+      else if (batchTotal(row) > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || t('Transfer qty cannot exceed available stock') }
       else row.qtyError = false
     } else {
       const qty = Number(row.qty)
       if (!qty || qty < 1) { row.qtyError = true; valid = false }
-      else if (qty > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || 'Transfer qty cannot exceed available stock' }
+      else if (qty > availableFor(row.sku)) { row.qtyError = true; valid = false; formError.value = formError.value || t('Transfer qty cannot exceed available stock') }
       else {
         row.qtyError = false
         if (isSerialTrackedSku(row.sku)) {
           const actual = row.serialLines?.length ?? 0
           if (actual !== qty) {
-            formError.value = formError.value || `Enter all serial numbers for "${row.productName}" (${actual}/${qty} entered)`
+            formError.value = formError.value || `${t('Enter all serial numbers for')} "${row.productName}" (${actual}/${qty} ${t('entered')})`
             valid = false
           }
         }
@@ -373,11 +374,11 @@ async function handleSave() {
   disableUnsavedChangesGuard()
   if (isEdit.value) {
     updateTransfer(props.orderId, input)
-    toast.notify({ variant: 'success', title: 'Warehouse transfer updated' , maxWidth: 'max-content'})
+    toast.notify({ variant: 'success', title: t('Warehouse transfer updated') , maxWidth: 'max-content'})
     router.push(`/warehouse-transfers/${props.orderId}`)
   } else {
-    const t = addTransfer(input)
-    toast.notify({ variant: 'success', title: 'Warehouse transfer created' , maxWidth: 'max-content'})
+    addTransfer(input)
+    toast.notify({ variant: 'success', title: t('Warehouse transfer created') , maxWidth: 'max-content'})
     router.push('/warehouse-transfers')
   }
 }
@@ -414,9 +415,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">All warehouse transfers</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('All warehouse transfers') }}</button>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ isEdit ? 'Edit warehouse transfer' : 'New warehouse transfer' }}</h1>
+          <h1 class="detail-title">{{ isEdit ? t('Edit warehouse transfer') : t('New warehouse transfer') }}</h1>
         </div>
       </div>
     </header>
@@ -428,44 +429,44 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <!-- Header fields — 3 columns -->
         <div class="wtf-form-grid">
           <MpFormControl id="wtf-txdate" class="wtf-f-date" is-required :is-invalid="transactionDateError">
-            <MpFormLabel>Transaction date</MpFormLabel>
+            <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
             <div class="wtf-datepicker">
               <MpDatePicker
                 id="wtf-txdate-dp" v-model="transactionDate" format="DD/MM/YYYY" value-type="format"
                 use-portal @update:model-value="transactionDateError = false"
               />
             </div>
-            <MpFormErrorMessage>You must select transaction date</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select transaction date') }}</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="wtf-transno" class="wtf-f-transno">
             <div class="wtf-label-row">
-              <MpFormLabel>Transaction no.</MpFormLabel>
-              <span class="wtf-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
+              <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
+              <span class="wtf-label-icon" :title="t('Auto-generated')"><MpIcon name="settings" size="sm" /></span>
             </div>
-            <MpInput id="wtf-transno-input" model-value="" placeholder="[Auto]" is-full-width is-disabled />
+            <MpInput id="wtf-transno-input" model-value="" :placeholder="t('[Auto]')" is-full-width is-disabled />
           </MpFormControl>
 
           <MpFormControl id="wtf-origin" class="wtf-f-origin" is-required :is-invalid="originError">
-            <MpFormLabel>Origin warehouse</MpFormLabel>
+            <MpFormLabel>{{ t('Origin warehouse') }}</MpFormLabel>
             <MpAutocomplete
               id="wtf-origin-ac" v-model="originId" :data="warehouseOptions" label-prop="name" value-prop="id"
-              placeholder="Select warehouse"
+              :placeholder="t('Select warehouse')"
               is-searchable use-portal is-full-width :is-invalid="originError"
               @update:model-value="originError = false"
             />
-            <MpFormErrorMessage>You must select origin warehouse</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select origin warehouse') }}</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="wtf-dest" class="wtf-f-dest" is-required :is-invalid="destError">
-            <MpFormLabel>Destination warehouse</MpFormLabel>
+            <MpFormLabel>{{ t('Destination warehouse') }}</MpFormLabel>
             <MpAutocomplete
               id="wtf-dest-ac" v-model="destId" :data="warehouseOptions" label-prop="name" value-prop="id"
-              placeholder="Select warehouse"
+              :placeholder="t('Select warehouse')"
               is-searchable use-portal is-full-width :is-invalid="destError"
               @update:model-value="destError = false"
             />
-            <MpFormErrorMessage>You must select destination warehouse</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select destination warehouse') }}</MpFormErrorMessage>
           </MpFormControl>
         </div>
 
@@ -475,14 +476,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="wtf-search-input" type="text" placeholder="Search..." />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <input v-model="search" class="wtf-search-input" type="text" :placeholder="t('Search...')" />
+            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
             </button>
           </div>
-          <button class="wtf-import-btn" type="button" @click="importProducts">Import</button>
+          <button class="wtf-import-btn" type="button" @click="importProducts">{{ t('Import') }}</button>
         </div>
 
         <!-- Product table -->
@@ -501,18 +502,18 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </colgroup>
               <thead>
                 <tr>
-                  <th class="wtf-th" rowspan="2">Product</th>
-                  <th class="wtf-th" rowspan="2">SKU</th>
-                  <th class="wtf-th wtf-th--group" colspan="2">Origin</th>
-                  <th class="wtf-th wtf-th--group" colspan="2">Destination</th>
-                  <th class="wtf-th" rowspan="2">Unit</th>
+                  <th class="wtf-th" rowspan="2">{{ t('Product') }}</th>
+                  <th class="wtf-th" rowspan="2">{{ t('SKU') }}</th>
+                  <th class="wtf-th wtf-th--group" colspan="2">{{ t('Origin') }}</th>
+                  <th class="wtf-th wtf-th--group" colspan="2">{{ t('Destination') }}</th>
+                  <th class="wtf-th" rowspan="2">{{ t('Unit') }}</th>
                   <th class="wtf-th wtf-th--del" rowspan="2" />
                 </tr>
                 <tr>
-                  <th class="wtf-th wtf-th--num">Available qty</th>
-                  <th class="wtf-th wtf-th--num">Transfer qty</th>
-                  <th class="wtf-th wtf-th--num">On hand qty</th>
-                  <th class="wtf-th wtf-th--num">After transfer qty</th>
+                  <th class="wtf-th wtf-th--num">{{ t('Available qty') }}</th>
+                  <th class="wtf-th wtf-th--num">{{ t('Transfer qty') }}</th>
+                  <th class="wtf-th wtf-th--num">{{ t('On hand qty') }}</th>
+                  <th class="wtf-th wtf-th--num">{{ t('After transfer qty') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -524,7 +525,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wtf-td wtf-td--num">
                     <span class="wtf-avail">
                       <span>{{ availableFor(row.sku).toLocaleString('id-ID') }}</span>
-                      <span v-if="isBatchTrackedSku(row.sku) ? batchHasCounts(row) : Number(row.qty) > 0" class="wtf-avail-after" title="Available after transfer">→ {{ originAfter(row).toLocaleString('id-ID') }}</span>
+                      <span v-if="isBatchTrackedSku(row.sku) ? batchHasCounts(row) : Number(row.qty) > 0" class="wtf-avail-after" :title="t('Available after transfer')">→ {{ originAfter(row).toLocaleString('id-ID') }}</span>
                     </span>
                   </td>
                   <!-- Transfer qty: batch — value + Manage batch stacked as 2 lines in the same cell -->
@@ -532,7 +533,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <span class="wtf-qty-stack">
                       <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
                       <span v-else class="wtf-batch-empty">—</span>
-                      <button class="wtf-manage-btn" type="button" @click="openBatchDrawer(row)">Manage batch</button>
+                      <button class="wtf-manage-btn" type="button" @click="openBatchDrawer(row)">{{ t('Manage batch') }}</button>
                     </span>
                   </td>
                   <!-- Transfer qty: serial — input + Manage serial numbers stacked as 2 lines in the same cell -->
@@ -543,7 +544,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         :value="row.qty"
                         @input="setQty(row, ($event.target as HTMLInputElement).value)"
                       />
-                      <button class="wtf-manage-btn wtf-manage-btn--under-input" type="button" @click="openSerialDrawer(row)">Manage serial numbers</button>
+                      <button class="wtf-manage-btn wtf-manage-btn--under-input" type="button" @click="openSerialDrawer(row)">{{ t('Manage serial numbers') }}</button>
                     </div>
                   </td>
                   <!-- Transfer qty: regular with storage location -->
@@ -551,7 +552,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <span class="wtf-qty-stack">
                       <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
                       <span v-else class="wtf-batch-empty">—</span>
-                      <button class="wtf-manage-btn" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">Manage storage location</button>
+                      <button class="wtf-manage-btn" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">{{ t('Manage storage location') }}</button>
                     </span>
                   </td>
                   <!-- Transfer qty: regular plain -->
@@ -576,7 +577,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 <tr class="wtf-tr">
                   <td class="wtf-td wtf-td--prod">
                     <button class="wtf-prod-trigger" type="button" @click="drawerOpen = true">
-                      <span class="wtf-prod-placeholder">Select product</span>
+                      <span class="wtf-prod-placeholder">{{ t('Select product') }}</span>
                       <svg class="wtf-prod-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
                   </td>
@@ -585,22 +586,22 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </tbody>
             </table>
           </div>
-          <div class="wtf-count">Showing {{ displayRows.length }} of {{ rows.length }} products</div>
+          <div class="wtf-count">{{ t('Showing') }} {{ displayRows.length }} {{ t('of') }} {{ rows.length }} {{ t('products') }}</div>
           <p v-if="formError" class="wtf-form-error">{{ formError }}</p>
         </div>
 
         <!-- Memo -->
         <div class="wtf-section wtf-section--gap-top">
           <MpFormControl id="wtf-memo">
-            <MpFormLabel>Memo</MpFormLabel>
+            <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
             <MpTextarea id="wtf-memo-textarea" v-model="memo" is-full-width :rows="4" />
           </MpFormControl>
-          <p class="wtf-helper-text">Only visible to you and your team</p>
+          <p class="wtf-helper-text">{{ t('Only visible to you and your team') }}</p>
         </div>
 
         <!-- Attachment -->
         <div class="wtf-section wtf-section--last">
-          <div class="wtf-section-label">Attachment</div>
+          <div class="wtf-section-label">{{ t('Attachment') }}</div>
           <div class="wtf-attachment">
             <input
               ref="fileInput" type="file" multiple
@@ -608,10 +609,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
               class="wtf-file-hidden" @change="onFileChange"
             />
             <div class="wtf-attachment-row">
-              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
-              <span class="wtf-attach-or">or drag and drop here</span>
+              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">{{ t('Choose file') }}</MpButton>
+              <span class="wtf-attach-or">{{ t('or drag and drop here') }}</span>
             </div>
-            <p class="wtf-helper-text">File must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
+            <p class="wtf-helper-text">{{ t('File must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction') }}</p>
             <ul v-if="attachedFiles.length" class="wtf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="wtf-file-item">
                 <span class="wtf-file-name">{{ f.name }}</span>
@@ -660,10 +661,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Storage location drawer ── -->
     <Transition name="wtf-loc">
     <div v-if="locDrawerRow" class="wtf-loc-overlay" @click.self="closeLocDrawer">
-      <div class="wtf-loc-panel" role="dialog" aria-label="Manage storage location">
+      <div class="wtf-loc-panel" role="dialog" :aria-label="t('Manage storage location')">
         <header class="wtf-loc-header">
-          <h2 class="wtf-loc-title">Manage storage location</h2>
-          <button class="wtf-loc-close" type="button" aria-label="Close" @click="closeLocDrawer">
+          <h2 class="wtf-loc-title">{{ t('Manage storage location') }}</h2>
+          <button class="wtf-loc-close" type="button" :aria-label="t('Close')" @click="closeLocDrawer">
             <MpIcon name="close" size="md" />
           </button>
         </header>
@@ -678,31 +679,31 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <span class="wtf-loc-sku">{{ locDrawerRow.sku }}</span>
             </div>
             <div class="wtf-loc-qty-badge">
-              <span class="wtf-loc-qty-label">Available qty</span>
+              <span class="wtf-loc-qty-label">{{ t('Available qty') }}</span>
               <span class="wtf-loc-qty-value">{{ locDrawerRow ? availableFor(locDrawerRow.sku).toLocaleString('id-ID') : '—' }}</span>
             </div>
           </div>
 
           <!-- Descriptions for mixed-location scenarios -->
           <MpBanner v-if="originHasLocations && !destHasLocations" variant="info">
-            <MpBannerDescription>Stock will be taken from specific bins in {{ warehouseName(originId) }} and added to the general stock in {{ warehouseName(destId) }}, which doesn't use storage locations.</MpBannerDescription>
+            <MpBannerDescription>{{ t('Stock will be taken from specific bins in') }} {{ warehouseName(originId) }} {{ t('and added to the general stock in') }} {{ warehouseName(destId) }}, {{ t("which doesn't use storage locations.") }}</MpBannerDescription>
           </MpBanner>
           <MpBanner v-if="!originHasLocations && destHasLocations" variant="info">
-            <MpBannerDescription>Stock will be moved from the general stock in {{ warehouseName(originId) }} (no storage locations) and placed into specific bins in {{ warehouseName(destId) }}.</MpBannerDescription>
+            <MpBannerDescription>{{ t('Stock will be moved from the general stock in') }} {{ warehouseName(originId) }} {{ t('(no storage locations) and placed into specific bins in') }} {{ warehouseName(destId) }}.</MpBannerDescription>
           </MpBanner>
 
           <!-- Origin locations -->
           <div v-if="originHasLocations" class="wtf-loc-section">
             <div class="wtf-loc-section-header">
-              <span class="wtf-loc-section-title">Out from ({{ warehouseName(originId) }})</span>
-              <span class="wtf-loc-total" :class="locOriginExceeds ? 'wtf-loc-total--warn' : ''">Total: {{ locOriginTotal }}</span>
+              <span class="wtf-loc-section-title">{{ t('Out from') }} ({{ warehouseName(originId) }})</span>
+              <span class="wtf-loc-total" :class="locOriginExceeds ? 'wtf-loc-total--warn' : ''">{{ t('Total') }}: {{ locOriginTotal }}</span>
             </div>
             <div class="wtf-loc-table-wrap"><table class="wtf-loc-table">
               <colgroup><col /><col class="wtf-loc-col-qty" /><col class="wtf-loc-col-del" /></colgroup>
               <thead>
                 <tr>
-                  <th class="wtf-loc-th">Storage location</th>
-                  <th class="wtf-loc-th wtf-loc-th--num">Qty</th>
+                  <th class="wtf-loc-th">{{ t('Storage location') }}</th>
+                  <th class="wtf-loc-th wtf-loc-th--num">{{ t('Qty') }}</th>
                   <th class="wtf-loc-th wtf-loc-th--del" />
                 </tr>
               </thead>
@@ -715,7 +716,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           <input
                             class="wtf-loc-picker-input" type="text" autocomplete="off"
                             :value="locActiveKey === `o-${r.id}` ? locPickerSearch : r.locationId"
-                            placeholder="Select location…"
+                            :placeholder="t('Select location…')"
                             @focus="openLocPicker(`o-${r.id}`)"
                             @input="locActiveKey = `o-${r.id}`; locPickerSearch = ($event.target as HTMLInputElement).value"
                           />
@@ -725,7 +726,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       <MpPopoverContent :class="css({ width: '380px', maxHeight: '260px', overflowY: 'auto', padding: '0' })">
                         <MpPopoverList>
                           <MpPopoverListItem v-for="opt in locOptionsFor(locDrawerOriginBins, locOriginRows, r.locationId)" :key="opt.id" :is-active="opt.id === r.locationId" @click="selectLocOrigin(r, opt.id)">{{ opt.name }}</MpPopoverListItem>
-                          <p v-if="!locOptionsFor(locDrawerOriginBins, locOriginRows, r.locationId).length" class="wtf-loc-none">No locations found.</p>
+                          <p v-if="!locOptionsFor(locDrawerOriginBins, locOriginRows, r.locationId).length" class="wtf-loc-none">{{ t('No locations found') }}</p>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
@@ -746,17 +747,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <!-- Destination locations -->
           <div v-if="destHasLocations" class="wtf-loc-section">
             <div class="wtf-loc-section-header">
-              <span class="wtf-loc-section-title">Into ({{ warehouseName(destId) }})</span>
+              <span class="wtf-loc-section-title">{{ t('Into') }} ({{ warehouseName(destId) }})</span>
               <span class="wtf-loc-total" :class="locDestExceeds || (locOriginTotal > 0 && locDestTotal > 0 && locDestTotal !== locOriginTotal) ? 'wtf-loc-total--warn' : ''">
-                Total: {{ locDestTotal }}
+                {{ t('Total') }}: {{ locDestTotal }}
               </span>
             </div>
             <div class="wtf-loc-table-wrap"><table class="wtf-loc-table">
               <colgroup><col /><col class="wtf-loc-col-qty" /><col class="wtf-loc-col-del" /></colgroup>
               <thead>
                 <tr>
-                  <th class="wtf-loc-th">Storage location</th>
-                  <th class="wtf-loc-th wtf-loc-th--num">Qty</th>
+                  <th class="wtf-loc-th">{{ t('Storage location') }}</th>
+                  <th class="wtf-loc-th wtf-loc-th--num">{{ t('Qty') }}</th>
                   <th class="wtf-loc-th wtf-loc-th--del" />
                 </tr>
               </thead>
@@ -769,7 +770,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                           <input
                             class="wtf-loc-picker-input" type="text" autocomplete="off"
                             :value="locActiveKey === `d-${r.id}` ? locPickerSearch : r.locationId"
-                            placeholder="Select location…"
+                            :placeholder="t('Select location…')"
                             @focus="openLocPicker(`d-${r.id}`)"
                             @input="locActiveKey = `d-${r.id}`; locPickerSearch = ($event.target as HTMLInputElement).value"
                           />
@@ -779,7 +780,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       <MpPopoverContent :class="css({ width: '380px', maxHeight: '260px', overflowY: 'auto', padding: '0' })">
                         <MpPopoverList>
                           <MpPopoverListItem v-for="opt in locOptionsFor(destLocationPaths, locDestRows, r.locationId)" :key="opt.id" :is-active="opt.id === r.locationId" @click="selectLocDest(r, opt.id)">{{ opt.name }}</MpPopoverListItem>
-                          <p v-if="!locOptionsFor(destLocationPaths, locDestRows, r.locationId).length" class="wtf-loc-none">No locations found.</p>
+                          <p v-if="!locOptionsFor(destLocationPaths, locDestRows, r.locationId).length" class="wtf-loc-none">{{ t('No locations found') }}</p>
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
@@ -801,8 +802,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
         </div>
 
         <footer class="wtf-loc-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeLocDrawer">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSavingLoc" @click="saveLocDrawer">{{ isSavingLoc ? 'Saving…' : 'Save' }}</button>
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeLocDrawer">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSavingLoc" @click="saveLocDrawer">{{ isSavingLoc ? t('Saving…') : t('Save') }}</button>
         </footer>
       </div>
     </div>
@@ -810,8 +811,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <MpButton variant="ghost" is-rounded @click="goBack">Cancel</MpButton>
-      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
+      <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="handleSave">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
     </footer>
   </div>
 </template>

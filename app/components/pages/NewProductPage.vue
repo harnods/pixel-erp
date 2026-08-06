@@ -14,6 +14,8 @@ import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
 import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
 
+const { t } = useLocale()
+
 // order-id from the catch-all route: 'new' → create, a SKU → edit.
 const props = defineProps<{ orderId?: string }>()
 const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
@@ -86,9 +88,9 @@ const unitOptions = computed(() =>
   [...new Set(['Pcs', ...PRODUCTS.map(p => p.unit)])].sort().map(u => ({ label: u, value: u })),
 )
 const trackStockByOptions = [
-  { label: 'Quantity', value: 'Quantity' },
-  { label: 'Batch', value: 'Batch' },
-  { label: 'Serial number', value: 'Serial number' },
+  { label: t('Quantity'), value: 'Quantity' },
+  { label: t('Batch'), value: 'Batch' },
+  { label: t('Serial number'), value: 'Serial number' },
 ]
 const inventoryAccountOptions = [
   { label: '1-10200 Inventory', value: '1-10200 Inventory' },
@@ -188,9 +190,9 @@ const isSavingAndAdding = ref(false)
 type DemoState = 'empty' | 'data' | 'ai_matched'
 const demoState = ref<DemoState>('empty')
 const demoStates: { value: DemoState; label: string }[] = [
-  { value: 'data', label: 'With data' },
-  { value: 'empty', label: 'Empty state' },
-  { value: 'ai_matched', label: 'AI matched' },
+  { value: 'data', label: t('With data') },
+  { value: 'empty', label: t('Empty state') },
+  { value: 'ai_matched', label: t('AI matched') },
 ]
 function setDemoState(s: DemoState) {
   demoState.value = s
@@ -264,20 +266,20 @@ function validate(): boolean {
   categoryError.value = ''
   unitError.value = ''
 
-  if (!name.value.trim()) nameError.value = 'You must fill in product name'
+  if (!name.value.trim()) nameError.value = t('You must fill in product name')
 
   if (!sku.value.trim()) {
-    skuError.value = 'You must fill in SKU'
+    skuError.value = t('You must fill in SKU')
   } else {
     const skuUpper = sku.value.trim().toUpperCase()
     const dup = [...PRODUCTS, ...customProducts].some(
       p => p.sku.toUpperCase() === skuUpper && (!isEdit.value || p.sku !== props.orderId),
     )
-    if (dup) skuError.value = 'SKU already taken'
+    if (dup) skuError.value = t('SKU already taken')
   }
 
-  if (!category.value) categoryError.value = 'You must select category'
-  if (!unit.value) unitError.value = 'You must select base unit'
+  if (!category.value) categoryError.value = t('You must select category')
+  if (!unit.value) unitError.value = t('You must select base unit')
 
   return !(nameError.value || skuError.value || categoryError.value || unitError.value)
 }
@@ -333,17 +335,17 @@ async function save() {
 
   if (isEdit.value && editingCustom.value) {
     updateCustomProduct(props.orderId!, payload)
-    toast.notify({ variant: 'success', title: 'Product changes saved', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${payload.sku}`)
   } else if (isEdit.value) {
     // Seed (CATALOG) product — read-only master data, nothing to persist.
-    toast.notify({ variant: 'success', title: 'Product changes saved', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${props.orderId}`)
   } else {
     // New product → whatever's in the field (free-typed or generated via the
     // settings icon); left blank, the product simply has no real barcode yet.
     const created = addCustomProduct({ ...payload, barcode: barcode.value.trim() || undefined })
-    toast.notify({ variant: 'success', title: 'Product saved', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Product saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${created.sku}`)
   }
 }
@@ -401,8 +403,8 @@ onUnmounted(() => { footerObserver?.disconnect() })
     <!-- ── Title bar ── -->
     <div class="nw-titlebar">
       <div class="nw-titlebar-left">
-        <button class="nw-breadcrumb" @click="goBack">Products</button>
-        <h1 class="nw-title">{{ isEdit ? 'Edit product' : 'New product' }}</h1>
+        <button class="nw-breadcrumb" @click="goBack">{{ t('Products') }}</button>
+        <h1 class="nw-title">{{ isEdit ? t('Edit product') : t('New product') }}</h1>
       </div>
     </div>
 
@@ -413,22 +415,22 @@ onUnmounted(() => { footerObserver?.disconnect() })
         <!-- ── Product info ── -->
         <div class="nw-form-group">
           <div class="nw-section">
-            <h2 class="nw-section-title">Product info</h2>
+            <h2 class="nw-section-title">{{ t('Product info') }}</h2>
             <div class="nw-section-spacer" />
 
             <div class="nw-fields">
 
               <!-- Product type -->
               <MpFormControl id="np-type" is-required>
-                <MpFormLabel>Product type</MpFormLabel>
+                <MpFormLabel>{{ t('Product type') }}</MpFormLabel>
                 <div class="np-radio-group">
                   <label class="np-radio-item">
                     <MpRadio id="np-type-single" name="np-type" value="single" :is-checked="productType === 'single'" @change="productType = 'single'" />
-                    <span>Single product</span>
+                    <span>{{ t('Single product') }}</span>
                   </label>
                   <label class="np-radio-item">
                     <MpRadio id="np-type-bundle" name="np-type" value="bundle" :is-checked="productType === 'bundle'" @change="productType = 'bundle'" />
-                    <span>Bundle product</span>
+                    <span>{{ t('Bundle product') }}</span>
                   </label>
                 </div>
               </MpFormControl>
@@ -436,13 +438,13 @@ onUnmounted(() => { footerObserver?.disconnect() })
               <!-- Has variants -->
               <label class="np-checkbox-row">
                 <MpCheckbox id="np-has-variants" :is-checked="hasVariants" @change="hasVariants = !hasVariants" />
-                <span>This product has variants</span>
+                <span>{{ t('This product has variants') }}</span>
               </label>
 
               <!-- Product name -->
               <MpFormControl id="np-name" is-required :is-invalid="!!nameError">
                 <div class="nw-label-row">
-                  <MpFormLabel>Product name</MpFormLabel>
+                  <MpFormLabel>{{ t('Product name') }}</MpFormLabel>
                   <span class="nw-counter">{{ name.length }} / {{ NAME_MAX }}</span>
                 </div>
                 <MpInput id="np-name-input" v-model="name" :maxlength="NAME_MAX" @update:model-value="nameError = ''" />
@@ -452,25 +454,25 @@ onUnmounted(() => { footerObserver?.disconnect() })
               <!-- SKU + Barcode -->
               <div class="nw-row">
                 <MpFormControl id="np-sku" class="np-field-270" is-required :is-invalid="!!skuError">
-                  <MpFormLabel>SKU</MpFormLabel>
+                  <MpFormLabel>{{ t('SKU') }}</MpFormLabel>
                   <MpInput id="np-sku-input" v-model="sku" @update:model-value="skuError = ''" />
                   <MpFormErrorMessage>{{ skuError }}</MpFormErrorMessage>
                 </MpFormControl>
                 <MpFormControl id="np-barcode" class="np-field-270">
                   <div class="np-label-row">
-                    <MpFormLabel>Barcode</MpFormLabel>
+                    <MpFormLabel>{{ t('Barcode') }}</MpFormLabel>
                     <BarcodeSettingsButton @generated="barcode = $event" />
                   </div>
-                  <MpInput id="np-barcode-input" v-model="barcode" placeholder="Enter barcode or generate" is-full-width />
+                  <MpInput id="np-barcode-input" v-model="barcode" :placeholder="t('Enter barcode or generate')" is-full-width />
                 </MpFormControl>
               </div>
 
               <!-- Category -->
               <MpFormControl id="np-category" is-required :is-invalid="!!categoryError">
-                <MpFormLabel>Category</MpFormLabel>
+                <MpFormLabel>{{ t('Category') }}</MpFormLabel>
                 <MpAutocomplete
                   id="np-category-ac" v-model="category" :data="categoryOptions" label-prop="label" value-prop="value"
-                  placeholder="Select category" is-searchable use-portal is-full-width :is-invalid="!!categoryError"
+                  :placeholder="t('Select category')" is-searchable use-portal is-full-width :is-invalid="!!categoryError"
                   @update:model-value="categoryError = ''"
                 />
                 <MpFormErrorMessage>{{ categoryError }}</MpFormErrorMessage>
@@ -478,10 +480,10 @@ onUnmounted(() => { footerObserver?.disconnect() })
 
               <!-- Base unit -->
               <MpFormControl id="np-unit" class="np-field-270" is-required :is-invalid="!!unitError">
-                <MpFormLabel>Base unit</MpFormLabel>
+                <MpFormLabel>{{ t('Base unit') }}</MpFormLabel>
                 <MpAutocomplete
                   id="np-unit-ac" v-model="unit" :data="unitOptions" label-prop="label" value-prop="value"
-                  placeholder="Select unit" is-searchable use-portal is-full-width :is-invalid="!!unitError"
+                  :placeholder="t('Select unit')" is-searchable use-portal is-full-width :is-invalid="!!unitError"
                   @update:model-value="unitError = ''"
                 />
                 <MpFormErrorMessage>{{ unitError }}</MpFormErrorMessage>
@@ -490,7 +492,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
               <!-- Description -->
               <MpFormControl id="np-desc">
                 <div class="nw-label-row">
-                  <MpFormLabel>Description</MpFormLabel>
+                  <MpFormLabel>{{ t('Description') }}</MpFormLabel>
                   <span class="nw-counter">{{ description.length }} / {{ DESC_MAX.toLocaleString('id-ID') }}</span>
                 </div>
                 <MpTextarea id="np-desc-input" v-model="description" :maxlength="DESC_MAX" is-full-width rows="6" />
@@ -502,7 +504,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
 
         <!-- ── Product photo ── -->
         <div class="np-photo-col">
-          <h2 class="nw-section-title">Product photo</h2>
+          <h2 class="nw-section-title">{{ t('Product photo') }}</h2>
           <div class="nw-section-spacer" />
           <div
             v-if="!photoDataUrl"
@@ -515,15 +517,15 @@ onUnmounted(() => { footerObserver?.disconnect() })
             <img src="/upload-photo.svg" alt="" aria-hidden="true" class="np-dropzone-icon" />
             <p class="np-dropzone-copy">
               <label class="np-dropzone-link">
-                Choose photo
+                {{ t('Choose photo') }}
                 <input type="file" accept="image/*" hidden @change="onPhotoInput" />
               </label>
-              or drag and drop here
+              {{ t('or drag and drop here') }}
             </p>
           </div>
           <div v-else class="np-photo-preview">
-            <img :src="photoDataUrl" alt="Product photo" class="np-photo-img" />
-            <button class="np-photo-remove" type="button" aria-label="Remove photo" @click="removePhoto">
+            <img :src="photoDataUrl" :alt="t('Product photo')" class="np-photo-img" />
+            <button class="np-photo-remove" type="button" :aria-label="t('Remove photo')" @click="removePhoto">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -532,25 +534,139 @@ onUnmounted(() => { footerObserver?.disconnect() })
         </div>
       </div>
 
+      <!-- ── Pricing & inventory info (WMS: "Inventory info" — no pricing) ── -->
+      <div class="nw-form-group np-full">
+        <div class="nw-section">
+          <h2 class="nw-section-title">{{ isWms ? t('Inventory info') : t('Pricing & inventory info') }}</h2>
+          <div class="nw-section-spacer" />
+
+          <div class="nw-fields">
+
+            <!-- I track stock for this product -->
+            <div class="np-toggle-block">
+              <label class="np-checkbox-row">
+                <MpCheckbox id="np-track-stock" :is-checked="trackStock" @change="trackStock = !trackStock" />
+                <span>{{ t('I track stock for this product') }}</span>
+              </label>
+              <div v-if="trackStock" class="nw-row np-toggle-fields">
+                <MpFormControl id="np-min-stock" class="np-field-270">
+                  <MpFormLabel>{{ t('Min. stock') }}</MpFormLabel>
+                  <div class="np-suffix-wrap">
+                    <input id="np-min-stock-input" v-model="minStock" class="np-suffix-input" type="text" inputmode="numeric" placeholder="0" />
+                    <span class="np-suffix-chip">{{ unit || 'Pcs' }}</span>
+                  </div>
+                </MpFormControl>
+                <MpFormControl id="np-track-by" class="np-field-270" is-required>
+                  <MpFormLabel>{{ t('Track stock by') }}</MpFormLabel>
+                  <MpAutocomplete
+                    id="np-track-by-ac" v-model="trackStockBy" :data="trackStockByOptions" label-prop="label" value-prop="value"
+                    is-searchable use-portal is-full-width
+                  />
+                </MpFormControl>
+                <MpFormControl v-if="!isWms" id="np-inventory-account" class="np-field-270" is-required>
+                  <MpFormLabel>{{ t('Default inventory account') }}</MpFormLabel>
+                  <MpAutocomplete
+                    id="np-inventory-account-ac" v-model="inventoryAccount" :data="inventoryAccountOptions" label-prop="label" value-prop="value"
+                    is-searchable use-portal is-full-width
+                  />
+                </MpFormControl>
+              </div>
+            </div>
+
+            <!-- I buy this product / I sell this product — ERP only; WMS only tracks stock -->
+            <template v-if="!isWms">
+              <div class="np-toggle-block">
+                <label class="np-checkbox-row">
+                  <MpCheckbox id="np-does-buy" :is-checked="doesBuy" @change="doesBuy = !doesBuy" />
+                  <span>{{ t('I buy this product') }}</span>
+                </label>
+                <div v-if="doesBuy" class="nw-row np-toggle-fields">
+                  <MpFormControl id="np-purchase-cost" class="np-field-270">
+                    <MpFormLabel>{{ t('Default purchase cost') }}</MpFormLabel>
+                    <div class="np-prefix-wrap">
+                      <span class="np-prefix-chip">Rp</span>
+                      <input id="np-purchase-cost-input" v-model="purchaseCost" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
+                    </div>
+                  </MpFormControl>
+                  <MpFormControl id="np-purchase-account" class="np-field-270" is-required>
+                    <MpFormLabel>{{ t('Default purchase account') }}</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-purchase-account-ac" v-model="purchaseAccount" :data="purchaseAccountOptions" label-prop="label" value-prop="value"
+                      is-searchable use-portal is-full-width
+                    />
+                  </MpFormControl>
+                  <MpFormControl id="np-purchase-tax" class="np-field-270">
+                    <MpFormLabel>{{ t('Default purchase tax') }}</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-purchase-tax-ac" v-model="purchaseTax" :data="taxOptions" label-prop="label" value-prop="value"
+                      :placeholder="t('Select default purchase tax')" is-searchable use-portal is-full-width is-clearable
+                    />
+                  </MpFormControl>
+                </div>
+              </div>
+
+              <div class="np-toggle-block">
+                <label class="np-checkbox-row">
+                  <MpCheckbox id="np-does-sell" :is-checked="doesSell" @change="doesSell = !doesSell" />
+                  <span>{{ t('I sell this product') }}</span>
+                </label>
+                <div v-if="doesSell" class="nw-row np-toggle-fields np-toggle-fields--wrap">
+                  <MpFormControl id="np-sales-price" class="np-field-270">
+                    <MpFormLabel>{{ t('Default sales price') }}</MpFormLabel>
+                    <div class="np-prefix-wrap">
+                      <span class="np-prefix-chip">Rp</span>
+                      <input id="np-sales-price-input" v-model="salesPrice" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
+                    </div>
+                  </MpFormControl>
+                  <MpFormControl id="np-sales-account" class="np-field-270" is-required>
+                    <MpFormLabel>{{ t('Default sales account') }}</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-sales-account-ac" v-model="salesAccount" :data="salesAccountOptions" label-prop="label" value-prop="value"
+                      is-searchable use-portal is-full-width
+                    />
+                  </MpFormControl>
+                  <MpFormControl id="np-sales-tax" class="np-field-270">
+                    <MpFormLabel>{{ t('Default sales tax') }}</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-sales-tax-ac" v-model="salesTax" :data="taxOptions" label-prop="label" value-prop="value"
+                      :placeholder="t('Select default sales tax')" is-searchable use-portal is-full-width is-clearable
+                    />
+                  </MpFormControl>
+                  <MpFormControl id="np-discount-account" class="np-field-270">
+                    <MpFormLabel>{{ t('Default discount account') }}</MpFormLabel>
+                    <MpAutocomplete
+                      id="np-discount-account-ac" v-model="discountAccount" :data="discountAccountOptions" label-prop="label" value-prop="value"
+                      :placeholder="t('Select default discount account')" is-searchable use-portal is-full-width is-clearable
+                    />
+                  </MpFormControl>
+                </div>
+              </div>
+            </template>
+
+          </div>
+        </div>
+
+      </div>
+
       <!-- ── Tax info ── -->
       <div class="nw-form-group np-full">
         <div class="nw-section">
-          <h2 class="nw-section-title">Tax info</h2>
+          <h2 class="nw-section-title">{{ t('Tax info') }}</h2>
           <div class="nw-section-spacer" />
 
           <div class="nw-fields">
 
             <!-- Product classification -->
             <MpFormControl id="np-classification">
-              <MpFormLabel>Product classification</MpFormLabel>
+              <MpFormLabel>{{ t('Product classification') }}</MpFormLabel>
               <div class="np-radio-group">
                 <label class="np-radio-item">
                   <MpRadio id="np-classification-goods" name="np-classification" value="Goods" :is-checked="productClassification === 'Goods'" @change="productClassification = 'Goods'" />
-                  <span>Goods</span>
+                  <span>{{ t('Goods') }}</span>
                 </label>
                 <label class="np-radio-item">
                   <MpRadio id="np-classification-service" name="np-classification" value="Service" :is-checked="productClassification === 'Service'" @change="productClassification = 'Service'" />
-                  <span>Service</span>
+                  <span>{{ t('Service') }}</span>
                 </label>
               </div>
             </MpFormControl>
@@ -558,10 +674,10 @@ onUnmounted(() => { footerObserver?.disconnect() })
             <!-- Classification code — same width as Category (564px), not the full Tax info row -->
             <div class="np-ai-field np-field-564">
               <MpFormControl id="np-classification-code" :class="{ 'np-ai-select': demoState === 'ai_matched' }">
-                <MpFormLabel>DJP code</MpFormLabel>
+                <MpFormLabel>{{ t('DJP code') }}</MpFormLabel>
                 <MpAutocomplete
                   id="np-classification-code-ac" v-model="classificationCode" :data="classificationCodeOptions" label-prop="label" value-prop="value"
-                  placeholder="Select DJP code" is-searchable use-portal is-full-width is-adaptive-width
+                  :placeholder="t('Select DJP code')" is-searchable use-portal is-full-width is-adaptive-width
                 >
                   <template #default="{ item }">
                     <MpTooltip
@@ -576,16 +692,16 @@ onUnmounted(() => { footerObserver?.disconnect() })
               </MpFormControl>
               <div v-if="demoState === 'ai_matched'" class="np-ai-banner">
                 <MpIcon name="airene-brand" size="sm" />
-                <span>AI matched — Matches product name &amp; description</span>
+                <span>{{ t('AI matched — Matches product name & description') }}</span>
               </div>
             </div>
 
             <!-- DJP unit -->
             <MpFormControl id="np-djp-unit" class="np-field-270">
-              <MpFormLabel>DJP unit</MpFormLabel>
+              <MpFormLabel>{{ t('DJP unit') }}</MpFormLabel>
               <MpAutocomplete
                 id="np-djp-unit-ac" v-model="djpUnit" :data="djpUnitOptions" label-prop="label" value-prop="value"
-                placeholder="Select DJP unit" is-searchable use-portal is-full-width is-adaptive-width
+                :placeholder="t('Select DJP unit')" is-searchable use-portal is-full-width is-adaptive-width
               >
                 <template #default="{ item }">
                   <MpTooltip
@@ -602,138 +718,24 @@ onUnmounted(() => { footerObserver?.disconnect() })
           </div>
         </div>
       </div>
-
-      <!-- ── Pricing & inventory info (WMS: "Inventory info" — no pricing) ── -->
-      <div class="nw-form-group np-full">
-        <div class="nw-section">
-          <h2 class="nw-section-title">{{ isWms ? 'Inventory info' : 'Pricing & inventory info' }}</h2>
-          <div class="nw-section-spacer" />
-
-          <div class="nw-fields">
-
-            <!-- I track stock for this product -->
-            <div class="np-toggle-block">
-              <label class="np-checkbox-row">
-                <MpCheckbox id="np-track-stock" :is-checked="trackStock" @change="trackStock = !trackStock" />
-                <span>I track stock for this product</span>
-              </label>
-              <div v-if="trackStock" class="nw-row np-toggle-fields">
-                <MpFormControl id="np-min-stock" class="np-field-270">
-                  <MpFormLabel>Min. stock</MpFormLabel>
-                  <div class="np-suffix-wrap">
-                    <input id="np-min-stock-input" v-model="minStock" class="np-suffix-input" type="text" inputmode="numeric" placeholder="0" />
-                    <span class="np-suffix-chip">{{ unit || 'Pcs' }}</span>
-                  </div>
-                </MpFormControl>
-                <MpFormControl id="np-track-by" class="np-field-270" is-required>
-                  <MpFormLabel>Track stock by</MpFormLabel>
-                  <MpAutocomplete
-                    id="np-track-by-ac" v-model="trackStockBy" :data="trackStockByOptions" label-prop="label" value-prop="value"
-                    is-searchable use-portal is-full-width
-                  />
-                </MpFormControl>
-                <MpFormControl v-if="!isWms" id="np-inventory-account" class="np-field-270" is-required>
-                  <MpFormLabel>Default inventory account</MpFormLabel>
-                  <MpAutocomplete
-                    id="np-inventory-account-ac" v-model="inventoryAccount" :data="inventoryAccountOptions" label-prop="label" value-prop="value"
-                    is-searchable use-portal is-full-width
-                  />
-                </MpFormControl>
-              </div>
-            </div>
-
-            <!-- I buy this product / I sell this product — ERP only; WMS only tracks stock -->
-            <template v-if="!isWms">
-              <div class="np-toggle-block">
-                <label class="np-checkbox-row">
-                  <MpCheckbox id="np-does-buy" :is-checked="doesBuy" @change="doesBuy = !doesBuy" />
-                  <span>I buy this product</span>
-                </label>
-                <div v-if="doesBuy" class="nw-row np-toggle-fields">
-                  <MpFormControl id="np-purchase-cost" class="np-field-270">
-                    <MpFormLabel>Default purchase cost</MpFormLabel>
-                    <div class="np-prefix-wrap">
-                      <span class="np-prefix-chip">Rp</span>
-                      <input id="np-purchase-cost-input" v-model="purchaseCost" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
-                    </div>
-                  </MpFormControl>
-                  <MpFormControl id="np-purchase-account" class="np-field-270" is-required>
-                    <MpFormLabel>Default purchase account</MpFormLabel>
-                    <MpAutocomplete
-                      id="np-purchase-account-ac" v-model="purchaseAccount" :data="purchaseAccountOptions" label-prop="label" value-prop="value"
-                      is-searchable use-portal is-full-width
-                    />
-                  </MpFormControl>
-                  <MpFormControl id="np-purchase-tax" class="np-field-270">
-                    <MpFormLabel>Default purchase tax</MpFormLabel>
-                    <MpAutocomplete
-                      id="np-purchase-tax-ac" v-model="purchaseTax" :data="taxOptions" label-prop="label" value-prop="value"
-                      placeholder="Select default purchase tax" is-searchable use-portal is-full-width is-clearable
-                    />
-                  </MpFormControl>
-                </div>
-              </div>
-
-              <div class="np-toggle-block">
-                <label class="np-checkbox-row">
-                  <MpCheckbox id="np-does-sell" :is-checked="doesSell" @change="doesSell = !doesSell" />
-                  <span>I sell this product</span>
-                </label>
-                <div v-if="doesSell" class="nw-row np-toggle-fields np-toggle-fields--wrap">
-                  <MpFormControl id="np-sales-price" class="np-field-270">
-                    <MpFormLabel>Default sales price</MpFormLabel>
-                    <div class="np-prefix-wrap">
-                      <span class="np-prefix-chip">Rp</span>
-                      <input id="np-sales-price-input" v-model="salesPrice" class="np-prefix-input" type="text" inputmode="numeric" placeholder="0" />
-                    </div>
-                  </MpFormControl>
-                  <MpFormControl id="np-sales-account" class="np-field-270" is-required>
-                    <MpFormLabel>Default sales account</MpFormLabel>
-                    <MpAutocomplete
-                      id="np-sales-account-ac" v-model="salesAccount" :data="salesAccountOptions" label-prop="label" value-prop="value"
-                      is-searchable use-portal is-full-width
-                    />
-                  </MpFormControl>
-                  <MpFormControl id="np-sales-tax" class="np-field-270">
-                    <MpFormLabel>Default sales tax</MpFormLabel>
-                    <MpAutocomplete
-                      id="np-sales-tax-ac" v-model="salesTax" :data="taxOptions" label-prop="label" value-prop="value"
-                      placeholder="Select default sales tax" is-searchable use-portal is-full-width is-clearable
-                    />
-                  </MpFormControl>
-                  <MpFormControl id="np-discount-account" class="np-field-270">
-                    <MpFormLabel>Default discount account</MpFormLabel>
-                    <MpAutocomplete
-                      id="np-discount-account-ac" v-model="discountAccount" :data="discountAccountOptions" label-prop="label" value-prop="value"
-                      placeholder="Select default discount account" is-searchable use-portal is-full-width is-clearable
-                    />
-                  </MpFormControl>
-                </div>
-              </div>
-            </template>
-
-          </div>
-        </div>
-
-      </div>
     </div>
 
     <!-- ── Sticky footer ── -->
     <div ref="footerEl" class="nw-footer" :class="{ 'nw-footer--floating': stageOverflowing }">
-      <button class="nw-btn-cancel" @click="goBack">Cancel</button>
+      <button class="nw-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
       <button v-if="!isEdit" class="nw-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="saveAndAdd">
-        {{ isSavingAndAdding ? 'Saving…' : 'Save & add another' }}
+        {{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}
       </button>
-      <button class="nw-btn-save" :disabled="isSaving || isSavingAndAdding" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+      <button class="nw-btn-save" :disabled="isSaving || isSavingAndAdding" @click="save">{{ isSaving ? t('Saving…') : t('Save') }}</button>
     </div>
 
     <!-- ── Demo scenario FAB — Tax info preview states ── -->
     <MpPopover id="np-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <MpButton class="demo-fab" :style="{ bottom: fabBottom + 'px' }" aria-label="Change scenario state"><MpIcon name="sliders" size="md" color="icon.inverse" /></MpButton>
+        <MpButton class="demo-fab" :style="{ bottom: fabBottom + 'px' }" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-        <p class="demo-fab-heading">Scenario state</p>
+        <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
         <MpPopoverList>
           <MpPopoverListItem
             v-for="s in demoStates" :key="s.value"

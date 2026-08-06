@@ -12,6 +12,7 @@ import type { Bill } from '~/data/types'
 // page always exists in the context of settling that bill (Payee is derived
 // from it and it's always the table's first, locked row).
 const props = defineProps<{ orderId: string }>()
+const { t } = useLocale()
 const router = useRouter()
 
 function toDisplayDate(iso: string) {
@@ -28,7 +29,7 @@ function formatIDR(amount: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(amount).replace(/^(Rp)\s/, '$1')
 }
 function billLabel(b: Bill) {
-  return `Expense #${String(b.number).padStart(5, '0')}`
+  return `${t('Expense')} #${String(b.number).padStart(5, '0')}`
 }
 
 const sourceBill = computed(() => bills.find((b) => b.id === props.orderId) ?? null)
@@ -149,7 +150,7 @@ function handleSave() {
     b.status = 'paid'
   }
 
-  toast.notify({ variant: 'success', title: 'Payment saved' })
+  toast.notify({ variant: 'success', title: t('Payment saved') })
   goBackToExpense()
 }
 </script>
@@ -160,10 +161,10 @@ function handleSave() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <span class="detail-breadcrumb detail-breadcrumb--static">Cash management</span>
+          <span class="detail-breadcrumb detail-breadcrumb--static">{{ t('Cash management') }}</span>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New spend money</h1>
+          <h1 class="detail-title">{{ t('New spend money') }}</h1>
         </div>
       </div>
     </header>
@@ -175,7 +176,7 @@ function handleSave() {
         <!-- Pay from / Payee + Total — always inline (flex row, not the grid below) -->
         <div class="ex-row-1">
           <MpFormControl id="sm-payfrom" class="ex-field-flex" :is-invalid="payFromError">
-            <MpFormLabel>Pay from</MpFormLabel>
+            <MpFormLabel>{{ t('Pay from') }}</MpFormLabel>
             <MpAutocomplete
               id="sm-payfrom-ac"
               v-model="payFromId"
@@ -185,15 +186,15 @@ function handleSave() {
               :is-invalid="payFromError"
               @update:model-value="payFromError = false"
             />
-            <MpFormErrorMessage>Please select an account to pay from</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select pay from') }}</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="sm-payee" class="ex-field-flex">
-            <MpFormLabel>Payee</MpFormLabel>
+            <MpFormLabel>{{ t('Payee') }}</MpFormLabel>
             <MpInput id="sm-payee-input" :model-value="payeeName" is-full-width is-disabled />
           </MpFormControl>
           <div class="sm-total">
             <span class="detail-total-amount">
-              <span class="detail-total-label">Total</span> {{ formatIDR(totalAmount) }}
+              <span class="detail-total-label">{{ t('Total') }}</span> {{ formatIDR(totalAmount) }}
             </span>
           </div>
         </div>
@@ -201,32 +202,32 @@ function handleSave() {
         <!-- Transaction date / Transaction no. / Reference no. / Tags -->
         <div class="ex-grid-2">
           <MpFormControl id="sm-txdate">
-            <MpFormLabel>Transaction date</MpFormLabel>
+            <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
             <div class="ex-datepicker">
               <MpDatePicker id="sm-txdate-dp" v-model="transactionDate" format="DD/MM/YYYY" value-type="format" use-portal />
             </div>
           </MpFormControl>
           <MpFormControl id="sm-transno">
             <div class="ex-label-row">
-              <MpFormLabel>Transaction no.</MpFormLabel>
-              <span class="ex-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
+              <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
+              <span class="ex-label-icon" :title="t('Auto-generated')"><MpIcon name="settings" size="sm" /></span>
             </div>
-            <MpInput id="sm-transno-input" v-model="transactionNo" placeholder="[Auto]" is-full-width is-disabled />
+            <MpInput id="sm-transno-input" v-model="transactionNo" :placeholder="t('Auto')" is-full-width is-disabled />
           </MpFormControl>
           <MpFormControl id="sm-refno">
-            <MpFormLabel>Reference no.</MpFormLabel>
+            <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
             <MpInput id="sm-refno-input" v-model="referenceNo" is-full-width />
           </MpFormControl>
           <MpFormControl id="sm-tags">
-            <MpFormLabel>Tags</MpFormLabel>
+            <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
             <MpInputTag id="sm-tags-input" :data="tags" :is-enable-create-new-tag="true" :is-show-suggestions="false" @change="onTagsChange" />
           </MpFormControl>
         </div>
 
         <!-- Line item type — Expense selected; Account isn't wired up for this flow -->
-        <div class="ex-segmented" role="tablist" aria-label="Line item type">
-          <MpButton class="ex-segmented-part ex-segmented-part--active">Expense</MpButton>
-          <MpButton class="ex-segmented-part" disabled>Account</MpButton>
+        <div class="ex-segmented" role="tablist" :aria-label="t('Line item type')">
+          <MpButton class="ex-segmented-part ex-segmented-part--active">{{ t('Expense') }}</MpButton>
+          <MpButton class="ex-segmented-part" disabled>{{ t('Account') }}</MpButton>
         </div>
 
         <!-- Line items -->
@@ -243,11 +244,11 @@ function handleSave() {
               </colgroup>
               <thead>
                 <tr>
-                  <th class="ex-th">Expense</th>
-                  <th class="ex-th">Description</th>
-                  <th class="ex-th ex-th--num">Balance due</th>
-                  <th class="ex-th ex-th--num">Total</th>
-                  <th class="ex-th ex-th--num">Amount</th>
+                  <th class="ex-th">{{ t('Expense') }}</th>
+                  <th class="ex-th">{{ t('Description') }}</th>
+                  <th class="ex-th ex-th--num">{{ t('Balance due') }}</th>
+                  <th class="ex-th ex-th--num">{{ t('Total') }}</th>
+                  <th class="ex-th ex-th--num">{{ t('Amount') }}</th>
                   <th class="ex-th ex-th--del" />
                 </tr>
               </thead>
@@ -279,7 +280,7 @@ function handleSave() {
                     <MpAutocomplete
                       id="sm-add-expense-ac" v-model="selectedExpenseToAdd" :data="availableExpenseOptions"
                       label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-                      placeholder="Select expense"
+                      :placeholder="t('Select expense')"
                       @update:model-value="onAddExpenseRow"
                     />
                   </td>
@@ -295,23 +296,23 @@ function handleSave() {
           <div class="ex-notes-left">
             <div class="ex-section">
               <MpFormControl id="sm-message">
-                <MpFormLabel>Message</MpFormLabel>
+                <MpFormLabel>{{ t('Message') }}</MpFormLabel>
                 <MpTextarea id="sm-message-textarea" v-model="message" is-full-width :rows="3" />
               </MpFormControl>
-              <p class="ex-helper-text">Visible to customer/vendor</p>
+              <p class="ex-helper-text">{{ t('Visible to vendor') }}</p>
             </div>
 
             <div class="ex-section">
               <MpFormControl id="sm-memo">
-                <MpFormLabel>Memo</MpFormLabel>
+                <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
                 <MpTextarea id="sm-memo-textarea" v-model="memo" is-full-width :rows="3" />
               </MpFormControl>
-              <p class="ex-helper-text">Only visible to you and your team</p>
+              <p class="ex-helper-text">{{ t('Only visible to you and your team') }}</p>
             </div>
 
             <div class="ex-section sm-attachment-section">
               <div class="ex-section-label-row">
-                <div class="ex-section-label">Attachment</div>
+                <div class="ex-section-label">{{ t('Attachment') }}</div>
               </div>
               <div class="ex-attachment">
                 <MpUpload
@@ -319,15 +320,15 @@ function handleSave() {
                   class="ex-attachment-upload"
                   accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip"
                   is-multiple is-full-width
-                  placeholder="or drag and drop here"
-                  button-text="Choose file"
+                  :placeholder="t('or drag and drop here')"
+                  :button-text="t('Choose file')"
                   @change="onAttachmentChange"
                 />
-                <p class="ex-helper-text">Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 5 files per transaction</p>
+                <p class="ex-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 5 files per transaction') }}</p>
                 <MpUploadList
                   v-for="f in attachedFiles" :key="f.name"
                   :id="`sm-attachment-file-${f.name}`"
-                  :title="f.name" status="success" subtitle="Uploaded"
+                  :title="f.name" status="success" :subtitle="t('Uploaded')"
                   :icon-name="fileIconName(f.name)"
                   is-show-remove-button
                   @remove="removeAttachedFile(f.name)"
@@ -339,8 +340,8 @@ function handleSave() {
 
         <!-- Footer actions -->
         <footer class="ex-footer">
-          <MpButton variant="ghost" is-rounded @click="goBackToExpense">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="handleSave">Save</MpButton>
+          <MpButton variant="ghost" is-rounded @click="goBackToExpense">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="handleSave">{{ t('Save') }}</MpButton>
         </footer>
       </div>
     </div>
@@ -348,8 +349,8 @@ function handleSave() {
 
   <!-- Not found fallback -->
   <div v-else class="bd-not-found">
-    <p>Expense not found.</p>
-    <MpTextlink id="sm-not-found-back" as="a" class="detail-breadcrumb" @click.prevent="router.push({ path: '/expenses', query: { tab: 'Bills' } })">Back to Expenses</MpTextlink>
+    <p>{{ t('Expense not found.') }}</p>
+    <MpTextlink id="sm-not-found-back" as="a" class="detail-breadcrumb" @click.prevent="router.push({ path: '/expenses', query: { tab: 'Bills' } })">{{ t('Back to Expenses') }}</MpTextlink>
   </div>
 </template>
 

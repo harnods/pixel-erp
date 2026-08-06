@@ -585,7 +585,10 @@ function makeBatches(onHand: number, reserved: number, seed: number, i: number):
 
 // Serial units for a hardware product — a small, design-matching subset.
 function makeSerials(sku: string, onHand: number, reserved: number, seed: number, i: number): ProductSerials {
-  const prefix = (sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN')
+  // Full SKU (not just the first 3 chars) so serials are namespaced per SKU —
+  // SKUs sharing a 3-char prefix (2101, 2102, …) must never generate the same
+  // serial string, or resolveScan would map a scan to the wrong SKU.
+  const prefix = (sku.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'SN')
   const mk = (qty: number, base: number) =>
     Array.from({ length: qty }, (_, k) => ({
       serial: `${prefix}${String(base + k).padStart(5, '0')}`,
@@ -612,9 +615,12 @@ function reconcileSerialQty(item: WarehouseStockItem): void {
   const delta = item.onHand - (item.serials.available.length + item.serials.reserved.length)
   if (delta === 0) return
   if (delta > 0) {
-    const prefix = item.sku.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'SN'
+    const prefix = item.sku.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'SN'
+    // Strip the exact prefix to get the numeric suffix — a plain replace(/\D/g)
+    // would keep the SKU's own digits for numeric SKUs (e.g. "2102") and blow up
+    // the next number, producing a double-prefixed serial.
     const nums = [...item.serials.available, ...item.serials.reserved]
-      .map((u) => parseInt(u.serial.replace(/\D/g, ''), 10))
+      .map((u) => parseInt(u.serial.startsWith(prefix) ? u.serial.slice(prefix.length) : u.serial.replace(/\D/g, ''), 10))
       .filter((n) => Number.isFinite(n))
     let next = (nums.length ? Math.max(...nums) : 0) + 1
     const loc = item.locations[0] ?? '—'
@@ -722,6 +728,10 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   // bin-split and reservation-application steps below then treat it exactly like
   // any other batch.
   const bOverlay = batchOverlay[id]
+  // batchNo → the operator-chosen bin it was registered into (registerNewBatch).
+  // Kept so the bin-split + round-robin below leave the batch in that exact bin
+  // instead of collapsing every batch onto a primary bin.
+  const pinnedBatchLoc: Record<string, Record<string, string>> = {} // sku → batchNo → location
   if (bOverlay) {
     for (const item of stock) {
       const extra = bOverlay[item.sku]
@@ -732,6 +742,7 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
         item.batches.push({ ...nb })
         item.onHand += nb.onHand
         item.available += nb.onHand
+        ;(pinnedBatchLoc[item.sku] ??= {})[nb.batchNo] = nb.location || ''
       }
     }
   }
@@ -745,43 +756,69 @@ export function getWarehouseDetail(id: string): WarehouseDetail | undefined {
   stock.forEach((item, i) => {
     const loc = paths[i % L] ?? '—'
     const mlCfg = multiLoc.find((m) => m.idx === i)
-    let locs: string[]
+    let baseLocs: string[]
     if (mlCfg && L > 1) {
       // Pick `count` distinct paths spread across the tree using an even step
       const step = Math.max(1, Math.floor(L / mlCfg.count))
-      locs = [loc]
+      baseLocs = [loc]
       for (let k = 1; k < mlCfg.count; k++) {
         const candidate = paths[(i + step * k) % L]
-        if (candidate && !locs.includes(candidate)) locs.push(candidate)
+        if (candidate && !baseLocs.includes(candidate)) baseLocs.push(candidate)
       }
-      if (locs.length < 2) locs = [loc]
+      if (baseLocs.length < 2) baseLocs = [loc]
     } else {
-      locs = [loc]
+      baseLocs = [loc]
     }
-    item.locations = locs
+
+    // Overlay batches carry a real, operator-chosen bin. Hold their qty in THAT bin
+    // (creating it if the SKU never stocked there before) and split only the remaining
+    // generated qty across the base bins — so a batch added to a new bin genuinely
+    // lives there (item.bins gains it, reservations mirror to it) instead of being
+    // round-robined onto a primary bin.
+    const pinnedLoc = pinnedBatchLoc[item.sku] ?? {}
+    const pinnedList = (item.batches ?? [])
+      .filter((b) => b.batchNo in pinnedLoc)
+      .map((b) => ({ batchNo: b.batchNo, location: pinnedLoc[b.batchNo] || baseLocs[0] || loc, onHand: b.onHand }))
+    const pinnedOnHand = pinnedList.reduce((s, p) => s + p.onHand, 0)
+    const baseOnHand = Math.max(0, item.onHand - pinnedOnHand)
 
     // Real per-bin qty split — same weights the Products-tab display always used,
-    // now persisted so it's genuinely allocatable (reservations draw from it) instead
-    // of recomputed at render time. A single-loc item just mirrors its aggregate.
-    if (locs.length > 1) {
-      const ohParts = splitByWeight(item.onHand, locs.length)
-      const rvParts = splitByWeight(item.reserved, locs.length)
-      item.bins = locs.map((l, bi) => {
+    // now persisted so it's genuinely allocatable (reservations draw from it).
+    let bins: StockLocationBin[]
+    if (baseLocs.length > 1) {
+      const ohParts = splitByWeight(baseOnHand, baseLocs.length)
+      const rvParts = splitByWeight(item.reserved, baseLocs.length)
+      bins = baseLocs.map((l, bi) => {
         const oh = ohParts[bi] ?? 0
         const rv = Math.min(rvParts[bi] ?? 0, oh)
         return { location: l, onHand: oh, reserved: rv, available: oh - rv }
       })
     } else {
-      item.bins = [{ location: loc, onHand: item.onHand, reserved: item.reserved, available: item.available }]
+      bins = [{ location: loc, onHand: baseOnHand, reserved: Math.min(item.reserved, baseOnHand), available: Math.max(0, baseOnHand - item.reserved) }]
     }
+    // Add each pinned batch's qty to its own bin (create the bin if it's new).
+    for (const p of pinnedList) {
+      let bin = bins.find((b) => b.location === p.location)
+      if (!bin) { bin = { location: p.location, onHand: 0, reserved: 0, available: 0 }; bins.push(bin) }
+      bin.onHand += p.onHand
+      bin.available += p.onHand
+    }
+    item.bins = bins
+    item.locations = bins.map((b) => b.location)
 
-    // Distribute batches/serial units across the item's real bins (round-robin) —
-    // every batch/serial now lands in a bin that's actually one of this item's own,
-    // instead of all being forced into the single primary one.
-    item.batches?.forEach((b, bi) => { b.location = item.bins[bi % item.bins.length]!.location })
+    // Distribute the generated (non-pinned) batches/serials round-robin across the
+    // BASE bins; a pinned batch keeps the exact bin it was registered into.
+    const baseLocSet = new Set(baseLocs)
+    const rrBins = bins.filter((b) => baseLocSet.has(b.location))
+    const rr = rrBins.length ? rrBins : bins
+    let bidx = 0
+    item.batches?.forEach((b) => {
+      if (b.batchNo in pinnedLoc) { b.location = pinnedLoc[b.batchNo] || rr[0]!.location; return }
+      b.location = rr[bidx % rr.length]!.location; bidx++
+    })
     if (item.serials) {
-      item.serials.available.forEach((u, ui) => { u.location = item.bins[ui % item.bins.length]!.location })
-      item.serials.reserved.forEach((u, ui) => { u.location = item.bins[ui % item.bins.length]!.location })
+      item.serials.available.forEach((u, ui) => { u.location = rr[ui % rr.length]!.location })
+      item.serials.reserved.forEach((u, ui) => { u.location = rr[ui % rr.length]!.location })
     }
   })
   // Apply any persisted on-hand overrides from stock counts / in-out / transfers

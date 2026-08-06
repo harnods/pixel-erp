@@ -49,10 +49,10 @@ const columns: TableColumn[] = [
   { key: 'sku',                 label: 'SKU',                    width: '160px', sortable: true, sortType: 'text'   },
   { key: 'barcode',             label: 'Barcode',                width: '160px',                 sortType: 'text'   },
   { key: 'category',            label: 'Category',               width: '160px',                 sortType: 'text'   },
-  { key: 'onHand',              label: 'On hand',                width: '130px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'reserved',            label: 'Reserved',               width: '130px', align: 'right',                 sortType: 'number' },
-  { key: 'available',           label: 'Available',              width: '130px', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'onTheWay',            label: 'In transit',             width: '130px', align: 'right',                 sortType: 'number' },
+  { key: 'onHand',              label: 'On hand qty',            width: '130px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'reserved',            label: 'Reserved qty',           width: '130px', align: 'right',                 sortType: 'number' },
+  { key: 'available',           label: 'Available qty',          width: '130px', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'onTheWay',            label: 'In transit qty',         width: '130px', align: 'right',                 sortType: 'number' },
   { key: 'minStock',            label: 'Min. stock',             width: '104px', align: 'right',                 sortType: 'number' },
   { key: 'unit',                label: 'Unit',                   width: '96px',                  sortType: 'text'   },
   // Pricing/costing columns — ERP only, WMS doesn't deal in pricing.
@@ -199,10 +199,10 @@ const exportColumnGroups: { key: string; label: string }[][] = [
     { key: 'category', label: 'Category' },
   ],
   [
-    { key: 'onHand', label: 'On hand' },
-    { key: 'reserved', label: 'Reserved' },
-    { key: 'available', label: 'Available' },
-    { key: 'inTransit', label: 'In transit' },
+    { key: 'onHand', label: 'On hand qty' },
+    { key: 'reserved', label: 'Reserved qty' },
+    { key: 'available', label: 'Available qty' },
+    { key: 'inTransit', label: 'In transit qty' },
     { key: 'minStock', label: 'Min. stock' },
     { key: 'unit', label: 'Unit' },
   ],
@@ -288,13 +288,13 @@ function closeExportModal() { exportModalOpen.value = false }
           <div class="stat-title">Low stock</div>
           <div class="stat-period">Below minimum stock</div>
           <div class="stat-amount stat-amount--warning">{{ lowStockRows.length }}</div>
-          <a class="stat-link" @click="viewLowStock">View product</a>
+          <a class="stat-link" @click="viewLowStock">View products</a>
         </div>
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">Out of stock</div>
           <div class="stat-period">Needs restocking</div>
           <div class="stat-amount stat-amount--danger">{{ outOfStockRows.length }}</div>
-          <a class="stat-link" @click="viewOutOfStock">View product</a>
+          <a class="stat-link" @click="viewOutOfStock">View products</a>
         </div>
         <div class="stat-card">
           <div class="stat-title">In-stock rate</div>
@@ -594,7 +594,7 @@ function closeExportModal() { exportModalOpen.value = false }
                 v-model="exportColumnSearch"
                 class="export-col-search__input"
                 type="text"
-                placeholder="Search column"
+                placeholder="Search..."
               />
               <MpButton v-if="exportColumnSearch" class="search-clear-btn" aria-label="Clear search" @click="exportColumnSearch = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -961,5 +961,24 @@ function closeExportModal() { exportModalOpen.value = false }
   justify-content: flex-end;
   gap: var(--mp-spacing-2);
   width: 100%;
+}
+
+/* ── Mobile ─────────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  /* Stats: two equal-width columns → 2 rows (instead of one cramped 4-across row) */
+  .stats-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--mp-spacing-4);
+    align-items: stretch;
+  }
+  .stat-card { padding-right: 0; }
+  .stat-card--bordered { border-right: none; }
+
+  /* Filter bar: drop Product type + Warehouse (keep All filters) on the left, and
+     Airene + Export (keep column settings) on the right. Search stays. */
+  .filter-left > :not(.filter-all-btn) { display: none !important; }
+  .filter-btn-group > .filter-icon-btn--airene,
+  .filter-btn-group > .mp-button { display: none !important; }
 }
 </style>

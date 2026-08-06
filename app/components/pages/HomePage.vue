@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
-import { MpIcon, toast } from '@mekari/pixel3'
+import {
+  MpIcon, toast,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { picForWarehouse } from '~/data/warehouses'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import { selectedActions, type HomeActionDef } from '~/data/homeActions'
+import { infoToast } from '~/utils/toasts'
 
 // What's-new card art — cropped from the Figma design (the mock-UI preview band).
 import whatsnewReconciliation from '~/assets/images/home/whatsnew-reconciliation.png?url'
@@ -13,7 +17,7 @@ import whatsnewProduction from '~/assets/images/home/whatsnew-production.png?url
 import setupBuilding from '~/assets/images/home/setup-building.png?url'
 
 const router = useRouter()
-const { navigate } = useNavigation()
+const { t } = useLocale()
 // Open the Airene chat panel (provided by [...slug].vue) from the Useful links.
 const toggleAirene = inject<() => void>('toggleAirene', () => {})
 // Drives the hero glow — the SearchBox emits its AI-mode state up.
@@ -40,7 +44,7 @@ const todayLabel = new Date().toLocaleDateString('en-GB', {
 // Pills are user-managed: pick up to 6 from a catalog + drag to reorder via the
 // "Add actions" modal (opened by the "Actions" pill). Selection persists (mini-DB).
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — ${t('coming soon')}`)
 }
 function runAction(a: HomeActionDef) {
   if (a.path === '#') soon(a.label)
@@ -55,17 +59,17 @@ const anomalies: Anomaly[] = [
   {
     id: 'a1',
     title: 'Unusual amount in Sales invoice #33201',
-    body: 'The transaction value of Sales Invoice #33201 is Rp500,000,000 — 5× above average for customer Anomali Coffee. Double-check the sales invoice and ensure that components such as amount, quantity, and payment terms are correct.',
+    body: 'The transaction value of Sales Invoice #33201 is Rp500.000.000 — 5× above average for customer Anomali Coffee. Double-check the sales invoice and ensure that components such as amount, quantity, and payment terms are correct.',
   },
   {
     id: 'a2',
     title: 'Possible duplicate payment in Purchase invoice #12088',
-    body: 'Purchase Invoice #12088 to EXPAT Roasters (Rp33,000,000) matches a payment already recorded 3 days ago. Confirm this is not a duplicate before approving the disbursement.',
+    body: 'Purchase Invoice #12088 to EXPAT Roasters (Rp33.000.000) matches a payment already recorded 3 days ago. Confirm this is not a duplicate before approving the disbursement.',
   },
   {
     id: 'a3',
     title: 'Unexpected stock write-off in Gudang Jakarta Pusat',
-    body: 'A 120 Kg write-off of Arabica Gayo Grade 1 was recorded in Gudang Jakarta Pusat — 8× the usual monthly adjustment. Review the stock adjustment and confirm the reason code.',
+    body: 'A 120 kg write-off of Arabica Gayo Grade 1 was recorded in Gudang Jakarta Pusat — 8× the usual monthly adjustment. Review the stock adjustment and confirm the reason code.',
   },
 ]
 const anomalyExpanded = ref(false)
@@ -92,27 +96,35 @@ const approvals: Approval[] = [
 const actionsRequiredCount = 10
 
 function approve(a: Approval) {
-  toast.notify({ variant: 'success', title: `${a.title} approved`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${a.title} ${t('approved')}`, maxWidth: 'max-content' })
 }
 
 // ── What's new ────────────────────────────────────────────────────────────────
 interface NewsCard { key: string; title: string[]; desc: string; art: string }
 const news: NewsCard[] = [
-  { key: 'blue',   title: ['Smarter reconciliation', 'is now available'], desc: 'Speed up bank reconciliation with our AI tool for accurate matching.', art: whatsnewReconciliation },
-  { key: 'yellow', title: ['Detect your financial', 'anomalies earlier'],  desc: 'Identify unusual transactions in 1 click.',                            art: whatsnewAnomaly },
-  { key: 'green',  title: ['Plan production with', 'confidence'],          desc: 'Stay ahead with clear schedules and real-time visibility.',            art: whatsnewProduction },
+  { key: 'blue',   title: [t('Smarter reconciliation'), t('is now available')], desc: t('Speed up bank reconciliation with Airene for accurate matching.'), art: whatsnewReconciliation },
+  { key: 'yellow', title: [t('Detect your financial'), t('anomalies earlier')],  desc: t('Identify unusual transactions in 1 click.'),                            art: whatsnewAnomaly },
+  { key: 'green',  title: [t('Plan production with'), t('confidence')],          desc: t('Stay ahead with clear schedules and real-time visibility.'),            art: whatsnewProduction },
 ]
+// ─── Demo scenario state (FAB) ───────────────────────────────────────────────
+type WhatsNewDemoState = 'default' | 'more'
+const whatsNewDemoState = ref<WhatsNewDemoState>('default')
+const whatsNewDemoStates: { value: WhatsNewDemoState; label: string }[] = [
+  { value: 'default', label: t("What's new — Default") },
+  { value: 'more', label: t("What's new — >3") },
+]
+const whatsNewHasPagination = computed(() => whatsNewDemoState.value === 'more')
 
 // ── Set up Mekari ERP ─────────────────────────────────────────────────────────
 interface SetupStep { label: string; time: string; done: boolean }
 const setupSteps: SetupStep[] = [
-  { label: 'Complete company settings',       time: 'APPROX. 2 MINUTES', done: true },
-  { label: 'Set up opening balances',         time: 'APPROX. 5 MINUTES', done: false },
-  { label: 'Add or import products',          time: 'APPROX. 4 MINUTES', done: false },
-  { label: 'Add or import contacts',          time: 'APPROX. 4 MINUTES', done: false },
-  { label: 'Add or import sales transactions', time: 'APPROX. 5 MINUTES', done: false },
-  { label: 'Connect your bank account',       time: 'APPROX. 3 MINUTES', done: false },
-  { label: 'Invite your team',                time: 'APPROX. 2 MINUTES', done: false },
+  { label: t('Complete company settings'),       time: t('APPROX. 2 MINUTES'), done: true },
+  { label: t('Set up opening balances'),         time: t('APPROX. 5 MINUTES'), done: false },
+  { label: t('Add or import products'),          time: t('APPROX. 4 MINUTES'), done: false },
+  { label: t('Add or import contacts'),          time: t('APPROX. 4 MINUTES'), done: false },
+  { label: t('Add or import sales transactions'), time: t('APPROX. 5 MINUTES'), done: false },
+  { label: t('Connect your bank account'),       time: t('APPROX. 3 MINUTES'), done: false },
+  { label: t('Invite your team'),                time: t('APPROX. 2 MINUTES'), done: false },
 ]
 const setupDone = computed(() => setupSteps.filter(s => s.done).length)
 const setupPercent = computed(() => Math.round((setupDone.value / setupSteps.length) * 100))
@@ -120,9 +132,9 @@ const setupPercent = computed(() => Math.round((setupDone.value / setupSteps.len
 // ── Learn Mekari ERP ────────────────────────────────────────────────────────
 interface LearnCard { tag: string; tone: 'blue' | 'neutral' | 'yellow'; title: string; desc: string; cta: string }
 const learn: LearnCard[] = [
-  { tag: 'Online training',  tone: 'blue',    title: 'Reporting & bookkeeping',    desc: 'Learn how to prepare and run the accounting process in Mekari ERP from start to finish.', cta: 'Sign up' },
-  { tag: 'Offline training', tone: 'neutral', title: 'Mekari ERP offline training', desc: 'Learn how to get started with Mekari ERP face to face with our product consultants.',      cta: 'Sign up' },
-  { tag: 'Tutorial video',   tone: 'yellow',  title: 'Demo: Mekari ERP',            desc: 'Watch a guided tutorial on how to get started with Mekari ERP.',                            cta: 'Watch video' },
+  { tag: t('Online training'),  tone: 'blue',    title: t('Reporting & bookkeeping'),    desc: t('Learn how to prepare and run the accounting process in Mekari ERP from start to finish.'), cta: t('Sign up') },
+  { tag: t('Offline training'), tone: 'neutral', title: t('Mekari ERP offline training'), desc: t('Learn how to get started with Mekari ERP face to face with our product consultants.'),      cta: t('Sign up') },
+  { tag: t('Tutorial video'),   tone: 'yellow',  title: t('Demo: Mekari ERP'),            desc: t('Watch a guided tutorial on how to get started with Mekari ERP.'),                            cta: t('Watch video') },
 ]
 </script>
 
@@ -134,8 +146,8 @@ const learn: LearnCard[] = [
       <div class="hero__inner">
         <p class="hero__date">{{ todayLabel }}</p>
         <div class="hero__greeting">
-          <h2 class="hero__line">Hello, {{ firstName }}</h2>
-          <h2 class="hero__line">What would you like to do today?</h2>
+          <h2 class="hero__line">{{ t('Hello') }}, {{ firstName }}</h2>
+          <h2 class="hero__line">{{ t('What would you like to do today?') }}</h2>
         </div>
 
         <SearchBox class="hero__search" @aimode="v => heroAi = v" />
@@ -148,7 +160,7 @@ const learn: LearnCard[] = [
             </button>
             <button class="chip" type="button" @click="manageActionsOpen = true">
               <MpIcon name="add" size="md" class="chip__icon" />
-              Actions
+              {{ t('Actions') }}
             </button>
           </div>
         </div>
@@ -158,7 +170,7 @@ const learn: LearnCard[] = [
     <div class="home__col">
       <!-- ── Tasks ──────────────────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">Tasks</h3>
+        <h3 class="sec__title">{{ t('Tasks') }}</h3>
 
         <!-- Anomaly alerts — a collapsed deck when there's more than one -->
         <div v-if="anomalies.length" class="anomaly-block">
@@ -178,8 +190,8 @@ const learn: LearnCard[] = [
               </div>
               <p class="anomaly__body">{{ a.body }}</p>
               <div class="anomaly__actions">
-                <button class="btn btn--ghost" type="button" @click="soon('Ignore')">Ignore</button>
-                <button class="btn btn--secondary" type="button" @click="soon('Review')">Review</button>
+                <button class="btn btn--ghost" type="button" @click="soon(t('Ignore'))">{{ t('Ignore') }}</button>
+                <button class="btn btn--secondary" type="button" @click="soon(t('Review'))">{{ t('Review') }}</button>
               </div>
             </div>
 
@@ -195,7 +207,7 @@ const learn: LearnCard[] = [
             @click="anomalyExpanded = !anomalyExpanded"
           >
             <MpIcon :name="anomalyExpanded ? 'caret-up' : 'caret-down'" size="sm" />
-            {{ anomalyExpanded ? 'Show less' : 'Show more' }}
+            {{ anomalyExpanded ? t('Show less') : t('Show more') }}
           </button>
         </div>
 
@@ -203,10 +215,10 @@ const learn: LearnCard[] = [
         <div class="card approvals">
           <div class="approvals__tabs">
             <button class="apptab apptab--active" type="button">
-              Awaiting approval <span class="apptab__count apptab__count--active">{{ approvals.length }}</span>
+              {{ t('Awaiting approval') }} <span class="apptab__count apptab__count--active">{{ approvals.length }}</span>
             </button>
-            <button class="apptab" type="button" @click="soon('Actions required')">
-              Actions required <span class="apptab__count">{{ actionsRequiredCount }}</span>
+            <button class="apptab" type="button" @click="soon(t('Actions required'))">
+              {{ t('Actions required') }} <span class="apptab__count">{{ actionsRequiredCount }}</span>
             </button>
           </div>
 
@@ -218,13 +230,13 @@ const learn: LearnCard[] = [
               <div class="appr__main">
                 <p class="appr__title">{{ a.title }}</p>
                 <p v-if="a.party" class="appr__party">{{ a.party }}</p>
-                <p class="appr__by">Requested by {{ a.by }}</p>
+                <p class="appr__by">{{ t('Requested by') }} {{ a.by }}</p>
               </div>
               <div class="appr__amount">
                 <p class="appr__amount-main">{{ a.amount }}</p>
                 <p v-if="a.amountSub" class="appr__amount-sub">{{ a.amountSub }}</p>
               </div>
-              <button class="btn btn--secondary btn--sm" type="button" @click.stop="approve(a)">Approve</button>
+              <button class="btn btn--secondary btn--sm" type="button" @click.stop="approve(a)">{{ t('Approve') }}</button>
               <button class="appr__kebab" type="button" @click.stop>
                 <MpIcon name="menu-kebab" size="md" />
               </button>
@@ -232,14 +244,14 @@ const learn: LearnCard[] = [
           </div>
 
           <button class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
-            View all awaiting approvals
+            {{ t('View all awaiting approvals') }}
           </button>
         </div>
       </section>
 
       <!-- ── What's new ─────────────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">What's new</h3>
+        <h3 class="sec__title">{{ t("What's new") }}</h3>
         <div class="whatsnew">
           <div class="whatsnew__track">
             <article v-for="n in news" :key="n.key" class="wn" :class="`wn--${n.key}`">
@@ -249,16 +261,16 @@ const learn: LearnCard[] = [
               </div>
               <img :src="n.art" alt="" class="wn__art">
               <div class="wn__foot">
-                <button class="wn__link" type="button" @click="soon('Learn more')">Learn more</button>
-                <button class="btn btn--secondary btn--sm" type="button" @click="soon('Try feature')">Try feature</button>
+                <button class="wn__link" type="button" @click="soon(t('Learn more'))">{{ t('Learn more') }}</button>
+                <button class="btn btn--secondary btn--sm" type="button" @click="soon(t('Try feature'))">{{ t('Try feature') }}</button>
               </div>
             </article>
           </div>
-          <button class="whatsnew__next" type="button" aria-label="Next" @click="soon('More updates')">
+          <button v-if="whatsNewHasPagination" class="whatsnew__next" type="button" :aria-label="t('Next')" @click="soon(t('More updates'))">
             <MpIcon name="chevrons-right" size="md" />
           </button>
         </div>
-        <div class="whatsnew__dots">
+        <div v-if="whatsNewHasPagination" class="whatsnew__dots">
           <span class="dot dot--active" />
           <span class="dot" />
           <span class="dot" />
@@ -268,12 +280,12 @@ const learn: LearnCard[] = [
       <!-- ── Set up Mekari ERP ──────────────────────────────────────────── -->
       <section class="sec">
         <div class="setup-head">
-          <h3 class="sec__title">Set up Mekari ERP</h3>
+          <h3 class="sec__title">{{ t('Set up Mekari ERP') }}</h3>
           <div class="setup-progress">
             <div class="setup-progress__bar"><div class="setup-progress__fill" :style="{ width: setupPercent + '%' }" /></div>
             <div class="setup-progress__meta">
               <span class="setup-progress__pct">{{ setupPercent }}%</span>
-              <span class="setup-progress__steps">{{ setupDone }} of {{ setupSteps.length }} steps completed</span>
+              <span class="setup-progress__steps">{{ setupDone }} {{ t('of') }} {{ setupSteps.length }} {{ t('steps completed') }}</span>
             </div>
           </div>
         </div>
@@ -286,7 +298,7 @@ const learn: LearnCard[] = [
               class="setup-step"
               :class="{ 'setup-step--active': i === 0 }"
               type="button"
-              @click="navigate('Company profile')"
+              @click="soon(s.label)"
             >
               <span class="setup-step__check" :class="{ 'setup-step__check--done': s.done }">
                 <MpIcon v-if="s.done" name="check" size="sm" />
@@ -300,13 +312,13 @@ const learn: LearnCard[] = [
 
           <div class="setup__detail">
             <div class="setup__copy">
-              <h4 class="setup__heading">Fill in important information<br>about your company</h4>
-              <p class="setup__sub">Organize company info to activate features like multi-currency, formats, and tax inclusive.</p>
+              <h4 class="setup__heading">{{ t('Fill in important information') }}<br>{{ t('about your company') }}</h4>
+              <p class="setup__sub">{{ t('Organize company info to activate features like multi-currency, formats, and tax inclusive.') }}</p>
               <div class="setup__actions">
-                <button class="btn btn--brand" type="button" @click="navigate('Company profile')">Set up now</button>
-                <button class="btn btn--secondary btn--icon" type="button" @click="soon('Watch video')">
+                <button class="btn btn--brand" type="button" @click="soon(t('Set up now'))">{{ t('Set up now') }}</button>
+                <button class="btn btn--secondary btn--icon" type="button" @click="soon(t('Watch video'))">
                   <MpIcon name="play-video" size="md" />
-                  Watch video
+                  {{ t('Watch video') }}
                 </button>
               </div>
             </div>
@@ -317,7 +329,7 @@ const learn: LearnCard[] = [
 
       <!-- ── Learn Mekari ERP ───────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">Learn Mekari ERP</h3>
+        <h3 class="sec__title">{{ t('Learn Mekari ERP') }}</h3>
         <div class="learn">
           <article v-for="l in learn" :key="l.title" class="card learn-card">
             <span class="learn-tag" :class="`learn-tag--${l.tone}`">{{ l.tag }}</span>
@@ -332,20 +344,20 @@ const learn: LearnCard[] = [
 
       <!-- ── Useful links ───────────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">Useful links</h3>
+        <h3 class="sec__title">{{ t('Useful links') }}</h3>
         <div class="useful">
           <button class="useful-link" type="button" @click="toggleAirene()">
             <MpIcon name="chat" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
-              <span class="useful-link__title">Live chat</span>
-              <span class="useful-link__desc">Chat with our customer support for any questions or inquiries.</span>
+              <span class="useful-link__title">{{ t('Live chat') }}</span>
+              <span class="useful-link__desc">{{ t('Chat with our customer support for any questions or inquiries.') }}</span>
             </span>
           </button>
-          <button class="useful-link" type="button" @click="soon('Help center')">
+          <button class="useful-link" type="button" @click="soon(t('Help center'))">
             <MpIcon name="book" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
-              <span class="useful-link__title">Help center</span>
-              <span class="useful-link__desc">Guidelines for all features in Mekari ERP.</span>
+              <span class="useful-link__title">{{ t('Help center') }}</span>
+              <span class="useful-link__desc">{{ t('Guidelines for all features in Mekari ERP.') }}</span>
             </span>
           </button>
         </div>
@@ -353,6 +365,26 @@ const learn: LearnCard[] = [
     </div>
 
     <HomeActionsDrawer v-model:isOpen="manageActionsOpen" />
+
+    <!-- ── Demo scenario FAB ── -->
+    <MpPopover id="home-demo-fab" is-close-on-select use-portal placement="top-end">
+      <MpPopoverTrigger>
+        <button class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+      </MpPopoverTrigger>
+      <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+        <p class="demo-fab-heading">{{ t('Scenarios') }}</p>
+        <MpPopoverList>
+          <MpPopoverListItem
+            v-for="s in whatsNewDemoStates"
+            :key="s.value"
+            :is-active="s.value === whatsNewDemoState"
+            @click="whatsNewDemoState = s.value"
+          >
+            {{ s.label }}
+          </MpPopoverListItem>
+        </MpPopoverList>
+      </MpPopoverContent>
+    </MpPopover>
   </div>
 </template>
 
@@ -362,6 +394,18 @@ const learn: LearnCard[] = [
   flex-direction: column;
   gap: var(--mp-spacing-10, 40px);
 }
+
+/* Demo FAB */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
+}
+.demo-fab:hover { opacity: 0.9; }
+.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Hero ─────────────────────────────────────────────────────────────────── */
 /* An inset rounded gradient block — the stage's own 24px side padding keeps the
@@ -650,6 +694,11 @@ const learn: LearnCard[] = [
   color: var(--mp-text-secondary, #3a4749);
 }
 .appr__main { flex: 1; min-width: 0; }
+/* Truncate with ellipsis when the row is tight — never let the text collapse to
+   one-character-per-line (min-width:0 flex child + long unbroken content). */
+.appr__title,
+.appr__party,
+.appr__by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .appr__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .appr__party { margin: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .appr__by { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -677,20 +726,23 @@ const learn: LearnCard[] = [
 .whatsnew { position: relative; }
 .whatsnew__track {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Reflow: keep a readable min card width and wrap to fewer columns when the
+     content area narrows (tablet/mobile) — never squish below 240px. */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .wn {
+  position: relative;
   height: 400px;
   border-radius: var(--mp-radii-xl, 12px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-.wn--green    { background: #edf9f2; }
-.wn--yellow   { background: #fdf6dd; }
-.wn--blue     { background: #eaf4fc; }
-.wn__head { padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
+.wn--green    { --wn-bg: #edf9f2; background: var(--wn-bg); }
+.wn--yellow   { --wn-bg: #FFF9EA; background: var(--wn-bg); }
+.wn--blue     { --wn-bg: #eaf4fc; background: var(--wn-bg); }
+.wn__head { position: relative; z-index: 1; padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
 .wn__title {
   margin: 0 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-lg);
@@ -704,15 +756,42 @@ const learn: LearnCard[] = [
   line-height: var(--mp-line-heights-md, 20px);
   color: var(--mp-text-secondary);
 }
-/* Fill the space between the head and the foot, showing the artwork's bottom edge
-   (object-position bottom) — so the cover stays bottom-aligned and the Learn more /
-   Try feature foot is never pushed out of the fixed-height card. */
-.wn__art { display: block; width: 100%; flex: 1 1 0; min-height: 0; object-fit: cover; object-position: center bottom; }
+/* Full card width, natural aspect ratio (the PNGs already carry their own
+   rounded-card + shadow look). Bottom-anchored via absolute positioning
+   (not a flex margin-top: auto) so it's always aligned center-bottom even
+   when an art asset is taller than the space below the head — any excess
+   height extends upward and is clipped by .wn's overflow: hidden, keeping
+   the bottom of the artwork (where the foot floats) always visible. */
+.wn__art {
+  display: block;
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  width: 100%;
+  height: auto;
+}
+/* Pinned to the card's bottom edge (absolute, out of flow — so it overlaps
+   the bottom of .wn__art rather than pushing below it), floating on top of
+   the art. A gradient in the card's own pastel color (::before) fades from
+   solid at the very bottom up to transparent over the art, so the buttons
+   read as sitting on the card background rather than directly on the artwork. */
 .wn__foot {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 1;
   padding: var(--mp-spacing-4) var(--mp-spacing-6) var(--mp-spacing-6);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: var(--mp-spacing-4);
+}
+.wn__foot::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  top: -40px;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--wn-bg) 0%, var(--wn-bg) 30%, transparent 100%);
 }
 .wn__link {
   background: none; border: none; cursor: pointer;
@@ -829,7 +908,7 @@ const learn: LearnCard[] = [
 /* ── Learn ────────────────────────────────────────────────────────────────── */
 .learn {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .learn-card {
@@ -866,7 +945,7 @@ const learn: LearnCard[] = [
 /* ── Useful links ─────────────────────────────────────────────────────────── */
 .useful {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .useful-link {
@@ -884,4 +963,67 @@ const learn: LearnCard[] = [
 .useful-link__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .useful-link__desc { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); max-width: 280px; }
 .useful-link:hover .useful-link__title { text-decoration: underline; }
+
+/* ── Responsive ───────────────────────────────────────────────────────────────
+   Cards/sections reflow (grids wrap via auto-fit above; splits stack here). Data
+   tables are NOT touched — they keep their own horizontal scroll so columns stay
+   full-width and readable (see ErpTablePage .erp-table-wrapper). */
+
+/* Tablet — the two-pane Set up card can't hold a 328px list + detail side by side */
+@media (max-width: 900px) {
+  .setup { flex-direction: column; }
+  .setup__list {
+    width: 100%;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  }
+}
+
+/* Mobile — tighten spacing, shrink the hero, stack the setup detail */
+@media (max-width: 600px) {
+  .home { gap: var(--mp-spacing-6); }
+
+  .hero { padding: var(--mp-spacing-4); }
+  .hero__line { font-size: var(--mp-font-sizes-xl); line-height: 28px; }
+
+  /* Quick shortcuts: compact so they pack horizontally and wrap (2–3 per row on
+     a phone) instead of stacking one-per-line. */
+  .chips { margin-top: var(--mp-spacing-4); }
+  .chips__row { gap: var(--mp-spacing-2); justify-content: center; }
+  .chip {
+    height: 32px;
+    padding: 0 var(--mp-spacing-3);
+    font-size: var(--mp-font-sizes-sm);
+    gap: var(--mp-spacing-1);
+  }
+  .chip__icon { width: 16px; height: 16px; }
+
+  .setup__detail {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mp-spacing-4);
+    padding: var(--mp-spacing-5);
+  }
+  .setup__illus { display: none; }
+  .setup__actions { flex-wrap: wrap; }
+
+  .setup-progress { width: 100%; }
+
+  /* Awaiting-approval is a list, not a table — stack each item vertically:
+     title (+ kebab pinned top-right), then party, requester, amount, Approve. */
+  .appr {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mp-spacing-1);
+    position: relative;
+    padding-right: var(--mp-spacing-10, 40px);   /* clear the top-right kebab */
+  }
+  .appr__thumb { display: none; }
+  .appr__main { width: 100%; }
+  .appr__amount { text-align: left; margin-left: 0; }
+  .appr__amount-main { font-weight: var(--mp-font-weights-semi-bold); }
+  .appr__kebab { position: absolute; top: var(--mp-spacing-3); right: var(--mp-spacing-4); }
+  .appr > .btn { align-self: flex-start; margin-top: var(--mp-spacing-2); }
+}
 </style>

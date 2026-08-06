@@ -965,6 +965,7 @@ function fmtNum(n: number | null): string {
             @click="resetPickedCount"
           >Reset count</button>
         </ScanBar>
+        <p v-if="isPutAway || isPicking" class="mbd-scan-caption">Scan the storage location first before scanning the batch number.</p>
 
         <template v-if="rows.length === 0 && !isInOut">
           <div class="mbd-empty">
@@ -1731,6 +1732,7 @@ function fmtNum(n: number | null): string {
   color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
 }
 .mbd-active-bin-clear:hover { opacity: 1; }
+.mbd-scan-caption { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-4) - 20px) 0 calc(var(--mp-spacing-4) - 20px); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 .mbd-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 
 /* White editable cells — focus ring via ::after (box-shadow: inset is painted

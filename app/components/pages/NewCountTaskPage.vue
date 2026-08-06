@@ -16,6 +16,7 @@ import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useLocale()
 
 // ── Warehouse + assignee ────────────────────────────────────────────────────────
 const realWarehouses = warehouses.filter(w => w.status === 'active' && !w.isDefault)
@@ -282,14 +283,14 @@ async function handleSave() {
   let lines: { sku: string; qty: number }[] = []
   if (hasStorageLocs.value) {
     if (!selectedLocations.value.length || !selectedLocations.value.some(l => l.rows.length)) {
-      formError.value = 'You must select at least one location with products to count'
+      formError.value = t('You must select at least one location with products to count')
       valid = false
     }
     for (const loc of selectedLocations.value) {
       for (const r of loc.rows) lines.push({ sku: r.sku, qty: 0 })
     }
   } else {
-    if (!flatSkus.value.length) { formError.value = 'You must add at least one product to count'; valid = false }
+    if (!flatSkus.value.length) { formError.value = t('You must add at least one product to count'); valid = false }
     // Counting happens later on the counting page — qty starts at 0.
     lines = flatSkus.value.map(sku => ({ sku, qty: 0 }))
   }
@@ -309,7 +310,7 @@ async function handleSave() {
     lines,
     assignee: assigneeLabel.value || undefined,
   })
-  toast.notify({ variant: 'success', title: 'Count task created', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Count task created'), maxWidth: 'max-content' })
   router.push(`/cycle-counts/${adj.id}`)
 }
 </script>
@@ -318,9 +319,9 @@ async function handleSave() {
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Cycle counts</button>
+        <button class="detail-breadcrumb" @click="goBack">{{ t('Cycle counts') }}</button>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">New count task</h1>
+          <h1 class="detail-title">{{ t('New count task') }}</h1>
         </div>
       </div>
     </header>
@@ -332,64 +333,64 @@ async function handleSave() {
         <div class="nct-form-grid">
           <MpFormControl id="nct-number" class="nct-f-number">
             <div class="nct-label-row">
-              <MpFormLabel>Number</MpFormLabel>
-              <span class="nct-label-icon" title="Auto-generated"><MpIcon name="settings" size="sm" /></span>
+              <MpFormLabel>{{ t('Number') }}</MpFormLabel>
+              <span class="nct-label-icon" :title="t('Auto-generated')"><MpIcon name="settings" size="sm" /></span>
             </div>
             <MpInput id="nct-number-input" model-value="" placeholder="[Auto]" is-full-width is-disabled />
           </MpFormControl>
 
           <MpFormControl id="nct-warehouse" class="nct-f-warehouse nct-f-row2" is-required :is-invalid="warehouseError">
-            <MpFormLabel>Warehouse</MpFormLabel>
+            <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
             <MpAutocomplete id="nct-warehouse-ac" v-model="warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width :is-invalid="warehouseError" @update:model-value="warehouseError = false" />
-            <MpFormErrorMessage>You must select warehouse</MpFormErrorMessage>
+            <MpFormErrorMessage>{{ t('You must select warehouse') }}</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="nct-assignee" class="nct-f-assignee nct-f-row2">
-            <MpFormLabel>Assignee</MpFormLabel>
-            <MpAutocomplete id="nct-assignee-ac" v-model="assigneeId" :data="assigneeOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width placeholder="Select assignee" />
+            <MpFormLabel>{{ t('Assignee') }}</MpFormLabel>
+            <MpAutocomplete id="nct-assignee-ac" v-model="assigneeId" :data="assigneeOptions" label-prop="name" value-prop="id" is-searchable use-portal is-full-width :placeholder="t('Select assignee')" />
           </MpFormControl>
         </div>
 
         <!-- Count task section -->
         <template v-if="hasStorageLocs">
           <div class="scf-countby">
-            <span class="scf-countby-label">Count by</span>
+            <span class="scf-countby-label">{{ t('Count by') }}</span>
             <div class="scf-countby-wrap">
               <div v-if="pendingCountBy" class="scf-countby-popover">
-                <p class="scf-countby-popover-text">Switching will clear all current entries.</p>
+                <p class="scf-countby-popover-text">{{ t('Switching will clear all current entries.') }}</p>
                 <div class="scf-countby-popover-btns">
-                  <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="cancelCountBySwitch">Cancel</button>
-                  <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmCountBySwitch">Switch</button>
+                  <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="cancelCountBySwitch">{{ t('Cancel') }}</button>
+                  <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmCountBySwitch">{{ t('Switch') }}</button>
                 </div>
                 <span class="scf-countby-popover-arrow" />
               </div>
               <div class="scf-countby-toggle">
-                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'location' }" type="button" @click="requestSwitchCountBy('location')">Location</button>
-                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'sku' }" type="button" @click="requestSwitchCountBy('sku')">SKU</button>
+                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'location' }" type="button" @click="requestSwitchCountBy('location')">{{ t('Location') }}</button>
+                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'sku' }" type="button" @click="requestSwitchCountBy('sku')">{{ t('SKU') }}</button>
               </div>
             </div>
           </div>
 
           <template v-if="countBy === 'location'">
             <div class="scf-loc-banner">
-              This warehouse uses storage locations. Select location before making adjustments
+              {{ t('This warehouse uses storage locations. Select location before making adjustments') }}
             </div>
             <div class="scf-loc-actions">
               <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="locationDrawerOpen = true">
                 <MpIcon name="add" size="sm" />
-                Select locations
+                {{ t('Select locations') }}
               </button>
             </div>
           </template>
 
           <template v-else>
             <div class="scf-loc-banner">
-              Select products to count. They'll be grouped by their storage location.
+              {{ t("Select products to count. They'll be grouped by their storage location.") }}
             </div>
             <div class="scf-loc-actions">
               <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="bySkuDrawerOpen = true">
                 <MpIcon name="add" size="sm" />
-                Select products
+                {{ t('Select products') }}
               </button>
             </div>
           </template>
@@ -397,8 +398,8 @@ async function handleSave() {
           <div v-for="loc in selectedLocations" :key="loc.locId" class="nct-loc-card">
             <div class="nct-loc-head">
               <span class="scf-acc-label">{{ loc.fullPath }}</span>
-              <span class="scf-acc-meta">SKU qty: {{ loc.rows.length }}</span>
-              <button class="scf-acc-remove" type="button" aria-label="Remove location" @click="removeLoc(loc.locId)">
+              <span class="scf-acc-meta">{{ t('SKU qty:') }} {{ loc.rows.length }}</span>
+              <button class="scf-acc-remove" type="button" :aria-label="t('Remove location')" @click="removeLoc(loc.locId)">
                 <MpIcon name="minus-circular" size="sm" />
               </button>
             </div>
@@ -415,10 +416,10 @@ async function handleSave() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <th class="scf-th">Product</th>
-                      <th class="scf-th">SKU</th>
-                      <th class="scf-th scf-th--num">On hand qty</th>
-                      <th class="scf-th">Unit</th>
+                      <th class="scf-th">{{ t('Product') }}</th>
+                      <th class="scf-th">{{ t('SKU') }}</th>
+                      <th class="scf-th scf-th--num">{{ t('On hand qty') }}</th>
+                      <th class="scf-th">{{ t('Unit') }}</th>
                       <th class="scf-th" />
                       <th class="scf-th scf-th--del" />
                     </tr>
@@ -447,7 +448,7 @@ async function handleSave() {
                 </table>
               </div>
               <button class="scf-add-btn" type="button" @click="loc.productDrawerOpen = true">
-                <MpIcon name="add" size="sm" /> Add product
+                <MpIcon name="add" size="sm" /> {{ t('Add product') }}
               </button>
 
               <SelectProductDrawer
@@ -467,7 +468,7 @@ async function handleSave() {
           <div class="scf-loc-actions">
             <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="flatDrawerOpen = true">
               <MpIcon name="add" size="sm" />
-              Select products
+              {{ t('Select products') }}
             </button>
           </div>
 
@@ -483,10 +484,10 @@ async function handleSave() {
               </colgroup>
               <thead>
                 <tr>
-                  <th class="scf-th">Product</th>
-                  <th class="scf-th">SKU</th>
-                  <th class="scf-th scf-th--num">On hand qty</th>
-                  <th class="scf-th">Unit</th>
+                  <th class="scf-th">{{ t('Product') }}</th>
+                  <th class="scf-th">{{ t('SKU') }}</th>
+                  <th class="scf-th scf-th--num">{{ t('On hand qty') }}</th>
+                  <th class="scf-th">{{ t('Unit') }}</th>
                   <th class="scf-th" />
                   <th class="scf-th scf-th--del" />
                 </tr>
@@ -520,22 +521,22 @@ async function handleSave() {
         <!-- Memo -->
         <div class="scf-section scf-section--gap-top">
           <MpFormControl id="nct-memo">
-            <MpFormLabel>Memo</MpFormLabel>
+            <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
             <MpTextarea id="nct-memo-textarea" v-model="memo" is-full-width :rows="4" />
           </MpFormControl>
-          <p class="scf-helper-text">Only visible to you and your team</p>
+          <p class="scf-helper-text">{{ t('Only visible to you and your team') }}</p>
         </div>
 
         <!-- Attachment -->
         <div class="scf-section scf-section--last">
-          <div class="scf-section-label">Attachment</div>
+          <div class="scf-section-label">{{ t('Attachment') }}</div>
           <div class="scf-attachment">
             <input ref="fileInput" type="file" multiple accept=".xls,.xlsx,.doc,.docx,.pdf,.jpg,.jpeg,.png,.zip" class="scf-file-hidden" @change="onFileChange" />
             <div class="scf-attachment-row">
-              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">Choose file</MpButton>
-              <span class="scf-attach-or">or drag and drop here</span>
+              <MpButton variant="secondary" size="sm" is-rounded @click="fileInput?.click()">{{ t('Choose file') }}</MpButton>
+              <span class="scf-attach-or">{{ t('or drag and drop here') }}</span>
             </div>
-            <p class="scf-helper-text">File must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction</p>
+            <p class="scf-helper-text">{{ t('File must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB and 5 files per transaction') }}</p>
             <ul v-if="attachedFiles.length" class="scf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="scf-file-item">
                 <span class="scf-file-name">{{ f.name }}</span>
@@ -549,8 +550,8 @@ async function handleSave() {
     </div>
 
     <footer class="detail-footer">
-      <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">Cancel</button>
-      <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+      <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
+      <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="handleSave">{{ isSaving ? t('Saving…') : t('Save') }}</button>
     </footer>
 
     <SelectProductDrawer v-model:open="bySkuDrawerOpen" :products="pickerProducts" :model-value="bySkuSelected" @save="applySkuPicker" />
@@ -559,14 +560,14 @@ async function handleSave() {
     <!-- Select locations drawer -->
     <Transition name="scf-loc">
       <div v-if="locationDrawerOpen" class="loc-spd-overlay" @click.self="locationDrawerOpen = false">
-        <div class="loc-spd-panel" role="dialog" aria-label="Select locations">
+        <div class="loc-spd-panel" role="dialog" :aria-label="t('Select locations')">
           <div class="loc-spd-header">
-            <span class="loc-spd-title">Select locations</span>
+            <span class="loc-spd-title">{{ t('Select locations') }}</span>
             <button class="loc-spd-close" type="button" @click="locationDrawerOpen = false"><MpIcon name="close" size="sm" /></button>
           </div>
           <div class="loc-spd-search-wrap">
-            <input v-model="locDrawerSearch" class="loc-spd-search-input" type="text" placeholder="Search..." />
-            <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" aria-label="Clear search" @click="locDrawerSearch = ''">
+            <input v-model="locDrawerSearch" class="loc-spd-search-input" type="text" :placeholder="t('Search...')" />
+            <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="locDrawerSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -599,12 +600,12 @@ async function handleSave() {
                 <span class="loc-drawer-name" @click="toggleLocDrawerSel(node.id)">{{ locDrawerSearch.trim() ? node.fullPath : node.name }}</span>
               </div>
             </template>
-            <div v-if="!locDrawerItems.length" class="loc-drawer-empty">No storage locations found</div>
+            <div v-if="!locDrawerItems.length" class="loc-drawer-empty">{{ t('No storage locations found') }}</div>
           </div>
           <div class="loc-spd-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="locationDrawerOpen = false">Cancel</button>
+            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="locationDrawerOpen = false">{{ t('Cancel') }}</button>
             <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmLocSelection">
-              Select ({{ locDrawerSel.size }})
+              {{ t('Select') }} ({{ locDrawerSel.size }})
             </button>
           </div>
         </div>

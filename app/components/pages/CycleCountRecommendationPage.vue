@@ -15,6 +15,7 @@ import { MIN_STOCK_LIMIT, hashStr, recommendationReasons, type Reason } from '~/
 import { formatDate } from '~/utils/date'
 
 const router = useRouter()
+const { t } = useLocale()
 
 // ─── First-load skeleton (matches Count task / Awaiting approval tabs) ────────────
 const loading = ref(true)
@@ -156,7 +157,7 @@ function createCycleCount(sel: Set<number>, deselectAll: () => void) {
   // of silently picking one (buttons stay clickable; show an error toast per convention).
   const warehouseIds = new Set(rows.map(r => r.warehouseId))
   if (warehouseIds.size > 1) {
-    toast.notify({ variant: 'error', title: 'Select SKUs from a single warehouse to create a cycle count', maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('Select SKUs from a single warehouse to create a cycle count'), maxWidth: 'max-content' })
     return
   }
   const skus = rows.map(r => r.sku)
@@ -198,8 +199,8 @@ function createCountTaskForRow(row: Recommendation) {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
-          <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search product or SKU')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
@@ -214,7 +215,7 @@ function createCountTaskForRow(row: Recommendation) {
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         @click="createCycleCount(selectedRows as Set<number>, deselectAll)"
       >
-        Create cycle count
+        {{ t('Create cycle count') }}
       </button>
     </template>
 
@@ -222,7 +223,7 @@ function createCountTaskForRow(row: Recommendation) {
     <template #actions="{ row }">
       <MpPopover :id="`ccr-actions-${(row as any).warehouseId}-${(row as any).sku}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" aria-label="More actions">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -230,8 +231,8 @@ function createCountTaskForRow(row: Recommendation) {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewProduct((row as any).sku)">View details</MpPopoverListItem>
-            <MpPopoverListItem @click="createCountTaskForRow(row as unknown as Recommendation)">Create count task</MpPopoverListItem>
+            <MpPopoverListItem @click="viewProduct((row as any).sku)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="createCountTaskForRow(row as unknown as Recommendation)">{{ t('Create count task') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -259,7 +260,7 @@ function createCountTaskForRow(row: Recommendation) {
     <template #cell-onHand="{ row }">
       <div class="ccr-onhand">
         <span class="ccr-onhand-value">{{ (row as any).onHand.toLocaleString('id-ID') }} {{ (row as any).unit }}</span>
-        <span class="ccr-onhand-min">Min. {{ (row as any).minStock.toLocaleString('id-ID') }} {{ (row as any).unit }}</span>
+        <span class="ccr-onhand-min">{{ t('Min.') }} {{ (row as any).minStock.toLocaleString('id-ID') }} {{ (row as any).unit }}</span>
       </div>
     </template>
 
@@ -285,12 +286,12 @@ function createCountTaskForRow(row: Recommendation) {
       <div class="empty-full">
         <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">
-          {{ !anyRecEnabled ? 'Recommendations not set up' : 'No recommendations' }}
+          {{ !anyRecEnabled ? t('Recommendations not set up') : t('No recommendations') }}
         </p>
         <p class="empty-full-desc">
           {{ !anyRecEnabled
-            ? 'Turn on cycle count recommendations in Configure warehouse to see which SKUs need counting.'
-            : 'All SKUs are within their target stock levels.' }}
+            ? t('Turn on cycle count recommendations in Configure warehouse to see which SKUs need counting.')
+            : t('All SKUs are within their target stock levels.') }}
         </p>
       </div>
     </template>

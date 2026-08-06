@@ -9,6 +9,8 @@ import {
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
 import shortcutIcon from '~/assets/images/shortcut-icon.svg?url'
 
+const { t } = useLocale()
+
 // Which section is currently being edited (only one at a time). Company info is
 // synced from the Mekari account, so it is never editable.
 type EditSection = null | 'tax' | 'payment' | 'advanced'
@@ -44,11 +46,11 @@ const advanced = reactive({
 })
 
 const AMOUNT_DISPLAY_OPTIONS = [
-  { value: 'full-decimals', label: 'Full number (with decimals)' },
-  { value: 'full', label: 'Full number' },
-  { value: 'abbreviated', label: 'Abbreviated (e.g. Rp2 jt)' },
+  { value: 'full-decimals', label: t('Full number (with decimals)') },
+  { value: 'full', label: t('Full number') },
+  { value: 'abbreviated', label: t('Abbreviated (e.g. Rp2 jt)') },
 ]
-const CURRENCY_OPTIONS = [{ value: 'idr', label: 'Indonesian Rupiah (Rp)' }]
+const CURRENCY_OPTIONS = [{ value: 'idr', label: t('Indonesian Rupiah (Rp)') }]
 const amountDisplayLabel = computed(
   () => AMOUNT_DISPLAY_OPTIONS.find((o) => o.value === advanced.amountDisplay)?.label ?? '—',
 )
@@ -85,7 +87,7 @@ function clearTaxErr(field: string) { if (errTax[field]) delete errTax[field] }
 function clearPayErr(field: string) { if (errPayment[field]) delete errPayment[field] }
 
 // UXW copy library — inline error messages.
-const req = (label: string) => `You must fill in ${label}`
+const req = (label: string) => `${t('You must fill in')} ${label}`
 
 // ─── Tax form ───────────────────────────────────────────────────────────────
 function validateTax(): boolean {
@@ -97,25 +99,25 @@ function saveTax() {
   if (!validateTax()) return
   Object.assign(tax, draftTax)
   editing.value = null
-  toast.notify({ variant: 'success', title: 'Changes saved', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
 }
 function validateField(name: string) {
-  toast.notify({ variant: 'success', title: `${name} validated`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${name} ${t('validated')}`, maxWidth: 'max-content' })
 }
 
 // ─── Payment form ─────────────────────────────────────────────────────────────
 function validatePayment(): boolean {
   clearErrors()
-  if (!draftPayment.bankName.trim()) errPayment.bankName = req('bank name')
-  if (!draftPayment.accountNo.trim()) errPayment.accountNo = req('account number')
-  if (!draftPayment.accountName.trim()) errPayment.accountName = req('account name')
+  if (!draftPayment.bankName.trim()) errPayment.bankName = req(t('bank name'))
+  if (!draftPayment.accountNo.trim()) errPayment.accountNo = req(t('account number'))
+  if (!draftPayment.accountName.trim()) errPayment.accountName = req(t('account name'))
   return Object.keys(errPayment).length === 0
 }
 function savePayment() {
   if (!validatePayment()) return
   Object.assign(payment, draftPayment)
   editing.value = null
-  toast.notify({ variant: 'success', title: 'Changes saved', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
 }
 
 // ─── Advanced form + multi-currency modal ──────────────────────────────────────
@@ -135,7 +137,7 @@ function activateMultiCurrency() {
   draftAdvanced.multiCurrency = true
   draftAdvanced.baseCurrency = mcBaseCurrency.value
   mcModalOpen.value = false
-  toast.notify({ variant: 'success', title: 'Multi-currency activation scheduled', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Multi-currency activation scheduled'), maxWidth: 'max-content' })
 }
 function cancelMultiCurrency() {
   draftAdvanced.multiCurrency = false
@@ -147,16 +149,16 @@ function setAdvancedToggle(key: string, v: boolean) {
 function saveAdvanced() {
   Object.assign(advanced, draftAdvanced)
   editing.value = null
-  toast.notify({ variant: 'success', title: 'Changes saved', maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Company profile changes saved'), maxWidth: 'max-content' })
 }
 
 const ADVANCED_TOGGLES = [
-  { key: 'transactionApproval', title: 'Transaction approval', desc: 'Transactions require approval before they are processed.' },
-  { key: 'multipleWithholdingTax', title: 'Multiple withholding tax', desc: 'Multiple withholding tax lines can be added per transaction.' },
-  { key: 'companyPerformanceSummary', title: 'Company performance summary', desc: 'A weekly performance summary will be sent to your email.' },
-  { key: 'taxInclusive', title: 'Tax inclusive', desc: 'Include tax (PPN) in transaction prices by default.' },
-  { key: 'transactionLog', title: 'Transaction log', desc: 'A detailed audit trail is recorded for user activities.' },
-  { key: 'multiCurrency', title: 'Multi-currency', desc: 'Transactions can be made in foreign currencies.' },
+  { key: 'transactionApproval', title: t('Transaction approval'), desc: t('Transactions require approval before they are processed.') },
+  { key: 'multipleWithholdingTax', title: t('Multiple withholding tax'), desc: t('Multiple withholding tax lines can be added per transaction.') },
+  { key: 'companyPerformanceSummary', title: t('Company performance summary'), desc: t('A weekly performance summary will be sent to your email.') },
+  { key: 'taxInclusive', title: t('Tax inclusive'), desc: t('Include tax (PPN) in transaction prices by default.') },
+  { key: 'transactionLog', title: t('Transaction log'), desc: t('A detailed audit trail is recorded for user activities.') },
+  { key: 'multiCurrency', title: t('Multi-currency'), desc: t('Transactions can be made in foreign currencies.') },
 ] as const
 </script>
 
@@ -167,26 +169,26 @@ const ADVANCED_TOGGLES = [
     <section class="cp-section">
       <div class="cp-section-header">
         <div class="cp-section-meta">
-          <h2 class="cp-section-title">Company info</h2>
-          <p class="cp-section-desc">Synced from your Mekari account and used for invoices.</p>
+          <h2 class="cp-section-title">{{ t('Company info') }}</h2>
+          <p class="cp-section-desc">{{ t('Synced from your Mekari account and used for invoices.') }}</p>
         </div>
         <button
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after"
-          title="Edit in your Mekari account (opens in a new tab)"
+          :title="t('Edit in your Mekari account (opens in a new tab)')"
           @click="openCompanyInfoSource"
         >
-          Edit
+          {{ t('Edit') }}
           <img :src="shortcutIcon" class="cp-shortcut-icon" alt="" />
         </button>
       </div>
 
       <div class="cp-grid">
         <div class="cp-field">
-          <span class="cp-label">Company name</span>
+          <span class="cp-label">{{ t('Company name') }}</span>
           <span class="cp-value">PT Central Perk Indonesia</span>
         </div>
         <div class="cp-field">
-          <span class="cp-label">Company address</span>
+          <span class="cp-label">{{ t('Company address') }}</span>
           <span class="cp-value">
             MidPlaza 2 Lantai 4<br>
             Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,<br>
@@ -194,34 +196,34 @@ const ADVANCED_TOGGLES = [
           </span>
         </div>
         <div class="cp-field">
-          <span class="cp-label">Email</span>
+          <span class="cp-label">{{ t('Email') }}</span>
           <span class="cp-value">rizal.candra@centralperk.co.id</span>
         </div>
         <div class="cp-field">
-          <span class="cp-label">Phone</span>
+          <span class="cp-label">{{ t('Phone') }}</span>
           <span class="cp-value">+628129209988</span>
         </div>
         <div class="cp-field">
-          <span class="cp-label">Account owner</span>
+          <span class="cp-label">{{ t('Account owner') }}</span>
           <span class="cp-value">
             Rizal Candra<br>
             <span class="cp-value-subtle">rizal.candra@centralperk.co.id</span>
           </span>
         </div>
         <div class="cp-field">
-          <span class="cp-label">Company ID</span>
+          <span class="cp-label">{{ t('Company ID') }}</span>
           <span class="cp-value">676424</span>
         </div>
       </div>
 
       <div class="cp-field cp-field--logo">
-        <span class="cp-label">Company logo</span>
+        <span class="cp-label">{{ t('Company logo') }}</span>
         <img :src="centralPerkLogo" alt="Central Perk" class="cp-logo-img" />
       </div>
 
       <div class="cp-grid cp-grid--spaced">
         <div class="cp-field">
-          <span class="cp-label">Shipping address</span>
+          <span class="cp-label">{{ t('Shipping address') }}</span>
           <span class="cp-value">
             MidPlaza 2 Lantai 4<br>
             Jl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,<br>
@@ -229,11 +231,11 @@ const ADVANCED_TOGGLES = [
           </span>
         </div>
         <div class="cp-field">
-          <span class="cp-label">Fax</span>
+          <span class="cp-label">{{ t('Fax') }}</span>
           <span class="cp-value">+62215559999</span>
         </div>
         <div class="cp-field">
-          <span class="cp-label">Website</span>
+          <span class="cp-label">{{ t('Website') }}</span>
           <a href="https://centralperk.co.id" class="cp-link" target="_blank" rel="noopener">https://centralperk.co.id</a>
         </div>
       </div>
@@ -245,8 +247,8 @@ const ADVANCED_TOGGLES = [
     <section class="cp-section">
       <div class="cp-section-header">
         <div class="cp-section-meta">
-          <h2 class="cp-section-title">{{ editing === 'tax' ? 'Edit tax info' : 'Tax info' }}</h2>
-          <p class="cp-section-desc">This information appears on invoices and tax documents.</p>
+          <h2 class="cp-section-title">{{ editing === 'tax' ? t('Edit tax info') : t('Tax info') }}</h2>
+          <p class="cp-section-desc">{{ t('This information appears on invoices and tax documents.') }}</p>
         </div>
         <button
           v-if="editing !== 'tax'"
@@ -254,20 +256,20 @@ const ADVANCED_TOGGLES = [
           @click="startEdit('tax')"
         >
           <MpIcon name="edit" size="sm" />
-          Edit
+          {{ t('Edit') }}
         </button>
       </div>
 
       <!-- Read mode -->
       <template v-if="editing !== 'tax'">
         <div class="cp-subhead">
-          <span class="cp-subhead-title">Tax identity</span>
-          <MpBadge for="tableStatus" type="completed" size="sm">Validated</MpBadge>
+          <span class="cp-subhead-title">{{ t('Tax identity') }}</span>
+          <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge>
         </div>
-        <p class="cp-subhead-desc">NPWP details</p>
+        <p class="cp-subhead-desc">{{ t('NPWP details') }}</p>
         <div class="cp-grid">
           <div class="cp-field">
-            <span class="cp-label">NPWP <MpBadge for="tableStatus" type="announcement" size="sm">Not validated</MpBadge></span>
+            <span class="cp-label">NPWP <MpBadge for="tableStatus" type="announcement" size="sm">{{ t('Not validated') }}</MpBadge></span>
             <span class="cp-value">{{ tax.npwp }}</span>
           </div>
           <div class="cp-field">
@@ -276,16 +278,16 @@ const ADVANCED_TOGGLES = [
           </div>
         </div>
         <div class="cp-subhead cp-subhead--spaced">
-          <span class="cp-subhead-title">Coretax info</span>
+          <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
         </div>
-        <p class="cp-subhead-desc">Enter Coretax information to validate your e-faktur.</p>
+        <p class="cp-subhead-desc">{{ t('Enter Coretax information to validate your e-faktur.') }}</p>
         <div class="cp-grid">
           <div class="cp-field">
-            <span class="cp-label">NPWP signee <MpBadge for="tableStatus" type="completed" size="sm">Validated</MpBadge></span>
+            <span class="cp-label">{{ t('NPWP signee') }} <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge></span>
             <span class="cp-value">{{ tax.signeeNpwp }}<br><span class="cp-value-subtle">{{ tax.signee }}</span></span>
           </div>
           <div class="cp-field">
-            <span class="cp-label">NPWP PIC <MpBadge for="tableStatus" type="completed" size="sm">Validated</MpBadge></span>
+            <span class="cp-label">{{ t('NPWP PIC') }} <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge></span>
             <span class="cp-value">{{ tax.picNpwp }}<br><span class="cp-value-subtle">{{ tax.pic }}</span></span>
           </div>
         </div>
@@ -295,28 +297,28 @@ const ADVANCED_TOGGLES = [
       <template v-else>
         <div class="cp-form">
           <div class="cp-field-group">
-            <span class="cp-form-label">Company type</span>
+            <span class="cp-form-label">{{ t('Company type') }}</span>
             <label class="cp-radio">
               <MpRadio id="cp-type-nonpkp" name="cp-company-type" value="non-pkp" :is-checked="draftTax.companyType === 'non-pkp'" @change="draftTax.companyType = 'non-pkp'" />
               <span class="cp-radio-text">
-                <span class="cp-radio-title">Non-PKP (Not VAT-registered)</span>
-                <span class="cp-radio-desc">Your business has not registered for VAT.</span>
+                <span class="cp-radio-title">{{ t('Non-PKP (Not VAT-registered)') }}</span>
+                <span class="cp-radio-desc">{{ t('Your business has not registered for VAT.') }}</span>
               </span>
             </label>
             <label class="cp-radio">
               <MpRadio id="cp-type-pkp" name="cp-company-type" value="pkp" :is-checked="draftTax.companyType === 'pkp'" @change="draftTax.companyType = 'pkp'" />
               <span class="cp-radio-text">
-                <span class="cp-radio-title">PKP (VAT-registered)</span>
-                <span class="cp-radio-desc">Your business collects and reports VAT.</span>
+                <span class="cp-radio-title">{{ t('PKP (VAT-registered)') }}</span>
+                <span class="cp-radio-desc">{{ t('Your business collects and reports VAT.') }}</span>
               </span>
             </label>
           </div>
 
           <div class="cp-subhead cp-subhead--spaced">
-            <span class="cp-subhead-title">Tax identity</span>
-            <MpBadge for="tableStatus" type="completed" size="sm">Validated</MpBadge>
+            <span class="cp-subhead-title">{{ t('Tax identity') }}</span>
+            <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge>
           </div>
-          <p class="cp-subhead-desc">Enter your NPWP and business location number (NITKU) to validate e-invoicing.</p>
+          <p class="cp-subhead-desc">{{ t('Enter your NPWP and business location number (NITKU) to validate e-invoicing.') }}</p>
           <div class="cp-validate-row">
             <MpFormControl id="cp-npwp" :is-invalid="!!errTax.npwp" class="cp-vf">
               <div class="cp-label-row">
@@ -333,40 +335,40 @@ const ADVANCED_TOGGLES = [
               </div>
               <MpInput id="cp-nitku-input" v-model="draftTax.nitku" is-full-width />
             </MpFormControl>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn" @click="validateField('NPWP')">Validate</button>
+            <button type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn" @click="validateField('NPWP')">{{ t('Validate') }}</button>
           </div>
 
           <div class="cp-subhead cp-subhead--spaced">
-            <span class="cp-subhead-title">Coretax info</span>
-            <MpBadge for="tableStatus" type="completed" size="sm">Validated</MpBadge>
+            <span class="cp-subhead-title">{{ t('Coretax info') }}</span>
+            <MpBadge for="tableStatus" type="completed" size="sm">{{ t('Validated') }}</MpBadge>
           </div>
-          <p class="cp-subhead-desc">Authorized person details for tax filing, pulled from your tax identity.</p>
+          <p class="cp-subhead-desc">{{ t('Authorized person details for tax filing, pulled from your tax identity.') }}</p>
           <div class="cp-validate-row">
             <MpFormControl id="cp-signee-npwp" class="cp-vf">
-              <MpFormLabel>NPWP signee</MpFormLabel>
+              <MpFormLabel>{{ t('NPWP signee') }}</MpFormLabel>
               <MpInput id="cp-signee-npwp-input" v-model="draftTax.signeeNpwp" is-full-width />
             </MpFormControl>
             <MpFormControl id="cp-signee" class="cp-vf">
-              <MpFormLabel>Signee</MpFormLabel>
+              <MpFormLabel>{{ t('Signee') }}</MpFormLabel>
               <MpInput id="cp-signee-input" v-model="draftTax.signee" is-full-width />
             </MpFormControl>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn" @click="validateField('Signee')">Validate</button>
+            <button type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn" @click="validateField('Signee')">{{ t('Validate') }}</button>
           </div>
           <div class="cp-validate-row">
             <MpFormControl id="cp-pic-npwp" class="cp-vf">
-              <MpFormLabel>NPWP PIC</MpFormLabel>
+              <MpFormLabel>{{ t('NPWP PIC') }}</MpFormLabel>
               <MpInput id="cp-pic-npwp-input" v-model="draftTax.picNpwp" is-full-width />
             </MpFormControl>
             <MpFormControl id="cp-pic" class="cp-vf">
-              <MpFormLabel>PIC</MpFormLabel>
+              <MpFormLabel>{{ t('PIC') }}</MpFormLabel>
               <MpInput id="cp-pic-input" v-model="draftTax.pic" is-full-width />
             </MpFormControl>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn" @click="validateField('PIC')">Validate</button>
+            <button type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn" @click="validateField('PIC')">{{ t('Validate') }}</button>
           </div>
 
           <div class="cp-action-bar">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">Cancel</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="saveTax">Save changes</button>
+            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</button>
+            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="saveTax">{{ t('Save changes') }}</button>
           </div>
         </div>
       </template>
@@ -378,8 +380,8 @@ const ADVANCED_TOGGLES = [
     <section class="cp-section">
       <div class="cp-section-header">
         <div class="cp-section-meta">
-          <h2 class="cp-section-title">{{ editing === 'payment' ? 'Edit payment info' : 'Payment info' }}</h2>
-          <p class="cp-section-desc">Bank details appear on sales invoices.</p>
+          <h2 class="cp-section-title">{{ editing === 'payment' ? t('Edit payment info') : t('Payment info') }}</h2>
+          <p class="cp-section-desc">{{ t('Bank details appear on sales invoices.') }}</p>
         </div>
         <button
           v-if="editing !== 'payment'"
@@ -387,56 +389,56 @@ const ADVANCED_TOGGLES = [
           @click="startEdit('payment')"
         >
           <MpIcon name="edit" size="sm" />
-          Edit
+          {{ t('Edit') }}
         </button>
       </div>
 
       <!-- Read mode -->
       <div v-if="editing !== 'payment'" class="cp-grid">
-        <div class="cp-field"><span class="cp-label">Bank name</span><span class="cp-value">{{ payment.bankName || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">Branch</span><span class="cp-value">{{ payment.branch || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">Branch address</span><span class="cp-value">{{ payment.branchAddress || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">Account no.</span><span class="cp-value">{{ payment.accountNo || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">Account name</span><span class="cp-value">{{ payment.accountName || '—' }}</span></div>
-        <div class="cp-field"><span class="cp-label">SWIFT code</span><span class="cp-value">{{ payment.swift || '—' }}</span></div>
+        <div class="cp-field"><span class="cp-label">{{ t('Bank name') }}</span><span class="cp-value">{{ payment.bankName || '—' }}</span></div>
+        <div class="cp-field"><span class="cp-label">{{ t('Branch') }}</span><span class="cp-value">{{ payment.branch || '—' }}</span></div>
+        <div class="cp-field"><span class="cp-label">{{ t('Branch address') }}</span><span class="cp-value">{{ payment.branchAddress || '—' }}</span></div>
+        <div class="cp-field"><span class="cp-label">{{ t('Account no.') }}</span><span class="cp-value">{{ payment.accountNo || '—' }}</span></div>
+        <div class="cp-field"><span class="cp-label">{{ t('Account name') }}</span><span class="cp-value">{{ payment.accountName || '—' }}</span></div>
+        <div class="cp-field"><span class="cp-label">{{ t('SWIFT code') }}</span><span class="cp-value">{{ payment.swift || '—' }}</span></div>
       </div>
 
       <!-- Edit mode -->
       <div v-else class="cp-form">
         <MpFormControl id="cp-bank-name" :is-invalid="!!errPayment.bankName">
-          <MpFormLabel>Bank name</MpFormLabel>
+          <MpFormLabel>{{ t('Bank name') }}</MpFormLabel>
           <MpInput id="cp-bank-name-input" v-model="draftPayment.bankName" is-full-width @update:model-value="clearPayErr('bankName')" />
           <MpFormErrorMessage>{{ errPayment.bankName }}</MpFormErrorMessage>
         </MpFormControl>
         <div class="cp-form-grid">
           <MpFormControl id="cp-branch">
-            <MpFormLabel>Branch</MpFormLabel>
+            <MpFormLabel>{{ t('Branch') }}</MpFormLabel>
             <MpInput id="cp-branch-input" v-model="draftPayment.branch" is-full-width />
           </MpFormControl>
           <MpFormControl id="cp-branch-addr">
-            <MpFormLabel>Branch address</MpFormLabel>
+            <MpFormLabel>{{ t('Branch address') }}</MpFormLabel>
             <MpInput id="cp-branch-addr-input" v-model="draftPayment.branchAddress" is-full-width />
           </MpFormControl>
           <MpFormControl id="cp-account-no" :is-invalid="!!errPayment.accountNo">
-            <MpFormLabel>Account no.</MpFormLabel>
+            <MpFormLabel>{{ t('Account no.') }}</MpFormLabel>
             <MpInput id="cp-account-no-input" v-model="draftPayment.accountNo" is-full-width @update:model-value="clearPayErr('accountNo')" />
             <MpFormErrorMessage>{{ errPayment.accountNo }}</MpFormErrorMessage>
           </MpFormControl>
           <MpFormControl id="cp-account-name" :is-invalid="!!errPayment.accountName">
-            <MpFormLabel>Account name</MpFormLabel>
+            <MpFormLabel>{{ t('Account name') }}</MpFormLabel>
             <MpInput id="cp-account-name-input" v-model="draftPayment.accountName" is-full-width @update:model-value="clearPayErr('accountName')" />
             <MpFormErrorMessage>{{ errPayment.accountName }}</MpFormErrorMessage>
           </MpFormControl>
         </div>
         <div class="cp-form-grid">
           <MpFormControl id="cp-swift">
-            <MpFormLabel>SWIFT code</MpFormLabel>
+            <MpFormLabel>{{ t('SWIFT code') }}</MpFormLabel>
             <MpInput id="cp-swift-input" v-model="draftPayment.swift" is-full-width />
           </MpFormControl>
         </div>
         <div class="cp-action-bar">
-          <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">Cancel</button>
-          <button type="button" class="btn-enterprise btn-enterprise--primary" @click="savePayment">Save changes</button>
+          <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</button>
+          <button type="button" class="btn-enterprise btn-enterprise--primary" @click="savePayment">{{ t('Save changes') }}</button>
         </div>
       </div>
     </section>
@@ -447,8 +449,8 @@ const ADVANCED_TOGGLES = [
     <section class="cp-section">
       <div class="cp-section-header">
         <div class="cp-section-meta">
-          <h2 class="cp-section-title">{{ editing === 'advanced' ? 'Edit advanced settings' : 'Advanced settings' }}</h2>
-          <p class="cp-section-desc">System-wide settings for transactions, approvals, and currencies.</p>
+          <h2 class="cp-section-title">{{ editing === 'advanced' ? t('Edit advanced settings') : t('Advanced settings') }}</h2>
+          <p class="cp-section-desc">{{ t('System-wide settings for transactions, approvals, and currencies.') }}</p>
         </div>
         <button
           v-if="editing !== 'advanced'"
@@ -456,62 +458,62 @@ const ADVANCED_TOGGLES = [
           @click="startEdit('advanced')"
         >
           <MpIcon name="edit" size="sm" />
-          Edit
+          {{ t('Edit') }}
         </button>
       </div>
 
       <div class="cp-toggles">
-        <div v-for="t in ADVANCED_TOGGLES" :key="t.key" class="cp-toggle-row">
+        <div v-for="toggle in ADVANCED_TOGGLES" :key="toggle.key" class="cp-toggle-row">
           <div class="cp-toggle-info">
-            <span class="cp-toggle-title">{{ t.title }}</span>
-            <span class="cp-toggle-desc">{{ t.desc }}</span>
+            <span class="cp-toggle-title">{{ toggle.title }}</span>
+            <span class="cp-toggle-desc">{{ toggle.desc }}</span>
           </div>
           <MpToggle
             v-if="editing !== 'advanced'"
-            :is-checked="advanced[t.key] as boolean"
+            :is-checked="advanced[toggle.key] as boolean"
             :is-disabled="true"
-            :aria-label="t.title"
+            :aria-label="toggle.title"
           />
           <MpToggle
-            v-else-if="t.key === 'multiCurrency'"
+            v-else-if="toggle.key === 'multiCurrency'"
             :is-checked="draftAdvanced.multiCurrency"
-            :aria-label="t.title"
+            :aria-label="toggle.title"
             @update:is-checked="onMultiCurrencyToggle"
           />
           <MpToggle
             v-else
-            :is-checked="draftAdvanced[t.key] as boolean"
-            :aria-label="t.title"
-            @update:is-checked="(v: boolean) => setAdvancedToggle(t.key, v)"
+            :is-checked="draftAdvanced[toggle.key] as boolean"
+            :aria-label="toggle.title"
+            @update:is-checked="(v: boolean) => setAdvancedToggle(toggle.key, v)"
           />
         </div>
       </div>
 
       <!-- Read mode: currency info as text -->
       <div v-if="editing !== 'advanced'" class="cp-currency-info">
-        <span class="cp-value">Base currency: Indonesian Rupiah (Rp)</span>
-        <span class="cp-value">Amount display: {{ amountDisplayLabel }}, e.g. Rp2.000.000,00</span>
+        <span class="cp-value">{{ t('Base currency:') }} {{ t('Indonesian Rupiah (Rp)') }}</span>
+        <span class="cp-value">{{ t('Amount display:') }} {{ amountDisplayLabel }}, {{ t('e.g. Rp2.000.000,00') }}</span>
       </div>
 
       <!-- Edit mode: currency selects + action bar -->
       <div v-else class="cp-form cp-form--currency">
         <MpFormControl id="cp-base-currency" class="cp-form-field--half">
-          <MpFormLabel>Base currency</MpFormLabel>
+          <MpFormLabel>{{ t('Base currency') }}</MpFormLabel>
           <MpSelect id="cp-base-currency-select" :model-value="draftAdvanced.baseCurrency" :is-disabled="true">
             <option v-for="c in CURRENCY_OPTIONS" :key="c.value" :value="c.value">{{ c.label }}</option>
           </MpSelect>
-          <span class="cp-help">Base currency cannot be changed after it is used in transactions</span>
+          <span class="cp-help">{{ t('Base currency cannot be changed after it is used in transactions') }}</span>
         </MpFormControl>
         <MpFormControl id="cp-amount-display" class="cp-form-field--half">
-          <MpFormLabel>Amount display</MpFormLabel>
+          <MpFormLabel>{{ t('Amount display') }}</MpFormLabel>
           <MpSelect id="cp-amount-display-select" :model-value="draftAdvanced.amountDisplay" @change="(_e: Event, v: string) => (draftAdvanced.amountDisplay = v)">
             <option v-for="o in AMOUNT_DISPLAY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
           </MpSelect>
-          <span class="cp-help">e.g. Rp2.000.000,00</span>
+          <span class="cp-help">{{ t('e.g. Rp2.000.000,00') }}</span>
         </MpFormControl>
         <div class="cp-action-bar">
-          <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">Cancel</button>
-          <button type="button" class="btn-enterprise btn-enterprise--primary" @click="saveAdvanced">Save changes</button>
+          <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</button>
+          <button type="button" class="btn-enterprise btn-enterprise--primary" @click="saveAdvanced">{{ t('Save changes') }}</button>
         </div>
       </div>
     </section>
@@ -520,35 +522,35 @@ const ADVANCED_TOGGLES = [
     <MpModal id="cp-multicurrency-modal" :is-open="mcModalOpen" is-centered :is-keep-alive="false" @close="cancelMultiCurrency">
       <MpModalContent>
         <MpModalHeader>
-          Activate Multi-currency?
+          {{ t('Activate Multi-currency?') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
           <MpFormControl id="cp-mc-base-currency" is-required class="cp-mc-currency">
-            <MpFormLabel>Base currency</MpFormLabel>
+            <MpFormLabel>{{ t('Base currency') }}</MpFormLabel>
             <MpSelect id="cp-mc-base-currency-select" :model-value="mcBaseCurrency" @change="(_e: Event, v: string) => (mcBaseCurrency = v)">
               <option v-for="c in CURRENCY_OPTIONS" :key="c.value" :value="c.value">{{ c.label }}</option>
             </MpSelect>
           </MpFormControl>
-          <h3 class="cp-mc-terms-title">Activation terms</h3>
+          <h3 class="cp-mc-terms-title">{{ t('Activation terms') }}</h3>
           <ol class="cp-mc-terms">
-            <li>Activation will begin at <strong>00:00 WIB the following day</strong>. You cannot create transactions during the activation process.</li>
-            <li>The base currency cannot be changed after activation.</li>
-            <li>This feature is not compatible with Jurnal Consolidation yet.</li>
+            <li>{{ t('Activation will begin at') }} <strong>{{ t('00:00 WIB the following day') }}</strong>. {{ t('You cannot create transactions during the activation process.') }}</li>
+            <li>{{ t('The base currency cannot be changed after activation.') }}</li>
+            <li>{{ t('This feature is not compatible with Jurnal Consolidation yet.') }}</li>
             <li>
-              This feature cannot be deactivated if you have:
+              {{ t('This feature cannot be deactivated if you have:') }}
               <ul class="cp-mc-sublist">
-                <li>Added another currency.</li>
-                <li>Added an account (COA) with another currency.</li>
-                <li>Created transactions after activation, including those using only the base currency.</li>
+                <li>{{ t('Added another currency.') }}</li>
+                <li>{{ t('Added an account (COA) with another currency.') }}</li>
+                <li>{{ t('Created transactions after activation, including those using only the base currency.') }}</li>
               </ul>
             </li>
           </ol>
         </MpModalBody>
         <MpModalFooter>
           <div class="cp-action-bar cp-action-bar--modal">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelMultiCurrency">Cancel</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="activateMultiCurrency">Activate</button>
+            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelMultiCurrency">{{ t('Cancel') }}</button>
+            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="activateMultiCurrency">{{ t('Activate') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>

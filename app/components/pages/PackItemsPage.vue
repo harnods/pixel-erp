@@ -26,6 +26,7 @@ import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
+const { t } = useLocale()
 
 const task = computed(() => getPackingTask(props.orderId))
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
@@ -50,7 +51,7 @@ const allPicked = computed(() =>
   lineItems.value.every(it => (draftQty.value[it.key] ?? 0) === it.pickedQty),
 )
 const canEndPacking = computed(() => !isMarketplace.value || allPicked.value)
-const MARKETPLACE_SHORT_MSG = 'Marketplace orders must be packed in full — pack every picked unit before finishing.'
+const MARKETPLACE_SHORT_MSG = t('Marketplace orders must be packed in full — pack every picked unit before finishing.')
 function isShortForMarketplace(item: PackLineItem): boolean {
   return showQtyErrors.value && isMarketplace.value && (draftQty.value[item.key] ?? 0) < item.pickedQty
 }
@@ -178,8 +179,10 @@ function handleScan(rawValue: string) {
   // Scanning the bare SKU can't verify a specific unit, so it just opens the view.
   if (isSerialTrackedSku(item.skuCode)) {
     if (resolved.kind !== 'serial') {
+      // Scanning the bare SKU can't verify a specific unit — open the read-only
+      // drawer so the operator can scan serials in its own scan bar. This is a
+      // deliberate shortcut (same as the other tracked drawers), not an error.
       openViewSerial(item)
-      notifyScanError(`${item.skuCode}: scan the serial number to verify this item`)
       return
     }
     const picked = (item.serialPicks ?? []).some(s => sameCode(s.serial, resolved.serial))
@@ -203,8 +206,10 @@ function handleScan(rawValue: string) {
   // the qty picked from that batch.
   if (isBatchTrackedSku(item.skuCode)) {
     if (resolved.kind !== 'batch') {
+      // Scanning the bare SKU can't verify a specific unit — open the read-only
+      // drawer so the operator can scan batches in its own scan bar. This is a
+      // deliberate shortcut (same as the other tracked drawers), not an error.
       openViewBatch(item)
-      notifyScanError(`${item.skuCode}: scan the batch number to verify this item`)
       return
     }
     const pick = (item.batchPicks ?? []).find(b => sameCode(b.batchNo, resolved.batchNo))
@@ -300,14 +305,14 @@ function endPackingClick() {
   }
   if (draftPackedTotal.value === 0) {
     showQtyErrors.value = true
-    finishError.value = 'You must fill in packed qty for at least 1 item'
+    finishError.value = t('You must fill in packed qty for at least 1 item')
     return
   }
   // Match order: every picked serial/batch of a tracked line must be scanned so we
   // confirm the physical goods match the pick before the shipment goes out.
   if (unverifiedTrackedLines.value.length) {
     showQtyErrors.value = true
-    finishError.value = 'Scan every serial/batch number to verify it matches the pick before finishing'
+    finishError.value = t('Scan every serial/batch number to verify it matches the pick before finishing')
     return
   }
   finishError.value = ''
@@ -315,20 +320,20 @@ function endPackingClick() {
 }
 function commit() {
   showConfirm.value = false
-  const t = task.value
-  if (!t) return
+  const packTask = task.value
+  if (!packTask) return
   endPacking(props.orderId, { ...draftQty.value })
   // Finishing packing hands the order straight to delivery — no separate "Create
   // delivery" step. Marketplace orders already carry a fixed courier + tracking no.;
   // everyone else fills those in later, in bulk, on the Handover to courier page.
   const info = marketplaceShipping(order.value)
-  addDeliveryTaskFromPackingTasks([t], {
-    assignee: t.assignee,
+  addDeliveryTaskFromPackingTasks([packTask], {
+    assignee: packTask.assignee,
     deliveryMethod: info ? 'online' : undefined,
     courier: info?.courier,
     trackingNo: info?.trackingNo,
   })
-  toast.notify({ variant: 'success', title: 'Packing finished, delivery ready to ship' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Packing finished, delivery ready to ship') , maxWidth: 'max-content'})
   // Already committed — the router.push below is this function's own doing,
   // not the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
@@ -336,7 +341,7 @@ function commit() {
 }
 function saveDraft() {
   savePackingDraft(props.orderId, { ...draftQty.value })
-  toast.notify({ variant: 'success', title: 'Packing draft saved' , maxWidth: 'max-content'})
+  toast.notify({ variant: 'success', title: t('Packing draft saved') , maxWidth: 'max-content'})
   disableUnsavedChangesGuard()
   router.push(`/packing/${props.orderId}`)
 }
@@ -354,7 +359,7 @@ const { disableGuard: disableUnsavedChangesGuard } = useUnsavedChangesGuard({
   hasUnsavedChanges: () => draftPackedTotal.value > 0,
   saveDraft: () => {
     savePackingDraft(props.orderId, { ...draftQty.value })
-    toast.notify({ variant: 'success', title: 'Packing draft saved', maxWidth: 'max-content' })
+    toast.notify({ variant: 'success', title: t('Packing draft saved'), maxWidth: 'max-content' })
   },
 })
 
@@ -390,12 +395,12 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPacking">Packing</button>
+          <button class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</button>
           <span class="detail-breadcrumb-sep">/</span>
           <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
         </nav>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">Match order</h1>
+          <h1 class="detail-title">{{ t('Match order') }}</h1>
         </div>
       </div>
     </header>
@@ -403,20 +408,20 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     <div ref="stageEl" class="detail-stage">
 
       <div class="pak-header">
-        <ContentList label="Sales order" :value="task.salesNo" />
-        <ContentList label="Source"><SourceLabel :source="order?.source" /></ContentList>
-        <ContentList label="Due date" :value="dueDateLabel" />
-        <ContentList label="Warehouse" :value="task.warehouseName" />
-        <ContentList label="Assignee" :value="task.assignee" />
-        <ContentList label="Start date" :value="startDateLabel" />
-        <ContentList label="End date" :value="endDateLabel" />
+        <ContentList :label="t('Sales order')" :value="task.salesNo" />
+        <ContentList :label="t('Source')"><SourceLabel :source="order?.source" /></ContentList>
+        <ContentList :label="t('Due date')" :value="dueDateLabel" />
+        <ContentList :label="t('Warehouse')" :value="task.warehouseName" />
+        <ContentList :label="t('Assignee')" :value="task.assignee" />
+        <ContentList :label="t('Start date')" :value="startDateLabel" />
+        <ContentList :label="t('End date')" :value="endDateLabel" />
       </div>
 
       <div class="pak-summary">
-        <div class="pak-stat"><span class="pak-stat-label">SKU qty</span><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span></div>
-        <div v-if="!skippedPicking" class="pak-stat"><span class="pak-stat-label">Picked qty</span><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span></div>
-        <div class="pak-stat"><span class="pak-stat-label">Packed qty</span><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span></div>
-        <div class="pak-stat"><span class="pak-stat-label">Remaining qty to pack</span><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">{{ t('SKU qty') }}</span><span class="pak-stat-val">{{ fmt(lineItems.length) }}</span></div>
+        <div v-if="!skippedPicking" class="pak-stat"><span class="pak-stat-label">{{ t('Picked qty') }}</span><span class="pak-stat-val">{{ fmt(pickedTotal) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">{{ t('Packed qty') }}</span><span class="pak-stat-val">{{ fmt(draftPackedTotal) }}</span></div>
+        <div class="pak-stat"><span class="pak-stat-label">{{ t('Remaining qty to pack') }}</span><span class="pak-stat-val">{{ fmt(draftOutstanding) }}</span></div>
       </div>
 
       <div class="pak-sku-section">
@@ -425,8 +430,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <input v-model="search" class="pak-search" type="text" placeholder="Search..." />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <input v-model="search" class="pak-search" type="text" :placeholder="t('Search...')" />
+            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
@@ -434,8 +439,8 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
           </div>
         </div>
 
-        <ScanBar placeholder="Scan barcode..." @scan="handleScan">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">Reset count</button>
+        <ScanBar :placeholder="t('Scan barcode...')" @scan="handleScan">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">{{ t('Reset count') }}</button>
         </ScanBar>
 
         <p v-if="finishError" class="pak-finish-error">{{ finishError }}</p>
@@ -445,13 +450,13 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
             <table class="pak-items">
               <thead>
                 <tr>
-                  <th class="pak-th">Product</th>
-                  <th class="pak-th">SKU</th>
-                  <th class="pak-th pak-th--num">Order qty</th>
-                  <th v-if="!skippedPicking" class="pak-th pak-th--num">Picked qty</th>
-                  <th class="pak-th pak-th--num">Packed qty</th>
-                  <th class="pak-th pak-th--num">Remaining qty to pack</th>
-                  <th class="pak-th">Unit</th>
+                  <th class="pak-th">{{ t('Product') }}</th>
+                  <th class="pak-th">{{ t('SKU') }}</th>
+                  <th class="pak-th pak-th--num">{{ t('Order qty') }}</th>
+                  <th v-if="!skippedPicking" class="pak-th pak-th--num">{{ t('Picked qty') }}</th>
+                  <th class="pak-th pak-th--num">{{ t('Packed qty') }}</th>
+                  <th class="pak-th pak-th--num">{{ t('Remaining qty to pack') }}</th>
+                  <th class="pak-th">{{ t('Unit') }}</th>
                   <th class="pak-th pak-th--action"></th>
                 </tr>
               </thead>
@@ -468,7 +473,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                     <MpTooltip
                       v-if="qtyScanRequired(item.pickedQty) || isTrackedItem(item)"
                       :id="`pak-tt-scan-${item.key}`"
-                      :label="isTrackedItem(item) ? 'Scan the serial/batch number to verify each unit' : 'Qty at or below the scan threshold — scan the barcode instead of typing'"
+                      :label="isTrackedItem(item) ? t('Scan the serial/batch number to verify each unit') : t('Qty at or below the scan threshold — scan the barcode instead of typing')"
                       placement="top"
                       use-portal
                       class="pak-qty-tooltip-wrap"
@@ -477,7 +482,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                         class="pak-qty-input"
                         type="number" min="0" :max="item.pickedQty"
                         :value="draftQty[item.key] ?? 0"
-                        :aria-label="`Packed qty for ${item.productName}`"
+                        :aria-label="`${t('Packed qty for')} ${item.productName}`"
                         disabled
                       />
                     </MpTooltip>
@@ -493,7 +498,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                         class="pak-qty-input"
                         type="number" min="0" :max="item.pickedQty"
                         :value="draftQty[item.key] ?? 0"
-                        :aria-label="`Packed qty for ${item.productName}`"
+                        :aria-label="`${t('Packed qty for')} ${item.productName}`"
                         @input="onQtyInput(item.key, item.pickedQty, $event)"
                       />
                     </MpTooltip>
@@ -502,7 +507,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                       class="pak-qty-input"
                       type="number" min="0" :max="item.pickedQty"
                       :value="draftQty[item.key] ?? 0"
-                      :aria-label="`Packed qty for ${item.productName}`"
+                      :aria-label="`${t('Packed qty for')} ${item.productName}`"
                       @input="onQtyInput(item.key, item.pickedQty, $event)"
                     />
                   </td>
@@ -516,25 +521,25 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                         v-if="isTrackedItem(item)"
                         class="pak-verify-tag"
                         :class="{ 'pak-verify-tag--done': verifiedCount(item) >= item.pickedQty, 'pak-verify-tag--pending': showQtyErrors && verifiedCount(item) < item.pickedQty }"
-                      >{{ verifiedCount(item) }}/{{ item.pickedQty }} verified</span>
-                      <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pak-tt-batch-${item.key}`" label="View batch" placement="top" use-portal>
-                        <button class="pak-view-btn" type="button" aria-label="View batch" @click="openViewBatch(item)">
+                      >{{ verifiedCount(item) }}/{{ item.pickedQty }} {{ t('verified') }}</span>
+                      <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`pak-tt-batch-${item.key}`" :label="t('View batch')" placement="top" use-portal>
+                        <button class="pak-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(item)">
                           <MpIcon name="competencies" size="md" />
                         </button>
                       </MpTooltip>
-                      <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`pak-tt-serial-${item.key}`" label="View serial number" placement="top" use-portal>
-                        <button class="pak-view-btn" type="button" aria-label="View serial number" @click="openViewSerial(item)">
+                      <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`pak-tt-serial-${item.key}`" :label="t('View serial number')" placement="top" use-portal>
+                        <button class="pak-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(item)">
                           <MpIcon name="competencies" size="md" />
                         </button>
                       </MpTooltip>
                     </div>
                   </td>
                 </tr>
-                <tr v-if="!filteredItems.length"><td class="pak-td pak-empty" :colspan="skippedPicking ? 7 : 8">No products match your search.</td></tr>
+                <tr v-if="!filteredItems.length"><td class="pak-td pak-empty" :colspan="skippedPicking ? 7 : 8">{{ t('No products match your search.') }}</td></tr>
               </tbody>
             </table>
             <div ref="itemsSentinelEl" class="pak-sentinel" aria-hidden="true" />
-            <div v-if="loadingMore" class="pak-loading pak-loading--inline"><MpSpinner size="sm" /> Loading products…</div>
+            <div v-if="loadingMore" class="pak-loading pak-loading--inline"><MpSpinner size="sm" /> {{ t('Loading products…') }}</div>
           </div>
           <div class="pak-items-count"><span>Showing {{ pagedItems.length }} of {{ filteredItems.length }} products</span></div>
         </section>
@@ -543,37 +548,37 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     </div>
 
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="pak-btn pak-btn--ghost" @click="goBack">Cancel</button>
-      <button class="pak-btn pak-btn--secondary" @click="saveDraft">Save draft</button>
-      <button class="pak-btn pak-btn--primary" @click="endPackingClick">Finish packing</button>
+      <button class="pak-btn pak-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
+      <button class="pak-btn pak-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</button>
+      <button class="pak-btn pak-btn--primary" @click="endPackingClick">{{ t('Finish packing') }}</button>
     </footer>
   </div>
 
   <div v-else class="pak-not-found">
-    <p>Packing task not found.</p>
-    <button class="detail-breadcrumb" @click="goPacking">Back to Packing</button>
+    <p>{{ t('Packing task not found.') }}</p>
+    <button class="detail-breadcrumb" @click="goPacking">{{ t('Back to Packing') }}</button>
   </div>
 
   <MpModal id="pak-confirm" :is-open="showConfirm" size="md" is-close-on-esc :is-keep-alive="false" @close="showConfirm = false">
     <MpModalContent>
       <MpModalHeader>
-        {{ draftOutstanding > 0 ? 'Finish packing with unpacked items?' : 'Finish packing?' }}
+        {{ draftOutstanding > 0 ? t('Finish packing with unpacked items?') : t('Finish packing?') }}
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
         <template v-if="draftOutstanding > 0">
-          {{ fmt(draftOutstanding) }} of {{ fmt(pickedTotal) }} picked units won't be packed
-          across {{ shortItemsCount }} {{ shortItemsCount === 1 ? 'item' : 'items' }}.
-          The order will be ready to ship for the {{ fmt(draftPackedTotal) }} packed units.
+          {{ fmt(draftOutstanding) }} of {{ fmt(pickedTotal) }} {{ t("picked units won't be packed across") }}
+          {{ shortItemsCount }} {{ shortItemsCount === 1 ? t('item') : t('items') }}.
+          {{ t('The order will be ready to ship for the') }} {{ fmt(draftPackedTotal) }} {{ t('packed units.') }}
         </template>
         <template v-else>
-          All {{ fmt(pickedTotal) }} picked units will be packed and ready to ship.
+          All {{ fmt(pickedTotal) }} {{ t('picked units will be packed and ready to ship.') }}
         </template>
       </MpModalBody>
       <MpModalFooter>
         <div class="pak-modal-footer">
-          <button class="pak-btn pak-btn--ghost" @click="showConfirm = false">Cancel</button>
-          <button class="pak-btn pak-btn--primary" @click="commit">Finish packing</button>
+          <button class="pak-btn pak-btn--ghost" @click="showConfirm = false">{{ t('Cancel') }}</button>
+          <button class="pak-btn pak-btn--primary" @click="commit">{{ t('Finish packing') }}</button>
         </div>
       </MpModalFooter>
     </MpModalContent>

@@ -14,15 +14,16 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { billOfMaterials, catalogProduct, persistBillOfMaterials, type BillOfMaterials } from '~/data/billOfMaterials'
 
 const toggleAirene = inject<() => void>('toggleAirene')
+const { t } = useLocale()
 
 // ─── Columns ───────────────────────────────────────────────────────────────────
 const columns: TableColumn[] = [
-  { key: 'number',           label: 'Number',             width: '200px', sortable: true },
-  { key: 'name',             label: 'Name',               width: '200px', sortable: true },
-  { key: 'category',         label: 'Category',           width: '130px' },
-  { key: 'costingReference', label: 'Costing reference',  width: '170px' },
-  { key: 'finishedGood',     label: 'Finished goods',     width: '180px' },
-  { key: 'description',      label: 'Description',        width: '280px' },
+  { key: 'number',           label: t('Number'),             width: '200px', sortable: true },
+  { key: 'name',             label: t('Name'),               width: '200px', sortable: true },
+  { key: 'category',         label: t('Category'),           width: '130px' },
+  { key: 'costingReference', label: t('Costing reference'),  width: '170px' },
+  { key: 'finishedGood',     label: t('Finished goods'),     width: '180px' },
+  { key: 'description',      label: t('Description'),        width: '280px' },
 ]
 
 // ─── Filters ───────────────────────────────────────────────────────────────────
@@ -117,7 +118,7 @@ function clearFilters() {
 function archiveBom(row: BillOfMaterials) {
   row.archived = true
   persistBillOfMaterials()
-  toast.notify({ variant: 'success', title: 'Bill of materials archived' })
+  toast.notify({ variant: 'success', title: t('Bill of materials archived') })
 }
 
 // ─── Delete confirmation ────────────────────────────────────────────────────────
@@ -166,8 +167,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :has-active-filter="hasActiveFilter"
     :search="search"
     has-checkbox
-    bulk-label="bill of materials"
-    bulk-label-plural="bill of materials"
+    :bulk-label="t('bill of materials')"
+    :bulk-label-plural="t('bill of materials')"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -181,7 +182,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverTrigger>
             <MpSelect
               id="bom-category-select"
-              placeholder="Category"
+              :placeholder="t('Category')"
               :model-value="categoryFilter"
               is-clearable
               :class="css({ width: '160px' })"
@@ -207,7 +208,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverTrigger>
             <MpSelect
               id="bom-costing-select"
-              placeholder="Costing ref."
+              :placeholder="t('Costing ref.')"
               :model-value="costingFilter"
               is-clearable
               :class="css({ width: '170px' })"
@@ -231,15 +232,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
         <button class="filter-all-btn" type="button" @click="isFiltersDrawerOpen = true">
           <MpIcon name="filter" size="sm" />
-          All filters
+          {{ t('All filters') }}
         </button>
       </div>
 
       <!-- Right: icon buttons + search -->
       <div class="filter-right">
         <div class="filter-btn-group">
-          <MpTooltip id="tt-bom-airene" label="Ask Airene" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+          <MpTooltip id="tt-bom-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
+            <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
@@ -247,8 +248,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </button>
           </MpTooltip>
           <ColumnSettingsMenu id="bom-columns" :items="columnItems" :visibility="columnVisibility" />
-          <MpTooltip id="tt-bom-export" label="Export" placement="bottom" use-portal>
-            <button class="filter-icon-btn" aria-label="Export">
+          <MpTooltip id="tt-bom-export" :label="t('Export')" placement="bottom" use-portal>
+            <button class="filter-icon-btn" :aria-label="t('Export')">
               <MpIcon name="download" size="md" />
             </button>
           </MpTooltip>
@@ -258,7 +259,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <input v-model="search" class="filter-search-input" type="text" placeholder="Search..." />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
         </div>
       </div>
     </template>
@@ -288,7 +289,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`bom-actions-${row.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" aria-label="More actions">
+          <button class="row-kebab" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
             </svg>
@@ -296,9 +297,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="viewDetails(row as unknown as BillOfMaterials)">View details</MpPopoverListItem>
-            <MpPopoverListItem @click="duplicateBom(row as unknown as BillOfMaterials)">Duplicate</MpPopoverListItem>
-            <MpPopoverListItem @click="openDeleteModal(row as unknown as BillOfMaterials)">Archive</MpPopoverListItem>
+            <MpPopoverListItem @click="viewDetails(row as unknown as BillOfMaterials)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="duplicateBom(row as unknown as BillOfMaterials)">{{ t('Duplicate') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openDeleteModal(row as unknown as BillOfMaterials)">{{ t('Archive') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -306,20 +307,20 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Bulk selection actions ── -->
     <template #bulk-actions>
-      <button class="bulk-action-btn">Delete</button>
+      <button class="bulk-action-btn">{{ t('Delete') }}</button>
     </template>
 
     <!-- ── Full empty state (first run) ── -->
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-        <p class="empty-full-title">No bill of materials</p>
-        <p class="empty-full-desc">Bill of materials will appear here.</p>
+        <p class="empty-full-title">{{ t('No bill of materials') }}</p>
+        <p class="empty-full-desc">{{ t('Bill of materials will appear here.') }}</p>
         <button class="empty-full-btn">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          New bill of materials
+          {{ t('New bill of materials') }}
         </button>
       </div>
     </template>
@@ -328,9 +329,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Delete confirmation ── -->
   <ConfirmModal
     v-model:is-open="isDeleteModalOpen"
-    title="Archive bill of materials?"
-    :description="`${bomToDelete?.number ?? ''} will be removed from the list. You can still find it via the Show archived BOM filter.`"
-    confirm-label="Archive"
+    :title="t('Archive bill of materials?')"
+    :description="`${bomToDelete?.number ?? ''} ${t('will be removed from the list. You can still find it via the Show archived BOM filter.')}`"
+    :confirm-label="t('Archive')"
     @confirm="confirmDelete"
   />
 
@@ -347,15 +348,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <!-- ── Demo scenario FAB (bottom-right) ── -->
   <MpPopover id="bom-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab" aria-label="Change scenario state">
+      <button class="demo-fab" :aria-label="t('Change scenario state')">
         <MpIcon name="sliders" size="md" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-      <p class="demo-fab-heading">Scenario state</p>
+      <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
       <MpPopoverList>
-        <MpPopoverListItem :is-active="previewMode === 'data'" @click="previewMode = 'data'">With data</MpPopoverListItem>
-        <MpPopoverListItem :is-active="previewMode === 'empty'" @click="previewMode = 'empty'">Empty state</MpPopoverListItem>
+        <MpPopoverListItem :is-active="previewMode === 'data'" @click="previewMode = 'data'">{{ t('With data') }}</MpPopoverListItem>
+        <MpPopoverListItem :is-active="previewMode === 'empty'" @click="previewMode = 'empty'">{{ t('Empty state') }}</MpPopoverListItem>
       </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>

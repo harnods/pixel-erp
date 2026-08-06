@@ -23,6 +23,7 @@ import { billOfMaterials, catalogProduct, persistBillOfMaterials, type BillOfMat
 
 // The shared detail renderer passes the route id as `order-id`.
 const props = defineProps<{ orderId: string }>()
+const { t } = useLocale()
 const router = useRouter()
 
 const bom = computed<BillOfMaterials | undefined>(() => billOfMaterials.find(b => b.id === props.orderId))
@@ -46,7 +47,7 @@ function confirmDelete() {
   if (!bom.value) return
   bom.value.archived = true
   persistBillOfMaterials()
-  toast.notify({ variant: 'success', title: 'Bill of materials archived' })
+  toast.notify({ variant: 'success', title: t('Bill of materials archived') })
   goList()
 }
 
@@ -112,7 +113,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">Bill of materials</button>
+        <button class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</button>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ bom.number }}</h1>
         </div>
@@ -123,7 +124,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
         <MpPopover id="bomd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <button class="detail-btn detail-btn--secondary">
-              Actions
+              {{ t('Actions') }}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
@@ -134,17 +135,17 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
                 @click="onAction(item)"
-              >{{ item }}</MpPopoverListItem>
+              >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
 
         <button class="detail-btn detail-btn--secondary detail-btn--icon">
           <MpIcon name="hierarchy" size="sm" />
-          View BOM hierarchy
+          {{ t('View BOM hierarchy') }}
         </button>
 
-        <button class="detail-btn detail-btn--primary" @click="createWorkOrder">Create work order</button>
+        <button class="detail-btn detail-btn--primary" @click="createWorkOrder">{{ t('Create work order') }}</button>
       </div>
     </header>
 
@@ -153,25 +154,25 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 
       <!-- ── Bill of materials info ── -->
       <section class="bom-section">
-        <h2 class="bom-section-title">Bill of materials info</h2>
+        <h2 class="bom-section-title">{{ t('Bill of materials info') }}</h2>
         <div class="bom-info-grid">
           <div class="content-list-col">
-            <ContentList label="BOM name" :value="bom.name" />
-            <ContentList label="BOM no." :value="bom.number" />
-            <ContentList label="Description">
+            <ContentList :label="t('BOM name')" :value="bom.name" />
+            <ContentList :label="t('BOM no.')" :value="bom.number" />
+            <ContentList :label="t('Description')">
               <template v-if="bom.description">
                 <span>{{ descDisplay }}</span>
                 <a v-if="isDescLong" class="bom-show-more" @click.prevent="descExpanded = !descExpanded">
-                  {{ descExpanded ? 'Show less' : 'Show more' }}
+                  {{ descExpanded ? t('Show less') : t('Show more') }}
                 </a>
               </template>
               <template v-else>—</template>
             </ContentList>
           </div>
           <div class="content-list-col">
-            <ContentList label="Category" :value="bom.category" />
-            <ContentList label="Costing reference" :value="bom.costingReference" />
-            <ContentList label="Attachments">
+            <ContentList :label="t('Category')" :value="bom.category" />
+            <ContentList :label="t('Costing reference')" :value="bom.costingReference" />
+            <ContentList :label="t('Attachments')">
               <div class="bom-attach-list">
                 <a v-for="a in attachments" :key="a.name" class="bom-attach" @click.prevent>
                   <MpIcon name="pdf-document" size="sm" />
@@ -186,7 +187,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
       <!-- ── Raw materials ── -->
       <section class="bom-section">
         <button class="bom-section-head" @click="collapsed.raw = !collapsed.raw">
-          <h2 class="bom-section-title">Raw materials</h2>
+          <h2 class="bom-section-title">{{ t('Raw materials') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.raw }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.raw">
@@ -198,10 +199,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               </colgroup>
               <thead>
                 <tr>
-                  <th class="bom-th">Product</th><th class="bom-th">SKU</th>
-                  <th class="bom-th bom-th--num">Needed qty</th><th class="bom-th">Unit</th>
-                  <th class="bom-th bom-th--num">Purchase cost</th>
-                  <th class="bom-th bom-th--num">Estimated cost</th>
+                  <th class="bom-th">{{ t('Product') }}</th><th class="bom-th">SKU</th>
+                  <th class="bom-th bom-th--num">{{ t('Needed qty') }}</th><th class="bom-th">{{ t('Unit') }}</th>
+                  <th class="bom-th bom-th--num">{{ t('Purchase cost') }}</th>
+                  <th class="bom-th bom-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -216,14 +217,14 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               </tbody>
             </table>
           </div>
-          <div class="bom-subtotal-row"><span>Estimated raw materials subtotal</span><span class="bom-amount">{{ formatIDR(rawSubtotal) }}</span></div>
+          <div class="bom-subtotal-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span class="bom-amount">{{ formatIDR(rawSubtotal) }}</span></div>
         </template>
       </section>
 
       <!-- ── Production cost ── -->
       <section class="bom-section">
         <button class="bom-section-head" @click="collapsed.cost = !collapsed.cost">
-          <h2 class="bom-section-title">Production cost</h2>
+          <h2 class="bom-section-title">{{ t('Production cost') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.cost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.cost">
@@ -236,8 +237,8 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                 <template v-for="g in productionCostGroups" :key="g.label">
                   <tr class="bom-subhead-row">
                     <th class="bom-th">{{ g.label }}</th>
-                    <th class="bom-th">Cost driver</th>
-                    <th class="bom-th bom-th--num">Amount</th>
+                    <th class="bom-th">{{ t('Cost driver') }}</th>
+                    <th class="bom-th bom-th--num">{{ t('Amount') }}</th>
                   </tr>
                   <tr v-if="g.rows.length === 0" class="bom-tr">
                     <td class="bom-td">—</td><td class="bom-td">—</td><td class="bom-td bom-td--num">—</td>
@@ -251,14 +252,14 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               </tbody>
             </table>
           </div>
-          <div class="bom-subtotal-row"><span>Production cost subtotal</span><span class="bom-amount">{{ formatIDR(productionCostSubtotal) }}</span></div>
+          <div class="bom-subtotal-row"><span>{{ t('Production cost subtotal') }}</span><span class="bom-amount">{{ formatIDR(productionCostSubtotal) }}</span></div>
         </template>
       </section>
 
       <!-- ── Routing ── -->
       <section class="bom-section">
         <button class="bom-section-head" @click="collapsed.routing = !collapsed.routing">
-          <h2 class="bom-section-title">Routing</h2>
+          <h2 class="bom-section-title">{{ t('Routing') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.routing }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.routing">
@@ -266,10 +267,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
             <table class="bom-table">
               <thead>
                 <tr>
-                  <th class="bom-th">Process</th>
-                  <th class="bom-th">Description</th>
-                  <th class="bom-th">Account mapping</th>
-                  <th class="bom-th bom-th--num">Amount</th>
+                  <th class="bom-th">{{ t('Process') }}</th>
+                  <th class="bom-th">{{ t('Description') }}</th>
+                  <th class="bom-th">{{ t('Account mapping') }}</th>
+                  <th class="bom-th bom-th--num">{{ t('Amount') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -282,27 +283,27 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               </tbody>
             </table>
           </div>
-          <div class="bom-subtotal-row"><span>Routing cost subtotal</span><span class="bom-amount">{{ formatIDR(routingSubtotal) }}</span></div>
+          <div class="bom-subtotal-row"><span>{{ t('Routing cost subtotal') }}</span><span class="bom-amount">{{ formatIDR(routingSubtotal) }}</span></div>
         </template>
 
         <!-- Cost summary -->
         <div class="bom-summary">
-          <div class="bom-summary-row"><span>Estimated raw materials subtotal</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
-          <div class="bom-summary-row"><span>Production cost subtotal</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
-          <div class="bom-summary-row"><span>Routing cost subtotal</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
-          <div class="bom-summary-row bom-summary-row--total"><span>Estimated total production cost</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
+          <div class="bom-summary-row"><span>{{ t('Estimated raw materials subtotal') }}</span><span>{{ formatIDR(rawSubtotal) }}</span></div>
+          <div class="bom-summary-row"><span>{{ t('Production cost subtotal') }}</span><span>{{ formatIDR(productionCostSubtotal) }}</span></div>
+          <div class="bom-summary-row"><span>{{ t('Routing cost subtotal') }}</span><span>{{ formatIDR(routingSubtotal) }}</span></div>
+          <div class="bom-summary-row bom-summary-row--total"><span>{{ t('Estimated total production cost') }}</span><span>{{ formatIDR(totalProductionCost) }}</span></div>
         </div>
       </section>
 
       <!-- ── Finished goods ── -->
       <section class="bom-section bom-section--last">
         <button class="bom-section-head" @click="collapsed.finished = !collapsed.finished">
-          <h2 class="bom-section-title">Finished goods</h2>
+          <h2 class="bom-section-title">{{ t('Finished goods') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.finished }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <template v-if="!collapsed.finished">
           <!-- Main output -->
-          <h3 class="bom-subsection-title">Main output</h3>
+          <h3 class="bom-subsection-title">{{ t('Main output') }}</h3>
           <div class="bom-table-scroll">
             <table class="bom-table bom-table--outputs">
               <colgroup>
@@ -311,9 +312,9 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               </colgroup>
               <thead>
                 <tr>
-                  <th class="bom-th">Product</th><th class="bom-th">SKU</th>
-                  <th class="bom-th bom-th--num">Produced qty</th><th class="bom-th">Unit</th>
-                  <th class="bom-th">Percentage</th><th class="bom-th bom-th--num">Estimated cost</th>
+                  <th class="bom-th">{{ t('Product') }}</th><th class="bom-th">SKU</th>
+                  <th class="bom-th bom-th--num">{{ t('Produced qty') }}</th><th class="bom-th">{{ t('Unit') }}</th>
+                  <th class="bom-th">{{ t('Percentage') }}</th><th class="bom-th bom-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -328,11 +329,11 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               </tbody>
             </table>
           </div>
-          <div class="bom-subtotal-row"><span>Estimated main output subtotal</span><span class="bom-amount">{{ formatIDR(mainOutputSubtotal) }}</span></div>
+          <div class="bom-subtotal-row"><span>{{ t('Estimated main output subtotal') }}</span><span class="bom-amount">{{ formatIDR(mainOutputSubtotal) }}</span></div>
 
           <!-- Other outputs -->
           <template v-if="otherOutputs.length">
-            <h3 class="bom-subsection-title">Other outputs</h3>
+            <h3 class="bom-subsection-title">{{ t('Other outputs') }}</h3>
             <div class="bom-table-scroll">
               <table class="bom-table bom-table--outputs">
                 <colgroup>
@@ -341,9 +342,9 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                 </colgroup>
                 <thead>
                   <tr>
-                    <th class="bom-th">Product</th><th class="bom-th">SKU</th>
-                    <th class="bom-th bom-th--num">Produced qty</th><th class="bom-th">Unit</th>
-                    <th class="bom-th">Percentage</th><th class="bom-th bom-th--num">Estimated cost</th>
+                    <th class="bom-th">{{ t('Product') }}</th><th class="bom-th">SKU</th>
+                    <th class="bom-th bom-th--num">{{ t('Produced qty') }}</th><th class="bom-th">{{ t('Unit') }}</th>
+                    <th class="bom-th">{{ t('Percentage') }}</th><th class="bom-th bom-th--num">{{ t('Estimated cost') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -358,17 +359,17 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                 </tbody>
               </table>
             </div>
-            <div class="bom-subtotal-row"><span>Estimated other outputs subtotal</span><span class="bom-amount">{{ formatIDR(otherOutputsSubtotal) }}</span></div>
+            <div class="bom-subtotal-row"><span>{{ t('Estimated other outputs subtotal') }}</span><span class="bom-amount">{{ formatIDR(otherOutputsSubtotal) }}</span></div>
           </template>
 
           <!-- Production waste -->
-          <h3 class="bom-subsection-title">Production waste</h3>
+          <h3 class="bom-subsection-title">{{ t('Production waste') }}</h3>
           <div class="bom-table-scroll">
             <table class="bom-table">
               <thead>
                 <tr>
-                  <th class="bom-th">Account mapping</th><th class="bom-th">Allocation method</th>
-                  <th class="bom-th">Percentage</th><th class="bom-th bom-th--num">Amount</th>
+                  <th class="bom-th">{{ t('Account mapping') }}</th><th class="bom-th">{{ t('Allocation method') }}</th>
+                  <th class="bom-th">{{ t('Percentage') }}</th><th class="bom-th bom-th--num">{{ t('Amount') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -381,14 +382,14 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
               </tbody>
             </table>
           </div>
-          <div class="bom-subtotal-row"><span>Estimated production waste subtotal</span><span class="bom-amount">{{ formatIDR(wasteSubtotal) }}</span></div>
+          <div class="bom-subtotal-row"><span>{{ t('Estimated production waste subtotal') }}</span><span class="bom-amount">{{ formatIDR(wasteSubtotal) }}</span></div>
 
           <!-- Finished goods summary -->
           <div class="bom-summary">
-            <div class="bom-summary-row"><span>Estimated main output subtotal</span><span>{{ formatIDR(mainOutputSubtotal) }}</span></div>
-            <div class="bom-summary-row"><span>Estimated other outputs subtotal</span><span>{{ formatIDR(otherOutputsSubtotal) }}</span></div>
-            <div class="bom-summary-row"><span>Estimated production waste subtotal</span><span>{{ formatIDR(wasteSubtotal) }}</span></div>
-            <div class="bom-summary-row bom-summary-row--total"><span>Estimated finished goods total</span><span>{{ formatIDR(finishedGoodsTotal) }}</span></div>
+            <div class="bom-summary-row"><span>{{ t('Estimated main output subtotal') }}</span><span>{{ formatIDR(mainOutputSubtotal) }}</span></div>
+            <div class="bom-summary-row"><span>{{ t('Estimated other outputs subtotal') }}</span><span>{{ formatIDR(otherOutputsSubtotal) }}</span></div>
+            <div class="bom-summary-row"><span>{{ t('Estimated production waste subtotal') }}</span><span>{{ formatIDR(wasteSubtotal) }}</span></div>
+            <div class="bom-summary-row bom-summary-row--total"><span>{{ t('Estimated finished goods total') }}</span><span>{{ formatIDR(finishedGoodsTotal) }}</span></div>
           </div>
         </template>
       </section>
@@ -400,8 +401,8 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
   <div v-else class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">Bill of materials</button>
-        <div class="detail-titlerow-left"><h1 class="detail-title">Bill of materials not found</h1></div>
+        <button class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</button>
+        <div class="detail-titlerow-left"><h1 class="detail-title">{{ t('Bill of materials not found') }}</h1></div>
       </div>
     </header>
   </div>
@@ -410,9 +411,9 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
   <ConfirmModal
     v-if="bom"
     v-model:is-open="isDeleteModalOpen"
-    title="Archive bill of materials?"
-    :description="`${bom.number} will be removed from the list. You can still find it via the Show archived BOM filter.`"
-    confirm-label="Archive"
+    :title="t('Archive bill of materials?')"
+    :description="t('Archiving hides this bill of materials from the list and new transactions. Historical data stays intact.')"
+    :confirm-label="t('Archive')"
     @confirm="confirmDelete"
   />
 </template>
