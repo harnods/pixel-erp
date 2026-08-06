@@ -2,9 +2,11 @@
 /**
  * New shipment — same shape as Handover to Courier, except the deliveries aren't
  * pre-selected on the index page; the warehouse is picked here, then deliveries
- * are added by scanning their packing no. (stands in for a shipping label/AWB —
- * neither exists yet at this stage, since courier/tracking are decided on this
- * very form). Saving reuses the same handoverToCourierBulk() as the bulk flow.
+ * are added by scanning any of the three codes a packed order carries: its
+ * resi/tracking no. (marketplace orders arrive with one), its packing no., or its
+ * order no. — all resolve to the same ready-to-ship delivery (see
+ * findReadyToShipByScan). Saving reuses the same handoverToCourierBulk() as the
+ * bulk flow.
  */
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
@@ -16,7 +18,7 @@ import {
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import {
-  getDeliveryTask, findReadyToShipByPackingNo, findReadyToShipByPackingNoAnyWarehouse,
+  getDeliveryTask, findReadyToShipByScan, findReadyToShipByScanAnyWarehouse,
   handoverToCourierBulk, type DeliveryTask,
 } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
@@ -134,16 +136,19 @@ function handleScan(raw: string) {
     notifyScanError('Select warehouse first')
     return
   }
-  const match = findReadyToShipByPackingNo(warehouseId.value, value)
-  if (!match) {
-    const elsewhere = findReadyToShipByPackingNoAnyWarehouse(value)
+  // Scan any of the three codes on a packed order: resi/tracking no., packing
+  // no., or order no. — all resolve to the same ready-to-ship delivery.
+  const found = findReadyToShipByScan(warehouseId.value, value)
+  if (!found) {
+    const elsewhere = findReadyToShipByScanAnyWarehouse(value)
     if (elsewhere) {
-      notifyScanError(`"${value}" belongs to ${elsewhere.warehouseName}, not ${warehouseName.value}`)
+      notifyScanError(`"${value}" belongs to ${elsewhere.task.warehouseName}, not ${warehouseName.value}`)
     } else {
       notifyScanError(`Barcode not found: "${value}"`)
     }
     return
   }
+  const match = found.task
   if (taskIds.value.includes(match.id)) {
     notifyScanError('Already added to this shipment')
     return
@@ -367,14 +372,14 @@ async function handleSave() {
           </div>
         </div>
 
-        <ScanBar placeholder="Scan barcode..." class="ns-scanbar" @scan="handleScan">
+        <ScanBar placeholder="Scan tracking no., packing no., or order no." class="ns-scanbar" @scan="handleScan">
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</button>
         </ScanBar>
 
         <div v-if="!rows.length" class="empty-full">
           <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
           <p class="empty-full-title">No deliveries yet</p>
-          <p class="empty-full-desc">Scan a packing no. above to add a delivery to this shipment.</p>
+          <p class="empty-full-desc">Scan a tracking no., packing no., or order no. above to add a delivery to this shipment.</p>
         </div>
 
         <section v-else class="ho-items-section" :class="{ 'ho-items-section--bordered': isProgressive }">

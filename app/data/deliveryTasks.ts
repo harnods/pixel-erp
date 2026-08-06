@@ -416,6 +416,67 @@ export function findReadyToShipByPackingNoAnyWarehouse(packingNo: string): Deliv
   );
 }
 
+// ── Create shipping document — scan by tracking / packing / order ──────────────
+/** Which of a delivery's three scannable identifiers a code matched on, so the
+ *  operator toast can say what was recognised. */
+export type ShipScanKind = "tracking" | "packing" | "order";
+
+/** All order-level codes a delivery can be scanned by: its sales order no. and
+ *  the outbound order's own number (OUT-YYYY-####). */
+function orderCodesForDelivery(t: DeliveryTask): string[] {
+  const codes: string[] = [];
+  if (t.salesNo) codes.push(t.salesNo);
+  const order = outgoingOrders.find((o) => o.id === t.salesOrderId);
+  if (order?.number) codes.push(order.number);
+  if (order?.salesNo) codes.push(order.salesNo);
+  return codes;
+}
+
+/** Which identifier (if any) of a delivery a scanned code matches — the three
+ *  things a shipping operator can scan on/for a packed order: the resi/tracking
+ *  no., the packing no., or the order no. Codes are matched case/whitespace-
+ *  insensitively (a physical barcode carries no case; see utils/scan). */
+function shipScanKind(t: DeliveryTask, q: string): ShipScanKind | null {
+  if (t.trackingNo && sameCode(t.trackingNo, q)) return "tracking";
+  if (sameCode(t.packingTaskNo, q) || (t.packingTaskNos && includesCode(t.packingTaskNos, q))) return "packing";
+  if (includesCode(orderCodesForDelivery(t), q)) return "order";
+  return null;
+}
+
+/**
+ * Create-shipping-document scan: find a ready-to-ship delivery in a warehouse by
+ * ANY of its three codes — resi/tracking no., packing no., or order no. Returns
+ * the matched task and which kind of code it matched.
+ */
+export function findReadyToShipByScan(
+  warehouseId: string,
+  code: string,
+): { task: DeliveryTask; kind: ShipScanKind } | undefined {
+  const q = code.trim();
+  if (!q) return undefined;
+  for (const t of deliveryTasks) {
+    if (t.warehouseId !== warehouseId || t.status !== "ready to ship") continue;
+    const kind = shipScanKind(t, q);
+    if (kind) return { task: t, kind };
+  }
+  return undefined;
+}
+
+/** Same three-code match ignoring warehouse — lets the caller tell "this code
+ *  belongs to a different warehouse" apart from a genuine not-found miss. */
+export function findReadyToShipByScanAnyWarehouse(
+  code: string,
+): { task: DeliveryTask; kind: ShipScanKind } | undefined {
+  const q = code.trim();
+  if (!q) return undefined;
+  for (const t of deliveryTasks) {
+    if (t.status !== "ready to ship") continue;
+    const kind = shipScanKind(t, q);
+    if (kind) return { task: t, kind };
+  }
+  return undefined;
+}
+
 let nextShipmentSeq = 70000;
 function freshShipmentSeq(): number {
   const used = deliveryTasks
