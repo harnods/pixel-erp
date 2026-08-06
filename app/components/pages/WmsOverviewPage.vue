@@ -470,8 +470,12 @@ function stageAccent(s: StageCard): string {
   padding: 16px; display: flex; flex-direction: column; gap: 8px;
 }
 .stat-card--clickable { cursor: pointer; transition: border-color 0.12s ease; }
-/* Hover affordance = a bolder border, not a drop-shadow. */
+/* Hover affordance = a bolder shade of the card's OWN tone, not a drop-shadow. */
 .stat-card--clickable:hover { border-color: var(--mp-border-bold, #758195); }
+.stat-card--clickable.card--pending:hover  { border-color: var(--mp-background-warning-bold, #d98634); }
+.stat-card--clickable.card--active:hover   { border-color: var(--mp-border-bold, #758195); }
+.stat-card--clickable.card--closed:hover   { border-color: var(--mp-icon-success, #028454); }
+.stat-card--clickable.card--noaction:hover { border-color: var(--mp-text-danger, #c4362b); }
 .stat-card--clickable:focus-visible { outline: 2px solid var(--mp-border-focused, #4b61dc); outline-offset: 1px; }
 .card--pending  { background: var(--mp-background-warning-subtle, #fdf7e7); border-color: var(--mp-border-warning, #ecd9a3); }
 .card--active   { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-default); }
