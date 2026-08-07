@@ -122,3 +122,19 @@ export function ordersByIds(ids: readonly string[]): OutgoingOrder[] {
 export function anyLabelAvailable(orders: OutgoingOrder[]): boolean {
   return orders.some((o) => shippingLabelInfo(o).available);
 }
+
+/**
+ * D4 AC#8 — Source-label-gated packing start. True when the order's warehouse
+ * requires the order-source (marketplace) shipping label before packing can
+ * begin (`requireSourceLabel`, Configure warehouse) and that label hasn't
+ * arrived yet — Start Packing / Match Order must stay blocked ("waiting for
+ * marketplace shipping label") and the task stays Pending. The gate releases
+ * automatically the instant the label lands (via the A7 update write-back) —
+ * no manual un-gate. Non-marketplace orders are never gated; they have no
+ * source label to wait for and use the WMS-generated label instead.
+ */
+export function packingBlockedOnSourceLabel(order: OutgoingOrder | undefined): boolean {
+  if (!order || !isMarketplaceOrder(order)) return false;
+  if (!getWarehouseConfig(order.warehouseId).requireSourceLabel) return false;
+  return !shippingLabelInfo(order).available;
+}
