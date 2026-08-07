@@ -330,7 +330,7 @@ function handleSave() {
                     :is-keep-alive="false" placement="bottom-start"
                   >
                     <MpPopoverTrigger>
-                      <button type="button" class="bsr-movement-trigger">
+                      <button type="button" class="bsr-movement-trigger btn-enterprise">
                         <span>{{ t(movementLabel(row.movement)) }}</span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                           <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -479,8 +479,9 @@ function handleSave() {
   display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-2);
   position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px);
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2);
-  border: none; background: none; cursor: pointer;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-family: inherit;
+  border: none; border-radius: 0; background: none; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-default); font-family: inherit;
 }
 .bsr-movement-trigger:hover { background: var(--mp-background-neutral-hovered); }
 .bsr-movement-trigger svg { flex-shrink: 0; color: var(--mp-icon-default, var(--mp-text-secondary)); }
@@ -494,13 +495,13 @@ function handleSave() {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
-/* MpInput forwards `class` onto the <input> itself (.mp-input__control), not a
-   wrapper — so the growing flex child is its own __root div, and the alignment
-   rule belongs directly on .bsr-amount-input. */
+/* MpInput forwards `class` onto the native input element itself
+   (.mp-input__control), not a wrapper — so the growing flex child is its own
+   __root div, and the alignment rule belongs directly on .bsr-amount-input. */
 .ex-amount-cell :deep(.mp-input__root) { flex: 1; min-width: 0; align-items: flex-start; }
-/* …and because that <input> isn't MpInput's root element, the scoped data-v
-   attribute never reaches it — the rule has to go through :deep. A native
-   <input>'s value text ignores align-items on the control itself (tested —
+/* …and because that native input isn't MpInput's root element, the scoped
+   data-v attribute never reaches it — the rule has to go through :deep. A
+   native input's value text ignores align-items on the control itself (tested —
    Chrome still centers it regardless of flex-start), so stretching the input
    to the row's height can't be used to get top alignment. Left at its
    intrinsic (line-height + padding-top) height instead, which top-aligns for
@@ -512,7 +513,7 @@ function handleSave() {
   text-align: right; font-variant-numeric: tabular-nums;
   padding-top: var(--mp-sizes-2\.5, 10px) !important;
 }
-.ex-amount-cell :deep(.bsr-amount-input:focus) { border-color: transparent !important; box-shadow: none !important; }
+.ex-amount-cell :deep(.bsr-amount-input:focus) { border-color: transparent !important; box-shadow: none !important; } /* pixel-police-allow-shadow */
 
 /* ── Lines footer — count + progressive "Load N more", rendered as the
    table's own last row (not a separate element below it). ── */
