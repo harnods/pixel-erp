@@ -233,6 +233,14 @@ function bulkCreateHandover(sel: Set<number>, deselectAll: () => void) {
   router.push({ path: '/outbound-delivery/handover/create', query: { deliveryIds: rows.map(t => t.id).join(',') } })
   deselectAll()
 }
+// Why "Create shipment" is hidden — a shipment batch is single-warehouse and only
+// groups ready-to-ship deliveries, so tell the operator which rule blocked it.
+function selectionSpansMultipleWarehouses(sel: Set<number>): boolean {
+  return new Set(selectedDeliveriesOf(sel).map(t => t.warehouseId)).size > 1
+}
+function selectionHasNonReady(sel: Set<number>): boolean {
+  return selectedDeliveriesOf(sel).some(t => t.status !== 'ready to ship')
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -265,6 +273,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       >
         {{ t('Create shipment') }}
       </button>
+      <span v-else-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="del-bulk-hint">
+        {{ t('Select deliveries from a single warehouse to create a shipment') }}
+      </span>
+      <span v-else-if="selectionHasNonReady(selectedRows as Set<number>)" class="del-bulk-hint">
+        {{ t('Only ready-to-ship deliveries can be grouped into a shipment') }}
+      </span>
     </template>
 
     <!-- ── Filter bar ── -->
@@ -506,6 +520,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
+.del-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 
 /* Courier filter — searchable (matches the table search box), capped to ~5
    options with scroll inside the popover. */
