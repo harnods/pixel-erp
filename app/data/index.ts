@@ -15,6 +15,8 @@ export * from './users'
 export * from './customers'
 export * from './catalog'
 export * from './products'
+export * from './purchaseOrders'
+export * from './purchaseOrderDetails'
 export * from './customProducts'
 export * from './inventory'
 export * from './productsIndex'
@@ -82,3 +84,7 @@ export * from './integrityGuards'
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 export * from './quickShortcuts'
+
+// ── Seed status coverage — runs LAST (after every base seed has initialised) so
+// the mock DB has ≥1 record in every inbound/outbound status. ─────────────────
+import './seedCoverage'

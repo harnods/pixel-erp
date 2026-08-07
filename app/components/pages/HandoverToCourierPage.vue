@@ -9,7 +9,7 @@ import {
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import {
-  getDeliveryTask, findReadyToShipByPackingNo, findReadyToShipByPackingNoAnyWarehouse,
+  getDeliveryTask, findReadyToShipByScan, findReadyToShipByScanAnyWarehouse,
   handoverToCourierBulk, type DeliveryTask,
 } from '~/data/deliveryTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
@@ -119,16 +119,19 @@ const flashRowId = ref<string | null>(null)
 function handleScan(raw: string) {
   const value = raw.trim()
   if (!value) return
-  const match = findReadyToShipByPackingNo(warehouseId.value, value)
-  if (!match) {
-    const elsewhere = findReadyToShipByPackingNoAnyWarehouse(value)
+  // Scan any of the three codes on a packed order: resi/tracking no., packing
+  // no., or order no. — all resolve to the same ready-to-ship delivery.
+  const found = findReadyToShipByScan(warehouseId.value, value)
+  if (!found) {
+    const elsewhere = findReadyToShipByScanAnyWarehouse(value)
     if (elsewhere) {
-      notifyScanError(`"${value}" belongs to ${elsewhere.warehouseName}, not ${warehouseName.value}`)
+      notifyScanError(`"${value}" belongs to ${elsewhere.task.warehouseName}, not ${warehouseName.value}`)
     } else {
       notifyScanError(`Barcode not found: "${value}"`)
     }
     return
   }
+  const match = found.task
   if (taskIds.value.includes(match.id)) {
     notifyScanError('Already added to this handover')
     return
@@ -358,7 +361,7 @@ async function handleSave() {
             </div>
           </div>
 
-          <ScanBar placeholder="Scan barcode..." class="ns-scanbar" @scan="handleScan">
+          <ScanBar placeholder="Scan tracking no., packing no., or order no." class="ns-scanbar" @scan="handleScan">
             <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</button>
           </ScanBar>
 

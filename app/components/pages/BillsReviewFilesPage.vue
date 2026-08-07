@@ -1,23 +1,35 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpAvatar, MpButton, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, css,
+  MpIcon, MpAvatar, MpButton, MpSelect, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpPopoverList, MpPopoverListItem, css, toast,
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { reviewFiles } from '~/data'
+import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile, deleteReviewFiles, moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses } from '~/data'
 import type { ReviewFile, FileClassification } from '~/data'
 
+/** Which surface's review queue this table is showing. Both Expenses and
+ *  Purchase invoices have a "Review files" tab over the same table; only the
+ *  underlying queue and the review route differ. */
+const props = withDefaults(defineProps<{ surface?: 'expenses' | 'purchase-invoices' }>(), {
+  surface: 'expenses',
+})
+
 const { t } = useLocale()
+const router = useRouter()
 const toggleAirene = inject<() => void>('toggleAirene')
+
+const queue = computed(() => (props.surface === 'purchase-invoices' ? purchaseInvoiceReviewFiles : reviewFiles))
+const reviewBase = computed(() => (props.surface === 'purchase-invoices' ? '/purchase-invoices/review' : '/expenses/review'))
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'file',            label: 'File',           width: '220px', sortable: true,                 sortType: 'text'   },
-  { key: 'number',          label: 'Number',         width: '160px', sortable: true,                 sortType: 'number' },
+  { key: 'number',          label: 'Number',         width: '160px', sortable: true,                 sortType: 'text'   },
   { key: 'beneficiaryName', label: 'Beneficiary',    width: '220px', sortable: true,                 sortType: 'text'   },
   { key: 'confidence',      label: 'Confidence',     width: '120px', sortable: true,                 sortType: 'number' },
   { key: 'classification',  label: 'Classification', width: '160px',                                 sortType: 'text'   },
@@ -44,7 +56,7 @@ function iconForFile(name: string): string {
 // ─── Flatten + enrich ─────────────────────────────────────────────────────────
 
 const rows = computed<Row[]>(() =>
-  reviewFiles.map(rf => ({
+  queue.value.map(rf => ({
     ...rf,
     beneficiaryName: rf.beneficiary.name,
     fileIcon: iconForFile(rf.file),
@@ -65,10 +77,14 @@ const {
 
 // ─── Filter options ───────────────────────────────────────────────────────────
 
+// OCR can classify an uploaded file as any of the four types no matter which
+// surface it landed on (see reviewFiles.ts), so both tabs filter across all
+// four rather than just the surface's "native" classification.
 const classificationOptions: { label: string; value: FileClassification | '' }[] = [
-  { label: t('Bill'),         value: 'bill'         },
-  { label: t('Receipt'),      value: 'receipt'      },
-  { label: t('Unclassified'), value: 'unclassified' },
+  { label: t('Expenses'),        value: 'bill'         },
+  { label: t('Invoice'),         value: 'invoice'      },
+  { label: t('Payment receipt'), value: 'receipt'      },
+  { label: t('Other documents'), value: 'unclassified' },
 ]
 
 const classificationLabel = computed(
@@ -91,8 +107,8 @@ function formatDate(iso: string) {
   }).format(new Date(iso))
 }
 
-function formatNumber(n: number) {
-  return `${t('Expense')} #${String(n).padStart(5, '0')}`
+function formatNumber(n: string | undefined) {
+  return n ?? '—'
 }
 
 function confidenceLabel(score: number): 'High' | 'Medium' | 'Low' {
@@ -109,9 +125,105 @@ const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnV
 function hideColumn(key: string) { columnVisibility[key] = false }
 
 // ─── Upload dropzone (Card 1) ──────────────────────────────────────────────────
+// Every uploaded/dropped file is dropped in immediately as a "processing" row
+// (see ReviewFile.processing) — addProcessingReviewFile resolves it in place
+// once the simulated OCR pass completes, no extra wiring needed here.
 
 const fileInputEl = ref<HTMLInputElement | null>(null)
 function openFilePicker() { fileInputEl.value?.click() }
+
+function ingestFiles(files: FileList | null) {
+  if (!files) return
+  for (const f of Array.from(files)) addProcessingReviewFile(f.name, props.surface)
+}
+function onFileInputChange(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  ingestFiles(input.files)
+  input.value = ''
+}
+const dropzoneDragOver = ref(false)
+function onDropzoneDrop(ev: DragEvent) {
+  dropzoneDragOver.value = false
+  ingestFiles(ev.dataTransfer?.files ?? null)
+}
+
+// ─── Bulk actions (selection bar) — mirrors BillsIndexPage's bulk pattern ──────
+
+function bulkSelectedReviewFiles(selectedRows: Set<number>): Row[] {
+  return [...selectedRows].map(i => paginated.value[i] as Row).filter(Boolean)
+}
+// Each surface's own classification — 'bill' reviews as an Expense here,
+// 'invoice' as a Purchase invoice there. A file OCR reads as anything else
+// doesn't belong to this surface and needs to be moved out via bulk action.
+const nativeClassification = computed<FileClassification>(() => (props.surface === 'purchase-invoices' ? 'invoice' : 'bill'))
+
+/** All selected rows share one classification, and it isn't this surface's
+ *  native one (i.e. all Receipt, all Invoice/Expenses, or all Unclassified)
+ *  — these can be reviewed or moved elsewhere. Mixed selections, and
+ *  all-native selections, fall back to Review + Delete only. */
+function allSelectedSameNonNativeClassification(selectedRows: Set<number>): boolean {
+  const selected = bulkSelectedReviewFiles(selectedRows)
+  if (!selected.length) return false
+  const first = selected[0]!.classification
+  return first !== nativeClassification.value && selected.every(rf => rf.classification === first)
+}
+
+// Review — opens the file-review page on the first selected file; the page's own
+// "Save & next" / "Skip without saving" walk the rest of the queue from there.
+function openReviewFiles(files: ReviewFile[]) {
+  const first = files[0]
+  if (first) router.push(`${reviewBase.value}/${first.id}`)
+}
+function reviewSelected(selectedRows: Set<number>) {
+  openReviewFiles(bulkSelectedReviewFiles(selectedRows))
+}
+// Row click (File cell) — same review stub as the bulk "Review" action, single file.
+function openRowReview(row: Row) {
+  if (row.processing) return
+  openReviewFiles([row])
+}
+
+// Move to the other surface's queue — handles the case where an uploaded
+// file turns out to belong to Purchase invoices while sitting in Expenses'
+// queue, or vice versa. Each tab only ever moves out towards the other one.
+const moveActionLabel = computed(() => (props.surface === 'purchase-invoices' ? 'Move files to Expenses' : 'Move files to Purchase invoice'))
+const movedToastLabel = computed(() => (props.surface === 'purchase-invoices' ? 'moved to Expenses' : 'moved to Purchase invoice'))
+
+function moveSelectedToOtherSurface(selectedRows: Set<number>, deselectAll: () => void) {
+  const ids = bulkSelectedReviewFiles(selectedRows).map(rf => rf.id)
+  const count = props.surface === 'purchase-invoices'
+    ? moveReviewFilesToExpenses(ids)
+    : moveReviewFilesToPurchaseInvoice(ids)
+  toast.notify({
+    variant: 'success',
+    title: `${count} ${t(count !== 1 ? 'files' : 'file')} ${t(movedToastLabel.value)}`,
+    rootProps: { class: 'toast-enterprise' },
+  })
+  deselectAll()
+}
+
+// Delete
+const bulkDeleteModalOpen = ref(false)
+const bulkDeleteIds = ref<string[]>([])
+const bulkDeleteCount = computed(() => bulkDeleteIds.value.length)
+let bulkDeleteDeselect: (() => void) | null = null
+
+function openBulkDeleteModal(selectedRows: Set<number>, deselectAll: () => void) {
+  bulkDeleteIds.value = bulkSelectedReviewFiles(selectedRows).map(rf => rf.id)
+  bulkDeleteDeselect = deselectAll
+  bulkDeleteModalOpen.value = true
+}
+function closeBulkDeleteModal() { bulkDeleteModalOpen.value = false }
+function confirmBulkDelete() {
+  const count = deleteReviewFiles(bulkDeleteIds.value, props.surface)
+  toast.notify({
+    variant: 'success',
+    title: `${count} ${t(count !== 1 ? 'files' : 'file')} ${t('deleted')}`,
+    rootProps: { class: 'toast-enterprise' },
+  })
+  bulkDeleteDeselect?.()
+  closeBulkDeleteModal()
+}
 </script>
 
 <template>
@@ -125,6 +237,7 @@ function openFilePicker() { fileInputEl.value?.click() }
     :sort-dir="sortDir"
     has-checkbox
     actions-width="52px"
+    bulk-label="file"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -132,13 +245,55 @@ function openFilePicker() { fileInputEl.value?.click() }
     @hide-column="hideColumn"
   >
 
+    <!-- ── Bulk actions ── -->
+    <template #bulk-actions="{ selectedRows, deselectAll }">
+      <template v-if="allSelectedSameNonNativeClassification(selectedRows as Set<number>)">
+        <MpPopover id="review-files-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+          <MpPopoverTrigger>
+            <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm btn-enterprise--icon-after">
+              {{ t('Actions') }}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="reviewSelected(selectedRows as Set<number>)">{{ t('Review') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="moveSelectedToOtherSurface(selectedRows as Set<number>, deselectAll)">{{ t(moveActionLabel) }}</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+      </template>
+      <button
+        v-else
+        class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
+        @click="reviewSelected(selectedRows as Set<number>)"
+      >
+        {{ t('Review') }}
+      </button>
+      <button
+        class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
+        @click="openBulkDeleteModal(selectedRows as Set<number>, deselectAll)"
+      >
+        {{ t('Delete') }}
+      </button>
+    </template>
+
     <!-- ── Upload dropzone — same position as the stats bar on other tabs ── -->
     <template #stats>
       <div class="upload-row">
 
         <!-- Card 1: Drop file / choose (dashed border) -->
-        <MpButton class="upload-card upload-card--dropzone" @click="openFilePicker">
-          <component :is="'input'" ref="fileInputEl" type="file" class="upload-card__input" accept=".csv,.png,.xlsx,.pdf,.jpg" multiple />
+        <MpButton
+          class="upload-card upload-card--dropzone"
+          :class="{ 'upload-card--dropzone-over': dropzoneDragOver }"
+          @click="openFilePicker"
+          @dragover.prevent="dropzoneDragOver = true"
+          @dragleave.prevent="dropzoneDragOver = false"
+          @drop.prevent="onDropzoneDrop"
+        >
+          <component :is="'input'" ref="fileInputEl" type="file" class="upload-card__input" accept=".csv,.png,.xlsx,.pdf,.jpg" multiple @change="onFileInputChange" />
           <MpAvatar variant="circle" size="xl" variant-color="gray" icon="upload" icon-variant="outline" />
           <span class="upload-card__copy">
             <span class="upload-card__title">
@@ -245,47 +400,58 @@ function openFilePicker() { fileInputEl.value?.click() }
       </div>
     </template>
 
-    <!-- ── Cell: File ── -->
+    <!-- ── Cell: File (text link → review; erp.css .cell-link, same pattern as
+         BillsIndexPage's Number/Beneficiary columns) ── -->
     <template #cell-file="{ row, value }">
       <div class="file-cell">
         <MpIcon :name="(row as Row).fileIcon" size="sm" class="file-cell__icon" />
-        <span class="cell-text">{{ value }}</span>
+        <a
+          class="cell-text"
+          :class="(row as Row).processing ? 'file-cell__name--processing' : 'cell-link'"
+          @click.stop="openRowReview(row as Row)"
+        >{{ value }}</a>
       </div>
     </template>
 
     <!-- ── Cell: Number ── -->
-    <template #cell-number="{ value }">
-      {{ formatNumber(value as number) }}
+    <template #cell-number="{ row, value }">
+      <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <template v-else>{{ formatNumber(value as string | undefined) }}</template>
     </template>
 
     <!-- ── Cell: Beneficiary ── -->
-    <template #cell-beneficiaryName="{ value }">
-      <span class="cell-text">{{ value }}</span>
+    <template #cell-beneficiaryName="{ row, value }">
+      <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <span v-else class="cell-text">{{ value }}</span>
     </template>
 
     <!-- ── Cell: Confidence ── -->
-    <template #cell-confidence="{ value }">
-      {{ t(confidenceLabel(value as number)) }}
+    <template #cell-confidence="{ row, value }">
+      <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <template v-else>{{ t(confidenceLabel(value as number)) }}</template>
     </template>
 
     <!-- ── Cell: Classification ── -->
-    <template #cell-classification="{ value }">
-      <ErpStatusBadge :status="value as string" />
+    <template #cell-classification="{ row, value }">
+      <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <ErpStatusBadge v-else :status="value as string" />
     </template>
 
     <!-- ── Cell: Date ── -->
-    <template #cell-date="{ value }">
-      {{ formatDate(value as string) }}
+    <template #cell-date="{ row, value }">
+      <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <template v-else>{{ formatDate(value as string) }}</template>
     </template>
 
     <!-- ── Cell: Amount ── -->
-    <template #cell-amount="{ value }">
-      {{ formatIDR(value as number) }}
+    <template #cell-amount="{ row, value }">
+      <MpSkeleton v-if="(row as Row).processing" class="review-skeleton" height="12px" rounded="md" duration="0s" width="100%" />
+      <template v-else>{{ formatIDR(value as number) }}</template>
     </template>
 
     <!-- ── Actions ── -->
-    <template #actions>
-      <MpButton class="row-kebab" :aria-label="t('More actions')">
+    <template #actions="{ row }">
+      <MpButton v-if="!(row as Row).processing" class="row-kebab" :aria-label="t('More actions')">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <circle cx="12" cy="5" r="2" />
           <circle cx="12" cy="12" r="2" />
@@ -298,6 +464,33 @@ function openFilePicker() { fileInputEl.value?.click() }
       <LastUpdatedCell v-bind="lastUpdatedFor((row as Record<string, unknown>).id as string)" />
     </template>
   </ErpTablePage>
+
+  <!-- ── Bulk delete confirmation modal (same pattern as BillsIndexPage) ── -->
+  <MpModal
+    id="review-files-bulk-delete-modal"
+    :is-open="bulkDeleteModalOpen"
+    size="md"
+    is-close-on-esc
+    is-close-on-overlay-click
+    :is-keep-alive="false"
+    @close="closeBulkDeleteModal"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        {{ t('Delete') }} {{ bulkDeleteCount }} {{ t(bulkDeleteCount !== 1 ? 'files' : 'file') }}?
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        {{ t('Deleted files cannot be restored.') }}
+      </MpModalBody>
+      <MpModalFooter>
+        <div class="modal-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" @click="closeBulkDeleteModal">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--danger" @click="confirmBulkDelete">{{ t('Delete') }}</button>
+        </div>
+      </MpModalFooter>
+    </MpModalContent>
+  </MpModal>
 </template>
 
 <style scoped>
@@ -329,6 +522,10 @@ function openFilePicker() { fileInputEl.value?.click() }
 .upload-card--dropzone {
   border: 1px dashed var(--mp-border-bold) !important;
   position: relative;
+}
+.upload-card--dropzone-over {
+  border-color: var(--mp-border-selected, #029861) !important;
+  background: var(--mp-background-neutral-hovered, #f8f9f9) !important;
 }
 
 .upload-card--option {
@@ -373,6 +570,16 @@ function openFilePicker() { fileInputEl.value?.click() }
   color: var(--mp-text-secondary);
 }
 
+/* Processing-row skeleton bar — matches Figma's OCR "processing" row state
+   (node 4260:65434): solid neutral-subtle bar, no shimmer, full cell width. */
+.review-skeleton {
+  display: block !important;
+  width: 100%;
+  background-image: none !important;
+  background-color: var(--mp-background-neutral-subtle, #ebebeb) !important;
+  animation: none !important;
+}
+
 /* File cell */
 .file-cell {
   display: flex;
@@ -391,6 +598,12 @@ function openFilePicker() { fileInputEl.value?.click() }
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+/* File cell while OCR is still processing — not yet reviewable, so no link affordance */
+.file-cell__name--processing {
+  color: var(--mp-text-default);
+  cursor: default;
 }
 
 /* Row action kebab button */
@@ -483,4 +696,7 @@ function openFilePicker() { fileInputEl.value?.click() }
   min-width: 0;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+
+/* ── Bulk delete modal ─────────────────────────────────────────────────── */
+.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

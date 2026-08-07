@@ -229,11 +229,11 @@ function seedShippedPacks(startSeq: number): PackingTask[] {
   return out;
 }
 
-const snapshot = loadSnapshot<PackingTask>("packing");
+const snapshot = loadSnapshot<PackingTask>("packing-v2");
 export const packingTasks = reactive<PackingTask[]>(snapshot ?? seedTasks());
 
 function persistPacking(): void {
-  saveSnapshot("packing", packingTasks);
+  saveSnapshot("packing-v2", packingTasks);
 }
 
 // Freeze the freshly-generated seed on first client load — the packing seed derives

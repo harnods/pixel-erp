@@ -9,7 +9,10 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { useTableState } from '~/composables/useTableState'
+import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
+import { ordersByIds, anyLabelAvailable } from '~/data/shippingLabels'
 import {
   pickingTasksFor, pickingTaskAgingDays, isPickingReadyToPack, packableOrderIds, startPicking,
   canCancelPickingTask, cancelPickingTask, isPickingFrozen, type PickingTask,
@@ -229,6 +232,18 @@ function bulkCreatePacking(sel: Set<number>, deselectAll: () => void) {
   deselectAll()
 }
 
+// ─── Print shipping label (source/marketplace or WMS label; D9 duplicate guard) ──
+const { pdfOpen, pdfDoc, pdfFilename, printShippingLabels } = usePrintShippingLabel()
+function ordersForPicking(t: PickingTask) { return ordersByIds(t.salesOrderIds) }
+// Enabled unless every order behind the task is a marketplace order still waiting
+// for its source label (then there's nothing printable).
+function canPrintLabel(t: PickingTask): boolean { return anyLabelAvailable(ordersForPicking(t)) }
+function bulkPrintLabels(sel: Set<number>, deselectAll: () => void) {
+  const orders = ordersByIds(selectedPickingsOf(sel).flatMap(t => t.salesOrderIds))
+  printShippingLabels(orders)
+  deselectAll()
+}
+
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
@@ -252,7 +267,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
-    <!-- ── Bulk bar → create packing for the selected finished picking lists ── -->
+    <!-- ── Bulk bar → create packing / print shipping labels for the selected lists ── -->
     <template #bulk-actions="{ deselectAll, selectedRows }">
       <button
         v-if="bulkPackable(selectedRows as Set<number>)"
@@ -261,7 +276,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       >
         {{ t('Create packing') }}
       </button>
-      <span v-else-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="pick-bulk-hint">
+      <button
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        @click="bulkPrintLabels(selectedRows as Set<number>, deselectAll)"
+      >
+        {{ t('Print shipping label') }}
+      </button>
+      <span v-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="pick-bulk-hint">
         {{ t('Select picking lists from a single warehouse to create packing') }}
       </span>
     </template>
@@ -457,6 +478,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               @click="createPacking(row as unknown as PickingTask)"
             >{{ t('Create packing') }}</MpPopoverListItem>
             <MpPopoverListItem
+              v-if="canPrintLabel(row as unknown as PickingTask)"
+              @click="printShippingLabels(ordersForPicking(row as unknown as PickingTask))"
+            >{{ t('Print shipping label') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else
+              :class="css({ opacity: 0.45, cursor: 'not-allowed' })"
+              :title="t('Waiting for marketplace shipping label')"
+            >{{ t('Print shipping label') }}</MpPopoverListItem>
+            <MpPopoverListItem
               v-if="canCancelPickingTask(row as unknown as PickingTask)"
               :class="css({ color: 'var(--mp-text-critical)' })"
               @click="openCancelModal(row as unknown as PickingTask)"
@@ -475,6 +505,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
+
+  <PdfPreviewModal
+    :open="pdfOpen"
+    :doc="pdfDoc"
+    :filename="pdfFilename"
+    :title="t('Shipping label preview')"
+    @close="pdfOpen = false"
+  />
 
   <!-- ── Cancel confirmation modal ── -->
   <MpModal id="pick-cancel-modal" :is-open="cancelModalOpen" size="md"

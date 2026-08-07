@@ -284,6 +284,21 @@ function seedTasks(): ReceivingTask[] {
     const n = seq++;
     const h = hash(r.id) + pos;
     const totalSkus = lineItemsForReceipt(r).length;
+    // Spread finished work across ~88 days so date-range filters (Overview period,
+    // Reports) are meaningful; in-progress / pending work stays recent (it's still
+    // live). Ages are "days ago"; created > start > end keeps the timeline ordered.
+    let createdAge: number, startAge: number, endAge: number;
+    if (ended) {
+      endAge = 1 + ((h * 37) % 88);            // 1..88 days ago — spread
+      startAge = endAge + (h % 2);             // started same/prior day
+      createdAge = startAge + 1 + (h % 3);     // created 1..3 days earlier
+    } else if (started) {
+      startAge = 1 + (h % 4);                  // in progress now → recent
+      createdAge = startAge + 1 + (h % 3);
+    } else {
+      startAge = 0;
+      createdAge = 3 + (h % 8);                // pending backlog → recent
+    }
     const task: ReceivingTask = {
       id: `rtask-${n}`,
       taskNo: `Receiving #${n}`,
@@ -298,9 +313,9 @@ function seedTasks(): ReceivingTask[] {
       purchaseQty: 0,
       receivedQty: 0,
       status,
-      createdDate: isoAt(-(5 + (h % 6)), 9, (h * 3) % 60),
-      startDate: started ? isoAt(-(3 + (h % 6)), 8 + (h % 4), (h * 7) % 60) : undefined,
-      endDate: ended ? isoAt(-(1 + (h % 3)), 16 + (h % 3), (h * 11) % 60) : undefined,
+      createdDate: isoAt(-createdAge, 9, (h * 3) % 60),
+      startDate: started ? isoAt(-startAge, 8 + (h % 4), (h * 7) % 60) : undefined,
+      endDate: ended ? isoAt(-endAge, 16 + (h % 3), (h * 11) % 60) : undefined,
     };
     syncTaskTotals(task, totalSkus);
     return task;
@@ -389,7 +404,7 @@ function patchMissingTargetQty(snap: ReceivingTask[]): ReceivingTask[] {
   });
 }
 
-const _snap = loadSnapshot<ReceivingTask>("receiving");
+const _snap = loadSnapshot<ReceivingTask>("receiving-v3");
 const snapshot = _snap ? patchMissingTargetQty(patchSnapshotSerials(_snap)) : null;
 export const receivingTasks = reactive<ReceivingTask[]>(snapshot ?? seedTasks());
 
@@ -420,7 +435,7 @@ function rebuildPOs(): void {
 }
 
 function persistTasks(): void {
-  saveSnapshot("receiving", receivingTasks);
+  saveSnapshot("receiving-v3", receivingTasks);
   rebuildPOs();
 }
 
@@ -434,7 +449,7 @@ function initInbound(): void {
     ids.forEach((id) => recomputeReceiptStatus(id));
   }
   // Always persist: captures fresh seed OR patched snapshot with added SNs
-  saveSnapshot("receiving", receivingTasks);
+  saveSnapshot("receiving-v3", receivingTasks);
 }
 
 // ── PO status derivation ─────────────────────────────────────────────────────────
@@ -473,7 +488,10 @@ export function recomputeReceiptStatus(receiptId: string): void {
     if (lines.every((l) => (received[l.sku] ?? 0) >= l.purchaseQty)) {
       if (ended.every((t) => t.stockCommitted)) {
         r.status = "completed";
-        r.receivedDate = r.receivedDate ?? nowIso().slice(0, 10);
+        // Received date = when receiving actually finished (latest task end), so it
+        // tracks the spread close dates rather than a separate clustered seed value.
+        const closeIso = ended.map((t) => t.endDate).filter(Boolean).sort().slice(-1)[0];
+        r.receivedDate = closeIso ? closeIso.slice(0, 10) : (r.receivedDate ?? nowIso().slice(0, 10));
       } else {
         r.status = "in progress"; // fully received, still waiting on real put-away
       }

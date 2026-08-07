@@ -93,38 +93,61 @@ function receivedUnits(taskIds: string[]): number {
   return taskIds.reduce((sum, id) => sum + (getReceivingTask(id)?.receivedQty ?? 0), 0);
 }
 
-// ── Seed: one Open put-away per warehouse for its FIRST pending task ──────────────
-// That receiving task becomes Completed (state E); any other pending tasks stay
-// pending (state D), so both states are demonstrable.
+// Put-away timestamps: it happens shortly after receiving finished and takes
+// 20 min–3 h. Derived from the receiving task's endDate so put-away durations are
+// real (and spread across the same window), giving the Overview a real average.
+function putAwayDates(recvEndIso: string, h: number): { start: string; end: string } {
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const fmt = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:00`;
+  const start = new Date(recvEndIso);
+  start.setHours(start.getHours() + 1 + (h % 5)); // 1–5 h after receiving finished
+  const end = new Date(start);
+  end.setMinutes(end.getMinutes() + 20 + ((h * 7) % 160)); // 20–180 min to put away
+  return { start: fmt(start), end: fmt(end) };
+}
+function hashStr(s: string): number {
+  return s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+}
+
+// ── Seed: a put-away per received task. Most are Completed (with real start/end
+// timestamps); the first per warehouse stays Open so both states are demonstrable.
 function seedTasks(): PutAwayTask[] {
   const out: PutAwayTask[] = [];
   let seq = 20090;
   PUTAWAY_WAREHOUSES.forEach((wh, p) => {
     const pending = pendingRefs(wh.id);
     if (!pending.length) return;
-    const rtasks = pending.slice(0, 1); // 1:1 for the seed; bundling is allowed in-app
     const zone = ZONES[p % ZONES.length]!;
-    out.push({
-      id: `pa-${p}`,
-      taskNo: `Put-away #${seq++}`,
-      receivingTaskIds: rtasks.map((r) => r.id),
-      receivingTaskNos: rtasks.map((r) => r.no),
-      warehouseId: wh.id,
-      warehouseName: wh.name,
-      assignee: operatorForWarehouse(wh.id, p),
-      itemQty: receivedUnits(rtasks.map((r) => r.id)),
-      destination: `${zone}-${String((p % 9) + 1).padStart(2, "0")}-${String((p % 5) + 1).padStart(2, "0")}`,
-      status: "open",
+    pending.forEach((ref, idx) => {
+      const h = hashStr(ref.id) + idx;
+      const recvEnd = getReceivingTask(ref.id)?.endDate;
+      // Keep the first task per warehouse Open (demo); complete the rest.
+      const done = idx > 0 && !!recvEnd;
+      const dates = done ? putAwayDates(recvEnd!, h) : undefined;
+      out.push({
+        id: `pa-${p}-${idx}`,
+        taskNo: `Put-away #${seq++}`,
+        receivingTaskIds: [ref.id],
+        receivingTaskNos: [ref.no],
+        warehouseId: wh.id,
+        warehouseName: wh.name,
+        assignee: operatorForWarehouse(wh.id, p + idx),
+        itemQty: receivedUnits([ref.id]),
+        destination: `${zone}-${String(((p + idx) % 9) + 1).padStart(2, "0")}-${String(((p + idx) % 5) + 1).padStart(2, "0")}`,
+        status: done ? "completed" : "open",
+        startDate: dates?.start,
+        endDate: dates?.end,
+      });
     });
   });
   return out;
 }
 
-const snapshot = loadSnapshot<PutAwayTask>("putaway");
+const snapshot = loadSnapshot<PutAwayTask>("putaway-v4");
 export const putAwayTasks = reactive<PutAwayTask[]>(snapshot ?? seedTasks());
 
 function persistPutAways(): void {
-  saveSnapshot("putaway", putAwayTasks);
+  saveSnapshot("putaway-v4", putAwayTasks);
 }
 
 // On first load, mark each seed put-away's receiving task(s) Completed.

@@ -55,6 +55,7 @@ const statusConfig: Record<string, StatusConfig> = {
   shipped:    { type: 'completed',    label: 'Shipped'    },
   high:       { type: 'completed',    label: 'High'       },
   fulfilled:  { type: 'completed',    label: 'Fulfilled'  },
+  ready:      { type: 'completed',    label: 'Ready'      },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
@@ -65,6 +66,7 @@ const statusConfig: Record<string, StatusConfig> = {
   receiving:  { type: 'warning',      label: 'Receiving'  },
   'ready to pack':{ type: 'warning',  label: 'Ready to pack' },
   'ready to ship':{ type: 'warning',  label: 'Ready to ship' },
+  bill:       { type: 'warning',      label: 'Expenses'   },
   'out for delivery':{ type: 'information', label: 'Out for delivery' },
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
@@ -81,6 +83,7 @@ const statusConfig: Record<string, StatusConfig> = {
   error:      { type: 'critical',     label: 'Error'      },
   declined:   { type: 'critical',     label: 'Declined'   },
   low:        { type: 'critical',     label: 'Low'        },
+  'needs review':{ type: 'critical',  label: 'Needs review' },
 
   // ── announcement — GRAY (neutral / final / inactive) ──
   draft:      { type: 'announcement', label: 'Draft'      },
@@ -96,11 +99,13 @@ const statusConfig: Record<string, StatusConfig> = {
   not_started:{ type: 'warning',      label: 'Open'        },
   'to do':    { type: 'announcement', label: 'To do'      },
   direct:     { type: 'announcement', label: 'Direct'     },
-  unclassified:{ type: 'announcement', label: 'Unclassified' },
+  unclassified:{ type: 'announcement', label: 'Other documents' },
+
+  // ── completed — green ─────────────────────────────
+  receipt:    { type: 'completed',    label: 'Payment receipt' },
 
   // ── information — blue ────────────────────────────
-  bill:       { type: 'information',  label: 'Bill'       },
-  receipt:    { type: 'information',  label: 'Receipt'    },
+  invoice:    { type: 'information',  label: 'Invoice'    },
   'partially processed': { type: 'information', label: 'Partially processed' },
   'partially produced': { type: 'warning', label: 'Partially produced' },
   'partially completed': { type: 'information', label: 'Partially completed' },
