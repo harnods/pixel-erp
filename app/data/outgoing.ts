@@ -335,6 +335,9 @@ function generateShipped(count = 10): OutgoingOrder[] {
       number: `OUT-2026-${String(800 + k).padStart(4, "0")}`,
       salesNo,
       source,
+      // Shipped marketplace orders always carry their source label (the channel
+      // issued it before it left) so Print Shipping Label works on these too.
+      shippingLabel: fromDesty ? `SPXID${String(50000000 + k * 211).padStart(11, "0")}` : undefined,
       warehouseId: wh.id,
       warehouseName: wh.name,
       skuQty,
@@ -642,7 +645,7 @@ function generateMultiOrderPickingScenario(): OutgoingOrder[] {
 // full snapshot so seed records mutated by the flow (status derivation, shipped
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
-const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing-v4");
+const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing-v5");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
   outgoingSnapshot ?? [
     ...generateTrackingScenario(), ...generateMultiOrderPickingScenario(),
@@ -686,7 +689,7 @@ export const shippedSeeds: ShippedSeed[] = outgoingOrders
 
 /** Persist the outgoing snapshot (call after any mutation). */
 export function persistOutgoing(): void {
-  saveSnapshot("outgoing-v4", outgoingOrders);
+  saveSnapshot("outgoing-v5", outgoingOrders);
 }
 
 let outgoingAddSeq = outgoingOrders.filter((o) => o.id.startsWith("out-new-")).length;
