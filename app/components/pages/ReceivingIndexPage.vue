@@ -12,7 +12,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpColumnSortMenu from '~/components/patterns/ErpColumnSortMenu.vue'
 import { formatDateTime } from '~/utils/date'
 import {
-  receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask, startReceiving,
+  receivingPOsFor, taskAgingDays, canCancelReceivingTask, cancelReceivingTask, startReceiving, isReceivingFrozen,
   type ReceivingPO, type ReceivingTask,
 } from '~/data/receivingTasks'
 import { putAwayTasksFor } from '~/data/putAwayTasks'
@@ -291,9 +291,15 @@ onMounted(() => {
   }
 })
 function viewDetails(t: ReceivingTask) { router.push(`/receiving/${t.id}`) }
-function startReceivingAndNavigate(t: ReceivingTask) {
-  startReceiving(t.id)
-  router.push(`/receiving/${t.id}/receive`)
+function startReceivingAndNavigate(task: ReceivingTask) {
+  // A task frozen behind a Needs Re-arrangement flag can't be started from the
+  // list either — the operator must acknowledge it on the task's detail page.
+  if (isReceivingFrozen(task)) {
+    toast.notify({ variant: 'error', title: t('This receiving task changed and needs acknowledgement before it can start'), maxWidth: 'max-content' })
+    return
+  }
+  startReceiving(task.id)
+  router.push(`/receiving/${task.id}/receive`)
 }
 function continueReceiving(t: ReceivingTask) { router.push(`/receiving/${t.id}/receive`) }
 function createPutAway(t: ReceivingTask) {
@@ -522,7 +528,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <td v-if="colVis.skuCount" class="rcvg-td">{{ task.skuCount }}</td>
             <td v-if="colVis.expectedQty" class="rcvg-td rcvg-td--right">{{ fmt(expectedQtyTotal(task)) }}</td>
             <td v-if="colVis.receivedQty" class="rcvg-td rcvg-td--right">{{ fmt(task.receivedQty) }}</td>
-            <td v-if="colVis.status" class="rcvg-td"><ErpStatusBadge :status="task.status" /></td>
+            <td v-if="colVis.status" class="rcvg-td">
+              <div class="rcvg-status-cell">
+                <ErpStatusBadge :status="task.status" />
+                <ErpStatusBadge
+                  v-if="isReceivingFrozen(task)"
+                  status="needs-rearrangement" type="critical" :label="t('Needs re-arrangement')"
+                />
+              </div>
+            </td>
             <td class="rcvg-td">
               <div class="rcvg-icons-cell">
                 <MpTooltip
@@ -558,7 +572,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
                       <MpPopoverListItem @click="viewDetails(task)">{{ t('View details') }}</MpPopoverListItem>
-                      <MpPopoverListItem v-if="task.status === 'open'" @click="startReceivingAndNavigate(task)">{{ t('Start receiving') }}</MpPopoverListItem>
+                      <MpPopoverListItem v-if="task.status === 'open' && !isReceivingFrozen(task)" @click="startReceivingAndNavigate(task)">{{ t('Start receiving') }}</MpPopoverListItem>
                       <MpPopoverListItem v-else-if="task.status === 'in progress'" @click="continueReceiving(task)">{{ t('Continue receiving') }}</MpPopoverListItem>
                       <MpPopoverListItem v-if="task.status === 'pending put-away'" @click="createPutAway(task)">{{ t('Create put-away') }}</MpPopoverListItem>
                       <MpPopoverListItem
@@ -735,6 +749,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .rcvg-td--right { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .rcvg-td--muted { color: var(--mp-text-secondary); }
+
+/* Status cell — status + Needs re-arrangement badges stacked */
+.rcvg-status-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5); flex-wrap: wrap; }
 
 /* Icon indicator cell — put-away task badge */
 .rcvg-icons-cell {

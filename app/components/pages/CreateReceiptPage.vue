@@ -10,12 +10,13 @@ import {
 import { warehouses } from '~/data/warehouses'
 import { couriers } from '~/data/couriers'
 import { addReceipt, nextReceiptNo, receipts, canEditReceipt } from '~/data/receipts'
-import { editInboundReceipt } from '~/data/inboundSync'
+import { editInboundReceipt, proposeReceivingReduction } from '~/data/inboundSync'
 import { lineItemsForReceipt } from '~/data/receiptLineItems'
-import { lockedReceivingQtyForSku } from '~/data/receivingTasks'
+import { lockedReceivingQtyForSku, openReceivingLinesForSku, getReceivingTask } from '~/data/receivingTasks'
 import { VENDORS } from '~/data/master'
 import { CATALOG } from '~/data/catalog'
 import { scrollToFirstError } from '~/utils/form'
+import AcknowledgeReceivingReductionModal, { type ReceivingReductionGroup } from '~/components/AcknowledgeReceivingReductionModal.vue'
 
 const props = defineProps<{ orderId?: string }>()
 const isEdit = computed(() => !!props.orderId && props.orderId !== 'new')
@@ -279,6 +280,54 @@ async function persist() {
   })
 }
 
+const allocModalOpen = ref(false)
+const allocGroups = ref<ReceivingReductionGroup[]>([])
+
+/** Reductions that span ≥2 Open receiving tasks need a read-only acknowledge step
+ *  (no override, unlike outbound). Single-task / unassigned-only reductions apply
+ *  directly (AC#1). */
+function computeAllocationGroups(): ReceivingReductionGroup[] {
+  const r = editingReceipt.value
+  if (!r) return []
+  const oldBySku = new Map(lineItemsForReceipt(r).map((l) => [l.sku, l.purchaseQty]))
+  const groups: ReceivingReductionGroup[] = []
+  for (const row of rows.value.filter((row) => row.productId)) {
+    const oldQty = oldBySku.get(row.productSku) ?? 0
+    const newQty = Number(row.qty) || 0
+    if (newQty >= oldQty) continue
+    const N = oldQty - newQty
+    const proposal = proposeReceivingReduction(r.id, row.productSku, N)
+    if (proposal.exceedsRemovable) continue // editInboundReceipt rejects it with a clear toast
+    const R = Math.max(0, N - Math.min(N, proposal.unassigned)) // qty drawn from open tasks
+    const open = openReceivingLinesForSku(r.id, row.productSku)
+    if (open.length < 2 || R <= 0) continue // AC#1 — direct, no allocation step
+    const byTask = new Map(proposal.taskReductions.map((t) => [t.taskId, t]))
+    groups.push({
+      sku: row.productSku,
+      productName: row.productName,
+      toRemove: R,
+      tasks: open.map((p) => {
+        const tr = byTask.get(p.taskId)
+        const reduceBy = tr?.reduceBy ?? 0
+        const t = getReceivingTask(p.taskId)
+        return {
+          taskNo: p.taskNo, currentQty: p.qty, reduceBy, resultQty: p.qty - reduceBy,
+          willCancel: reduceBy === p.qty && t?.items.length === 1,
+        }
+      }),
+    })
+  }
+  return groups
+}
+
+function onAllocConfirm() {
+  allocModalOpen.value = false
+  const ok = persistEdit()
+  if (!ok) return
+  toast.notify({ variant: 'success', title: t('Purchase order updated'), maxWidth: 'max-content' })
+  router.push(`/inbound-delivery/${props.orderId}`)
+}
+
 /** Edit mode — apply changes via editInboundReceipt (C2 AC#4 lock). Returns
  *  false (and toasts) on rejection so the caller stays on the form (no
  *  partial apply). */
@@ -294,7 +343,8 @@ function persistEdit(): boolean {
     trackingNos: trackingNo.value ? [trackingNo.value] : [],
   })
   if (!res.ok) {
-    const msg = res.reason === 'SKU_LOCKED' ? `${t('A SKU already received can\'t be removed or reduced below')} ${res.locked}`
+    const msg = res.reason === 'SKU_LOCKED'
+      ? `${t('A SKU already received can\'t be removed or reduced below')} ${res.locked}${res.removable !== undefined ? ` — ${t('only')} ${res.removable} ${t('removable')}` : ''}`
       : res.reason === 'NOT_EDITABLE' ? t('This PO can no longer be edited')
       : t('Could not save the changes')
     toast.notify({ variant: 'error', title: msg, maxWidth: 'max-content' })
@@ -307,8 +357,10 @@ async function handleSave() {
   if (!await validate()) return
   isSaving.value = true
   if (isEdit.value) {
-    const ok = persistEdit()
     isSaving.value = false
+    const groups = computeAllocationGroups()
+    if (groups.length) { allocGroups.value = groups; allocModalOpen.value = true; return } // ask first
+    const ok = persistEdit()
     if (!ok) return
     toast.notify({ variant: 'success', title: t('Purchase order updated'), maxWidth: 'max-content' })
     router.push(`/inbound-delivery/${props.orderId}`)
@@ -690,6 +742,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <button v-if="!isEdit" class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}</button>
       <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
     </footer>
+
+    <AcknowledgeReceivingReductionModal
+      :open="allocModalOpen"
+      :groups="allocGroups"
+      @close="allocModalOpen = false"
+      @confirm="onAllocConfirm"
+    />
   </div>
 </template>
 

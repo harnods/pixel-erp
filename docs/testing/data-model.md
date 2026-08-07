@@ -34,6 +34,8 @@ State persists to `localStorage` (via `persist.ts`) and is resettable.
 | **Put-away task** | open → in progress → completed · canceled |
 | **Outbound order** | Pending → Open → In progress → (Partially picked / Partially shipped) → Completed · Canceled |
 | **Picking / Packing task** | open → in progress → (partially picked) → completed · canceled |
+| **Picking task — Needs Re-arrangement** | orthogonal flag (`needsRearrangement`) on an `open` task, not a status: a D7 outbound qty reduction touched the task (reduced, didn't empty it) → Start/Continue blocked until a Warehouse Manager clears it (`clearPickingRearrangement`) — see `docs/prd/wms-outbound-prd.md` D7 AC#8–#10 |
+| **Receiving task — Needs Re-arrangement** | orthogonal flag (`needsRearrangement`) on an `open` receiving task: a PO qty reduction touched it (its SKU spanned ≥2 Open receiving tasks, or was the sole Open task — C2 AC#4 adapted) → Start receiving blocked until the operator self-serve acknowledges (`acknowledgeReceivingRearrangement`, no WH-Manager gate unlike Picking's) |
 | **Delivery / shipment** | ready to ship → out for delivery → shipped · canceled |
 | **Warehouse transfer** | draft → approved (terminal) · canceled |
 | **WMS adjustment** | Stock In/Out = completed on create; cycle count: not_started → in_progress → finished → approved |

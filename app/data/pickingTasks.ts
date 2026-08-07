@@ -87,6 +87,17 @@ export interface PickingTask {
   /** Orders whose cancellation has been acknowledged — their lines are excluded from
    *  the pick work (Qty to pick / rows) but they remain in salesOrderIds for linking. */
   canceledAckedOrderIds?: string[];
+  /** D7 AC#8 — a SKU-qty reduction on the Outbound touched this OPEN task (reduced but
+   *  not emptied to 0). The task freezes: it still shows its (now smaller) pick work,
+   *  but Start/Continue picking is blocked until a Warehouse Manager clears the flag
+   *  (AC#9) — an operator cannot self-clear it, unlike needsCancelAck above. */
+  needsRearrangement?: boolean;
+  /** ISO timestamp — when the task most recently froze (AC#8). */
+  rearrangementSetDate?: string;
+  /** Who cleared the last freeze (AC#9 — WH Manager, or Owner/Ultimate+LM). */
+  rearrangementClearedBy?: string;
+  /** ISO timestamp — when the last freeze was cleared (AC#9 audit). */
+  rearrangementClearedDate?: string;
   /** planned pick lines (per SKU per order) */
   lines?: PickingLine[];
   /** picked qty per line key (set as the operator picks) */
@@ -1019,6 +1030,39 @@ export function markPickingNeedsCancelAck(taskId: string): void {
   if (pendingCanceledOrderIds(t).length === 0) return;
   t.needsCancelAck = true;
   persistPicking();
+}
+
+/** D7 AC#8 — freeze an OPEN task into "Needs Re-arrangement" right after an outbound
+ *  qty reduction touched it (reduced its qty, didn't empty it to 0). No-op on any task
+ *  that isn't Open (a just-auto-cancelled task doesn't need this, and a started task
+ *  can't be reduced at all — its qty is locked). Called from editOutboundOrder for
+ *  every source the reduction can arrive from (WMS surface or the source API) — there
+ *  is no separate "confirm" step for the freeze itself, it's unconditional on commit. */
+export function markPickingNeedsRearrangement(taskId: string): void {
+  const t = getPickingTask(taskId);
+  if (!t || t.status !== "open") return;
+  t.needsRearrangement = true;
+  t.rearrangementSetDate = nowIso();
+  persistPicking();
+}
+
+/** D7 AC#9 — a Warehouse Manager reviews and clears a frozen task's re-arrangement,
+ *  returning it to a normal startable Open task. Gated to WH Manager in the UI layer
+ *  (this app has no real auth, so `actor` is caller-supplied for the audit stamp).
+ *  No-op if the task isn't currently frozen. */
+export function clearPickingRearrangement(taskId: string, actor = "Warehouse Manager"): void {
+  const t = getPickingTask(taskId);
+  if (!t || !t.needsRearrangement) return;
+  t.needsRearrangement = false;
+  t.rearrangementClearedBy = actor;
+  t.rearrangementClearedDate = nowIso();
+  persistPicking();
+}
+
+/** Whether a picking task is currently frozen behind a D7 re-arrangement (AC#8) —
+ *  the single source of truth the UI (Start/Continue gate) and tests both read. */
+export function isPickingFrozen(t: Pick<PickingTask, "needsRearrangement">): boolean {
+  return !!t.needsRearrangement;
 }
 
 /** Orders on this task that are cancelled but whose cancellation the operator hasn't

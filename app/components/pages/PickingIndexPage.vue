@@ -15,7 +15,7 @@ import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
 import { ordersByIds, anyLabelAvailable } from '~/data/shippingLabels'
 import {
   pickingTasksFor, pickingTaskAgingDays, isPickingReadyToPack, packableOrderIds, startPicking,
-  canCancelPickingTask, cancelPickingTask, type PickingTask,
+  canCancelPickingTask, cancelPickingTask, isPickingFrozen, type PickingTask,
 } from '~/data/pickingTasks'
 import { getPackingForOrder, pickingTaskHasPacking } from '~/data/packingTasks'
 import { warehouses } from '~/data/warehouses'
@@ -167,6 +167,13 @@ function toggleExpand(id: string) {
 const router = useRouter()
 function viewDetails(row: PickingTask) { router.push(`/picking/${row.id}`) }
 function startPickingAndNavigate(row: PickingTask) {
+  // D7 AC#8 — a task frozen behind a Needs Re-arrangement flag can't be started
+  // from the list either; the operator must wait for a Warehouse Manager to clear
+  // it on the task's detail page.
+  if (isPickingFrozen(row)) {
+    toast.notify({ variant: 'error', title: t('This picking task changed and needs warehouse-manager re-arrangement before it can start'), maxWidth: 'max-content' })
+    return
+  }
   startPicking(row.id)
   router.push(`/picking/${row.id}/pick`)
 }
@@ -398,7 +405,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #cell-pickedQty="{ value }">{{ formatNum(value as number) }}</template>
 
     <!-- ── Status ── -->
-    <template #cell-status="{ value }"><ErpStatusBadge :status="value as string" /></template>
+    <template #cell-status="{ value, row }">
+      <div class="pick-status-cell">
+        <ErpStatusBadge :status="value as string" />
+        <ErpStatusBadge
+          v-if="isPickingFrozen(row as unknown as PickingTask)"
+          status="needs-rearrangement" type="critical" :label="t('Needs re-arrangement')"
+        />
+      </div>
+    </template>
 
     <!-- ── Icon indicators — packing task created ── -->
     <template #cell-icons="{ row }">
@@ -451,7 +466,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as PickingTask)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem
-              v-if="(row as unknown as PickingTask).status === 'open'"
+              v-if="(row as unknown as PickingTask).status === 'open' && !isPickingFrozen(row as unknown as PickingTask)"
               @click="startPickingAndNavigate(row as unknown as PickingTask)"
             >{{ t('Start picking') }}</MpPopoverListItem>
             <MpPopoverListItem
@@ -597,6 +612,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 /* Icon indicators cell — packing task created */
 .pick-icons-cell { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
 .pick-icon-indicator { display: inline-flex; align-items: center; justify-content: center; color: var(--mp-text-subtle); }
+
+/* Status cell — Open + Needs re-arrangement badges stacked */
+.pick-status-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5); flex-wrap: wrap; }
 
 /* Start/End date + aging badge */
 .pick-end { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }

@@ -20,6 +20,7 @@ import {
   getPickingTask, startPicking, pickingTaskAgingDays, packableOrderIds,
   canCancelPickingTask, cancelPickingTask,
   pendingCanceledOrderIds, acknowledgeCanceledPickingOrders,
+  clearPickingRearrangement,
   type PickingTask,
 } from '~/data/pickingTasks'
 import { orderPackedFromPickingTask } from '~/data/packingTasks'
@@ -214,6 +215,10 @@ const lastUpdated = computed(() => {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 function startPickingAndNavigate() {
+  if (needsRearrangement.value) {
+    toast.notify({ variant: 'error', title: t('This task is flagged Needs re-arrangement — a warehouse manager must clear it before picking can start'), maxWidth: 'max-content' })
+    return
+  }
   if (needsCancelAck.value) { ackModalOpen.value = true; return }
   startPicking(props.orderId)
   router.push(`/picking/${props.orderId}/pick`)
@@ -222,6 +227,10 @@ function startPickingAndNavigate() {
 // while a cancelled order still needs acknowledging (the banner's own Acknowledge
 // button is the other path). Otherwise straight to the pick screen.
 function continuePicking() {
+  if (needsRearrangement.value) {
+    toast.notify({ variant: 'error', title: t('This task is flagged Needs re-arrangement — a warehouse manager must clear it before picking can start'), maxWidth: 'max-content' })
+    return
+  }
   if (needsCancelAck.value) { ackModalOpen.value = true; return }
   router.push(`/picking/${props.orderId}/pick`)
 }
@@ -276,6 +285,20 @@ function confirmAckAndContinue() {
   ackModalOpen.value = false
   if (wasOpen) startPicking(props.orderId)
   router.push(`/picking/${props.orderId}/pick`)
+}
+
+// ── D7 AC#8/#9 — Needs Re-arrangement freeze (outbound qty reduction touched this
+// task). Unlike the cancel-ack banner above, the operator can't clear this themselves
+// — Start/Continue stays blocked (toast, no modal) until a Warehouse Manager clears
+// it via the banner's own action. ─────────────────────────────────────────────
+const needsRearrangement = computed(() => !!task.value?.needsRearrangement)
+const clearRearrangeModalOpen = ref(false)
+function askClearRearrangement() { clearRearrangeModalOpen.value = true }
+function confirmClearRearrangement() {
+  if (!task.value) return
+  clearPickingRearrangement(task.value.id)
+  clearRearrangeModalOpen.value = false
+  toast.notify({ variant: 'success', title: t('Re-arrangement cleared. This task can be started again'), maxWidth: 'max-content' })
 }
 
 const pdfPreviewOpen = ref(false)
@@ -637,6 +660,20 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         <button class="pkd-cancel-banner-btn" type="button" @click="acknowledgeCancel">{{ t('Acknowledge') }}</button>
       </div>
 
+      <!-- D7 AC#8 — an outbound qty reduction touched this task's SKU/qty. It's frozen:
+           Start/Continue picking is blocked until a Warehouse Manager reviews and
+           clears the re-arrangement below (the operator can't clear it themselves). -->
+      <div v-if="needsRearrangement" class="pkd-rearrange-banner">
+        <svg class="pkd-rearrange-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+        <span class="pkd-rearrange-banner-text">
+          {{ t('This task is flagged Needs re-arrangement — a warehouse manager must clear it before picking can start') }}
+        </span>
+        <button class="btn-enterprise pkd-rearrange-banner-btn" type="button" @click="askClearRearrangement">{{ t('Clear re-arrangement') }}</button>
+      </div>
+
       <!-- Summary grid -->
       <section class="pkd-summary">
         <div class="content-list-col">
@@ -984,7 +1021,10 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
            standalone "Cancel" footer button. -->
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
+          <MpTooltip v-if="needsRearrangement" id="pkd-start-tt-split" :label="t('Cannot start picking. Clear the re-arrangement first.')" placement="top" use-portal>
+            <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start picking') }}</button>
+          </MpTooltip>
+          <button v-else class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
           <MpPopover id="pkd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
@@ -996,7 +1036,10 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
+        <MpTooltip v-else-if="needsRearrangement" id="pkd-start-tt-solo" :label="t('Cannot start picking. Clear the re-arrangement first.')" placement="top" use-portal>
+          <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start picking') }}</button>
+        </MpTooltip>
+        <button v-else class="btn-enterprise detail-btn detail-btn--primary" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
       </template>
       <template v-else-if="localStatus === 'in progress'">
         <div v-if="canCancel" class="detail-split-btn">
@@ -1056,6 +1099,24 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--secondary" @click="ackModalOpen = false">{{ t('Review') }}</button>
             <button class="btn-enterprise btn-enterprise--primary" @click="confirmAckAndContinue">{{ t('Acknowledge & continue') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── Warehouse Manager clears the D7 re-arrangement freeze (AC#9) ── -->
+    <MpModal id="pkd-clear-rearrange" :is-open="clearRearrangeModalOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="clearRearrangeModalOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ t('Clear re-arrangement?') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          {{ t('Review the remaining SKU and quantity above before clearing. Once cleared, this task returns to Open and pickers can start it again.') }}
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--secondary" @click="clearRearrangeModalOpen = false">{{ t('Review') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="confirmClearRearrangement">{{ t('Clear re-arrangement') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1232,6 +1293,23 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 }
 .pkd-cancel-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
 
+.pkd-rearrange-banner {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
+  background: var(--mp-background-critical-subtle, #fceeed);
+  border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.pkd-rearrange-banner-icon { color: var(--mp-icon-critical, #e2483d); flex-shrink: 0; }
+.pkd-rearrange-banner-text { flex: 1; }
+.pkd-rearrange-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.pkd-rearrange-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
+
 .pkd-reason { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
 .pkd-reason-release {
   background: none; border: none; padding: 0; cursor: pointer;
@@ -1366,6 +1444,14 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+/* Disabled variant (e.g. Start picking while Needs Re-arrangement) — greyed
+ * out instead of staying full brand-green, so it visually reads as blocked. */
+.detail-btn--disabled,
+.detail-btn--disabled:hover {
+  background: var(--mp-background-disabled, #e5e7eb);
+  color: var(--mp-text-disabled, #9ca3af);
+  cursor: not-allowed;
+}
 .detail-split-btn { display: flex; }
 .detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
 .detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }

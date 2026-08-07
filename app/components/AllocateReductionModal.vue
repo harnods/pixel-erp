@@ -67,9 +67,15 @@ function handleConfirm() {
 
       <MpModalBody>
         <p class="al-intro">
-          You’re lowering the quantity of a SKU that’s split across several picking tasks.
-          Pick how much to take back from each — a task emptied this way is cancelled.
+          This SKU’s quantity is split across several picking tasks.
+          Choose how much to reduce from each task below.
         </p>
+
+        <ul class="al-rules">
+          <li>A task reduced to zero is cancelled automatically.</li>
+          <li>A task with quantity left stays Open but is flagged Needs re-arrangement — it can’t start until a warehouse manager clears it.</li>
+          <li>The default takes from the smallest tasks first. You can adjust the amounts, but they must add up to the total reduction.</li>
+        </ul>
 
         <div v-for="g in groups" :key="g.sku" class="al-group">
           <div class="al-group-head">
@@ -94,7 +100,7 @@ function handleConfirm() {
                 <tr>
                   <th class="al-th">Picking task</th>
                   <th class="al-th al-th--num">In task</th>
-                  <th class="al-th al-th--num">Reduce by</th>
+                  <th class="al-th">Reduce by</th>
                   <th class="al-th">Result</th>
                 </tr>
               </thead>
@@ -140,6 +146,14 @@ function handleConfirm() {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
   line-height: var(--mp-line-heights-lg, 20px);
 }
+.al-rules {
+  margin: 0 0 var(--mp-spacing-6) 0; padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-1\.5);
+  list-style: disc; padding-left: var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-lg, 20px);
+}
 .al-group { margin-bottom: var(--mp-spacing-8); }
 .al-group:last-child { margin-bottom: 0; }
 .al-group-head {
@@ -169,13 +183,34 @@ function handleConfirm() {
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  /* Read-only/calculated cells (In task, Result) get a subtle background —
+     see docs/patterns/FormTable.md "Cell Types" — so the plain-white editable
+     cell next to them reads as distinct, not just more static text. */
+  background: var(--mp-background-neutral-subtle);
 }
 .al-tr:last-child .al-td { border-bottom: none; }
 .al-td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.al-td--input { padding: 0; }
-.al-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; }
-.al-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
-.al-td--err { background: #FCEEED; border-bottom-color: #E2483D; }
+
+/* Editable input cell — per docs/patterns/FormTable.md "Editable Input Cell":
+   the cell owns the border/focus state (white background + a focus-ring
+   overlay), the input itself stays visually borderless. */
+.al-td--input {
+  padding: 0; background: var(--mp-background-neutral, #fff); position: relative;
+}
+.al-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0;
+  border: 1px solid var(--mp-border-bold); z-index: 2; pointer-events: none;
+}
+.al-td--input :deep([class*='input']) {
+  border-color: transparent; border-radius: 0; box-shadow: none !important; /* zeroing Pixel's own input shadow, not adding one — pixel-police-allow-shadow */
+  height: var(--mp-sizes-10, 40px); text-align: left; font-variant-numeric: tabular-nums;
+}
+.al-td--err {
+  background: var(--mp-background-danger-subtle, #FCEEED);
+  border-bottom-color: var(--mp-border-danger, #E2483D);
+}
+.al-td--err:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-danger, #E2483D); }
+.al-td--err:focus-within::after { content: none; }
 .al-td--err :deep([class*='input']) { background: transparent; }
 
 .al-taskno { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }

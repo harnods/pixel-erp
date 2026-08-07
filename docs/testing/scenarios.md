@@ -81,8 +81,10 @@ a PO cancel invalidates 100% of its tasks.
 | Edit a PENDING PO: increase/decrease/add/remove SKU, header fields; materializes seed-style receipt on first edit | H | `inbound-edit-order` |
 | Activity log records real before→after diff (qty, add/remove, header); no-op logs nothing | R | `inbound-edit-order` |
 | Lock vs receiving state: SKU with receivedQty on in-progress/completed task can't be reduced/removed; open task doesn't lock | E | `inbound-edit-order` |
-| Not editable once completed/cancelled; NOT_FOUND for bogus id; existing tasks never retroactively touched | E | `inbound-edit-order` |
+| Not editable once completed/cancelled; NOT_FOUND for bogus id; a qty reduction DOES now touch the Open task(s) claiming it (and freezes them) | E | `inbound-edit-order` |
 | Multi-order + partial bundled into one put-away (plain & batch): merged qty = received sum, statuses diverge, on-hand posts only received | E | `inbound-multi-order-partial` |
+| Allocation across Open receiving tasks: direct-reduce trigger, drain-smallest-first default (read-only, no override), removable cap (open vs locked), auto-cancel vs keep, unassigned-first | E/R | `inbound-edit-order-allocation` |
+| Needs Re-arrangement freeze: touched Open task freezes, untouched/cancelled tasks don't; single-task direct reduction also freezes; self-serve acknowledge resets + stamps audit; freeze doesn't touch items | E/R | `receiving-needs-rearrangement` |
 
 ---
 
@@ -155,6 +157,7 @@ a PO cancel invalidates 100% of its tasks.
 | Edit a PENDING order: increase reserves / decrease releases / add / remove; over-Available rejected (NO_ALLOCATABLE_STOCK) | H/E | `outbound-edit-order` |
 | Edit vs picking state: started task locks reduce/remove but allows increase; open task doesn't lock; activity log; not editable once shipped/cancelled | E | `outbound-edit-order` |
 | Allocation across tasks: direct-reduce trigger, drain-smallest-first default, user override (+ rejects), removable cap (pending vs started), auto-cancel vs keep, atomic multi-SKU combined edits, unassigned-first | E/R | `outbound-edit-order-allocation` |
+| Needs Re-arrangement freeze (AC#8): touched Open task freezes, untouched/cancelled tasks don't; single-task direct reduction also freezes; WH Manager clear (AC#9) resets + stamps audit; freeze doesn't touch lines/reservation (AC#10) | E/R | `picking-needs-rearrangement` |
 
 ---
 
