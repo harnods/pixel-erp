@@ -15,6 +15,7 @@ import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems, allTasksFlat, getPutAwayForTask, type TaskLineItem } from '~/data/receivingTaskDetails'
 import {
   taskAgingDays, startReceiving, canCancelReceivingTask, cancelReceivingTask, acknowledgeCanceledReceipt,
+  acknowledgeReceivingRearrangement,
   type ReceivingTask,
 } from '~/data/receivingTasks'
 import { receipts } from '~/data/receipts'
@@ -147,8 +148,28 @@ function createPutAway() {
 
 // ── Receiving actions ───────────────────────────────────────────────────────
 function startReceivingAndNavigate() {
+  if (needsRearrangement.value) {
+    toast.notify({ variant: 'error', title: t('This receiving task changed and needs acknowledgement before it can start'), maxWidth: 'max-content' })
+    return
+  }
   startReceiving(props.orderId)
   router.push(`/receiving/${props.orderId}/receive`)
+}
+
+// A PO qty reduction touched this task (its SKU spanned ≥2 Open receiving tasks,
+// or was the sole Open task) — it freezes. Unlike needsCancelAck below, this is a
+// plain self-serve review (no rebalancing decision to make), but — unlike a
+// one-click acknowledge — the operator must first open "View changes" to see the
+// per-SKU before/after table, then confirm via "Proceed changes" in that modal.
+const needsRearrangement = computed(() => !!task.value?.needsRearrangement)
+const rearrangementChanges = computed(() => task.value?.rearrangementChanges ?? [])
+const viewChangesOpen = ref(false)
+function openViewChanges() { viewChangesOpen.value = true }
+function proceedRearrangementChanges() {
+  if (!task.value) return
+  acknowledgeReceivingRearrangement(task.value.id)
+  viewChangesOpen.value = false
+  toast.notify({ variant: 'success', title: t('Changes acknowledged — this task can be started again'), maxWidth: 'max-content' })
 }
 
 // This task's own PO was canceled while it was in progress — real receiving
@@ -374,6 +395,21 @@ function goBack() {
         <span class="rcvgd-last-updated-val">{{ formatDateTime(lastUpdated) }}</span>
       </div>
     </header>
+
+    <!-- A PO qty reduction touched this task — it's frozen: Start receiving is
+         blocked until the operator reviews the change (View changes → Proceed
+         changes) — self-serve, no rebalancing decision to make, just awareness.
+         Sits between the title bar and the stage (not inside it). -->
+    <div v-if="needsRearrangement" class="rcvgd-rearrange-banner">
+      <svg class="rcvgd-rearrange-banner-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      <span class="rcvgd-rearrange-banner-text">
+        {{ t('This receiving task changed and needs acknowledgement before it can start') }}
+      </span>
+      <button class="rcvgd-rearrange-banner-btn" type="button" @click="openViewChanges">{{ t('View changes') }}</button>
+    </div>
 
     <!-- ── Scrollable stage ── -->
     <div ref="stageEl" class="detail-stage">
@@ -650,7 +686,10 @@ function goBack() {
            split-button dropdown, never as a standalone "Cancel" footer button. -->
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
+          <MpTooltip v-if="needsRearrangement" id="rcvgd-start-tt-split" :label="t('Proceed the changes before start receiving')" placement="top" use-portal>
+            <button class="detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start receiving') }}</button>
+          </MpTooltip>
+          <button v-else class="detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
           <MpPopover id="rcvgd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
@@ -662,6 +701,9 @@ function goBack() {
             </MpPopoverContent>
           </MpPopover>
         </div>
+        <MpTooltip v-else-if="needsRearrangement" id="rcvgd-start-tt-solo" :label="t('Proceed the changes before start receiving')" placement="top" use-portal>
+          <button class="detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start receiving') }}</button>
+        </MpTooltip>
         <button v-else class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
       </template>
       <template v-else-if="localStatus === 'in progress'">
@@ -723,6 +765,47 @@ function goBack() {
           <div class="modal-footer-btns">
             <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">{{ t('Review') }}</button>
             <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- ── View changes — the per-SKU before/after table behind the Needs
+         Re-arrangement freeze; Proceed changes is the actual acknowledge. ── -->
+    <MpModal id="rcvgd-view-changes" :is-open="viewChangesOpen" size="md"
+      is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="viewChangesOpen = false">
+      <MpModalContent>
+        <MpModalHeader>{{ t('Review the changes') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p class="rcvgd-changes-intro">
+            {{ t('The purchase order behind this task was reduced. Review the qty change below before this task can start.') }}
+          </p>
+          <div class="rcvgd-changes-table-wrap">
+            <table class="rcvgd-changes-table">
+              <thead>
+                <tr>
+                  <th class="rcvgd-changes-th">{{ t('Product') }}</th>
+                  <th class="rcvgd-changes-th rcvgd-changes-th--num">{{ t('Qty before') }}</th>
+                  <th class="rcvgd-changes-th rcvgd-changes-th--num">{{ t('Adjusted qty') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="c in rearrangementChanges" :key="c.sku" class="rcvgd-changes-tr">
+                  <td class="rcvgd-changes-td">
+                    <span class="rcvgd-changes-prod">{{ c.productName }}</span>
+                    <span class="rcvgd-changes-sku">{{ c.sku }}</span>
+                  </td>
+                  <td class="rcvgd-changes-td rcvgd-changes-td--num">{{ c.qtyBefore }}</td>
+                  <td class="rcvgd-changes-td rcvgd-changes-td--num">{{ c.qtyAfter }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="modal-footer-btns">
+            <button class="btn-enterprise btn-enterprise--primary" @click="proceedRearrangementChanges">{{ t('Proceed changes') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -875,6 +958,56 @@ function goBack() {
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
 }
 .rcvgd-cancel-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* ── Needs Re-arrangement banner (warning, not danger — same severity tier as
+   the canceled-PO banner above; matches docs/patterns/details-page-format.md's
+   "info banner" region: first thing in the stage, right under the title bar) ── */
+.rcvgd-rearrange-banner {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  /* Full-bleed like .detail-bar/.detail-stage above and below it — no side
+     margin, horizontal inset comes from padding so it lines up with the
+     stage's own content width instead of sitting narrower than it. */
+  margin: var(--mp-spacing-4) 0 0;
+  padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  background: var(--mp-background-warning-subtle, #fffbeb);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.rcvgd-rearrange-banner-icon { color: var(--mp-icon-warning, #d97706); flex-shrink: 0; }
+.rcvgd-rearrange-banner-text { flex: 1; }
+.rcvgd-rearrange-banner-btn {
+  flex-shrink: 0; height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #fff); color: var(--mp-text-default);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer;
+}
+.rcvgd-rearrange-banner-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* ── View changes modal — before/after table ─────────────────────────────── */
+.rcvgd-changes-intro {
+  margin: 0 0 var(--mp-spacing-4) 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-lg, 20px);
+}
+.rcvgd-changes-table-wrap { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-lg); overflow: hidden; }
+.rcvgd-changes-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
+.rcvgd-changes-th {
+  height: var(--mp-sizes-7, 28px); text-align: left;
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-3);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+}
+.rcvgd-changes-th--num { text-align: right; }
+.rcvgd-changes-td {
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
+}
+.rcvgd-changes-tr:last-child .rcvgd-changes-td { border-bottom: none; }
+.rcvgd-changes-td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rcvgd-changes-prod { display: block; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.rcvgd-changes-sku { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Summary grid ────────────────────────────────────────────────────────── */
 .rcvgd-summary {
@@ -1030,6 +1163,14 @@ function goBack() {
   background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff);
 }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+/* Disabled variant (e.g. Start receiving while Needs Re-arrangement) — greyed
+ * out instead of staying full brand-green, so it visually reads as blocked. */
+.detail-btn--disabled,
+.detail-btn--disabled:hover {
+  background: var(--mp-background-disabled, #e5e7eb);
+  color: var(--mp-text-disabled, #9ca3af);
+  cursor: not-allowed;
+}
 .detail-split-btn { display: flex; }
 .detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
 .detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }

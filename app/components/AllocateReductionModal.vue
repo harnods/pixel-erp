@@ -71,6 +71,12 @@ function handleConfirm() {
           Pick how much to take back from each — a task emptied this way is cancelled.
         </p>
 
+        <ul class="al-rules">
+          <li>A task reduced to 0 is cancelled automatically.</li>
+          <li>A task that still has qty left stays Open, but needs warehouse-manager re-arrangement acknowledgement before it can start.</li>
+          <li>The default below drains the smallest tasks first — you can adjust the amounts, but they must sum to the total reduction exactly.</li>
+        </ul>
+
         <div v-for="g in groups" :key="g.sku" class="al-group">
           <div class="al-group-head">
             <div class="al-group-title">
@@ -138,6 +144,14 @@ function handleConfirm() {
 .al-intro {
   margin: 0 0 var(--mp-spacing-6) 0;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-lg, 20px);
+}
+.al-rules {
+  margin: 0 0 var(--mp-spacing-6) 0; padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-1\.5);
+  list-style: disc; padding-left: var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-md);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
   line-height: var(--mp-line-heights-lg, 20px);
 }
 .al-group { margin-bottom: var(--mp-spacing-8); }

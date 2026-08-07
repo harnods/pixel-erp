@@ -1,5 +1,5 @@
 import { outgoingOrders, reserveAllPickableOrders, cancelOutgoingOrder, canCancelOutboundOrder, canEditOutboundOrder, updateOutgoingOrderLines, recordOutgoingEdit } from "./outgoing";
-import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck, acknowledgeCanceledPickingOrders, lockedOutboundQtyForSku, pendingPickingLinesForSku, reduceOrderSkuOnPickingTask, getPickingTask } from "./pickingTasks";
+import { getPickingForOrder, cancelPickingTask, markPickingNeedsCancelAck, acknowledgeCanceledPickingOrders, lockedOutboundQtyForSku, pendingPickingLinesForSku, reduceOrderSkuOnPickingTask, getPickingTask, markPickingNeedsRearrangement } from "./pickingTasks";
 import { getPackingForOrder, cancelPackingTask } from "./packingTasks";
 import { deliveryTasks, getDeliveryForOrder, canCancelDeliveryTask, cancelDeliveryTask, shippedQtyBySkuForOrder } from "./deliveryTasks";
 import { orderSkuLines, productBySku } from "./inventory";
@@ -145,7 +145,13 @@ export function editOutboundOrder(
 
   // ── Commit ───────────────────────────────────────────────────────────────────
   for (const plan of reductionPlans) {
-    for (const tr of plan.taskReductions) reduceOrderSkuOnPickingTask(tr.taskId, orderId, plan.sku, tr.reduceBy);
+    for (const tr of plan.taskReductions) {
+      reduceOrderSkuOnPickingTask(tr.taskId, orderId, plan.sku, tr.reduceBy);
+      // D7 AC#8 — a task that survived the reduction (still Open, not auto-cancelled)
+      // freezes into Needs Re-arrangement. Unconditional here, so it applies the same
+      // whether this edit arrived via the WMS surface or the source API (AC#7/#8).
+      if (getPickingTask(tr.taskId)?.status === "open") markPickingNeedsRearrangement(tr.taskId);
+    }
     consumeReservation(orderId, wh, plan.sku, plan.N); // release the full reduction back to Available
   }
   updateOutgoingOrderLines(orderId, [...newBySku].map(([sku, qty]) => ({ sku, qty })), header);

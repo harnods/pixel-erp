@@ -89,6 +89,15 @@ export interface ReceivingItemDetail {
   serialNumbers?: string[];
 }
 
+/** One SKU's before/after qty on a task frozen by a PO reduction — see
+ *  ReceivingTask.rearrangementChanges. */
+export interface RearrangementChange {
+  sku: string;
+  productName: string;
+  qtyBefore: number;
+  qtyAfter: number;
+}
+
 export interface ReceivingTask {
   id: string;
   /** task number, e.g. "Receiving #10090" */
@@ -136,6 +145,22 @@ export interface ReceivingTask {
    *  task itself, since there's nothing left to receive once its one-and-only
    *  PO is gone. */
   needsCancelAck?: boolean;
+  /** A PO qty reduction touched this OPEN task (its SKU spanned ≥2 Open receiving
+   *  tasks, or was the sole Open task — see editInboundReceipt / C2 AC#4). The task
+   *  freezes: Start receiving is blocked until the operator reviews the change (View
+   *  changes → Proceed changes) — a plain self-serve review (unlike Picking's D7 AC#9
+   *  WH-Manager-gated clear, since there's no rebalancing decision to make here, just
+   *  awareness of what changed). */
+  needsRearrangement?: boolean;
+  /** ISO timestamp — when the task most recently froze. */
+  rearrangementSetDate?: string;
+  /** Who acknowledged (Proceed changes) the last freeze. */
+  rearrangementAckBy?: string;
+  /** ISO timestamp — when the last freeze was acknowledged. */
+  rearrangementAckDate?: string;
+  /** Per-SKU before/after snapshot of the qty reduction that froze this task —
+   *  drives the "View changes" modal's table. Cleared once acknowledged. */
+  rearrangementChanges?: RearrangementChange[];
   /** True once this task's goods are ACTUALLY reflected in real, tracked
    *  on-hand stock — via a genuinely completed put-away (endPutAway calls
    *  markStockCommitted below) or via commitReceivingStock (put-away disabled
@@ -959,6 +984,88 @@ export function lockedReceivingQtyForSku(receiptId: string, sku: string): number
     for (const it of t.items) if (it.sku === sku) sum += it.receivedQty;
   }
   return sum;
+}
+
+/** One SKU's targetQty on each OPEN receiving task for this receipt — the tasks a
+ *  qty-reduction can drain from (the multi-task allocation step). Started/ended
+ *  tasks are excluded (locked, see lockedReceivingQtyForSku). Mirrors
+ *  pendingPickingLinesForSku in pickingTasks.ts. */
+export function openReceivingLinesForSku(receiptId: string, sku: string): { taskId: string; taskNo: string; qty: number }[] {
+  const out: { taskId: string; taskNo: string; qty: number }[] = [];
+  for (const t of receivingTasks) {
+    if (t.receiptId !== receiptId || t.status !== "open") continue;
+    const qty = t.items.filter((it) => it.sku === sku).reduce((s, it) => s + it.targetQty, 0);
+    if (qty > 0) out.push({ taskId: t.id, taskNo: t.taskNo, qty });
+  }
+  return out;
+}
+
+/** The multi-task allocation step — reduce `sku`'s targetQty on ONE open receiving
+ *  task by `reduceBy` (expectedQty drops by the same delta, preserving whatever
+ *  target<expected gap already existed). If the line hits 0 it's removed; if the
+ *  task then holds NO items at all it auto-cancels. Mirrors
+ *  reduceOrderSkuOnPickingTask in pickingTasks.ts. */
+export function reduceOrderSkuOnReceivingTask(taskId: string, sku: string, reduceBy: number): void {
+  const t = getReceivingTask(taskId);
+  if (!t || t.status !== "open" || reduceBy <= 0) return;
+  let remaining = reduceBy;
+  const next: ReceivingItem[] = [];
+  for (const it of t.items) {
+    if (it.sku === sku && remaining > 0) {
+      const take = Math.min(it.targetQty, remaining);
+      remaining -= take;
+      const nq = it.targetQty - take;
+      if (nq > 0) next.push({ ...it, targetQty: nq, expectedQty: Math.max(0, it.expectedQty - take) });
+      // else: line fully removed
+    } else next.push(it);
+  }
+  t.items = next;
+  syncTaskTotals(t, next.length);
+  if (next.length === 0) {
+    t.status = "canceled";
+    t.canceledDate = nowIso();
+    t.canceledReason = "Emptied by PO edit";
+    t.canceledBy = "Rizal Candra";
+  }
+  persistTasks();
+  recomputeReceiptStatus(t.receiptId);
+}
+
+/** Freeze an OPEN task into "Needs Re-arrangement" right after a PO qty reduction
+ *  touched it (reduced its qty, didn't empty it to 0). `changes` is the per-SKU
+ *  before/after snapshot the "View changes" modal shows — merged into any changes
+ *  already pending (same SKU replaced, others kept) so a second reduction in the
+ *  same edit doesn't clobber the first. No-op on any task that isn't Open. Mirrors
+ *  markPickingNeedsRearrangement in pickingTasks.ts. */
+export function markReceivingNeedsRearrangement(taskId: string, changes: RearrangementChange[] = []): void {
+  const t = getReceivingTask(taskId);
+  if (!t || t.status !== "open") return;
+  t.needsRearrangement = true;
+  t.rearrangementSetDate = nowIso();
+  if (changes.length) {
+    const bySku = new Map((t.rearrangementChanges ?? []).map((c) => [c.sku, c]));
+    for (const c of changes) bySku.set(c.sku, c);
+    t.rearrangementChanges = [...bySku.values()];
+  }
+  persistTasks();
+}
+
+/** Self-serve review (unlike Picking's WH-Manager-gated clear — there's no
+ *  rebalancing decision to make here, just awareness of what changed) — clears the
+ *  freeze and returns the task to a normal startable Open task. No-op if not frozen. */
+export function acknowledgeReceivingRearrangement(taskId: string, actor = "Rizal Candra"): void {
+  const t = getReceivingTask(taskId);
+  if (!t || !t.needsRearrangement) return;
+  t.needsRearrangement = false;
+  t.rearrangementAckBy = actor;
+  t.rearrangementAckDate = nowIso();
+  t.rearrangementChanges = undefined;
+  persistTasks();
+}
+
+/** Whether a receiving task is currently frozen behind a qty-reduction re-arrangement. */
+export function isReceivingFrozen(t: Pick<ReceivingTask, "needsRearrangement">): boolean {
+  return !!t.needsRearrangement;
 }
 
 /**
