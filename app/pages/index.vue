@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, type Component, ref, computed, provide, nextTick, onMounted, onUnmounted } from 'vue'
-import { MpBadge } from '@mekari/pixel3'
+import { MpBadge, MpButton } from '@mekari/pixel3'
 import { purchaseOrders } from '~/data'
 
 const { pageTitle, currentPageKey } = useNavigation()
@@ -458,22 +458,22 @@ function startResize(e: MouseEvent) {
           <div class="airene-card-header">
             <!-- Chat title + history dropdown -->
             <div ref="historyWrapperEl" class="airene-history-wrapper">
-              <button class="airene-new-chat" @click="toggleHistory">
+              <MpButton class="airene-new-chat" @click="toggleHistory">
                 <span class="airene-chat-title">{{ chatTitle }}</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="airene-chevron" :class="{ 'airene-chevron--open': historyOpen }">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
 
               <!-- History dropdown -->
               <div v-if="historyOpen" class="airene-history-dropdown" @click.stop>
                 <!-- New chat item -->
-                <button class="airene-history-new-btn" @click="startNewChat">
+                <MpButton class="airene-history-new-btn" @click="startNewChat">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                   New chat
-                </button>
+                </MpButton>
 
                 <div class="airene-history-sep" />
 
@@ -513,11 +513,11 @@ function startResize(e: MouseEvent) {
             </div>
             <div class="airene-header-icons">
               <!-- Chat bubble icon -->
-              <button class="airene-icon-btn" aria-label="Chat history">
+              <MpButton class="airene-icon-btn" aria-label="Chat history">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path fill-rule="evenodd" clip-rule="evenodd" d="M5.86533 3.46533C5.42991 3.90075 5.15 4.55044 5.15 5.4V6.85H10.152C11.1384 6.85 12.0188 7.18209 12.6543 7.81768C13.2899 8.45327 13.622 9.33358 13.622 10.32V13.576C13.622 13.7282 13.6145 13.881 13.5977 14.0329L13.85 14.1994V12.88C13.85 12.4658 14.1858 12.13 14.6 12.13C15.4492 12.13 16.1012 11.852 16.5301 11.4172L16.5372 11.4101L16.5372 11.4101C16.972 10.9812 17.25 10.3292 17.25 9.47998V5.4C17.25 4.55044 16.9701 3.90075 16.5347 3.46533C16.0993 3.02991 15.4496 2.75 14.6 2.75H7.8C6.95044 2.75 6.30075 3.02991 5.86533 3.46533ZM13.1053 15.5051L13.1275 15.5197C14.0847 16.1642 15.35 15.4577 15.35 14.328V13.5747C16.2263 13.442 17.0034 13.0716 17.5943 12.4743C18.3573 11.7195 18.75 10.6609 18.75 9.47998V5.4C18.75 4.20956 18.3499 3.15925 17.5953 2.40467C16.8407 1.65009 15.7904 1.25 14.6 1.25H7.8C6.60956 1.25 5.55925 1.65009 4.80467 2.40467C4.05009 3.15925 3.65 4.20956 3.65 5.4V6.9941C3.03903 7.1655 2.50536 7.48857 2.0941 7.95C1.53737 8.57466 1.25 9.40203 1.25 10.32V13.576C1.25 14.5633 1.58266 15.4433 2.22167 16.0823C2.68831 16.549 3.29034 16.8518 3.97 16.9784V17.456C3.97 18.4665 5.10358 19.1227 5.97955 18.5257L8.20277 17.046H10.152C11.4362 17.046 12.5087 16.4804 13.1053 15.5051ZM4.464 8.36331C3.9064 8.41663 3.4912 8.6369 3.2139 8.94803C2.93463 9.26138 2.75 9.718 2.75 10.32V13.576C2.75 14.2206 2.96134 14.7007 3.28233 15.0217C3.59416 15.3335 4.0735 15.546 4.71999 15.546C5.13421 15.546 5.46999 15.8818 5.46999 16.296V17.063L7.56045 15.6716C7.68355 15.5897 7.82813 15.546 7.976 15.546H10.152C11.1869 15.546 11.8368 15.0112 12.0407 14.2009C12.0429 14.1922 12.0452 14.1835 12.0477 14.1749C12.0958 14.0095 12.122 13.8103 12.122 13.576V10.32C12.122 9.67445 11.9101 9.19476 11.5937 8.87834C11.2772 8.56192 10.7976 8.35 10.152 8.35H4.71999C4.6427 8.35 4.56798 8.35532 4.464 8.36331Z" fill="currentColor"/>
                 </svg>
-              </button>
+              </MpButton>
               <!-- Kebab / more -->
               <button class="airene-icon-btn" aria-label="More options">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -691,7 +691,7 @@ function startResize(e: MouseEvent) {
 /* ── Title bar ────────────────────────────────────────────────────────────── */
 
 .page-title-bar {
-  height: 72px;
+  height: var(--mp-sizes-18, 72px);
   background: var(--mp-background-neutral-subtle);
   display: flex;
   align-items: center;
@@ -741,7 +741,7 @@ function startResize(e: MouseEvent) {
 .btn-enterprise--primary {
   background: var(--mp-colors-emerald-700, #029861);
   border-color: var(--mp-colors-emerald-700, #029861);
-  color: #ffffff;
+  color: var(--mp-text-inverse, #ffffff);
   padding-left: 12px;
   padding-right: 16px;
 }
@@ -755,7 +755,7 @@ function startResize(e: MouseEvent) {
 .page-tabs-bar {
   display: flex;
   align-items: flex-end;
-  gap: 24px;
+  gap: var(--mp-spacing-6, 24px);
   padding: 0 24px;
   background: var(--mp-background-neutral-subtle);
   flex-shrink: 0;
@@ -764,7 +764,7 @@ function startResize(e: MouseEvent) {
 .page-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--mp-spacing-1\.5, 6px);
   padding: 12px 4px;
   background: none;
   border: none;
@@ -781,7 +781,7 @@ function startResize(e: MouseEvent) {
 
 .page-tab--active {
   color: var(--mp-text-selected, #080d0e);
-  border-bottom-color: #029861;
+  border-bottom-color: var(--mp-colors-emerald-700, #029861);
   font-weight: 600;
 }
 
@@ -832,7 +832,7 @@ function startResize(e: MouseEvent) {
   display: block;
   width: 2px;
   height: 40px;
-  background: #dddee5;
+  background: var(--mp-border-bold, #dddee5);
   border-radius: 999px;
   transition: background 0.15s;
 }
@@ -867,16 +867,19 @@ function startResize(e: MouseEvent) {
 }
 
 .airene-new-chat {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: 4px;
+  width: auto !important;
+  height: auto !important;
+  min-width: 0 !important;
   font-size: 14px;
   font-weight: 400;
   color: var(--mp-text-default, #080d0e);
-  background: none;
-  border: none;
+  background: none !important;
+  border: none !important;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 4px 6px !important;
   border-radius: 6px;
   line-height: 20px;
   max-width: 200px;
@@ -905,9 +908,8 @@ function startResize(e: MouseEvent) {
   left: 0;
   width: 256px;
   background: white;
-  border: 1px solid var(--mp-border-default, #dcdfe4);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
   z-index: 200;
   padding: 4px 0;
   max-height: 360px;
@@ -915,13 +917,15 @@ function startResize(e: MouseEvent) {
 }
 
 .airene-history-new-btn {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  background: none;
-  border: none;
+  width: 100% !important;
+  height: auto !important;
+  min-width: 0 !important;
+  padding: 8px 12px !important;
+  background: none !important;
+  border: none !important;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -972,17 +976,18 @@ function startResize(e: MouseEvent) {
 }
 
 .airene-icon-btn {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: transparent;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 0 !important;
+  border: none !important;
+  background: transparent !important;
   cursor: pointer;
   border-radius: 6px;
   color: var(--mp-text-secondary, #536062);
-  padding: 8px;
+  padding: 8px !important;
 }
 .airene-icon-btn:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
 

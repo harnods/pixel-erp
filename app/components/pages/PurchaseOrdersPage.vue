@@ -19,7 +19,7 @@
 -->
 <script setup lang="ts">
 import { type Ref } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpSelect } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { purchaseOrders } from '~/data'
@@ -131,29 +131,29 @@ function formatDate(iso: string) {
     <template #filters>
       <div class="filter-left">
         <div class="filter-select-wrap">
-          <select class="filter-select">
+          <MpSelect class="filter-select">
             <option value="">Status</option>
-          </select>
+          </MpSelect>
           <svg class="filter-select-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
-        <button class="filter-all-btn">
+        <MpButton class="filter-all-btn">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M3 6h18M7 12h10M11 18h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           All filters
-        </button>
+        </MpButton>
       </div>
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <button class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
+          <MpButton class="filter-icon-btn filter-icon-btn--airene" aria-label="Ask Airene" @click="toggleAirene?.()">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
               <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
             </svg>
-          </button>
+          </MpButton>
           <button class="filter-icon-btn" aria-label="Column settings">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path fill-rule="evenodd" clip-rule="evenodd" d="M6.97345 1.26335C7.1777 1.25434 7.38659 1.25 7.6 1.25H12.4C12.6134 1.25 12.8223 1.25434 13.0265 1.26335C13.0315 1.26352 13.0365 1.26374 13.0415 1.26401C14.8152 1.34425 16.2378 1.77715 17.2303 2.76967C18.3398 3.87914 18.75 5.52603 18.75 7.6V12.4C18.75 14.474 18.3398 16.1209 17.2303 17.2303C16.2378 18.2229 14.8152 18.6558 13.0415 18.736C13.0365 18.7363 13.0316 18.7365 13.0266 18.7367C12.8223 18.7457 12.6134 18.75 12.4 18.75H7.6C7.38658 18.75 7.17769 18.7457 6.97344 18.7367C6.96845 18.7365 6.96347 18.7363 6.95851 18.736C5.1848 18.6557 3.76219 18.2228 2.76967 17.2303C1.6602 16.1209 1.25 14.474 1.25 12.4V7.6C1.25 5.52603 1.6602 3.87914 2.76967 2.76967C3.76219 1.77715 5.18479 1.34425 6.9585 1.26401C6.96347 1.26374 6.96845 1.26352 6.97345 1.26335ZM6.25 2.82736C5.10607 2.97282 4.34147 3.31919 3.83033 3.83033C3.1398 4.52086 2.75 5.67397 2.75 7.6V12.4C2.75 14.326 3.1398 15.4791 3.83033 16.1697C4.34147 16.6808 5.10607 17.0272 6.25 17.1726V2.82736ZM7.75 17.25V2.75H12.25V17.25H7.75ZM13.75 17.1726C14.8939 17.0272 15.6585 16.6808 16.1697 16.1697C16.8602 15.4791 17.25 14.326 17.25 12.4V7.6C17.25 5.67397 16.8602 4.52086 16.1697 3.83033C15.6585 3.31919 14.8939 2.97282 13.75 2.82736V17.1726Z" fill="currentColor"/>
@@ -303,8 +303,8 @@ function formatDate(iso: string) {
   transform: translateY(-50%);
   display: none;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
+  gap: var(--mp-spacing-1\.5, 6px);
+  padding: var(--mp-spacing-1, 4px) var(--mp-spacing-1\.5, 6px);
   background: var(--mp-background-neutral, #ffffff);
   border: 1px solid var(--mp-border-bold, #758195);
   border-radius: var(--mp-radii-sm, 4px);
@@ -329,7 +329,7 @@ function formatDate(iso: string) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--mp-spacing-0\.5, 2px);
 }
 
 .attachment-icon {
@@ -398,9 +398,14 @@ function formatDate(iso: string) {
 }
 
 .filter-select {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+.filter-select :deep(.mp-select__control) {
   appearance: none;
-  background: transparent;
-  border: none;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: var(--mp-shadows-none, none) !important;
   outline: none;
   width: 100%;
   padding: 8px 36px 8px 12px;
@@ -418,13 +423,16 @@ function formatDate(iso: string) {
 }
 
 .filter-all-btn {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: var(--mp-spacing-2, 8px);
-  padding: 8px 16px 8px 12px;
-  background: var(--mp-background-neutral, #ffffff);
-  border: 1px solid var(--mp-border-bold, #758195);
-  border-radius: 999px;
+  width: auto !important;
+  height: auto !important;
+  min-width: 0 !important;
+  padding: 8px 16px 8px 12px !important;
+  background: var(--mp-background-neutral, #ffffff) !important;
+  border: 1px solid var(--mp-border-bold, #758195) !important;
+  border-radius: 999px !important;
   font-size: var(--mp-font-sizes-md, 14px);
   font-weight: var(--mp-font-weights-semi-bold, 600);
   line-height: var(--mp-line-heights-md, 20px);
@@ -440,20 +448,21 @@ function formatDate(iso: string) {
 }
 
 .filter-icon-btn {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: var(--mp-spacing-2, 8px);
-  border: none;
-  background: transparent;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 0 !important;
+  padding: var(--mp-spacing-2, 8px) !important;
+  border: none !important;
+  background: transparent !important;
   border-radius: var(--mp-radii-md, 6px);
   cursor: pointer;
   color: var(--mp-text-default, #272b32);
 }
 .filter-icon-btn:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
-.filter-icon-btn--airene { color: #651FFF; }
+.filter-icon-btn--airene { color: var(--mp-airene-default, #651FFF); }
 
 .filter-search {
   display: flex;

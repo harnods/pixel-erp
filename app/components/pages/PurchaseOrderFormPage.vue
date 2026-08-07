@@ -210,7 +210,7 @@ function onSendToFulfillment() {
     <!-- ── Fixed header bar (mirrors detail-bar) ── -->
     <header class="po-form-bar">
       <div class="po-form-bar-left">
-        <button class="po-crumb" @click="onCancel">Purchase orders</button>
+        <MpButton class="po-crumb" @click="onCancel">Purchase orders</MpButton>
         <h1 class="po-form-h1">New purchase order</h1>
       </div>
     </header>
@@ -527,10 +527,10 @@ function onSendToFulfillment() {
                 <span>Global discount</span>
                 <MpInputGroup id="f-global-discount-group" class="po-global-discount">
                   <MpInputLeftAddon>
-                    <select class="po-prefix-toggle" v-model="globalDiscountType">
+                    <MpSelect class="po-prefix-toggle" v-model="globalDiscountType">
                       <option value="%">%</option>
                       <option value="Rp">Rp</option>
-                    </select>
+                    </MpSelect>
                   </MpInputLeftAddon>
                   <MpInput type="number" :model-value="globalDiscountValue"
                     @update:model-value="(v) => globalDiscountValue = Number(v)" />
@@ -653,7 +653,8 @@ function onSendToFulfillment() {
   min-width: 0;
 }
 .po-crumb {
-  background: none; border: none; padding: 0;
+  width: auto !important; height: auto !important; min-width: 0 !important;
+  background: none !important; border: none !important; padding: 0 !important;
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-link);
   cursor: pointer;
@@ -780,7 +781,7 @@ function onSendToFulfillment() {
 
 /* Rows — vertical column dividers only, no horizontal row separators */
 .po-td {
-  height: 52px;
+  height: var(--mp-sizes-13, 52px);
   box-sizing: border-box;
   padding: var(--mp-spacing-4) var(--mp-spacing-2) 0;
   vertical-align: top;
@@ -800,7 +801,7 @@ function onSendToFulfillment() {
 .po-td :deep(.mp-input__root),
 .po-td :deep(.mp-select__root),
 .po-td :deep(.mp-input-group__root) {
-  height: 52px;
+  height: var(--mp-sizes-13, 52px);
   border: none;
   border-radius: 0;
   background: transparent;
@@ -810,7 +811,7 @@ function onSendToFulfillment() {
 .po-td :deep(.mp-input-addon__root) {
   border: none;
   border-radius: 0;
-  box-shadow: none;
+  box-shadow: var(--mp-shadows-none, none);
 }
 .po-td--amount { padding-top: 0; display: flex; align-items: center; justify-content: flex-end; }
 .po-td--drag :deep(.mp-button) { height: 52px; }
@@ -870,8 +871,14 @@ function onSendToFulfillment() {
   background: var(--mp-background-neutral-subtle);
 }
 .po-prefix-toggle {
-  border: none;
-  background: transparent;
+  width: auto !important;
+  min-width: 0 !important;
+}
+.po-prefix-toggle :deep(.mp-select__control) {
+  border: none !important;
+  box-shadow: var(--mp-shadows-none, none) !important;
+  background: transparent !important;
+  padding-left: 0 !important;
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
@@ -926,7 +933,7 @@ function onSendToFulfillment() {
 .btn-enterprise--primary {
   background: var(--mp-colors-emerald-700, #029861);
   border-color: var(--mp-colors-emerald-700, #029861);
-  color: #ffffff;
+  color: var(--mp-text-inverse, #ffffff);
 }
 .btn-enterprise--primary:hover {
   background: var(--mp-colors-emerald-800, #186f4a);
@@ -942,7 +949,7 @@ function onSendToFulfillment() {
 
 .btn-enterprise--icon {
   padding: var(--mp-spacing-2, 8px);
-  width: 38px;
-  height: 38px;
+  width: var(--mp-sizes-9\.5, 38px);
+  height: var(--mp-sizes-9\.5, 38px);
 }
 </style>
