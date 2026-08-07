@@ -627,9 +627,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
           <MpTooltip v-if="sourceLabelGated" id="pck-start-tt-split" :label="t('Cannot start packing. Waiting for the marketplace shipping label.')" placement="top" use-portal>
-            <button class="detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Match order') }}</button>
+            <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Match order') }}</button>
           </MpTooltip>
-          <button v-else class="detail-btn detail-btn--primary detail-split-btn__main" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
+          <button v-else class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
           <MpPopover id="pck-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
@@ -642,9 +642,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
           </MpPopover>
         </div>
         <MpTooltip v-else-if="sourceLabelGated" id="pck-start-tt-solo" :label="t('Cannot start packing. Waiting for the marketplace shipping label.')" placement="top" use-portal>
-          <button class="detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Match order') }}</button>
+          <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Match order') }}</button>
         </MpTooltip>
-        <button v-else class="detail-btn detail-btn--primary" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
+        <button v-else class="btn-enterprise detail-btn detail-btn--primary" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
       </template>
       <template v-else-if="localStatus === 'in progress'">
         <div v-if="canCancel" class="detail-split-btn">
