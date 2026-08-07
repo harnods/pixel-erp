@@ -52,9 +52,9 @@ function rowBadge(t: ReceivingAllocTask): string {
             <table class="ral-table">
               <colgroup>
                 <col />
-                <col style="width: 120px" />
-                <col style="width: 130px" />
-                <col style="width: 180px" />
+                <col style="width: 7.5rem" />
+                <col style="width: 8.125rem" />
+                <col style="width: 11.25rem" />
               </colgroup>
               <thead>
                 <tr>

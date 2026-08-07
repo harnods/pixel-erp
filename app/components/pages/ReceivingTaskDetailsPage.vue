@@ -408,7 +408,7 @@ function goBack() {
       <span class="rcvgd-rearrange-banner-text">
         {{ t('This task is flagged Needs re-arrangement — view the changes before it can start') }}
       </span>
-      <button class="rcvgd-rearrange-banner-btn" type="button" @click="openViewChanges">{{ t('View changes') }}</button>
+      <button class="btn-enterprise rcvgd-rearrange-banner-btn" type="button" @click="openViewChanges">{{ t('View changes') }}</button>
     </div>
 
     <!-- ── Scrollable stage ── -->
@@ -687,9 +687,9 @@ function goBack() {
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
           <MpTooltip v-if="needsRearrangement" id="rcvgd-start-tt-split" :label="t('Cannot start receiving. Apply the changes first.')" placement="top" use-portal>
-            <button class="detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start receiving') }}</button>
+            <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start receiving') }}</button>
           </MpTooltip>
-          <button v-else class="detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
+          <button v-else class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
           <MpPopover id="rcvgd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
@@ -702,9 +702,9 @@ function goBack() {
           </MpPopover>
         </div>
         <MpTooltip v-else-if="needsRearrangement" id="rcvgd-start-tt-solo" :label="t('Cannot start receiving. Apply the changes first.')" placement="top" use-portal>
-          <button class="detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start receiving') }}</button>
+          <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start receiving') }}</button>
         </MpTooltip>
-        <button v-else class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
+        <button v-else class="btn-enterprise detail-btn detail-btn--primary" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
       </template>
       <template v-else-if="localStatus === 'in progress'">
         <div v-if="canCancel" class="detail-split-btn">

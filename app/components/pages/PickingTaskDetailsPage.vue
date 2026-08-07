@@ -671,7 +671,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         <span class="pkd-rearrange-banner-text">
           {{ t('This task is flagged Needs re-arrangement — a warehouse manager must clear it before picking can start') }}
         </span>
-        <button class="pkd-rearrange-banner-btn" type="button" @click="askClearRearrangement">{{ t('Clear re-arrangement') }}</button>
+        <button class="btn-enterprise pkd-rearrange-banner-btn" type="button" @click="askClearRearrangement">{{ t('Clear re-arrangement') }}</button>
       </div>
 
       <!-- Summary grid -->
@@ -1022,9 +1022,9 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
           <MpTooltip v-if="needsRearrangement" id="pkd-start-tt-split" :label="t('Cannot start picking. Clear the re-arrangement first.')" placement="top" use-portal>
-            <button class="detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start picking') }}</button>
+            <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start picking') }}</button>
           </MpTooltip>
-          <button v-else class="detail-btn detail-btn--primary detail-split-btn__main" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
+          <button v-else class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
           <MpPopover id="pkd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
@@ -1037,9 +1037,9 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
           </MpPopover>
         </div>
         <MpTooltip v-else-if="needsRearrangement" id="pkd-start-tt-solo" :label="t('Cannot start picking. Clear the re-arrangement first.')" placement="top" use-portal>
-          <button class="detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start picking') }}</button>
+          <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start picking') }}</button>
         </MpTooltip>
-        <button v-else class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
+        <button v-else class="btn-enterprise detail-btn detail-btn--primary" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
       </template>
       <template v-else-if="localStatus === 'in progress'">
         <div v-if="canCancel" class="detail-split-btn">

@@ -202,7 +202,7 @@ function handleConfirm() {
   border: 1px solid var(--mp-border-bold); z-index: 2; pointer-events: none;
 }
 .al-td--input :deep([class*='input']) {
-  border-color: transparent; border-radius: 0; box-shadow: none !important;
+  border-color: transparent; border-radius: 0; box-shadow: none !important; /* zeroing Pixel's own input shadow, not adding one — pixel-police-allow-shadow */
   height: var(--mp-sizes-10, 40px); text-align: left; font-variant-numeric: tabular-nums;
 }
 .al-td--err {
