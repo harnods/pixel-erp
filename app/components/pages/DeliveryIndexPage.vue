@@ -332,10 +332,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', maxWidth: '280px' })">
             <div class="courier-filter">
-              <input
-                v-model="courierSearch" class="courier-filter-search" type="text"
-                :placeholder="t('Search courier...')" @click.stop @keydown.stop
-              />
+              <div class="courier-filter-search">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <input v-model="courierSearch" class="courier-filter-search-input" type="text" :placeholder="t('Search courier...')" @click.stop @keydown.stop />
+              </div>
               <div class="courier-filter-scroll">
                 <label v-for="opt in filteredCourierOptions" :key="opt.value" class="checkbox-filter-item">
                   <MpCheckbox
@@ -505,16 +507,21 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 
-/* Courier filter — searchable, capped to ~5 options with scroll inside the popover. */
-.courier-filter { display: flex; flex-direction: column; padding: var(--mp-spacing-1); min-width: 200px; }
+/* Courier filter — searchable (matches the table search box), capped to ~5
+   options with scroll inside the popover. */
+.courier-filter { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-2); min-width: 220px; }
 .courier-filter-search {
-  height: 32px; margin-bottom: var(--mp-spacing-1); padding: 0 10px;
-  border: 1px solid var(--mp-border-form, var(--mp-border-default)); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-default, #fff); outline: none;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
+  background: var(--mp-background-neutral); color: var(--mp-text-secondary);
 }
-.courier-filter-search:focus { border-color: var(--mp-border-bold); }
-.courier-filter-search::placeholder { color: var(--mp-text-placeholder); }
+.courier-filter-search svg { flex-shrink: 0; }
+.courier-filter-search-input {
+  flex: 1; min-width: 0; border: none; background: transparent; outline: none;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
+}
+.courier-filter-search-input::placeholder { color: var(--mp-text-placeholder); }
 .courier-filter-scroll { display: flex; flex-direction: column; max-height: 184px; overflow-y: auto; }
 .courier-filter-empty { padding: var(--mp-spacing-2) 10px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }

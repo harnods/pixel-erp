@@ -547,10 +547,10 @@ const currentTabs = computed<string[]>(() => {
 // registry, counts, navigation), only the visible text differs. Outbound's
 // "Ready to ship" tab actually holds shipping tasks across several statuses (ready
 // to ship being just one of them), so it reads as "Shipping"; the shipment docs
-// tab reads as "Shipping document".
+// tab reads as "Shipping documents".
 const TAB_LABELS: Record<string, string> = {
   'Ready to ship': 'Shipping',
-  'Shipments': 'Shipping document',
+  'Shipments': 'Shipping documents',
 }
 function tabLabel(tab: string): string { return t(TAB_LABELS[tab] ?? tab) }
 
