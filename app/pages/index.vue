@@ -980,14 +980,14 @@ function startResize(e: MouseEvent) {
   align-items: center;
   justify-content: center;
   width: var(--mp-sizes-9, 36px) !important;
-  height: 36px !important;
+  height: var(--mp-sizes-9, 36px) !important;
   min-width: 0 !important;
   border: none !important;
   background: transparent !important;
   cursor: pointer;
   border-radius: 6px;
   color: var(--mp-text-secondary, #536062);
-  padding: 8px !important;
+  padding: var(--mp-spacing-2, 8px) !important;
 }
 .airene-icon-btn:hover { background: var(--mp-background-neutral-hovered, #f0f1f3); }
 
