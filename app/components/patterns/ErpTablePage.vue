@@ -364,6 +364,10 @@ const totalCols = computed(() =>
   (props.hasAiChat ? 1 : 0)
 )
 
+// Sticky actions column width — the actionsWidth prop, else the 52px default
+// (kept in script so the <col> inline style carries no hardcoded px).
+const actionsColWidth = computed(() => props.actionsWidth ?? '52px')
+
 const bulkCountLabel = computed(() => {
   const n = selectedRows.value.size
   const noun = props.bulkLabel ?? 'item'
@@ -402,7 +406,7 @@ const bulkCountLabel = computed(() => {
             :key="col.key"
             :style="colStyle(col, ci)"
           />
-          <col v-if="$slots.actions" :style="{ width: actionsWidth ?? '52px', minWidth: actionsWidth ?? '52px', maxWidth: actionsWidth ?? '52px' }" />
+          <col v-if="$slots.actions" :style="{ width: actionsColWidth, minWidth: actionsColWidth, maxWidth: actionsColWidth }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
 

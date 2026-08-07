@@ -8,7 +8,7 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { useTableState } from '~/composables/useTableState'
-import { listShipments } from '~/data/deliveryTasks'
+import { listShipments, DELIVERY_COURIERS } from '~/data/deliveryTasks'
 import { warehouses } from '~/data/warehouses'
 import { formatDateTime } from '~/utils/date'
 
@@ -126,11 +126,14 @@ function toggleStatus(v: string) {
   else statusFilter.value = [...statusFilter.value, v]
 }
 
-// Courier filter — options are the distinct couriers actually present on shipments.
+// Courier filter — the full courier master (same as the Shipping tab), searchable
+// with a capped-height popover (see CSS).
 const courierFilter = ref<string[]>([])
-const courierOptions = computed(() => {
-  const names = [...new Set(baseRows.value.map(r => r.courier).filter(Boolean))]
-  return names.sort((a, b) => a.localeCompare(b)).map(c => ({ label: c, value: c }))
+const courierOptions = DELIVERY_COURIERS.map(c => ({ label: c, value: c }))
+const courierSearch = ref('')
+const filteredCourierOptions = computed(() => {
+  const q = courierSearch.value.trim().toLowerCase()
+  return q ? courierOptions.filter(o => o.label.toLowerCase().includes(q)) : courierOptions
 })
 const courierLabel = computed(() => {
   const n = courierFilter.value.length
@@ -239,32 +242,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
-        <MpPopover id="shp-courier-filter" :is-close-on-select="false">
-          <MpPopoverTrigger>
-            <MpSelect
-              id="shp-courier-select" :placeholder="t('Courier')" :model-value="courierFilter.length ? 'set' : ''" is-clearable
-              :class="css({ width: '160px' })" @mousedown.prevent @clear="courierFilter = []"
-            >
-              <option v-if="courierFilter.length" value="set">{{ courierLabel }}</option>
-            </MpSelect>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-            <div class="checkbox-filter-list">
-              <label v-for="opt in courierOptions" :key="opt.value" class="checkbox-filter-item">
-                <MpCheckbox
-                  :id="`shp-courier-${opt.value}`"
-                  :is-checked="courierFilter.includes(opt.value)"
-                  @change="toggleCourier(opt.value)"
-                  @click.stop
-                >
-                  {{ opt.label }}
-                </MpCheckbox>
-              </label>
-              <p v-if="!courierOptions.length" class="checkbox-filter-empty">{{ t('No couriers yet.') }}</p>
-            </div>
-          </MpPopoverContent>
-        </MpPopover>
-
         <MpPopover id="shp-status-filter" :is-close-on-select="false">
           <MpPopoverTrigger>
             <MpSelect
@@ -286,6 +263,40 @@ const emptyIllustration = '/illustrations/empty-folder.png'
                   {{ opt.label }}
                 </MpCheckbox>
               </label>
+            </div>
+          </MpPopoverContent>
+        </MpPopover>
+
+        <MpPopover id="shp-courier-filter" :is-close-on-select="false">
+          <MpPopoverTrigger>
+            <MpSelect
+              id="shp-courier-select" :placeholder="t('Courier')" :model-value="courierFilter.length ? 'set' : ''" is-clearable
+              :class="css({ width: '160px' })" @mousedown.prevent @clear="courierFilter = []"
+            >
+              <option v-if="courierFilter.length" value="set">{{ courierLabel }}</option>
+            </MpSelect>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ padding: '0', minWidth: '220px', width: 'max-content', maxWidth: '280px' })">
+            <div class="courier-filter">
+              <div class="courier-filter-search">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <input v-model="courierSearch" class="courier-filter-search-input" type="text" :placeholder="t('Search courier...')" @click.stop @keydown.stop />
+              </div>
+              <div class="courier-filter-scroll">
+                <label v-for="opt in filteredCourierOptions" :key="opt.value" class="checkbox-filter-item">
+                  <MpCheckbox
+                    :id="`shp-courier-${opt.value}`"
+                    :is-checked="courierFilter.includes(opt.value)"
+                    @change="toggleCourier(opt.value)"
+                    @click.stop
+                  >
+                    {{ opt.label }}
+                  </MpCheckbox>
+                </label>
+                <p v-if="!filteredCourierOptions.length" class="courier-filter-empty">{{ t('No couriers found') }}</p>
+              </div>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -403,6 +414,24 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 }
 .checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
 .checkbox-filter-empty { margin: 0; padding: var(--mp-spacing-2) 10px; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* Courier filter — searchable (matches the table search box), capped to ~5
+   options with scroll inside the popover. Same as the Shipping tab. */
+.courier-filter { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-2); min-width: 220px; }
+.courier-filter-search {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
+  background: var(--mp-background-neutral); color: var(--mp-text-secondary);
+}
+.courier-filter-search svg { flex-shrink: 0; }
+.courier-filter-search-input {
+  flex: 1; min-width: 0; border: none; background: transparent; outline: none;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
+}
+.courier-filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.courier-filter-scroll { display: flex; flex-direction: column; max-height: 184px; overflow-y: auto; }
+.courier-filter-empty { padding: var(--mp-spacing-2) 10px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;

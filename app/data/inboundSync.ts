@@ -4,6 +4,8 @@ import {
 import {
   receivingTasksForReceipt, getReceivingTask, cancelReceivingTask, flagTaskCanceledPoAck,
   forceCancelEndedTask, completeReceivingOnPoCancel, lockedReceivingQtyForSku, recomputeReceiptStatus,
+  openReceivingLinesForSku, reduceOrderSkuOnReceivingTask, markReceivingNeedsRearrangement,
+  type RearrangementChange,
 } from "./receivingTasks";
 import { getPutAwayTask, flagPutAwayCanceledPoAck, cancelPutAway, removeReceivingTasksFromPutAway } from "./putAwayTasks";
 import { lineItemsForReceipt } from "./receiptLineItems";
@@ -15,7 +17,47 @@ export type CancelInboundResult =
 
 export type EditInboundResult =
   | { ok: true }
-  | { ok: false; reason: "NOT_FOUND" | "NOT_EDITABLE" | "SKU_LOCKED"; productId?: string; sku?: string; locked?: number };
+  | { ok: false; reason: "NOT_FOUND" | "NOT_EDITABLE" | "SKU_LOCKED"; productId?: string; sku?: string; locked?: number; removable?: number };
+
+/** Per-task reduction of one SKU (the multi-Open-task allocation step). */
+export interface ReceivingTaskReduction { taskId: string; taskNo: string; currentQty: number; reduceBy: number; willCancel: boolean }
+/** The default (and, per this feature's MVP, ONLY — no override) proposal for
+ *  reducing a SKU spread across Open receiving tasks. Mirrors SkuReductionProposal
+ *  in outboundSync.ts. */
+export interface ReceivingReductionProposal {
+  sku: string; reduction: number; locked: number; removable: number; unassigned: number;
+  exceedsRemovable: boolean; taskReductions: ReceivingTaskReduction[];
+}
+
+/** Drain the smallest Open task first so the fewest tasks remain — same rule as
+ *  outbound D7 AC#3, duplicated locally to keep inbound/outbound decoupled. */
+function drainSmallestFirst(open: { taskId: string; taskNo: string; qty: number }[], R: number): ReceivingTaskReduction[] {
+  let rem = R;
+  return [...open].sort((a, b) => a.qty - b.qty).map((p) => {
+    const reduceBy = Math.min(p.qty, Math.max(0, rem));
+    rem -= reduceBy;
+    return { taskId: p.taskId, taskNo: p.taskNo, currentQty: p.qty, reduceBy, willCancel: reduceBy === p.qty };
+  });
+}
+
+/** The default proposal for reducing `sku` on `receiptId` by `N` — reduces any
+ *  UNASSIGNED (not yet claimed by any task) qty first, then drains Open tasks
+ *  smallest first. Reports the removable cap so the caller can reject over-cap. */
+export function proposeReceivingReduction(receiptId: string, sku: string, N: number): ReceivingReductionProposal {
+  const r = receipts.find((x) => x.id === receiptId);
+  const poQty = r ? (lineItemsForReceipt(r).find((l) => l.sku === sku)?.purchaseQty ?? 0) : 0;
+  const locked = lockedReceivingQtyForSku(receiptId, sku);
+  const open = openReceivingLinesForSku(receiptId, sku);
+  const openTotal = open.reduce((s, p) => s + p.qty, 0);
+  const removable = poQty - locked;
+  const unassigned = Math.max(0, poQty - locked - openTotal);
+  const R = Math.max(0, N - Math.min(N, unassigned));
+  const taskReductions = drainSmallestFirst(open, R).filter((t) => t.reduceBy > 0);
+  for (const tr of taskReductions) {
+    tr.willCancel = tr.reduceBy === tr.currentQty && getReceivingTask(tr.taskId)?.items.length === 1;
+  }
+  return { sku, reduction: N, locked, removable, unassigned, exceedsRemovable: N > removable, taskReductions };
+}
 
 /**
  * Edit a PO's line items (+ optional header fields) — PRD C2 AC#4, adapted to
@@ -27,13 +69,23 @@ export type EditInboundResult =
  *    the new qty doesn't drop below what's already been physically received
  *    for it (lockedReceivingQtyForSku — an "open"/not-yet-started task
  *    contributes nothing, so its SKUs stay freely editable);
- *  - dropping below that locked amount rejects the WHOLE edit (SKU_LOCKED) —
- *    no partial apply;
- *  - existing receiving tasks are NEVER touched by this edit (their own
- *    items[].expectedQty stays a snapshot from whenever they were created,
- *    same as this app already behaves elsewhere) — only the PO's own line
- *    items change, which is what uncoveredLineItems() reads when a NEW
- *    receiving task gets created afterward.
+ *  - dropping below that locked amount rejects the WHOLE edit (SKU_LOCKED),
+ *    now carrying `removable` too so the caller can show "X locked in active
+ *    receiving, only Y removable" — no partial apply;
+ *  - a reduction that fits within the removable cap DOES now touch existing
+ *    Open receiving tasks (this used to be a strict no-touch snapshot — see the
+ *    "existing tasks are touched" describe block in inbound-edit-order.spec.ts
+ *    for the deliberate behavior change): the removed qty drains any unassigned
+ *    remainder first, then Open tasks smallest-first (proposeReceivingReduction
+ *    above computes the same plan the UI previews before the user acknowledges);
+ *    a task emptied to 0 auto-cancels, a task that survives with qty left over
+ *    freezes into Needs Re-arrangement (markReceivingNeedsRearrangement, carrying
+ *    a per-SKU before/after snapshot) until the operator reviews it on that task's
+ *    own page (View changes → Proceed changes) — applies the same way whether this
+ *    edit arrived via the WMS surface or a direct/API call, since there's no
+ *    separate confirm step possible for that path;
+ *  - only the SKU's own Open-task claims are touched — a started/ended task's
+ *    items[] is never touched (that portion is locked, per the point above).
  * Lives here (not receipts.ts) to read receiving-task state without a
  * load-time circular import, mirroring editOutboundOrder in outboundSync.ts.
  */
@@ -51,13 +103,27 @@ export function editInboundReceipt(
   for (const l of newLines) if (l.qty > 0) newByProduct.set(l.productId, (newByProduct.get(l.productId) ?? 0) + l.qty);
   const productIds = new Set<string>([...oldByProduct.keys(), ...newByProduct.keys()]);
 
-  // Validate everything up-front (no partial apply).
+  // Validate everything up-front (no partial apply) and build each reduction's
+  // Open-task drain plan (default/only allocation — no override in this MVP).
+  const reductionPlans: { productId: string; sku: string; productName: string; taskReductions: { taskId: string; reduceBy: number; qtyBefore: number }[] }[] = [];
   for (const productId of productIds) {
-    const sku = CATALOG.find((c) => c.id === productId)?.sku;
+    const cat = CATALOG.find((c) => c.id === productId);
+    const sku = cat?.sku;
     if (!sku) continue;
+    const oldQty = oldByProduct.get(productId) ?? 0;
     const newQty = newByProduct.get(productId) ?? 0;
+    if (newQty >= oldQty) continue; // add/increase — nothing to allocate
+    const N = oldQty - newQty;
     const locked = lockedReceivingQtyForSku(receiptId, sku);
-    if (newQty < locked) return { ok: false, reason: "SKU_LOCKED", productId, sku, locked };
+    const removable = oldQty - locked;
+    if (N > removable) return { ok: false, reason: "SKU_LOCKED", productId, sku, locked, removable };
+    const open = openReceivingLinesForSku(receiptId, sku);
+    const openTotal = open.reduce((s, p) => s + p.qty, 0);
+    const unassigned = Math.max(0, oldQty - locked - openTotal);
+    const R = Math.max(0, N - Math.min(N, unassigned));
+    const taskReductions = drainSmallestFirst(open, R).filter((t) => t.reduceBy > 0)
+      .map((t) => ({ taskId: t.taskId, reduceBy: t.reduceBy, qtyBefore: t.currentQty }));
+    if (taskReductions.length) reductionPlans.push({ productId, sku, productName: cat.name, taskReductions });
   }
 
   // Build the "what changed" diff for the activity log — computed here, while
@@ -88,6 +154,25 @@ export function editInboundReceipt(
     }
   }
 
+  // ── Commit ───────────────────────────────────────────────────────────────────
+  // Group the before/after snapshot per task (a single edit can touch the same
+  // task via more than one SKU) so markReceivingNeedsRearrangement freezes it
+  // once with the full "View changes" table, not once per SKU.
+  const changesByTask = new Map<string, RearrangementChange[]>();
+  for (const plan of reductionPlans) {
+    for (const tr of plan.taskReductions) {
+      reduceOrderSkuOnReceivingTask(tr.taskId, plan.sku, tr.reduceBy);
+      if (getReceivingTask(tr.taskId)?.status === "open") {
+        const list = changesByTask.get(tr.taskId) ?? [];
+        list.push({ sku: plan.sku, productName: plan.productName, qtyBefore: tr.qtyBefore, qtyAfter: tr.qtyBefore - tr.reduceBy });
+        changesByTask.set(tr.taskId, list);
+      }
+    }
+  }
+  // A task that survived the reduction (still Open, not auto-cancelled) freezes
+  // into Needs Re-arrangement — unconditional here, so it applies the same
+  // whether this edit arrived via the WMS surface or the source API.
+  for (const [taskId, taskChanges] of changesByTask) markReceivingNeedsRearrangement(taskId, taskChanges);
   updateReceiptLines(receiptId, [...newByProduct].map(([productId, qty]) => ({ productId, qty })), header);
   appendReceiptEditLog(receiptId, changes);
   recomputeReceiptStatus(receiptId);

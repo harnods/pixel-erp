@@ -179,6 +179,12 @@ function seedRows(): void {
     // brand-new units. Show only what's actually been scanned/entered so far (this
     // task's own modelValue); never mix in unrelated already-in-stock serials.
     rows.value = props.modelValue.map(cs => ({ serial: cs.serial, counted: true }))
+  } else if (!props.kind || props.kind === 'count') {
+    // Blind count: the operator never sees the expected/system serial list —
+    // only serials actually scanned (or previously confirmed, on reopening a
+    // draft) ever appear. There is no "not counted" row to surface; a serial
+    // that hasn't been scanned yet simply isn't in the list at all.
+    rows.value = props.modelValue.map(cs => ({ serial: cs.serial, counted: true }))
   } else if (props.modelValue.length > 0) {
     const countedSet = new Set(props.modelValue.map(cs => cs.serial))
     const seen = new Set<string>()
@@ -190,10 +196,6 @@ function seedRows(): void {
       if (!seen.has(cs.serial)) result.push({ serial: cs.serial, counted: true })
     }
     rows.value = result
-  } else if (!props.kind || props.kind === 'count') {
-    // Stock count: pre-populate all warehouse SNs as already counted; user removes
-    // (marks not-counted) any that aren't physically found during the count.
-    rows.value = warehouseSerials.map(s => ({ serial: s, counted: true }))
   } else if (props.locationOnHand === 0) {
     rows.value = []
   } else {
@@ -240,8 +242,11 @@ const onHandCount = computed(() =>
 // countedCount = rows currently marked as counted (for table X/Y indicator + validation)
 const countedCount = computed(() => rows.value.filter(r => r.counted && !r.fromPriorTask).length)
 const putAwayCount = computed(() => rows.value.filter(r => r.destLocId).length)
-// Info bar stats are driven by targetCount (what user entered in the form), not table state
-const difference = computed(() => props.targetCount - onHandCount.value)
+// Info bar stats are driven by targetCount (what user entered in the form), not table
+// state — except count mode's own Counted/Difference, which must track the live
+// blind-count tally (countedCount), since targetCount there is just the system's
+// prior on-hand figure passed through for the "On hand" stat, not a real count.
+const difference = computed(() => (isCountMode.value ? countedCount.value : props.targetCount) - onHandCount.value)
 const isInOut = computed(() =>
   props.kind === 'in-out' || props.kind === 'transfer' || props.kind === 'receiving' || props.kind === 'put-away' || props.kind === 'picking',
 )
@@ -357,7 +362,10 @@ watch(inputText, (val) => { if (val) addError.value = '' })
 function toggleRow(row: SerialRow) {
   if (row.reserved) return
   if ((isTransfer.value || isPicking.value) && !row.counted && countedCount.value >= props.targetCount) return
-  if (isReceiving.value && row.counted) {
+  // Receiving and blind count never show a "not counted" row — undoing one
+  // removes it from the list outright instead of flipping a flag that would
+  // otherwise have nothing to render.
+  if ((isReceiving.value || isCountMode.value) && row.counted) {
     rows.value = rows.value.filter(r => r.serial !== row.serial)
     saveError.value = ''
     return
@@ -576,9 +584,9 @@ function setDestLoc(row: SerialRow, locId: string) {
   row.destLocId = locId
   locActiveKey.value = null
 }
-// Count mode: the Status column is only meaningful once there's a discrepancy
-// (some serial removed from the default all-counted state) — otherwise every
-// row would just say "Counted", adding noise. Other kinds always show it.
+// Count mode: blind count only ever lists rows that are counted (an uncounted
+// serial is simply absent, never shown), so a Status column would just repeat
+// "Counted" on every row — pure noise. Other kinds always show it.
 const showStatusColumn = computed(() => !isCountMode.value || rows.value.some(r => !r.counted))
 const colspanCount = computed(() =>
   2 + (showStatusColumn.value ? 1 : 0) + (hasOriginLoc.value ? 1 : 0) + (hasDestLoc.value ? 1 : 0),
@@ -680,7 +688,7 @@ async function handleSave() {
               </div>
               <div class="msn-stat">
                 <span class="msn-stat-label">Counted</span>
-                <span class="msn-stat-value">{{ fmtSerial(targetCount) }}</span>
+                <span class="msn-stat-value">{{ fmtSerial(countedCount) }}</span>
               </div>
               <div class="msn-stat" :class="{ 'msn-stat--pos': difference > 0, 'msn-stat--neg': difference < 0 }">
                 <span class="msn-stat-label">Difference</span>
@@ -727,8 +735,11 @@ async function handleSave() {
           </div>
         </div>
 
-        <div v-if="!isTransfer && !isPicking" class="msn-form-section">
-          <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins. -->
+        <div v-if="!isTransfer && !isPicking && !isCountMode" class="msn-form-section">
+          <!-- Serials are a fixed fact from receiving for put-away — no adding, just assign bins.
+               Also hidden for count (blind count): every serial must come from an actual scan —
+               a typed/pasted list would let the operator register one they never physically
+               checked, defeating the point of a blind count. -->
           <template v-if="!isPutAway">
             <label class="msn-form-label">Serial number</label>
             <MpTooltip
@@ -805,7 +816,8 @@ async function handleSave() {
           <div class="msn-empty">
             <img src="/illustrations/empty-folder.png" alt="" width="120" height="100" />
             <p class="msn-empty-title">No serial numbers yet</p>
-            <p class="msn-empty-desc">Add serial numbers using the input above, or scan a barcode.</p>
+            <p v-if="isCountMode" class="msn-empty-desc">Scan a barcode to add a serial number.</p>
+            <p v-else class="msn-empty-desc">Add serial numbers using the input above, or scan a barcode.</p>
           </div>
         </template>
 
@@ -844,7 +856,10 @@ async function handleSave() {
             </colgroup>
             <thead>
               <tr>
-                <th class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ effectiveTargetCount }})</th>
+                <!-- Blind count: no "/ target" — the operator is only ever told how
+                     many they've scanned, never how many the system expects. -->
+                <th v-if="isCountMode" class="msn-th">SERIAL NUMBER ({{ countedCount }})</th>
+                <th v-else class="msn-th">SERIAL NUMBER ({{ countedCount }} / {{ effectiveTargetCount }})</th>
                 <th v-if="hasOriginLoc" class="msn-th">ORIGIN LOCATION</th>
                 <th v-if="hasDestLoc" class="msn-th">STORAGE LOCATION</th>
                 <th v-if="showStatusColumn" class="msn-th">STATUS</th>

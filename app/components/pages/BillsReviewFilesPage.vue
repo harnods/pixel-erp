@@ -413,7 +413,7 @@ function confirmBulkDelete() {
         is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
       >
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('More actions')">
+          <button class="row-kebab btn-enterprise" :aria-label="t('More actions')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="5" r="2" />
               <circle cx="12" cy="12" r="2" />

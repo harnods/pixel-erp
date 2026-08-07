@@ -88,6 +88,11 @@ const props = defineProps<{
    *  this line. When provided, the drawer shows a scan bar (emits 'scan') and a
    *  "Verified x/y" stat so the operator confirms each batch matches the pick. */
   verifiedQty?: number
+  /** Count mode only — hides the On hand qty stat/column (and Difference, which is
+   *  derived from it) while a cycle count is still blind — the operator shouldn't
+   *  be able to see the system's on-hand record before the count reaches Awaiting
+   *  approval, where the reviewing manager needs it. Other kinds never pass this. */
+  hideOnHand?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
@@ -310,7 +315,7 @@ function close() { emit('update:open', false) }
               </div>
             </template>
             <template v-else>
-              <div class="vbd-stat">
+              <div v-if="!hideOnHand" class="vbd-stat">
                 <span class="vbd-stat-label">{{ t('On hand qty') }}</span>
                 <span class="vbd-stat-value">{{ fmt(totalOnHand) }}</span>
               </div>
@@ -320,7 +325,9 @@ function close() { emit('update:open', false) }
                   <span class="vbd-stat-label">{{ t('Counted qty') }}</span>
                   <span class="vbd-stat-value">{{ fmt(totalCounted) }}</span>
                 </div>
-                <div class="vbd-stat" :class="{ 'vbd-stat--pos': difference > 0, 'vbd-stat--neg': difference < 0 }">
+                <!-- Difference is derived from on-hand — hidden alongside it, or the
+                     operator could back-calculate the figure it's meant to hide. -->
+                <div v-if="!hideOnHand" class="vbd-stat" :class="{ 'vbd-stat--pos': difference > 0, 'vbd-stat--neg': difference < 0 }">
                   <span class="vbd-stat-label">{{ t('Difference') }}</span>
                   <span class="vbd-stat-value">{{ fmtDiff(difference) }}</span>
                 </div>
@@ -352,7 +359,7 @@ function close() { emit('update:open', false) }
               <col class="vbd-col-batch" />
               <col class="vbd-col-expiry" />
               <col class="vbd-col-desc" />
-              <col v-if="!isPacking" class="vbd-col-num" />
+              <col v-if="!isPacking && !hideOnHand" class="vbd-col-num" />
               <template v-if="qtyBeforeLocation">
                 <col v-if="hasPlanned" class="vbd-col-num" />
                 <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
@@ -370,7 +377,7 @@ function close() { emit('update:open', false) }
                 <th class="vbd-th">{{ t('Batch') }}</th>
                 <th class="vbd-th">{{ t('Expiry date') }}</th>
                 <th class="vbd-th">{{ t('Description') }}</th>
-                <th v-if="!isPacking" class="vbd-th vbd-th--num">{{ t('On hand qty') }}</th>
+                <th v-if="!isPacking && !hideOnHand" class="vbd-th vbd-th--num">{{ t('On hand qty') }}</th>
                 <template v-if="qtyBeforeLocation">
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ t(plannedQtyLabel) }}</th>
                   <th v-if="isPacking && !isVerify" class="vbd-th">{{ t('Storage location') }}</th>
@@ -393,7 +400,7 @@ function close() { emit('update:open', false) }
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.batchNo }}</td>
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.desc }}</td>
-                <td v-if="!isPacking" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
+                <td v-if="!isPacking && !hideOnHand" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
                 <template v-if="qtyBeforeLocation">
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
                   <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>

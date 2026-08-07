@@ -23,6 +23,8 @@ import { productBySku } from '~/data/inventory'
 import { resolveScan, notifyScanError, sameCode } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
+import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
@@ -318,7 +320,12 @@ function endPackingClick() {
   finishError.value = ''
   showConfirm.value = true
 }
-function commit() {
+// D4 AC#5 — completing packing prints the shipping label (source label for
+// pack_using_source_label orders, WMS-generated label otherwise) as part of
+// finishing the task, right before the packer sticks it on the package.
+const { pdfOpen, pdfDoc, pdfFilename, printShippingLabels } = usePrintShippingLabel()
+
+async function commit() {
   showConfirm.value = false
   const packTask = task.value
   if (!packTask) return
@@ -337,7 +344,16 @@ function commit() {
   // Already committed — the router.push below is this function's own doing,
   // not the operator losing unsaved work, so the guard mustn't fire on it.
   disableUnsavedChangesGuard()
-  router.push(`/packing/${props.orderId}`)
+  if (order.value) await printShippingLabels([order.value])
+  // Nothing printable (label unavailable/duplicate) — printShippingLabels already
+  // toasted why, so just leave; otherwise wait for the preview to be dismissed
+  // (Print or Cancel) before navigating off this page.
+  if (!pdfOpen.value) { router.push(`/packing/${props.orderId}`); return }
+  const stop = watch(pdfOpen, (open) => {
+    if (open) return
+    stop()
+    router.push(`/packing/${props.orderId}`)
+  })
 }
 function saveDraft() {
   savePackingDraft(props.orderId, { ...draftQty.value })
@@ -584,6 +600,14 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <PdfPreviewModal
+    :open="pdfOpen"
+    :doc="pdfDoc"
+    :filename="pdfFilename"
+    :title="t('Shipping label preview')"
+    @close="pdfOpen = false"
+  />
 
   <ViewBatchDrawer
     v-if="viewBatchItem"

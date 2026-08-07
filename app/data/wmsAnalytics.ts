@@ -32,6 +32,9 @@ export interface AnalyticsFilter {
   operator: string
   /** performance period, inclusive, in days back from TODAY */
   periodDays: number
+  /** Live operations reference day (ISO yyyy-mm-dd); omitted = now. Live stages
+   *  are reconstructed as-of the end of this day. */
+  asOf?: string
 }
 
 export const DEFAULT_FILTER: AnalyticsFilter = { warehouseId: 'all', operator: 'all', periodDays: 30 }
@@ -155,6 +158,14 @@ function inPeriod(f: AnalyticsFilter, d?: string): boolean {
   if (!dt) return false
   return dt >= periodStart(f.periodDays) && dt <= TODAY
 }
+// Live operations reference instant: end of the selected day (Today/Yesterday/…),
+// never past "now" (TODAY). Live stages are reconstructed as-of this moment.
+function refInstant(f: AnalyticsFilter): number {
+  const d = parse(f.asOf)
+  if (!d) return TODAY.getTime()
+  const eod = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime()
+  return Math.min(eod, TODAY.getTime())
+}
 
 // A stage's on-time/late/early split relative to an expected date. Active work is
 // judged against TODAY; closed work against its actual close date.
@@ -205,34 +216,49 @@ export function inboundAnalytics(f: AnalyticsFilter): DirectionAnalytics {
     return (recvByReceipt.get(r.id) ?? []).map((t) => t.endDate).filter(Boolean).sort().slice(-1)[0]
   }
 
-  // ── Live operations (current open work) ────────────────────────────────────
-  // Pending = receipts with no receiving activity yet (status pending/open).
-  const pendingRecs = recs.filter((r) => r.status === 'pending' || r.status === 'open')
-  const onReceiving = recvAll.filter((t) => t.status === 'in progress')
-  const onPutaway = putAll.filter((t) => t.status === 'open' || t.status === 'in progress')
-  const closedRecs = recs.filter((r) => receiptClosed(r))
+  // ── Live operations (reconstructed as-of the selected day) ──────────────────
+  // Each card counts what was at that stage at the end of the chosen day, derived
+  // from task dates (created → start → end) rather than the current status.
+  const ref = refInstant(f)
+  const by = (d?: string) => { const x = parse(d); return !!x && x.getTime() <= ref }
+  const recvById = new Map(recvAll.map((t) => [t.id, t]))
+  const recvStateAsOf = (t: (typeof recvAll)[number]): 'none' | 'pending' | 'receiving' | 'done' =>
+    !by(t.createdDate) ? 'none' : by(t.endDate) ? 'done' : by(t.startDate) ? 'receiving' : 'pending'
+  const existingTasks = (rid: string) => (recvByReceipt.get(rid) ?? []).filter((t) => by(t.createdDate))
+  const closeDateAsOf = (rid: string) => existingTasks(rid).map((t) => t.endDate).filter((d) => by(d)).sort().slice(-1)[0]
+  const putReceiptId = (p: (typeof putAll)[number]) => { for (const id of p.receivingTaskIds) { const t = recvById.get(id); if (t) return t.receiptId } return '' }
 
-  const pSplit = splitCounts(pendingRecs.map((r) => ({ expected: r.estimatedArrival })), true)
-  const rSplit = splitCounts(onReceiving.map((t) => ({ expected: recById.get(t.receiptId)?.estimatedArrival })))
-  const uSplit = splitCounts(onPutaway.map((t) => ({ expected: recById.get(recvAll.find((r) => t.receivingTaskIds.includes(r.id))?.receiptId ?? '')?.estimatedArrival })))
-  const cSplit = splitCounts(closedRecs.map((r) => ({ expected: r.estimatedArrival, actual: receiptCloseDate(r) })))
+  // Has not started = no receiving has begun by ref (includes receipts that have
+  // no receiving task yet — the pending backlog).
+  const livePending = recs.filter((r) => !(recvByReceipt.get(r.id) ?? []).some((t) => by(t.startDate)))
+  const liveReceiving = recvAll.filter((t) => recvStateAsOf(t) === 'receiving')
+  const livePutaway = putAll.filter((p) => !by(p.endDate) && p.receivingTaskIds.some((id) => by(recvById.get(id)?.endDate)))
+  const liveClosed = recs.filter((r) => { const ts = existingTasks(r.id); return ts.length > 0 && ts.every((t) => by(t.endDate)) })
+  const openReceivingAsOf = recvAll.filter((t) => recvStateAsOf(t) === 'pending')
+
+  const refIso = new Date(ref).toISOString()
+  const pSplit = splitCounts(livePending.map((r) => ({ expected: recById.get(r.id)?.estimatedArrival })), true)
+  const rSplit = splitCounts(liveReceiving.map((t) => ({ expected: recById.get(t.receiptId)?.estimatedArrival, actual: refIso })))
+  const uSplit = splitCounts(livePutaway.map((p) => ({ expected: recById.get(putReceiptId(p))?.estimatedArrival, actual: refIso })))
+  const cSplit = splitCounts(liveClosed.map((r) => ({ expected: recById.get(r.id)?.estimatedArrival, actual: closeDateAsOf(r.id) })))
 
   const stages: StageCard[] = [
-    { key: 'pending', label: 'Has not started', state: 'PENDING', caption: 'Pending receipts', count: pendingRecs.length, onTime: pSplit.onTime, late: pSplit.late, tone: 'neutral' },
-    { key: 'receiving', label: 'On receiving', state: 'ACTIVE', caption: 'Active receiving', count: onReceiving.length, onTime: rSplit.onTime, late: rSplit.late, early: rSplit.early, tone: 'active' },
-    { key: 'putaway', label: 'On putaway', state: 'ACTIVE', caption: 'Active putaway', count: onPutaway.length, onTime: uSplit.onTime, late: uSplit.late, early: uSplit.early, tone: 'active' },
-    { key: 'closed', label: 'Closed', state: 'CLOSED', caption: 'Closed receipts', count: closedRecs.length, onTime: cSplit.onTime, late: cSplit.late, early: cSplit.early, tone: 'closed' },
+    { key: 'pending', label: 'Has not started', state: 'PENDING', caption: 'Pending receipts', count: livePending.length, onTime: pSplit.onTime, late: pSplit.late, tone: 'neutral' },
+    { key: 'receiving', label: 'On receiving', state: 'ACTIVE', caption: 'Active receiving', count: liveReceiving.length, onTime: rSplit.onTime, late: rSplit.late, early: rSplit.early, tone: 'active' },
+    { key: 'putaway', label: 'On putaway', state: 'ACTIVE', caption: 'Active putaway', count: livePutaway.length, onTime: uSplit.onTime, late: uSplit.late, early: uSplit.early, tone: 'active' },
+    { key: 'closed', label: 'Closed', state: 'CLOSED', caption: 'Closed receipts', count: liveClosed.length, onTime: cSplit.onTime, late: cSplit.late, early: cSplit.early, tone: 'closed' },
   ]
   const noAction: NoActionCard = {
-    count: pendingRecs.length + recvAll.filter((t) => t.status === 'open').length,
+    count: livePending.length + openReceivingAsOf.length,
     rows: [
-      { label: 'No task', value: pendingRecs.length },
-      { label: 'Open receiving', value: recvAll.filter((t) => t.status === 'open').length },
-      { label: 'Open putaway', value: putAll.filter((t) => t.status === 'open').length },
+      { label: 'No task', value: livePending.length },
+      { label: 'Open receiving', value: openReceivingAsOf.length },
+      { label: 'Open putaway', value: livePutaway.length },
     ],
   }
 
   // ── Performance (period) ───────────────────────────────────────────────────
+  const closedRecs = recs.filter((r) => receiptClosed(r))
   const recvDone = recvAll.filter((t) => (t.status === 'completed' || t.status === 'pending put-away') && inPeriod(f, t.endDate))
   const putDone = putAll.filter((t) => t.status === 'completed' && inPeriod(f, t.endDate))
   const closedInPeriod = closedRecs.filter((r) => inPeriod(f, receiptCloseDate(r)))
@@ -316,36 +342,46 @@ export function outboundAnalytics(f: AnalyticsFilter): DirectionAnalytics {
   const packAll = packingTasks.filter((t) => whOk(f, t.warehouseId) && t.status !== 'canceled' && opOk(f, t.assignee))
   const shipAll = deliveryTasks.filter((t) => whOk(f, t.warehouseId) && t.status !== 'canceled' && opOk(f, t.assignee))
 
-  const pendingOrders = orders.filter((o) => o.status === 'pending' || o.status === 'open')
-  const onPicking = pickAll.filter((t) => t.status === 'in progress' || t.status === 'partially picked')
-  const onPacking = packAll.filter((t) => t.status === 'in progress')
-  const onShipping = shipAll.filter((t) => t.status === 'ready to ship' || t.status === 'out for delivery')
-  const closedOrders = orders.filter((o) => o.status === 'completed')
+  // ── Live operations (reconstructed as-of the selected day) ──────────────────
+  const ref = refInstant(f)
+  const by = (d?: string) => { const x = parse(d); return !!x && x.getTime() <= ref }
+  const startedOrderIds = new Set(pickAll.filter((t) => by(t.startDate)).flatMap((t) => t.salesOrderIds))
 
+  const liveClosed = orders.filter((o) => by(o.shippedDate))
+  const onPicking = pickAll.filter((t) => by(t.startDate) && !by(t.endDate))
+  const onPacking = packAll.filter((t) => by(t.startDate) && !by(t.endDate))
+  const onShipping = shipAll.filter((t) => !by(t.shippedDate) && by(packById(packAll, t)?.endDate))
+  const pendingOrders = orders.filter((o) => !startedOrderIds.has(o.id) && !by(o.shippedDate))
+  const openPickingAsOf = pickAll.filter((t) => !by(t.startDate) && !by(t.endDate))
+  const openPackingAsOf = packAll.filter((t) => !by(t.startDate) && !by(t.endDate))
+
+  const refIso = new Date(ref).toISOString()
   const expOf = (o?: { dueDate?: string }) => o?.dueDate
   const pSplit = splitCounts(pendingOrders.map((o) => ({ expected: o.dueDate })), true)
-  const kSplit = splitCounts(onPicking.map((t) => ({ expected: expOf(orderById.get(t.salesOrderIds[0] ?? '')) })))
-  const gSplit = splitCounts(onPacking.map((t) => ({ expected: expOf(orderById.get(t.salesOrderId)) })))
-  const hSplit = splitCounts(onShipping.map((t) => ({ expected: expOf(orderById.get(t.salesOrderId)) })))
-  const cSplit = splitCounts(closedOrders.map((o) => ({ expected: o.dueDate, actual: o.shippedDate })))
+  const kSplit = splitCounts(onPicking.map((t) => ({ expected: expOf(orderById.get(t.salesOrderIds[0] ?? '')), actual: refIso })))
+  const gSplit = splitCounts(onPacking.map((t) => ({ expected: expOf(orderById.get(t.salesOrderId)), actual: refIso })))
+  const hSplit = splitCounts(onShipping.map((t) => ({ expected: expOf(orderById.get(t.salesOrderId)), actual: refIso })))
+  const cSplit = splitCounts(liveClosed.map((o) => ({ expected: o.dueDate, actual: o.shippedDate })))
 
   const stages: StageCard[] = [
     { key: 'pending', label: 'Has not started', state: 'PENDING', caption: 'Pending orders', count: pendingOrders.length, onTime: pSplit.onTime, late: pSplit.late, tone: 'neutral' },
     { key: 'picking', label: 'On picking', state: 'ACTIVE', caption: 'Active picking', count: onPicking.length, onTime: kSplit.onTime, late: kSplit.late, early: kSplit.early, tone: 'active' },
     { key: 'packing', label: 'On packing', state: 'ACTIVE', caption: 'Active packing', count: onPacking.length, onTime: gSplit.onTime, late: gSplit.late, early: gSplit.early, tone: 'active' },
     { key: 'shipping', label: 'On shipping', state: 'ACTIVE', caption: 'Active shipping', count: onShipping.length, onTime: hSplit.onTime, late: hSplit.late, early: hSplit.early, tone: 'active' },
-    { key: 'closed', label: 'Closed', state: 'CLOSED', caption: 'Closed orders', count: closedOrders.length, onTime: cSplit.onTime, late: cSplit.late, early: cSplit.early, tone: 'closed' },
+    { key: 'closed', label: 'Closed', state: 'CLOSED', caption: 'Closed orders', count: liveClosed.length, onTime: cSplit.onTime, late: cSplit.late, early: cSplit.early, tone: 'closed' },
   ]
   const noAction: NoActionCard = {
-    count: pendingOrders.length + pickAll.filter((t) => t.status === 'open').length,
+    count: pendingOrders.length + openPickingAsOf.length,
     rows: [
       { label: 'No task', value: pendingOrders.length },
-      { label: 'Open picking', value: pickAll.filter((t) => t.status === 'open').length },
-      { label: 'Open packing', value: packAll.filter((t) => t.status === 'open').length },
-      { label: 'Open shipping', value: shipAll.filter((t) => t.status === 'ready to ship').length },
+      { label: 'Open picking', value: openPickingAsOf.length },
+      { label: 'Open packing', value: openPackingAsOf.length },
+      { label: 'Open shipping', value: onShipping.length },
     ],
   }
 
+  // ── Performance (period) ───────────────────────────────────────────────────
+  const closedOrders = orders.filter((o) => o.status === 'completed')
   const pickDone = pickAll.filter((t) => t.status === 'completed' && inPeriod(f, t.endDate))
   const packDone = packAll.filter((t) => t.status === 'completed' && inPeriod(f, t.endDate))
   const shipDone = shipAll.filter((t) => t.status === 'shipped' && inPeriod(f, t.shippedDate))

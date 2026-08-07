@@ -46,6 +46,15 @@ export async function resolveNavigationAttempt(): Promise<boolean> {
   isOpen.value = false
   if (choice === 'cancel') return false
   if (choice === 'draft') await guard.saveDraft?.()
+  // The operator already answered "leave this page behind?" for THIS guard —
+  // clear it right away rather than waiting for the still-mounting-out page's
+  // own onUnmounted. A redirect/second beforeEach pass that lands before that
+  // unmount finishes (e.g. the destination normalizing its own URL/query on
+  // mount) would otherwise see the same still-registered guard and pop this
+  // exact "Leave without saving?" modal straight back up for a question that
+  // was just answered. (Guarded by identity, not a blind null, in case a new
+  // page has already mounted and registered its own guard in the interim.)
+  if (activeGuard.value === guard) activeGuard.value = null
   return true
 }
 

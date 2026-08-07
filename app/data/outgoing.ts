@@ -47,6 +47,12 @@ export interface OutgoingOrder {
   /** where the order originated: "Sales Order" (ERP), "Manual", or a Desty
    *  marketplace channel "{Marketplace}: {store name}" (e.g. "Shopee: Central Perk"). */
   source: string;
+  /** SOURCE shipping label (resi/AWB) that came with the order — set for
+   *  marketplace orders whose channel has already issued the label; UNDEFINED
+   *  while a marketplace order is still waiting for its label (Print Shipping
+   *  Label is disabled until it lands). ERP/Manual orders leave this undefined and
+   *  use the WMS-generated shipping label instead. See data/shippingLabels.ts. */
+  shippingLabel?: string;
   warehouseId: string;
   warehouseName: string;
   /** distinct SKUs ordered */
@@ -266,19 +272,29 @@ function generateOrders(count = 42): OutgoingOrder[] {
     const custName = so ? so.customer.name : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].name;
     const custId = so ? so.customer.id : CUSTOMERS[hash100(i * 31) % CUSTOMERS.length].id;
     const source = fromDesty ? `${MARKETPLACES[hash100(i * 29) % MARKETPLACES.length]}: ${STORE_NAME}` : "Sales Order";
+    // Marketplace source label (resi/AWB): almost always present (the channel
+    // issues it up front), so Print Shipping Label works out of the box. Only a
+    // small share of in-warehouse marketplace orders are still waiting for the
+    // label (so the disabled/"waiting" state is still demonstrable). ERP/manual = none.
+    const waitingLabel = fromDesty && !hasLeft && hash100(i * 41) % 10 === 0;
+    const shippingLabel = fromDesty && !waitingLabel
+      ? `SPXID${String(40000000 + i * 137).padStart(11, "0")}`
+      : undefined;
     out.push({
       id: `out-${String(i + 1).padStart(3, "0")}`,
       number: `OUT-2026-${String(i + 1).padStart(4, "0")}`,
       salesNo,
       source,
+      shippingLabel,
       warehouseId: wh.id,
       warehouseName: wh.name,
       skuQty,
       orderQty,
       shippedQty: computeShipped(i, status, orderQty),
       status,
-      // completed orders fully shipped between due date and today
-      shippedDate: status === "completed" ? isoOffset(-((i % 10) + 1)) : undefined,
+      // Completed orders shipped 1..88 days ago (spread, so date-range filters on
+      // the Overview / Reports are meaningful rather than all bunched at "recent").
+      shippedDate: status === "completed" ? isoOffset(-(1 + ((i * 37) % 88))) : undefined,
       dueDate,
       memo: generateMemo(i, isoOffset(offset)),
       salesOrderId: so?.id,
@@ -319,13 +335,16 @@ function generateShipped(count = 10): OutgoingOrder[] {
       number: `OUT-2026-${String(800 + k).padStart(4, "0")}`,
       salesNo,
       source,
+      // Shipped marketplace orders always carry their source label (the channel
+      // issued it before it left) so Print Shipping Label works on these too.
+      shippingLabel: fromDesty ? `SPXID${String(50000000 + k * 211).padStart(11, "0")}` : undefined,
       warehouseId: wh.id,
       warehouseName: wh.name,
       skuQty,
       orderQty,
       shippedQty: 0, // re-derived by the sync from the delivery tasks
       status: partial ? "partially shipped" : "completed",
-      shippedDate: isoOffset(-((k % 10) + 1)),
+      shippedDate: isoOffset(-(1 + ((k * 37) % 88))),
       dueDate: isoOffset(-((k % 12) + 2)),
       memo: generateMemo(i, isoOffset(-((k % 12) + 2))),
       salesOrderId: so?.id,
@@ -626,7 +645,7 @@ function generateMultiOrderPickingScenario(): OutgoingOrder[] {
 // full snapshot so seed records mutated by the flow (status derivation, shipped
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
 // "Reset demo data" clears it.
-const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing");
+const outgoingSnapshot = loadSnapshot<OutgoingOrder>("outgoing-v5");
 export const outgoingOrders = reactive<OutgoingOrder[]>(
   outgoingSnapshot ?? [
     ...generateTrackingScenario(), ...generateMultiOrderPickingScenario(),
@@ -670,7 +689,7 @@ export const shippedSeeds: ShippedSeed[] = outgoingOrders
 
 /** Persist the outgoing snapshot (call after any mutation). */
 export function persistOutgoing(): void {
-  saveSnapshot("outgoing", outgoingOrders);
+  saveSnapshot("outgoing-v5", outgoingOrders);
 }
 
 let outgoingAddSeq = outgoingOrders.filter((o) => o.id.startsWith("out-new-")).length;

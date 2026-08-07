@@ -69,6 +69,9 @@ const filter = computed<AnalyticsFilter>(() => ({
   warehouseId: warehouseId.value,
   operator: operator.value,
   periodDays: periodDays.value,
+  // Live operations reference day (Today / Yesterday / N days ago) — local date,
+  // not toISOString (which would shift a day in +07:00).
+  asOf: `${liveDate.value.getFullYear()}-${String(liveDate.value.getMonth() + 1).padStart(2, '0')}-${String(liveDate.value.getDate()).padStart(2, '0')}`,
 }))
 const model = computed(() => props.direction === 'inbound' ? inboundAnalytics(filter.value) : outboundAnalytics(filter.value))
 const live = computed(() => model.value.live)
@@ -108,28 +111,24 @@ function stageVal(s: { avg: number | null; median: number | null }): number | nu
 }
 const barStages = computed(() => perf.value.stages.filter((s) => !s.total))
 const cycleStage = computed(() => perf.value.stages.find((s) => s.total))
-const barMax = computed(() => {
-  const vals = barStages.value.map((s) => stageVal(s) ?? 0)
-  return Math.max(1, ...vals)
-})
 const cycleVal = computed(() => stageVal(cycleStage.value ?? { avg: null, median: null }))
-// Idle time inside the cycle not covered by the measured stages.
 const stagesSum = computed(() => barStages.value.reduce((sum, s) => sum + (stageVal(s) ?? 0), 0))
+// Idle time inside the cycle not covered by the measured stages.
 const idleMin = computed(() => cycleVal.value != null ? Math.max(0, cycleVal.value - stagesSum.value) : 0)
 
-function barWidth(s: { avg: number | null; median: number | null }): string {
-  const v = stageVal(s) ?? 0
-  return `${Math.max(2, (v / barMax.value) * 100)}%`
-}
-// Cycle bar: stages laid end-to-end as a proportion of the full cycle.
-function cycleSeg(s: { avg: number | null; median: number | null }): string {
-  const v = stageVal(s) ?? 0
-  const total = cycleVal.value || 1
-  return `${(v / total) * 100}%`
-}
-const idleSeg = computed(() => {
-  const total = cycleVal.value || 1
-  return `${(idleMin.value / total) * 100}%`
+// Waterfall scale: everything is a proportion of the FULL cycle, and each stage
+// starts where the previous one ended (offset = cumulative time before it), so the
+// stage bars laid end-to-end line up with the full-width cycle bar at the bottom.
+const stageTotal = computed(() => (cycleVal.value && cycleVal.value > 0 ? cycleVal.value : stagesSum.value || 1))
+const stageBars = computed(() => {
+  let acc = 0
+  return barStages.value.map((s) => {
+    const v = stageVal(s) ?? 0
+    const left = (acc / stageTotal.value) * 100
+    const width = (v / stageTotal.value) * 100
+    acc += v
+    return { s, left, width }
+  })
 })
 
 function toneDot(kind: 'onTime' | 'late' | 'early'): string {
@@ -241,7 +240,6 @@ function stageAccent(s: StageCard): string {
           <MpPopover :id="`ovw-period-${direction}`" is-close-on-select>
             <MpPopoverTrigger>
               <button type="button" class="filter-trigger filter-trigger--auto filter-trigger--ghost">
-                <svg class="cal-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 2.5v3M16 2.5v3M3.5 9.5h17M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 19 20.5H5A1.5 1.5 0 0 1 3.5 19V6A1.5 1.5 0 0 1 5 4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <span class="filter-trigger-label">{{ t('Period') }}: {{ t(periodLabel) }}</span>
                 <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
@@ -278,27 +276,27 @@ function stageAccent(s: StageCard): string {
         </div>
 
         <div class="stage-list">
-          <div v-for="s in barStages" :key="s.key" class="stage-row">
+          <div v-for="row in stageBars" :key="row.s.key" class="stage-row">
             <div class="stage-info">
-              <span class="stage-name">{{ t(s.label) }}</span>
-              <span class="stage-hint">{{ t(s.desc) }}</span>
+              <span class="stage-name">{{ t(row.s.label) }}</span>
+              <span class="stage-hint">{{ t(row.s.desc) }}</span>
             </div>
             <div class="stage-track">
-              <div class="stage-fill" :style="{ width: barWidth(s) }" />
+              <!-- offset so this stage starts where the previous one ended; a 0m
+                   stage renders no bar at all -->
+              <div v-if="row.width > 0" class="stage-fill" :style="{ marginLeft: row.left + '%', width: row.width + '%' }" />
             </div>
-            <span class="stage-val">{{ fmtDur(stageVal(s)) }}</span>
+            <span class="stage-val">{{ fmtDur(stageVal(row.s) ?? 0) }}</span>
           </div>
 
-          <!-- Cycle bar (stages end-to-end + idle) -->
+          <!-- Cycle bar — the whole span, one solid bar -->
           <div v-if="cycleStage" class="stage-row stage-row--cycle">
             <div class="stage-info">
               <span class="stage-name">{{ t(cycleStage.label) }}</span>
               <span class="stage-hint">{{ t(cycleStage.desc) }}</span>
             </div>
-            <div class="stage-track stage-track--cycle">
-              <div v-for="s in barStages" :key="s.key" class="cycle-seg" :class="`cycle-seg--${s.key}`"
-                :style="{ width: cycleSeg(s) }" :title="`${t(s.label)} ${fmtDur(stageVal(s))}`" />
-              <div v-if="idleMin > 0" class="cycle-seg cycle-seg--idle" :style="{ width: idleSeg }" :title="t('Idle time')" />
+            <div class="stage-track">
+              <div class="stage-fill stage-fill--cycle" :style="{ width: '100%' }" />
             </div>
             <span class="stage-val stage-val--strong">{{ fmtDur(cycleVal) }}</span>
           </div>
@@ -307,7 +305,7 @@ function stageAccent(s: StageCard): string {
 
       <!-- Timeliness -->
       <div class="sub-panel">
-        <div class="section-eyebrow">{{ t('Timeliness') }}</div>
+        <h3 class="section-eyebrow">{{ t('Timeliness') }}</h3>
         <div class="metric-grid" :style="{ gridTemplateColumns: metricCols }">
           <div v-for="b in perf.timeliness" :key="b.label" class="metric-card">
             <div class="metric-card-head">
@@ -335,7 +333,7 @@ function stageAccent(s: StageCard): string {
 
       <!-- Volume -->
       <div class="sub-panel">
-        <div class="section-eyebrow">{{ t('Volume') }}</div>
+        <h3 class="section-eyebrow">{{ t('Volume') }}</h3>
         <div class="metric-grid metric-grid--vol" :style="{ gridTemplateColumns: metricCols }">
           <div v-for="v in perf.volume" :key="v.label" class="stat-card stat-card--plain">
             <div class="stat-card-top">
@@ -370,7 +368,7 @@ function stageAccent(s: StageCard): string {
 
       <!-- Accuracy — completion state, one bar per state -->
       <div class="sub-panel">
-        <div class="section-eyebrow">{{ t('Accuracy') }}</div>
+        <h3 class="section-eyebrow">{{ t('Accuracy') }}</h3>
         <div class="metric-grid metric-grid--wide" :style="{ gridTemplateColumns: metricCols }">
           <div class="stat-card stat-card--plain">
             <div class="stat-card-top">
@@ -424,8 +422,9 @@ function stageAccent(s: StageCard): string {
 .filter-trigger--auto { width: auto; }
 .filter-trigger:hover { border-color: var(--mp-border-bold); }
 /* borderless variant — the Live operations date picker sits inline next to the title */
-.filter-trigger--ghost { border-color: transparent; background: transparent; padding-left: 4px; padding-right: 4px; }
-.filter-trigger--ghost:hover { border-color: transparent; background: var(--mp-background-neutral-subtle); }
+/* Overview date/period pickers: no box, just a bottom border (underline style). */
+.filter-trigger--ghost { border-color: transparent; border-radius: 0; border-bottom-color: var(--mp-border-form, var(--mp-border-default)); background: transparent; padding-left: 4px; padding-right: 4px; }
+.filter-trigger--ghost:hover { border-color: transparent; border-bottom-color: var(--mp-border-bold); background: var(--mp-background-neutral-subtle); }
 .filter-trigger-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filter-trigger .chev { color: var(--mp-icon-default); flex: none; }
 
@@ -435,7 +434,7 @@ function stageAccent(s: StageCard): string {
   gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
 }
 .section-head-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.section-title { font-size: 16px; font-weight: 600; color: var(--mp-text-default); margin: 0; }
+.section-title { font-size: var(--mp-font-sizes-xl, 18px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-xl, 26px); color: var(--mp-text-default); margin: 0; }
 .section-head-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .updated { font-size: 12px; color: var(--mp-text-subtle); }
 
@@ -466,8 +465,13 @@ function stageAccent(s: StageCard): string {
   border: 1px solid var(--mp-border-default); border-radius: 10px;
   padding: 16px; display: flex; flex-direction: column; gap: 8px;
 }
-.stat-card--clickable { cursor: pointer; transition: box-shadow 0.12s ease, border-color 0.12s ease; }
-.stat-card--clickable:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
+.stat-card--clickable { cursor: pointer; transition: border-color 0.12s ease; }
+/* Hover affordance = a bolder shade of the card's OWN tone, not a drop-shadow. */
+.stat-card--clickable:hover { border-color: var(--mp-border-bold, #758195); }
+.stat-card--clickable.card--pending:hover  { border-color: var(--mp-background-warning-bold, #d98634); }
+.stat-card--clickable.card--active:hover   { border-color: var(--mp-border-bold, #758195); }
+.stat-card--clickable.card--closed:hover   { border-color: var(--mp-icon-success, #028454); }
+.stat-card--clickable.card--noaction:hover { border-color: var(--mp-text-danger, #c4362b); }
 .stat-card--clickable:focus-visible { outline: 2px solid var(--mp-border-focused, #4b61dc); outline-offset: 1px; }
 .card--pending  { background: var(--mp-background-warning-subtle, #fdf7e7); border-color: var(--mp-border-warning, #ecd9a3); }
 .card--active   { background: var(--mp-background-neutral-subtle, #f8f9f9); border-color: var(--mp-border-default); }
@@ -475,7 +479,7 @@ function stageAccent(s: StageCard): string {
 .card--noaction { background: var(--mp-background-danger-subtle, #fdeeec); border-color: var(--mp-border-danger, #f1cbc5); }
 
 .stat-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.stat-card-title { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
+.stat-card-title { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
 .card--noaction .stat-card-title { color: var(--mp-text-danger, #c4362b); }
 .ext-ico { color: var(--mp-icon-subtle, #96a0a4); flex: none; }
 .card--noaction .ext-ico { color: var(--mp-text-danger, #c4362b); }
@@ -495,18 +499,18 @@ function stageAccent(s: StageCard): string {
 
 /* accuracy legend swatches */
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
-.dot--match { background: var(--mp-icon-success, #028454); }
+.dot--match { background: var(--mp-colors-emerald-700, #029861); }
 .dot--short { background: var(--mp-background-warning-bold, #d98634); }
 .dot--over  { background: var(--mp-background-brand-bold, #4b61dc); }
 
 /* ── Performance sub-panels ── */
 .sub-panel { padding: 24px 0 0; }
 .sub-panel:first-of-type { padding-top: 0; }
-/* Overview box — the time-per-stage chart lives in a gray card */
+/* Overview box — the time-per-stage chart lives in a white bordered card */
 .sub-panel--box {
   padding: 20px;
-  background: #F8F9F9;
-  border: 1px solid #EBF0F1;
+  background: var(--mp-background-default, #fff);
+  border: 1px solid var(--mp-border-default);
   border-radius: 10px;
 }
 .ov-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
@@ -517,31 +521,31 @@ function stageAccent(s: StageCard): string {
   padding: 4px; border: none; background: none; color: var(--mp-icon-default); cursor: pointer;
 }
 .ov-shortcut:hover { color: var(--mp-text-default); }
-.sub-title { font-size: 14px; font-weight: 600; color: var(--mp-text-default); margin: 0; }
+.sub-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); margin: 0; }
 .sub-desc { font-size: 12px; color: var(--mp-text-secondary); margin: 0; max-width: 620px; line-height: 1.5; }
 .period-opt { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; width: 100%; }
 .period-opt-range { font-size: 12px; color: var(--mp-text-subtle); }
-.section-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-text-subtle); margin-bottom: 8px; }
+/* H3, black — Timeliness / Volume / Accuracy sub-headings. */
+.section-eyebrow { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: var(--mp-line-heights-lg, 24px); color: var(--mp-text-default); margin: 0 0 8px; }
 .cal-ico { color: var(--mp-icon-default); flex: none; }
 
-/* stage bars — 6-col grid: label (span 2) · bar (span 3) · aging (span 1) */
+/* stage bars — fixed label, flexible bar (fills), fixed time. The bar track
+   (1fr) fills all the space between the label and the time, no side gaps. */
 .stage-list { display: flex; flex-direction: column; gap: 14px; }
-.stage-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; align-items: center; }
-.stage-info { grid-column: span 2; display: flex; flex-direction: column; gap: 2px; }
+/* Time column is a FIXED width (each row is its own grid, so max-content would
+   size the track differently per row and leave the track ends ragged). */
+.stage-row { display: grid; grid-template-columns: 280px 1fr 76px; gap: 16px; align-items: center; }
+.stage-info { display: flex; flex-direction: column; gap: 2px; }
 .stage-name { font-size: 13px; font-weight: 500; color: var(--mp-text-default); }
 .stage-hint { font-size: 11px; color: var(--mp-text-subtle); }
-.stage-track { grid-column: span 3; position: relative; height: 12px; background: #fff; border: 1px solid #EBF0F1; border-radius: 999px; display: flex; align-items: center; overflow: hidden; }
-.stage-fill { height: 100%; background: var(--mp-background-brand-bold, #4b61dc); border-radius: 999px; opacity: 0.9; }
-.stage-val { grid-column: span 1; text-align: right; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); }
+.stage-track { position: relative; height: 12px; background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: 999px; display: flex; align-items: center; }
+/* Each stage is offset (margin-left, inline) so the bars lay end-to-end and the
+   cumulative run matches the full-width cycle bar below. Light green for stages. */
+.stage-fill { height: 100%; background: #93d3a6; border-radius: 999px; }
+.stage-fill--cycle { background: var(--mp-colors-emerald-700, #029861); }
+.stage-val { text-align: right; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); white-space: nowrap; }
 .stage-val--strong { color: var(--mp-text-default); font-weight: 500; }
 .stage-row--cycle { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--mp-border-default); }
-.stage-track--cycle { overflow: hidden; }
-.cycle-seg { height: 100%; }
-.cycle-seg--wait { background: color-mix(in srgb, var(--mp-background-brand-bold, #4b61dc) 35%, transparent); }
-.cycle-seg--receiving, .cycle-seg--picking { background: color-mix(in srgb, var(--mp-background-brand-bold, #4b61dc) 70%, transparent); }
-.cycle-seg--putaway, .cycle-seg--packing { background: color-mix(in srgb, var(--mp-background-brand-bold, #4b61dc) 90%, transparent); }
-.cycle-seg--shipping { background: var(--mp-background-brand-bold, #4b61dc); }
-.cycle-seg--idle { background: repeating-linear-gradient(45deg, var(--mp-background-neutral-hovered), var(--mp-background-neutral-hovered) 4px, transparent 4px, transparent 8px); }
 
 /* Timeliness / Volume / Activity ratios — each stat is a white bordered card:
    title + shortcut, divider, then body. Cards in a grid stretch to equal height. */
@@ -552,8 +556,9 @@ function stageAccent(s: StageCard): string {
 /* --vol / --single / --wide inherit the base grid so every card is one column wide */
 .metric-card {
   background: var(--mp-background-default, #fff); border: 1px solid var(--mp-border-default); border-radius: 12px; padding: 20px;
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; transition: border-color 0.12s ease;
 }
+.metric-card:hover { border-color: var(--mp-border-bold, #758195); }
 .metric-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .metric-card-titles { display: flex; flex-direction: column; gap: 2px; }
 .metric-card-title { font-size: 15px; font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-default); }
@@ -569,8 +574,10 @@ function stageAccent(s: StageCard): string {
 .tl-stat-val--warn { color: var(--mp-text-warning, #c26a12); }
 .tl-note { margin-top: 16px; padding: 12px 14px; background: var(--mp-background-warning-subtle, #fdf7e3); border-radius: 8px; font-size: 12px; color: var(--mp-text-warning, #8a6d1a); line-height: 1.5; }
 
-/* Volume cards reuse the live-operations card format (.stat-card) but stay white. */
-.stat-card--plain { background: var(--mp-background-default, #fff); }
+/* Volume / Activity / Accuracy cards reuse the live-operations card format but
+   stay white; hover boldens the border (matching the live-ops cards). */
+.stat-card--plain { background: var(--mp-background-default, #fff); transition: border-color 0.12s ease; }
+.stat-card--plain:hover { border-color: var(--mp-border-bold, #758195); }
 .split-row--pos b { color: var(--mp-text-success, #028454); }
 
 /* large rows (activity ratios) */
@@ -595,7 +602,7 @@ function stageAccent(s: StageCard): string {
 .acc-state-val b { color: var(--mp-text-default); font-weight: 700; }
 .acc-state-track { height: 10px; border-radius: 999px; background: var(--mp-background-neutral-subtle, #eef0f1); overflow: hidden; }
 .acc-state-fill { height: 100%; border-radius: 999px; }
-.acc-fill--match { background: var(--mp-icon-success, #028454); }
+.acc-fill--match { background: var(--mp-colors-emerald-700, #029861); }
 .acc-fill--short { background: #a8352d; }
 .acc-fill--over  { background: var(--mp-background-warning-bold, #d98634); }
 </style>

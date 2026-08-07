@@ -137,6 +137,13 @@ function toggleStatus(v: string) {
 }
 
 const courierOptions = DELIVERY_COURIERS.map(c => ({ label: c, value: c }))
+// Searchable courier filter — the list can be long, so filter by typed text
+// (the popover itself caps the visible height to ~5 and scrolls; see CSS).
+const courierSearch = ref('')
+const filteredCourierOptions = computed(() => {
+  const q = courierSearch.value.trim().toLowerCase()
+  return q ? courierOptions.filter(o => o.label.toLowerCase().includes(q)) : courierOptions
+})
 const courierLabel = computed(() => {
   const n = courierFilter.value.length
   if (n === 0) return ''
@@ -226,6 +233,14 @@ function bulkCreateHandover(sel: Set<number>, deselectAll: () => void) {
   router.push({ path: '/outbound-delivery/handover/create', query: { deliveryIds: rows.map(t => t.id).join(',') } })
   deselectAll()
 }
+// Why "Create shipment" is hidden — a shipment batch is single-warehouse and only
+// groups ready-to-ship deliveries, so tell the operator which rule blocked it.
+function selectionSpansMultipleWarehouses(sel: Set<number>): boolean {
+  return new Set(selectedDeliveriesOf(sel).map(t => t.warehouseId)).size > 1
+}
+function selectionHasNonReady(sel: Set<number>): boolean {
+  return selectedDeliveriesOf(sel).some(t => t.status !== 'ready to ship')
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -258,6 +273,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       >
         {{ t('Create shipment') }}
       </button>
+      <span v-else-if="selectionSpansMultipleWarehouses(selectedRows as Set<number>)" class="del-bulk-hint">
+        {{ t('Select deliveries from a single warehouse to create a shipment') }}
+      </span>
+      <span v-else-if="selectionHasNonReady(selectedRows as Set<number>)" class="del-bulk-hint">
+        {{ t('Only ready-to-ship deliveries can be grouped into a shipment') }}
+      </span>
     </template>
 
     <!-- ── Filter bar ── -->
@@ -323,18 +344,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               <option v-if="courierFilter.length" value="set">{{ courierLabel }}</option>
             </MpSelect>
           </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <div class="checkbox-filter-list">
-              <label v-for="opt in courierOptions" :key="opt.value" class="checkbox-filter-item">
-                <MpCheckbox
-                  :id="`del-courier-${opt.value}`"
-                  :is-checked="courierFilter.includes(opt.value)"
-                  @change="toggleCourier(opt.value)"
-                  @click.stop
-                >
-                  {{ opt.label }}
-                </MpCheckbox>
-              </label>
+          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', maxWidth: '280px' })">
+            <div class="courier-filter">
+              <div class="courier-filter-search">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <input v-model="courierSearch" class="courier-filter-search-input" type="text" :placeholder="t('Search courier...')" @click.stop @keydown.stop />
+              </div>
+              <div class="courier-filter-scroll">
+                <label v-for="opt in filteredCourierOptions" :key="opt.value" class="checkbox-filter-item">
+                  <MpCheckbox
+                    :id="`del-courier-${opt.value}`"
+                    :is-checked="courierFilter.includes(opt.value)"
+                    @change="toggleCourier(opt.value)"
+                    @click.stop
+                  >
+                    {{ opt.label }}
+                  </MpCheckbox>
+                </label>
+                <p v-if="!filteredCourierOptions.length" class="courier-filter-empty">{{ t('No couriers found') }}</p>
+              </div>
             </div>
           </MpPopoverContent>
         </MpPopover>
@@ -490,6 +520,25 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
 .checkbox-filter-item:hover { background: var(--mp-background-neutral-subtle); }
+.del-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+
+/* Courier filter — searchable (matches the table search box), capped to ~5
+   options with scroll inside the popover. */
+.courier-filter { display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-2); min-width: 220px; }
+.courier-filter-search {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full);
+  background: var(--mp-background-neutral); color: var(--mp-text-secondary);
+}
+.courier-filter-search svg { flex-shrink: 0; }
+.courier-filter-search-input {
+  flex: 1; min-width: 0; border: none; background: transparent; outline: none;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
+}
+.courier-filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.courier-filter-scroll { display: flex; flex-direction: column; max-height: 184px; overflow-y: auto; }
+.courier-filter-empty { padding: var(--mp-spacing-2) 10px; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .filter-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;

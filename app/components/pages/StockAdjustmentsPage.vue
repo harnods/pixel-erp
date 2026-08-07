@@ -149,10 +149,14 @@ const warehouseFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
 const statusFilter = ref<string[]>([])
 const assigneeFilter = ref<string[]>([])
+// 'counted' (Awaiting approval) deliberately excluded — the Count task tab's
+// own base list always filters status !== 'counted' out (see baseRows below),
+// and the Awaiting approval tab hides this filter entirely (every row there
+// is already Counted) — so a "Counted" checkbox here could never match
+// anything, on either tab.
 const STATUS_OPTIONS = [
   { value: 'not_started', label: t('Open') },
   { value: 'in_progress', label: t('In progress') },
-  { value: 'counted',     label: t('Counted')     },
   { value: 'completed',   label: t('Completed')   },
   { value: 'closed',      label: t('Closed')      },
 ]

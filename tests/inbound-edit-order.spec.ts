@@ -224,8 +224,12 @@ describe('Edit inbound PO — not editable once completed or cancelled', () => {
   })
 })
 
-describe('Edit inbound PO — existing receiving tasks are never retroactively touched', () => {
-  it("editing the PO's qty does not change an existing OPEN task's own expectedQty snapshot", () => {
+describe('Edit inbound PO — a qty reduction DOES touch the Open task(s) claiming it', () => {
+  // Behavior change: this used to assert the opposite ("never retroactively
+  // touched") — see the C7-analog allocation feature in inbound-edit-order-
+  // allocation.spec.ts. A SKU's Open-task claim now shrinks along with the PO
+  // line, and the touched task freezes (Needs Re-arrangement) until acknowledged.
+  it("editing the PO's qty DOES shrink an existing OPEN task's own targetQty/expectedQty, and freezes it", () => {
     const r = makeReceipt([{ productId: SKU_A.productId, qty: 10 }])
     const task = addReceivingTask({ receiptId: r.id, assignee: 'Test Operator' })!
     expect(getReceivingTask(task.id)!.items.find((i) => i.sku === SKU_A.sku)!.expectedQty).toBe(10)
@@ -234,7 +238,11 @@ describe('Edit inbound PO — existing receiving tasks are never retroactively t
 
     // The PO's own qty changed...
     expect(qtyOf(r, SKU_A.productId)).toBe(3)
-    // ...but the already-created task's own snapshot is untouched.
-    expect(getReceivingTask(task.id)!.items.find((i) => i.sku === SKU_A.sku)!.expectedQty).toBe(10)
+    // ...and the sole Open task claiming it shrinks to match (AC#1 — single task,
+    // no allocation-step modal, but still touched + frozen).
+    const t = getReceivingTask(task.id)!
+    expect(t.items.find((i) => i.sku === SKU_A.sku)!.targetQty).toBe(3)
+    expect(t.items.find((i) => i.sku === SKU_A.sku)!.expectedQty).toBe(3)
+    expect(t.needsRearrangement).toBe(true)
   })
 })

@@ -15,6 +15,9 @@ import {
   packingTasksFor, packingTaskAgingDays, startPacking, canCancelPackingTask, cancelPackingTask,
   type PackingTask,
 } from '~/data/packingTasks'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
+import { orderById, anyLabelAvailable, packingBlockedOnSourceLabel } from '~/data/shippingLabels'
 import { packingTaskHasShipment } from '~/data/deliveryTasks'
 import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
 import { outgoingOrders } from '~/data/outgoing'
@@ -169,7 +172,14 @@ function agingDays(t: PackingTask) { return packingTaskAgingDays(t) }
 const router = useRouter()
 function viewDetails(row: PackingTask) { router.push(`/packing/${row.id}`) }
 function viewSalesOrder(row: PackingTask) { router.push(`/outbound-delivery/${row.salesOrderId}`) }
+// D4 AC#8 — blocked while the warehouse requires the order-source (marketplace)
+// shipping label and it hasn't arrived yet; releases automatically once it lands.
+function sourceLabelGate(row: PackingTask): boolean { return packingBlockedOnSourceLabel(orderById(row.salesOrderId)) }
 function startPackingAndNavigate(row: PackingTask) {
+  if (sourceLabelGate(row)) {
+    toast.notify({ variant: 'error', title: t('This order is waiting for the marketplace shipping label — packing cannot start yet'), maxWidth: 'max-content' })
+    return
+  }
   startPacking(row.id)
   router.push(`/packing/${row.id}/pack`)
 }
@@ -191,6 +201,19 @@ function confirmCancelTask() {
   closeCancelModal()
 }
 
+// ─── Print shipping label (source/marketplace or WMS label; D9 duplicate guard) ──
+const { pdfOpen, pdfDoc, pdfFilename, printShippingLabels } = usePrintShippingLabel()
+function ordersForPacking(t: PackingTask) { const o = orderById(t.salesOrderId); return o ? [o] : [] }
+function canPrintLabel(t: PackingTask): boolean { return anyLabelAvailable(ordersForPacking(t)) }
+function selectedPackingsOf(sel: Set<number>): PackingTask[] {
+  return [...sel].map(i => paginated.value[i]).filter(Boolean) as unknown as PackingTask[]
+}
+function bulkPrintLabels(sel: Set<number>, deselectAll: () => void) {
+  const orders = selectedPackingsOf(sel).flatMap(ordersForPacking)
+  printShippingLabels(orders)
+  deselectAll()
+}
+
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
@@ -205,6 +228,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-dir="sortDir"
     :loading="loading"
     :has-active-filter="hasActiveFilter"
+    has-checkbox
+    bulk-label="packing task"
     @page-change="setPage"
     @per-page-change="setPerPage"
     @sort="toggleSort"
@@ -212,6 +237,16 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
+    <!-- ── Bulk bar → print shipping labels for the selected packing tasks ── -->
+    <template #bulk-actions="{ deselectAll, selectedRows }">
+      <button
+        class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+        @click="bulkPrintLabels(selectedRows as Set<number>, deselectAll)"
+      >
+        {{ t('Print shipping label') }}
+      </button>
+    </template>
+
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
@@ -365,8 +400,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as PackingTask)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem
-              v-if="(row as unknown as PackingTask).status === 'open'"
+              v-if="(row as unknown as PackingTask).status === 'open' && !sourceLabelGate(row as unknown as PackingTask)"
               @click="startPackingAndNavigate(row as unknown as PackingTask)"
+            >{{ t('Start packing') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else-if="(row as unknown as PackingTask).status === 'open'"
+              :class="css({ opacity: 0.45, cursor: 'not-allowed' })"
+              :title="t('Waiting for marketplace shipping label')"
             >{{ t('Start packing') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-else-if="(row as unknown as PackingTask).status === 'in progress'"
@@ -376,6 +416,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               v-else-if="(row as unknown as PackingTask).status === 'completed' && getDeliveryForPackingTask((row as unknown as PackingTask).id).length"
               @click="viewDelivery(row as unknown as PackingTask)"
             >{{ t('View delivery') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="canPrintLabel(row as unknown as PackingTask)"
+              @click="printShippingLabels(ordersForPacking(row as unknown as PackingTask))"
+            >{{ t('Print shipping label') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else
+              :class="css({ opacity: 0.45, cursor: 'not-allowed' })"
+              :title="t('Waiting for marketplace shipping label')"
+            >{{ t('Print shipping label') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-if="canCancelPackingTask(row as unknown as PackingTask)"
               :class="css({ color: 'var(--mp-text-critical)' })"
@@ -395,6 +444,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
+
+  <PdfPreviewModal
+    :open="pdfOpen"
+    :doc="pdfDoc"
+    :filename="pdfFilename"
+    :title="t('Shipping label preview')"
+    @close="pdfOpen = false"
+  />
 
   <!-- ── Cancel confirmation modal ── -->
   <MpModal id="pack-cancel-modal" :is-open="cancelModalOpen" size="md"
