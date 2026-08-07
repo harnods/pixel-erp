@@ -17,7 +17,7 @@ import {
 } from '~/data/packingTasks'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
-import { orderById, anyLabelAvailable } from '~/data/shippingLabels'
+import { orderById, anyLabelAvailable, packingBlockedOnSourceLabel } from '~/data/shippingLabels'
 import { packingTaskHasShipment } from '~/data/deliveryTasks'
 import { getDeliveryForPackingTask } from '~/data/packingTaskDetails'
 import { outgoingOrders } from '~/data/outgoing'
@@ -172,7 +172,14 @@ function agingDays(t: PackingTask) { return packingTaskAgingDays(t) }
 const router = useRouter()
 function viewDetails(row: PackingTask) { router.push(`/packing/${row.id}`) }
 function viewSalesOrder(row: PackingTask) { router.push(`/outbound-delivery/${row.salesOrderId}`) }
+// D4 AC#8 — blocked while the warehouse requires the order-source (marketplace)
+// shipping label and it hasn't arrived yet; releases automatically once it lands.
+function sourceLabelGate(row: PackingTask): boolean { return packingBlockedOnSourceLabel(orderById(row.salesOrderId)) }
 function startPackingAndNavigate(row: PackingTask) {
+  if (sourceLabelGate(row)) {
+    toast.notify({ variant: 'error', title: t('This order is waiting for the marketplace shipping label — packing cannot start yet'), maxWidth: 'max-content' })
+    return
+  }
   startPacking(row.id)
   router.push(`/packing/${row.id}/pack`)
 }
@@ -393,8 +400,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as PackingTask)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem
-              v-if="(row as unknown as PackingTask).status === 'open'"
+              v-if="(row as unknown as PackingTask).status === 'open' && !sourceLabelGate(row as unknown as PackingTask)"
               @click="startPackingAndNavigate(row as unknown as PackingTask)"
+            >{{ t('Start packing') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-else-if="(row as unknown as PackingTask).status === 'open'"
+              :class="css({ opacity: 0.45, cursor: 'not-allowed' })"
+              :title="t('Waiting for marketplace shipping label')"
             >{{ t('Start packing') }}</MpPopoverListItem>
             <MpPopoverListItem
               v-else-if="(row as unknown as PackingTask).status === 'in progress'"

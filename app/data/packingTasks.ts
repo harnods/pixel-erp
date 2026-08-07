@@ -11,6 +11,7 @@ import { binForSku } from "./warehouseDetails";
 import { TODAY } from "./master";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { getWarehouseConfig } from "./warehouseConfig";
+import { packingBlockedOnSourceLabel } from "./shippingLabels";
 
 /**
  * A packing task — created once a picking task is COMPLETED. Picking can bundle
@@ -442,10 +443,14 @@ function sumPacked(packed: Record<string, number>): number {
   return Object.values(packed).reduce((a, b) => a + (b || 0), 0);
 }
 
-/** Operator clicks "Match order" → in progress + start timestamp. */
+/** Operator clicks "Match order" → in progress + start timestamp. Refuses to
+ *  start while D4 AC#8 gates the task on the order-source shipping label
+ *  (defense-in-depth — the UI already disables the action in that state). */
 export function startPacking(taskId: string): void {
   const t = getPackingTask(taskId);
   if (!t || t.status !== "open") return;
+  const order = outgoingOrders.find((o) => o.id === t.salesOrderId);
+  if (packingBlockedOnSourceLabel(order)) return;
   t.status = "in progress";
   t.startDate = nowIso();
   persistPacking();

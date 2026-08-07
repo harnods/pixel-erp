@@ -27,6 +27,7 @@ import { outgoingOrders, outgoingStage, OUTGOING_TODAY, canReleaseReservedForOrd
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePackingListPdf } from '~/utils/packingListPdf'
 import { usePrintShippingLabel } from '~/composables/usePrintShippingLabel'
+import { packingBlockedOnSourceLabel } from '~/data/shippingLabels'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 
@@ -118,7 +119,14 @@ const lastUpdated = computed(() => {
   return new Date(base + Math.floor(progress * 3 * 60 * 60 * 1000)).toISOString()
 })
 
+// D4 AC#8 — blocked while the warehouse requires the order-source (marketplace)
+// shipping label and it hasn't arrived yet; releases automatically once it lands.
+const sourceLabelGated = computed(() => packingBlockedOnSourceLabel(linkedOrder.value))
 function startPackingAndNavigate() {
+  if (sourceLabelGated.value) {
+    toast.notify({ variant: 'error', title: t('This order is waiting for the marketplace shipping label — packing cannot start yet'), maxWidth: 'max-content' })
+    return
+  }
   startPacking(props.orderId)
   router.push(`/packing/${props.orderId}/pack`)
 }
@@ -618,7 +626,10 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
            standalone "Cancel" footer button. -->
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
+          <MpTooltip v-if="sourceLabelGated" id="pck-start-tt-split" :label="t('Cannot start packing. Waiting for the marketplace shipping label.')" placement="top" use-portal>
+            <button class="detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Match order') }}</button>
+          </MpTooltip>
+          <button v-else class="detail-btn detail-btn--primary detail-split-btn__main" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
           <MpPopover id="pck-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
@@ -630,6 +641,9 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
             </MpPopoverContent>
           </MpPopover>
         </div>
+        <MpTooltip v-else-if="sourceLabelGated" id="pck-start-tt-solo" :label="t('Cannot start packing. Waiting for the marketplace shipping label.')" placement="top" use-portal>
+          <button class="detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Match order') }}</button>
+        </MpTooltip>
         <button v-else class="detail-btn detail-btn--primary" @click="startPackingAndNavigate">{{ t('Match order') }}</button>
       </template>
       <template v-else-if="localStatus === 'in progress'">
@@ -856,6 +870,15 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+/* Disabled variant (e.g. Match order while waiting for the marketplace shipping
+ * label) — greyed out instead of staying full brand-green, so it visually reads
+ * as blocked. */
+.detail-btn--disabled,
+.detail-btn--disabled:hover {
+  background: var(--mp-background-disabled, #e5e7eb);
+  color: var(--mp-text-disabled, #9ca3af);
+  cursor: not-allowed;
+}
 
 .pck-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-4); flex: 1; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>
