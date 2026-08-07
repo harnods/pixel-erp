@@ -1021,7 +1021,10 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
            standalone "Cancel" footer button. -->
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" :disabled="needsRearrangement" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
+          <MpTooltip v-if="needsRearrangement" id="pkd-start-tt-split" :label="t('Cannot start picking. Clear the re-arrangement first.')" placement="top" use-portal>
+            <button class="detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start picking') }}</button>
+          </MpTooltip>
+          <button v-else class="detail-btn detail-btn--primary detail-split-btn__main" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
           <MpPopover id="pkd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
               <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
@@ -1033,7 +1036,10 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" :disabled="needsRearrangement" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
+        <MpTooltip v-else-if="needsRearrangement" id="pkd-start-tt-solo" :label="t('Cannot start picking. Clear the re-arrangement first.')" placement="top" use-portal>
+          <button class="detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start picking') }}</button>
+        </MpTooltip>
+        <button v-else class="detail-btn detail-btn--primary" @click="startPickingAndNavigate">{{ t('Start picking') }}</button>
       </template>
       <template v-else-if="localStatus === 'in progress'">
         <div v-if="canCancel" class="detail-split-btn">
@@ -1438,6 +1444,14 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
 .detail-btn--primary { background: var(--mp-background-brand-bold, #029861); border-color: transparent; color: var(--mp-text-on-color, #fff); }
 .detail-btn--primary:hover { background: var(--mp-background-brand-bold-hovered, #027a4e); }
+/* Disabled variant (e.g. Start picking while Needs Re-arrangement) — greyed
+ * out instead of staying full brand-green, so it visually reads as blocked. */
+.detail-btn--disabled,
+.detail-btn--disabled:hover {
+  background: var(--mp-background-disabled, #e5e7eb);
+  color: var(--mp-text-disabled, #9ca3af);
+  cursor: not-allowed;
+}
 .detail-split-btn { display: flex; }
 .detail-split-btn__main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: var(--mp-spacing-3); border-right: 1px solid rgba(255,255,255,0.25); }
 .detail-split-btn__chevron { border-top-left-radius: 0; border-bottom-left-radius: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); }

@@ -1169,6 +1169,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Qty before": "Jumlah sebelumnya",
   "Apply changes": "Terapkan perubahan",
   "Cannot start receiving. Apply the changes first.": "Tidak dapat mulai menerima. Terapkan perubahan terlebih dahulu.",
+  "Cannot start picking. Clear the re-arrangement first.": "Tidak dapat mulai picking. Selesaikan penyusunan ulang terlebih dahulu.",
   "Changes applied. This task can be started again": "Perubahan diterapkan. Tugas ini dapat dimulai kembali",
   "only": "hanya",
   "removable": "dapat dikurangi",
