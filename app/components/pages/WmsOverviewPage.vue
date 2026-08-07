@@ -499,7 +499,7 @@ function stageAccent(s: StageCard): string {
 
 /* accuracy legend swatches */
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
-.dot--match { background: var(--mp-icon-success, #028454); }
+.dot--match { background: var(--mp-colors-emerald-700, #029861); }
 .dot--short { background: var(--mp-background-warning-bold, #d98634); }
 .dot--over  { background: var(--mp-background-brand-bold, #4b61dc); }
 
@@ -542,7 +542,7 @@ function stageAccent(s: StageCard): string {
 /* Each stage is offset (margin-left, inline) so the bars lay end-to-end and the
    cumulative run matches the full-width cycle bar below. Light green for stages. */
 .stage-fill { height: 100%; background: #93d3a6; border-radius: 999px; }
-.stage-fill--cycle { background: #2f9e5f; }
+.stage-fill--cycle { background: var(--mp-colors-emerald-700, #029861); }
 .stage-val { text-align: right; font-size: 13px; font-weight: 400; color: var(--mp-text-secondary); white-space: nowrap; }
 .stage-val--strong { color: var(--mp-text-default); font-weight: 500; }
 .stage-row--cycle { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--mp-border-default); }
@@ -602,7 +602,7 @@ function stageAccent(s: StageCard): string {
 .acc-state-val b { color: var(--mp-text-default); font-weight: 700; }
 .acc-state-track { height: 10px; border-radius: 999px; background: var(--mp-background-neutral-subtle, #eef0f1); overflow: hidden; }
 .acc-state-fill { height: 100%; border-radius: 999px; }
-.acc-fill--match { background: var(--mp-icon-success, #028454); }
+.acc-fill--match { background: var(--mp-colors-emerald-700, #029861); }
 .acc-fill--short { background: #a8352d; }
 .acc-fill--over  { background: var(--mp-background-warning-bold, #d98634); }
 </style>
