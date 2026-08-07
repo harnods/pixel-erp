@@ -75,6 +75,9 @@ export * from './workOrders'
 export * from './workOrderLinks'
 export * from './productionRequests'
 
+// ── Accounting (cash management) ────────────────────────────────────────────
+export * from './cashAccounts'
+
 // ── Expenses (bills / uploaded files review) ────────────────────────────────
 export * from './bills'
 export * from './reviewFiles'
