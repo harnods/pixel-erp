@@ -18,6 +18,7 @@ import { ref, computed, onBeforeUnmount } from 'vue'
 import {
   MpIcon, MpTextlink, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
 } from '@mekari/pixel3'
 import type { ReviewFile } from '~/data'
 
@@ -30,9 +31,19 @@ const props = defineProps<{
   backLabel: string
   /** Route prefix the switcher navigates within, e.g. "/purchase-invoices/review" */
   queueBase: string
+  /** OCR couldn't read this file at all — left panel shows the warning banner,
+   *  right panel is left to the page (it renders nothing in this state). */
+  isUnreadable?: boolean
+  /** Number of pages the source document has — drives the "N page(s)" label
+   *  and how many preview panels stack in the left column. Defaults to 1. */
+  pageCount?: number
+  /** Preview image for each page, in order. Short by pageCount → the last
+   *  entry repeats for the remaining pages. Defaults to the generic dropzone
+   *  illustration when omitted (e.g. a page that hasn't been given a mock yet). */
+  previewImages?: string[]
 }>()
 
-const emit = defineEmits<{ back: [] }>()
+const emit = defineEmits<{ back: []; reupload: [] }>()
 
 const router = useRouter()
 const { t } = useLocale()
@@ -70,7 +81,7 @@ const jumpResults = computed(() => {
 // ── Left panel resize ────────────────────────────────────────────────────────
 const LEFT_PANEL_MIN = 320
 const LEFT_PANEL_MAX = 640
-const leftWidth = ref(456)
+const leftWidth = ref(LEFT_PANEL_MIN)
 function startPanelResize(e: MouseEvent) {
   e.preventDefault()
   const startX = e.clientX
@@ -94,6 +105,13 @@ onBeforeUnmount(() => {
   document.body.style.userSelect = ''
 })
 const zoomMode = ref<'fit' | '100'>('fit')
+const pageCount = computed(() => props.pageCount ?? 1)
+
+function previewSrc(page: number) {
+  const images = props.previewImages
+  if (!images || images.length === 0) return '/illustrations/receipt-dropzone.png'
+  return images[page - 1] ?? images[images.length - 1]
+}
 
 defineExpose({ reviewFile, queueIndex, queueTotal })
 </script>
@@ -153,24 +171,38 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
             <MpIcon :name="fileIconName(reviewFile?.file ?? '')" size="sm" class="ex-file-meta-icon" />
             <div class="ex-file-meta-text">
               <span class="ex-file-name">{{ reviewFile?.file }}</span>
-              <span class="ex-file-size">1 {{ t('page') }}</span>
+              <span class="ex-file-size">{{ pageCount }} {{ pageCount > 1 ? t('pages') : t('page') }}</span>
             </div>
           </div>
-          <div class="ex-zoom-toggle" role="group" :aria-label="t('Zoom')">
+          <div class="detail-loc-toggle" role="group" :aria-label="t('Zoom')">
             <button
-              type="button" class="ex-zoom-part"
-              :class="{ 'ex-zoom-part--active': zoomMode === 'fit' }"
+              type="button" class="detail-loc-toggle-btn"
+              :class="{ 'detail-loc-toggle-btn--active': zoomMode === 'fit' }"
               @click="zoomMode = 'fit'"
             >{{ t('Fit') }}</button>
             <button
-              type="button" class="ex-zoom-part"
-              :class="{ 'ex-zoom-part--active': zoomMode === '100' }"
+              type="button" class="detail-loc-toggle-btn"
+              :class="{ 'detail-loc-toggle-btn--active': zoomMode === '100' }"
               @click="zoomMode = '100'"
             >100%</button>
           </div>
         </div>
-        <div class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }">
-          <img src="/illustrations/receipt-dropzone.png" alt="" class="br-preview-img" />
+        <MpBanner
+          v-if="isUnreadable"
+          id="frs-unreadable-banner" variant="warning" class="frs-unreadable-banner"
+        >
+          <MpBannerIcon id="frs-unreadable-banner-icon" />
+          <MpBannerTitle>{{ t("File couldn't be scanned properly") }}</MpBannerTitle>
+          <MpBannerDescription>
+            {{ t('This file is too blurry or dark to read. Upload a clearer file, or fill in the details manually.') }}
+            <MpTextlink id="frs-reupload-link" as="a" href="#" @click.prevent="emit('reupload')">{{ t('Reupload file') }}</MpTextlink>
+          </MpBannerDescription>
+        </MpBanner>
+        <div
+          v-for="page in pageCount" :key="page"
+          class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }"
+        >
+          <img :src="previewSrc(page)" alt="" class="br-preview-img" />
         </div>
       </div>
 
@@ -273,26 +305,17 @@ defineExpose({ reviewFile, queueIndex, queueTotal })
 }
 .ex-file-size { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.ex-zoom-toggle {
-  display: flex; align-items: center; gap: var(--mp-spacing-1); flex-shrink: 0;
-  padding: var(--mp-spacing-1); border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
-}
-.ex-zoom-part {
-  border: none; background: none; cursor: pointer;
-  padding: var(--mp-spacing-1) var(--mp-spacing-2); border-radius: var(--mp-radii-full, 999px);
-  font: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-secondary);
-}
-.ex-zoom-part--active {
-  background: var(--mp-background-neutral-subtle-selected, #dcdfe4);
-  color: var(--mp-text-secondary-pressed, #4c5460);
-}
+/* Fit / 100% zoom toggle — same segmented-pill pattern as WMS picking's
+   Combined / By orders toggle (PickingTaskDetailsPage.vue, CreatePickingPage.vue). */
+.detail-loc-toggle { display: flex; align-items: center; gap: 2px; flex-shrink: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; }
+.detail-loc-toggle-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.detail-loc-toggle-btn:hover { color: var(--mp-text-default); }
+.detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: inset 0 0 0 1px var(--mp-border-default); }
+.frs-unreadable-banner { flex-shrink: 0; }
 .br-preview {
   flex-shrink: 0; background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  padding: var(--mp-spacing-2); overflow: auto;
+  overflow: auto;
 }
 .br-preview-img { display: block; width: 100%; height: auto; }
 .br-preview--zoom .br-preview-img { width: auto; max-width: none; }

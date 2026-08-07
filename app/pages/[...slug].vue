@@ -30,7 +30,7 @@ import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
-import { purchaseOrders } from '~/data'
+import { purchaseOrders, purchaseInvoices } from '~/data'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
@@ -73,6 +73,7 @@ const pageRegistry: Record<string, Component> = {
   'Stock counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
+  'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
   'Company profile':    defineAsyncComponent(() => import('~/components/pages/SettingsCompanyProfilePage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   // 'Mekari pay' (sentence-cased key) — /mekari-pay → pathToLabel → 'Mekari pay'.
@@ -94,6 +95,7 @@ const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const PurchaseInvoicesPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue'))
+const PurchaseInvoicesAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesAwaitingApprovalPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
 const PartialReceiptDetailsPage = asyncPage(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
@@ -443,7 +445,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
-  'Purchase invoices': ['All purchase invoices', 'Review files'],
+  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Review files'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -497,6 +499,12 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const out: Record<string, number> = {}
     if (bills.length) out['Awaiting Approval'] = bills.length
     if (reviewFiles.length) out['Review files'] = reviewFiles.length
+    return out
+  }
+  if (currentPageKey.value === 'Purchase invoices') {
+    const out: Record<string, number> = {}
+    if (purchaseInvoices.length) out['Awaiting Approval'] = purchaseInvoices.length
+    if (purchaseInvoiceReviewFiles.length) out['Review files'] = purchaseInvoiceReviewFiles.length
     return out
   }
   if (currentPageKey.value === 'Stock adjustments') {
@@ -618,6 +626,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   // the `surface` prop swaps both the data and the review route.
   'Purchase invoices': {
     'All purchase invoices': PurchaseInvoicesPage,
+    'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
     'Review files': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
   },
   'Stock adjustments': {
@@ -1088,6 +1097,32 @@ function startResize(e: MouseEvent) {
             New sales delivery
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">
+          <!-- One pill: "New account" + caret. The caret half opens the account-type menu. -->
+          <div ref="importBtnWrapEl" class="import-wrap">
+            <button
+              class="btn-enterprise btn-enterprise--primary btn-enterprise--split"
+              @click.stop="importDropdownOpen = !importDropdownOpen"
+            >
+              {{ t('New account') }}
+              <span class="btn-enterprise__split-divider" />
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                class="import-chevron" :class="{ 'import-chevron--open': importDropdownOpen }"
+              >
+                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+            <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
+              <div class="import-group">
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Bank account') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Cash account') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Credit card') }}</MpButton>
+              </div>
+            </div>
+          </div>
+        </div>
         <div v-else-if="currentPageKey === 'Warehouses'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/warehouses/import')">
             {{ t('Import') }}
@@ -1185,16 +1220,10 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <MpButton variant="ghost" class="import-item">{{ t('Import from spreadsheet') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--ai">
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Import from spreadsheet') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start import-item--ai">
                   <span>Upload bills</span>
-                  <span class="ai-badge">
-                    <img
-                      src="https://www.figma.com/api/mcp/asset/b87bbbb6-b7ca-46be-a6a9-755ab81fefe6"
-                      width="12" height="12" alt="" class="ai-badge__icon"
-                    />
-                    <span class="ai-badge__label">AI</span>
-                  </span>
+                  <MpIcon name="airene-brand" size="xs" class="import-item__ai-icon" />
                 </MpButton>
               </div>
 
@@ -1751,6 +1780,21 @@ function startResize(e: MouseEvent) {
   transition: transform 0.15s ease;
   flex-shrink: 0;
 }
+
+/* Split pill (e.g. "New account ▾") — still ONE button, with a hairline between
+   the label and the caret so the menu affordance reads as its own half. */
+.btn-enterprise--split {
+  gap: var(--mp-spacing-2);
+  padding-right: var(--mp-spacing-2);
+}
+.btn-enterprise__split-divider {
+  width: var(--mp-sizes-px, 1px);
+  align-self: stretch;
+  margin: calc(var(--mp-spacing-1) * -1) 0;
+  background: currentColor;
+  opacity: 0.3;
+  flex-shrink: 0;
+}
 .import-chevron--open {
   transform: rotate(180deg);
 }
@@ -1807,6 +1851,17 @@ function startResize(e: MouseEvent) {
 .import-item--ai {
   justify-content: flex-start;
   gap: var(--mp-spacing-2);
+}
+/* MpIcon's size prop leaves airene-brand at its natural (oversized) dimensions. */
+.import-item__ai-icon {
+  width: var(--mp-sizes-3\.5, 14px) !important;
+  height: var(--mp-sizes-3\.5, 14px) !important;
+  flex-shrink: 0;
+}
+
+/* MpButton centres its label; menu rows read as a list only when left-aligned. */
+.import-item--start {
+  justify-content: flex-start;
 }
 
 /* AI badge */

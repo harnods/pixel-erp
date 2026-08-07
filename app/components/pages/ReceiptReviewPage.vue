@@ -21,6 +21,7 @@ import {
   MpInputTag, MpIcon, MpUpload, MpUploadList, toast, MpTooltip,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
   type DataInterface,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -33,7 +34,8 @@ import { scrollToFirstError } from '~/utils/form'
 const props = defineProps<{ orderId: string }>()
 
 const { t } = useLocale()
-const { queue, backLabel, queueBase, goBack, goToNext, removeFromQueue } = useReviewQueue(() => props.orderId)
+const { queue, index, backLabel, queueBase, goBack, goToNext, removeFromQueue } = useReviewQueue(() => props.orderId)
+const isLastFile = computed(() => index.value === queue.value.length - 1)
 
 const reviewFile = computed(() => queue.value.find((rf) => rf.id === props.orderId) ?? queue.value[0])
 
@@ -56,11 +58,13 @@ const INVOICE_OPTIONS = computed(() => [
 ])
 
 // ── Scenario state (dev FAB) ─────────────────────────────────────────────────
-type Scenario = 'first_run' | 'filled'
-const scenario = ref<Scenario>('first_run')
+type Scenario = 'ai_not_found' | 'ai_matched' | 'filled' | 'unreadable'
+const scenario = ref<Scenario>('ai_matched')
 const scenarios: { value: Scenario; label: string }[] = [
-  { value: 'first_run', label: t('First run') },
-  { value: 'filled',    label: t('Filled')    },
+  { value: 'ai_not_found', label: t('AI not found') },
+  { value: 'ai_matched',   label: t('AI matched')   },
+  { value: 'filled',       label: t('Filled')       },
+  { value: 'unreadable',   label: t('Error - file unreadable') },
 ]
 
 // ── Header fields ────────────────────────────────────────────────────────────
@@ -172,9 +176,24 @@ function toggleChecked(id: number) {
   if (s.has(id)) s.delete(id); else s.add(id)
   checkedCards.value = s
 }
+const allCardsChecked = computed(() => matchCards.value.length > 0 && matchCards.value.every((c) => checkedCards.value.has(c.id)))
+const someCardsChecked = computed(() => checkedCards.value.size > 0 && !allCardsChecked.value)
+function toggleSelectAllCards() {
+  checkedCards.value = allCardsChecked.value ? new Set() : new Set(matchCards.value.map((c) => c.id))
+}
 
-const transactionsStatus = computed(() => (matchCards.value.length ? 'needs review' : 'ready'))
+const transactionsStatus = computed(() => (matchCards.value.length || !rows.value.some((r) => r.invoiceId)) ? 'needs review' : 'ready')
 const receiptStatus = computed(() => (vendor.value && datePaid.value ? 'ready' : 'needs review'))
+
+/** Accept every checked card at once — cards that still fail validation (e.g.
+ *  no invoice matched yet) stay checked and keep their error state. */
+function acceptCheckedMatches() {
+  for (const id of [...checkedCards.value]) {
+    const card = matchCards.value.find((c) => c.id === id)
+    if (card) acceptMatch(card)
+  }
+  checkedCards.value = new Set([...checkedCards.value].filter((id) => matchCards.value.some((c) => c.id === id)))
+}
 
 function acceptMatch(card: MatchCard) {
   if (!card.invoiceId) { card.invoiceError = true; scrollToFirstError(); return }
@@ -207,13 +226,13 @@ function applyScenario(s: Scenario) {
   datePaidError.value = false
   checkedCards.value = new Set()
   lessWithholding.value = false
-  vendor.value = 'PT Inspirasi Digital Eksperiensia'
-  vendorAiHint.value = 'PT Inspirasi Digital Eksperiensia'
   datePaid.value = '17/04/2026'
   transactionNo.value = ''
   memo.value = ''
 
   if (s === 'filled') {
+    vendor.value = 'PT Inspirasi Digital Eksperiensia'
+    vendorAiHint.value = 'PT Inspirasi Digital Eksperiensia'
     matchCards.value = []
     openCardId.value = null
     rows.value = [
@@ -223,12 +242,26 @@ function applyScenario(s: Scenario) {
     return
   }
 
+  // OCR couldn't read the file at all — no extracted proposal, so the form
+  // renders in its plain empty state (no AI hint, no "to match" cards).
+  if (s === 'unreadable') {
+    vendor.value = ''
+    vendorAiHint.value = ''
+    matchCards.value = []
+    openCardId.value = null
+    rows.value = [makeRow()]
+    return
+  }
+
   rows.value = [makeRow()]
+  const ai = s === 'ai_matched'
+  vendor.value = ai ? 'PT Inspirasi Digital Eksperiensia' : ''
+  vendorAiHint.value = ai ? 'PT Inspirasi Digital Eksperiensia' : ''
   matchCards.value = [
     {
       id: cardSeq++,
       reference: 'INV-1610', amountPaid: 800_000,
-      invoiceId: 'PI-94040', aiMatched: true, invoiceError: false,
+      invoiceId: ai ? 'PI-94040' : '', aiMatched: ai, invoiceError: false,
     },
   ]
   openCardId.value = matchCards.value[0]!.id
@@ -327,6 +360,8 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   <FileReviewShell
     :queue="queue" :file-id="props.orderId"
     :back-label="backLabel" :queue-base="queueBase"
+    :is-unreadable="scenario === 'unreadable'"
+    :preview-images="['/illustrations/ocr/payment-receipt.png']"
     @back="goBack"
   >
     <!-- ══ Section: Payment Receipt ══ -->
@@ -439,11 +474,20 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
           </div>
 
           <div class="br-match-wrap">
+            <!-- Bulk bar — select-all checkbox is always visible once there's more than
+                 one match card; "Accept match" only appears once something is checked. -->
+            <div v-if="matchCards.length > 1" class="br-match-bulk-bar">
+              <div class="br-match-bulk-bar__left">
+                <MpCheckbox :is-checked="allCardsChecked" :is-indeterminate="someCardsChecked" @change="toggleSelectAllCards" />
+                <span>{{ t('Select all matches') }}</span>
+              </div>
+              <button v-if="checkedCards.size > 0" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="acceptCheckedMatches">{{ t('Accept match') }}</button>
+            </div>
             <div v-for="card in matchCards" :key="card.id" class="br-match-card">
               <div class="br-match-head">
                 <div class="br-match-head-col br-match-head-col--src">
                   <div class="br-match-head-controls">
-                    <MpCheckbox :id="`rc-match-check-${card.id}`" :is-checked="checkedCards.has(card.id)" @change="toggleChecked(card.id)" />
+                    <MpCheckbox v-if="matchCards.length > 1" :id="`rc-match-check-${card.id}`" :is-checked="checkedCards.has(card.id)" @change="toggleChecked(card.id)" />
                     <MpButton class="br-icon-btn" :aria-label="t('Toggle details')" @click="toggleCard(card.id)">
                       <MpIcon :name="openCardId === card.id ? 'chevrons-down' : 'chevrons-right'" size="md" />
                     </MpButton>
@@ -460,7 +504,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
                   <div class="br-match-stack">
                     <div class="br-match-name-row">
                       <span class="br-match-name" :class="{ 'br-match-name--empty': !card.invoiceId }">
-                        {{ INVOICE_OPTIONS.find(o => o.id === card.invoiceId)?.name || t('No match found') }}
+                        {{ INVOICE_OPTIONS.find(o => o.id === card.invoiceId)?.name || t('Match not found') }}
                       </span>
                       <span v-if="card.aiMatched" class="br-ai-badge">
                         <MpIcon name="airene-brand" size="sm" />{{ t('AI matched') }}
@@ -567,7 +611,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
                 </td>
                 <td class="ex-td ex-td--del">
                   <MpButton v-if="rows.length > 1" class="ex-del-btn" :aria-label="t('Remove row')" @click="removeRow(row.id)">
-                    <MpIcon name="minus-circle" size="sm" />
+                    <MpIcon name="minus-circular" size="sm" />
                   </MpButton>
                 </td>
               </tr>
@@ -653,7 +697,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
       <footer class="ex-footer">
         <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
         <button class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ t('Save & next') }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</button>
       </footer>
     </div>
 
@@ -665,14 +709,23 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
         @save="saveClassification"
       />
 
-      <!-- ── Demo scenario FAB ── -->
-      <div class="demo-fab-wrap">
-        <button
-          v-for="s in scenarios" :key="s.value"
-          class="demo-fab-chip" :class="{ 'demo-fab-chip--active': s.value === scenario }"
-          @click="setScenario(s.value)"
-        >{{ s.label }}</button>
-      </div>
+      <!-- ── Demo scenario FAB — same component as the expense review ── -->
+      <MpPopover id="rc-demo-fab" is-close-on-select use-portal placement="top-end">
+        <MpPopoverTrigger>
+          <MpButton class="demo-fab" :aria-label="t('Change scenario state')">
+            <MpIcon name="sliders" size="md" color="icon.inverse" />
+          </MpButton>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
+          <p class="demo-fab-heading">{{ t('Scenario state') }}</p>
+          <MpPopoverList>
+            <MpPopoverListItem
+              v-for="s in scenarios" :key="s.value"
+              :is-active="s.value === scenario" @click="setScenario(s.value)"
+            >{{ s.label }}</MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </template>
   </FileReviewShell>
 </template>
@@ -683,8 +736,8 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .br-section-header { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .br-section-titlerow { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .br-section-title {
-  margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg); color: var(--mp-text-default);
+  margin: 0; font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-xl); color: var(--mp-text-default);
 }
 .br-icon-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
@@ -753,6 +806,18 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   background: var(--mp-background-highlight, #f3f1fc);
   border-radius: var(--mp-radii-md); padding: var(--mp-spacing-3);
   margin-left: var(--mp-spacing-8);
+}
+/* Bulk bar — mirrors ErpTablePage's erp-bulk-bar (checkbox + count on the
+   left, primary action flush right) for the "to match" checkbox selection. */
+.br-match-bulk-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-3);
+}
+/* Reuses .ex-paid-check's checkbox+label layout ("I have paid this bill") —
+   gap:0 since MpCheckbox renders its own 12px control-to-label gap. */
+.br-match-bulk-bar__left {
+  display: flex; align-items: center; gap: 0; min-width: 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap;
 }
 .br-match-card {
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
@@ -932,17 +997,20 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   padding-top: var(--mp-spacing-6); padding-bottom: var(--mp-spacing-12, 48px);
 }
 
-/* ── Demo scenario switcher ───────────────────────────────────────────────── */
-.demo-fab-wrap {
-  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6); z-index: 40;
-  display: flex; gap: var(--mp-spacing-1); padding: var(--mp-spacing-1);
-  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-full); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+/* ── Demo scenario FAB — mirrors BillReviewPage.vue's .demo-fab ──────────── */
+.demo-fab {
+  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
+  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
+  padding: 0 !important; min-width: 0 !important;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  border: none !important; border-radius: var(--mp-radii-full, 999px) !important;
+  background: var(--mp-background-inverse) !important; color: var(--mp-text-inverse);
+  cursor: pointer; z-index: 1200;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2); /* pixel-police-allow-shadow: floating FAB trigger */
 }
-.demo-fab-chip {
-  border: none; background: none; cursor: pointer; font: inherit;
-  padding: var(--mp-spacing-1) var(--mp-spacing-3); border-radius: var(--mp-radii-full);
+.demo-fab:hover { opacity: 0.9; background: var(--mp-background-inverse) !important; }
+.demo-fab-heading {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
-.demo-fab-chip--active { background: var(--mp-background-neutral-subtle-selected, #dcdfe4); color: var(--mp-text-default); }
 </style>

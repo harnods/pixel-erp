@@ -837,7 +837,15 @@ watch([currentPageKey, activeSectionOverride, () => route.path, () => route.quer
     setActiveMenuLabel(matchLabel)
     return
   }
+  // OCR file review is a full-bleed page with its own title bar (reachable from
+  // both Expenses and Purchase invoices) — keep the nav rail highlighted but
+  // don't leave the Purchases level-2 submenu open over it.
+  const isFileReviewRoute = /^\/(expenses|purchase-invoices)\/review\//.test(route.path)
   let { nav, sub, panel } = resolveActive(key)
+  if (isFileReviewRoute) {
+    sub = null
+    panel = null
+  }
   // When the URL key isn't in this scenario's nav tree, try the canonical parent
   // section instead so the sidebar stays anchored (and the level-2 panel stays open).
   if (nav === 'Home' && key !== 'Home') {
@@ -850,7 +858,7 @@ watch([currentPageKey, activeSectionOverride, () => route.path, () => route.quer
   // doesn't disappear while the user is inside a detail page of that section.
   // On a hard refresh sub is null, so we restore from localStorage (keyed per
   // nav section). If nothing is stored yet, fall back to the first panel item.
-  const sameSection = activePanel.value?.parentNavName === nav || panel?.parentNavName === nav
+  const sameSection = !isFileReviewRoute && (activePanel.value?.parentNavName === nav || panel?.parentNavName === nav)
   if (sub !== null) {
     activePanelSubItem.value = sub
     setActiveMenuLabel(sub)

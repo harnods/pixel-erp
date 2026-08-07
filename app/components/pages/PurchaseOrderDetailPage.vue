@@ -217,7 +217,7 @@ function goBack() { closePurchaseOrder?.() }
     <!-- ── Title bar (breadcrumb + title + status dropdown + icon actions) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Purchase orders</button>
+        <MpButton class="detail-breadcrumb" @click="goBack">Purchase orders</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">Purchase Order #{{ order.number }}</h1>
           <ErpStatusBadge :status="order.status" badge-for="additionalInformation" size="md" />
@@ -225,11 +225,11 @@ function goBack() { closePurchaseOrder?.() }
           <!-- Chevron → jump-to-transaction switcher (search + 5 recent) -->
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" aria-label="Switch transaction">
+              <MpButton class="detail-jump-chevron" aria-label="Switch transaction">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
@@ -264,9 +264,9 @@ function goBack() { closePurchaseOrder?.() }
           <!-- Approval log — click opens the log popover 4px below the icon -->
           <div ref="approvalLogAnchor" class="applog-anchor">
             <MpTooltip id="detail-tt-tasks" label="Approval log" placement="bottom" use-portal>
-              <button class="detail-icon-btn" :class="{ 'detail-icon-btn--active': approvalLogOpen }" aria-label="Approval log" @click.stop="toggleApprovalLog">
+              <MpButton class="detail-icon-btn" :class="{ 'detail-icon-btn--active': approvalLogOpen }" aria-label="Approval log" @click.stop="toggleApprovalLog">
                 <MpIcon name="task-todo" size="md" />
-              </button>
+              </MpButton>
             </MpTooltip>
 
             <div v-if="approvalLogOpen" class="applog" @click.stop>
@@ -676,9 +676,12 @@ function goBack() { closePurchaseOrder?.() }
 }
 .detail-breadcrumb {
   align-self: flex-start;
-  background: none;
-  border: none;
-  padding: 0;
+  width: auto !important;
+  height: auto !important;
+  min-width: 0 !important;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
   cursor: pointer;
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-link);
@@ -700,14 +703,15 @@ function goBack() { closePurchaseOrder?.() }
 }
 /* chevron next to the badge → jump-to-transaction switcher */
 .detail-jump-chevron {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: var(--mp-sizes-7, 28px);
-  height: var(--mp-sizes-7, 28px);
-  background: none;
-  border: none;
-  padding: 0;
+  width: var(--mp-sizes-7, 28px) !important;
+  height: var(--mp-sizes-7, 28px) !important;
+  min-width: 0 !important;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
   border-radius: var(--mp-radii-md);
   cursor: pointer;
   color: var(--mp-icon-default);
@@ -757,14 +761,16 @@ function goBack() { closePurchaseOrder?.() }
   gap: var(--mp-spacing-1);
 }
 .detail-icon-btn {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: var(--mp-sizes-9, 36px);
-  height: var(--mp-sizes-9, 36px);
+  width: var(--mp-sizes-9, 36px) !important;
+  height: var(--mp-sizes-9, 36px) !important;
+  min-width: 0 !important;
+  padding: 0 !important;
   border-radius: var(--mp-radii-md);
-  background: none;
-  border: none;
+  background: none !important;
+  border: none !important;
   cursor: pointer;
   color: var(--mp-icon-default);
 }
@@ -778,12 +784,11 @@ function goBack() { closePurchaseOrder?.() }
   top: calc(100% + 4px);   /* 4px below the icon button */
   right: 0;
   z-index: 60;
-  width: 448px;
+  width: var(--mp-sizes-112, 448px);
   max-width: min(448px, calc(100vw - 48px));
   background: var(--mp-background-stage, #fff);
-  border: 1px solid var(--mp-border-default, #e3e7e9);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md, 6px);
-  box-shadow: 0 10px 10px -5px rgba(0,0,0,0.04), 0 20px 25px -5px rgba(0,0,0,0.10);
   overflow: hidden;
 }
 .applog-header {
@@ -805,8 +810,8 @@ function goBack() { closePurchaseOrder?.() }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: var(--mp-sizes-6, 24px);
+  height: var(--mp-sizes-6, 24px);
   border: none;
   background: none;
   cursor: pointer;
@@ -867,7 +872,7 @@ function goBack() { closePurchaseOrder?.() }
   width: 20px;
   height: 20px;
   border-radius: var(--mp-radii-full, 999px);
-  color: #fff;
+  color: var(--mp-text-inverse, #fff);
   flex-shrink: 0;
 }
 .applog-node--dot { width: 12px; height: 12px; margin: 4px; background: var(--mp-icon-brand, #029861); }
@@ -1311,7 +1316,7 @@ function goBack() { closePurchaseOrder?.() }
 .btn-enterprise--danger {
   background: var(--mp-colors-red-700, #c33e35);
   border-color: var(--mp-colors-red-700, #c33e35);
-  color: #ffffff;
+  color: var(--mp-text-inverse, #ffffff);
 }
 .btn-enterprise--danger:hover {
   background: var(--mp-colors-red-800, #a8352d);
