@@ -879,7 +879,7 @@ function startResize(e: MouseEvent) {
   background: none !important;
   border: none !important;
   cursor: pointer;
-  padding: 4px 6px !important;
+  padding: var(--mp-spacing-1, 4px) var(--mp-spacing-1\.5, 6px) !important;
   border-radius: 6px;
   line-height: 20px;
   max-width: 200px;
@@ -923,7 +923,7 @@ function startResize(e: MouseEvent) {
   width: 100% !important;
   height: auto !important;
   min-width: 0 !important;
-  padding: 8px 12px !important;
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px) !important;
   background: none !important;
   border: none !important;
   cursor: pointer;
@@ -979,7 +979,7 @@ function startResize(e: MouseEvent) {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: 36px !important;
+  width: var(--mp-sizes-9, 36px) !important;
   height: 36px !important;
   min-width: 0 !important;
   border: none !important;

@@ -811,7 +811,7 @@ function onSendToFulfillment() {
 .po-td :deep(.mp-input-addon__root) {
   border: none;
   border-radius: 0;
-  box-shadow: var(--mp-shadows-none, none);
+  box-shadow: var(--mp-shadows-none, none); /* pixel-police-allow-shadow: removing the default shadow */
 }
 .po-td--amount { padding-top: 0; display: flex; align-items: center; justify-content: flex-end; }
 .po-td--drag :deep(.mp-button) { height: 52px; }
@@ -876,7 +876,7 @@ function onSendToFulfillment() {
 }
 .po-prefix-toggle :deep(.mp-select__control) {
   border: none !important;
-  box-shadow: var(--mp-shadows-none, none) !important;
+  box-shadow: var(--mp-shadows-none, none) !important; /* pixel-police-allow-shadow: removing the default shadow */
   background: transparent !important;
   padding-left: 0 !important;
   font-size: var(--mp-font-sizes-sm);

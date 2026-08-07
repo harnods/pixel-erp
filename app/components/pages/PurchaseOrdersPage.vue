@@ -405,7 +405,7 @@ function formatDate(iso: string) {
   appearance: none;
   background: transparent !important;
   border: none !important;
-  box-shadow: var(--mp-shadows-none, none) !important;
+  box-shadow: var(--mp-shadows-none, none) !important; /* pixel-police-allow-shadow: removing the default shadow */
   outline: none;
   width: 100%;
   padding: 8px 36px 8px 12px;
@@ -429,7 +429,7 @@ function formatDate(iso: string) {
   width: auto !important;
   height: auto !important;
   min-width: 0 !important;
-  padding: 8px 16px 8px 12px !important;
+  padding: var(--mp-spacing-2, 8px) var(--mp-spacing-4, 16px) var(--mp-spacing-2, 8px) var(--mp-spacing-3, 12px) !important;
   background: var(--mp-background-neutral, #ffffff) !important;
   border: 1px solid var(--mp-border-bold, #758195) !important;
   border-radius: 999px !important;
@@ -451,8 +451,8 @@ function formatDate(iso: string) {
   display: flex !important;
   align-items: center;
   justify-content: center;
-  width: 36px !important;
-  height: 36px !important;
+  width: var(--mp-sizes-9, 36px) !important;
+  height: var(--mp-sizes-9, 36px) !important;
   min-width: 0 !important;
   padding: var(--mp-spacing-2, 8px) !important;
   border: none !important;

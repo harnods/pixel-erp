@@ -1796,7 +1796,7 @@ function startResize(e: MouseEvent) {
   padding-right: var(--mp-spacing-2);
 }
 .btn-enterprise__split-divider {
-  width: 1px;
+  width: var(--mp-sizes-px, 1px);
   align-self: stretch;
   margin: calc(var(--mp-spacing-1) * -1) 0;
   background: currentColor;
