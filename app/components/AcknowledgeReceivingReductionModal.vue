@@ -23,20 +23,20 @@ function rowBadge(t: ReceivingAllocTask): string {
   <MpModal id="ack-recv-alloc-modal" :is-open="open" size="lg" :is-keep-alive="false" @close="emit('close')">
     <MpModalContent>
       <MpModalHeader>
-        This reduction spans multiple receiving tasks
+        Review this reduction
         <MpModalCloseButton />
       </MpModalHeader>
 
       <MpModalBody>
         <p class="ral-intro">
-          You’re lowering the quantity of a SKU that’s split across several Open receiving tasks.
-          The system proposes the arrangement below — there’s no override in this flow, only acknowledgement.
+          This SKU’s quantity is split across several Open receiving tasks.
+          Review the arrangement below, then acknowledge to apply it.
         </p>
 
         <ul class="ral-rules">
-          <li>A task reduced to 0 is cancelled automatically.</li>
-          <li>A task that still has qty left stays Open, but needs acknowledgement on that task before it can start.</li>
-          <li>The arrangement below drains the smallest tasks first — it can’t be adjusted.</li>
+          <li>A task reduced to zero is cancelled automatically.</li>
+          <li>A task with quantity left stays Open but is flagged Needs re-arrangement until you confirm the change on that task.</li>
+          <li>The arrangement below takes from the smallest tasks first and can’t be adjusted.</li>
         </ul>
 
         <div v-for="g in groups" :key="g.sku" class="ral-group">
@@ -53,14 +53,14 @@ function rowBadge(t: ReceivingAllocTask): string {
               <colgroup>
                 <col />
                 <col style="width: 120px" />
-                <col style="width: 110px" />
+                <col style="width: 130px" />
                 <col style="width: 180px" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="ral-th">Receiving task</th>
                   <th class="ral-th ral-th--num">In task</th>
-                  <th class="ral-th ral-th--num">Reduce by</th>
+                  <th class="ral-th">Reduce by</th>
                   <th class="ral-th">Result</th>
                 </tr>
               </thead>
@@ -68,7 +68,7 @@ function rowBadge(t: ReceivingAllocTask): string {
                 <tr v-for="t in g.tasks" :key="t.taskNo" class="ral-tr">
                   <td class="ral-td"><span class="ral-taskno">{{ t.taskNo }}</span></td>
                   <td class="ral-td ral-td--num">{{ t.currentQty }}</td>
-                  <td class="ral-td ral-td--num">{{ t.reduceBy }}</td>
+                  <td class="ral-td ral-td--input"><span class="ral-td--input-value">{{ t.reduceBy }}</span></td>
                   <td class="ral-td">
                     <span class="ral-badge" :class="{ 'ral-badge--cancel': t.willCancel }">{{ rowBadge(t) }}</span>
                   </td>
@@ -82,7 +82,7 @@ function rowBadge(t: ReceivingAllocTask): string {
       <MpModalFooter>
         <div class="ral-footer">
           <MpButton variant="ghost" is-rounded @click="emit('close')">Cancel</MpButton>
-          <MpButton variant="primary" is-rounded @click="emit('confirm')">Acknowledge & apply</MpButton>
+          <MpButton variant="primary" is-rounded @click="emit('confirm')">Apply reduction</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -131,9 +131,22 @@ function rowBadge(t: ReceivingAllocTask): string {
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   border-bottom: 1px solid var(--mp-border-default); vertical-align: middle;
+  /* Read-only cells get a subtle background — see docs/patterns/FormTable.md
+     "Cell Types" — so the Reduce-by cell (styled like AllocateReductionModal's
+     editable one, just non-interactive here) reads as distinct from them. */
+  background: var(--mp-background-neutral-subtle);
 }
 .ral-tr:last-child .ral-td { border-bottom: none; }
 .ral-td--num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Reduce-by cell — matches AllocateReductionModal's al-td--input look (white
+   background, borderless value) minus the focus-ring, since this modal is
+   read-only (no override, see the component doc comment above). */
+.ral-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
+.ral-td--input-value {
+  display: flex; align-items: center; height: var(--mp-sizes-10, 40px);
+  padding: 0 var(--mp-spacing-3); font-variant-numeric: tabular-nums; color: var(--mp-text-default);
+}
 
 .ral-taskno { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ral-badge { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }

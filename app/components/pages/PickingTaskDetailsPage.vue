@@ -216,7 +216,7 @@ const lastUpdated = computed(() => {
 // ── Actions ──────────────────────────────────────────────────────────────────
 function startPickingAndNavigate() {
   if (needsRearrangement.value) {
-    toast.notify({ variant: 'error', title: t('This picking task changed and needs warehouse-manager re-arrangement before it can start'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('This task is flagged Needs re-arrangement — a warehouse manager must clear it before picking can start'), maxWidth: 'max-content' })
     return
   }
   if (needsCancelAck.value) { ackModalOpen.value = true; return }
@@ -228,7 +228,7 @@ function startPickingAndNavigate() {
 // button is the other path). Otherwise straight to the pick screen.
 function continuePicking() {
   if (needsRearrangement.value) {
-    toast.notify({ variant: 'error', title: t('This picking task changed and needs warehouse-manager re-arrangement before it can start'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('This task is flagged Needs re-arrangement — a warehouse manager must clear it before picking can start'), maxWidth: 'max-content' })
     return
   }
   if (needsCancelAck.value) { ackModalOpen.value = true; return }
@@ -298,7 +298,7 @@ function confirmClearRearrangement() {
   if (!task.value) return
   clearPickingRearrangement(task.value.id)
   clearRearrangeModalOpen.value = false
-  toast.notify({ variant: 'success', title: t('Re-arrangement cleared — this task can be started again'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Re-arrangement cleared. This task can be started again'), maxWidth: 'max-content' })
 }
 
 const pdfPreviewOpen = ref(false)
@@ -669,7 +669,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
           <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
         </svg>
         <span class="pkd-rearrange-banner-text">
-          {{ t('This picking task changed and needs warehouse-manager re-arrangement before it can start') }}
+          {{ t('This task is flagged Needs re-arrangement — a warehouse manager must clear it before picking can start') }}
         </span>
         <button class="pkd-rearrange-banner-btn" type="button" @click="askClearRearrangement">{{ t('Clear re-arrangement') }}</button>
       </div>
@@ -1105,7 +1105,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       <MpModalContent>
         <MpModalHeader>{{ t('Clear re-arrangement?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
-          {{ t('This confirms the picking list now matches the reduced order — review the remaining SKU/qty above before clearing. Once cleared, the task returns to Open and pickers can start it again.') }}
+          {{ t('Review the remaining SKU and quantity above before clearing. Once cleared, this task returns to Open and pickers can start it again.') }}
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">

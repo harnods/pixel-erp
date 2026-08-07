@@ -149,7 +149,7 @@ function createPutAway() {
 // ── Receiving actions ───────────────────────────────────────────────────────
 function startReceivingAndNavigate() {
   if (needsRearrangement.value) {
-    toast.notify({ variant: 'error', title: t('This receiving task changed and needs acknowledgement before it can start'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('This task is flagged Needs re-arrangement — view the changes before it can start'), maxWidth: 'max-content' })
     return
   }
   startReceiving(props.orderId)
@@ -160,7 +160,7 @@ function startReceivingAndNavigate() {
 // or was the sole Open task) — it freezes. Unlike needsCancelAck below, this is a
 // plain self-serve review (no rebalancing decision to make), but — unlike a
 // one-click acknowledge — the operator must first open "View changes" to see the
-// per-SKU before/after table, then confirm via "Proceed changes" in that modal.
+// per-SKU before/after table, then confirm via "Apply changes" in that modal.
 const needsRearrangement = computed(() => !!task.value?.needsRearrangement)
 const rearrangementChanges = computed(() => task.value?.rearrangementChanges ?? [])
 const viewChangesOpen = ref(false)
@@ -169,7 +169,7 @@ function proceedRearrangementChanges() {
   if (!task.value) return
   acknowledgeReceivingRearrangement(task.value.id)
   viewChangesOpen.value = false
-  toast.notify({ variant: 'success', title: t('Changes acknowledged — this task can be started again'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Changes applied. This task can be started again'), maxWidth: 'max-content' })
 }
 
 // This task's own PO was canceled while it was in progress — real receiving
@@ -406,7 +406,7 @@ function goBack() {
         <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
       </svg>
       <span class="rcvgd-rearrange-banner-text">
-        {{ t('This receiving task changed and needs acknowledgement before it can start') }}
+        {{ t('This task is flagged Needs re-arrangement — view the changes before it can start') }}
       </span>
       <button class="rcvgd-rearrange-banner-btn" type="button" @click="openViewChanges">{{ t('View changes') }}</button>
     </div>
@@ -686,7 +686,7 @@ function goBack() {
            split-button dropdown, never as a standalone "Cancel" footer button. -->
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
-          <MpTooltip v-if="needsRearrangement" id="rcvgd-start-tt-split" :label="t('Proceed the changes before start receiving')" placement="top" use-portal>
+          <MpTooltip v-if="needsRearrangement" id="rcvgd-start-tt-split" :label="t('Cannot start receiving. Apply the changes first.')" placement="top" use-portal>
             <button class="detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start receiving') }}</button>
           </MpTooltip>
           <button v-else class="detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
@@ -701,7 +701,7 @@ function goBack() {
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <MpTooltip v-else-if="needsRearrangement" id="rcvgd-start-tt-solo" :label="t('Proceed the changes before start receiving')" placement="top" use-portal>
+        <MpTooltip v-else-if="needsRearrangement" id="rcvgd-start-tt-solo" :label="t('Cannot start receiving. Apply the changes first.')" placement="top" use-portal>
           <button class="detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start receiving') }}</button>
         </MpTooltip>
         <button v-else class="detail-btn detail-btn--primary" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
@@ -772,14 +772,14 @@ function goBack() {
     </MpModal>
 
     <!-- ── View changes — the per-SKU before/after table behind the Needs
-         Re-arrangement freeze; Proceed changes is the actual acknowledge. ── -->
+         Re-arrangement freeze; Apply changes is the actual acknowledge. ── -->
     <MpModal id="rcvgd-view-changes" :is-open="viewChangesOpen" size="md"
       is-close-on-esc is-close-on-overlay-click :is-keep-alive="false" @close="viewChangesOpen = false">
       <MpModalContent>
         <MpModalHeader>{{ t('Review the changes') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           <p class="rcvgd-changes-intro">
-            {{ t('The purchase order behind this task was reduced. Review the qty change below before this task can start.') }}
+            {{ t('The purchase order behind this task was reduced. Review the quantity change below before this task can start.') }}
           </p>
           <div class="rcvgd-changes-table-wrap">
             <table class="rcvgd-changes-table">
@@ -805,7 +805,7 @@ function goBack() {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--primary" @click="proceedRearrangementChanges">{{ t('Proceed changes') }}</button>
+            <button class="btn-enterprise btn-enterprise--primary" @click="proceedRearrangementChanges">{{ t('Apply changes') }}</button>
           </div>
         </MpModalFooter>
       </MpModalContent>
