@@ -38,6 +38,7 @@ export const cashAccounts: CashAccount[] = [
   { id: 'CA003', code: '1-10003', name: 'Bank BCA',        accountNumber: '5485079642', isConnected: true, currency: 'IDR', statementBalance: 163_835_000,  statementDate: '2026-02-05', bookBalance: 139_025_000,  unreconciledCount: 10 },
   { id: 'CA004', code: '1-10004', name: 'DBS Singapore',   accountNumber: '0661089145',                  currency: 'SGD', statementBalance: 155_000_000,  statementCurrency: 'IDR', statementDate: '2025-12-20', bookBalance: 6_000,  unreconciledCount: 1 },
   { id: 'CA005', code: '2-10001', name: 'BCA Corporate Card', accountNumber: '****9645',                 currency: 'IDR', statementBalance: -32_000_000,  statementDate: '2026-01-02', bookBalance: -10_000_000,  unreconciledCount: 1  },
+  { id: 'CA008', code: '1-10007', name: 'Mandiri',         accountNumber: '1560024252035',              currency: 'IDR', statementBalance: 13_630_937,   statementDate: '2025-03-31', bookBalance: 13_630_937,   unreconciledCount: 0  },
 
   // Archived — hidden until the "Show archived accounts" toggle is on.
   { id: 'CA006', code: '1-10005', name: 'Bank Mandiri (closed)', accountNumber: '1440009823',            currency: 'IDR', statementBalance: 0,            statementDate: '2025-09-30', bookBalance: 0,            unreconciledCount: 0, isArchived: true },
