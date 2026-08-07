@@ -36,7 +36,8 @@ import { scrollToFirstError } from '~/utils/form'
 const props = defineProps<{ orderId: string }>()
 
 const { t } = useLocale()
-const { queue, backLabel, queueBase, goBack, goToNext, removeFromQueue } = useReviewQueue(() => props.orderId)
+const { queue, index, backLabel, queueBase, goBack, goToNext, removeFromQueue } = useReviewQueue(() => props.orderId)
+const isLastFile = computed(() => index.value === queue.value.length - 1)
 
 const reviewFile = computed(() => queue.value.find((rf) => rf.id === props.orderId) ?? queue.value[0])
 
@@ -123,6 +124,11 @@ const scenarios: { value: Scenario; label: string }[] = [
 /** Only the >10 Products scenario simulates a multi-page source document —
  *  every other scenario is the usual single-page scan. */
 const pageCount = computed(() => (scenario.value === 'many_products' ? 2 : 1))
+const previewImages = computed(() => (
+  scenario.value === 'many_products'
+    ? ['/illustrations/ocr/purchase-invoice-10-1.png', '/illustrations/ocr/purchase-invoice-10-2.png']
+    : ['/illustrations/ocr/purchase-invoice.png']
+))
 
 // ── Header fields ────────────────────────────────────────────────────────────
 const vendor = ref('')
@@ -506,6 +512,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
     :back-label="backLabel" :queue-base="queueBase"
     :is-unreadable="scenario === 'unreadable'"
     :page-count="pageCount"
+    :preview-images="previewImages"
     @back="goBack"
   >
     <!-- ══ Section: Invoice ══ -->
@@ -665,13 +672,14 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
           </div>
 
           <div class="br-match-wrap">
-            <!-- Bulk bar — appears once at least one match item is checked -->
-            <div v-if="checkedCards.size > 0" class="br-match-bulk-bar">
+            <!-- Bulk bar — select-all checkbox is always visible once there's more than
+                 one match card; "Accept match" only appears once something is checked. -->
+            <div v-if="matchCards.length > 1" class="br-match-bulk-bar">
               <div class="br-match-bulk-bar__left">
                 <MpCheckbox :is-checked="allCardsChecked" :is-indeterminate="someCardsChecked" @change="toggleSelectAllCards" />
-                <span class="br-match-bulk-bar__count">{{ checkedCards.size }} {{ t(checkedCards.size === 1 ? 'item selected' : 'items selected') }}</span>
+                <span>{{ t('Select all matches') }}</span>
               </div>
-              <button class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="acceptCheckedMatches">{{ t('Accept match') }}</button>
+              <button v-if="checkedCards.size > 0" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="acceptCheckedMatches">{{ t('Accept match') }}</button>
             </div>
             <div v-for="card in matchCards" :key="card.id" class="br-match-card">
               <!-- Card header: what the doc says ⟷ what it maps to -->
@@ -840,7 +848,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
                 </td>
                 <td class="ex-td ex-td--del">
                   <MpButton v-if="rows.length > 1" class="ex-del-btn" :aria-label="t('Remove row')" @click="removeRow(row.id)">
-                    <MpIcon name="minus-circle" size="sm" />
+                    <MpIcon name="minus-circular" size="sm" />
                   </MpButton>
                 </td>
               </tr>
@@ -936,7 +944,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
       <footer class="ex-footer">
         <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
         <button class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ t('Save & next') }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</button>
       </footer>
     </div>
 
@@ -1073,10 +1081,11 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--mp-spacing-3);
 }
-.br-match-bulk-bar__left { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
-.br-match-bulk-bar__count {
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular);
-  color: var(--mp-text-default); white-space: nowrap;
+/* Reuses .ex-paid-check's checkbox+label layout ("I have paid this bill") —
+   gap:0 since MpCheckbox renders its own 12px control-to-label gap. */
+.br-match-bulk-bar__left {
+  display: flex; align-items: center; gap: 0; min-width: 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap;
 }
 .br-match-card {
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);

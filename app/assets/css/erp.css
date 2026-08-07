@@ -102,6 +102,17 @@
   border-radius: var(--mp-radii-full, 999px) !important;
 }
 
+/* Toast label — MpToast's <p> has no white-space rule of its own, so a long
+   title wraps to a second line and breaks the pill (it also breaks the
+   toaster's centering fix above, which assumes single-line nowrap content).
+   Never let toast copy wrap; truncate with an ellipsis instead. */
+[data-pixel-component="MpToastLabel"] {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
 /* ── Form-field focus colour (global ERP override) ────────────────────────────
  * Pixel's default focus border + ring on form fields is the brand emerald green.
  * The ERP wants a neutral focus instead: Color/Gray/Slate400 (#8C9596).

@@ -30,7 +30,7 @@ import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
-import { purchaseOrders } from '~/data'
+import { purchaseOrders, purchaseInvoices } from '~/data'
 
 const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
@@ -95,6 +95,7 @@ const BillsIndexPage = asyncPage(() => import('~/components/pages/BillsIndexPage
 const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/BillsAwaitingApprovalPage.vue'))
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const PurchaseInvoicesPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue'))
+const PurchaseInvoicesAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesAwaitingApprovalPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
 const ReceiptDetailsPage = asyncPage(() => import('~/components/pages/ReceiptDetailsPage.vue'))
 const PartialReceiptDetailsPage = asyncPage(() => import('~/components/pages/PartialReceiptDetailsPage.vue'))
@@ -444,7 +445,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Review files'],
-  'Purchase invoices': ['All purchase invoices', 'Review files'],
+  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Review files'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
@@ -506,6 +507,12 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const out: Record<string, number> = {}
     if (bills.length) out['Awaiting Approval'] = bills.length
     if (reviewFiles.length) out['Review files'] = reviewFiles.length
+    return out
+  }
+  if (currentPageKey.value === 'Purchase invoices') {
+    const out: Record<string, number> = {}
+    if (purchaseInvoices.length) out['Awaiting Approval'] = purchaseInvoices.length
+    if (purchaseInvoiceReviewFiles.length) out['Review files'] = purchaseInvoiceReviewFiles.length
     return out
   }
   if (currentPageKey.value === 'Stock adjustments') {
@@ -627,6 +634,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   // the `surface` prop swaps both the data and the review route.
   'Purchase invoices': {
     'All purchase invoices': PurchaseInvoicesPage,
+    'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
     'Review files': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
   },
   'Stock adjustments': {
@@ -1220,16 +1228,10 @@ function startResize(e: MouseEvent) {
 
               <!-- Group 1: spreadsheet + upload bills -->
               <div class="import-group import-group--bordered">
-                <MpButton variant="ghost" class="import-item">{{ t('Import from spreadsheet') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--ai">
+                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Import from spreadsheet') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start import-item--ai">
                   <span>Upload bills</span>
-                  <span class="ai-badge">
-                    <img
-                      src="https://www.figma.com/api/mcp/asset/b87bbbb6-b7ca-46be-a6a9-755ab81fefe6"
-                      width="12" height="12" alt="" class="ai-badge__icon"
-                    />
-                    <span class="ai-badge__label">AI</span>
-                  </span>
+                  <MpIcon name="airene-brand" size="xs" class="import-item__ai-icon" />
                 </MpButton>
               </div>
 
@@ -1857,6 +1859,12 @@ function startResize(e: MouseEvent) {
 .import-item--ai {
   justify-content: flex-start;
   gap: var(--mp-spacing-2);
+}
+/* MpIcon's size prop leaves airene-brand at its natural (oversized) dimensions. */
+.import-item__ai-icon {
+  width: var(--mp-sizes-3\.5, 14px) !important;
+  height: var(--mp-sizes-3\.5, 14px) !important;
+  flex-shrink: 0;
 }
 
 /* MpButton centres its label; menu rows read as a list only when left-aligned. */

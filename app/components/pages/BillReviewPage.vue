@@ -64,6 +64,7 @@ const queueIndex = computed(() => {
   return i === -1 ? 0 : i
 })
 const queueTotal = computed(() => reviewFiles.length)
+const isLastFile = computed(() => queueIndex.value === queueTotal.value - 1)
 function goToFile(id: string) {
   if (id !== props.orderId) router.push(`/expenses/review/${id}`)
 }
@@ -384,7 +385,7 @@ watch(total, (v) => {
 // ── Left panel resize + zoom (same as NewExpensePage) ────────────────────────
 const LEFT_PANEL_MIN = 320
 const LEFT_PANEL_MAX = 640
-const leftWidth = ref(LEFT_PANEL_MAX)
+const leftWidth = ref(LEFT_PANEL_MIN)
 function startPanelResize(e: MouseEvent) {
   e.preventDefault()
   const startX = e.clientX
@@ -519,7 +520,7 @@ function handleSave() {
     const i = reviewFiles.findIndex((rf) => rf.id === file.id)
     if (i !== -1) reviewFiles.splice(i, 1)
   }
-  toast.notify({ variant: 'success', title: t('Expense saved'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: t('Bill saved. Loading next...'), rootProps: { class: 'toast-enterprise' } })
   // Land on the bill's own detail page (Bills index → row) rather than the next
   // file in the review queue — "Save & next" moves the user forward into the
   // record they just created, not deeper into OCR review.
@@ -607,15 +608,15 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
               <span class="ex-file-size">1 {{ t('page') }}</span>
             </div>
           </div>
-          <div class="ex-zoom-toggle" role="group" :aria-label="t('Zoom')">
+          <div class="detail-loc-toggle" role="group" :aria-label="t('Zoom')">
             <button
-              type="button" class="ex-zoom-part"
-              :class="{ 'ex-zoom-part--active': zoomMode === 'fit' }"
+              type="button" class="detail-loc-toggle-btn"
+              :class="{ 'detail-loc-toggle-btn--active': zoomMode === 'fit' }"
               @click="zoomMode = 'fit'"
             >{{ t('Fit') }}</button>
             <button
-              type="button" class="ex-zoom-part"
-              :class="{ 'ex-zoom-part--active': zoomMode === '100' }"
+              type="button" class="detail-loc-toggle-btn"
+              :class="{ 'detail-loc-toggle-btn--active': zoomMode === '100' }"
               @click="zoomMode = '100'"
             >100%</button>
           </div>
@@ -632,7 +633,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
           </MpBannerDescription>
         </MpBanner>
         <div class="br-preview" :class="{ 'br-preview--zoom': zoomMode === '100' }">
-          <img src="/illustrations/receipt-dropzone.png" alt="" class="br-preview-img" />
+          <img src="/illustrations/ocr/expense.png" alt="" class="br-preview-img" />
         </div>
       </div>
 
@@ -1112,7 +1113,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
         <footer class="ex-footer">
           <button class="btn-enterprise btn-enterprise--ghost" @click="goExpenses">{{ t('Cancel') }}</button>
           <button class="btn-enterprise btn-enterprise--secondary" @click="skipWithoutSaving">{{ t('Skip without saving') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ t('Save & next') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</button>
         </footer>
       </div>
     </div>
@@ -1255,22 +1256,14 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 }
 .ex-file-size { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-.ex-zoom-toggle {
-  display: flex; align-items: center; gap: var(--mp-spacing-1); flex-shrink: 0;
-  padding: var(--mp-spacing-1); border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
-}
-.ex-zoom-part {
-  border: none; background: none; cursor: pointer;
-  padding: var(--mp-spacing-1) var(--mp-spacing-2); border-radius: var(--mp-radii-full, 999px);
-  font: inherit; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-secondary);
-}
-.ex-zoom-part--active {
-  background: var(--mp-background-neutral-subtle-selected, #dcdfe4);
-  color: var(--mp-text-secondary-pressed, #4c5460);
-}
+/* Fit / 100% zoom toggle — same segmented-pill pattern as WMS picking's
+   Combined / By orders toggle (PickingTaskDetailsPage.vue, CreatePickingPage.vue),
+   and the same one InvoiceReviewPage/ReceiptReviewPage/UnclassifiedReviewPage
+   use via FileReviewShell.vue. */
+.detail-loc-toggle { display: flex; align-items: center; gap: 2px; flex-shrink: 0; background: var(--mp-background-neutral-subtle); border-radius: var(--mp-radii-full); padding: 2px; }
+.detail-loc-toggle-btn { height: 28px; padding: 0 var(--mp-spacing-3); border: none; border-radius: var(--mp-radii-full); background: none; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap; }
+.detail-loc-toggle-btn:hover { color: var(--mp-text-default); }
+.detail-loc-toggle-btn--active { background: var(--mp-background-stage, #fff); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
 .br-unreadable-banner { flex-shrink: 0; }
 
@@ -1278,7 +1271,7 @@ watch(() => props.orderId, () => applyScenario(scenario.value))
 .br-preview {
   flex-shrink: 0; background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  padding: var(--mp-spacing-2); overflow: auto;
+  overflow: auto;
 }
 .br-preview-img { display: block; width: 100%; height: auto; }
 .br-preview--zoom .br-preview-img { width: auto; max-width: none; }

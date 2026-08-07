@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpIcon, MpAvatar, MpButton, MpSelect, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpIcon, MpButton, MpSelect, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, css, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter,
 } from '@mekari/pixel3'
@@ -9,7 +9,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import { lastUpdatedFor } from '~/utils/lastUpdated'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { reviewFiles, purchaseInvoiceReviewFiles, addProcessingReviewFile, deleteReviewFiles, moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses } from '~/data'
+import { reviewFiles, purchaseInvoiceReviewFiles, deleteReviewFiles, moveReviewFilesToPurchaseInvoice, moveReviewFilesToExpenses } from '~/data'
 import type { ReviewFile, FileClassification } from '~/data'
 
 /** Which surface's review queue this table is showing. Both Expenses and
@@ -124,29 +124,6 @@ const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disable
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
 
-// ─── Upload dropzone (Card 1) ──────────────────────────────────────────────────
-// Every uploaded/dropped file is dropped in immediately as a "processing" row
-// (see ReviewFile.processing) — addProcessingReviewFile resolves it in place
-// once the simulated OCR pass completes, no extra wiring needed here.
-
-const fileInputEl = ref<HTMLInputElement | null>(null)
-function openFilePicker() { fileInputEl.value?.click() }
-
-function ingestFiles(files: FileList | null) {
-  if (!files) return
-  for (const f of Array.from(files)) addProcessingReviewFile(f.name, props.surface)
-}
-function onFileInputChange(ev: Event) {
-  const input = ev.target as HTMLInputElement
-  ingestFiles(input.files)
-  input.value = ''
-}
-const dropzoneDragOver = ref(false)
-function onDropzoneDrop(ev: DragEvent) {
-  dropzoneDragOver.value = false
-  ingestFiles(ev.dataTransfer?.files ?? null)
-}
-
 // ─── Bulk actions (selection bar) — mirrors BillsIndexPage's bulk pattern ──────
 
 function bulkSelectedReviewFiles(selectedRows: Set<number>): Row[] {
@@ -202,6 +179,19 @@ function moveSelectedToOtherSurface(selectedRows: Set<number>, deselectAll: () =
   deselectAll()
 }
 
+// Row kebab — same "not this surface's native classification" rule as the bulk
+// action above, just for a single row instead of a selection.
+function moveRowToOtherSurface(row: Row) {
+  const count = props.surface === 'purchase-invoices'
+    ? moveReviewFilesToExpenses([row.id])
+    : moveReviewFilesToPurchaseInvoice([row.id])
+  toast.notify({
+    variant: 'success',
+    title: `${count} ${t(count !== 1 ? 'files' : 'file')} ${t(movedToastLabel.value)}`,
+    rootProps: { class: 'toast-enterprise' },
+  })
+}
+
 // Delete
 const bulkDeleteModalOpen = ref(false)
 const bulkDeleteIds = ref<string[]>([])
@@ -237,6 +227,7 @@ function confirmBulkDelete() {
     :sort-dir="sortDir"
     has-checkbox
     actions-width="52px"
+    last-column-flexible
     bulk-label="file"
     @page-change="setPage"
     @per-page-change="setPerPage"
@@ -278,51 +269,6 @@ function confirmBulkDelete() {
       >
         {{ t('Delete') }}
       </button>
-    </template>
-
-    <!-- ── Upload dropzone — same position as the stats bar on other tabs ── -->
-    <template #stats>
-      <div class="upload-row">
-
-        <!-- Card 1: Drop file / choose (dashed border) -->
-        <MpButton
-          class="upload-card upload-card--dropzone"
-          :class="{ 'upload-card--dropzone-over': dropzoneDragOver }"
-          @click="openFilePicker"
-          @dragover.prevent="dropzoneDragOver = true"
-          @dragleave.prevent="dropzoneDragOver = false"
-          @drop.prevent="onDropzoneDrop"
-        >
-          <component :is="'input'" ref="fileInputEl" type="file" class="upload-card__input" accept=".csv,.png,.xlsx,.pdf,.jpg" multiple @change="onFileInputChange" />
-          <MpAvatar variant="circle" size="xl" variant-color="gray" icon="upload" icon-variant="outline" />
-          <span class="upload-card__copy">
-            <span class="upload-card__title">
-              {{ t('Drop your file here or') }} <span class="upload-card__choose">{{ t('choose') }}</span>
-            </span>
-            <span class="upload-card__desc">{{ t('Supported formats: CSV, PNG, XLSX, PDF, JPG.') }}</span>
-            <span class="upload-card__desc">{{ t('Maximum file size 10 MB.') }}</span>
-          </span>
-        </MpButton>
-
-        <!-- Card 2: Upload from Google Drive -->
-        <MpButton class="upload-card upload-card--option">
-          <MpAvatar variant="circle" size="xl" variant-color="gray" icon="Google" icon-variant="outline" />
-          <span class="upload-card__copy">
-            <span class="upload-card__title upload-card__title--center">{{ t('Upload from Google Drive') }}</span>
-            <span class="upload-card__desc">{{ t('Access your Google account') }}</span>
-          </span>
-        </MpButton>
-
-        <!-- Card 3: Forward from email -->
-        <MpButton class="upload-card upload-card--option">
-          <MpAvatar variant="circle" size="xl" variant-color="gray" icon="envelope" icon-variant="outline" />
-          <span class="upload-card__copy">
-            <span class="upload-card__title upload-card__title--center">{{ t('Forward from email') }}</span>
-            <span class="upload-card__desc">{{ t('Forward bills to dropbox.680128@jurnal.id') }}</span>
-          </span>
-        </MpButton>
-
-      </div>
     </template>
 
     <!-- ── Filter bar ── -->
@@ -451,13 +397,32 @@ function confirmBulkDelete() {
 
     <!-- ── Actions ── -->
     <template #actions="{ row }">
-      <MpButton v-if="!(row as Row).processing" class="row-kebab" :aria-label="t('More actions')">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="12" cy="5" r="2" />
-          <circle cx="12" cy="12" r="2" />
-          <circle cx="12" cy="19" r="2" />
-        </svg>
-      </MpButton>
+      <MpPopover
+        v-if="!(row as Row).processing"
+        :id="`review-files-row-actions-${(row as Row).id}`"
+        is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
+      >
+        <MpPopoverTrigger>
+          <button class="row-kebab" :aria-label="t('More actions')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
+          </button>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem @click="openRowReview(row as Row)">{{ t('Review') }}</MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="(row as Row).classification !== nativeClassification"
+              @click="moveRowToOtherSurface(row as Row)"
+            >
+              {{ t(moveActionLabel) }}
+            </MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
     </template>
 
     <template #cell-lastUpdated="{ row }">
@@ -494,82 +459,6 @@ function confirmBulkDelete() {
 </template>
 
 <style scoped>
-/* ── Upload dropzone row ────────────────────────────────────────────────── */
-
-.upload-row {
-  display: flex;
-  gap: var(--mp-spacing-6);
-  align-items: stretch;
-}
-
-.upload-card {
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center;
-  justify-content: center;
-  gap: var(--mp-spacing-3);
-  flex: 1;
-  min-width: 0 !important;
-  height: auto !important;
-  padding: var(--mp-spacing-5) !important;
-  background: var(--mp-background-neutral) !important;
-  border-radius: var(--mp-radii-md) !important;
-  cursor: pointer;
-  text-align: center;
-  font-family: inherit;
-}
-
-.upload-card--dropzone {
-  border: 1px dashed var(--mp-border-bold) !important;
-  position: relative;
-}
-.upload-card--dropzone-over {
-  border-color: var(--mp-border-selected, #029861) !important;
-  background: var(--mp-background-neutral-hovered, #f8f9f9) !important;
-}
-
-.upload-card--option {
-  border: 1px solid var(--mp-border-default) !important;
-  cursor: default;
-}
-
-.upload-card__input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.upload-card__copy {
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-1);
-  width: 100%;
-}
-
-.upload-card__title {
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-default);
-}
-
-.upload-card__title--center {
-  display: block;
-}
-
-.upload-card__choose {
-  color: var(--mp-text-link);
-}
-
-.upload-card__desc {
-  display: block;
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-regular);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-secondary);
-}
-
 /* Processing-row skeleton bar — matches Figma's OCR "processing" row state
    (node 4260:65434): solid neutral-subtle bar, no shimmer, full cell width. */
 .review-skeleton {

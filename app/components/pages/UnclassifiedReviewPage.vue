@@ -17,7 +17,8 @@ import { useReviewQueue } from '~/composables/useReviewQueue'
 const props = defineProps<{ orderId: string }>()
 
 const { t } = useLocale()
-const { queue, backLabel, queueBase, goBack, removeFromQueue, goToNext } = useReviewQueue(() => props.orderId)
+const { queue, index, backLabel, queueBase, goBack, removeFromQueue, goToNext } = useReviewQueue(() => props.orderId)
+const isLastFile = computed(() => index.value === queue.value.length - 1)
 
 // ── Scenario state (dev FAB) ─────────────────────────────────────────────────
 type Scenario = 'default' | 'unreadable'
@@ -72,6 +73,7 @@ function handleSave() {
     :queue="queue" :file-id="props.orderId"
     :back-label="backLabel" :queue-base="queueBase"
     :is-unreadable="scenario === 'unreadable'"
+    :preview-images="['/illustrations/ocr/other-document.png']"
     @back="goBack"
   >
     <div class="uc-body">
@@ -113,7 +115,7 @@ function handleSave() {
     <footer class="ex-footer">
       <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
       <button class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</button>
-      <button class="btn-enterprise btn-enterprise--primary" :disabled="!action" @click="handleSave">{{ t('Save & next') }}</button>
+      <button class="btn-enterprise btn-enterprise--primary" :disabled="!action" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</button>
     </footer>
 
     <template #overlays>

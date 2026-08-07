@@ -80,12 +80,19 @@ const props = withDefaults(defineProps<{
   /** Plural override for the bulk bar count — use when the noun isn't just `bulkLabel + 's'`
    *  (e.g. already-plural "bill of materials", or "entries"). Defaults to `bulkLabel + 's'`. */
   bulkLabelPlural?: string
-  /** Override the sticky actions column width (default 44px) — use when the #actions
-   *  slot renders more than a single kebab button (several buttons in a row). */
+  /** Override the sticky actions column width (default 52px, fits a single kebab
+   *  button) — use when the #actions slot renders more than that (several buttons
+   *  in a row, or a kebab plus a labeled button like "Reconcile"). */
   actionsWidth?: string
   /** Singular noun for the filter-only empty state, e.g. "expense" → "No expense match
    *  your filters". Defaults to the generic "No results match your filters". */
   filterEmptyLabel?: string
+  /** Let the LAST column grow to absorb any leftover table width instead of staying
+   *  pinned to its declared `width` (table-layout:fixed otherwise distributes that
+   *  leftover proportionally across every column, including fixed-width ones like
+   *  the sticky actions column — see BillsReviewFilesPage.vue). Off by default so
+   *  every other page's column widths stay exactly as declared. */
+  lastColumnFlexible?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -102,6 +109,7 @@ const props = withDefaults(defineProps<{
   bulkLabelPlural: undefined,
   actionsWidth: undefined,
   filterEmptyLabel: undefined,
+  lastColumnFlexible: false,
 })
 
 const emit = defineEmits<{
@@ -115,6 +123,16 @@ const emit = defineEmits<{
   clearAll: []
   selectionChange: [count: number]
 }>()
+
+// Column width — pinned to `col.width` exactly (width + minWidth), unless this is
+// the last column AND the page opted into `lastColumnFlexible`, in which case only
+// `minWidth` is set so it can grow into leftover table width instead of staying
+// fixed. See the `lastColumnFlexible` prop doc above.
+function colStyle(col: TableColumn, ci: number) {
+  if (!col.width) return {}
+  if (props.lastColumnFlexible && ci === props.columns.length - 1) return { minWidth: col.width }
+  return { width: col.width, minWidth: col.width }
+}
 
 // ERP column sort: picking the already-active direction clears the sort (back to
 // default order); otherwise apply the chosen direction. Empty key = unsorted.
@@ -380,11 +398,11 @@ const bulkCountLabel = computed(() => {
              Skipped on the full empty state so the table fits the container (no scroll). -->
         <colgroup v-if="!isFullEmpty">
           <col
-            v-for="col in columns"
+            v-for="(col, ci) in columns"
             :key="col.key"
-            :style="col.width ? { width: col.width, minWidth: col.width } : {}"
+            :style="colStyle(col, ci)"
           />
-          <col v-if="$slots.actions" :style="{ width: actionsWidth ?? '44px', minWidth: actionsWidth ?? '44px' }" />
+          <col v-if="$slots.actions" :style="{ width: actionsWidth ?? '52px', minWidth: actionsWidth ?? '52px', maxWidth: actionsWidth ?? '52px' }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
 
@@ -436,7 +454,7 @@ const bulkCountLabel = computed(() => {
                 'erp-th--fixed':    col.isFixed,
               }"
               :data-col="col.key"
-              :style="col.width ? { width: col.width, minWidth: col.width } : {}"
+              :style="colStyle(col, ci)"
               @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
             >
               <span class="th-inner">
@@ -617,7 +635,7 @@ const bulkCountLabel = computed(() => {
           <tr v-else-if="displayRows.length === 0">
             <td
               class="erp-td erp-td--empty"
-              :colspan="columns.length + ($slots.actions ? 1 : 0) + (hasAiChat ? 1 : 0)"
+              :colspan="totalCols"
             >
               <!-- Inline empty — search/filter eliminated all results (same illustration as
                    the full empty state, so both empty states read consistently) -->
@@ -856,10 +874,19 @@ const bulkCountLabel = computed(() => {
   right: var(--mp-sizes-7);
 }
 
-/* Actions header (no label) — width overridable via --erp-actions-width (actionsWidth prop) */
+/* Actions header (no label) — width overridable via --erp-actions-width (actionsWidth prop).
+   Default 52px (not --mp-sizes-11/44px) — matches the kebab-only pages that already
+   hardcode actions-width="52px" (BillsIndexPage, BillsReviewFilesPage), now the default
+   for every other kebab-only table too instead of each page redeclaring it.
+   max-width pins this too: table-layout:fixed distributes any leftover table width
+   (when column widths sum to less than the container, e.g. narrow tables like
+   WarehousesPage) proportionally across EVERY column, including ones with an
+   explicit width/min-width — without max-width the actions column silently grows
+   past 52px right along with the rest. */
 .erp-th--actions {
-  width: var(--erp-actions-width, var(--mp-sizes-11));
-  min-width: var(--erp-actions-width, var(--mp-sizes-11));
+  width: var(--erp-actions-width, 52px);
+  min-width: var(--erp-actions-width, 52px);
+  max-width: var(--erp-actions-width, 52px);
 }
 
 /* AI chat header column */
@@ -990,8 +1017,9 @@ const bulkCountLabel = computed(() => {
 /* Actions cell — Figma: px-8 py-6 justify-end. Width overridable via --erp-actions-width.
    Vertical padding is 2px so md-size buttons (36px) fit inside a 40px row. */
 .erp-td--actions {
-  width: var(--erp-actions-width, var(--mp-sizes-11));
-  min-width: var(--erp-actions-width, var(--mp-sizes-11));
+  width: var(--erp-actions-width, 52px);
+  min-width: var(--erp-actions-width, 52px);
+  max-width: var(--erp-actions-width, 52px);
   text-align: right;
   padding: var(--mp-sizes-0\.5, 2px) var(--mp-spacing-2) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-4);
 }
