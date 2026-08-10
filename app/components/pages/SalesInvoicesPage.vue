@@ -86,10 +86,15 @@ const keywordColumns = [
   { key: 'tags',         label: t('Tags')     },
 ]
 const tagOptions = computed(() => [...new Set(salesInvoices.flatMap(inv => inv.tags ?? []))].sort())
-const djpStatusOptions = [
-  { value: 'not-generated', label: t('Not generated') },
-  ...(Object.keys(DJP_STATUS_CONFIG) as TaxDocumentStatus[]).map(value => ({ value, label: t(DJP_STATUS_CONFIG[value].label) })),
-]
+// DJP status is only a real column/filter when at least one invoice on the
+// table has a tax document — otherwise every row would just show "Not
+// generated" and the column/filter would be dead weight.
+const hasAnyTaxDocument = computed(() => rows.value.some(r => r.hasTaxDocument))
+// Empty (and the drawer's DJP status field hidden) until the table has at
+// least one invoice with a tax document — see hasAnyTaxDocument below.
+const djpStatusOptions = computed(() => hasAnyTaxDocument.value
+  ? (Object.keys(DJP_STATUS_CONFIG) as TaxDocumentStatus[]).map(value => ({ value, label: t(DJP_STATUS_CONFIG[value].label) }))
+  : [])
 
 function applyDrawerFilters(v: SalesInvoiceFiltersValue) { Object.assign(appliedFilters, v) }
 
@@ -200,10 +205,13 @@ function formatDate(iso: string) {
 // Column show/hide (first column always on; Last updated appended, hidden by default;
 // DJP status also starts hidden — only shown once activated from column settings)
 const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'djpStatus'])
-const allCols: TableColumn[] = [...columns, { key: 'lastUpdated', label: t('Last updated'), width: '200px' }]
-const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
-const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
-const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
+const allCols = computed<TableColumn[]>(() => [
+  ...columns.filter(c => c.key !== 'djpStatus' || hasAnyTaxDocument.value),
+  { key: 'lastUpdated', label: t('Last updated'), width: '200px' },
+])
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.value.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
+const columnItems = computed(() => allCols.value.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 })))
+const visibleColumns = computed<TableColumn[]>(() => allCols.value.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
 
 // ─── Bulk actions (selection bar) — mirrors BillsIndexPage's bulk pattern ──────

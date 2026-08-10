@@ -174,8 +174,10 @@ const keywordColumnLabel = computed(() =>
           </div>
 
           <!-- DJP status — the invoice's most recent tax document status, or
-               "Not generated" when it has none yet (see getTaxDocumentsForInvoice). -->
-          <div class="sif-field">
+               "Not generated" when it has none yet (see getTaxDocumentsForInvoice).
+               Hidden entirely (parent passes an empty list) until at least one
+               invoice on the table has a tax document. -->
+          <div v-if="djpStatusOptions.length" class="sif-field">
             <span class="sif-field-label">DJP status</span>
             <ul class="sif-checklist">
               <li
