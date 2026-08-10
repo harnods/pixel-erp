@@ -262,9 +262,9 @@ function submitToDjp() { save('awaiting-approval') }
                    not reliably the viewport). -->
               <MpPopover id="ctd-lane-popover" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                 <MpPopoverTrigger>
-                  <button type="button" class="ctd-lane-fab" :aria-label="t('Change scenario state')">
+                  <MpButton class="ctd-lane-fab" :aria-label="t('Change scenario state')">
                     <MpIcon name="sliders" size="sm" color="icon.inverse" />
-                  </button>
+                  </MpButton>
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
                   <p class="ctd-lane-fab-heading">{{ t('Scenario state') }}</p>
@@ -294,10 +294,10 @@ function submitToDjp() { save('awaiting-approval') }
                   <MpFormLabel>{{ t('Document type') }}</MpFormLabel>
                   <MpPopover id="ctd-doctype-popover" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                     <MpPopoverTrigger>
-                      <button id="ctd-doctype-inp" type="button" class="ctd-select-trigger">
+                      <MpButton id="ctd-doctype-inp" class="ctd-select-trigger">
                         <span>{{ t(documentType) }}</span>
                         <MpIcon name="chevrons-down" size="sm" />
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content' })">
                       <MpPopoverList>
@@ -516,7 +516,7 @@ function submitToDjp() { save('awaiting-approval') }
    size="md" + this override, computed transform froze at translateX(448px)
    forever — visually a ~150px sliver stuck off the right edge). */
 :deep([data-pixel-component="MpDrawerContent"]) {
-  width: 600px !important;
+  width: var(--mp-spacing-150, 600px) !important;
   max-width: 600px !important;
 }
 .ctd-header {
@@ -529,10 +529,10 @@ function submitToDjp() { save('awaiting-approval') }
 /* Lane switcher — same visual as InvoiceReviewPage.vue's .demo-fab, sized down
    to sit inline in the header instead of floating fixed over the viewport. */
 .ctd-lane-fab {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-spacing-8, 32px); height: var(--mp-spacing-8, 32px);
-  padding: 0; border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse); color: var(--mp-text-inverse);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-spacing-8, 32px) !important; height: var(--mp-spacing-8, 32px) !important; min-width: 0 !important;
+  padding: 0 !important; border: none !important; border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-inverse) !important; color: var(--mp-text-inverse);
   cursor: pointer;
 }
 .ctd-lane-fab:hover { opacity: 0.9; }
@@ -580,13 +580,13 @@ function submitToDjp() { save('awaiting-approval') }
 /* Document type / VAT Code — form-field-styled popover triggers (MpSelect
    doesn't do custom option markup); metrics copied from the MpSelect they replaced. */
 .ctd-select-trigger {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  width: 100%; min-width: 0; height: 38px; box-sizing: border-box;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
+  display: flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
+  width: 100% !important; min-width: 0 !important; height: var(--mp-sizes-9\.5, 38px) !important; box-sizing: border-box;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)) !important;
   border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral, #fff);
-  font-size: var(--mp-font-sizes-md);
+  background: var(--mp-background-neutral, #fff) !important;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-default);
   cursor: pointer;
   text-align: left;

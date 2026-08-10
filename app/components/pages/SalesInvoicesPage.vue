@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { type Ref } from 'vue'
 import {
-  MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpIcon, MpButton, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
   css, toast,
 } from '@mekari/pixel3'
@@ -391,7 +391,7 @@ function confirmBulkDelete() {
           </svg>
         </div>
 
-        <button class="filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
+        <button class="btn-enterprise btn-enterprise--secondary filter-all-btn" :class="{ 'filter-all-btn--active': isDrawerFilterActive }" @click="filtersOpen = true">
           <MpIcon name="filter" size="sm" />
           {{ t('All filters') }}
         </button>
@@ -451,9 +451,9 @@ function confirmBulkDelete() {
       <div class="attachment-cell">
         <MpPopover v-if="(row as Row).hasTaxDocument" :id="`si-taxdoc-${(row as Row).id}`" use-portal :is-keep-alive="false" placement="bottom-start">
           <MpPopoverTrigger>
-            <button type="button" class="taxdoc-icon-btn" :aria-label="t('Tax document')" @click.stop>
+            <MpButton class="taxdoc-icon-btn" :aria-label="t('Tax document')" @click.stop>
               <MpIcon name="doc" size="sm" />
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ width: '480px', padding: 'var(--mp-spacing-6)' })">
             <div class="taxdoc-popover">
@@ -463,7 +463,7 @@ function confirmBulkDelete() {
               </div>
               <table class="taxdoc-popover-table">
                 <colgroup>
-                  <col style="width: 140px;" />
+                  <col class="taxdoc-popover-col-label" />
                   <col />
                 </colgroup>
                 <thead>
@@ -734,14 +734,15 @@ function confirmBulkDelete() {
   color: var(--mp-text-subtle);
 }
 .taxdoc-icon-btn {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: var(--mp-sizes-6, 24px);
-  height: var(--mp-sizes-6, 24px);
-  padding: 0;
-  border: none;
-  background: transparent;
+  width: var(--mp-sizes-6, 24px) !important;
+  height: var(--mp-sizes-6, 24px) !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
   border-radius: var(--mp-radii-sm);
   cursor: pointer;
   color: var(--mp-text-subtle);
@@ -769,8 +770,9 @@ function confirmBulkDelete() {
   border-radius: var(--mp-radii-lg, 8px);
   overflow: hidden;
 }
+.taxdoc-popover-col-label { width: var(--mp-spacing-35, 140px); }
 .taxdoc-popover-table th {
-  height: 28px;
+  height: var(--mp-sizes-7, 28px);
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-sm);
@@ -782,7 +784,7 @@ function confirmBulkDelete() {
 }
 .taxdoc-popover-th { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .taxdoc-popover-table td {
-  height: 40px;
+  height: var(--mp-sizes-10, 40px);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-4) var(--mp-spacing-1\.5) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -894,23 +896,12 @@ function confirmBulkDelete() {
   height: var(--mp-sizes-5, 20px);
 }
 
-/* All filters button */
+/* All filters button — base pill look comes from .btn-enterprise--secondary
+   (erp.css); only the asymmetric icon padding and the semibold weight differ. */
 .filter-all-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-bold);
-  border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
 }
-.filter-all-btn:hover { background: var(--mp-background-neutral-hovered); }
 .filter-all-btn--active {
   background: var(--mp-background-selected, var(--mp-background-information)) !important;
   border-color: var(--mp-border-selected, var(--mp-border-information)) !important;

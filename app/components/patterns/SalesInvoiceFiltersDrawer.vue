@@ -54,7 +54,7 @@ export function emptySalesInvoiceFilters(): SalesInvoiceFiltersValue {
  * "Not generated" when it has none) — see getTaxDocumentsForInvoice /
  * DJP_STATUS_CONFIG in ~/data/taxDocuments.
  */
-import { MpIcon, MpCheckbox, MpFormControl, MpFormLabel, MpDatePicker, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpDatePicker, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import AmountComparatorField from '~/components/patterns/AmountComparatorField.vue'
 import TagsComparatorField from '~/components/patterns/TagsComparatorField.vue'
 
@@ -98,9 +98,9 @@ const keywordColumnLabel = computed(() =>
       <div class="sif-filters-panel" role="dialog" aria-label="All filters">
         <header class="sif-filters-header">
           <span class="sif-filters-title">All filters</span>
-          <button class="sif-filters-close" type="button" aria-label="Close" @click="close">
+          <MpButton class="sif-filters-close" aria-label="Close" @click="close">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="sif-filters-body">
@@ -118,10 +118,10 @@ const keywordColumnLabel = computed(() =>
               >
               <MpPopover :id="`${id}-keyword-scope`" is-manual :is-open="keywordColumnOpen" use-portal :is-keep-alive="false" @open="keywordColumnOpen = true" @close="keywordColumnOpen = false">
                 <MpPopoverTrigger>
-                  <button type="button" class="sif-keyword-scope" @click.stop="keywordColumnOpen = !keywordColumnOpen">
+                  <MpButton class="sif-keyword-scope" @click.stop="keywordColumnOpen = !keywordColumnOpen">
                     <span class="sif-keyword-scope-label">{{ keywordColumnLabel }}</span>
                     <MpIcon name="chevrons-down" size="sm" />
-                  </button>
+                  </MpButton>
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="keywordColumnOpen = false" @escape="keywordColumnOpen = false">
                   <MpPopoverList>
@@ -261,9 +261,9 @@ const keywordColumnLabel = computed(() =>
   color: var(--mp-text-default);
 }
 .sif-filters-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
+  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-icon-default);
 }
 .sif-filters-close:hover { background: var(--mp-background-neutral-hovered); }
@@ -278,14 +278,13 @@ const keywordColumnLabel = computed(() =>
    WmsReportFiltersDrawer's Keywords field). */
 .sif-keyword {
   display: flex; align-items: center; gap: var(--mp-spacing-3);
-  padding: 2px 2px 2px var(--mp-spacing-3);
+  padding: var(--mp-sizes-0\.5, 2px) var(--mp-sizes-0\.5, 2px) var(--mp-sizes-0\.5, 2px) var(--mp-spacing-3);
   background: var(--mp-background-neutral, #fff);
   border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16));
   border-radius: var(--mp-radii-md, 6px);
 }
 .sif-keyword:focus-within {
   border-color: var(--mp-border-brand, #4b61dc);
-  box-shadow: 0 0 0 1px var(--mp-border-brand, #4b61dc);
 }
 .sif-keyword-input {
   flex: 1 0 0; min-width: 0; height: 20px;
@@ -294,12 +293,12 @@ const keywordColumnLabel = computed(() =>
 }
 .sif-keyword-input::placeholder { color: var(--mp-text-placeholder); }
 .sif-keyword-scope {
-  flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
-  min-width: 32px; padding: var(--mp-spacing-2);
-  border: none; cursor: pointer;
-  background: var(--mp-background-neutral-subtle, #f0f1f3);
-  border-radius: 0 4px 4px 0;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+  flex-shrink: 0; display: inline-flex !important; align-items: center; gap: var(--mp-spacing-1);
+  min-width: var(--mp-sizes-8, 32px) !important; padding: var(--mp-spacing-2) !important;
+  border: none !important; cursor: pointer;
+  background: var(--mp-background-neutral-subtle, #f0f1f3) !important;
+  border-radius: 0 var(--mp-radii-sm, 4px) var(--mp-radii-sm, 4px) 0;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default);
 }
 .sif-keyword-scope:hover { background: var(--mp-background-neutral-hovered, #e6e8eb); }
 .sif-keyword-scope-label { white-space: nowrap; }

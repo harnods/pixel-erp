@@ -15,7 +15,7 @@ import {
   MpSelect, MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpAutocomplete, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, toast, css,
+  MpIcon, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import type { DataInterface } from '@mekari/pixel3'
 import {
@@ -344,7 +344,7 @@ function onSave() {
     <!-- ── Fixed header bar ── -->
     <header class="si-form-bar">
       <div class="si-form-bar-left">
-        <button class="si-crumb" @click="onCancel">{{ t('Sales invoices') }}</button>
+        <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Sales invoices') }}</MpTextlink>
         <h1 class="si-form-h1">{{ t('New sales invoice') }}</h1>
       </div>
     </header>
@@ -439,9 +439,9 @@ function onSave() {
             <MpFormLabel>
               <span class="si-label-row">
                 {{ t('Transaction no.') }}
-                <button type="button" class="si-label-icon" :aria-label="t('Transaction number settings')">
+                <MpButton class="si-label-icon" :aria-label="t('Transaction number settings')">
                   <MpIcon name="settings" size="sm" />
-                </button>
+                </MpButton>
               </span>
             </MpFormLabel>
             <MpInput id="f-tx-no-inp" :placeholder="t('Auto')" is-disabled is-full-width />
@@ -690,9 +690,9 @@ function onSave() {
 
           <!-- Discount block — the swap affordance sits in the gutter, as designed -->
           <div class="si-discount-block">
-            <button type="button" class="si-discount-swap" :aria-label="t('Switch discount mode')">
+            <MpButton class="si-discount-swap" :aria-label="t('Switch discount mode')">
               <MpIcon name="sort-default" size="sm" />
-            </button>
+            </MpButton>
             <div class="si-discount-rows">
               <div class="si-totals-row">
                 <span>{{ t('Discount per line') }}</span>
@@ -995,9 +995,9 @@ function onSave() {
 
 .si-label-row { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .si-label-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; border: none; background: none; cursor: pointer;
-  color: var(--mp-text-secondary);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  padding: 0 !important; border: none !important; background: none !important; min-width: 0 !important;
+  cursor: pointer; color: var(--mp-text-secondary);
 }
 
 /* ── Line items ─────────────────────────────────────────────────────────────
@@ -1132,7 +1132,7 @@ function onSave() {
 .si-deduction { color: var(--mp-text-secondary); white-space: nowrap; }
 
 .si-total-rule {
-  height: 1px; margin: var(--mp-spacing-2) 0;
+  height: var(--mp-border-width-sm, 1px); margin: var(--mp-spacing-2) 0;
   background: repeating-linear-gradient(
     to right,
     var(--mp-border-default) 0,
@@ -1146,9 +1146,9 @@ function onSave() {
 .si-discount-rows { display: flex; flex-direction: column; }
 .si-discount-swap {
   position: absolute; left: -28px; top: var(--mp-spacing-2);
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; padding: 0;
-  border: none; background: none; cursor: pointer;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: var(--mp-sizes-6, 24px) !important; height: var(--mp-sizes-6, 24px) !important; min-width: 0 !important;
+  padding: 0 !important; border: none !important; background: none !important; cursor: pointer;
   color: var(--mp-text-subtle); border-radius: var(--mp-radii-sm);
 }
 .si-discount-swap:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }

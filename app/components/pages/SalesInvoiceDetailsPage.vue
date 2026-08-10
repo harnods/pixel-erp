@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, css, toast,
+  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
@@ -234,7 +234,7 @@ function receivePayment() { router.push('/sales-invoices') }
     <!-- ── Title bar (breadcrumb + title + status dropdown + icon actions) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('Sales invoices') }}</button>
+        <MpTextlink id="detail-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goBack">{{ t('Sales invoices') }}</MpTextlink>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Sales Invoice') }} #{{ invoice.number }}</h1>
           <ErpStatusBadge :status="invoice.status" badge-for="additionalInformation" size="md" />
@@ -242,11 +242,11 @@ function receivePayment() { router.push('/sales-invoices') }
           <!-- Chevron → jump-to-transaction switcher (search + 5 recent) -->
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch transaction')">
+              <MpButton class="detail-jump-chevron" :aria-label="t('Switch transaction')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
@@ -257,11 +257,11 @@ function receivePayment() { router.push('/sales-invoices') }
                     type="text"
                     :placeholder="t('Search...')"
                   />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
                   <button
@@ -284,14 +284,14 @@ function receivePayment() { router.push('/sales-invoices') }
       <!-- Right-side icon actions — only when the page has an approval flow -->
       <div v-if="hasApproval" class="detail-titlerow-right">
           <MpTooltip id="detail-tt-tasks" :label="t('Approval log')" placement="bottom" use-portal>
-            <button class="detail-icon-btn" :aria-label="t('Approval log')">
+            <MpButton class="detail-icon-btn" :aria-label="t('Approval log')">
               <MpIcon name="task-todo" size="md" />
-            </button>
+            </MpButton>
           </MpTooltip>
           <MpTooltip id="detail-tt-comments" :label="t('Comments')" placement="bottom" use-portal>
-            <button class="detail-icon-btn" :aria-label="t('Comments')">
+            <MpButton class="detail-icon-btn" :aria-label="t('Comments')">
               <MpIcon name="comment" size="md" />
-            </button>
+            </MpButton>
           </MpTooltip>
       </div>
     </header>
@@ -618,7 +618,7 @@ function receivePayment() { router.push('/sales-invoices') }
         <!-- Print & share (secondary dropdown) -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--secondary">
+            <button class="btn-enterprise btn-enterprise--secondary">
               {{ t('Print & share') }}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -642,7 +642,7 @@ function receivePayment() { router.push('/sales-invoices') }
         <!-- Paid: a plain "Actions" primary dropdown (no payment left to record) -->
         <MpPopover v-if="invoice.status === 'paid'" id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--primary">
+            <button class="btn-enterprise btn-enterprise--primary">
               {{ t('Actions') }}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -669,12 +669,12 @@ function receivePayment() { router.push('/sales-invoices') }
              a payment; chevron segment opens the rest (Reject + the create-document
              actions that only make sense before the invoice is settled). -->
         <div v-else class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="receivePayment">
+          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="receivePayment">
             {{ t('Add payment') }}
           </button>
           <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -799,14 +799,15 @@ function receivePayment() { router.push('/sales-invoices') }
 }
 /* chevron next to the badge → jump-to-transaction switcher */
 .detail-jump-chevron {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: var(--mp-sizes-7, 28px);
-  height: var(--mp-sizes-7, 28px);
-  background: none;
-  border: none;
-  padding: 0;
+  width: var(--mp-sizes-7, 28px) !important;
+  height: var(--mp-sizes-7, 28px) !important;
+  min-width: 0 !important;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
   border-radius: var(--mp-radii-md);
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
@@ -830,9 +831,9 @@ function receivePayment() { router.push('/sales-invoices') }
 .detail-jump-search:focus { border-color: var(--mp-border-brand-bold, #029861); }
 .detail-jump-search::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
-  border: none; background: none; cursor: pointer;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  flex-shrink: 0; width: var(--mp-sizes-4\.5, 18px) !important; height: var(--mp-sizes-4\.5, 18px) !important; min-width: 0 !important;
+  padding: 0 !important; border: none !important; background: none !important; cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
@@ -866,14 +867,15 @@ function receivePayment() { router.push('/sales-invoices') }
   gap: var(--mp-spacing-1);
 }
 .detail-icon-btn {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: var(--mp-sizes-9, 36px);
-  height: var(--mp-sizes-9, 36px);
+  width: var(--mp-sizes-9, 36px) !important;
+  height: var(--mp-sizes-9, 36px) !important;
+  min-width: 0 !important;
   border-radius: var(--mp-radii-md);
-  background: none;
-  border: none;
+  background: none !important;
+  border: none !important;
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
@@ -940,7 +942,7 @@ function receivePayment() { router.push('/sales-invoices') }
 
 /* dashed rule between header 1 (primary row) and header 2 (detail grid): 4px dash / 4px gap */
 .detail-divider {
-  height: 1px;
+  height: var(--mp-border-width-sm, 1px);
   background: repeating-linear-gradient(
     to right,
     var(--mp-border-default) 0,
@@ -1141,7 +1143,7 @@ function receivePayment() { router.push('/sales-invoices') }
 }
 /* dashed rule before Total: 4px dash / 4px gap, border-default */
 .detail-total-rule {
-  height: 1px;
+  height: var(--mp-border-width-sm, 1px);
   background: repeating-linear-gradient(
     to right,
     var(--mp-border-default) 0,
@@ -1193,34 +1195,6 @@ function receivePayment() { router.push('/sales-invoices') }
   gap: var(--mp-spacing-3);
   padding-top: var(--mp-spacing-4);
 }
-.detail-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  cursor: pointer;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-.detail-btn--secondary {
-  background: var(--mp-background-neutral);
-  border-color: var(--mp-border-bold);
-  color: var(--mp-text-secondary);
-}
-.detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
-.detail-btn--primary {
-  background: var(--mp-colors-emerald-700, #029861);
-  border-color: var(--mp-colors-emerald-700, #029861);
-  color: var(--mp-text-inverse);
-}
-.detail-btn--primary:hover {
-  background: var(--mp-colors-emerald-800, #186f4a);
-  border-color: var(--mp-colors-emerald-800, #186f4a);
-}
-
 /* Split button — "Add payment" main segment + chevron segment sharing one pill,
    separated by a 1px divider. Only the outer corners are rounded. */
 .detail-split-btn {

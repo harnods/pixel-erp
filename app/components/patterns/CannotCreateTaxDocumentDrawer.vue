@@ -134,7 +134,7 @@ function goToProduct(sku: string) {
    — see that file's comments for why size="full" + this override is required. */
 .cctd-card { display: flex; flex-direction: column; height: 100%; }
 :deep([data-pixel-component="MpDrawerContent"]) {
-  width: 600px !important;
+  width: var(--mp-spacing-150, 600px) !important;
   max-width: 600px !important;
 }
 .cctd-header {

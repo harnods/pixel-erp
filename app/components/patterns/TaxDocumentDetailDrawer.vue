@@ -212,7 +212,7 @@ function close() { emit('update:isOpen', false) }
    width lookup fights this override and freezes the open animation). */
 .tdd-card { display: flex; flex-direction: column; height: 100%; }
 :deep([data-pixel-component="MpDrawerContent"]) {
-  width: 600px !important;
+  width: var(--mp-spacing-150, 600px) !important;
   max-width: 600px !important;
 }
 .tdd-header {
